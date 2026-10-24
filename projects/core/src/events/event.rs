@@ -1,4 +1,6 @@
-use super::{LifecycleChanged, TaskAccepted, TaskRejected, ThreadCreated, ThreadUpdated};
+use super::{
+    ExecutionFailed, LifecycleChanged, TaskAccepted, TaskRejected, ThreadCreated, ThreadUpdated,
+};
 
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -6,5 +8,6 @@ pub enum Event {
     ThreadUpdated(ThreadUpdated),
     TaskAccepted(TaskAccepted),
     TaskRejected(TaskRejected),
+    ExecutionFailed(ExecutionFailed),
     LifecycleChanged(LifecycleChanged),
 }

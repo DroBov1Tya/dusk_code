@@ -1,6 +1,7 @@
 //! Concrete event payloads, aggregate event contract, and Tokio broadcast types.
 
 mod event;
+mod execution_failed;
 mod lifecycle_changed;
 mod task_accepted;
 mod task_rejected;
@@ -8,6 +9,7 @@ mod thread_created;
 mod thread_updated;
 
 pub use event::Event;
+pub use execution_failed::ExecutionFailed;
 pub use lifecycle_changed::LifecycleChanged;
 pub use task_accepted::TaskAccepted;
 pub use task_rejected::TaskRejected;

@@ -23,6 +23,7 @@ projects/
 │       │   ├── thread_updated.rs
 │       │   ├── task_accepted.rs
 │       │   ├── task_rejected.rs
+│       │   ├── execution_failed.rs
 │       │   └── lifecycle_changed.rs
 │       ├── transport/    in-process request transport
 │       │   ├── mod.rs    public reexports
@@ -68,10 +69,22 @@ let execution = Transport::new(&state)
 assert!(!execution.is_complete());
 ```
 
-The handler commits an `event_logs` receipt containing only `request_uid`, the attempted `thread_id`, `received_at` (Unix milliseconds), `status` (`accepted` or `rejected`), and optional `error_code`. Content is consumed in memory, never bound to a database query or included in the event. The caller must retain content for future processing. An accepted receipt means the core received a valid request; it remains incomplete because execution is not implemented. Rejected receipts have a fixed, non-sensitive code: `empty_message`, `empty_thread`, or `unknown_thread`. Rejection is terminal (`is_complete()` returns `true`) without generating model output. A rejected receipt is returned as `Ok(Execution)`; callers inspect `status` and `error_code`.
+The handler commits an `event_logs` receipt containing only `request_uid`, the attempted `thread_id`, `received_at` (Unix milliseconds), `status` (`accepted`, `rejected`, or `failed`), and optional `error_code`. Content is consumed in memory, never bound to a database query or included in the event. The caller must retain content for future processing. An accepted receipt means the core received a valid request; it remains incomplete because execution is not implemented. Rejected receipts have a fixed, non-sensitive code: `empty_message`, `empty_thread`, or `unknown_thread`. Rejection is terminal (`is_complete()` returns `true`) without generating model output. A rejected receipt is returned as `Ok(Execution)`; callers inspect `status` and `error_code`. `Execution.error_code` remains an optional `RejectionCode`; the separate `failure_code` field exposes execution failures as `ExecutionFailureCode`. Both use the existing SQL `error_code` column, decoded according to status.
 
 After the commit, subscribers receive `Event::TaskAccepted(TaskAccepted { execution })` or `Event::TaskRejected(TaskRejected { execution })`. Thread events wrap their metadata in `ThreadCreated { thread }` or `ThreadUpdated { thread }`; `LifecycleChanged { previous, current }` is a separate payload as well. Each payload has its own file under `events/`, and `Event` aggregates them. `Task` and `Execution` live under `transport/`; root imports and existing `api` imports remain available. Acceptance checks thread existence in the same database statement that inserts the receipt; `event_logs.thread_id` has no foreign key so unknown attempted threads can be recorded. Repeating a UID on the same thread returns its original receipt without another event, including after reopening the database. Neither accepted nor rejected rows are overwritten by retries. Content is not compared on retries; the caller must reuse a UID only for the same logical request. Reusing a UID for another thread fails and preserves the original receipt. Empty UIDs and unavailable storage return an error and cannot reliably leave a receipt. `State::load_execution(uid)` retrieves a durable receipt or returns `None`; a missing row alone therefore cannot distinguish an undelivered request from one that could not be logged. There is no core `not_received` status. `CoreEvent` remains a compatibility alias for `Event`.
 
+`State::fail_execution(uid)` explicitly transitions an accepted execution to terminal `failed` with the fixed non-sensitive `execution_failed` code. It preserves the UID, thread ID, and receipt timestamp, commits the change, then publishes `Event::ExecutionFailed(ExecutionFailed { execution })`. Failed executions have `is_complete() == true`, `error_code == None`, and `failure_code == Some(ExecutionFailureCode::ExecutionFailed)`. Repeating the failure transition or resubmitting its original task returns the stored failed receipt without another event. Missing or rejected UIDs cannot transition to failed. No provider call or generated content is involved.
+
+The only supported task is currently `Task::UserMessage`:
+
+| Input / explicit operation | Result | Terminal | Event after commit |
+| --- | --- | --- | --- |
+| Valid UID, non-empty message, existing thread | `accepted` | No | `TaskAccepted` |
+| Valid UID, empty message or empty/unknown thread | `rejected` plus validation code | Yes | `TaskRejected` |
+| `fail_execution(uid)` for an accepted request | `failed` plus execution failure code | Yes | `ExecutionFailed` |
+| Retry of the same UID/thread or an already failed transition | Existing result | Unchanged | None |
+| Invalid UID, conflicting-thread UID reuse, missing/rejected failure target, or unavailable storage | Error; no new result | Unchanged | None |
+
 ## Limitations
 
-This is an initial core slice. Scheduling, model execution, completed/failed model execution states, lifecycle transitions, general event routing, extension loading and compatibility negotiation, policy enforcement, snapshot persistence, and supervised shutdown are not implemented. `event_logs` stores request receipt metadata; it is not a replayable event journal. The event transport is in-process Tokio broadcast with a 256-event buffer, no replay, and no durable delivery. Receivers must handle lag; cancellation during a database operation can leave a committed write without a delivered event. Separate state instances have separate event channels. The CLI has no thread editing or chat interface yet.
+This is an initial core slice. The standalone initial `0002_event_logs.sql` schema targets a fresh database; no upgrade migration for previous development schemas is provided. Scheduling, model execution, successful model completion states, lifecycle transitions, general event routing, extension loading and compatibility negotiation, policy enforcement, snapshot persistence, and supervised shutdown are not implemented. `event_logs` stores request receipt metadata; it is not a replayable event journal. The event transport is in-process Tokio broadcast with a 256-event buffer, no replay, and no durable delivery. Receivers must handle lag; cancellation during a database operation can leave a committed write without a delivered event. Separate state instances have separate event channels. The CLI has no thread editing or chat interface yet.

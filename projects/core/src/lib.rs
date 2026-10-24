@@ -11,4 +11,4 @@ pub mod supervision;
 pub mod transport;
 
 pub use events::Event;
-pub use transport::{Execution, ExecutionStatus, RejectionCode, Task};
+pub use transport::{Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode, Task};

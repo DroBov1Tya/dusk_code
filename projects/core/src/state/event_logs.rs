@@ -3,8 +3,8 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::events::{TaskAccepted, TaskRejected};
-use crate::{Event, Execution, ExecutionStatus, RejectionCode};
+use crate::events::{ExecutionFailed, TaskAccepted, TaskRejected};
+use crate::{Event, Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode};
 
 use super::State;
 
@@ -70,8 +70,53 @@ impl State {
                 ExecutionStatus::Rejected => Event::TaskRejected(TaskRejected {
                     execution: execution.clone(),
                 }),
+                ExecutionStatus::Failed => Event::ExecutionFailed(ExecutionFailed {
+                    execution: execution.clone(),
+                }),
             };
             let _ = self.events.send(event);
+        }
+        Ok(execution)
+    }
+
+    /// Marks an accepted request as terminally failed without persisting error text.
+    /// Repeating a failed UID returns the original result without another event.
+    pub async fn fail_execution(&self, request_uid: &str) -> Result<Execution> {
+        ensure!(!request_uid.trim().is_empty(), "request UID is empty");
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin().await.context("begin execution failure")?;
+        let row = sqlx::query(
+            "UPDATE event_logs SET status = 'failed', error_code = ?
+             WHERE request_uid = ? AND status = 'accepted' RETURNING *",
+        )
+        .bind(ExecutionFailureCode::ExecutionFailed.as_str())
+        .bind(request_uid)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("record execution failure")?;
+        let changed = row.is_some();
+        let row = match row {
+            Some(row) => row,
+            None => sqlx::query("SELECT * FROM event_logs WHERE request_uid = ?")
+                .bind(request_uid)
+                .fetch_optional(&mut *transaction)
+                .await
+                .context("load execution for failure")?
+                .context("execution does not exist")?,
+        };
+        let execution = decode_execution(row)?;
+        ensure!(
+            execution.status == ExecutionStatus::Failed,
+            "only accepted executions can fail"
+        );
+        transaction
+            .commit()
+            .await
+            .context("commit execution failure")?;
+        if changed {
+            let _ = self.events.send(Event::ExecutionFailed(ExecutionFailed {
+                execution: execution.clone(),
+            }));
         }
         Ok(execution)
     }
@@ -93,25 +138,32 @@ fn decode_execution(row: SqliteRow) -> Result<Execution> {
     let status = match status.as_str() {
         "accepted" => ExecutionStatus::Accepted,
         "rejected" => ExecutionStatus::Rejected,
+        "failed" => ExecutionStatus::Failed,
         _ => bail!("invalid stored execution status"),
     };
     let error_code: Option<String> = row.try_get("error_code")?;
-    let error_code = match error_code.as_deref() {
-        Some("empty_message") => Some(RejectionCode::EmptyMessage),
-        Some("empty_thread") => Some(RejectionCode::EmptyThread),
-        Some("unknown_thread") => Some(RejectionCode::UnknownThread),
-        Some(_) => bail!("invalid stored rejection code"),
-        None => None,
+    let (error_code, failure_code) = match (status, error_code.as_deref()) {
+        (ExecutionStatus::Accepted, None) => (None, None),
+        (ExecutionStatus::Rejected, Some("empty_message")) => {
+            (Some(RejectionCode::EmptyMessage), None)
+        }
+        (ExecutionStatus::Rejected, Some("empty_thread")) => {
+            (Some(RejectionCode::EmptyThread), None)
+        }
+        (ExecutionStatus::Rejected, Some("unknown_thread")) => {
+            (Some(RejectionCode::UnknownThread), None)
+        }
+        (ExecutionStatus::Failed, Some("execution_failed")) => {
+            (None, Some(ExecutionFailureCode::ExecutionFailed))
+        }
+        _ => bail!("stored execution status and error code disagree"),
     };
-    ensure!(
-        (status == ExecutionStatus::Rejected) == error_code.is_some(),
-        "stored execution status and rejection code disagree"
-    );
     Ok(Execution {
         request_uid: row.try_get("request_uid")?,
         thread_id: row.try_get("thread_id")?,
         received_at: row.try_get("received_at")?,
         status,
         error_code,
+        failure_code,
     })
 }

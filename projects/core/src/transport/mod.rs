@@ -4,6 +4,6 @@ mod execution;
 mod handler;
 mod task;
 
-pub use execution::{Execution, ExecutionStatus, RejectionCode};
+pub use execution::{Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode};
 pub use handler::Transport;
 pub use task::Task;

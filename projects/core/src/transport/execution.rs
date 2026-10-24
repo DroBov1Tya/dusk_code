@@ -1,8 +1,9 @@
-/// Only receipt is implemented; accepting a task does not complete execution.
+/// Accepting a task does not complete execution; rejection and failure are terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionStatus {
     Accepted,
     Rejected,
+    Failed,
 }
 
 impl ExecutionStatus {
@@ -10,6 +11,7 @@ impl ExecutionStatus {
         match self {
             Self::Accepted => "accepted",
             Self::Rejected => "rejected",
+            Self::Failed => "failed",
         }
     }
 }
@@ -32,6 +34,20 @@ impl RejectionCode {
     }
 }
 
+/// Fixed execution-failure codes never contain provider errors or message content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExecutionFailureCode {
+    ExecutionFailed,
+}
+
+impl ExecutionFailureCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExecutionFailed => "execution_failed",
+        }
+    }
+}
+
 /// Durable receipt without the original message or generated output.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
@@ -40,15 +56,18 @@ pub struct Execution {
     /// Unix timestamp in milliseconds, assigned on first receipt.
     pub received_at: i64,
     pub status: ExecutionStatus,
+    /// Validation rejection; absent for accepted and failed executions.
     pub error_code: Option<RejectionCode>,
+    /// Execution failure; distinct from validation rejection.
+    pub failure_code: Option<ExecutionFailureCode>,
 }
 
 impl Execution {
-    /// Rejection is terminal; accepted requests await execution and remain incomplete.
+    /// Rejection and failure are terminal; accepted requests remain incomplete.
     pub fn is_complete(&self) -> bool {
         match self.status {
             ExecutionStatus::Accepted => false,
-            ExecutionStatus::Rejected => true,
+            ExecutionStatus::Rejected | ExecutionStatus::Failed => true,
         }
     }
 }
