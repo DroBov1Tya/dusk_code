@@ -3,6 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
+use crate::events::{TaskAccepted, TaskRejected};
 use crate::{Event, Execution, ExecutionStatus, RejectionCode};
 
 use super::State;
@@ -63,8 +64,12 @@ impl State {
             .context("commit request receipt")?;
         if inserted {
             let event = match execution.status {
-                ExecutionStatus::Accepted => Event::TaskAccepted(execution.clone()),
-                ExecutionStatus::Rejected => Event::TaskRejected(execution.clone()),
+                ExecutionStatus::Accepted => Event::TaskAccepted(TaskAccepted {
+                    execution: execution.clone(),
+                }),
+                ExecutionStatus::Rejected => Event::TaskRejected(TaskRejected {
+                    execution: execution.clone(),
+                }),
             };
             let _ = self.events.send(event);
         }

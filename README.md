@@ -14,10 +14,21 @@ projects/
 ├── core/                 dusk_core library
 │   └── src/
 │       ├── lib.rs        public modules
-│       ├── api.rs        Core API version, Task, and Execution contracts
+│       ├── api.rs        Core API version and compatibility reexports
 │       ├── lifecycle.rs  lifecycle states
-│       ├── events.rs     event contract and Tokio broadcast types
-│       ├── transport.rs  in-process user-message acceptance handler
+│       ├── events/       aggregate event and one file per concrete payload
+│       │   ├── mod.rs    reexports and Tokio broadcast types
+│       │   ├── event.rs  Event enum
+│       │   ├── thread_created.rs
+│       │   ├── thread_updated.rs
+│       │   ├── task_accepted.rs
+│       │   ├── task_rejected.rs
+│       │   └── lifecycle_changed.rs
+│       ├── transport/    in-process request transport
+│       │   ├── mod.rs    public reexports
+│       │   ├── task.rs   Task contract
+│       │   ├── execution.rs Execution and status contracts
+│       │   └── handler.rs user-message receipt handler
 │       ├── extensions.rs extension metadata and registry storage
 │       ├── policy.rs     async authorization contract
 │       ├── persistence.rs async snapshot contract
@@ -59,7 +70,7 @@ assert!(!execution.is_complete());
 
 The handler commits an `event_logs` receipt containing only `request_uid`, the attempted `thread_id`, `received_at` (Unix milliseconds), `status` (`accepted` or `rejected`), and optional `error_code`. Content is consumed in memory, never bound to a database query or included in the event. The caller must retain content for future processing. An accepted receipt means the core received a valid request; it remains incomplete because execution is not implemented. Rejected receipts have a fixed, non-sensitive code: `empty_message`, `empty_thread`, or `unknown_thread`. Rejection is terminal (`is_complete()` returns `true`) without generating model output. A rejected receipt is returned as `Ok(Execution)`; callers inspect `status` and `error_code`.
 
-After the commit, subscribers receive `Event::TaskAccepted(Execution)` or `Event::TaskRejected(Execution)`. Acceptance checks thread existence in the same database statement that inserts the receipt; `event_logs.thread_id` has no foreign key so unknown attempted threads can be recorded. Repeating a UID on the same thread returns its original receipt without another event, including after reopening the database. Neither accepted nor rejected rows are overwritten by retries. Content is not compared on retries; the caller must reuse a UID only for the same logical request. Reusing a UID for another thread fails and preserves the original receipt. Empty UIDs and unavailable storage return an error and cannot reliably leave a receipt. `State::load_execution(uid)` retrieves a durable receipt or returns `None`; a missing row alone therefore cannot distinguish an undelivered request from one that could not be logged. There is no core `not_received` status. `CoreEvent` remains a compatibility alias for `Event`.
+After the commit, subscribers receive `Event::TaskAccepted(TaskAccepted { execution })` or `Event::TaskRejected(TaskRejected { execution })`. Thread events wrap their metadata in `ThreadCreated { thread }` or `ThreadUpdated { thread }`; `LifecycleChanged { previous, current }` is a separate payload as well. Each payload has its own file under `events/`, and `Event` aggregates them. `Task` and `Execution` live under `transport/`; root imports and existing `api` imports remain available. Acceptance checks thread existence in the same database statement that inserts the receipt; `event_logs.thread_id` has no foreign key so unknown attempted threads can be recorded. Repeating a UID on the same thread returns its original receipt without another event, including after reopening the database. Neither accepted nor rejected rows are overwritten by retries. Content is not compared on retries; the caller must reuse a UID only for the same logical request. Reusing a UID for another thread fails and preserves the original receipt. Empty UIDs and unavailable storage return an error and cannot reliably leave a receipt. `State::load_execution(uid)` retrieves a durable receipt or returns `None`; a missing row alone therefore cannot distinguish an undelivered request from one that could not be logged. There is no core `not_received` status. `CoreEvent` remains a compatibility alias for `Event`.
 
 ## Limitations
 
