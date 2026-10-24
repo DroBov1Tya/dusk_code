@@ -1,11 +1,19 @@
-//! SQLite metadata and in-memory events emitted after successful writes.
+//! SQLite session records and in-memory events emitted after successful writes.
 
 mod event_logs;
+mod jobs;
+mod messages;
 mod threads;
 
+pub use jobs::{Job, JobInput, JobOutcome, JobStatus};
+pub use messages::{Message, MessageAttachment, MessageInput, MessageRole};
 pub use threads::{ApprovalMode, ThreadInput, ThreadMetadata};
 
-use std::{io::ErrorKind, path::Path};
+use std::{
+    io::ErrorKind,
+    path::Path,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Context, Result, ensure};
 use sqlx::{ConnectOptions, SqlitePool, migrate::Migrator, sqlite::SqliteConnectOptions};
@@ -21,6 +29,13 @@ pub struct State {
     events: EventSender,
     // Preserve write/event ordering for callers sharing this state instance.
     writes: Mutex<()>,
+}
+
+fn timestamp_ms() -> Result<i64> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock precedes Unix epoch")?;
+    i64::try_from(elapsed.as_millis()).context("timestamp exceeds SQLite integer range")
 }
 
 impl State {
@@ -103,7 +118,7 @@ impl State {
         })
     }
 
-    /// Events are live only: request receipts can be loaded separately, without replay.
+    /// Events are live only: durable session records can be loaded separately, without replay.
     pub fn subscribe(&self) -> EventReceiver {
         self.events.subscribe()
     }

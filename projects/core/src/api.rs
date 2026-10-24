@@ -8,6 +8,9 @@ pub struct ApiVersion {
 
 pub const CORE_API_VERSION: ApiVersion = ApiVersion { major: 0, minor: 1 };
 
+pub use crate::state::{
+    Job, JobInput, JobOutcome, JobStatus, Message, MessageAttachment, MessageInput, MessageRole,
+};
 pub use crate::transport::{Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode, Task};
 
 // Compatibility negotiation belongs here when extension loading is implemented.

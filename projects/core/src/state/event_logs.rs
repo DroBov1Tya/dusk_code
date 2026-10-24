@@ -1,27 +1,31 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::events::{ExecutionFailed, TaskAccepted, TaskRejected};
+use crate::events::{ExecutionFailed, MessageCreated, TaskAccepted, TaskRejected};
 use crate::{Event, Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode};
 
-use super::State;
+use super::{
+    MessageInput, MessageRole, State,
+    messages::{decode_message, insert_message, validate_context},
+    timestamp_ms,
+};
 
 impl State {
-    /// Only the transport can receive input; storage never receives message content.
+    /// Commits a receipt and accepted message atomically. The receipt remains metadata-only.
     pub(crate) async fn receive_request(
         &self,
         request_uid: &str,
-        thread_id: &str,
+        input: MessageInput,
         rejection: Option<RejectionCode>,
     ) -> Result<Execution> {
         ensure!(!request_uid.trim().is_empty(), "request UID is empty");
-        let elapsed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .context("system clock precedes Unix epoch")?;
-        let received_at =
-            i64::try_from(elapsed.as_millis()).context("timestamp exceeds SQLite integer range")?;
+        ensure!(
+            input.role == MessageRole::User && input.job_id.is_none() && input.agent_id.is_none(),
+            "invalid user-message input"
+        );
+        validate_context(&input.cwd, &input.attachments)?;
+        let thread_id = &input.thread_id;
+        let received_at = timestamp_ms()?;
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin request receipt")?;
         let row = sqlx::query(
@@ -55,9 +59,41 @@ impl State {
         };
         let execution = decode_execution(row)?;
         ensure!(
-            execution.thread_id == thread_id,
+            &execution.thread_id == thread_id,
             "request UID already belongs to another thread"
         );
+        let message = if inserted && execution.status == ExecutionStatus::Accepted {
+            // User request IDs form a stable message ID namespace for transport replays.
+            Some(
+                insert_message(
+                    &mut transaction,
+                    &format!("request:{request_uid}"),
+                    &input,
+                    Some(request_uid),
+                    received_at,
+                )
+                .await?,
+            )
+        } else {
+            if !inserted && execution.status != ExecutionStatus::Rejected {
+                let original = sqlx::query("SELECT * FROM messages WHERE request_uid = ?")
+                    .bind(request_uid)
+                    .fetch_optional(&mut *transaction)
+                    .await
+                    .context("load original request message")?
+                    .context("existing request has no persisted message")?;
+                let original = decode_message(original)?;
+                ensure!(
+                    original.thread_id == input.thread_id
+                        && original.content == input.content
+                        && original.cwd == input.cwd
+                        && original.attachments == input.attachments,
+                    "request UID already belongs to different input"
+                );
+            }
+            // Rejected receipts have no persisted payload to compare; return the original receipt.
+            None
+        };
         transaction
             .commit()
             .await
@@ -75,6 +111,11 @@ impl State {
                 }),
             };
             let _ = self.events.send(event);
+            if let Some(message) = message {
+                let _ = self
+                    .events
+                    .send(Event::MessageCreated(MessageCreated { message }));
+            }
         }
         Ok(execution)
     }

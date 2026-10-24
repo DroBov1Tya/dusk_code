@@ -2,7 +2,10 @@
 
 mod event;
 mod execution_failed;
+mod job_created;
+mod job_updated;
 mod lifecycle_changed;
+mod message_created;
 mod task_accepted;
 mod task_rejected;
 mod thread_created;
@@ -10,7 +13,10 @@ mod thread_updated;
 
 pub use event::Event;
 pub use execution_failed::ExecutionFailed;
+pub use job_created::JobCreated;
+pub use job_updated::JobUpdated;
 pub use lifecycle_changed::LifecycleChanged;
+pub use message_created::MessageCreated;
 pub use task_accepted::TaskAccepted;
 pub use task_rejected::TaskRejected;
 pub use thread_created::ThreadCreated;
