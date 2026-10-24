@@ -1,13 +1,14 @@
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::events::{ExecutionFailed, MessageCreated, TaskAccepted, TaskRejected};
+use crate::events::{ExecutionFailed, MessageCreated, TaskAccepted, TaskRejected, TurnCreated};
 use crate::{Event, Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode};
 
 use super::{
     MessageInput, MessageRole, State,
     messages::{decode_message, insert_message, validate_context},
     timestamp_ms,
+    turns::insert_turn,
 };
 
 impl State {
@@ -62,6 +63,7 @@ impl State {
             &execution.thread_id == thread_id,
             "request UID already belongs to another thread"
         );
+        let mut original_message = None;
         let message = if inserted && execution.status == ExecutionStatus::Accepted {
             // User request IDs form a stable message ID namespace for transport replays.
             Some(
@@ -90,8 +92,24 @@ impl State {
                         && original.attachments == input.attachments,
                     "request UID already belongs to different input"
                 );
+                original_message = Some(original);
             }
             // Rejected receipts have no persisted payload to compare; return the original receipt.
+            None
+        };
+        let turn = if execution.status == ExecutionStatus::Accepted {
+            let user_message = message
+                .as_ref()
+                .or(original_message.as_ref())
+                .context("accepted request has no message")?;
+            insert_turn(
+                &mut transaction,
+                request_uid,
+                user_message,
+                execution.received_at,
+            )
+            .await?
+        } else {
             None
         };
         transaction
@@ -117,15 +135,29 @@ impl State {
                     .send(Event::MessageCreated(MessageCreated { message }));
             }
         }
+        if let Some(turn) = turn {
+            let _ = self.events.send(Event::TurnCreated(TurnCreated { turn }));
+        }
         Ok(execution)
     }
 
-    /// Marks an accepted request as terminally failed without persisting error text.
+    /// Legacy failure path for receipts without a user turn, without persisting error text.
+    /// User-turn results must go through AgentReceiver with agent and attempt validation.
     /// Repeating a failed UID returns the original result without another event.
     pub async fn fail_execution(&self, request_uid: &str) -> Result<Execution> {
         ensure!(!request_uid.trim().is_empty(), "request UID is empty");
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin execution failure")?;
+        let has_turn: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM turns WHERE turn_id = ?)")
+                .bind(request_uid)
+                .fetch_one(&mut *transaction)
+                .await
+                .context("inspect execution turn")?;
+        ensure!(
+            !has_turn,
+            "user turn lifecycle must be changed through the agent receiver"
+        );
         let row = sqlx::query(
             "UPDATE event_logs SET status = 'failed', error_code = ?
              WHERE request_uid = ? AND status = 'accepted' RETURNING *",

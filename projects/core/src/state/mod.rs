@@ -4,10 +4,12 @@ mod event_logs;
 mod jobs;
 mod messages;
 mod threads;
+mod turns;
 
 pub use jobs::{Job, JobInput, JobOutcome, JobStatus};
 pub use messages::{Message, MessageAttachment, MessageInput, MessageRole};
 pub use threads::{ApprovalMode, ThreadInput, ThreadMetadata};
+pub use turns::{Turn, TurnStatus};
 
 use std::{
     io::ErrorKind,

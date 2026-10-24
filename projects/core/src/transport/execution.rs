@@ -1,4 +1,4 @@
-/// Accepting a task does not complete execution; rejection and failure are terminal.
+/// Receipt state. User-task completion and failure are recorded separately in Turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExecutionStatus {
     Accepted,
@@ -63,7 +63,7 @@ pub struct Execution {
 }
 
 impl Execution {
-    /// Rejection and failure are terminal; accepted requests remain incomplete.
+    /// Reports receipt terminality only. Inspect Turn for the user task's lifecycle.
     pub fn is_complete(&self) -> bool {
         match self.status {
             ExecutionStatus::Accepted => false,

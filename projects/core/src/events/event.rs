@@ -1,6 +1,6 @@
 use super::{
     ExecutionFailed, JobCreated, JobUpdated, LifecycleChanged, MessageCreated, TaskAccepted,
-    TaskRejected, ThreadCreated, ThreadUpdated,
+    TaskRejected, ThreadCreated, ThreadUpdated, TurnCreated, TurnUpdated,
 };
 
 #[derive(Debug, Clone)]
@@ -14,5 +14,7 @@ pub enum Event {
     JobCreated(JobCreated),
     JobUpdated(JobUpdated),
     MessageCreated(MessageCreated),
+    TurnCreated(TurnCreated),
+    TurnUpdated(TurnUpdated),
     LifecycleChanged(LifecycleChanged),
 }
