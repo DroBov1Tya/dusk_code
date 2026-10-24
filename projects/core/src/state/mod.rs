@@ -2,7 +2,7 @@
 
 mod threads;
 
-pub use threads::{ThreadInput, ThreadMetadata};
+pub use threads::{ApprovalMode, ThreadInput, ThreadMetadata};
 
 use std::{io::ErrorKind, path::Path};
 
