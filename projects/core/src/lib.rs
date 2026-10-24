@@ -1,4 +1,4 @@
-//! Async harness core contracts, transport, and persistent request metadata.
+//! Async harness core contracts, transport, and persistent session records.
 
 pub mod api;
 pub mod events;
