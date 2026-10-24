@@ -1,10 +1,12 @@
 # dusk_code
 
-Rust workspace scaffold for an async harness core. The library defines domain boundaries; the CLI initializes logging, reports the Core API version, and exits.
+Rust workspace for an async harness core. The core persists thread metadata in SQLite and publishes in-memory events after successful writes. The CLI initializes the state database, reports the Core API version, and exits.
 
 ```sh
 cargo run -p dusk_code
 cargo check --workspace
+# Optional explicit database location:
+cargo run -p dusk_code -- --state-db /tmp/dusk_code/state.db
 ```
 
 ```text
@@ -18,6 +20,7 @@ projects/
 │       ├── extensions.rs extension metadata and registry storage
 │       ├── policy.rs     async authorization contract
 │       ├── persistence.rs async snapshot contract
+│       ├── state/        SQLite thread metadata and embedded migrations
 │       └── supervision.rs cancellation and task ownership types
 └── cli/                  dusk_code binary
     └── src/
@@ -30,6 +33,12 @@ projects/
 
 Tokio provides the async runtime and concurrency primitives. Fallible contracts use `anyhow::Result`; policy and persistence futures are `Send`.
 
+`state::State::open(path)` checks whether the database file exists before connecting, creates missing parent directories, and applies embedded SQLx migrations. The default CLI path is `~/Library/Application Support/dusk_code/state.db` on macOS, `%LOCALAPPDATA%/dusk_code/state.db` on Windows, and `$XDG_DATA_HOME/dusk_code/state.db` (or `~/.local/share/dusk_code/state.db`) elsewhere. `--state-db PATH` overrides it.
+
+The `threads` table stores a caller-assigned stable `id`, `from`, `to`, core-assigned `created_at` and `updated_at` Unix timestamps in milliseconds, `permission_mode`, `sandbox_enabled`, and `token_count`. Each application table has a separate migration file; SQLx also maintains its own migration bookkeeping table. Permission modes and endpoint formats are non-empty caller-defined strings. Token counts range from zero to `i64::MAX`.
+
+Use `State::create_thread`, `update_thread`, and `load_thread` with `ThreadInput`. Creation rejects duplicate IDs. Updates preserve the ID and creation timestamp, return `None` for missing IDs, and keep update timestamps non-decreasing. `State::subscribe()` receives `ThreadCreated` and `ThreadUpdated` snapshots only after successful database writes. Writes through one state instance emit events in write order. A write with no listeners still succeeds.
+
 ## Limitations
 
-This is an initial scaffold. Lifecycle transitions, event routing, extension loading and compatibility negotiation, policy enforcement, persistence backends, and supervised shutdown are not implemented. The exposed traits and types mark their intended boundaries. The event transport is in-process Tokio broadcast and does not provide durable delivery.
+This is an initial core slice. Lifecycle transitions, general event routing, extension loading and compatibility negotiation, policy enforcement, snapshot persistence, and supervised shutdown are not implemented. Only thread metadata is persisted; there is no event journal. The event transport is in-process Tokio broadcast with a 256-event buffer, no replay, and no durable delivery. Receivers must handle lag; cancellation during a database operation can leave a committed write without a delivered event. Separate state instances have separate event channels. The CLI has no thread editing interface yet.
