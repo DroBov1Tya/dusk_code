@@ -4,6 +4,7 @@ use super::{
 
 #[derive(Debug, Clone)]
 pub enum Event {
+    DatabaseCreated(super::DatabaseCreated),
     ThreadCreated(ThreadCreated),
     ThreadUpdated(ThreadUpdated),
     TaskAccepted(TaskAccepted),

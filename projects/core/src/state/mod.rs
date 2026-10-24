@@ -8,7 +8,7 @@ pub use threads::{ApprovalMode, ThreadInput, ThreadMetadata};
 use std::{io::ErrorKind, path::Path};
 
 use anyhow::{Context, Result, ensure};
-use sqlx::{SqlitePool, migrate::Migrator, sqlite::SqliteConnectOptions};
+use sqlx::{ConnectOptions, SqlitePool, migrate::Migrator, sqlite::SqliteConnectOptions};
 use tokio::sync::{Mutex, broadcast};
 
 use crate::events::{EventReceiver, EventSender};
@@ -27,7 +27,21 @@ impl State {
     /// Opens a file-backed database, creating parent directories and applying migrations.
     /// The caller owns the path; no database is placed in the source tree by default.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let path = path.as_ref();
+        Self::open_with_password(path.as_ref(), None).await
+    }
+
+    /// Opens an existing encrypted database. The password remains in pool memory for reconnects.
+    pub async fn open_encrypted(path: impl AsRef<Path>, password: &str) -> Result<Self> {
+        ensure!(!password.is_empty(), "database password is empty");
+        ensure!(!password.contains('\0'), "database password contains NUL");
+        ensure!(
+            tokio::fs::metadata(path.as_ref()).await?.is_file(),
+            "database does not exist"
+        );
+        Self::open_with_password(path.as_ref(), Some(password)).await
+    }
+
+    pub(crate) async fn open_with_password(path: &Path, password: Option<&str>) -> Result<Self> {
         ensure!(!path.as_os_str().is_empty(), "state database path is empty");
 
         // Check before connecting so opening an existing file never creates a replacement.
@@ -51,15 +65,31 @@ impl State {
             }
         }
 
-        let options = SqliteConnectOptions::new()
+        let mut options = SqliteConnectOptions::new()
             .filename(path)
             .create_if_missing(!exists)
-            .foreign_keys(true);
+            .foreign_keys(true)
+            .disable_statement_logging();
+        if let Some(password) = password {
+            // SQLCipher requires key before all other pragmas; SQLx reserves its first slot.
+            options = options.pragma("key", format!("'{}'", password.replace('\'', "''")));
+        }
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(options)
             .await
             .context("open state database")?;
+        if password.is_some() {
+            let version: String = sqlx::query_scalar("PRAGMA cipher_version")
+                .fetch_one(&pool)
+                .await
+                .context("SQLCipher unavailable")?;
+            ensure!(!version.is_empty(), "SQLCipher unavailable");
+            sqlx::query("SELECT count(*) FROM sqlite_master")
+                .execute(&pool)
+                .await
+                .context("unlock state database")?;
+        }
         MIGRATOR
             .run(&pool)
             .await
