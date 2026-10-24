@@ -1,0 +1,17 @@
+[workspace]
+resolver = "3"
+members = ["projects/core", "projects/cli"]
+default-members = ["projects/cli"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+clap = "4"
+tokio = { version = "1", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+dusk_core = { path = "projects/core" }
