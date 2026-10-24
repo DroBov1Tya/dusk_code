@@ -49,8 +49,10 @@ impl State {
     pub(crate) async fn pending_turns(&self, thread_id: &str, limit: u32) -> Result<Vec<Turn>> {
         ensure!((1..=1000).contains(&limit), "turn limit must be 1..=1000");
         sqlx::query(
-            "SELECT * FROM turns WHERE thread_id = ? AND status = 'queued'
-             ORDER BY created_at, turn_id LIMIT ?",
+            "SELECT turns.* FROM turns
+             JOIN messages ON messages.message_id = turns.user_message_id
+             WHERE turns.thread_id = ? AND turns.status = 'queued'
+             ORDER BY messages.sequence LIMIT ?",
         )
         .bind(thread_id)
         .bind(i64::from(limit))

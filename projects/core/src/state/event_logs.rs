@@ -141,12 +141,23 @@ impl State {
         Ok(execution)
     }
 
-    /// Marks an accepted request as terminally failed without persisting error text.
+    /// Legacy failure path for receipts without a user turn, without persisting error text.
+    /// User-turn results must go through AgentReceiver with agent and attempt validation.
     /// Repeating a failed UID returns the original result without another event.
     pub async fn fail_execution(&self, request_uid: &str) -> Result<Execution> {
         ensure!(!request_uid.trim().is_empty(), "request UID is empty");
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin execution failure")?;
+        let has_turn: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM turns WHERE turn_id = ?)")
+                .bind(request_uid)
+                .fetch_one(&mut *transaction)
+                .await
+                .context("inspect execution turn")?;
+        ensure!(
+            !has_turn,
+            "user turn lifecycle must be changed through the agent receiver"
+        );
         let row = sqlx::query(
             "UPDATE event_logs SET status = 'failed', error_code = ?
              WHERE request_uid = ? AND status = 'accepted' RETURNING *",
