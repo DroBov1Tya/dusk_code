@@ -1,4 +1,4 @@
-//! Async harness core contracts and persistent thread metadata.
+//! Async harness core contracts, transport, and persistent request metadata.
 
 pub mod api;
 pub mod events;
@@ -8,3 +8,7 @@ pub mod persistence;
 pub mod policy;
 pub mod state;
 pub mod supervision;
+pub mod transport;
+
+pub use events::Event;
+pub use transport::{Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode, Task};

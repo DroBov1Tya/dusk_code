@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::events::CoreEvent;
+use crate::events::{CoreEvent, ThreadCreated, ThreadUpdated};
 
 use super::State;
 
@@ -90,7 +90,9 @@ impl State {
             .await
             .context("commit thread creation")?;
         // No listeners is normal and does not invalidate a committed write.
-        let _ = self.events.send(CoreEvent::ThreadCreated(thread.clone()));
+        let _ = self.events.send(CoreEvent::ThreadCreated(ThreadCreated {
+            thread: thread.clone(),
+        }));
         Ok(thread)
     }
 
@@ -130,7 +132,9 @@ impl State {
         };
         let thread = decode_thread(row)?;
         transaction.commit().await.context("commit thread update")?;
-        let _ = self.events.send(CoreEvent::ThreadUpdated(thread.clone()));
+        let _ = self.events.send(CoreEvent::ThreadUpdated(ThreadUpdated {
+            thread: thread.clone(),
+        }));
         Ok(Some(thread))
     }
 

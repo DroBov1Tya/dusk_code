@@ -1,5 +1,6 @@
-//! SQLite thread metadata and in-memory events emitted after successful writes.
+//! SQLite metadata and in-memory events emitted after successful writes.
 
+mod event_logs;
 mod threads;
 
 pub use threads::{ApprovalMode, ThreadInput, ThreadMetadata};
@@ -52,7 +53,8 @@ impl State {
 
         let options = SqliteConnectOptions::new()
             .filename(path)
-            .create_if_missing(!exists);
+            .create_if_missing(!exists)
+            .foreign_keys(true);
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
             .connect_with(options)
@@ -71,7 +73,7 @@ impl State {
         })
     }
 
-    /// Events are live only: there is no replay or event journal.
+    /// Events are live only: request receipts can be loaded separately, without replay.
     pub fn subscribe(&self) -> EventReceiver {
         self.events.subscribe()
     }
