@@ -10,6 +10,8 @@ mod task_accepted;
 mod task_rejected;
 mod thread_created;
 mod thread_updated;
+mod turn_created;
+mod turn_updated;
 
 pub use event::Event;
 pub use execution_failed::ExecutionFailed;
@@ -21,6 +23,8 @@ pub use task_accepted::TaskAccepted;
 pub use task_rejected::TaskRejected;
 pub use thread_created::ThreadCreated;
 pub use thread_updated::ThreadUpdated;
+pub use turn_created::TurnCreated;
+pub use turn_updated::TurnUpdated;
 
 use tokio::sync::broadcast;
 

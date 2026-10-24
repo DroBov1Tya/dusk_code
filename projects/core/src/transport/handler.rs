@@ -1,6 +1,6 @@
 //! In-process task handler. No scheduling or model provider is invoked.
 
-use anyhow::Result;
+use anyhow::{Result, ensure};
 
 use crate::{
     Execution, RejectionCode, Task,
@@ -28,6 +28,10 @@ impl<'a> Transport<'a> {
                 cwd,
                 attachments,
             } => {
+                ensure!(
+                    !content.trim_start().starts_with('/'),
+                    "slash commands require the scenario route"
+                );
                 let rejection = if content.trim().is_empty() && attachments.is_empty() {
                     Some(RejectionCode::EmptyMessage)
                 } else if thread_id.trim().is_empty() {

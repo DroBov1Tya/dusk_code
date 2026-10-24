@@ -6,6 +6,7 @@ pub mod extensions;
 pub mod lifecycle;
 pub mod persistence;
 pub mod policy;
+pub mod receivers;
 pub mod state;
 pub mod supervision;
 pub mod transport;

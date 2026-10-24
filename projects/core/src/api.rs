@@ -8,8 +8,13 @@ pub struct ApiVersion {
 
 pub const CORE_API_VERSION: ApiVersion = ApiVersion { major: 0, minor: 1 };
 
+pub use crate::receivers::{
+    AgentOutcome, AgentReceipt, AgentReceiver, AgentResponse, AgentTask, ScenarioRequest,
+    UserMessage, UserReceipt, UserReceiver, UserRequest,
+};
 pub use crate::state::{
     Job, JobInput, JobOutcome, JobStatus, Message, MessageAttachment, MessageInput, MessageRole,
+    Turn, TurnStatus,
 };
 pub use crate::transport::{Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode, Task};
 

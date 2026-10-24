@@ -68,11 +68,11 @@ pub struct Message {
 impl State {
     /// Appends a message under a caller-assigned ID.
     /// Request-linked user messages are appended atomically by the transport.
-    /// The `request:` prefix is reserved for those transport-owned message IDs.
+    /// Receiver-owned ID prefixes are reserved for transactional user turns and responses.
     pub async fn append_message(&self, message_id: &str, input: MessageInput) -> Result<Message> {
         ensure!(
-            !message_id.starts_with("request:"),
-            "message ID prefix is reserved for transport requests"
+            !message_id.starts_with("request:") && !message_id.starts_with("turn-response:"),
+            "message ID prefix is reserved for receivers"
         );
         validate_input(message_id, &input)?;
         let timestamp = timestamp_ms()?;
