@@ -3,9 +3,12 @@
 use tokio::sync::broadcast;
 
 use crate::lifecycle::LifecycleState;
+use crate::state::ThreadMetadata;
 
 #[derive(Debug, Clone)]
 pub enum CoreEvent {
+    ThreadCreated(ThreadMetadata),
+    ThreadUpdated(ThreadMetadata),
     LifecycleChanged {
         previous: LifecycleState,
         current: LifecycleState,
