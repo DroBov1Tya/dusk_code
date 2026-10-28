@@ -10,7 +10,7 @@ mod threads;
 mod tokens;
 mod turns;
 
-pub use compactions::{Compaction, CompactionReason};
+pub use compactions::Compaction;
 pub(crate) use messages::estimate_tokens;
 pub use messages::{Message, MessageRole};
 pub use pending::PendingMessage;

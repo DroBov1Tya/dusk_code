@@ -230,8 +230,6 @@ mod tests {
                 through_sequence: 4,
                 summary: "so far".into(),
                 summary_tokens: 2,
-                reason: crate::state::CompactionReason::Manual,
-                created_at: 0,
             }),
             answered_through: 5,
             last_prompt: None,

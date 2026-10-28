@@ -20,9 +20,7 @@ use crate::{
     commands::{self, Command},
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
-    state::{
-        Compaction, CompactionReason, PendingMessage, State, ThreadTokens, Turn, estimate_tokens,
-    },
+    state::{Compaction, PendingMessage, State, ThreadTokens, Turn, estimate_tokens},
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
@@ -92,9 +90,7 @@ pub enum ThreadEvent {
         limit: u64,
     },
     /// The model is summarizing the context; its text streams as `Model` events.
-    CompactionStarted {
-        reason: CompactionReason,
-    },
+    CompactionStarted,
     CompactionFinished(Compaction),
     /// The context stays as it was.
     CompactionFailed {
@@ -227,11 +223,10 @@ impl ThreadRunner {
                 reason: format!("{error:#}"),
             }),
             Ok(Command::Compact { focus }) => {
-                let reason = CompactionReason::Manual;
                 // A stop only ends the compaction; the client decides what comes next.
                 let _ = self
                     .agent
-                    .compact(reason, focus.as_deref(), None, &mut self.inbox)
+                    .compact(focus.as_deref(), None, &mut self.inbox)
                     .await;
             }
         }
@@ -612,7 +607,6 @@ mod tests {
         let ((), compaction) = tokio::join!(runner.run(), client);
 
         assert_eq!(compaction.through_sequence, 2);
-        assert_eq!(compaction.reason, CompactionReason::Manual);
         let requests = provider.requests.lock().unwrap().clone();
         // 0 is the first turn and 1 names the thread.
         let instructions = requests[2].last().unwrap();
@@ -796,7 +790,7 @@ mod tests {
                 _ => {}
             }
         }
-        assert_eq!(compaction.unwrap().reason, CompactionReason::Auto);
+        assert!(compaction.is_some(), "compacted on its own");
         assert_eq!(status, Some(TurnStatus::Completed));
         let requests = provider.requests.lock().unwrap();
         assert_eq!(requests[2].len(), 1, "only the summary is left");
