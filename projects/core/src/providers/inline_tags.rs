@@ -18,7 +18,7 @@ const CALL_CLOSE: &str = "</tool_call>";
 const MAX_CALL_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Default)]
-pub(super) struct TagSplitter {
+pub struct TagSplitter {
     state: State,
     pending: String,
     calls: u32,
@@ -40,7 +40,7 @@ struct InlineCall {
 }
 
 impl TagSplitter {
-    pub(super) fn feed(&mut self, text: &str) -> Result<Vec<ModelEvent>> {
+    pub fn feed(&mut self, text: &str) -> Result<Vec<ModelEvent>> {
         self.pending.push_str(text);
         let mut events = Vec::new();
         while self.step(&mut events)? {}
@@ -48,7 +48,7 @@ impl TagSplitter {
     }
 
     /// Flushes what is left when the stream ends. An unclosed tool call is an error.
-    pub(super) fn finish(&mut self) -> Result<Vec<ModelEvent>> {
+    pub fn finish(&mut self) -> Result<Vec<ModelEvent>> {
         ensure!(
             self.state != State::ToolCall,
             "unterminated inline tool call"

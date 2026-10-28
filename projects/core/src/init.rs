@@ -50,7 +50,7 @@ Answer directly and concisely, in the language the user writes in.
 ";
 
 /// Also used when COMPACT.md is missing or blank.
-pub(crate) const COMPACT_PROMPT_TEMPLATE: &str = "\
+pub const COMPACT_PROMPT_TEMPLATE: &str = "\
 Summarize the conversation above so that the work can go on from the summary alone:
 the earlier messages are about to leave your context. Keep facts, decisions, exact
 names, paths, commands, errors and numbers; drop small talk. Write in the language of
@@ -88,7 +88,7 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     Ok(Initialization { config_created })
 }
 
-pub(crate) fn create_private_dir(directory: &Path) -> Result<()> {
+pub fn create_private_dir(directory: &Path) -> Result<()> {
     let mut builder = DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]

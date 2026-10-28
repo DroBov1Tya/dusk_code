@@ -40,7 +40,7 @@ pub enum MessageRole {
 
 /// A message about to be stored. The constructors allow only valid combinations.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) struct NewMessage {
+pub struct NewMessage {
     role: MessageRole,
     content: String,
     reasoning: Option<String>,
@@ -177,15 +177,15 @@ impl State {
 }
 
 impl NewMessage {
-    pub(super) fn system(content: &str) -> Self {
+    pub fn system(content: &str) -> Self {
         Self::plain(MessageRole::System, content)
     }
 
-    pub(super) fn user(content: &str) -> Self {
+    pub fn user(content: &str) -> Self {
         Self::plain(MessageRole::User, content)
     }
 
-    pub(super) fn assistant(
+    pub fn assistant(
         content: String,
         reasoning: Option<String>,
         tool_calls: Vec<ToolCall>,
@@ -199,7 +199,7 @@ impl NewMessage {
         }
     }
 
-    pub(super) fn tool(call_id: String, content: String) -> Self {
+    pub fn tool(call_id: String, content: String) -> Self {
         Self {
             role: MessageRole::Tool,
             content,
@@ -242,7 +242,7 @@ pub fn estimate_tokens(text: &str) -> u64 {
 const MESSAGE_OVERHEAD: u64 = 4;
 
 /// Appends a message at the end of the thread inside the caller's transaction.
-pub(super) async fn insert_message(
+pub async fn insert_message(
     transaction: &mut Transaction<'_, Sqlite>,
     thread_id: &str,
     message: &NewMessage,
@@ -295,7 +295,7 @@ async fn ensure_thread_exists(
     Ok(())
 }
 
-pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
+pub fn decode_message(row: SqliteRow) -> Result<Message> {
     let role: String = row.try_get("role")?;
     let role = match role.as_str() {
         "system" => MessageRole::System,
@@ -326,7 +326,7 @@ pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
     })
 }
 
-pub(super) fn read_tokens(row: &SqliteRow, column: &str) -> Result<u64> {
+pub fn read_tokens(row: &SqliteRow, column: &str) -> Result<u64> {
     let tokens: i64 = row.try_get(column)?;
     tokens.try_into().context("negative token count")
 }

@@ -25,11 +25,7 @@ const AUTO_COMPACT_PERCENT: u64 = 80;
 impl Agent {
     /// Compacts when the context has passed the automatic limit and there is something
     /// to work on: a queued message, or the running `turn`.
-    pub(super) async fn compact_if_needed(
-        &self,
-        turn: Option<&Turn>,
-        inbox: &mut Inbox,
-    ) -> Option<Stop> {
+    pub async fn compact_if_needed(&self, turn: Option<&Turn>, inbox: &mut Inbox) -> Option<Stop> {
         let limit = self.input_limit();
         let conversation = match Conversation::load(&self.state, &self.thread_id).await {
             Ok(conversation) => conversation,
@@ -49,7 +45,7 @@ impl Agent {
 
     /// Summarizes everything that is not queued. A failure is reported to the client and
     /// leaves the context as it was.
-    pub(super) async fn compact(
+    pub async fn compact(
         &self,
         focus: Option<&str>,
         turn: Option<&Turn>,

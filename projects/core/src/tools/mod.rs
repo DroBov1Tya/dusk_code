@@ -9,8 +9,8 @@ mod scope;
 mod shell;
 mod tool;
 
-pub(crate) use builtin::read_regular;
-pub(crate) use history::ReadHistory;
+pub use builtin::read_regular;
+pub use history::ReadHistory;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::ToolScope;
 pub use tool::{Tool, ToolContext};

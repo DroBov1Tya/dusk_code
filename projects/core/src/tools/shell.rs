@@ -22,7 +22,7 @@ const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
 const MAX_STREAM_BYTES: usize = 32 * 1024;
 
-pub(super) struct RunCommand;
+pub struct RunCommand;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]

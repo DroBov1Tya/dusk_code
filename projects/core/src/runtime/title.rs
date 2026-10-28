@@ -28,7 +28,7 @@ with the title only.\n\nMessage:\n";
 
 impl Agent {
     /// Gives a thread without a title the start of its first message.
-    pub(super) async fn title_from_first_message(&self, message: &Message) -> Result<()> {
+    pub async fn title_from_first_message(&self, message: &Message) -> Result<()> {
         let thread = self.state.load_thread(&self.thread_id).await?;
         if thread.context("thread is gone")?.title.is_some() {
             return Ok(());
@@ -38,7 +38,7 @@ impl Agent {
 
     /// After the thread's first turn, asks the model for a name. Failing to get one only
     /// keeps the stand-in, so it is logged and not reported.
-    pub(super) async fn name_thread(&self, inbox: &mut Inbox) -> Option<Stop> {
+    pub async fn name_thread(&self, inbox: &mut Inbox) -> Option<Stop> {
         match self.ask_for_title(inbox).await {
             Ok(Ok(())) => None,
             Ok(Err(stop)) => Some(stop),
@@ -98,7 +98,7 @@ impl Agent {
 }
 
 /// The message on one line, cut with an ellipsis when it is long.
-pub(super) fn fallback_title(text: &str) -> String {
+pub fn fallback_title(text: &str) -> String {
     let line = one_line(text);
     match line.char_indices().nth(FALLBACK_CHARS) {
         Some((end, _)) => format!("{}...", line[..end].trim_end()),

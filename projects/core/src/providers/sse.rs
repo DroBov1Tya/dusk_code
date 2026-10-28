@@ -7,14 +7,14 @@ const MAX_LINE_BYTES: usize = 1024 * 1024;
 const MAX_EVENT_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Default)]
-pub(super) struct SseDecoder {
+pub struct SseDecoder {
     line: Vec<u8>,
     data: Option<String>,
 }
 
 impl SseDecoder {
     /// Feeds raw bytes and returns the `data` payload of every event they complete.
-    pub(super) fn feed(&mut self, mut bytes: &[u8]) -> Result<Vec<String>> {
+    pub fn feed(&mut self, mut bytes: &[u8]) -> Result<Vec<String>> {
         let mut events = Vec::new();
         while let Some(end) = bytes.iter().position(|&byte| byte == b'\n') {
             self.append_to_line(&bytes[..end])?;

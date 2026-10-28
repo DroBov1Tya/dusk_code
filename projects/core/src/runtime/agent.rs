@@ -32,17 +32,17 @@ const MAX_ATTEMPTS: u32 = 3;
 /// Doubles before each further attempt.
 const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
 
-pub(super) struct Agent {
-    pub(super) state: Arc<State>,
-    pub(super) provider: Arc<dyn ModelProvider>,
-    pub(super) model: Model,
-    pub(super) config: Arc<LiveConfig>,
-    pub(super) tools: ToolRegistry,
-    pub(super) scope: ToolScope,
-    pub(super) thread_id: String,
+pub struct Agent {
+    pub state: Arc<State>,
+    pub provider: Arc<dyn ModelProvider>,
+    pub model: Model,
+    pub config: Arc<LiveConfig>,
+    pub tools: ToolRegistry,
+    pub scope: ToolScope,
+    pub thread_id: String,
     /// COMPACT.md: how to summarize the thread.
-    pub(super) compact_prompt: PathBuf,
-    pub(super) events: mpsc::UnboundedSender<ThreadEvent>,
+    pub compact_prompt: PathBuf,
+    pub events: mpsc::UnboundedSender<ThreadEvent>,
 }
 
 /// How one step ended.
@@ -54,12 +54,12 @@ enum StepEnd {
 
 impl Agent {
     /// Marks turns left running by a stopped process as interrupted.
-    pub(super) async fn recover(&self) -> Result<()> {
+    pub async fn recover(&self) -> Result<()> {
         self.state.interrupt_running_turns(&self.thread_id).await
     }
 
     /// Starts a turn when something is queued and the context fits the input limit.
-    pub(super) async fn start_turn(&self) -> Result<Option<Turn>> {
+    pub async fn start_turn(&self) -> Result<Option<Turn>> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         let specs = self.tools.specs(&self.scope, &self.config.current());
         if !conversation.has_queued() || self.context_too_large(&conversation, &specs).is_some() {
@@ -73,7 +73,7 @@ impl Agent {
     }
 
     /// Runs the turn to its end and records it. Returns why it stopped early, if it did.
-    pub(super) async fn run_turn(&self, turn: &Turn, inbox: &mut Inbox) -> Result<Option<Stop>> {
+    pub async fn run_turn(&self, turn: &Turn, inbox: &mut Inbox) -> Result<Option<Stop>> {
         let mut outcome =
             TurnOutcome::Failed(format!("the model made more than {MAX_STEPS} tool steps"));
         let mut stop = None;
@@ -120,7 +120,7 @@ impl Agent {
         }
     }
 
-    pub(super) fn emit(&self, event: ThreadEvent) {
+    pub fn emit(&self, event: ThreadEvent) {
         // A client that stopped listening does not stop the thread.
         let _ = self.events.send(event);
     }
@@ -200,7 +200,7 @@ impl Agent {
     /// Streams the model's response, trying again when the call fails in a way that may
     /// pass and nothing reached the user yet. The outer `Err` means the user stopped it
     /// during a pause between attempts.
-    pub(super) async fn call_model(
+    pub async fn call_model(
         &self,
         request: ChatRequest<'_>,
         inbox: &mut Inbox,
@@ -269,7 +269,7 @@ impl Agent {
     }
 
     /// The largest request: the configured input limit, or the model window when smaller.
-    pub(super) fn input_limit(&self) -> u64 {
+    pub fn input_limit(&self) -> u64 {
         let configured = self.config.current().limits().max_input_tokens;
         self.model
             .context_window

@@ -25,13 +25,13 @@ use crate::{
 };
 
 /// Runs one thread; `Runtime` gives each active thread its own task with one of these.
-pub(super) struct ThreadRunner {
+pub struct ThreadRunner {
     agent: Agent,
     inbox: Inbox,
 }
 
 /// Everything a running thread needs; the thread must exist.
-pub(super) struct ThreadSetup {
+pub struct ThreadSetup {
     pub state: Arc<State>,
     pub provider: Arc<dyn ModelProvider>,
     pub model: Model,
@@ -115,7 +115,7 @@ pub enum ThreadEvent {
 }
 
 impl ThreadRunner {
-    pub(super) fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
+    pub fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
         let (input_sender, inputs) = mpsc::unbounded_channel();
         let (events, event_receiver) = mpsc::unbounded_channel();
         let input = ThreadInput {
@@ -147,7 +147,7 @@ impl ThreadRunner {
 
     /// Runs until every `ThreadInput` is dropped and the queue is done. An error ends the
     /// thread and is reported to the client as `Failed`.
-    pub(super) async fn run(mut self) {
+    pub async fn run(mut self) {
         if let Err(error) = self.serve().await {
             self.agent.emit(ThreadEvent::Failed(format!("{error:#}")));
         }

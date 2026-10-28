@@ -11,7 +11,7 @@ use crate::providers::{
 ///
 /// Past `max_output_tokens` by its own count the stream is dropped, which closes the
 /// connection, in case the provider ignores the limit it was sent.
-pub(super) async fn generate(
+pub async fn generate(
     provider: &dyn ModelProvider,
     request: ChatRequest<'_>,
     output: &mut ModelOutput,

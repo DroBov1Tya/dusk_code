@@ -12,18 +12,18 @@ use crate::{
 const SUMMARY_INTRO: &str = "The earlier part of this conversation was replaced by this \
 summary. Its messages can still be read with the read_history tool.\n\n";
 
-pub(super) struct Conversation {
+pub struct Conversation {
     /// The system messages and the messages after the compaction, in order.
-    pub(super) messages: Vec<Message>,
-    pub(super) compaction: Option<Compaction>,
+    pub messages: Vec<Message>,
+    pub compaction: Option<Compaction>,
     /// Sequence of the newest message a turn has taken; user messages after it are queued.
-    pub(super) answered_through: u64,
+    pub answered_through: u64,
     /// The provider's count of the newest step over this context.
-    pub(super) last_prompt: Option<LastPrompt>,
+    pub last_prompt: Option<LastPrompt>,
 }
 
 impl Conversation {
-    pub(super) async fn load(state: &State, thread_id: &str) -> Result<Self> {
+    pub async fn load(state: &State, thread_id: &str) -> Result<Self> {
         let compaction = state.latest_compaction(thread_id).await?;
         let after = compaction
             .as_ref()
@@ -39,17 +39,17 @@ impl Conversation {
         })
     }
 
-    pub(super) fn has_queued(&self) -> bool {
+    pub fn has_queued(&self) -> bool {
         self.messages.iter().any(|message| self.is_queued(message))
     }
 
     /// IDs, timestamps and other metadata stay in the core and never reach the model.
-    pub(super) fn chat_messages(&self) -> Vec<ChatMessage> {
+    pub fn chat_messages(&self) -> Vec<ChatMessage> {
         self.chat_messages_through(u64::MAX)
     }
 
     /// The request a compaction summarizes: everything up to `through`.
-    pub(super) fn chat_messages_through(&self, through: u64) -> Vec<ChatMessage> {
+    pub fn chat_messages_through(&self, through: u64) -> Vec<ChatMessage> {
         let (system, rest): (Vec<_>, Vec<_>) = self
             .messages
             .iter()
@@ -65,14 +65,14 @@ impl Conversation {
     }
 
     /// The newest message `chat_messages` covers, the summary included.
-    pub(super) fn newest_sequence(&self) -> u64 {
+    pub fn newest_sequence(&self) -> u64 {
         let newest = self.messages.last().map_or(0, |message| message.sequence);
         newest.max(self.covered_through())
     }
 
     /// The newest message a compaction could summarize now: queued messages wait for
     /// their turn, so they stay. `None` when nothing is new since the last compaction.
-    pub(super) fn compactable_through(&self) -> Option<u64> {
+    pub fn compactable_through(&self) -> Option<u64> {
         self.messages
             .iter()
             .filter(|message| message.role != MessageRole::System && !self.is_queued(message))
@@ -83,7 +83,7 @@ impl Conversation {
     /// Size of a request with these messages and tools. The provider's count of the last
     /// request is exact, so only what came after it is estimated; estimates alone tend
     /// to miss the chat template markup.
-    pub(super) fn tokens(&self, specs: &[ToolSpec]) -> u64 {
+    pub fn tokens(&self, specs: &[ToolSpec]) -> u64 {
         let Some(last) = self.last_prompt else {
             let summary = self.compaction.as_ref().map_or(0, |c| c.summary_tokens);
             return self.estimated_after(0) + summary + spec_tokens(specs);
@@ -111,7 +111,7 @@ impl Conversation {
 }
 
 /// Estimated size of the tool definitions a request carries.
-pub(super) fn spec_tokens(specs: &[ToolSpec]) -> u64 {
+pub fn spec_tokens(specs: &[ToolSpec]) -> u64 {
     specs
         .iter()
         .map(|spec| {

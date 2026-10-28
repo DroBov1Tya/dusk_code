@@ -16,10 +16,10 @@ use crate::BoxFuture;
 /// Larger files would not fit the result limit anyway.
 const MAX_READ_BYTES: u64 = 1024 * 1024;
 
-pub(super) struct ReadFile;
-pub(super) struct WriteFile;
-pub(super) struct EditFile;
-pub(super) struct DeleteFile;
+pub struct ReadFile;
+pub struct WriteFile;
+pub struct EditFile;
+pub struct DeleteFile;
 
 /// For tools that take only a path.
 #[derive(Deserialize)]
