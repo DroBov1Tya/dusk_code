@@ -1,5 +1,6 @@
 mod app;
 mod args;
+mod chat;
 mod config;
 mod constants;
 

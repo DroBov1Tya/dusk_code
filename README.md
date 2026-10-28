@@ -1,6 +1,6 @@
 # dusk_code
 
-Rust workspace for an async harness core. The core persists thread metadata and request receipts in SQLite and publishes in-memory events after successful writes. An in-process transport accepts user-message tasks without calling a model provider. The CLI initializes the state database, reports the Core API version, and exits.
+Rust workspace for an async harness core. The core persists thread metadata and request receipts in SQLite and publishes in-memory events after successful writes. An in-process transport accepts user-message tasks; the agent runtime executes each queued turn against an OpenAI-compatible provider and streams the answer. The CLI is a line-based chat over the core.
 
 ```sh
 cargo run -p dusk_code
@@ -30,6 +30,12 @@ projects/
 │       │   ├── task.rs   Task contract
 │       │   ├── execution.rs Execution and status contracts
 │       │   └── handler.rs user-message receipt handler
+│       ├── config.rs     provider settings from ~/.config/duskcode/config.yml
+│       ├── providers/    model catalogue and streamed chat
+│       │   ├── mod.rs    provider registry, chat types, model auto-selection
+│       │   ├── sse.rs    bounded Server-Sent Events decoder
+│       │   └── openai/   OpenAI-compatible adapter and stream parser
+│       ├── runtime/      agent runtime: turn → model → streamed answer → turn outcome
 │       ├── extensions.rs extension metadata and registry storage
 │       ├── policy.rs     async authorization contract
 │       ├── persistence.rs async snapshot contract
@@ -40,6 +46,7 @@ projects/
         ├── main.rs       Tokio entry point
         ├── app.rs        build/run orchestration
         ├── args.rs       clap builder entry point
+        ├── chat.rs       line-based chat and stream rendering
         ├── config.rs     logging setup
         └── constants.rs  application constants
 ```
@@ -85,6 +92,20 @@ The only supported task is currently `Task::UserMessage`:
 | Retry of the same UID/thread or an already failed transition | Existing result | Unchanged | None |
 | Invalid UID, conflicting-thread UID reuse, missing/rejected failure target, or unavailable storage | Error; no new result | Unchanged | None |
 
+## Chat
+
+Providers are read from `~/.config/duskcode/config.yml`; the directory and file must not be accessible by group or others:
+
+```yaml
+providers:
+  main:
+    kind: openai_compatible
+    base_url: 'https://api.example.com/v1'
+    api_key: 'sk-...'
+```
+
+The CLI uses the first provider and its first catalogue model, creates a new thread, and turns every stdin line into a turn. The model receives only the role and text of the thread's messages; IDs, timestamps, cwd and attachments stay in the core. Reasoning streams to stderr, the answer to stdout, and the outcome is recorded on the turn.
+
 ## Limitations
 
-This is an initial core slice. The standalone initial `0002_event_logs.sql` schema targets a fresh database; no upgrade migration for previous development schemas is provided. Scheduling, model execution, successful model completion states, lifecycle transitions, general event routing, extension loading and compatibility negotiation, policy enforcement, snapshot persistence, and supervised shutdown are not implemented. `event_logs` stores request receipt metadata; it is not a replayable event journal. The event transport is in-process Tokio broadcast with a 256-event buffer, no replay, and no durable delivery. Receivers must handle lag; cancellation during a database operation can leave a committed write without a delivered event. Separate state instances have separate event channels. The CLI has no thread editing or chat interface yet.
+This is an initial core slice. The standalone initial `0002_event_logs.sql` schema targets a fresh database; no upgrade migration for previous development schemas is provided. Scheduling, retries, cancellation of running turns, system prompts, tools, context compaction, lifecycle transitions, general event routing, extension loading and compatibility negotiation, policy enforcement, snapshot persistence, and supervised shutdown are not implemented. `event_logs` stores request receipt metadata; it is not a replayable event journal. The event transport is in-process Tokio broadcast with a 256-event buffer, no replay, and no durable delivery. Receivers must handle lag; cancellation during a database operation can leave a committed write without a delivered event. Separate state instances have separate event channels. The CLI has no thread editing or resume; each run starts a new thread.
