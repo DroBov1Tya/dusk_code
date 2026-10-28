@@ -13,7 +13,7 @@ static MIGRATOR: Migrator = sqlx::migrate!("src/state/migrations");
 
 // One connection, so writes never interleave: each one runs in its own transaction.
 pub struct State {
-    pub(super) pool: SqlitePool,
+    pub pool: SqlitePool,
 }
 
 impl State {
@@ -56,7 +56,7 @@ impl State {
     }
 }
 
-pub(super) fn timestamp_ms() -> Result<i64> {
+pub fn timestamp_ms() -> Result<i64> {
     let elapsed = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .context("system clock precedes Unix epoch")?;

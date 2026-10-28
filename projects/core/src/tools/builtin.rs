@@ -18,7 +18,7 @@ use super::{
 };
 
 /// `skills` is the directory the skill graph is read from.
-pub(super) fn all(skills: &Path) -> Vec<Box<dyn Tool>> {
+pub fn all(skills: &Path) -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(ReadFile),
         Box::new(WriteFile),
@@ -30,13 +30,13 @@ pub(super) fn all(skills: &Path) -> Vec<Box<dyn Tool>> {
 }
 
 /// Strict on purpose: a misspelled field is reported to the model instead of ignored.
-pub(super) fn parse_arguments<T: DeserializeOwned>(arguments: Value) -> Result<T> {
+pub fn parse_arguments<T: DeserializeOwned>(arguments: Value) -> Result<T> {
     serde_json::from_value(arguments).context("invalid arguments")
 }
 
 /// Reads a regular file. The last path component is not followed if it is a symlink and a
 /// FIFO does not block, so a file swapped after the scope check cannot redirect the read.
-pub(crate) fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
+pub fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
     let file = open_no_follow(OpenOptions::new().read(true), path)?;
     let metadata = file.metadata().context("cannot read file")?;
     ensure!(metadata.is_file(), "not a regular file");
@@ -57,7 +57,7 @@ pub(crate) fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
 }
 
 /// Creates or replaces a regular file, with the same symlink and FIFO guard as `read_regular`.
-pub(super) fn write_regular(path: &Path, bytes: &[u8]) -> Result<()> {
+pub fn write_regular(path: &Path, bytes: &[u8]) -> Result<()> {
     let mut file = open_no_follow(
         OpenOptions::new().write(true).create(true).truncate(true),
         path,
@@ -70,7 +70,7 @@ pub(super) fn write_regular(path: &Path, bytes: &[u8]) -> Result<()> {
 }
 
 /// Control characters in names or lines would reach the model and terminals as markup.
-pub(super) fn printable(text: &str) -> String {
+pub fn printable(text: &str) -> String {
     text.chars()
         .map(|c| if c.is_control() && c != '\t' { '?' } else { c })
         .collect()

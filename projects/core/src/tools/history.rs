@@ -22,7 +22,7 @@ const MAX_LIMIT: u32 = 50;
 /// Keeps one long message from filling the whole result.
 const MAX_MESSAGE_CHARS: usize = 2000;
 
-pub(crate) struct ReadHistory {
+pub struct ReadHistory {
     state: Arc<State>,
     thread_id: String,
 }
@@ -36,7 +36,7 @@ struct ReadHistoryArguments {
 }
 
 impl ReadHistory {
-    pub(crate) fn new(state: Arc<State>, thread_id: String) -> Self {
+    pub fn new(state: Arc<State>, thread_id: String) -> Self {
         Self { state, thread_id }
     }
 }

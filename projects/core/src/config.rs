@@ -41,7 +41,7 @@ pub struct Config {
 pub struct ProviderConfig {
     pub kind: ProviderKind,
     pub base_url: String,
-    pub(crate) api_key: ApiKey,
+    pub api_key: ApiKey,
     /// The server leaves `<think>` and `<tool_call>` tags inside the answer text.
     #[serde(default, skip_serializing_if = "is_false")]
     pub inline_tags: bool,
@@ -56,7 +56,7 @@ pub enum ProviderKind {
 
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(transparent)]
-pub(crate) struct ApiKey(pub(crate) String);
+pub struct ApiKey(pub String);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -139,7 +139,7 @@ impl Config {
         self.skills.insert(name.to_owned(), enabled);
     }
 
-    pub(crate) fn parse(bytes: &[u8]) -> Result<Self> {
+    pub fn parse(bytes: &[u8]) -> Result<Self> {
         // YAML errors can quote input values, including secrets. Drop their source.
         let config: Self =
             serde_yaml::from_slice(bytes).map_err(|_| anyhow!("invalid configuration YAML"))?;
@@ -147,7 +147,7 @@ impl Config {
         Ok(config)
     }
 
-    pub(crate) fn to_yaml(&self) -> Result<String> {
+    pub fn to_yaml(&self) -> Result<String> {
         let body = serde_yaml::to_string(self).context("cannot encode configuration")?;
         Ok(format!("{HEADER}{body}"))
     }

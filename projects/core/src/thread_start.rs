@@ -37,7 +37,7 @@ pub async fn start_thread(state: &State, paths: &Paths, source: &str) -> Result<
 }
 
 /// Reads a prompt file such as MAIN.md; a missing or blank file means no prompt.
-pub(crate) fn read_prompt(path: &Path) -> Result<Option<String>> {
+pub fn read_prompt(path: &Path) -> Result<Option<String>> {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
     let prompt = match fs::read_to_string(path) {
         Ok(prompt) => prompt,

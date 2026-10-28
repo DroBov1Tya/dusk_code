@@ -17,7 +17,7 @@ use crate::{
     skills::{Skill, SkillGraph},
 };
 
-pub(super) struct LoadSkill {
+pub struct LoadSkill {
     directory: PathBuf,
 }
 
@@ -28,7 +28,7 @@ struct LoadSkillArguments {
 }
 
 impl LoadSkill {
-    pub(super) fn new(directory: PathBuf) -> Self {
+    pub fn new(directory: PathBuf) -> Self {
         Self { directory }
     }
 }

@@ -30,7 +30,7 @@ const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 const EVENT_STREAM: &str = "text/event-stream";
 const DONE_MARKER: &str = "[DONE]";
 
-pub(super) struct OpenAiCompatible {
+pub struct OpenAiCompatible {
     client: Client,
     models_url: Url,
     completions_url: Url,
@@ -174,7 +174,7 @@ impl From<&ToolSpec> for WireTool {
 }
 
 impl OpenAiCompatible {
-    pub(super) fn new(config: &ProviderConfig) -> Result<Self> {
+    pub fn new(config: &ProviderConfig) -> Result<Self> {
         let base_url =
             Url::parse(&config.base_url).map_err(|_| anyhow!("invalid provider base URL"))?;
         ensure!(
@@ -207,7 +207,7 @@ impl OpenAiCompatible {
         })
     }
 
-    pub(super) async fn list_models(&self) -> Result<Vec<Model>> {
+    pub async fn list_models(&self) -> Result<Vec<Model>> {
         // Do not retain reqwest errors or response bodies in error chains: either
         // can contain endpoint input or values echoed by an upstream server.
         let mut response = self
@@ -258,7 +258,7 @@ impl OpenAiCompatible {
             .collect())
     }
 
-    pub(super) async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
+    pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
         let request = CompletionRequest::new(request);
         let response = self
             .client
@@ -311,7 +311,7 @@ fn is_event_stream(response: &Response) -> bool {
 }
 
 /// Events of one streamed response, read lazily from the network.
-pub(super) struct CompletionStream {
+pub struct CompletionStream {
     response: Response,
     parser: CompletionParser,
     pending: VecDeque<ModelEvent>,
@@ -328,7 +328,7 @@ impl CompletionStream {
         }
     }
 
-    pub(super) async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
+    pub async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
         loop {
             if let Some(event) = self.pending.pop_front() {
                 return Ok(Some(event));
