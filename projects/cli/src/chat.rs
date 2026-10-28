@@ -5,7 +5,7 @@ use std::io::{self, IsTerminal, Write};
 
 use anyhow::Result;
 use dusk_core::{
-    providers::{ChatDelta, ModelProvider},
+    providers::{ModelEvent, ModelProvider},
     runtime::{SessionEvent, SessionInput, SessionOutput, SessionRunner},
     state::{Turn, TurnStatus},
 };
@@ -44,7 +44,7 @@ async fn print_events(mut output: SessionOutput) {
     while let Some(event) = output.next_event().await {
         match event {
             SessionEvent::Idle => eprint!("{PROMPT}"),
-            SessionEvent::Delta(delta) => printer.print(&delta),
+            SessionEvent::Model(event) => printer.print(&event),
             SessionEvent::TurnFinished(turn) => {
                 printer.finish();
                 report(&turn);
@@ -86,22 +86,22 @@ impl StreamPrinter {
 
     // Write errors are ignored: a closed terminal must not abort a turn whose answer is
     // still recorded in the thread.
-    fn print(&mut self, delta: &ChatDelta) {
-        match delta {
-            ChatDelta::Reasoning(text) => {
+    fn print(&mut self, event: &ModelEvent) {
+        match event {
+            ModelEvent::Reasoning(text) => {
                 if !self.in_reasoning && self.dim_reasoning {
                     eprint!("\x1b[2m");
                 }
                 self.in_reasoning = true;
                 let _ = io::stderr().write_all(sanitize(text).as_bytes());
             }
-            ChatDelta::Text(text) => {
+            ModelEvent::Text(text) => {
                 self.end_reasoning();
                 let mut stdout = io::stdout();
                 let _ = stdout.write_all(sanitize(text).as_bytes());
                 let _ = stdout.flush();
             }
-            // Kinds this client does not render yet.
+            // Tool calls, usage and finish reasons are not rendered yet.
             _ => {}
         }
     }

@@ -1,38 +1,34 @@
 //! Converts stored thread messages into model input: role and text only.
 
 use crate::{
-    providers::{ChatMessage, ChatRole},
+    providers::ChatMessage,
     state::{Message, MessageRole},
 };
 
 /// IDs, timestamps, cwd and attachments stay in the core and never reach the model.
 pub(super) fn chat_messages(messages: &[Message]) -> Vec<ChatMessage> {
-    messages
-        .iter()
-        .filter_map(|message| {
-            Some(ChatMessage {
-                role: chat_role(message.role)?,
-                content: message.content.clone(),
-            })
-        })
-        .collect()
+    messages.iter().filter_map(chat_message).collect()
 }
 
 /// Estimated size of what `chat_messages` sends.
 pub(super) fn context_tokens(messages: &[Message]) -> u64 {
     messages
         .iter()
-        .filter(|message| chat_role(message.role).is_some())
+        .filter(|message| chat_message(message).is_some())
         .map(|message| message.token_count)
         .sum()
 }
 
-fn chat_role(role: MessageRole) -> Option<ChatRole> {
-    match role {
-        MessageRole::System => Some(ChatRole::System),
-        MessageRole::User => Some(ChatRole::User),
-        MessageRole::Assistant | MessageRole::Agent => Some(ChatRole::Assistant),
-        // No tools exist yet.
+fn chat_message(message: &Message) -> Option<ChatMessage> {
+    let content = message.content.clone();
+    match message.role {
+        MessageRole::System => Some(ChatMessage::System(content)),
+        MessageRole::User => Some(ChatMessage::User(content)),
+        MessageRole::Assistant | MessageRole::Agent => Some(ChatMessage::Assistant {
+            text: content,
+            tool_calls: Vec::new(),
+        }),
+        // Tool results are not stored yet.
         MessageRole::Tool => None,
     }
 }
@@ -71,22 +67,13 @@ mod tests {
         assert_eq!(
             chat_messages(&messages),
             [
-                ChatMessage {
-                    role: ChatRole::System,
-                    content: "prompt".into()
+                ChatMessage::System("prompt".into()),
+                ChatMessage::User("question".into()),
+                ChatMessage::Assistant {
+                    text: "answer".into(),
+                    tool_calls: Vec::new()
                 },
-                ChatMessage {
-                    role: ChatRole::User,
-                    content: "question".into()
-                },
-                ChatMessage {
-                    role: ChatRole::Assistant,
-                    content: "answer".into()
-                },
-                ChatMessage {
-                    role: ChatRole::User,
-                    content: "follow-up".into()
-                },
+                ChatMessage::User("follow-up".into()),
             ]
         );
         assert_eq!(context_tokens(&messages), 20);

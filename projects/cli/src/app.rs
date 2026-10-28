@@ -2,7 +2,7 @@ use std::env;
 
 use anyhow::{Context, Result, bail};
 use dusk_core::{
-    api::CORE_API_VERSION,
+    api::CORE_VERSION,
     config::{Config, RecordMode},
     init,
     paths::Paths,
@@ -73,10 +73,7 @@ impl Application {
     }
 
     pub async fn run(self) -> Result<()> {
-        info!(
-            "chat started, core API {}.{}",
-            CORE_API_VERSION.major, CORE_API_VERSION.minor
-        );
+        info!("chat started, core {CORE_VERSION}");
         let result = self.chat().await;
         self.state.close().await;
         result

@@ -13,7 +13,7 @@ cargo test --workspace
 projects/
     core/src/                dusk_core
         lib.rs               module list
-        api.rs               core API version
+        api.rs               core version
         paths.rs             every application path
         init.rs              first-start setup of those paths
         config.rs            config.yml: providers and session settings
@@ -32,12 +32,14 @@ projects/
             agent_receiver.rs  reads a thread, starts and finishes turns
         runtime/             the agent
             session_runner.rs  live session: send, send now, cancel, events
-            answer.rs          one model call, streamed into a caller-owned answer
+            generation.rs      one model call, streamed into a caller-owned output
             context.rs         stored messages -> model input and its token size
         providers/           models
             provider.rs      providers by name, model discovery, stream dispatch
-            chat.rs          chat input and streamed output types
+            chat.rs          model input: messages by role, tool specs
+            model_output.rs  model output: ModelEvent stream, ModelOutput assembly
             openai.rs        OpenAI-compatible client and stream parser
+            inline_tags.rs   <think> and <tool_call> tags in text -> ModelEvents
             sse.rs           bounded Server-Sent Events decoder
     cli/src/                 dusk_code binary
         main.rs, app.rs      startup: paths, config, provider, model, session
@@ -75,6 +77,7 @@ providers:
     kind: openai_compatible
     base_url: 'https://api.example.com/v1'
     api_key: 'sk-...'
+    # inline_tags: true   # the server leaves <think>/<tool_call> tags in the text
 
 session:
   record: full      # user messages and the whole model output (default)
@@ -90,6 +93,7 @@ The CLI uses the first provider and its first catalogue model and starts a new s
 - Text is stored once, in `messages`; turns refer to messages and every request is rebuilt from them. Each message carries an estimated token count (UTF-8 bytes / 4); providers report usage per request only.
 - At most one turn runs per thread, enforced by the database.
 - A request UID is idempotent: a retry on the same thread returns the original receipt without a new event. Rejected requests get a fixed code (`empty_message`, `empty_thread`, `unknown_thread`) and are not queued.
+- Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the token limit or a filter is an error.
 - Provider responses are untrusted: sizes and idle time are bounded, redirects are refused, and upstream text never reaches error messages.
 - Events are in-process only: no replay, and slow receivers can miss events.
 

@@ -1,11 +1,16 @@
 //! Configured providers: built from the config by name, each dispatching to its protocol.
 
-use std::{collections::BTreeMap, future::Future};
+use std::{
+    collections::{BTreeMap, VecDeque},
+    future::Future,
+};
 
 use anyhow::{Context, Result};
 
 use super::{
-    chat::{ChatDelta, ChatMessage, ChatStream},
+    chat::ChatRequest,
+    inline_tags::TagSplitter,
+    model_output::{ChatStream, ModelEvent},
     openai::{CompletionStream, OpenAiCompatible},
 };
 use crate::config::{Config, ProviderKind};
@@ -26,8 +31,7 @@ pub trait ModelProvider: Send + Sync {
 
     fn stream_chat(
         &self,
-        model: &str,
-        messages: &[ChatMessage],
+        request: ChatRequest<'_>,
     ) -> impl Future<Output = Result<Self::Stream>> + Send;
 }
 
@@ -38,6 +42,7 @@ pub struct ProviderRegistry {
 
 pub struct Provider {
     adapter: ProviderAdapter,
+    inline_tags: bool,
 }
 
 enum ProviderAdapter {
@@ -46,6 +51,8 @@ enum ProviderAdapter {
 
 pub struct ProviderStream {
     adapter: StreamAdapter,
+    tags: Option<TagSplitter>,
+    pending: VecDeque<ModelEvent>,
 }
 
 enum StreamAdapter {
@@ -62,7 +69,11 @@ impl ProviderRegistry {
                     ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
                 }
             };
-            providers.insert(name.clone(), Provider { adapter });
+            let provider = Provider {
+                adapter,
+                inline_tags: settings.inline_tags,
+            };
+            providers.insert(name.clone(), provider);
         }
         Ok(Self { providers })
     }
@@ -96,20 +107,40 @@ impl ModelProvider for Provider {
         }
     }
 
-    async fn stream_chat(&self, model: &str, messages: &[ChatMessage]) -> Result<ProviderStream> {
+    async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<ProviderStream> {
         let adapter = match &self.adapter {
             ProviderAdapter::OpenAiCompatible(adapter) => {
-                StreamAdapter::OpenAiCompatible(adapter.stream_chat(model, messages).await?)
+                StreamAdapter::OpenAiCompatible(adapter.stream_chat(request).await?)
             }
         };
-        Ok(ProviderStream { adapter })
+        Ok(ProviderStream {
+            adapter,
+            tags: self.inline_tags.then(TagSplitter::default),
+            pending: VecDeque::new(),
+        })
     }
 }
 
 impl ChatStream for ProviderStream {
-    async fn next_delta(&mut self) -> Result<Option<ChatDelta>> {
-        match &mut self.adapter {
-            StreamAdapter::OpenAiCompatible(stream) => stream.next_delta().await,
+    async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
+        loop {
+            if let Some(event) = self.pending.pop_front() {
+                return Ok(Some(event));
+            }
+            let event = match &mut self.adapter {
+                StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
+            };
+            let Some(tags) = &mut self.tags else {
+                return Ok(event);
+            };
+            match event {
+                Some(ModelEvent::Text(text)) => self.pending.extend(tags.feed(&text)?),
+                Some(finished @ ModelEvent::Finished(_)) => {
+                    self.pending.extend(tags.finish()?);
+                    self.pending.push_back(finished);
+                }
+                other => return Ok(other),
+            }
         }
     }
 }
