@@ -14,7 +14,7 @@ use super::{
 use crate::{
     init::COMPACT_PROMPT_TEMPLATE,
     providers::{ChatMessage, ChatRequest},
-    state::{CallPurpose, Compaction, CompactionReason, ModelCall, Turn},
+    state::{CallPurpose, Compaction, ModelCall, Turn},
     thread_start::read_prompt,
 };
 
@@ -44,21 +44,19 @@ impl Agent {
         if !working || !full || conversation.compactable_through().is_none() {
             return None;
         }
-        self.compact(CompactionReason::Auto, None, turn, inbox)
-            .await
+        self.compact(None, turn, inbox).await
     }
 
     /// Summarizes everything that is not queued. A failure is reported to the client and
     /// leaves the context as it was.
     pub(super) async fn compact(
         &self,
-        reason: CompactionReason,
         focus: Option<&str>,
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Option<Stop> {
-        self.emit(ThreadEvent::CompactionStarted { reason });
-        match self.summarize(reason, focus, turn, inbox).await {
+        self.emit(ThreadEvent::CompactionStarted);
+        match self.summarize(focus, turn, inbox).await {
             Ok(Ok(compaction)) => {
                 self.emit(ThreadEvent::CompactionFinished(compaction));
                 None
@@ -74,7 +72,6 @@ impl Agent {
 
     async fn summarize(
         &self,
-        reason: CompactionReason,
         focus: Option<&str>,
         turn: Option<&Turn>,
         inbox: &mut Inbox,
@@ -114,9 +111,7 @@ impl Agent {
         if summary.is_empty() {
             bail!("the model wrote no summary");
         }
-        let compaction = self
-            .state
-            .add_compaction(&self.thread_id, through, summary, reason);
+        let compaction = self.state.add_compaction(&self.thread_id, through, summary);
         Ok(Ok(compaction.await?))
     }
 

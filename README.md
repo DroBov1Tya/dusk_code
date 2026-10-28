@@ -168,7 +168,7 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 - Built-in tools are only the essentials: `read_file`, `write_file`, `edit_file` and `delete_file`, `read_history` over the thread itself, `run_command` for everything a terminal does (listing, searching, building), and `load_skill` for the skill graph. Anything more, such as web search, belongs to MCP servers.
 - Tools run without asking. File tools only reach the directory the client was started in and the thread workspace. `run_command` runs in the client's working directory with a timeout and output caps in its own process group, so nothing it started outlives it; otherwise it can do what the user can.
 - Every sent message carries a request UID from the moment it is stored as pending; taking it into the thread twice, after a crash between the two writes, adds it once.
-- Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the token limit or a filter is an error.
+- Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the output limit ends the turn as interrupted, one blocked by a filter is an error.
 - Provider responses are untrusted: sizes and idle time are bounded, redirects are refused, and upstream text never reaches error messages.
 
 ## Limitations

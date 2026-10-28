@@ -69,9 +69,7 @@ async fn print_events(mut output: ThreadOutput) {
                 printer.end_reasoning();
                 eprintln!("\n[stopped: the answer reached the output limit of {limit} tokens]");
             }
-            ThreadEvent::CompactionStarted { reason } => {
-                eprintln!("[compacting the context: {}]", reason.as_str());
-            }
+            ThreadEvent::CompactionStarted => eprintln!("[compacting the context]"),
             ThreadEvent::CompactionFinished(compaction) => {
                 printer.finish();
                 eprintln!(

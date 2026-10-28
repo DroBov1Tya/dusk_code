@@ -238,7 +238,7 @@ mod tests {
     use super::*;
     use crate::{
         providers::ToolCall,
-        state::{CompactionReason, TurnAnswer, TurnOutcome, estimate_tokens},
+        state::{TurnAnswer, TurnOutcome, estimate_tokens},
         testing::temp_state,
     };
 
@@ -320,11 +320,7 @@ mod tests {
     #[tokio::test]
     async fn a_summary_replaces_older_messages_but_not_system_ones() {
         let (state, _) = thread_with_a_tool_step("tokens_compacted").await;
-        let reason = CompactionReason::Manual;
-        state
-            .add_compaction("thread", 3, "12345678", reason)
-            .await
-            .unwrap();
+        state.add_compaction("thread", 3, "12345678").await.unwrap();
 
         let tokens = state.thread_tokens("thread").await.unwrap();
 
@@ -392,11 +388,7 @@ mod tests {
             .record_usage(&call(&turn_id, None, 4), usage)
             .await
             .unwrap();
-        let reason = CompactionReason::Auto;
-        let compaction = state
-            .add_compaction("thread", 5, "summary", reason)
-            .await
-            .unwrap();
+        let compaction = state.add_compaction("thread", 5, "summary").await.unwrap();
 
         let id = Some(compaction.compaction_id);
         assert_eq!(state.last_prompt("thread", id).await.unwrap(), None);
