@@ -6,7 +6,6 @@ mod history;
 mod load_skill;
 mod registry;
 mod scope;
-mod search;
 mod shell;
 mod tool;
 

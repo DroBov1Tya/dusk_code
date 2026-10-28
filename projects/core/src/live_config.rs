@@ -194,11 +194,11 @@ mod tests {
         let edited = format!("{CONFIG}session:\n  record: answer\n");
         write_atomically(&path, edited.as_bytes()).unwrap();
 
-        live.update(|config| config.set_tool_enabled("search", false))
+        live.update(|config| config.set_tool_enabled("run_command", false))
             .unwrap();
 
         let saved = Config::load_from(&path).unwrap();
-        assert!(!saved.tool_enabled("search"));
+        assert!(!saved.tool_enabled("run_command"));
         assert!(!saved.thread().record.records_reasoning(), "hand edit kept");
     }
 

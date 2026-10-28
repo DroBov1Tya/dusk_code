@@ -50,8 +50,7 @@ projects/
             tool.rs          the Tool interface and what a tool sees
             registry.rs      tools by name; failed calls become error results
             scope.rs         where tools may act, checked after following symlinks
-            files.rs         read_file, list_dir, write_file, edit_file
-            search.rs        search: plain-text search through a directory
+            files.rs         read_file, write_file, edit_file, delete_file
             shell.rs         run_command: sh -c in the working directory
             load_skill.rs    load_skill: walks the skill graph
             history.rs       read_history: the thread's own messages, by number or text
@@ -166,6 +165,7 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 - The model receives only role and text; IDs, timestamps, cwd and attachments stay in the core. Reasoning is stored but never sent back as context.
 - Text is stored once, in `messages`; turns refer to messages and every request is rebuilt from them. Each message carries estimated token counts (UTF-8 bytes / 4) for its text, tool calls and reasoning; providers report usage per request only.
 - At most one turn runs per thread, enforced by the database.
+- Built-in tools are only the essentials: `read_file`, `write_file`, `edit_file` and `delete_file`, `read_history` over the thread itself, `run_command` for everything a terminal does (listing, searching, building), and `load_skill` for the skill graph. Anything more, such as web search, belongs to MCP servers.
 - Tools run without asking. File tools only reach the directory the client was started in and the thread workspace. `run_command` runs in the client's working directory with a timeout and output caps in its own process group, so nothing it started outlives it; otherwise it can do what the user can.
 - Every sent message carries a request UID from the moment it is stored as pending; taking it into the thread twice, after a crash between the two writes, adds it once.
 - Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the token limit or a filter is an error.
