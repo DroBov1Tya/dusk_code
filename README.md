@@ -42,7 +42,7 @@ projects/
             scope.rs         where tools may act, checked after following symlinks
             files.rs         read_file, list_dir, write_file, edit_file
             search.rs        search: plain-text search through a directory
-            shell.rs         run_command: sh -c in the session workspace
+            shell.rs         run_command: sh -c in the working directory
         providers/           models
             provider.rs      providers by name, model discovery, stream dispatch
             chat.rs          model input: messages by role, tool specs
@@ -101,7 +101,7 @@ The CLI uses the first provider and its first catalogue model and starts a new s
 - The model receives only role and text; IDs, timestamps, cwd and attachments stay in the core. Reasoning is stored but never sent back as context.
 - Text is stored once, in `messages`; turns refer to messages and every request is rebuilt from them. Each message carries an estimated token count (UTF-8 bytes / 4); providers report usage per request only.
 - At most one turn runs per thread, enforced by the database.
-- Tools run without asking. File tools only reach the directory the client was started in and the session workspace. `run_command` runs in the workspace with a timeout and output caps in its own process group, so nothing it started outlives it; otherwise it can do what the user can.
+- Tools run without asking. File tools only reach the directory the client was started in and the session workspace. `run_command` runs in the client's working directory with a timeout and output caps in its own process group, so nothing it started outlives it; otherwise it can do what the user can.
 - A request UID is idempotent: a retry on the same thread returns the original receipt without a new event. Rejected requests get a fixed code (`empty_message`, `empty_thread`, `unknown_thread`) and are not queued.
 - Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the token limit or a filter is an error.
 - Provider responses are untrusted: sizes and idle time are bounded, redirects are refused, and upstream text never reaches error messages.
