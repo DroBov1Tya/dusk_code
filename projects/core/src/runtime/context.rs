@@ -1,22 +1,46 @@
-//! Converts stored thread messages into model input: role and text only.
+//! A thread as the model sees it: its messages as role and text, and which of them are
+//! still waiting for an answer.
+
+use anyhow::Result;
 
 use crate::{
     providers::ChatMessage,
-    state::{Message, MessageRole},
+    state::{Message, MessageRole, State},
 };
 
-/// IDs, timestamps, cwd and attachments stay in the core and never reach the model.
-pub(super) fn chat_messages(messages: &[Message]) -> Vec<ChatMessage> {
-    messages.iter().filter_map(chat_message).collect()
+pub(super) struct Conversation {
+    pub(super) messages: Vec<Message>,
+    /// Sequence of the newest message a turn has taken; user messages after it are queued.
+    pub(super) answered_through: u64,
 }
 
-/// Estimated size of what `chat_messages` sends.
-pub(super) fn context_tokens(messages: &[Message]) -> u64 {
-    messages
-        .iter()
-        .filter(|message| chat_message(message).is_some())
-        .map(|message| message.token_count)
-        .sum()
+impl Conversation {
+    pub(super) async fn load(state: &State, thread_id: &str) -> Result<Self> {
+        Ok(Self {
+            answered_through: state.answered_through(thread_id).await?,
+            messages: state.list_messages(thread_id).await?,
+        })
+    }
+
+    pub(super) fn has_queued(&self) -> bool {
+        self.messages.iter().any(|message| {
+            message.role == MessageRole::User && message.sequence > self.answered_through
+        })
+    }
+
+    /// IDs, timestamps and other metadata stay in the core and never reach the model.
+    pub(super) fn chat_messages(&self) -> Vec<ChatMessage> {
+        self.messages.iter().filter_map(chat_message).collect()
+    }
+
+    /// Estimated size of what `chat_messages` sends.
+    pub(super) fn tokens(&self) -> u64 {
+        self.messages
+            .iter()
+            .filter(|message| chat_message(message).is_some())
+            .map(|message| message.token_count)
+            .sum()
+    }
 }
 
 fn chat_message(message: &Message) -> Option<ChatMessage> {
@@ -24,7 +48,7 @@ fn chat_message(message: &Message) -> Option<ChatMessage> {
     match message.role {
         MessageRole::System => Some(ChatMessage::System(content)),
         MessageRole::User => Some(ChatMessage::User(content)),
-        MessageRole::Assistant | MessageRole::Agent => Some(ChatMessage::Assistant {
+        MessageRole::Assistant => Some(ChatMessage::Assistant {
             text: content,
             tool_calls: message.tool_calls.clone(),
         }),
@@ -39,37 +63,35 @@ fn chat_message(message: &Message) -> Option<ChatMessage> {
 mod tests {
     use super::*;
 
-    fn message(role: MessageRole, content: &str) -> Message {
+    fn message(sequence: u64, role: MessageRole, content: &str) -> Message {
         Message {
-            message_id: format!("id-{content}"),
+            message_id: format!("id-{sequence}"),
             thread_id: "thread".into(),
-            job_id: None,
-            request_uid: Some("uid".into()),
-            sequence: 1,
+            sequence,
             role,
-            agent_id: None,
             content: content.into(),
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: (role == MessageRole::Tool).then(|| "call".into()),
-            cwd: "/tmp".into(),
-            attachments: Vec::new(),
             token_count: 5,
             created_at: 0,
         }
     }
 
     #[test]
-    fn keeps_only_role_text_and_tool_links() {
-        let messages = [
-            message(MessageRole::System, "prompt"),
-            message(MessageRole::User, "question"),
-            message(MessageRole::Assistant, "answer"),
-            message(MessageRole::Tool, "tool output"),
-            message(MessageRole::User, "follow-up"),
-        ];
+    fn sends_role_text_and_tool_links_only() {
+        let conversation = Conversation {
+            messages: vec![
+                message(1, MessageRole::System, "prompt"),
+                message(2, MessageRole::User, "question"),
+                message(3, MessageRole::Assistant, "answer"),
+                message(4, MessageRole::Tool, "tool output"),
+                message(5, MessageRole::User, "follow-up"),
+            ],
+            answered_through: 2,
+        };
         assert_eq!(
-            chat_messages(&messages),
+            conversation.chat_messages(),
             [
                 ChatMessage::System("prompt".into()),
                 ChatMessage::User("question".into()),
@@ -84,6 +106,7 @@ mod tests {
                 ChatMessage::User("follow-up".into()),
             ]
         );
-        assert_eq!(context_tokens(&messages), 25);
+        assert_eq!(conversation.tokens(), 25);
+        assert!(conversation.has_queued(), "the follow-up waits");
     }
 }

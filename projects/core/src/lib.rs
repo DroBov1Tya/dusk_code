@@ -7,12 +7,16 @@ pub mod init;
 pub mod live_config;
 pub mod paths;
 pub mod providers;
-pub mod receivers;
 pub mod runtime;
-pub mod session;
 pub mod skills;
 pub mod state;
+pub mod thread_start;
 pub mod tools;
+
+use std::{future::Future, pin::Pin};
+
+/// A boxed future, so a trait with async methods can be used as `dyn Trait`.
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = anyhow::Result<T>> + Send + 'a>>;
 
 #[cfg(test)]
 mod testing;

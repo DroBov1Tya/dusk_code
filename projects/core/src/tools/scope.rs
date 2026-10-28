@@ -1,4 +1,4 @@
-//! Where tools may act: the directory the client was started in and the session workspace.
+//! Where tools may act: the directory the client was started in and the thread workspace.
 //! Paths are resolved after following symlinks, so neither `..` nor a link leads outside.
 
 use std::{
@@ -23,7 +23,7 @@ impl ToolScope {
                 .context("working directory is not accessible")?,
             workspace: workspace
                 .canonicalize()
-                .context("session workspace is not accessible")?,
+                .context("thread workspace is not accessible")?,
         })
     }
 
@@ -45,7 +45,7 @@ impl ToolScope {
         let resolved = resolve_existing_prefix(&path)?;
         ensure!(
             resolved.starts_with(&self.cwd) || resolved.starts_with(&self.workspace),
-            "path is outside the working directory and the session workspace"
+            "path is outside the working directory and the thread workspace"
         );
         Ok(resolved)
     }

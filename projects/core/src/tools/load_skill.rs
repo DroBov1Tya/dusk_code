@@ -9,9 +9,10 @@ use serde_json::{Value, json};
 
 use super::{
     builtin::parse_arguments,
-    tool::{Tool, ToolContext, ToolFuture},
+    tool::{Tool, ToolContext},
 };
 use crate::{
+    BoxFuture,
     config::Config,
     skills::{Skill, SkillGraph},
 };
@@ -65,7 +66,7 @@ impl Tool for LoadSkill {
             .any(|skill| context.config.skill_enabled(&skill.name))
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: LoadSkillArguments = parse_arguments(arguments)?;
             let directory = self.directory.clone();

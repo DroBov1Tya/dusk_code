@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
-    future::Future,
+    sync::Arc,
 };
 
 use anyhow::{Context, Result};
@@ -13,7 +13,10 @@ use super::{
     model_output::{ChatStream, ModelEvent},
     openai::{CompletionStream, OpenAiCompatible},
 };
-use crate::config::{Config, ProviderKind};
+use crate::{
+    BoxFuture,
+    config::{Config, ProviderKind},
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Model {
@@ -23,21 +26,17 @@ pub struct Model {
 }
 
 /// What the agent needs from a model provider.
+/// What the agent needs from a model provider. Tests put a scripted model behind it.
 pub trait ModelProvider: Send + Sync {
-    type Stream: ChatStream;
-
     /// Returns the catalogue sorted by model ID.
-    fn list_models(&self) -> impl Future<Output = Result<Vec<Model>>> + Send;
+    fn list_models(&self) -> BoxFuture<'_, Vec<Model>>;
 
-    fn stream_chat(
-        &self,
-        request: ChatRequest<'_>,
-    ) -> impl Future<Output = Result<Self::Stream>> + Send;
+    fn stream_chat<'a>(&'a self, request: ChatRequest<'a>) -> BoxFuture<'a, Box<dyn ChatStream>>;
 }
 
 /// Providers by config name, in name order.
 pub struct ProviderRegistry {
-    providers: BTreeMap<String, Provider>,
+    providers: BTreeMap<String, Arc<Provider>>,
 }
 
 pub struct Provider {
@@ -73,7 +72,7 @@ impl ProviderRegistry {
                 adapter,
                 inline_tags: settings.inline_tags,
             };
-            providers.insert(name.clone(), provider);
+            providers.insert(name.clone(), Arc::new(provider));
         }
         Ok(Self { providers })
     }
@@ -82,8 +81,8 @@ impl ProviderRegistry {
         self.providers.keys().map(String::as_str)
     }
 
-    pub fn provider(&self, name: &str) -> Option<&Provider> {
-        self.providers.get(name)
+    pub fn provider(&self, name: &str) -> Option<Arc<Provider>> {
+        self.providers.get(name).cloned()
     }
 }
 
@@ -99,48 +98,53 @@ impl Provider {
 }
 
 impl ModelProvider for Provider {
-    type Stream = ProviderStream;
-
-    async fn list_models(&self) -> Result<Vec<Model>> {
-        match &self.adapter {
-            ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
-        }
+    fn list_models(&self) -> BoxFuture<'_, Vec<Model>> {
+        Box::pin(async move {
+            match &self.adapter {
+                ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
+            }
+        })
     }
 
-    async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<ProviderStream> {
-        let adapter = match &self.adapter {
-            ProviderAdapter::OpenAiCompatible(adapter) => {
-                StreamAdapter::OpenAiCompatible(adapter.stream_chat(request).await?)
-            }
-        };
-        Ok(ProviderStream {
-            adapter,
-            tags: self.inline_tags.then(TagSplitter::default),
-            pending: VecDeque::new(),
+    fn stream_chat<'a>(&'a self, request: ChatRequest<'a>) -> BoxFuture<'a, Box<dyn ChatStream>> {
+        Box::pin(async move {
+            let adapter = match &self.adapter {
+                ProviderAdapter::OpenAiCompatible(adapter) => {
+                    StreamAdapter::OpenAiCompatible(adapter.stream_chat(request).await?)
+                }
+            };
+            let stream = ProviderStream {
+                adapter,
+                tags: self.inline_tags.then(TagSplitter::default),
+                pending: VecDeque::new(),
+            };
+            Ok(Box::new(stream) as Box<dyn ChatStream>)
         })
     }
 }
 
 impl ChatStream for ProviderStream {
-    async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
-        loop {
-            if let Some(event) = self.pending.pop_front() {
-                return Ok(Some(event));
-            }
-            let event = match &mut self.adapter {
-                StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
-            };
-            let Some(tags) = &mut self.tags else {
-                return Ok(event);
-            };
-            match event {
-                Some(ModelEvent::Text(text)) => self.pending.extend(tags.feed(&text)?),
-                Some(finished @ ModelEvent::Finished(_)) => {
-                    self.pending.extend(tags.finish()?);
-                    self.pending.push_back(finished);
+    fn next_event(&mut self) -> BoxFuture<'_, Option<ModelEvent>> {
+        Box::pin(async move {
+            loop {
+                if let Some(event) = self.pending.pop_front() {
+                    return Ok(Some(event));
                 }
-                other => return Ok(other),
+                let event = match &mut self.adapter {
+                    StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
+                };
+                let Some(tags) = &mut self.tags else {
+                    return Ok(event);
+                };
+                match event {
+                    Some(ModelEvent::Text(text)) => self.pending.extend(tags.feed(&text)?),
+                    Some(finished @ ModelEvent::Finished(_)) => {
+                        self.pending.extend(tags.finish()?);
+                        self.pending.push_back(finished);
+                    }
+                    other => return Ok(other),
+                }
             }
-        }
+        })
     }
 }

@@ -12,4 +12,4 @@ mod tool;
 pub(crate) use builtin::read_regular;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::ToolScope;
-pub use tool::{Tool, ToolContext, ToolFuture};
+pub use tool::{Tool, ToolContext};

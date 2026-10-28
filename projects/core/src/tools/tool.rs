@@ -10,7 +10,7 @@ use super::scope::ToolScope;
 use crate::config::Config;
 
 /// Boxed so tools of different kinds, built-in or MCP, fit in one registry.
-pub type ToolFuture<'a> = Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;
+pub type BoxFuture<'a, String> = Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;
 
 /// What a tool sees: where it may act and the settings of the current step.
 #[derive(Clone, Copy)]
@@ -36,5 +36,5 @@ pub trait Tool: Send + Sync {
     }
 
     /// An error is shown to the model as the result, so it can correct itself.
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a>;
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String>;
 }

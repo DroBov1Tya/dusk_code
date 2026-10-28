@@ -3,7 +3,7 @@
 
 use tokio::sync::broadcast;
 
-use crate::state::{Execution, Job, Message, ThreadMetadata, Turn};
+use crate::state::{Message, Thread, Turn};
 
 pub type EventSender = broadcast::Sender<Event>;
 pub type EventReceiver = broadcast::Receiver<Event>;
@@ -11,13 +11,8 @@ pub type EventReceiver = broadcast::Receiver<Event>;
 #[derive(Debug, Clone)]
 #[non_exhaustive]
 pub enum Event {
-    ThreadCreated(ThreadMetadata),
-    ThreadUpdated(ThreadMetadata),
-    TaskAccepted(Execution),
-    TaskRejected(Execution),
+    ThreadCreated(Thread),
     MessageCreated(Message),
     TurnStarted(Turn),
     TurnFinished(Turn),
-    JobCreated(Job),
-    JobUpdated(Job),
 }

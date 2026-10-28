@@ -1,11 +1,11 @@
 //! What the model sends back. Every provider turns its stream into `ModelEvent`s;
 //! `ModelOutput` assembles them into text, reasoning and tool calls.
 
-use std::future::Future;
-
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+use crate::BoxFuture;
 
 /// Bounds memory for a provider that never finishes; every kind of output counts.
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
@@ -60,7 +60,7 @@ pub struct ToolCall {
 /// A streamed model response.
 pub trait ChatStream: Send {
     /// Returns `None` once the response has ended; an error ends the stream.
-    fn next_event(&mut self) -> impl Future<Output = Result<Option<ModelEvent>>> + Send;
+    fn next_event(&mut self) -> BoxFuture<'_, Option<ModelEvent>>;
 }
 
 /// The response assembled so far. It stays usable when the stream stops early.

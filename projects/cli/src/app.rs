@@ -6,10 +6,10 @@ use dusk_core::{
     init,
     live_config::LiveConfig,
     paths::Paths,
-    providers::{Model, ProviderRegistry},
-    runtime::{SessionRunner, SessionSetup},
-    session::start_session,
+    providers::{Model, ModelProvider, Provider, ProviderRegistry},
+    runtime::{ThreadRunner, ThreadSetup},
     state::State,
+    thread_start::start_thread,
     tools::{ToolRegistry, ToolScope},
 };
 use tracing::{error, info};
@@ -18,15 +18,14 @@ use crate::{
     args::AppArgs,
     chat,
     commands::Settings,
-    constants::{AGENT_ID, CONFIG_RELOAD_PERIOD, THREAD_SOURCE},
+    constants::{CONFIG_RELOAD_PERIOD, THREAD_SOURCE},
 };
 
 pub struct Application {
     paths: Paths,
-    state: State,
+    state: Arc<State>,
     config: Arc<LiveConfig>,
-    providers: ProviderRegistry,
-    provider_name: String,
+    provider: Arc<Provider>,
     model: Model,
 }
 
@@ -43,7 +42,7 @@ impl Application {
         let state = match State::open(path).await {
             Ok(state) => {
                 info!("state database opened");
-                state
+                Arc::new(state)
             }
             Err(error) => {
                 error!("cannot open state database: {error:#}");
@@ -57,18 +56,16 @@ impl Application {
             .next()
             .context("no provider configured")?
             .to_owned();
-        let model = providers
+        let provider = providers
             .provider(&provider_name)
-            .context("configured provider is missing")?
-            .default_model()
-            .await?;
+            .context("configured provider is missing")?;
+        let model = provider.default_model().await?;
         info!("provider {provider_name}, model {}", model.id);
         Ok(Self {
             paths,
             state,
             config,
-            providers,
-            provider_name,
+            provider,
             model,
         })
     }
@@ -81,15 +78,11 @@ impl Application {
     }
 
     async fn chat(&self) -> Result<()> {
-        let provider = self
-            .providers
-            .provider(&self.provider_name)
-            .context("configured provider is missing")?;
-        let session = start_session(&self.state, &self.paths, THREAD_SOURCE).await?;
+        let thread = start_thread(&self.state, &self.paths, THREAD_SOURCE).await?;
         info!(
-            "session {} started in {}",
-            session.thread_id,
-            session.workspace.display()
+            "thread {} started in {}",
+            thread.thread_id,
+            thread.workspace.display()
         );
         tokio::spawn(Arc::clone(&self.config).watch(CONFIG_RELOAD_PERIOD));
         let tools = ToolRegistry::builtin(&self.paths.skills_dir());
@@ -98,16 +91,15 @@ impl Application {
             tools: tools.names().collect(),
             skills_dir: self.paths.skills_dir(),
         };
-        let (runner, input, output) = SessionRunner::new(SessionSetup {
-            state: &self.state,
-            provider,
+        let (runner, input, output) = ThreadRunner::new(ThreadSetup {
+            state: Arc::clone(&self.state),
+            provider: Arc::clone(&self.provider) as Arc<dyn ModelProvider>,
             model: self.model.clone(),
-            config: &self.config,
-            agent_id: AGENT_ID,
-            thread_id: &session.thread_id,
+            config: Arc::clone(&self.config),
+            scope: ToolScope::new(&env::current_dir()?, &thread.workspace)?,
+            thread_id: thread.thread_id,
             tools,
-            scope: ToolScope::new(&env::current_dir()?, &session.workspace)?,
-        })?;
+        });
         chat::run(runner, input, output, settings).await
     }
 }

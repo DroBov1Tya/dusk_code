@@ -1,9 +1,11 @@
-//! A live chat session. Messages can be sent at any time; the agent runs one turn at a
-//! time over everything queued. `send_now` stops the running turn, keeping what it wrote,
+//! A live thread. Messages can be sent at any time; the agent runs one turn at a time
+//! over everything queued. `send_now` stops the running turn, keeping what it wrote,
 //! so the next turn starts at once with the new message.
 //!
 //! Messages sent during a turn are held in memory and stored right after the turn ends,
 //! so the thread always reads in the order things happened.
+
+use std::sync::Arc;
 
 use anyhow::{Result, anyhow};
 use tokio::sync::mpsc;
@@ -16,44 +18,40 @@ use super::{
 use crate::{
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
-    receivers::{AgentReceiver, UserMessage, UserReceiver},
     state::{State, Turn},
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
-pub struct SessionRunner<'a, P> {
-    agent: Agent<'a, P>,
-    users: UserReceiver<'a>,
+pub struct ThreadRunner {
+    agent: Agent,
     inbox: Inbox,
-    cwd: String,
 }
 
-/// Everything a session needs; the thread must exist.
-pub struct SessionSetup<'a, P> {
-    pub state: &'a State,
-    pub provider: &'a P,
+/// Everything a running thread needs; the thread must exist.
+pub struct ThreadSetup {
+    pub state: Arc<State>,
+    pub provider: Arc<dyn ModelProvider>,
     pub model: Model,
-    pub config: &'a LiveConfig,
-    pub agent_id: &'a str,
-    pub thread_id: &'a str,
+    pub config: Arc<LiveConfig>,
+    pub thread_id: String,
     pub tools: ToolRegistry,
     pub scope: ToolScope,
 }
 
-/// The client's side for sending. Dropping every clone ends the session once the queue is done.
+/// The client's side for sending. Dropping every clone ends the thread once the queue is done.
 #[derive(Clone)]
-pub struct SessionInput {
+pub struct ThreadInput {
     commands: mpsc::UnboundedSender<Command>,
 }
 
 /// The client's side for receiving.
-pub struct SessionOutput {
-    events: mpsc::UnboundedReceiver<SessionEvent>,
+pub struct ThreadOutput {
+    events: mpsc::UnboundedReceiver<ThreadEvent>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum SessionEvent {
+pub enum ThreadEvent {
     Queued {
         message_id: String,
     },
@@ -78,42 +76,39 @@ pub enum SessionEvent {
     Idle,
 }
 
-impl<'a, P: ModelProvider> SessionRunner<'a, P> {
-    pub fn new(setup: SessionSetup<'a, P>) -> Result<(Self, SessionInput, SessionOutput)> {
+impl ThreadRunner {
+    pub fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
         let (command_sender, commands) = mpsc::unbounded_channel();
         let (events, event_receiver) = mpsc::unbounded_channel();
-        let cwd = setup.scope.cwd().to_string_lossy().into_owned();
         let agent = Agent {
-            receiver: AgentReceiver::new(setup.state, setup.agent_id)?,
+            state: setup.state,
             provider: setup.provider,
             model: setup.model,
             config: setup.config,
             tools: setup.tools,
             scope: setup.scope,
-            thread_id: setup.thread_id.to_owned(),
+            thread_id: setup.thread_id,
             events,
         };
         let runner = Self {
             agent,
-            users: UserReceiver::new(setup.state),
             inbox: Inbox::new(commands),
-            cwd,
         };
-        let input = SessionInput {
+        let input = ThreadInput {
             commands: command_sender,
         };
-        let output = SessionOutput {
+        let output = ThreadOutput {
             events: event_receiver,
         };
-        Ok((runner, input, output))
+        (runner, input, output)
     }
 
-    /// Runs until every `SessionInput` is dropped and the queue is done.
+    /// Runs until every `ThreadInput` is dropped and the queue is done.
     pub async fn run(mut self) -> Result<()> {
         self.agent.recover().await?;
         loop {
             self.run_queued().await?;
-            self.agent.emit(SessionEvent::Idle);
+            self.agent.emit(ThreadEvent::Idle);
             let Some(command) = self.inbox.next().await else {
                 return Ok(());
             };
@@ -147,23 +142,17 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
     }
 
     async fn store(&self, text: String) {
-        let message = UserMessage {
-            request_uid: Uuid::now_v7().to_string(),
-            thread_id: self.agent.thread_id.clone(),
-            content: text,
-            cwd: self.cwd.clone(),
-            attachments: Vec::new(),
-        };
-        let event = match self.users.submit_message(message).await {
-            Ok(receipt) => match (receipt.message, receipt.execution.error_code) {
-                (Some(message), _) => SessionEvent::Queued {
-                    message_id: message.message_id,
-                },
-                (None, code) => SessionEvent::Rejected {
-                    reason: code.map_or("rejected", |code| code.as_str()).to_owned(),
-                },
+        let request_uid = Uuid::now_v7().to_string();
+        let stored = self
+            .agent
+            .state
+            .add_user_message(&self.agent.thread_id, &request_uid, &text)
+            .await;
+        let event = match stored {
+            Ok(message) => ThreadEvent::Queued {
+                message_id: message.message_id,
             },
-            Err(error) => SessionEvent::Rejected {
+            Err(error) => ThreadEvent::Rejected {
                 reason: format!("{error:#}"),
             },
         };
@@ -171,7 +160,7 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
     }
 }
 
-impl SessionInput {
+impl ThreadInput {
     /// Queues a message; it is answered after the running turn, together with other queued ones.
     pub fn send(&self, text: impl Into<String>) -> Result<()> {
         self.command(Command::Send(text.into()))
@@ -190,13 +179,13 @@ impl SessionInput {
     fn command(&self, command: Command) -> Result<()> {
         self.commands
             .send(command)
-            .map_err(|_| anyhow!("session has ended"))
+            .map_err(|_| anyhow!("thread has ended"))
     }
 }
 
-impl SessionOutput {
-    /// `None` once the session has ended.
-    pub async fn next_event(&mut self) -> Option<SessionEvent> {
+impl ThreadOutput {
+    /// `None` once the thread has ended.
+    pub async fn next_event(&mut self) -> Option<ThreadEvent> {
         self.events.recv().await
     }
 }
@@ -209,10 +198,11 @@ mod tests {
 
     use super::*;
     use crate::{
+        BoxFuture,
         providers::{ChatRequest, ChatStream, FinishReason},
-        state::{ApprovalMode, MessageRole, ThreadInput, TurnStatus},
+        state::{MessageRole, TurnStatus},
         testing::{temp_dir, temp_live_config, temp_state},
-        tools::{Tool, ToolContext, ToolFuture},
+        tools::{Tool, ToolContext},
     };
 
     /// Each model call takes the next script; `Hang` never finishes, like a slow model.
@@ -238,42 +228,46 @@ mod tests {
     struct Echo;
 
     impl ModelProvider for FakeProvider {
-        type Stream = FakeStream;
-
-        async fn list_models(&self) -> Result<Vec<Model>> {
-            Ok(Vec::new())
+        fn list_models(&self) -> BoxFuture<'_, Vec<Model>> {
+            Box::pin(async { Ok(Vec::new()) })
         }
 
-        async fn stream_chat(&self, _request: ChatRequest<'_>) -> Result<FakeStream> {
+        fn stream_chat<'a>(
+            &'a self,
+            _request: ChatRequest<'a>,
+        ) -> BoxFuture<'a, Box<dyn ChatStream>> {
             let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
-            Ok(FakeStream {
+            let stream = FakeStream {
                 steps: script.into(),
                 pending: VecDeque::new(),
-            })
+            };
+            Box::pin(async move { Ok(Box::new(stream) as Box<dyn ChatStream>) })
         }
     }
 
     impl ChatStream for FakeStream {
-        async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
-            if let Some(event) = self.pending.pop_front() {
-                return Ok(Some(event));
-            }
-            Ok(match self.steps.pop_front() {
-                Some(Step::Text(text)) => Some(ModelEvent::Text(text.into())),
-                Some(Step::Call(text)) => {
-                    self.pending.push_back(ModelEvent::ToolArguments {
-                        index: 0,
-                        fragment: json!({ "text": text }).to_string(),
-                    });
-                    Some(ModelEvent::ToolCall {
-                        index: 0,
-                        id: "call_1".into(),
-                        name: "echo".into(),
-                    })
+        fn next_event(&mut self) -> BoxFuture<'_, Option<ModelEvent>> {
+            Box::pin(async move {
+                if let Some(event) = self.pending.pop_front() {
+                    return Ok(Some(event));
                 }
-                Some(Step::Hang) => std::future::pending().await,
-                Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
-                None => None,
+                Ok(match self.steps.pop_front() {
+                    Some(Step::Text(text)) => Some(ModelEvent::Text(text.into())),
+                    Some(Step::Call(text)) => {
+                        self.pending.push_back(ModelEvent::ToolArguments {
+                            index: 0,
+                            fragment: json!({ "text": text }).to_string(),
+                        });
+                        Some(ModelEvent::ToolCall {
+                            index: 0,
+                            id: "call_1".into(),
+                            name: "echo".into(),
+                        })
+                    }
+                    Some(Step::Hang) => std::future::pending().await,
+                    Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
+                    None => None,
+                })
             })
         }
     }
@@ -291,15 +285,19 @@ mod tests {
             json!({ "type": "object" })
         }
 
-        fn call<'a>(&'a self, arguments: Value, _context: ToolContext<'a>) -> ToolFuture<'a> {
+        fn call<'a>(
+            &'a self,
+            arguments: Value,
+            _context: ToolContext<'a>,
+        ) -> BoxFuture<'a, String> {
             Box::pin(async move { Ok(arguments["text"].as_str().unwrap_or_default().to_owned()) })
         }
     }
 
-    fn provider(scripts: Vec<Vec<Step>>) -> FakeProvider {
-        FakeProvider {
+    fn provider(scripts: Vec<Vec<Step>>) -> Arc<FakeProvider> {
+        Arc::new(FakeProvider {
             scripts: Mutex::new(scripts.into()),
-        }
+        })
     }
 
     fn model(context_window: Option<u64>) -> Model {
@@ -309,56 +307,47 @@ mod tests {
         }
     }
 
-    async fn session_state(name: &str) -> State {
-        let state = temp_state(name).await;
-        let thread = ThreadInput {
-            source: "test".into(),
-            tokens_used: 0,
-            compaction_count: 0,
-            sandbox_policy: "none".into(),
-            approval_mode: ApprovalMode::Never,
-            git_branch: None,
-            git_commit_sha: None,
-            git_origin_url: None,
-            title: String::new(),
-        };
-        state.create_thread("thread", thread).await.unwrap();
+    async fn thread_state(name: &str) -> Arc<State> {
+        let state = Arc::new(temp_state(name).await);
+        state.create_thread("thread", "test").await.unwrap();
         state
     }
 
-    fn runner<'a>(
-        state: &'a State,
-        provider: &'a FakeProvider,
-        config: &'a LiveConfig,
+    fn live_config(name: &str) -> Arc<LiveConfig> {
+        Arc::new(temp_live_config(name))
+    }
+
+    fn runner(
+        state: &Arc<State>,
+        provider: &Arc<FakeProvider>,
+        config: &Arc<LiveConfig>,
         model: Model,
-    ) -> (SessionRunner<'a, FakeProvider>, SessionInput, SessionOutput) {
+    ) -> (ThreadRunner, ThreadInput, ThreadOutput) {
         let root = temp_dir("runner_scope");
         std::fs::create_dir_all(&root).unwrap();
         let mut tools = ToolRegistry::default();
         tools.add(Box::new(Echo));
-        SessionRunner::new(SessionSetup {
-            state,
-            provider,
+        ThreadRunner::new(ThreadSetup {
+            state: Arc::clone(state),
+            provider: Arc::clone(provider) as Arc<dyn ModelProvider>,
             model,
-            config,
-            agent_id: "agent",
-            thread_id: "thread",
+            config: Arc::clone(config),
+            thread_id: "thread".into(),
             tools,
             scope: ToolScope::new(&root, &root).unwrap(),
         })
-        .unwrap()
     }
 
-    async fn next_turn_finished(output: &mut SessionOutput) -> Turn {
+    async fn next_turn_finished(output: &mut ThreadOutput) -> Turn {
         loop {
-            if let Some(SessionEvent::TurnFinished(turn)) = output.next_event().await {
+            if let Some(ThreadEvent::TurnFinished(turn)) = output.next_event().await {
                 return turn;
             }
         }
     }
 
     async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
-        let messages = state.list_messages("thread", 0, 100).await.unwrap();
+        let messages = state.list_messages("thread").await.unwrap();
         messages
             .into_iter()
             .map(|message| (message.role, message.content))
@@ -367,8 +356,8 @@ mod tests {
 
     #[tokio::test]
     async fn messages_queued_before_a_turn_are_answered_together() {
-        let state = session_state("together").await;
-        let config = temp_live_config("runner_config");
+        let state = thread_state("together").await;
+        let config = live_config("runner_config");
         let provider = provider(vec![vec![Step::Text("both"), Step::Done]]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         input.send("a").unwrap();
@@ -392,8 +381,8 @@ mod tests {
 
     #[tokio::test]
     async fn send_now_interrupts_and_answers_the_new_message_at_once() {
-        let state = session_state("send_now").await;
-        let config = temp_live_config("runner_config");
+        let state = thread_state("send_now").await;
+        let config = live_config("runner_config");
         let provider = provider(vec![
             vec![Step::Text("partial"), Step::Hang],
             vec![Step::Text("second"), Step::Done],
@@ -402,7 +391,7 @@ mod tests {
         let client = async move {
             input.send("first").unwrap();
             while output.next_event().await
-                != Some(SessionEvent::Model(ModelEvent::Text("partial".into())))
+                != Some(ThreadEvent::Model(ModelEvent::Text("partial".into())))
             {}
             input.send_now("now").unwrap();
             let first = next_turn_finished(&mut output).await;
@@ -427,19 +416,16 @@ mod tests {
 
     #[tokio::test]
     async fn cancel_stops_the_turn_and_waits() {
-        let state = session_state("cancel").await;
-        let config = temp_live_config("runner_config");
+        let state = thread_state("cancel").await;
+        let config = live_config("runner_config");
         let provider = provider(vec![vec![Step::Hang]]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         let client = async move {
             input.send("first").unwrap();
-            while !matches!(
-                output.next_event().await,
-                Some(SessionEvent::TurnStarted(_))
-            ) {}
+            while !matches!(output.next_event().await, Some(ThreadEvent::TurnStarted(_))) {}
             input.cancel().unwrap();
             let turn = next_turn_finished(&mut output).await;
-            assert_eq!(output.next_event().await, Some(SessionEvent::Idle));
+            assert_eq!(output.next_event().await, Some(ThreadEvent::Idle));
             turn.status
         };
 
@@ -452,8 +438,8 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_context_is_reported_and_not_sent() {
-        let state = session_state("too_large").await;
-        let config = temp_live_config("runner_config");
+        let state = thread_state("too_large").await;
+        let config = live_config("runner_config");
         let provider = provider(Vec::new());
         let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(3)));
         input.send("hello").unwrap();
@@ -465,21 +451,21 @@ mod tests {
         while let Some(event) = output.next_event().await {
             events.push(event);
         }
-        assert!(events.contains(&SessionEvent::ContextTooLarge {
+        assert!(events.contains(&ThreadEvent::ContextTooLarge {
             tokens: 6,
             limit: 3
         }));
         assert!(
             !events
                 .iter()
-                .any(|event| matches!(event, SessionEvent::TurnStarted(_)))
+                .any(|event| matches!(event, ThreadEvent::TurnStarted(_)))
         );
     }
 
     #[tokio::test]
     async fn runs_tools_until_the_model_answers() {
-        let state = session_state("tool_loop").await;
-        let config = temp_live_config("runner_config");
+        let state = thread_state("tool_loop").await;
+        let config = live_config("runner_config");
         let provider = provider(vec![
             vec![Step::Call("ping"), Step::Done],
             vec![Step::Text("got ping"), Step::Done],
@@ -492,7 +478,7 @@ mod tests {
 
         let mut finished = None;
         while let Some(event) = output.next_event().await {
-            if let SessionEvent::ToolFinished { result, .. } = event {
+            if let ThreadEvent::ToolFinished { result, .. } = event {
                 finished = Some(result.content);
             }
         }
@@ -510,8 +496,8 @@ mod tests {
 
     #[tokio::test]
     async fn a_switched_off_tool_is_refused() {
-        let state = session_state("tool_off").await;
-        let config = temp_live_config("tool_off_config");
+        let state = thread_state("tool_off").await;
+        let config = live_config("tool_off_config");
         config
             .update(|config| config.set_tool_enabled("echo", false))
             .unwrap();
