@@ -3,6 +3,8 @@
 CREATE TABLE model_usage (
     turn_id TEXT NOT NULL REFERENCES turns(turn_id),
     model TEXT NOT NULL CHECK (length(trim(model)) > 0),
+    -- The newest message the call sent; messages after it are not in prompt_tokens.
+    through_sequence INTEGER NOT NULL CHECK (through_sequence > 0),
     -- Includes the cached part.
     prompt_tokens INTEGER NOT NULL CHECK (prompt_tokens >= 0),
     cached_prompt_tokens INTEGER NOT NULL CHECK (cached_prompt_tokens >= 0),
@@ -12,4 +14,4 @@ CREATE TABLE model_usage (
     created_at INTEGER NOT NULL CHECK (created_at >= 0)
 );
 
-CREATE INDEX model_usage_turn ON model_usage(turn_id);
+CREATE INDEX model_usage_turn ON model_usage(turn_id, created_at);

@@ -12,7 +12,7 @@ pub(crate) use messages::estimate_tokens;
 pub use messages::{Message, MessageRole};
 pub use state::State;
 pub use threads::Thread;
-pub use tokens::{ThreadTokens, TokenCounts};
+pub use tokens::{LastPrompt, ThreadTokens, TokenCounts};
 pub use turns::{StepResult, Turn, TurnAnswer, TurnOutcome, TurnStatus, TurnStep};
 
 use state::timestamp_ms;
