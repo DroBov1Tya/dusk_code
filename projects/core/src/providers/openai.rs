@@ -58,6 +58,7 @@ struct CompletionRequest {
     messages: Vec<WireMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<WireTool>,
+    max_tokens: u64,
     stream: bool,
     stream_options: StreamOptions,
 }
@@ -120,6 +121,7 @@ impl CompletionRequest {
             model: request.model.to_owned(),
             messages: request.messages.iter().map(WireMessage::from).collect(),
             tools: request.tools.iter().map(WireTool::from).collect(),
+            max_tokens: request.max_output_tokens,
             stream: true,
             stream_options: StreamOptions {
                 include_usage: true,
@@ -565,6 +567,7 @@ mod tests {
             model: "m",
             messages: &messages,
             tools: &tools,
+            max_output_tokens: 1000,
         });
         assert_eq!(
             serde_json::to_value(&request).unwrap(),
@@ -582,6 +585,7 @@ mod tests {
                     "name": "weather", "description": "Current weather",
                     "parameters": {"type": "object"}
                 }}],
+                "max_tokens": 1000,
                 "stream": true,
                 "stream_options": {"include_usage": true}
             })

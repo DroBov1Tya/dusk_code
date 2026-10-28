@@ -18,8 +18,8 @@ use crate::{
     thread_start::read_prompt,
 };
 
-/// Compacting starts once the context passes this share of the model window. The rest
-/// is room for the summary request and its answer, so 256k compacts at about 205k.
+/// Compacting starts once the context passes this share of the input limit. The rest is
+/// room for the summary request and its answer, so 256k compacts at about 205k.
 const AUTO_COMPACT_PERCENT: u64 = 80;
 
 impl Agent {
@@ -30,7 +30,7 @@ impl Agent {
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Option<Stop> {
-        let window = self.model.context_window?;
+        let limit = self.input_limit();
         let conversation = match Conversation::load(&self.state, &self.thread_id).await {
             Ok(conversation) => conversation,
             Err(error) => {
@@ -40,7 +40,7 @@ impl Agent {
         };
         let specs = self.tools.specs(&self.scope, &self.config.current());
         let working = turn.is_some() || conversation.has_queued();
-        let full = conversation.tokens(&specs) >= window / 100 * AUTO_COMPACT_PERCENT;
+        let full = conversation.tokens(&specs) >= limit / 100 * AUTO_COMPACT_PERCENT;
         if !working || !full || conversation.compactable_through().is_none() {
             return None;
         }
@@ -89,6 +89,7 @@ impl Agent {
             model: &self.model.id,
             messages: &messages,
             tools: &[],
+            max_output_tokens: self.config.current().limits().max_output_tokens,
         };
         let (output, generated) = match self.call_model(request, inbox).await {
             Ok(called) => called,

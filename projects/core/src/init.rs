@@ -27,6 +27,13 @@ thread:
   # answer: store user messages and model answers only
   record: full
 
+limits:
+  # A request larger than this is not sent; the context is compacted at 80% of it,
+  # or of the model window when that is smaller.
+  max_input_tokens: 100000
+  # The model is stopped after writing this many tokens in one call.
+  max_output_tokens: 100000
+
 # Tools and skills are on unless switched off here or with :off in a client, for example:
 # tools:
 #   run_command: false

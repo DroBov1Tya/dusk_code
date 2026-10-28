@@ -17,7 +17,10 @@ use super::{
 use crate::{
     config::Config,
     live_config::LiveConfig,
-    providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, ToolSpec, is_transient},
+    providers::{
+        ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, ToolSpec, is_output_limit,
+        is_transient,
+    },
     state::{CallPurpose, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
     tools::{ToolRegistry, ToolScope},
 };
@@ -55,7 +58,7 @@ impl Agent {
         self.state.interrupt_running_turns(&self.thread_id).await
     }
 
-    /// Starts a turn when something is queued and the context fits the model window.
+    /// Starts a turn when something is queued and the context fits the input limit.
     pub(super) async fn start_turn(&self) -> Result<Option<Turn>> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         let specs = self.tools.specs(&self.scope, &self.config.current());
@@ -111,7 +114,7 @@ impl Agent {
         match counted.await {
             Ok(tokens) => self.emit(ThreadEvent::Tokens {
                 tokens,
-                window: self.model.context_window,
+                limit: self.input_limit(),
             }),
             Err(error) => warn!("cannot count thread tokens: {error:#}"),
         }
@@ -137,6 +140,7 @@ impl Agent {
             model: &self.model.id,
             messages: &messages,
             tools: &tools,
+            max_output_tokens: config.limits().max_output_tokens,
         };
         let (output, generated) = match self.call_model(request, inbox).await {
             Ok(called) => called,
@@ -163,6 +167,12 @@ impl Agent {
         };
         let calls = match generated {
             Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),
+            // The connection is closed already; what was written so far is kept.
+            Ok(Err(error)) if is_output_limit(&error) => {
+                let limit = config.limits().max_output_tokens;
+                self.emit(ThreadEvent::OutputLimitReached { limit });
+                return Ok(StepEnd::Answered(interrupted(answer)));
+            }
             Ok(Err(error)) => {
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
             }
@@ -258,13 +268,21 @@ impl Agent {
         Ok(stop)
     }
 
-    /// Reports a context past the model window to the client and returns why.
+    /// The largest request: the configured input limit, or the model window when smaller.
+    pub(super) fn input_limit(&self) -> u64 {
+        let configured = self.config.current().limits().max_input_tokens;
+        self.model
+            .context_window
+            .map_or(configured, |window| window.min(configured))
+    }
+
+    /// Reports a context past the input limit to the client and returns why.
     fn context_too_large(&self, conversation: &Conversation, specs: &[ToolSpec]) -> Option<String> {
         let tokens = conversation.tokens(specs);
-        let limit = self.model.context_window.filter(|&limit| tokens > limit)?;
+        let limit = Some(self.input_limit()).filter(|&limit| tokens > limit)?;
         self.emit(ThreadEvent::ContextTooLarge { tokens, limit });
         Some(format!(
-            "the context is about {tokens} tokens, past the model window of {limit}"
+            "the context is about {tokens} tokens, past the input limit of {limit}"
         ))
     }
 }
