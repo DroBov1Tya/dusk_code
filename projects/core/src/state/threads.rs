@@ -4,7 +4,6 @@ use anyhow::{Context, Result, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{State, timestamp_ms};
-use crate::events::Event;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Thread {
@@ -20,7 +19,6 @@ impl State {
         ensure!(!id.trim().is_empty(), "thread ID is empty");
         ensure!(!source.trim().is_empty(), "thread source is empty");
         let timestamp = timestamp_ms()?;
-        let _write = self.writes.lock().await;
         let row = sqlx::query(
             "INSERT INTO threads (id, source, created_at) VALUES (?, ?, ?) RETURNING *",
         )
@@ -31,18 +29,7 @@ impl State {
         .await
         .context("create thread")?;
         let thread = decode_thread(row)?;
-        let _ = self.events.send(Event::ThreadCreated(thread.clone()));
         Ok(thread)
-    }
-
-    pub async fn load_thread(&self, id: &str) -> Result<Option<Thread>> {
-        sqlx::query("SELECT * FROM threads WHERE id = ?")
-            .bind(id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("load thread")?
-            .map(decode_thread)
-            .transpose()
     }
 }
 

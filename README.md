@@ -25,11 +25,10 @@ projects/
         init.rs              first-start setup of those paths
         config.rs            config.yml: providers, recording, tool and skill switches
         live_config.rs       the current config in memory, written back on change
-        events.rs            live events published after database writes
         thread_start.rs      starts a thread: workspace folder, record, MAIN.md
         skills.rs            the skill graph read from skills/
         state/               SQLite records, one file per table
-            state.rs         database handle: open, create, encrypt, subscribe
+            state.rs         database handle: open, close
             threads.rs       threads
             messages.rs      messages, in order
             turns.rs         turns and their steps
@@ -73,7 +72,6 @@ A client starts one `Runtime`. It sets up missing files, opens the database and 
 3. A model call that fails before writing anything, on a network error, a timeout, a rate limit, a server error or a cut stream, is tried up to three times in all, after pauses of one and two seconds; the client sees each failed attempt as `Retrying`. Other failures, such as a rejected API key, end the turn at once, and the client sees the error.
 4. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. Messages sent during a turn are stored after it ends, so the thread reads in the order things happened.
 5. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
-6. Every successful write publishes an `Event` to `State::subscribe` receivers.
 
 ## Files
 
@@ -134,7 +132,6 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 - A user message carries a request UID; sending it again returns the stored message instead of adding a second one.
 - Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the token limit or a filter is an error.
 - Provider responses are untrusted: sizes and idle time are bounded, redirects are refused, and upstream text never reaches error messages.
-- Events are in-process only: no replay, and slow receivers can miss events.
 
 ## Limitations
 

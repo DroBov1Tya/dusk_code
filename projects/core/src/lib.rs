@@ -2,7 +2,6 @@
 
 pub mod api;
 pub mod config;
-pub mod events;
 pub mod init;
 pub mod live_config;
 pub mod paths;

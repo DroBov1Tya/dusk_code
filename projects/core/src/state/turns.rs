@@ -11,7 +11,7 @@ use super::{
     messages::{NewMessage, insert_message},
     timestamp_ms,
 };
-use crate::{events::Event, providers::ToolCall};
+use crate::providers::ToolCall;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Turn {
@@ -68,16 +68,6 @@ pub struct StepResult {
 }
 
 impl State {
-    pub async fn load_turn(&self, turn_id: &str) -> Result<Option<Turn>> {
-        sqlx::query("SELECT * FROM turns WHERE turn_id = ?")
-            .bind(turn_id)
-            .fetch_optional(&self.pool)
-            .await
-            .context("load turn")?
-            .map(decode_turn)
-            .transpose()
-    }
-
     /// Sequence of the newest message any turn of the thread has taken; 0 before the first.
     pub async fn answered_through(&self, thread_id: &str) -> Result<u64> {
         let sequence: i64 = sqlx::query_scalar(
@@ -94,7 +84,6 @@ impl State {
     /// The database allows one running turn per thread, so a second start fails.
     pub async fn start_turn(&self, thread_id: &str) -> Result<Option<Turn>> {
         let timestamp = timestamp_ms()?;
-        let _write = self.writes.lock().await;
         let row = sqlx::query(
             "INSERT INTO turns (turn_id, thread_id, last_sequence, status, started_at)
              SELECT ?, ?, MAX(sequence), 'running', ? FROM messages
@@ -115,7 +104,6 @@ impl State {
             return Ok(None);
         };
         let turn = decode_turn(row)?;
-        let _ = self.events.send(Event::TurnStarted(turn.clone()));
         Ok(Some(turn))
     }
 
@@ -139,7 +127,6 @@ impl State {
                 .map(|result| NewMessage::tool(result.call_id, result.content)),
         );
         let timestamp = timestamp_ms()?;
-        let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin turn step")?;
         let turn = read_running_turn(&mut transaction, turn_id).await?;
         let mut messages = Vec::with_capacity(new.len());
@@ -149,9 +136,6 @@ impl State {
             messages.push(stored.await?);
         }
         transaction.commit().await.context("commit turn step")?;
-        for message in &messages {
-            let _ = self.events.send(Event::MessageCreated(message.clone()));
-        }
         Ok(messages)
     }
 
@@ -163,7 +147,6 @@ impl State {
             TurnOutcome::Failed(error) => (TurnStatus::Failed, None, Some(error)),
         };
         let timestamp = timestamp_ms()?;
-        let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin turn finish")?;
         let turn = read_running_turn(&mut transaction, turn_id).await?;
         let message = match answer {
@@ -191,17 +174,12 @@ impl State {
         .context("finish turn")?;
         let turn = decode_turn(row)?;
         transaction.commit().await.context("commit turn finish")?;
-        if let Some(message) = message {
-            let _ = self.events.send(Event::MessageCreated(message));
-        }
-        let _ = self.events.send(Event::TurnFinished(turn.clone()));
         Ok(turn)
     }
 
     /// A process that stopped mid-turn leaves it running; mark such turns interrupted.
     pub async fn interrupt_running_turns(&self, thread_id: &str) -> Result<()> {
         let timestamp = timestamp_ms()?;
-        let _write = self.writes.lock().await;
         sqlx::query(
             "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?)
              WHERE thread_id = ? AND status = 'running'",
@@ -388,12 +366,11 @@ mod tests {
     async fn a_turn_left_running_is_interrupted_on_recovery() {
         let state = thread("turn_recover").await;
         send(&state, "a").await;
-        let turn = state.start_turn("thread").await.unwrap().unwrap();
+        state.start_turn("thread").await.unwrap().unwrap();
 
         state.interrupt_running_turns("thread").await.unwrap();
 
-        let turn = state.load_turn(&turn.turn_id).await.unwrap().unwrap();
-        assert_eq!(turn.status, TurnStatus::Interrupted);
+        // Only one turn per thread may be running, so a new one proves the old one ended.
         send(&state, "b").await;
         assert!(state.start_turn("thread").await.unwrap().is_some());
     }

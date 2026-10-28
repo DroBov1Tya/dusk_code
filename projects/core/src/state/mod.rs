@@ -1,4 +1,4 @@
-//! SQLite records of threads, messages and turns, with live events after each write.
+//! SQLite records of threads, messages and turns.
 
 mod messages;
 // Named after its primary item, `State`, as the style guide asks.
@@ -7,8 +7,8 @@ mod state;
 mod threads;
 mod turns;
 
-pub use messages::{Message, MessageRole, estimate_tokens};
-pub use state::{DatabasePassword, State};
+pub use messages::{Message, MessageRole};
+pub use state::State;
 pub use threads::Thread;
 pub use turns::{StepResult, Turn, TurnAnswer, TurnOutcome, TurnStatus, TurnStep};
 

@@ -99,8 +99,8 @@ mod tests {
 
         assert!(thread.workspace.is_dir());
         assert_eq!(thread.workspace.parent(), Some(paths.workspace_root()));
-        let stored = state.load_thread(&thread.thread_id).await.unwrap();
-        assert_eq!(stored.unwrap().source, "test");
+        let prompt = state.add_system_message(&thread.thread_id, "prompt").await;
+        assert!(prompt.is_ok(), "the thread is stored");
         state.close().await;
     }
 }

@@ -53,7 +53,7 @@ enum ProviderAdapter {
     OpenAiCompatible(OpenAiCompatible),
 }
 
-pub struct ProviderStream {
+struct ProviderStream {
     adapter: StreamAdapter,
     tags: Option<TagSplitter>,
     pending: VecDeque<ModelEvent>,

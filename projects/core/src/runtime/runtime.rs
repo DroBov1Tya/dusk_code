@@ -38,9 +38,6 @@ pub struct Runtime {
 
 /// A started thread, as its client sees it.
 pub struct ThreadHandle {
-    pub thread_id: String,
-    /// Where the agent keeps temporary and downloaded files for this thread.
-    pub workspace: PathBuf,
     pub input: ThreadInput,
     pub output: ThreadOutput,
 }
@@ -82,10 +79,6 @@ impl Runtime {
         &self.config
     }
 
-    pub fn model(&self) -> &Model {
-        &self.model
-    }
-
     pub fn paths(&self) -> &Paths {
         &self.paths
     }
@@ -114,12 +107,7 @@ impl Runtime {
             scope: ToolScope::new(cwd, &thread.workspace)?,
         });
         self.lock_threads().spawn(runner.run());
-        Ok(ThreadHandle {
-            thread_id: thread.thread_id,
-            workspace: thread.workspace,
-            input,
-            output,
-        })
+        Ok(ThreadHandle { input, output })
     }
 
     /// Lets every thread finish its queue, stops the config check and closes the database.
