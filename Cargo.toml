@@ -4,7 +4,7 @@ members = ["projects/core", "projects/cli"]
 default-members = ["projects/cli"]
 
 [workspace.package]
-version = "0.7.0"
+version = "0.7.1"
 edition = "2024"
 publish = false
 
@@ -22,5 +22,4 @@ tracing-subscriber = "0.3"
 uuid = { version = "1", features = ["v7"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate"] }
 nix = { version = "0.31", default-features = false, features = ["signal"] }
-libsqlite3-sys = { version = "=0.37.0", features = ["bundled-sqlcipher-vendored-openssl"] }
 dusk_core = { path = "projects/core" }

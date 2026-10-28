@@ -5,7 +5,7 @@ use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 use uuid::Uuid;
 
 use super::{State, timestamp_ms};
-use crate::{events::Event, providers::ToolCall};
+use crate::providers::ToolCall;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
@@ -58,7 +58,6 @@ impl State {
         ensure!(!request_uid.trim().is_empty(), "request UID is empty");
         ensure!(!content.trim().is_empty(), "message is empty");
         let timestamp = timestamp_ms()?;
-        let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin user message")?;
         let existing = sqlx::query("SELECT * FROM messages WHERE request_uid = ?")
             .bind(request_uid)
@@ -84,7 +83,6 @@ impl State {
         )
         .await?;
         transaction.commit().await.context("commit user message")?;
-        let _ = self.events.send(Event::MessageCreated(message.clone()));
         Ok(message)
     }
 
@@ -92,7 +90,6 @@ impl State {
     pub async fn add_system_message(&self, thread_id: &str, content: &str) -> Result<Message> {
         ensure!(!content.trim().is_empty(), "system prompt is empty");
         let timestamp = timestamp_ms()?;
-        let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin system message")?;
         ensure_thread_exists(&mut transaction, thread_id).await?;
         let new = NewMessage::system(content);
@@ -101,7 +98,6 @@ impl State {
             .commit()
             .await
             .context("commit system message")?;
-        let _ = self.events.send(Event::MessageCreated(message.clone()));
         Ok(message)
     }
 

@@ -10,6 +10,4 @@ mod sse;
 
 pub use chat::{ChatMessage, ChatRequest, ToolSpec};
 pub use model_output::{ChatStream, FinishReason, ModelEvent, ModelOutput, ToolCall, Usage};
-pub use provider::{
-    Model, ModelProvider, Provider, ProviderRegistry, ProviderStream, Transient, is_transient,
-};
+pub use provider::{Model, ModelProvider, Provider, ProviderRegistry, Transient, is_transient};
