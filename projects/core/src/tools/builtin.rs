@@ -11,9 +11,8 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::{
-    files::{EditFile, ListDir, ReadFile, WriteFile},
+    files::{DeleteFile, EditFile, ReadFile, WriteFile},
     load_skill::LoadSkill,
-    search::Search,
     shell::RunCommand,
     tool::Tool,
 };
@@ -22,10 +21,9 @@ use super::{
 pub(super) fn all(skills: &Path) -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(ReadFile),
-        Box::new(ListDir),
         Box::new(WriteFile),
         Box::new(EditFile),
-        Box::new(Search),
+        Box::new(DeleteFile),
         Box::new(RunCommand),
         Box::new(LoadSkill::new(skills.to_owned())),
     ]

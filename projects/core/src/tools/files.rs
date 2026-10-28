@@ -1,4 +1,4 @@
-//! File tools: read, list, write and edit files inside the tool scope.
+//! File tools: read, write, edit and delete files inside the tool scope.
 
 use std::path::Path;
 
@@ -15,23 +15,16 @@ use crate::BoxFuture;
 
 /// Larger files would not fit the result limit anyway.
 const MAX_READ_BYTES: u64 = 1024 * 1024;
-const MAX_LIST_ENTRIES: usize = 1000;
 
 pub(super) struct ReadFile;
-pub(super) struct ListDir;
 pub(super) struct WriteFile;
 pub(super) struct EditFile;
+pub(super) struct DeleteFile;
 
+/// For tools that take only a path.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ReadFileArguments {
-    path: String,
-}
-
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ListDirArguments {
-    #[serde(default = "current_dir")]
+struct PathArguments {
     path: String,
 }
 
@@ -77,45 +70,8 @@ impl Tool for ReadFile {
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         let scope = context.scope;
         Box::pin(async move {
-            let arguments: ReadFileArguments = parse_arguments(arguments)?;
+            let arguments: PathArguments = parse_arguments(arguments)?;
             read_text(&scope.resolve(&arguments.path)?).await
-        })
-    }
-}
-
-impl Tool for ListDir {
-    fn name(&self) -> &'static str {
-        "list_dir"
-    }
-
-    fn description(&self, context: &ToolContext<'_>) -> String {
-        let scope = context.scope;
-        format!(
-            "List a directory, one sorted entry per line, directories end with /. \
-             Relative paths resolve against {}.",
-            scope.cwd().display()
-        )
-    }
-
-    fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": {
-                    "type": "string",
-                    "description": "Directory to list. Defaults to the working directory."
-                }
-            },
-            "required": [],
-            "additionalProperties": false
-        })
-    }
-
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
-        let scope = context.scope;
-        Box::pin(async move {
-            let arguments: ListDirArguments = parse_arguments(arguments)?;
-            list(&scope.resolve(&arguments.path)?).await
         })
     }
 }
@@ -216,8 +172,42 @@ impl Tool for EditFile {
     }
 }
 
-fn current_dir() -> String {
-    ".".into()
+impl Tool for DeleteFile {
+    fn name(&self) -> &'static str {
+        "delete_file"
+    }
+
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let scope = context.scope;
+        format!(
+            "Delete a file. Directories are not deleted; use run_command for them. Relative \
+             paths resolve against {}.",
+            scope.cwd().display()
+        )
+    }
+
+    fn parameters(&self) -> Value {
+        json!({
+            "type": "object",
+            "properties": {
+                "path": { "type": "string", "description": "File to delete." }
+            },
+            "required": ["path"],
+            "additionalProperties": false
+        })
+    }
+
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+        let scope = context.scope;
+        Box::pin(async move {
+            let arguments: PathArguments = parse_arguments(arguments)?;
+            let path = scope.resolve(&arguments.path)?;
+            let metadata = fs::symlink_metadata(&path).await.context("no such file")?;
+            ensure!(metadata.is_file(), "not a file");
+            fs::remove_file(&path).await.context("cannot delete file")?;
+            Ok(format!("deleted {}", printable(&path.to_string_lossy())))
+        })
+    }
 }
 
 async fn read_text(path: &Path) -> Result<String> {
@@ -233,36 +223,6 @@ async fn write_text(path: &Path, text: String) -> Result<()> {
     tokio::task::spawn_blocking(move || write_regular(&path, text.as_bytes()))
         .await
         .context("cannot write file")?
-}
-
-async fn list(directory: &Path) -> Result<String> {
-    let mut entries = fs::read_dir(directory)
-        .await
-        .context("cannot read directory")?;
-    let mut names = Vec::new();
-    while let Some(entry) = entries
-        .next_entry()
-        .await
-        .context("cannot read directory")?
-    {
-        let mut name = printable(&entry.file_name().to_string_lossy());
-        // file_type does not follow symlinks, so a link is never shown as a directory.
-        if entry.file_type().await.is_ok_and(|kind| kind.is_dir()) {
-            name.push('/');
-        }
-        names.push(name);
-    }
-    if names.is_empty() {
-        return Ok("(empty directory)".into());
-    }
-    names.sort();
-    let omitted = names.len().saturating_sub(MAX_LIST_ENTRIES);
-    names.truncate(MAX_LIST_ENTRIES);
-    let mut output = names.join("\n");
-    if omitted > 0 {
-        output.push_str(&format!("\n[{omitted} more entries omitted]"));
-    }
-    Ok(output)
 }
 
 #[cfg(test)]
@@ -341,16 +301,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lists_sorted_with_directory_suffix() {
-        let (scope, _) = scope("files_list");
-        fs::create_dir(scope.cwd().join("b")).unwrap();
-        fs::write(scope.cwd().join("c.txt"), "").unwrap();
-        fs::write(scope.cwd().join("a.txt"), "").unwrap();
-        let output = ListDir.call(json!({}), tool_context(&scope)).await.unwrap();
-        assert_eq!(output, "a.txt\nb/\nc.txt");
-    }
-
-    #[tokio::test]
     async fn writes_with_parent_directories() {
         let (scope, _) = scope("files_write");
         let arguments = json!({ "path": "x/y/z.txt", "content": "abc" });
@@ -361,6 +311,18 @@ mod tests {
         assert!(output.starts_with("wrote 3 bytes to "), "{output}");
         let written = fs::read_to_string(scope.cwd().join("x/y/z.txt")).unwrap();
         assert_eq!(written, "abc");
+    }
+
+    #[tokio::test]
+    async fn deletes_files_only() {
+        let (scope, _) = scope("files_delete");
+        fs::write(scope.cwd().join("a.txt"), "x").unwrap();
+        fs::create_dir(scope.cwd().join("dir")).unwrap();
+        let delete = |path: &str| DeleteFile.call(json!({ "path": path }), tool_context(&scope));
+        delete("a.txt").await.unwrap();
+        assert!(!scope.cwd().join("a.txt").exists());
+        assert!(delete("dir").await.is_err());
+        assert!(delete("../outside").await.is_err());
     }
 
     #[tokio::test]

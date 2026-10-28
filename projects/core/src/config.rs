@@ -318,11 +318,11 @@ mod tests {
     #[test]
     fn written_yaml_reads_back_the_same() {
         let mut config = parse(PROVIDERS).unwrap();
-        config.set_tool_enabled("search", false);
+        config.set_tool_enabled("run_command", false);
         let yaml = config.to_yaml().unwrap();
         assert!(yaml.starts_with(HEADER));
         let again = parse(&yaml).unwrap();
-        assert!(!again.tool_enabled("search"));
+        assert!(!again.tool_enabled("run_command"));
         assert_eq!(again.providers()["main"].api_key.0, "sk-test");
     }
 }
