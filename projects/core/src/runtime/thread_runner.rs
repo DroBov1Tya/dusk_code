@@ -96,7 +96,7 @@ pub enum ThreadEvent {
     CompactionFailed {
         error: String,
     },
-    /// The thread's token counts, after each turn. `limit` is the largest request: the
+    /// The thread's token counts, when it starts and after each turn and compaction. `limit` is the largest request: the
     /// configured input limit or the model window, whichever is smaller.
     Tokens {
         tokens: ThreadTokens,
@@ -155,6 +155,8 @@ impl ThreadRunner {
 
     async fn serve(&mut self) -> Result<()> {
         self.agent.recover().await?;
+        // The client sees the context size before the first turn, too.
+        self.agent.report_tokens().await;
         loop {
             self.take_in().await?;
             self.run_queued().await?;

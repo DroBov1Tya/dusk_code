@@ -102,7 +102,7 @@ impl Agent {
     }
 
     /// Counting is for the client to see; a failure here does not touch the thread.
-    async fn report_tokens(&self) {
+    pub async fn report_tokens(&self) {
         let specs = self.tools.specs(&self.scope, &self.config.current());
         let counted = async {
             let mut tokens = self.state.thread_tokens(&self.thread_id).await?;

@@ -20,7 +20,7 @@ use crate::{
 
 /// Compacting starts once the context passes this share of the input limit. The rest is
 /// room for the summary request and its answer, so 256k compacts at about 205k.
-const AUTO_COMPACT_PERCENT: u64 = 80;
+pub const AUTO_COMPACT_PERCENT: u64 = 80;
 
 impl Agent {
     /// Compacts when the context has passed the automatic limit and there is something
@@ -55,6 +55,7 @@ impl Agent {
         match self.summarize(focus, turn, inbox).await {
             Ok(Ok(compaction)) => {
                 self.emit(ThreadEvent::CompactionFinished(compaction));
+                self.report_tokens().await;
                 None
             }
             Ok(Err(stop)) => Some(stop),

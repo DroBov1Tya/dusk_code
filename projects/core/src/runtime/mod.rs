@@ -11,5 +11,6 @@ mod runtime;
 mod thread_runner;
 mod title;
 
+pub use compaction::AUTO_COMPACT_PERCENT;
 pub use runtime::{Runtime, ThreadHandle};
 pub use thread_runner::{ThreadEvent, ThreadInput, ThreadOutput};
