@@ -1,10 +1,33 @@
+//! The agent runtime's entry point: claims queued turns and records their outcome.
+
 use anyhow::{Context, Result, ensure};
 
 use crate::state::{Message, MessageAttachment, State, Turn};
 
 const CONVERSATION_PAGE: u32 = 1000;
 
+/// Internal capability handed to a trusted agent runtime, never to the public adapter.
+/// The host authenticates the runtime before binding its identity here.
+pub struct AgentReceiver<'a> {
+    state: &'a State,
+    agent_id: String,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentTask {
+    pub turn: Turn,
+    pub user_message: Message,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentResponse {
+    pub turn_id: String,
+    pub expected_attempt: u64,
+    pub outcome: AgentOutcome,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AgentOutcome {
     Completed {
         content: String,
@@ -18,29 +41,9 @@ pub enum AgentOutcome {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentResponse {
-    pub turn_id: String,
-    pub expected_attempt: u64,
-    pub outcome: AgentOutcome,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentReceipt {
     pub turn: Turn,
     pub message: Option<Message>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AgentTask {
-    pub turn: Turn,
-    pub user_message: Message,
-}
-
-/// Internal capability handed to a trusted agent runtime, never to the public adapter.
-/// The host authenticates the runtime before binding its identity here.
-pub struct AgentReceiver<'a> {
-    state: &'a State,
-    agent_id: String,
 }
 
 impl<'a> AgentReceiver<'a> {

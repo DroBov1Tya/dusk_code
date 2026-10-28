@@ -1,8 +1,9 @@
+//! Request receipts: one durable, content-free record per user request UID.
+
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::events::{ExecutionFailed, MessageCreated, TaskAccepted, TaskRejected, TurnCreated};
-use crate::{Event, Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode};
+use crate::events::Event;
 
 use super::{
     MessageInput, MessageRole, State,
@@ -10,6 +11,83 @@ use super::{
     timestamp_ms,
     turns::insert_turn,
 };
+
+/// Durable receipt without the original message or generated output.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Execution {
+    pub request_uid: String,
+    pub thread_id: String,
+    /// Unix timestamp in milliseconds, assigned on first receipt.
+    pub received_at: i64,
+    pub status: ExecutionStatus,
+    /// Validation rejection; absent for accepted and failed executions.
+    pub error_code: Option<RejectionCode>,
+    /// Execution failure; distinct from validation rejection.
+    pub failure_code: Option<ExecutionFailureCode>,
+}
+
+impl Execution {
+    /// Reports receipt terminality only. Inspect Turn for the user task's lifecycle.
+    pub fn is_complete(&self) -> bool {
+        match self.status {
+            ExecutionStatus::Accepted => false,
+            ExecutionStatus::Rejected | ExecutionStatus::Failed => true,
+        }
+    }
+}
+
+/// Receipt state. User-task completion and failure are recorded separately in Turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ExecutionStatus {
+    Accepted,
+    Rejected,
+    Failed,
+}
+
+impl ExecutionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+            Self::Failed => "failed",
+        }
+    }
+}
+
+/// Fixed validation codes never contain user-message content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum RejectionCode {
+    EmptyMessage,
+    EmptyThread,
+    UnknownThread,
+}
+
+impl RejectionCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::EmptyMessage => "empty_message",
+            Self::EmptyThread => "empty_thread",
+            Self::UnknownThread => "unknown_thread",
+        }
+    }
+}
+
+/// Fixed execution-failure codes never contain provider errors or message content.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum ExecutionFailureCode {
+    ExecutionFailed,
+}
+
+impl ExecutionFailureCode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::ExecutionFailed => "execution_failed",
+        }
+    }
+}
 
 impl State {
     /// Commits a receipt and accepted message atomically. The receipt remains metadata-only.
@@ -118,25 +196,17 @@ impl State {
             .context("commit request receipt")?;
         if inserted {
             let event = match execution.status {
-                ExecutionStatus::Accepted => Event::TaskAccepted(TaskAccepted {
-                    execution: execution.clone(),
-                }),
-                ExecutionStatus::Rejected => Event::TaskRejected(TaskRejected {
-                    execution: execution.clone(),
-                }),
-                ExecutionStatus::Failed => Event::ExecutionFailed(ExecutionFailed {
-                    execution: execution.clone(),
-                }),
+                ExecutionStatus::Accepted => Event::TaskAccepted(execution.clone()),
+                ExecutionStatus::Rejected => Event::TaskRejected(execution.clone()),
+                ExecutionStatus::Failed => Event::ExecutionFailed(execution.clone()),
             };
             let _ = self.events.send(event);
             if let Some(message) = message {
-                let _ = self
-                    .events
-                    .send(Event::MessageCreated(MessageCreated { message }));
+                let _ = self.events.send(Event::MessageCreated(message));
             }
         }
         if let Some(turn) = turn {
-            let _ = self.events.send(Event::TurnCreated(TurnCreated { turn }));
+            let _ = self.events.send(Event::TurnCreated(turn));
         }
         Ok(execution)
     }
@@ -187,9 +257,7 @@ impl State {
             .await
             .context("commit execution failure")?;
         if changed {
-            let _ = self.events.send(Event::ExecutionFailed(ExecutionFailed {
-                execution: execution.clone(),
-            }));
+            let _ = self.events.send(Event::ExecutionFailed(execution.clone()));
         }
         Ok(execution)
     }

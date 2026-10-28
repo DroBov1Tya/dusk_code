@@ -43,8 +43,28 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     Ok(Initialization { config_created })
 }
 
+fn create_private_dir(directory: &Path) -> Result<()> {
+    let mut builder = DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder
+        .create(directory)
+        .map_err(|_| anyhow!("cannot create application directory"))?;
+    let metadata = fs::symlink_metadata(directory)
+        .map_err(|_| anyhow!("cannot inspect application directory"))?;
+    ensure!(
+        metadata.is_dir(),
+        "application directory must not be a symlink"
+    );
+    Ok(())
+}
+
 /// Creates the config template if the file is missing. Returns whether it was created.
-pub fn ensure_config(path: &Path) -> Result<bool> {
+fn ensure_config(path: &Path) -> Result<bool> {
     let directory = path.parent().context("config directory is missing")?;
     create_private_dir(directory)?;
     create_private_file(path, CONFIG_TEMPLATE.as_bytes())
@@ -72,26 +92,6 @@ fn create_private_file(path: &Path, contents: &[u8]) -> Result<bool> {
         bail!("cannot write application file");
     }
     Ok(true)
-}
-
-fn create_private_dir(directory: &Path) -> Result<()> {
-    let mut builder = DirBuilder::new();
-    builder.recursive(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::DirBuilderExt;
-        builder.mode(0o700);
-    }
-    builder
-        .create(directory)
-        .map_err(|_| anyhow!("cannot create application directory"))?;
-    let metadata = fs::symlink_metadata(directory)
-        .map_err(|_| anyhow!("cannot inspect application directory"))?;
-    ensure!(
-        metadata.is_dir(),
-        "application directory must not be a symlink"
-    );
-    Ok(())
 }
 
 #[cfg(test)]

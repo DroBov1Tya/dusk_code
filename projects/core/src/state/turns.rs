@@ -1,21 +1,15 @@
+//! User turns: one per accepted request, answered by a single agent attempt.
+
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 
-use crate::events::{Event, MessageCreated, TurnUpdated};
+use crate::events::Event;
 
 use super::{
     Message, MessageAttachment, MessageInput, MessageRole, State,
     messages::{decode_message, insert_message},
     timestamp_ms,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TurnStatus {
-    Queued,
-    Running,
-    Completed,
-    Failed,
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Turn {
@@ -33,6 +27,15 @@ pub struct Turn {
     pub started_at: Option<i64>,
     pub finished_at: Option<i64>,
     pub error_message: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TurnStatus {
+    Queued,
+    Running,
+    Completed,
+    Failed,
 }
 
 impl State {
@@ -100,9 +103,7 @@ impl State {
         );
         transaction.commit().await.context("commit turn start")?;
         if changed {
-            let _ = self
-                .events
-                .send(Event::TurnUpdated(TurnUpdated { turn: turn.clone() }));
+            let _ = self.events.send(Event::TurnUpdated(turn.clone()));
         }
         Ok(turn)
     }
@@ -194,12 +195,8 @@ impl State {
         .context("turn changed before completion")?;
         let turn = decode_turn(row)?;
         transaction.commit().await.context("commit turn response")?;
-        let _ = self.events.send(Event::MessageCreated(MessageCreated {
-            message: message.clone(),
-        }));
-        let _ = self
-            .events
-            .send(Event::TurnUpdated(TurnUpdated { turn: turn.clone() }));
+        let _ = self.events.send(Event::MessageCreated(message.clone()));
+        let _ = self.events.send(Event::TurnUpdated(turn.clone()));
         Ok((turn, message))
     }
 
@@ -242,9 +239,7 @@ impl State {
         );
         transaction.commit().await.context("commit turn failure")?;
         if changed {
-            let _ = self
-                .events
-                .send(Event::TurnUpdated(TurnUpdated { turn: turn.clone() }));
+            let _ = self.events.send(Event::TurnUpdated(turn.clone()));
         }
         Ok(turn)
     }

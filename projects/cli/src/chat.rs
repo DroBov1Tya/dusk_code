@@ -7,11 +7,10 @@ use std::{
 
 use anyhow::{Result, bail};
 use dusk_core::{
-    RejectionCode,
     providers::ChatDelta,
     receivers::{UserMessage, UserReceiver},
     runtime::AgentRuntime,
-    state::{State, TurnStatus},
+    state::{RejectionCode, State, TurnStatus},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
@@ -99,6 +98,8 @@ impl StreamPrinter {
                 let _ = stdout.write_all(sanitize(text).as_bytes());
                 let _ = stdout.flush();
             }
+            // Kinds this client does not render yet.
+            _ => {}
         }
     }
 

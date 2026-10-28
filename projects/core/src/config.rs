@@ -24,6 +24,25 @@ pub struct Config {
     session: SessionConfig,
 }
 
+#[derive(Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProviderConfig {
+    pub kind: ProviderKind,
+    pub base_url: String,
+    pub(crate) api_key: ApiKey,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[non_exhaustive]
+pub enum ProviderKind {
+    #[serde(rename = "openai_compatible")]
+    OpenAiCompatible,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(transparent)]
+pub(crate) struct ApiKey(pub(crate) String);
+
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SessionConfig {
@@ -34,67 +53,13 @@ pub struct SessionConfig {
 /// What a session stores from the model output. User messages are always stored.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum RecordMode {
     /// Everything the model produces: reasoning, tool calls and the answer.
     #[default]
     Full,
     /// Only the answer.
     Answer,
-}
-
-impl RecordMode {
-    pub fn records_reasoning(self) -> bool {
-        match self {
-            Self::Full => true,
-            Self::Answer => false,
-        }
-    }
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ProviderConfig {
-    pub kind: ProviderKind,
-    pub base_url: String,
-    pub(crate) api_key: ApiKey,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub enum ProviderKind {
-    #[serde(rename = "openai_compatible")]
-    OpenAiCompatible,
-}
-
-#[derive(Clone, Deserialize)]
-#[serde(transparent)]
-pub(crate) struct ApiKey(pub(crate) String);
-
-impl fmt::Debug for Config {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("Config")
-            .field("providers", &"[REDACTED]")
-            .field("provider_count", &self.providers.len())
-            .field("session", &self.session)
-            .finish()
-    }
-}
-
-impl fmt::Debug for ProviderConfig {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ProviderConfig")
-            .field("kind", &self.kind)
-            .field("base_url", &"[REDACTED]")
-            .field("api_key", &self.api_key)
-            .finish()
-    }
-}
-
-impl fmt::Debug for ApiKey {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("[REDACTED]")
-    }
 }
 
 impl Config {
@@ -166,6 +131,43 @@ impl Config {
 
     pub fn session(&self) -> &SessionConfig {
         &self.session
+    }
+}
+
+impl RecordMode {
+    pub fn records_reasoning(self) -> bool {
+        match self {
+            Self::Full => true,
+            Self::Answer => false,
+        }
+    }
+}
+
+impl fmt::Debug for Config {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("Config")
+            .field("providers", &"[REDACTED]")
+            .field("provider_count", &self.providers.len())
+            .field("session", &self.session)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ProviderConfig {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ProviderConfig")
+            .field("kind", &self.kind)
+            .field("base_url", &"[REDACTED]")
+            .field("api_key", &self.api_key)
+            .finish()
+    }
+}
+
+impl fmt::Debug for ApiKey {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("[REDACTED]")
     }
 }
 

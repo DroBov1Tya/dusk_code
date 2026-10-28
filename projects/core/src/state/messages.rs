@@ -1,12 +1,34 @@
+//! Thread messages in sequence order: what was said, by whom, in which context.
+
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 
-use crate::events::{Event, MessageCreated};
+use crate::events::Event;
 
 use super::{State, timestamp_ms};
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Message {
+    pub message_id: String,
+    pub thread_id: String,
+    pub job_id: Option<String>,
+    pub request_uid: Option<String>,
+    /// Stable, increasing order within a thread.
+    pub sequence: u64,
+    pub role: MessageRole,
+    pub agent_id: Option<String>,
+    pub content: String,
+    /// Model thinking; `None` when not recorded.
+    pub reasoning: Option<String>,
+    pub cwd: String,
+    pub attachments: Vec<MessageAttachment>,
+    /// Unix timestamp in milliseconds.
+    pub created_at: i64,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MessageRole {
     User,
     Assistant,
@@ -50,25 +72,6 @@ pub struct MessageInput {
     pub attachments: Vec<MessageAttachment>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Message {
-    pub message_id: String,
-    pub thread_id: String,
-    pub job_id: Option<String>,
-    pub request_uid: Option<String>,
-    /// Stable, increasing order within a thread.
-    pub sequence: u64,
-    pub role: MessageRole,
-    pub agent_id: Option<String>,
-    pub content: String,
-    /// Model thinking; `None` when not recorded.
-    pub reasoning: Option<String>,
-    pub cwd: String,
-    pub attachments: Vec<MessageAttachment>,
-    /// Unix timestamp in milliseconds.
-    pub created_at: i64,
-}
-
 impl State {
     /// Appends a message under a caller-assigned ID.
     /// Request-linked user messages are appended atomically by the transport.
@@ -87,9 +90,7 @@ impl State {
             .commit()
             .await
             .context("commit message append")?;
-        let _ = self.events.send(Event::MessageCreated(MessageCreated {
-            message: message.clone(),
-        }));
+        let _ = self.events.send(Event::MessageCreated(message.clone()));
         Ok(message)
     }
 
@@ -131,65 +132,6 @@ impl State {
     }
 }
 
-pub(super) fn validate_context(cwd: &str, attachments: &[MessageAttachment]) -> Result<()> {
-    ensure!(!cwd.trim().is_empty(), "message working directory is empty");
-    ensure!(
-        !cwd.contains('\0'),
-        "message working directory contains NUL"
-    );
-    for attachment in attachments {
-        ensure!(
-            !attachment.path.trim().is_empty(),
-            "attachment path is empty"
-        );
-        ensure!(
-            !attachment.path.contains('\0'),
-            "attachment path contains NUL"
-        );
-        if let Some(name) = &attachment.display_name {
-            ensure!(
-                !name.trim().is_empty() && !name.contains('\0'),
-                "invalid attachment name"
-            );
-        }
-        if let Some(mime_type) = &attachment.mime_type {
-            ensure!(
-                !mime_type.trim().is_empty() && !mime_type.contains('\0'),
-                "invalid attachment MIME type"
-            );
-        }
-    }
-    Ok(())
-}
-
-fn validate_input(message_id: &str, input: &MessageInput) -> Result<()> {
-    ensure!(!message_id.trim().is_empty(), "message ID is empty");
-    ensure!(!input.thread_id.trim().is_empty(), "thread ID is empty");
-    ensure!(
-        !input.content.trim().is_empty() || !input.attachments.is_empty(),
-        "message is empty"
-    );
-    ensure!(
-        input.job_id.as_ref().is_none_or(|id| !id.trim().is_empty()),
-        "job ID is empty"
-    );
-    ensure!(
-        input
-            .agent_id
-            .as_ref()
-            .is_none_or(|id| !id.trim().is_empty()),
-        "agent ID is empty"
-    );
-    ensure!(
-        input
-            .reasoning
-            .as_ref()
-            .is_none_or(|text| { input.role == MessageRole::Assistant && !text.trim().is_empty() }),
-        "only an assistant message can carry reasoning, and it must not be empty"
-    );
-    validate_context(&input.cwd, &input.attachments)
-}
-
 pub(super) async fn insert_message(
     transaction: &mut Transaction<'_, Sqlite>,
     message_id: &str,
@@ -228,6 +170,65 @@ pub(super) async fn insert_message(
         .await
         .context("update thread message timestamp")?;
     decode_message(row)
+}
+
+fn validate_input(message_id: &str, input: &MessageInput) -> Result<()> {
+    ensure!(!message_id.trim().is_empty(), "message ID is empty");
+    ensure!(!input.thread_id.trim().is_empty(), "thread ID is empty");
+    ensure!(
+        !input.content.trim().is_empty() || !input.attachments.is_empty(),
+        "message is empty"
+    );
+    ensure!(
+        input.job_id.as_ref().is_none_or(|id| !id.trim().is_empty()),
+        "job ID is empty"
+    );
+    ensure!(
+        input
+            .agent_id
+            .as_ref()
+            .is_none_or(|id| !id.trim().is_empty()),
+        "agent ID is empty"
+    );
+    ensure!(
+        input
+            .reasoning
+            .as_ref()
+            .is_none_or(|text| { input.role == MessageRole::Assistant && !text.trim().is_empty() }),
+        "only an assistant message can carry reasoning, and it must not be empty"
+    );
+    validate_context(&input.cwd, &input.attachments)
+}
+
+pub(super) fn validate_context(cwd: &str, attachments: &[MessageAttachment]) -> Result<()> {
+    ensure!(!cwd.trim().is_empty(), "message working directory is empty");
+    ensure!(
+        !cwd.contains('\0'),
+        "message working directory contains NUL"
+    );
+    for attachment in attachments {
+        ensure!(
+            !attachment.path.trim().is_empty(),
+            "attachment path is empty"
+        );
+        ensure!(
+            !attachment.path.contains('\0'),
+            "attachment path contains NUL"
+        );
+        if let Some(name) = &attachment.display_name {
+            ensure!(
+                !name.trim().is_empty() && !name.contains('\0'),
+                "invalid attachment name"
+            );
+        }
+        if let Some(mime_type) = &attachment.mime_type {
+            ensure!(
+                !mime_type.trim().is_empty() && !mime_type.contains('\0'),
+                "invalid attachment MIME type"
+            );
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
