@@ -406,6 +406,18 @@ struct WireUsage {
     prompt_tokens: u64,
     #[serde(default)]
     completion_tokens: u64,
+    prompt_tokens_details: Option<PromptDetails>,
+    completion_tokens_details: Option<CompletionDetails>,
+}
+
+#[derive(Deserialize)]
+struct PromptDetails {
+    cached_tokens: Option<u64>,
+}
+
+#[derive(Deserialize)]
+struct CompletionDetails {
+    reasoning_tokens: Option<u64>,
 }
 
 impl CompletionParser {
@@ -455,7 +467,15 @@ impl CompletionParser {
         if let Some(usage) = chunk.usage {
             events.push(ModelEvent::Usage(Usage {
                 prompt_tokens: usage.prompt_tokens,
+                cached_prompt_tokens: usage
+                    .prompt_tokens_details
+                    .and_then(|details| details.cached_tokens)
+                    .unwrap_or(0),
                 completion_tokens: usage.completion_tokens,
+                reasoning_tokens: usage
+                    .completion_tokens_details
+                    .and_then(|details| details.reasoning_tokens)
+                    .unwrap_or(0),
             }));
         }
         Ok(events)
@@ -585,8 +605,12 @@ mod tests {
             chunk(r#"{"reasoning_content":"think"}"#),
             chunk(r#"{"content":"Hi"}"#),
             finish("stop"),
-            "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2}}\n\n"
-                .to_owned(),
+            concat!(
+                "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":5,\"completion_tokens\":2,",
+                "\"prompt_tokens_details\":{\"cached_tokens\":3},",
+                "\"completion_tokens_details\":{\"reasoning_tokens\":1}}}\n\n"
+            )
+            .to_owned(),
             "data: [DONE]\n\n".to_owned(),
         ]
         .concat();
@@ -600,7 +624,9 @@ mod tests {
                 ModelEvent::Finished(FinishReason::Stop),
                 ModelEvent::Usage(Usage {
                     prompt_tokens: 5,
-                    completion_tokens: 2
+                    cached_prompt_tokens: 3,
+                    completion_tokens: 2,
+                    reasoning_tokens: 1,
                 }),
             ]
         );

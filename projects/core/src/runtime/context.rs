@@ -38,7 +38,7 @@ impl Conversation {
         self.messages
             .iter()
             .filter(|message| chat_message(message).is_some())
-            .map(|message| message.token_count)
+            .map(Message::context_tokens)
             .sum()
     }
 }
@@ -73,7 +73,9 @@ mod tests {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: (role == MessageRole::Tool).then(|| "call".into()),
-            token_count: 5,
+            content_tokens: 5,
+            tool_calls_tokens: 0,
+            reasoning_tokens: 0,
             created_at: 0,
         }
     }

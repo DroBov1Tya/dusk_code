@@ -18,7 +18,7 @@ use super::{
 use crate::{
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
-    state::{State, Turn},
+    state::{State, ThreadTokens, Turn},
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
@@ -73,6 +73,11 @@ pub enum ThreadEvent {
         result: ToolResult,
     },
     TurnFinished(Turn),
+    /// The thread's token counts, after each turn. `window` is the model's context size.
+    Tokens {
+        tokens: ThreadTokens,
+        window: Option<u64>,
+    },
     /// The queued turn was not started; the client should switch model or compact.
     ContextTooLarge {
         tokens: u64,
@@ -443,6 +448,11 @@ mod tests {
             while !matches!(output.next_event().await, Some(ThreadEvent::TurnStarted(_))) {}
             input.cancel().unwrap();
             let turn = next_turn_finished(&mut output).await;
+            let tokens = output.next_event().await;
+            assert!(
+                matches!(tokens, Some(ThreadEvent::Tokens { .. })),
+                "{tokens:?}"
+            );
             assert_eq!(output.next_event().await, Some(ThreadEvent::Idle));
             turn.status
         };

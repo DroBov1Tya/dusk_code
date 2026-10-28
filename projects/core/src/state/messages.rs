@@ -21,8 +21,10 @@ pub struct Message {
     pub tool_calls: Vec<ToolCall>,
     /// Set exactly on tool messages: the call they answer.
     pub tool_call_id: Option<String>,
-    /// Estimated size in model tokens; see `estimate_tokens`.
-    pub token_count: u64,
+    /// Estimated sizes in model tokens; see `estimate_tokens`.
+    pub content_tokens: u64,
+    pub tool_calls_tokens: u64,
+    pub reasoning_tokens: u64,
     /// Unix timestamp in milliseconds.
     pub created_at: i64,
 }
@@ -44,6 +46,13 @@ pub(super) struct NewMessage {
     reasoning: Option<String>,
     tool_calls: Vec<ToolCall>,
     tool_call_id: Option<String>,
+}
+
+impl Message {
+    /// Estimated size of what the model receives of this message.
+    pub fn context_tokens(&self) -> u64 {
+        self.content_tokens + self.tool_calls_tokens
+    }
 }
 
 impl State {
@@ -170,12 +179,14 @@ impl MessageRole {
 }
 
 /// Providers report token usage per request, not per message, so each message carries an
-/// estimate: about four bytes of UTF-8 per token, plus the role markup around the message.
+/// estimate: about four bytes of UTF-8 per token.
 pub fn estimate_tokens(text: &str) -> u64 {
     const BYTES_PER_TOKEN: usize = 4;
-    const MESSAGE_OVERHEAD: u64 = 4;
-    text.len().div_ceil(BYTES_PER_TOKEN) as u64 + MESSAGE_OVERHEAD
+    text.len().div_ceil(BYTES_PER_TOKEN) as u64
 }
+
+/// The role markup around each message in a request.
+const MESSAGE_OVERHEAD: u64 = 4;
 
 /// Appends a message at the end of the thread inside the caller's transaction.
 pub(super) async fn insert_message(
@@ -189,13 +200,15 @@ pub(super) async fn insert_message(
         [] => None,
         calls => Some(serde_json::to_string(calls).context("encode tool calls")?),
     };
-    let token_count =
-        estimate_tokens(&message.content) + tool_calls.as_deref().map_or(0, estimate_tokens);
+    let content_tokens = estimate_tokens(&message.content) + MESSAGE_OVERHEAD;
+    let tool_calls_tokens = tool_calls.as_deref().map_or(0, estimate_tokens);
+    let reasoning_tokens = message.reasoning.as_deref().map_or(0, estimate_tokens);
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, sequence, role, content, reasoning,
-            tool_calls_json, tool_call_id, request_uid, token_count, created_at)
+            tool_calls_json, tool_call_id, request_uid, content_tokens, tool_calls_tokens,
+            reasoning_tokens, created_at)
          VALUES (?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(Uuid::now_v7().to_string())
     .bind(thread_id)
@@ -206,7 +219,9 @@ pub(super) async fn insert_message(
     .bind(tool_calls)
     .bind(&message.tool_call_id)
     .bind(request_uid)
-    .bind(i64::try_from(token_count).context("message is too large")?)
+    .bind(i64::try_from(content_tokens).context("message is too large")?)
+    .bind(i64::try_from(tool_calls_tokens).context("tool calls are too large")?)
+    .bind(i64::try_from(reasoning_tokens).context("reasoning is too large")?)
     .bind(timestamp)
     .fetch_one(&mut **transaction)
     .await
@@ -242,7 +257,6 @@ fn decode_message(row: SqliteRow) -> Result<Message> {
         None => Vec::new(),
     };
     let sequence: i64 = row.try_get("sequence")?;
-    let token_count: i64 = row.try_get("token_count")?;
     Ok(Message {
         message_id: row.try_get("message_id")?,
         thread_id: row.try_get("thread_id")?,
@@ -252,7 +266,14 @@ fn decode_message(row: SqliteRow) -> Result<Message> {
         reasoning: row.try_get("reasoning")?,
         tool_calls,
         tool_call_id: row.try_get("tool_call_id")?,
-        token_count: token_count.try_into().context("negative token count")?,
+        content_tokens: read_tokens(&row, "content_tokens")?,
+        tool_calls_tokens: read_tokens(&row, "tool_calls_tokens")?,
+        reasoning_tokens: read_tokens(&row, "reasoning_tokens")?,
         created_at: row.try_get("created_at")?,
     })
+}
+
+pub(super) fn read_tokens(row: &SqliteRow, column: &str) -> Result<u64> {
+    let tokens: i64 = row.try_get(column)?;
+    tokens.try_into().context("negative token count")
 }
