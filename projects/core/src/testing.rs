@@ -5,7 +5,7 @@ use std::{
     sync::atomic::{AtomicUsize, Ordering},
 };
 
-use crate::{paths::Paths, state::State};
+use crate::{live_config::LiveConfig, paths::Paths, state::State};
 
 /// A fresh directory under the system temp dir, unique per process and call.
 pub(crate) fn temp_dir(name: &str) -> PathBuf {
@@ -21,4 +21,23 @@ pub(crate) fn temp_paths(name: &str) -> Paths {
 
 pub(crate) async fn temp_state(name: &str) -> State {
     State::open(temp_dir(name).join("state.db")).await.unwrap()
+}
+
+/// A config with one provider in a private directory, as `Config::load_from` requires.
+pub(crate) fn temp_live_config(name: &str) -> LiveConfig {
+    let directory = temp_dir(name);
+    std::fs::create_dir_all(&directory).unwrap();
+    let path = directory.join("config.yml");
+    std::fs::write(
+        &path,
+        "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n",
+    )
+    .unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&directory, std::fs::Permissions::from_mode(0o700)).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+    }
+    LiveConfig::load(path).unwrap()
 }

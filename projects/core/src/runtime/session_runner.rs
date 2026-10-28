@@ -14,7 +14,7 @@ use super::{
     inbox::{Command, Inbox, Stop},
 };
 use crate::{
-    config::RecordMode,
+    live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
     receivers::{AgentReceiver, UserMessage, UserReceiver},
     state::{State, Turn},
@@ -33,7 +33,7 @@ pub struct SessionSetup<'a, P> {
     pub state: &'a State,
     pub provider: &'a P,
     pub model: Model,
-    pub record: RecordMode,
+    pub config: &'a LiveConfig,
     pub agent_id: &'a str,
     pub thread_id: &'a str,
     pub tools: ToolRegistry,
@@ -87,7 +87,7 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
             receiver: AgentReceiver::new(setup.state, setup.agent_id)?,
             provider: setup.provider,
             model: setup.model,
-            record: setup.record,
+            config: setup.config,
             tools: setup.tools,
             scope: setup.scope,
             thread_id: setup.thread_id.to_owned(),
@@ -211,7 +211,7 @@ mod tests {
     use crate::{
         providers::{ChatRequest, ChatStream, FinishReason},
         state::{ApprovalMode, MessageRole, ThreadInput, TurnStatus},
-        testing::{temp_dir, temp_state},
+        testing::{temp_dir, temp_live_config, temp_state},
         tools::{Tool, ToolFuture},
     };
 
@@ -329,6 +329,7 @@ mod tests {
     fn runner<'a>(
         state: &'a State,
         provider: &'a FakeProvider,
+        config: &'a LiveConfig,
         model: Model,
     ) -> (SessionRunner<'a, FakeProvider>, SessionInput, SessionOutput) {
         let root = temp_dir("runner_scope");
@@ -339,7 +340,7 @@ mod tests {
             state,
             provider,
             model,
-            record: RecordMode::Full,
+            config,
             agent_id: "agent",
             thread_id: "thread",
             tools,
@@ -367,8 +368,9 @@ mod tests {
     #[tokio::test]
     async fn messages_queued_before_a_turn_are_answered_together() {
         let state = session_state("together").await;
+        let config = temp_live_config("runner_config");
         let provider = provider(vec![vec![Step::Text("both"), Step::Done]]);
-        let (runner, input, mut output) = runner(&state, &provider, model(None));
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         input.send("a").unwrap();
         input.send("b").unwrap();
         drop(input);
@@ -391,11 +393,12 @@ mod tests {
     #[tokio::test]
     async fn send_now_interrupts_and_answers_the_new_message_at_once() {
         let state = session_state("send_now").await;
+        let config = temp_live_config("runner_config");
         let provider = provider(vec![
             vec![Step::Text("partial"), Step::Hang],
             vec![Step::Text("second"), Step::Done],
         ]);
-        let (runner, input, mut output) = runner(&state, &provider, model(None));
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         let client = async move {
             input.send("first").unwrap();
             while output.next_event().await
@@ -425,8 +428,9 @@ mod tests {
     #[tokio::test]
     async fn cancel_stops_the_turn_and_waits() {
         let state = session_state("cancel").await;
+        let config = temp_live_config("runner_config");
         let provider = provider(vec![vec![Step::Hang]]);
-        let (runner, input, mut output) = runner(&state, &provider, model(None));
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         let client = async move {
             input.send("first").unwrap();
             while !matches!(
@@ -449,8 +453,9 @@ mod tests {
     #[tokio::test]
     async fn oversized_context_is_reported_and_not_sent() {
         let state = session_state("too_large").await;
+        let config = temp_live_config("runner_config");
         let provider = provider(Vec::new());
-        let (runner, input, mut output) = runner(&state, &provider, model(Some(3)));
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(3)));
         input.send("hello").unwrap();
         drop(input);
 
@@ -474,11 +479,12 @@ mod tests {
     #[tokio::test]
     async fn runs_tools_until_the_model_answers() {
         let state = session_state("tool_loop").await;
+        let config = temp_live_config("runner_config");
         let provider = provider(vec![
             vec![Step::Call("ping"), Step::Done],
             vec![Step::Text("got ping"), Step::Done],
         ]);
-        let (runner, input, mut output) = runner(&state, &provider, model(None));
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         input.send("use the tool").unwrap();
         drop(input);
 
@@ -499,6 +505,30 @@ mod tests {
                 (MessageRole::Tool, "ping".into()),
                 (MessageRole::Assistant, "got ping".into()),
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn a_switched_off_tool_is_refused() {
+        let state = session_state("tool_off").await;
+        let config = temp_live_config("tool_off_config");
+        config
+            .update(|config| config.set_tool_enabled("echo", false))
+            .unwrap();
+        let provider = provider(vec![
+            vec![Step::Call("ping"), Step::Done],
+            vec![Step::Text("ok"), Step::Done],
+        ]);
+        let (runner, input, _output) = runner(&state, &provider, &config, model(None));
+        input.send("use the tool").unwrap();
+        drop(input);
+
+        runner.run().await.unwrap();
+
+        let messages = transcript(&state).await;
+        assert_eq!(
+            messages[2],
+            (MessageRole::Tool, "error: tool echo is switched off".into())
         );
     }
 }

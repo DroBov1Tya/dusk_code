@@ -1,5 +1,6 @@
 //! Line-based chat over a live session. Lines are sent as they are typed:
-//! `text` queues a message, `!text` sends it now and interrupts the answer, `!` stops it.
+//! `text` queues a message, `!text` sends it now and interrupts the answer, `!` stops it,
+//! and `:command` changes settings.
 
 use std::io::{self, IsTerminal, Write};
 
@@ -11,6 +12,8 @@ use dusk_core::{
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 
+use crate::commands::{self, Settings};
+
 const PROMPT: &str = "> ";
 const NOW_PREFIX: char = '!';
 
@@ -18,17 +21,29 @@ pub async fn run<P: ModelProvider>(
     runner: SessionRunner<'_, P>,
     input: SessionInput,
     output: SessionOutput,
+    settings: Settings,
 ) -> Result<()> {
-    let (session, typing, ()) = tokio::join!(runner.run(), read_lines(input), print_events(output));
+    let (session, typing, ()) = tokio::join!(
+        runner.run(),
+        read_lines(input, settings),
+        print_events(output)
+    );
     typing?;
     session
 }
 
 /// Ends at end of input; dropping `input` lets the session finish its queue and stop.
-async fn read_lines(input: SessionInput) -> Result<()> {
+async fn read_lines(input: SessionInput, settings: Settings) -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await? {
         let line = line.trim();
+        if let Some(command) = line.strip_prefix(commands::PREFIX) {
+            match commands::run(command, &settings) {
+                Ok(reply) => eprintln!("{reply}"),
+                Err(error) => eprintln!("error: {error:#}"),
+            }
+            continue;
+        }
         match line.strip_prefix(NOW_PREFIX).map(str::trim) {
             Some("") => input.cancel()?,
             Some(text) => input.send_now(text)?,
