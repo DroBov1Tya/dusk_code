@@ -23,6 +23,7 @@ projects/
         api.rs               core version
         paths.rs             every application path
         init.rs              first-start setup of those paths
+        commands/            `/compact` and other commands a message can be
         config.rs            config.yml: providers, recording, tool and skill switches
         live_config.rs       the current config in memory, written back on change
         thread_start.rs      starts a thread: workspace folder, record, MAIN.md
@@ -32,6 +33,7 @@ projects/
             threads.rs       threads
             messages.rs      messages, in order
             turns.rs         turns and their steps
+            compactions.rs   summaries that replace older messages in the context
             tokens.rs        token counts by author and provider usage per thread
             migrations/      one standalone schema file per table
         runtime/             what clients start, and the agent
@@ -39,8 +41,9 @@ projects/
             thread_runner.rs   a live thread: send, send now, cancel, events
             inbox.rs           client commands while the agent works
             agent.rs           a turn, step by step: model -> tools -> model
+            compaction.rs      summarizing the context, on /compact or near the window
             generation.rs      one model call, streamed into a caller-owned output
-            context.rs         stored messages -> model input and its token size
+            context.rs         stored messages and summary -> model input and its token size
         tools/               what the agent can call
             tool.rs          the Tool interface and what a tool sees
             registry.rs      tools by name; failed calls become error results
@@ -49,6 +52,7 @@ projects/
             search.rs        search: plain-text search through a directory
             shell.rs         run_command: sh -c in the working directory
             load_skill.rs    load_skill: walks the skill graph
+            history.rs       read_history: the thread's own messages, by number or text
         providers/           models
             provider.rs      providers by name, model discovery, stream dispatch
             chat.rs          model input: messages by role, tool specs
@@ -75,9 +79,19 @@ A client starts one `Runtime`. It sets up missing files, opens the database and 
 5. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
 6. After each turn the client gets `Tokens`:
    - `context`: the size of the next request, which the context check also uses. The provider counted the last request exactly, so only messages stored after it are estimated; before the first call everything is.
-   - `current`: the estimated size of what the model receives now, by author: system, user, agent, tool calls, tool results, and the tool definitions every request carries. It holds the messages after the thread's `context_from`; compacting will move that point.
+   - `current`: the estimated size of what the model receives now, by author: system, user, agent, tool calls, tool results, the compaction summary, and the tool definitions every request carries.
    - `all`: the same over the whole thread history, reasoning included.
    - `spent`: the sums of what the provider reported per model call: prompt (and its cached part) and completion (and its reasoning part). Every call sends the whole context again, so this grows much faster than the thread.
+
+## Commands and compaction
+
+A message that starts with a known `/word` is a command for the core, not text for the model; the rest of the line is its argument. `/etc/hosts` and other text that only looks like one stays a message, and an unknown command such as `/compat` is rejected instead of being sent. Commands sent during a turn run after it, in the order they were sent.
+
+`/compact [focus]` summarizes the conversation. The model gets the context with the instructions from COMPACT.md (six sections: requested, completed and open tasks, the current task, paths and files, a summary) and the focus, if given. The summary then stands in for every message it covers: the model receives the system messages, the summary and the newer messages. Queued messages are never summarized away; they wait for their turn after the summary.
+
+The core also compacts on its own once the context passes 80% of the model window, so a 256k window compacts at about 205k and the rest is room for the summary request itself. It checks before each turn and after each tool step, since tool results are what fills a context fastest; a turn goes on from the summary. A failed compaction leaves the context as it was.
+
+Nothing is deleted: compacted messages stay in the database, count in `all` and can be read again by the agent with `read_history`, by message number or by any text of three characters or more (a trigram full-text index over message text and tool calls).
 
 ## Files
 
@@ -85,13 +99,14 @@ A client starts one `Runtime`. It sets up missing files, opens the database and 
 ~/.config/duskcode/
     config.yml               providers, recording, tool and skill switches (mode 0600)
     MAIN.md                  system prompt of the main agent (mode 0600)
+    COMPACT.md               how to summarize a thread when its context is compacted
     skills/**/SKILL.md       skills, named by their path: skills/git/notes -> git/notes
-    session/state.db         threads, turns and messages (mode 0600)
+    session/state.db         threads, messages, turns, compactions, usage (mode 0600)
 ~/Documents/duskcode/
     <thread id>/             thread workspace: temporary and downloaded files (mode 0700)
 ```
 
-On first start the core creates the directories (mode 0700), a config template without providers, a default MAIN.md and an empty database; existing files are never modified. Add a provider and restart:
+On first start the core creates the directories (mode 0700), a config template without providers, a default MAIN.md and COMPACT.md and an empty database; existing files are never modified. Add a provider and restart:
 
 ```yaml
 providers:
@@ -141,4 +156,4 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 
 ## Limitations
 
-Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers, context compaction or thread resume yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers or thread resume yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.

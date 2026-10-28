@@ -2,7 +2,7 @@
 //! response; when it calls tools, they run and the next step sends their results back,
 //! until the model answers without calling a tool.
 
-use std::{sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::Result;
 use tokio::sync::mpsc;
@@ -18,7 +18,7 @@ use crate::{
     config::Config,
     live_config::LiveConfig,
     providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, ToolSpec, is_transient},
-    state::{State, StepResult, Turn, TurnAnswer, TurnOutcome, TurnStep},
+    state::{CallPurpose, ModelCall, State, StepResult, Turn, TurnAnswer, TurnOutcome, TurnStep},
     tools::{ToolRegistry, ToolScope},
 };
 
@@ -37,6 +37,8 @@ pub(super) struct Agent {
     pub(super) tools: ToolRegistry,
     pub(super) scope: ToolScope,
     pub(super) thread_id: String,
+    /// COMPACT.md: how to summarize the thread.
+    pub(super) compact_prompt: PathBuf,
     pub(super) events: mpsc::UnboundedSender<ThreadEvent>,
 }
 
@@ -74,7 +76,14 @@ impl Agent {
         let mut stop = None;
         for _ in 0..MAX_STEPS {
             match self.step(turn, inbox).await? {
-                StepEnd::CalledTools => continue,
+                // Tool results are what fills the context, so it is checked after each.
+                StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
+                    None => continue,
+                    Some(reason) => {
+                        stop = Some(reason);
+                        outcome = TurnOutcome::Interrupted(None);
+                    }
+                },
                 StepEnd::Answered(answer) => outcome = answer,
                 StepEnd::Stopped(reason, partial) => {
                     stop = Some(reason);
@@ -135,12 +144,15 @@ impl Agent {
         };
         // Only the last attempt is recorded: a failed one rarely gets usage reported.
         if let Some(usage) = output.usage {
-            let through = conversation.newest_sequence().unwrap_or_default();
-            let model = &self.model.id;
-            let recorded = self
-                .state
-                .record_usage(&turn.turn_id, model, through, usage);
-            if let Err(error) = recorded.await {
+            let call = ModelCall {
+                thread_id: self.thread_id.clone(),
+                turn_id: Some(turn.turn_id.clone()),
+                purpose: CallPurpose::Answer,
+                compaction_id: conversation.compaction.as_ref().map(|c| c.compaction_id),
+                model: self.model.id.clone(),
+                through_sequence: conversation.newest_sequence(),
+            };
+            if let Err(error) = self.state.record_usage(&call, usage).await {
                 let error = format!("cannot store the model usage: {error:#}");
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
             }
@@ -180,7 +192,7 @@ impl Agent {
     /// Streams the model's response, trying again when the call fails in a way that may
     /// pass and nothing reached the user yet. The outer `Err` means the user stopped it
     /// during a pause between attempts.
-    async fn call_model(
+    pub(super) async fn call_model(
         &self,
         request: ChatRequest<'_>,
         inbox: &mut Inbox,

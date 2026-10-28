@@ -42,6 +42,25 @@ You are the main agent of dusk_code, working with the user in a chat.
 Answer directly and concisely, in the language the user writes in.
 ";
 
+/// Also used when COMPACT.md is missing or blank.
+pub(crate) const COMPACT_PROMPT_TEMPLATE: &str = "\
+Summarize the conversation above so that the work can go on from the summary alone:
+the earlier messages are about to leave your context. Keep facts, decisions, exact
+names, paths, commands, errors and numbers; drop small talk. Write in the language of
+the conversation. Do not call tools. This request is not part of the conversation:
+do not list it as a task.
+
+Use exactly these sections:
+
+1. Requested tasks: everything the user asked for, in order.
+2. Completed tasks: what is done and how it was checked.
+3. Open tasks: what is not done yet, with known problems.
+4. Current task: what was in progress at the end, and the next step.
+5. Paths and files: every file, directory, URL and command that matters, one line each
+   on why.
+6. Summary: everything else worth keeping, in a few sentences.
+";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Initialization {
     /// True on first start: the config is a template without providers.
@@ -56,6 +75,7 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     create_private_dir(&paths.agents_dir())?;
     let config_created = ensure_config(&paths.config_file())?;
     create_private_file(&paths.main_prompt(), MAIN_PROMPT_TEMPLATE.as_bytes())?;
+    create_private_file(&paths.compact_prompt(), COMPACT_PROMPT_TEMPLATE.as_bytes())?;
     // SQLite would create the file with umask permissions; an empty file is a valid new database.
     create_private_file(&paths.state_db(), b"")?;
     Ok(Initialization { config_created })
@@ -161,6 +181,7 @@ mod tests {
         assert_eq!(mode(&paths.records_dir()), 0o700);
         assert_eq!(mode(&paths.config_file()), 0o600);
         assert_eq!(mode(&paths.main_prompt()), 0o600);
+        assert_eq!(mode(&paths.compact_prompt()), 0o600);
         assert_eq!(mode(&paths.skills_dir()), 0o700);
         assert_eq!(mode(&paths.agents_dir()), 0o700);
         assert_eq!(mode(&paths.state_db()), 0o600);

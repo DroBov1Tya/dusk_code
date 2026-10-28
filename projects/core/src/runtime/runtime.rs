@@ -20,7 +20,7 @@ use crate::{
     providers::{Model, ModelProvider, Provider, ProviderRegistry},
     state::State,
     thread_start::start_thread,
-    tools::{ToolRegistry, ToolScope},
+    tools::{ReadHistory, ToolRegistry, ToolScope},
 };
 
 /// Hand edits to config.yml are picked up within this time.
@@ -85,7 +85,8 @@ impl Runtime {
 
     /// The tools every thread gets, by name.
     pub fn tool_names(&self) -> Vec<&'static str> {
-        self.tools().names().collect()
+        // Names do not depend on the thread.
+        self.tools("").names().collect()
     }
 
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
@@ -103,8 +104,9 @@ impl Runtime {
             model: self.model.clone(),
             config: Arc::clone(&self.config),
             thread_id: thread.thread_id.clone(),
-            tools: self.tools(),
+            tools: self.tools(&thread.thread_id),
             scope: ToolScope::new(cwd, &thread.workspace)?,
+            compact_prompt: self.paths.compact_prompt(),
         });
         self.lock_threads().spawn(runner.run());
         Ok(ThreadHandle { input, output })
@@ -118,8 +120,12 @@ impl Runtime {
         self.state.close().await;
     }
 
-    fn tools(&self) -> ToolRegistry {
-        ToolRegistry::builtin(&self.paths.skills_dir())
+    /// The built-in tools plus the thread's own history.
+    fn tools(&self, thread_id: &str) -> ToolRegistry {
+        let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
+        let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
+        tools.add(Box::new(history));
+        tools
     }
 
     fn lock_threads(&self) -> std::sync::MutexGuard<'_, JoinSet<()>> {

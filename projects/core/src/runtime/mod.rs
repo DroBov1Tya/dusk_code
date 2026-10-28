@@ -1,6 +1,7 @@
 //! The runtime: what clients start, and the agent that runs each thread.
 
 mod agent;
+mod compaction;
 mod context;
 mod generation;
 mod inbox;
