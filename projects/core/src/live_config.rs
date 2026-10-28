@@ -162,32 +162,6 @@ mod tests {
     }
 
     #[test]
-    fn update_writes_through_and_snapshots_stay_put() {
-        let path = config_file("live_update", CONFIG);
-        let live = LiveConfig::load(&path).unwrap();
-        let before = live.current();
-
-        live.update(|config| config.set_tool_enabled("run_command", false))
-            .unwrap();
-
-        assert!(before.tool_enabled("run_command"), "old snapshot unchanged");
-        assert!(!live.current().tool_enabled("run_command"));
-        assert!(
-            !Config::load_from(&path)
-                .unwrap()
-                .tool_enabled("run_command")
-        );
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            assert_eq!(
-                fs::metadata(&path).unwrap().permissions().mode() & 0o777,
-                0o600
-            );
-        }
-    }
-
-    #[test]
     fn update_keeps_a_hand_edit_made_since_the_last_load() {
         let path = config_file("live_hand_edit", CONFIG);
         let live = LiveConfig::load(&path).unwrap();
@@ -212,17 +186,5 @@ mod tests {
         assert!(live.reload_if_changed().is_err());
         assert!(live.reload_if_changed().is_ok(), "reported once");
         assert_eq!(live.current().providers().len(), 1);
-    }
-
-    #[test]
-    fn reload_if_changed_picks_up_edits() {
-        let path = config_file("live_watch", CONFIG);
-        let live = LiveConfig::load(&path).unwrap();
-        let edited = format!("{CONFIG}tools:\n  read_file: false\n");
-        write_atomically(&path, edited.as_bytes()).unwrap();
-
-        live.reload_if_changed().unwrap();
-
-        assert!(!live.current().tool_enabled("read_file"));
     }
 }

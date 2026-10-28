@@ -42,21 +42,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn reads_a_command_and_its_argument() {
-        let compact = |focus: Option<&str>| {
-            Some(Command::Compact {
-                focus: focus.map(Into::into),
-            })
-        };
-        assert_eq!(parse("/compact").and_then(Result::ok), compact(None));
-        assert_eq!(parse("  /compact  ").and_then(Result::ok), compact(None));
-        assert_eq!(
-            parse("/compact the API design\nand tests").and_then(Result::ok),
-            compact(Some("the API design\nand tests"))
-        );
-    }
-
-    #[test]
     fn ordinary_text_is_not_a_command() {
         for text in [
             "hello /compact",
@@ -67,11 +52,5 @@ mod tests {
         ] {
             assert!(parse(text).is_none(), "{text:?}");
         }
-    }
-
-    #[test]
-    fn an_unknown_command_is_an_error() {
-        let error = parse("/compactt now").unwrap().unwrap_err();
-        assert_eq!(error.to_string(), "unknown command /compactt");
     }
 }

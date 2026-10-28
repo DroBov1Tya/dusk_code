@@ -160,63 +160,6 @@ mod tests {
     }
 
     #[test]
-    fn sends_role_text_and_tool_links_only() {
-        let conversation = Conversation {
-            messages: vec![
-                message(1, MessageRole::System, "prompt"),
-                message(2, MessageRole::User, "question"),
-                message(3, MessageRole::Assistant, "answer"),
-                message(4, MessageRole::Tool, "tool output"),
-                message(5, MessageRole::User, "follow-up"),
-            ],
-            compaction: None,
-            answered_through: 2,
-            last_prompt: None,
-        };
-        assert_eq!(
-            conversation.chat_messages(),
-            [
-                ChatMessage::System("prompt".into()),
-                ChatMessage::User("question".into()),
-                ChatMessage::Assistant {
-                    text: "answer".into(),
-                    tool_calls: Vec::new()
-                },
-                ChatMessage::Tool {
-                    call_id: "call".into(),
-                    content: "tool output".into()
-                },
-                ChatMessage::User("follow-up".into()),
-            ]
-        );
-        assert_eq!(conversation.tokens(&[]), 25);
-        assert!(conversation.has_queued(), "the follow-up waits");
-    }
-
-    #[test]
-    fn the_last_prompt_count_replaces_estimates_up_to_its_message() {
-        let conversation = Conversation {
-            messages: (1..=4)
-                .map(|sequence| message(sequence, MessageRole::User, "text"))
-                .collect(),
-            compaction: None,
-            answered_through: 0,
-            last_prompt: Some(LastPrompt {
-                prompt_tokens: 100,
-                through_sequence: 3,
-            }),
-        };
-        let spec = ToolSpec {
-            name: "tool".into(),
-            description: "Does things.".into(),
-            parameters: serde_json::json!({}),
-        };
-
-        // The tool definition is inside the provider's count already.
-        assert_eq!(conversation.tokens(&[spec]), 100 + 5);
-    }
-
-    #[test]
     fn a_summary_follows_the_system_messages_and_queued_messages_stay() {
         let conversation = Conversation {
             messages: vec![

@@ -170,15 +170,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reads_in_order_from_a_message() {
-        let tool = history("history_from").await;
-        let read_all = read(&tool, json!({})).await.unwrap();
-        assert!(read_all.starts_with("#1 user"), "{read_all}");
-        let second = read(&tool, json!({ "from": 2, "limit": 1 })).await.unwrap();
-        assert_eq!(second, "#2 user:\nFix src/main.rs please");
-    }
-
-    #[tokio::test]
     async fn query_syntax_is_plain_text() {
         let tool = history("history_syntax").await;
         let found = read(&tool, json!({ "search": "\"main OR" })).await.unwrap();

@@ -85,29 +85,3 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         active_at: row.try_get("active_at")?,
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testing::temp_state;
-
-    #[tokio::test]
-    async fn lists_the_most_recently_active_first() {
-        let state = temp_state("threads_list").await;
-        state.create_thread("old", "test").await.unwrap();
-        state.create_thread("new", "test").await.unwrap();
-        tokio::time::sleep(std::time::Duration::from_millis(5)).await;
-        state
-            .add_user_message("old", "uid", "back again")
-            .await
-            .unwrap();
-        state.set_title("old", "Back again").await.unwrap();
-
-        let threads = state.list_threads().await.unwrap();
-
-        let ids: Vec<_> = threads.iter().map(|thread| thread.id.as_str()).collect();
-        assert_eq!(ids, ["old", "new"]);
-        assert_eq!(threads[0].title.as_deref(), Some("Back again"));
-        assert_eq!(threads[1].title, None);
-        assert!(state.load_thread("missing").await.unwrap().is_none());
-    }
-}

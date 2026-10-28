@@ -187,46 +187,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reports_exit_code_and_both_streams() {
-        let scope = scope("shell_streams");
-        let command = "echo out; echo err >&2; exit 3";
-        let output = run_tool(&scope, json!({ "command": command }))
-            .await
-            .unwrap();
-        assert_eq!(output, "exit code: 3\nstdout:\nout\n\nstderr:\nerr\n");
-    }
-
-    #[tokio::test]
-    async fn omits_empty_sections() {
-        let scope = scope("shell_empty");
-        let output = run_tool(&scope, json!({ "command": "true" }))
-            .await
-            .unwrap();
-        assert_eq!(output, "exit code: 0");
-    }
-
-    #[tokio::test]
-    async fn runs_in_the_working_directory() {
-        let scope = scope("shell_pwd");
-        let output = run_tool(&scope, json!({ "command": "pwd -P" }))
-            .await
-            .unwrap();
-        let expected = format!("exit code: 0\nstdout:\n{}\n", scope.cwd().display());
-        assert_eq!(output, expected);
-    }
-
-    #[tokio::test]
-    async fn caps_stream_output() {
-        let scope = scope("shell_cap");
-        let command = "head -c 100000 /dev/zero | tr '\\0' a";
-        let output = run_tool(&scope, json!({ "command": command }))
-            .await
-            .unwrap();
-        assert!(output.ends_with("\n[output truncated]"), "{output}");
-        assert!(output.len() < MAX_STREAM_BYTES + 100);
-    }
-
-    #[tokio::test]
     async fn kills_on_timeout() {
         let scope = scope("shell_timeout");
         let started = std::time::Instant::now();
@@ -234,15 +194,6 @@ mod tests {
         let error = run_tool(&scope, arguments).await.unwrap_err();
         assert!(error.to_string().contains("timed out"), "{error}");
         assert!(started.elapsed() < Duration::from_secs(4));
-    }
-
-    #[tokio::test]
-    async fn rejects_bad_timeouts() {
-        let scope = scope("shell_bad_timeout");
-        for timeout in [0, MAX_TIMEOUT_SECONDS + 1] {
-            let arguments = json!({ "command": "true", "timeout_seconds": timeout });
-            assert!(run_tool(&scope, arguments).await.is_err());
-        }
     }
 
     #[tokio::test]

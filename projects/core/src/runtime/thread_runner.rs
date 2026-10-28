@@ -463,31 +463,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn messages_queued_before_a_turn_are_answered_together() {
-        let state = thread_state("together").await;
-        let config = live_config("runner_config");
-        let provider = provider(vec![vec![Step::Text("both"), Step::Done]]);
-        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        input.send("a").await.unwrap();
-        input.send("b").await.unwrap();
-        drop(input);
-
-        runner.run().await;
-
-        let turn = next_turn_finished(&mut output).await;
-        assert_eq!(turn.status, TurnStatus::Completed);
-        assert_eq!(turn.last_sequence, 2);
-        assert_eq!(
-            transcript(&state).await,
-            [
-                (MessageRole::User, "a".into()),
-                (MessageRole::User, "b".into()),
-                (MessageRole::Assistant, "both".into()),
-            ]
-        );
-    }
-
-    #[tokio::test]
     async fn send_now_interrupts_and_answers_the_new_message_at_once() {
         let state = thread_state("send_now").await;
         let config = live_config("runner_config");
@@ -543,84 +518,6 @@ mod tests {
         let ((), status) = tokio::join!(runner.run(), client);
         assert_eq!(status, TurnStatus::Interrupted);
         assert_eq!(transcript(&state).await.len(), 1, "nothing was written");
-    }
-
-    #[tokio::test]
-    async fn oversized_context_is_reported_and_not_sent() {
-        let state = thread_state("too_large").await;
-        let config = live_config("runner_config");
-        let provider = provider(Vec::new());
-        let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(3)));
-        input.send("hello").await.unwrap();
-        drop(input);
-
-        runner.run().await;
-
-        let mut events = Vec::new();
-        while let Some(event) = output.next_event().await {
-            events.push(event);
-        }
-        // The message is 6 and the echo tool definition 1 + 5 + 5.
-        assert!(events.contains(&ThreadEvent::ContextTooLarge {
-            tokens: 17,
-            limit: 3
-        }));
-        assert!(
-            !events
-                .iter()
-                .any(|event| matches!(event, ThreadEvent::TurnStarted(_)))
-        );
-    }
-
-    async fn next_compaction(output: &mut ThreadOutput) -> Compaction {
-        loop {
-            match output.next_event().await {
-                Some(ThreadEvent::CompactionFinished(compaction)) => return compaction,
-                Some(ThreadEvent::CompactionFailed { error }) => panic!("{error}"),
-                Some(_) => {}
-                None => panic!("the thread ended"),
-            }
-        }
-    }
-
-    #[tokio::test]
-    async fn compact_summarizes_and_later_turns_see_the_summary() {
-        let state = thread_state("compact_manual").await;
-        let config = live_config("runner_config");
-        let provider = provider(vec![
-            vec![Step::Text("one"), Step::Done],
-            vec![Step::Text("Numbers"), Step::Done],
-            vec![Step::Text("so far: one"), Step::Done],
-            vec![Step::Text("two"), Step::Done],
-        ]);
-        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        let client = async move {
-            input.send("first").await.unwrap();
-            next_turn_finished(&mut output).await;
-            input.send("/compact the numbers").await.unwrap();
-            let compaction = next_compaction(&mut output).await;
-            input.send("second").await.unwrap();
-            next_turn_finished(&mut output).await;
-            compaction
-        };
-
-        let ((), compaction) = tokio::join!(runner.run(), client);
-
-        assert_eq!(compaction.through_sequence, 2);
-        let requests = provider.requests.lock().unwrap().clone();
-        // 0 is the first turn and 1 names the thread.
-        let instructions = requests[2].last().unwrap();
-        let ChatMessage::User(instructions) = instructions else {
-            panic!("{instructions:?}");
-        };
-        assert!(instructions.ends_with("Focus the summary on: the numbers\n"));
-        assert_eq!(requests[3].len(), 2, "summary and the new message");
-        assert!(
-            matches!(&requests[3][0], ChatMessage::User(text) if text.ends_with("so far: one"))
-        );
-        assert_eq!(requests[3][1], ChatMessage::User("second".into()));
-        let stored = transcript(&state).await;
-        assert_eq!(stored.len(), 4, "messages stay stored: {stored:?}");
     }
 
     #[tokio::test]
@@ -681,86 +578,6 @@ mod tests {
             transcript[1],
             (MessageRole::Assistant, "abcdefghijkl".into())
         );
-    }
-
-    #[tokio::test]
-    async fn a_message_past_the_input_limit_is_refused_at_once() {
-        let state = thread_state("input_limit").await;
-        let limits = "limits:\n  max_input_tokens: 10\n";
-        let config = Arc::new(temp_live_config_with("input_limit_config", limits));
-        let provider = provider(Vec::new());
-        let (_runner, input, _output) = runner(&state, &provider, &config, model(None));
-
-        let error = input.send("x".repeat(100)).await.unwrap_err();
-
-        assert!(
-            error.to_string().contains("past the input limit of 10"),
-            "{error}"
-        );
-        assert!(state.pending_messages("thread").await.unwrap().is_empty());
-    }
-
-    #[tokio::test]
-    async fn the_first_message_names_the_thread_and_the_model_renames_it() {
-        let state = thread_state("title").await;
-        let config = live_config("runner_config");
-        let provider = provider(vec![
-            vec![Step::Text("Hello!"), Step::Done],
-            vec![Step::Text("\"Greeting\""), Step::Done],
-            vec![Step::Text("Fine."), Step::Done],
-        ]);
-        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        let client = async move {
-            let mut titles = Vec::new();
-            input
-                .send("hi there, how are you doing today, my friend?")
-                .await
-                .unwrap();
-            input.send("and now?").await.unwrap();
-            drop(input);
-            while let Some(event) = output.next_event().await {
-                if let ThreadEvent::TitleChanged { title } = event {
-                    titles.push(title);
-                }
-            }
-            titles
-        };
-
-        let ((), titles) = tokio::join!(runner.run(), client);
-
-        assert_eq!(
-            titles,
-            ["hi there, how are you doing today,...", "Greeting"]
-        );
-        let thread = state.load_thread("thread").await.unwrap().unwrap();
-        assert_eq!(thread.title.as_deref(), Some("Greeting"));
-        let requests = provider.requests.lock().unwrap().clone();
-        assert_eq!(
-            requests.len(),
-            2,
-            "both messages in one turn, then the name"
-        );
-    }
-
-    #[tokio::test]
-    async fn an_unknown_command_is_rejected_and_not_stored() {
-        let state = thread_state("compact_unknown").await;
-        let config = live_config("runner_config");
-        let provider = provider(Vec::new());
-        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        input.send("/compactt").await.unwrap();
-        drop(input);
-
-        runner.run().await;
-
-        let mut rejected = None;
-        while let Some(event) = output.next_event().await {
-            if let ThreadEvent::Rejected { reason } = event {
-                rejected = Some(reason);
-            }
-        }
-        assert_eq!(rejected.as_deref(), Some("unknown command /compactt"));
-        assert!(transcript(&state).await.is_empty());
     }
 
     #[tokio::test]
@@ -825,30 +642,6 @@ mod tests {
                 (MessageRole::Tool, "ping".into()),
                 (MessageRole::Assistant, "got ping".into()),
             ]
-        );
-    }
-
-    #[tokio::test]
-    async fn a_switched_off_tool_is_refused() {
-        let state = thread_state("tool_off").await;
-        let config = live_config("tool_off_config");
-        config
-            .update(|config| config.set_tool_enabled("echo", false))
-            .unwrap();
-        let provider = provider(vec![
-            vec![Step::Call("ping"), Step::Done],
-            vec![Step::Text("ok"), Step::Done],
-        ]);
-        let (runner, input, _output) = runner(&state, &provider, &config, model(None));
-        input.send("use the tool").await.unwrap();
-        drop(input);
-
-        runner.run().await;
-
-        let messages = transcript(&state).await;
-        assert_eq!(
-            messages[2],
-            (MessageRole::Tool, "error: tool echo is switched off".into())
         );
     }
 

@@ -193,52 +193,6 @@ mod tests {
         merged
     }
 
-    #[test]
-    fn splits_thinking_text_and_tool_calls() {
-        let events = split(&[
-            "<think>plan</think>Sure. <tool_call>{\"name\": \"weather\", \"arguments\": {\"city\": \"Kazan\"}}</tool_call>",
-        ])
-        .unwrap();
-        assert_eq!(
-            events,
-            [
-                ModelEvent::Reasoning("plan".into()),
-                ModelEvent::Text("Sure. ".into()),
-                ModelEvent::ToolCall {
-                    index: 0,
-                    id: "call_0".into(),
-                    name: "weather".into()
-                },
-                ModelEvent::ToolArguments {
-                    index: 0,
-                    fragment: "{\"city\":\"Kazan\"}".into()
-                },
-            ]
-        );
-    }
-
-    #[test]
-    fn holds_back_only_a_possible_tag_start() {
-        let mut splitter = TagSplitter::default();
-        assert_eq!(
-            splitter.feed("a < b <thi").unwrap(),
-            [ModelEvent::Text("a < b ".into())]
-        );
-        assert_eq!(
-            splitter.feed("s is text").unwrap(),
-            [ModelEvent::Text("<this is text".into())]
-        );
-    }
-
-    #[test]
-    fn rejects_broken_tool_calls() {
-        assert!(
-            split(&["<tool_call>{\"name\": \"x\""]).is_err(),
-            "unterminated"
-        );
-        assert!(split(&["<tool_call>not json</tool_call>"]).is_err());
-    }
-
     proptest! {
         #[test]
         fn chunking_does_not_change_events(

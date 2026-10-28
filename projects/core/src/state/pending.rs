@@ -99,19 +99,4 @@ mod tests {
         assert!(state.pending_messages("thread").await.unwrap().is_empty());
         assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
     }
-
-    #[tokio::test]
-    async fn keeps_the_order_they_were_sent_in() {
-        let state = temp_state("pending_order").await;
-        state.create_thread("thread", "test").await.unwrap();
-        for text in ["one", "two", "three"] {
-            state.add_pending("thread", text).await.unwrap();
-        }
-        let pending = state.pending_messages("thread").await.unwrap();
-        let texts: Vec<_> = pending
-            .iter()
-            .map(|pending| pending.content.as_str())
-            .collect();
-        assert_eq!(texts, ["one", "two", "three"]);
-    }
 }

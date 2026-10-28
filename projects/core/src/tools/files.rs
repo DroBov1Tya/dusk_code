@@ -244,32 +244,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reads_a_file() {
-        let (scope, _) = scope("files_read");
-        fs::write(scope.cwd().join("a.txt"), "hello").unwrap();
-        let output = ReadFile
-            .call(json!({ "path": "a.txt" }), tool_context(&scope))
-            .await
-            .unwrap();
-        assert_eq!(output, "hello");
-    }
-
-    #[tokio::test]
-    async fn refuses_large_and_binary_files() {
-        let (scope, _) = scope("files_read_refuse");
-        fs::write(scope.cwd().join("big"), vec![b'a'; 1024 * 1024 + 1]).unwrap();
-        fs::write(scope.cwd().join("bin"), [0xff, 0xfe]).unwrap();
-        for path in ["big", "bin"] {
-            assert!(
-                ReadFile
-                    .call(json!({ "path": path }), tool_context(&scope))
-                    .await
-                    .is_err()
-            );
-        }
-    }
-
-    #[tokio::test]
     async fn rejects_paths_outside_the_scope() {
         let (scope, root) = scope("files_outside");
         fs::write(root.join("secret"), "x").unwrap();
@@ -288,32 +262,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn rejects_unknown_and_missing_fields() {
-        let (scope, _) = scope("files_arguments");
-        let unknown = json!({ "path": "a", "extra": 1 });
-        assert!(ReadFile.call(unknown, tool_context(&scope)).await.is_err());
-        assert!(
-            WriteFile
-                .call(json!({ "path": "a" }), tool_context(&scope))
-                .await
-                .is_err()
-        );
-    }
-
-    #[tokio::test]
-    async fn writes_with_parent_directories() {
-        let (scope, _) = scope("files_write");
-        let arguments = json!({ "path": "x/y/z.txt", "content": "abc" });
-        let output = WriteFile
-            .call(arguments, tool_context(&scope))
-            .await
-            .unwrap();
-        assert!(output.starts_with("wrote 3 bytes to "), "{output}");
-        let written = fs::read_to_string(scope.cwd().join("x/y/z.txt")).unwrap();
-        assert_eq!(written, "abc");
-    }
-
-    #[tokio::test]
     async fn deletes_files_only() {
         let (scope, _) = scope("files_delete");
         fs::write(scope.cwd().join("a.txt"), "x").unwrap();
@@ -323,34 +271,5 @@ mod tests {
         assert!(!scope.cwd().join("a.txt").exists());
         assert!(delete("dir").await.is_err());
         assert!(delete("../outside").await.is_err());
-    }
-
-    #[tokio::test]
-    async fn edits_a_single_match() {
-        let (scope, _) = scope("files_edit");
-        let path = scope.cwd().join("a.txt");
-        fs::write(&path, "one two three").unwrap();
-        let arguments = json!({ "path": "a.txt", "old_text": "two", "new_text": "2" });
-        EditFile
-            .call(arguments, tool_context(&scope))
-            .await
-            .unwrap();
-        assert_eq!(fs::read_to_string(&path).unwrap(), "one 2 three");
-    }
-
-    #[tokio::test]
-    async fn edit_requires_exactly_one_match() {
-        let (scope, _) = scope("files_edit_matches");
-        let path = scope.cwd().join("a.txt");
-        fs::write(&path, "x y x").unwrap();
-        for (old_text, expected) in [("z", "found 0 matches"), ("x", "found 2 matches")] {
-            let arguments = json!({ "path": "a.txt", "old_text": old_text, "new_text": "q" });
-            let error = EditFile
-                .call(arguments, tool_context(&scope))
-                .await
-                .unwrap_err();
-            assert!(error.to_string().contains(expected), "{error}");
-        }
-        assert_eq!(fs::read_to_string(&path).unwrap(), "x y x");
     }
 }

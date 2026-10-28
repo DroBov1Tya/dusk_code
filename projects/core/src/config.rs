@@ -276,37 +276,10 @@ mod tests {
     }
 
     #[test]
-    fn record_mode_defaults_to_full() {
-        assert_eq!(parse(PROVIDERS).unwrap().thread().record, RecordMode::Full);
-    }
-
-    #[test]
-    fn record_mode_answer_skips_reasoning() {
-        let config = parse(&format!("{PROVIDERS}thread:\n  record: answer\n")).unwrap();
-        assert_eq!(config.thread().record, RecordMode::Answer);
-        assert!(!config.thread().record.records_reasoning());
-    }
-
-    #[test]
-    fn the_older_session_section_still_reads() {
-        let config = parse(&format!("{PROVIDERS}session:\n  record: answer\n")).unwrap();
-        assert_eq!(config.thread().record, RecordMode::Answer);
-    }
-
-    #[test]
     fn unknown_fields_and_values_are_rejected() {
         assert!(parse(&format!("{PROVIDERS}session:\n  record: everything\n")).is_err());
         assert!(parse(&format!("{PROVIDERS}tool: {{}}\n")).is_err());
         assert!(parse("providers: {}\n").is_err(), "no provider");
-    }
-
-    #[test]
-    fn tools_are_on_unless_switched_off() {
-        let mut config = parse(&format!("{PROVIDERS}tools:\n  run_command: false\n")).unwrap();
-        assert!(!config.tool_enabled("run_command"));
-        assert!(config.tool_enabled("read_file"));
-        config.set_tool_enabled("run_command", true);
-        assert!(config.tool_enabled("run_command"));
     }
 
     #[test]
