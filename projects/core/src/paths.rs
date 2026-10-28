@@ -3,6 +3,9 @@
 //! ```text
 //! ~/.config/duskcode/            configuration, mode 0700
 //!     config.yml                 provider and session settings, mode 0600
+//!     MAIN.md                    system prompt of the main agent, mode 0600
+//!     skills/<name>/SKILL.md     skills, mode 0700
+//!     agents/<name>.md           system prompts of subagent kinds, mode 0700
 //!     session/                   session records, mode 0700
 //!         state.db               threads, turns and messages, mode 0600
 //! ~/Documents/duskcode/          session workspaces, mode 0700
@@ -17,6 +20,9 @@ use anyhow::{Result, anyhow, ensure};
 
 const CONFIG_ROOT: &str = ".config/duskcode";
 const CONFIG_FILE: &str = "config.yml";
+const MAIN_PROMPT: &str = "MAIN.md";
+const SKILLS_DIR: &str = "skills";
+const AGENTS_DIR: &str = "agents";
 const SESSION_DIR: &str = "session";
 const STATE_DB: &str = "state.db";
 const WORKSPACE_ROOT: &str = "Documents/duskcode";
@@ -51,6 +57,18 @@ impl Paths {
 
     pub fn config_file(&self) -> PathBuf {
         self.config_root.join(CONFIG_FILE)
+    }
+
+    pub fn main_prompt(&self) -> PathBuf {
+        self.config_root.join(MAIN_PROMPT)
+    }
+
+    pub fn skills_dir(&self) -> PathBuf {
+        self.config_root.join(SKILLS_DIR)
+    }
+
+    pub fn agents_dir(&self) -> PathBuf {
+        self.config_root.join(AGENTS_DIR)
     }
 
     pub fn session_dir(&self) -> PathBuf {

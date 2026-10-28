@@ -61,6 +61,7 @@ struct WireMessage<'a> {
 impl<'a> From<&'a ChatMessage> for WireMessage<'a> {
     fn from(message: &'a ChatMessage) -> Self {
         let role = match message.role {
+            ChatRole::System => "system",
             ChatRole::User => "user",
             ChatRole::Assistant => "assistant",
         };

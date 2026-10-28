@@ -11,10 +11,11 @@ pub(super) fn chat_messages(messages: &[Message]) -> Vec<ChatMessage> {
         .iter()
         .filter_map(|message| {
             let role = match message.role {
+                MessageRole::System => ChatRole::System,
                 MessageRole::User => ChatRole::User,
                 MessageRole::Assistant | MessageRole::Agent => ChatRole::Assistant,
-                // No system prompt or tools exist yet.
-                MessageRole::System | MessageRole::Tool => return None,
+                // No tools exist yet.
+                MessageRole::Tool => return None,
             };
             Some(ChatMessage {
                 role,
@@ -48,6 +49,7 @@ mod tests {
     #[test]
     fn keeps_only_role_and_text_of_conversation_messages() {
         let messages = [
+            message(MessageRole::System, "prompt"),
             message(MessageRole::User, "question"),
             message(MessageRole::Assistant, "answer"),
             message(MessageRole::Tool, "tool output"),
@@ -56,6 +58,10 @@ mod tests {
         assert_eq!(
             chat_messages(&messages),
             [
+                ChatMessage {
+                    role: ChatRole::System,
+                    content: "prompt".into()
+                },
                 ChatMessage {
                     role: ChatRole::User,
                     content: "question".into()

@@ -18,7 +18,7 @@ projects/
         init.rs              first-start setup of those paths
         config.rs            config.yml: providers and session settings
         events.rs            live events published after database writes
-        session.rs           starts a session: workspace folder and thread
+        session.rs           starts a session: workspace folder, thread, MAIN.md
         state/               SQLite records, one file per table
             state.rs         database handle: open, create, encrypt, subscribe
             threads.rs       sessions
@@ -54,12 +54,15 @@ projects/
 ```text
 ~/.config/duskcode/
     config.yml               providers and session settings (mode 0600)
+    MAIN.md                  system prompt of the main agent (mode 0600)
+    skills/<name>/SKILL.md   skills
+    agents/<name>.md         system prompts of subagent kinds
     session/state.db         threads, turns and messages (mode 0600)
 ~/Documents/duskcode/
     <thread id>/             session workspace: temporary and downloaded files (mode 0700)
 ```
 
-On first start the core creates the directories (mode 0700), a config template without providers and an empty database; existing files are never modified. Add a provider and restart:
+On first start the core creates the directories (mode 0700), a config template without providers, a default MAIN.md and an empty database; existing files are never modified. Add a provider and restart:
 
 ```yaml
 providers:
@@ -77,6 +80,7 @@ The CLI uses the first provider and its first catalogue model and starts a new s
 
 ## Guarantees
 
+- MAIN.md is copied into a new thread as its first, `system` message; editing the file affects only chats started later. A missing or blank file means no system prompt.
 - The model receives only role and text; IDs, timestamps, cwd and attachments stay in the core. Reasoning is stored but never sent back as context.
 - A request UID is idempotent: a retry on the same thread returns the original receipt without a new event. Rejected requests get a fixed code (`empty_message`, `empty_thread`, `unknown_thread`) and no turn.
 - Provider responses are untrusted: sizes and idle time are bounded, redirects are refused, and upstream text never reaches error messages.
@@ -84,4 +88,4 @@ The CLI uses the first provider and its first catalogue model and starts a new s
 
 ## Limitations
 
-No system prompt, tools, context compaction, turn cancellation, session resume or retries yet. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Skills and agent prompts are not loaded yet. No tools, context compaction, turn cancellation, session resume or retries yet. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.

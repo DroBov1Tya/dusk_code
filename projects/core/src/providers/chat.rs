@@ -8,6 +8,7 @@ use anyhow::Result;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ChatRole {
+    System,
     User,
     Assistant,
 }
