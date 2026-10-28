@@ -1,9 +1,10 @@
 use std::{env, path::PathBuf};
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use dusk_core::{
     api::CORE_API_VERSION,
     config::Config,
+    init,
     providers::{Model, ProviderRegistry},
     runtime::AgentRuntime,
     state::{ApprovalMode, State, ThreadInput},
@@ -26,21 +27,28 @@ pub struct Application {
 
 impl Application {
     pub async fn build(args: AppArgs) -> Result<Self> {
+        let init = init::initialize()?;
+        if init.config_created {
+            bail!(
+                "created {}; add a provider and restart",
+                init.config_path.display()
+            );
+        }
         let path = match args.state_db {
             Some(path) => path,
             None => default_state_db()?,
         };
         let state = match State::open(path).await {
             Ok(state) => {
-                info!("✅ Инициализация: SQLite state | Статус: Успешно");
+                info!("state database opened");
                 state
             }
             Err(error) => {
-                error!("❌ Инициализация: SQLite state | Статус: {}", error);
+                error!("cannot open state database: {error:#}");
                 return Err(error);
             }
         };
-        let providers = ProviderRegistry::from_config(&Config::load()?)?;
+        let providers = ProviderRegistry::from_config(&Config::load_from(&init.config_path)?)?;
         let provider_name = providers
             .names()
             .next()
@@ -51,10 +59,7 @@ impl Application {
             .context("configured provider is missing")?
             .default_model()
             .await?;
-        info!(
-            "✅ Инициализация: Провайдер {} | Статус: Модель {}",
-            provider_name, model.id
-        );
+        info!("provider {provider_name}, model {}", model.id);
         Ok(Self {
             state,
             providers,
@@ -65,7 +70,7 @@ impl Application {
 
     pub async fn run(self) -> Result<()> {
         info!(
-            "ℹ️ Действие: Запуск чата | Статус: Готово, Core API={}.{}",
+            "chat started, core API {}.{}",
             CORE_API_VERSION.major, CORE_API_VERSION.minor
         );
         let result = self.chat().await;
@@ -80,7 +85,7 @@ impl Application {
             .context("configured provider is missing")?;
         let runtime = AgentRuntime::new(&self.state, AGENT_ID, provider, self.model.clone())?;
         let thread_id = self.start_thread().await?;
-        info!("✅ Сессия: {} | Статус: Создана", thread_id);
+        info!("thread {thread_id} created");
         chat::run(&self.state, &runtime, &thread_id).await
     }
 

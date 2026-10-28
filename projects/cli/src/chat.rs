@@ -16,7 +16,7 @@ use dusk_core::{
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;
 
-const PROMPT: &str = "› ";
+const PROMPT: &str = "> ";
 
 pub async fn run(state: &State, runtime: &AgentRuntime<'_>, thread_id: &str) -> Result<()> {
     let users = UserReceiver::new(state);
@@ -32,7 +32,7 @@ pub async fn run(state: &State, runtime: &AgentRuntime<'_>, thread_id: &str) -> 
             continue;
         }
         if let Err(error) = ask(&users, runtime, thread_id, &cwd, content).await {
-            eprintln!("❌ {error:#}");
+            eprintln!("error: {error:#}");
         }
     }
 }

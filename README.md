@@ -31,6 +31,7 @@ projects/
 │       │   ├── execution.rs Execution and status contracts
 │       │   └── handler.rs user-message receipt handler
 │       ├── config.rs     provider settings from ~/.config/duskcode/config.yml
+│       ├── init.rs       first-start initialization (config template)
 │       ├── providers/    model catalogue and streamed chat
 │       │   ├── mod.rs    provider registry, chat types, model auto-selection
 │       │   ├── sse.rs    bounded Server-Sent Events decoder
@@ -94,7 +95,7 @@ The only supported task is currently `Task::UserMessage`:
 
 ## Chat
 
-Providers are read from `~/.config/duskcode/config.yml`; the directory and file must not be accessible by group or others:
+On first start the core creates `~/.config/duskcode/` (mode 0700) and a `config.yml` template (mode 0600) without providers; existing files are never modified. Add a provider and restart. The directory and file must not be accessible by group or others:
 
 ```yaml
 providers:
