@@ -1,9 +1,10 @@
 # dusk_code
 
-An AI agent system in Rust. All logic lives in one core library, `dusk_core`; front ends (the CLI today, a TUI and GUI later) are thin clients over it.
+An AI agent system in Rust. All logic lives in one core library, `dusk_core`; front ends are thin clients over it, as Linux distributions are over one kernel: `dusk`, a full-screen terminal client, and `dusk_code`, a line-based one for scripts.
 
 ```sh
-cargo run -p dusk_code
+cargo run                  # dusk, the full-screen client
+cargo run -p dusk_code     # the line-based client
 cargo test --workspace
 ```
 
@@ -65,7 +66,31 @@ projects/
         main.rs, app.rs      starts the runtime, opens or lists threads, shuts down
         chat.rs              line-based chat: `text` queues, `!text` sends now, `!` stops
         commands.rs          `:tools`, `:skills`, `:on <name>`, `:off <name>`, `:reload`
+    tui/src/                 dusk binary: the full-screen client
+        main.rs, args.rs     starts the runtime and takes the screen
+        session.rs           the loop: keys, thread events, opening and closing threads
+        app/                 what the client knows, with no drawing
+            mod.rs           the open thread, activity, tokens; applies thread events
+            transcript.rs    entries: messages, foldable thinking, tool calls, summaries
+            input.rs         the message being typed
+            keys.rs          keys and mouse -> changes or actions for the session
+            panels.rs        threads, tool and skill switches, keys
+        ui/                  drawing, one file per part of the screen
+            theme.rs         the dusk palette and glyphs
+            header.rs        thread and model, and the horizon that is the context meter
+            transcript.rs    the conversation, folded and wrapped
+            markdown.rs      headings, lists, quotes, code in answers
+            input.rs         the status rule, the message box, the command list
+            panels.rs        panels over the transcript
+            wrap.rs          fitting styled text into a width
+            screen.rs        taking the terminal and giving it back
 ```
+
+## The full-screen client
+
+`dusk` shows one thread at a time. At the top are the thread title and the model; under them is the horizon, which is the context meter: it lights up from the left as the context fills, from violet through rose and amber to ember, the sun sets along it, and a mark at 80% shows where compaction begins. The rule above the message box tells what the agent is doing and gives the context in numbers: the share, the tokens used and the limit, and what the provider counted in and out.
+
+Thinking, tool calls and compaction summaries fold into one line each. Tab walks them, Enter opens or closes one, Ctrl+R opens or closes all thinking. Messages can be sent while the agent works: Enter queues for the next turn, Alt+Enter interrupts, Esc stops. Ctrl+T lists the threads and opens one with its history, Ctrl+N starts a new one, Ctrl+O switches tools and skills, and F1 lists every key. A new thread is stored only when its first message is sent. `--thread ID` opens a thread at start.
 
 ## How the core runs
 

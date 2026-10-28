@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["projects/core", "projects/cli"]
-default-members = ["projects/cli"]
+members = ["projects/core", "projects/cli", "projects/tui"]
+default-members = ["projects/tui"]
 
 [workspace.package]
-version = "0.15.1"
+version = "0.16.0"
 edition = "2024"
 publish = false
 
@@ -22,4 +22,8 @@ tracing-subscriber = "0.3"
 uuid = { version = "1", features = ["v7"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate"] }
 nix = { version = "0.31", default-features = false, features = ["signal"] }
+ratatui = "0.30.2"
+crossterm = { version = "0.29", features = ["event-stream"] }
+futures = "0.3"
+unicode-width = "0.2"
 dusk_core = { path = "projects/core" }
