@@ -1,10 +1,10 @@
-use std::env;
+use std::{env, sync::Arc};
 
 use anyhow::{Context, Result, bail};
 use dusk_core::{
     api::CORE_VERSION,
-    config::{Config, RecordMode},
     init,
+    live_config::LiveConfig,
     paths::Paths,
     providers::{Model, ProviderRegistry},
     runtime::{SessionRunner, SessionSetup},
@@ -17,13 +17,14 @@ use tracing::{error, info};
 use crate::{
     args::AppArgs,
     chat,
-    constants::{AGENT_ID, THREAD_SOURCE},
+    commands::Settings,
+    constants::{AGENT_ID, CONFIG_RELOAD_PERIOD, THREAD_SOURCE},
 };
 
 pub struct Application {
     paths: Paths,
     state: State,
-    record: RecordMode,
+    config: Arc<LiveConfig>,
     providers: ProviderRegistry,
     provider_name: String,
     model: Model,
@@ -49,9 +50,8 @@ impl Application {
                 return Err(error);
             }
         };
-        let config = Config::load(&paths)?;
-        let record = config.session().record;
-        let providers = ProviderRegistry::from_config(&config)?;
+        let config = Arc::new(LiveConfig::load(paths.config_file())?);
+        let providers = ProviderRegistry::from_config(&config.current())?;
         let provider_name = providers
             .names()
             .next()
@@ -66,7 +66,7 @@ impl Application {
         Ok(Self {
             paths,
             state,
-            record,
+            config,
             providers,
             provider_name,
             model,
@@ -91,16 +91,22 @@ impl Application {
             session.thread_id,
             session.workspace.display()
         );
+        tokio::spawn(Arc::clone(&self.config).watch(CONFIG_RELOAD_PERIOD));
+        let tools = ToolRegistry::builtin();
+        let settings = Settings {
+            config: Arc::clone(&self.config),
+            tools: tools.names().collect(),
+        };
         let (runner, input, output) = SessionRunner::new(SessionSetup {
             state: &self.state,
             provider,
             model: self.model.clone(),
-            record: self.record,
+            config: &self.config,
             agent_id: AGENT_ID,
             thread_id: &session.thread_id,
-            tools: ToolRegistry::builtin(),
+            tools,
             scope: ToolScope::new(&env::current_dir()?, &session.workspace)?,
         })?;
-        chat::run(runner, input, output).await
+        chat::run(runner, input, output, settings).await
     }
 }

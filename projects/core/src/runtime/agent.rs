@@ -11,7 +11,8 @@ use super::{
     session_runner::SessionEvent,
 };
 use crate::{
-    config::RecordMode,
+    config::Config,
+    live_config::LiveConfig,
     providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall},
     receivers::{AgentOutcome, AgentReceiver, AgentStep},
     state::{Message, StepResult, Turn},
@@ -25,7 +26,7 @@ pub(super) struct Agent<'a, P> {
     pub(super) receiver: AgentReceiver<'a>,
     pub(super) provider: &'a P,
     pub(super) model: Model,
-    pub(super) record: RecordMode,
+    pub(super) config: &'a LiveConfig,
     pub(super) tools: ToolRegistry,
     pub(super) scope: ToolScope,
     pub(super) thread_id: String,
@@ -94,8 +95,10 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
         if let Some(error_message) = self.context_too_large(&conversation.messages) {
             return Ok(StepEnd::Answered(AgentOutcome::Failed { error_message }));
         }
+        // One snapshot per step: switches flipped meanwhile apply from the next step.
+        let config = self.config.current();
         let messages = context::chat_messages(&conversation.messages);
-        let tools = self.tools.specs(&self.scope);
+        let tools = self.tools.specs(&self.scope, &config);
         let request = ChatRequest {
             model: &self.model.id,
             messages: &messages,
@@ -113,7 +116,7 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
                 },
             ))
             .await;
-        let reasoning = self.recorded_reasoning(&output);
+        let reasoning = recorded_reasoning(&config, &output);
         let calls = match generated {
             Err(stop) => {
                 let partial = AgentOutcome::Interrupted {
@@ -136,7 +139,7 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
             Ok(Ok(calls)) => calls,
         };
 
-        let (results, stop) = self.call_tools(&calls, inbox).await;
+        let (results, stop) = self.call_tools(&calls, &config, inbox).await;
         let step = AgentStep {
             content: output.text,
             reasoning,
@@ -166,6 +169,7 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
     async fn call_tools(
         &self,
         calls: &[ToolCall],
+        config: &Config,
         inbox: &mut Inbox,
     ) -> (Vec<StepResult>, Option<Stop>) {
         let mut results = Vec::with_capacity(calls.len());
@@ -175,7 +179,7 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
                 Some(_) => "not run: the user interrupted the turn".to_owned(),
                 None => {
                     self.emit(SessionEvent::ToolStarted(call.clone()));
-                    match inbox.race(self.tools.call(call, &self.scope)).await {
+                    match inbox.race(self.tools.call(call, &self.scope, config)).await {
                         Ok(result) => {
                             let content = result.content.clone();
                             self.emit(SessionEvent::ToolFinished {
@@ -208,9 +212,9 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
             "the context is about {tokens} tokens, past the model window of {limit}"
         ))
     }
+}
 
-    fn recorded_reasoning(&self, output: &ModelOutput) -> Option<String> {
-        let keep = self.record.records_reasoning() && !output.reasoning.trim().is_empty();
-        keep.then(|| output.reasoning.clone())
-    }
+fn recorded_reasoning(config: &Config, output: &ModelOutput) -> Option<String> {
+    let keep = config.session().record.records_reasoning() && !output.reasoning.trim().is_empty();
+    keep.then(|| output.reasoning.clone())
 }

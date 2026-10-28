@@ -16,7 +16,8 @@ projects/
         api.rs               core version
         paths.rs             every application path
         init.rs              first-start setup of those paths
-        config.rs            config.yml: providers and session settings
+        config.rs            config.yml: providers, session settings, tool switches
+        live_config.rs       the current config in memory, written back on change
         events.rs            live events published after database writes
         session.rs           starts a session: workspace folder, thread, MAIN.md
         state/               SQLite records, one file per table
@@ -53,6 +54,7 @@ projects/
     cli/src/                 dusk_code binary
         main.rs, app.rs      startup: paths, config, provider, model, session
         chat.rs              line-based chat: `text` queues, `!text` sends now, `!` stops
+        commands.rs          `:tools`, `:on <tool>`, `:off <tool>`, `:reload`
 ```
 
 ## How a session works
@@ -91,7 +93,12 @@ providers:
 session:
   record: full      # user messages and the whole model output (default)
   # record: answer  # user messages and model answers only
+
+tools:              # every tool is on unless switched off
+  run_command: false
 ```
+
+The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as `:off run_command` are written to disk atomically and applied in memory, and a background check re-reads the file within five seconds of a hand edit (`:reload` does it at once). A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
 
 The CLI uses the first provider and its first catalogue model and starts a new session per run. `--state-db PATH` overrides the database location.
 

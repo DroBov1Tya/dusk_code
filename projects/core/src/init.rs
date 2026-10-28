@@ -26,6 +26,13 @@ session:
   # full:   store user messages and the whole model output (reasoning, tool calls, answer)
   # answer: store user messages and model answers only
   record: full
+
+# Tools are on unless switched off here or with :off in a client, for example:
+# tools:
+#   run_command: false
+#
+# The core rewrites this file when a setting changes at runtime; only its own header
+# comment is kept then.
 ";
 
 const MAIN_PROMPT_TEMPLATE: &str = "\
