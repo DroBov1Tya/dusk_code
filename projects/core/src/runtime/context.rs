@@ -5,13 +5,14 @@ use anyhow::Result;
 
 use crate::{
     providers::{ChatMessage, ToolSpec},
-    state::{Message, MessageRole, State, estimate_tokens},
+    state::{LastPrompt, Message, MessageRole, State, estimate_tokens},
 };
 
 pub(super) struct Conversation {
     pub(super) messages: Vec<Message>,
     /// Sequence of the newest message a turn has taken; user messages after it are queued.
     pub(super) answered_through: u64,
+    pub(super) last_prompt: Option<LastPrompt>,
 }
 
 impl Conversation {
@@ -19,6 +20,7 @@ impl Conversation {
         Ok(Self {
             answered_through: state.answered_through(thread_id).await?,
             messages: state.list_messages(thread_id).await?,
+            last_prompt: state.last_prompt(thread_id).await?,
         })
     }
 
@@ -33,11 +35,26 @@ impl Conversation {
         self.messages.iter().filter_map(chat_message).collect()
     }
 
-    /// Estimated size of what `chat_messages` sends.
-    pub(super) fn tokens(&self) -> u64 {
+    /// Sequence of the newest message `chat_messages` sends.
+    pub(super) fn newest_sequence(&self) -> Option<u64> {
+        self.messages.last().map(|message| message.sequence)
+    }
+
+    /// Size of a request with these messages and tools. The provider's count of the last
+    /// request is exact, so only what came after it is estimated; estimates alone tend
+    /// to miss the chat template markup.
+    pub(super) fn tokens(&self, specs: &[ToolSpec]) -> u64 {
+        // Compaction will have to drop this count, since it changes the earlier messages.
+        let Some(last) = self.last_prompt else {
+            return self.estimated_after(0) + spec_tokens(specs);
+        };
+        last.prompt_tokens + self.estimated_after(last.through_sequence)
+    }
+
+    fn estimated_after(&self, sequence: u64) -> u64 {
         self.messages
             .iter()
-            .filter(|message| chat_message(message).is_some())
+            .filter(|message| message.sequence > sequence && chat_message(message).is_some())
             .map(Message::context_tokens)
             .sum()
     }
@@ -103,6 +120,7 @@ mod tests {
                 message(5, MessageRole::User, "follow-up"),
             ],
             answered_through: 2,
+            last_prompt: None,
         };
         assert_eq!(
             conversation.chat_messages(),
@@ -120,7 +138,29 @@ mod tests {
                 ChatMessage::User("follow-up".into()),
             ]
         );
-        assert_eq!(conversation.tokens(), 25);
+        assert_eq!(conversation.tokens(&[]), 25);
         assert!(conversation.has_queued(), "the follow-up waits");
+    }
+
+    #[test]
+    fn the_last_prompt_count_replaces_estimates_up_to_its_message() {
+        let conversation = Conversation {
+            messages: (1..=4)
+                .map(|sequence| message(sequence, MessageRole::User, "text"))
+                .collect(),
+            answered_through: 0,
+            last_prompt: Some(LastPrompt {
+                prompt_tokens: 100,
+                through_sequence: 3,
+            }),
+        };
+        let spec = ToolSpec {
+            name: "tool".into(),
+            description: "Does things.".into(),
+            parameters: serde_json::json!({}),
+        };
+
+        // The tool definition is inside the provider's count already.
+        assert_eq!(conversation.tokens(&[spec]), 100 + 5);
     }
 }

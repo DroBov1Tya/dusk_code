@@ -99,9 +99,9 @@ fn describe(tokens: &ThreadTokens, window: Option<u64>) -> String {
         .unwrap_or_default();
     let spent = &tokens.spent;
     format!(
-        "tokens: context ~{}{window} (system {}, user {}, agent {}, tool calls {}, \
-         tool results {}, tool definitions {}); history ~{}; provider {} in ({} cached), {} out in {} calls",
-        current.total(),
+        "tokens: context {}{window}, estimated by author: system {}, user {}, agent {}, tool calls {}, \
+         tool results {}, tool definitions {}; history ~{}; provider {} in ({} cached), {} out in {} calls",
+        tokens.context,
         current.system,
         current.user,
         current.assistant,

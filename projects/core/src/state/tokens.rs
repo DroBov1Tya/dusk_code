@@ -9,6 +9,9 @@ use crate::providers::Usage;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ThreadTokens {
+    /// The best known size of the current context: what the provider counted for the
+    /// last call plus estimates of what came after it. Before any call, `current.total()`.
+    pub context: u64,
     /// What the model receives now: the messages after the thread's compaction point.
     pub current: TokenCounts,
     /// Every message the thread ever had, compacted ones included.
@@ -59,17 +62,33 @@ impl TokenCounts {
     }
 }
 
+/// The provider's count of the newest request of a thread.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LastPrompt {
+    pub prompt_tokens: u64,
+    /// The newest message that request sent.
+    pub through_sequence: u64,
+}
+
 impl State {
-    /// Stores the usage the provider reported for one model call of a turn.
-    pub async fn record_usage(&self, turn_id: &str, model: &str, usage: Usage) -> Result<()> {
+    /// Stores the usage the provider reported for one model call of a turn, which sent
+    /// the thread's messages up to `through_sequence`.
+    pub async fn record_usage(
+        &self,
+        turn_id: &str,
+        model: &str,
+        through_sequence: u64,
+        usage: Usage,
+    ) -> Result<()> {
         let timestamp = timestamp_ms()?;
         sqlx::query(
-            "INSERT INTO model_usage (turn_id, model, prompt_tokens, cached_prompt_tokens,
-                completion_tokens, reasoning_tokens, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO model_usage (turn_id, model, through_sequence, prompt_tokens,
+                cached_prompt_tokens, completion_tokens, reasoning_tokens, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(turn_id)
         .bind(model)
+        .bind(sql_count(through_sequence)?)
         .bind(sql_count(usage.prompt_tokens)?)
         .bind(sql_count(usage.cached_prompt_tokens)?)
         .bind(sql_count(usage.completion_tokens)?)
@@ -81,6 +100,26 @@ impl State {
         Ok(())
     }
 
+    pub async fn last_prompt(&self, thread_id: &str) -> Result<Option<LastPrompt>> {
+        let row = sqlx::query(
+            "SELECT prompt_tokens, through_sequence
+             FROM model_usage JOIN turns USING (turn_id) WHERE thread_id = ?
+             ORDER BY model_usage.created_at DESC, model_usage.rowid DESC LIMIT 1",
+        )
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("load the last prompt size")?;
+        row.map(|row| {
+            Ok(LastPrompt {
+                prompt_tokens: read_tokens(&row, "prompt_tokens")?,
+                through_sequence: read_tokens(&row, "through_sequence")?,
+            })
+        })
+        .transpose()
+    }
+
+    /// Counts by author; `context` is left to the agent, which knows the last request.
     pub async fn thread_tokens(&self, thread_id: &str) -> Result<ThreadTokens> {
         let mut tokens = ThreadTokens::default();
         let groups = sqlx::query(
@@ -232,8 +271,18 @@ mod tests {
             completion_tokens: 20,
             reasoning_tokens: 5,
         };
-        state.record_usage(&turn_id, "model", usage).await.unwrap();
-        state.record_usage(&turn_id, "model", usage).await.unwrap();
+        state
+            .record_usage(&turn_id, "model", 2, usage)
+            .await
+            .unwrap();
+        let later = Usage {
+            prompt_tokens: 150,
+            ..usage
+        };
+        state
+            .record_usage(&turn_id, "model", 4, later)
+            .await
+            .unwrap();
 
         let tokens = state.thread_tokens("thread").await.unwrap();
 
@@ -241,11 +290,19 @@ mod tests {
         assert_eq!(
             tokens.spent,
             Usage {
-                prompt_tokens: 200,
+                prompt_tokens: 250,
                 cached_prompt_tokens: 120,
                 completion_tokens: 40,
                 reasoning_tokens: 10,
             }
+        );
+        let last = state.last_prompt("thread").await.unwrap();
+        assert_eq!(
+            last,
+            Some(LastPrompt {
+                prompt_tokens: 150,
+                through_sequence: 4
+            })
         );
     }
 }

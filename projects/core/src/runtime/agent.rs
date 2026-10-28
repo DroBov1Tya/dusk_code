@@ -91,15 +91,19 @@ impl Agent {
 
     /// Counting is for the client to see; a failure here does not touch the thread.
     async fn report_tokens(&self) {
-        match self.state.thread_tokens(&self.thread_id).await {
-            Ok(mut tokens) => {
-                let specs = self.tools.specs(&self.scope, &self.config.current());
-                tokens.current.tool_specs = spec_tokens(&specs);
-                self.emit(ThreadEvent::Tokens {
-                    tokens,
-                    window: self.model.context_window,
-                });
-            }
+        let specs = self.tools.specs(&self.scope, &self.config.current());
+        let counted = async {
+            let mut tokens = self.state.thread_tokens(&self.thread_id).await?;
+            let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+            tokens.current.tool_specs = spec_tokens(&specs);
+            tokens.context = conversation.tokens(&specs);
+            anyhow::Ok(tokens)
+        };
+        match counted.await {
+            Ok(tokens) => self.emit(ThreadEvent::Tokens {
+                tokens,
+                window: self.model.context_window,
+            }),
             Err(error) => warn!("cannot count thread tokens: {error:#}"),
         }
     }
@@ -131,9 +135,11 @@ impl Agent {
         };
         // Only the last attempt is recorded: a failed one rarely gets usage reported.
         if let Some(usage) = output.usage {
+            let through = conversation.newest_sequence().unwrap_or_default();
+            let model = &self.model.id;
             let recorded = self
                 .state
-                .record_usage(&turn.turn_id, &self.model.id, usage);
+                .record_usage(&turn.turn_id, model, through, usage);
             if let Err(error) = recorded.await {
                 let error = format!("cannot store the model usage: {error:#}");
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
@@ -243,7 +249,7 @@ impl Agent {
 
     /// Reports a context past the model window to the client and returns why.
     fn context_too_large(&self, conversation: &Conversation, specs: &[ToolSpec]) -> Option<String> {
-        let tokens = conversation.tokens() + spec_tokens(specs);
+        let tokens = conversation.tokens(specs);
         let limit = self.model.context_window.filter(|&limit| tokens > limit)?;
         self.emit(ThreadEvent::ContextTooLarge { tokens, limit });
         Some(format!(
