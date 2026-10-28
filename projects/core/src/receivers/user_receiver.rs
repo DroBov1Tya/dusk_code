@@ -3,7 +3,7 @@
 use anyhow::{Result, bail, ensure};
 
 use crate::state::{
-    Execution, MessageAttachment, MessageInput, MessageRole, RejectionCode, State, Turn,
+    Execution, Message, MessageAttachment, MessageInput, MessageRole, RejectionCode, State,
 };
 
 pub struct UserReceiver<'a> {
@@ -36,10 +36,9 @@ pub struct ScenarioRequest {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UserReceipt {
-    /// Acceptance metadata; the turn owns the subsequent lifecycle.
     pub execution: Execution,
-    /// `None` when the request was rejected.
-    pub turn: Option<Turn>,
+    /// The stored message, now queued for the agent; `None` when the request was rejected.
+    pub message: Option<Message>,
 }
 
 impl<'a> UserReceiver<'a> {
@@ -54,16 +53,16 @@ impl<'a> UserReceiver<'a> {
         }
     }
 
-    /// Commits the receipt, the message and its queued turn in one transaction, then
-    /// publishes live events. Invalid input gets a rejected receipt; an invalid UID,
-    /// context or unavailable storage is an error without a receipt.
+    /// Commits the receipt and the message in one transaction, then publishes live events.
+    /// Invalid input gets a rejected receipt; an invalid UID, context or unavailable storage
+    /// is an error without a receipt.
     pub async fn submit_message(&self, message: UserMessage) -> Result<UserReceipt> {
         ensure!(
             !message.content.trim_start().starts_with('/'),
             "slash commands require the scenario route"
         );
         let rejection = rejection(&message);
-        let execution = self
+        let (execution, message) = self
             .state
             .receive_request(
                 &message.request_uid,
@@ -80,8 +79,7 @@ impl<'a> UserReceiver<'a> {
                 rejection,
             )
             .await?;
-        let turn = self.state.load_turn(&execution.request_uid).await?;
-        Ok(UserReceipt { execution, turn })
+        Ok(UserReceipt { execution, message })
     }
 
     /// Scenarios deliberately have a separate method and currently perform no writes.

@@ -1,3 +1,5 @@
+use std::env;
+
 use anyhow::{Context, Result, bail};
 use dusk_core::{
     api::CORE_API_VERSION,
@@ -5,7 +7,7 @@ use dusk_core::{
     init,
     paths::Paths,
     providers::{Model, ProviderRegistry},
-    runtime::AgentRuntime,
+    runtime::SessionRunner,
     session::start_session,
     state::State,
 };
@@ -85,19 +87,22 @@ impl Application {
             .providers
             .provider(&self.provider_name)
             .context("configured provider is missing")?;
-        let runtime = AgentRuntime::new(
-            &self.state,
-            AGENT_ID,
-            provider,
-            self.model.clone(),
-            self.record,
-        )?;
         let session = start_session(&self.state, &self.paths, THREAD_SOURCE).await?;
         info!(
             "session {} started in {}",
             session.thread_id,
             session.workspace.display()
         );
-        chat::run(&self.state, &runtime, &session.thread_id).await
+        let cwd = env::current_dir()?.to_string_lossy().into_owned();
+        let (runner, input, output) = SessionRunner::new(
+            &self.state,
+            provider,
+            self.model.clone(),
+            self.record,
+            AGENT_ID,
+            &session.thread_id,
+            &cwd,
+        )?;
+        chat::run(runner, input, output).await
     }
 }

@@ -10,6 +10,8 @@ CREATE TABLE messages (
     -- Model thinking behind an assistant message; NULL when not recorded.
     reasoning TEXT CHECK (reasoning IS NULL OR (role = 'assistant' AND length(trim(reasoning)) > 0)),
     cwd TEXT NOT NULL CHECK (length(trim(cwd)) > 0),
+    -- Estimated size in model tokens, used to check the context window.
+    token_count INTEGER NOT NULL CHECK (token_count >= 0),
     attachments_json TEXT NOT NULL DEFAULT '[]' CHECK (
         json_valid(attachments_json) AND json_type(attachments_json) = 'array'
     ),

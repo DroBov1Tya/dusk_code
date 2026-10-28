@@ -1,70 +1,73 @@
-//! Line-based chat: every input line becomes a turn whose answer streams to stdout.
+//! Line-based chat over a live session. Lines are sent as they are typed:
+//! `text` queues a message, `!text` sends it now and interrupts the answer, `!` stops it.
 
-use std::{
-    env,
-    io::{self, IsTerminal, Write},
-};
+use std::io::{self, IsTerminal, Write};
 
-use anyhow::{Result, bail};
+use anyhow::Result;
 use dusk_core::{
-    providers::ChatDelta,
-    receivers::{UserMessage, UserReceiver},
-    runtime::AgentRuntime,
-    state::{RejectionCode, State, TurnStatus},
+    providers::{ChatDelta, ModelProvider},
+    runtime::{SessionEvent, SessionInput, SessionOutput, SessionRunner},
+    state::{Turn, TurnStatus},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
-use uuid::Uuid;
 
 const PROMPT: &str = "> ";
+const NOW_PREFIX: char = '!';
 
-pub async fn run(state: &State, runtime: &AgentRuntime<'_>, thread_id: &str) -> Result<()> {
-    let users = UserReceiver::new(state);
-    let cwd = env::current_dir()?.to_string_lossy().into_owned();
+pub async fn run<P: ModelProvider>(
+    runner: SessionRunner<'_, P>,
+    input: SessionInput,
+    output: SessionOutput,
+) -> Result<()> {
+    let (session, typing, ()) = tokio::join!(runner.run(), read_lines(input), print_events(output));
+    typing?;
+    session
+}
+
+/// Ends at end of input; dropping `input` lets the session finish its queue and stop.
+async fn read_lines(input: SessionInput) -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
-    loop {
-        eprint!("{PROMPT}");
-        let Some(line) = lines.next_line().await? else {
-            return Ok(());
-        };
-        let content = line.trim();
-        if content.is_empty() {
-            continue;
+    while let Some(line) = lines.next_line().await? {
+        let line = line.trim();
+        match line.strip_prefix(NOW_PREFIX).map(str::trim) {
+            Some("") => input.cancel()?,
+            Some(text) => input.send_now(text)?,
+            None if line.is_empty() => {}
+            None => input.send(line)?,
         }
-        if let Err(error) = ask(&users, runtime, thread_id, &cwd, content).await {
-            eprintln!("error: {error:#}");
+    }
+    Ok(())
+}
+
+async fn print_events(mut output: SessionOutput) {
+    let mut printer = StreamPrinter::new();
+    while let Some(event) = output.next_event().await {
+        match event {
+            SessionEvent::Idle => eprint!("{PROMPT}"),
+            SessionEvent::Delta(delta) => printer.print(&delta),
+            SessionEvent::TurnFinished(turn) => {
+                printer.finish();
+                report(&turn);
+            }
+            SessionEvent::Rejected { reason } => eprintln!("rejected: {reason}"),
+            SessionEvent::ContextTooLarge { tokens, limit } => eprintln!(
+                "the context is about {tokens} tokens but the model accepts {limit}: \
+                 switch the model or compact the context"
+            ),
+            _ => {}
         }
     }
 }
 
-async fn ask(
-    users: &UserReceiver<'_>,
-    runtime: &AgentRuntime<'_>,
-    thread_id: &str,
-    cwd: &str,
-    content: &str,
-) -> Result<()> {
-    let receipt = users
-        .submit_message(UserMessage {
-            request_uid: Uuid::now_v7().to_string(),
-            thread_id: thread_id.to_owned(),
-            content: content.to_owned(),
-            cwd: cwd.to_owned(),
-            attachments: Vec::new(),
-        })
-        .await?;
-    let Some(turn) = receipt.turn else {
-        let code = receipt.execution.error_code.map(RejectionCode::as_str);
-        bail!("request rejected: {}", code.unwrap_or("unknown"));
-    };
-
-    let mut printer = StreamPrinter::new();
-    let receipt = runtime.run_turn(&turn, |delta| printer.print(delta)).await;
-    printer.finish();
-    let receipt = receipt?;
-    if receipt.turn.status == TurnStatus::Failed {
-        bail!("{}", receipt.turn.error_message.unwrap_or_default());
+fn report(turn: &Turn) {
+    match turn.status {
+        TurnStatus::Interrupted => eprintln!("[interrupted]"),
+        TurnStatus::Failed => eprintln!(
+            "error: {}",
+            turn.error_message.as_deref().unwrap_or("turn failed")
+        ),
+        _ => {}
     }
-    Ok(())
 }
 
 /// Reasoning goes to stderr (dimmed on a terminal), the answer to stdout.

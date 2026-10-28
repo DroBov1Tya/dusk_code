@@ -2,7 +2,7 @@
 //! the HTTP client, then the streamed response it returns.
 
 use std::{
-    collections::{BTreeSet, VecDeque},
+    collections::{BTreeMap, VecDeque},
     time::Duration,
 };
 
@@ -43,6 +43,9 @@ struct ModelCatalogue {
 #[derive(Deserialize)]
 struct ModelEntry {
     id: String,
+    /// Named differently by LiteLLM, OpenRouter and others; OpenAI omits it.
+    #[serde(alias = "context_length", alias = "context_window")]
+    max_input_tokens: Option<u64>,
 }
 
 #[derive(Serialize)]
@@ -143,15 +146,18 @@ impl OpenAiCompatible {
         }
         let catalogue: ModelCatalogue = serde_json::from_slice(&bytes)
             .map_err(|_| anyhow!("invalid provider model catalogue JSON"))?;
-        let mut ids = BTreeSet::new();
+        let mut models = BTreeMap::new();
         for model in catalogue.data {
             ensure!(
                 !model.id.trim().is_empty() && !model.id.chars().any(char::is_control),
                 "provider returned an empty or invalid model ID"
             );
-            ids.insert(model.id);
+            models.insert(model.id, model.max_input_tokens);
         }
-        Ok(ids.into_iter().map(|id| Model { id }).collect())
+        Ok(models
+            .into_iter()
+            .map(|(id, context_window)| Model { id, context_window })
+            .collect())
     }
 
     pub(super) async fn stream_chat(

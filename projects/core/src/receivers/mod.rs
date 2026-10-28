@@ -1,8 +1,7 @@
-//! Method-based entry points. A future public adapter receives only `UserReceiver`.
-//! The trusted agent runtime owns `AgentReceiver`; no provider or network server is invoked here.
+//! Entry points into the core: clients get `UserReceiver`, the agent runtime `AgentReceiver`.
 
 mod agent_receiver;
 mod user_receiver;
 
-pub use agent_receiver::{AgentOutcome, AgentReceipt, AgentReceiver, AgentResponse, AgentTask};
+pub use agent_receiver::{AgentOutcome, AgentReceiver, Conversation};
 pub use user_receiver::{ScenarioRequest, UserMessage, UserReceipt, UserReceiver, UserRequest};
