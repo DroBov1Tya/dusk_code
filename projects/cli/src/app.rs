@@ -1,9 +1,9 @@
-use std::{env, path::PathBuf};
-
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail};
 use dusk_core::{
     api::CORE_API_VERSION,
     config::Config,
+    init,
+    paths::Paths,
     providers::{Model, ProviderRegistry},
     runtime::AgentRuntime,
     state::{ApprovalMode, State, ThreadInput},
@@ -26,21 +26,25 @@ pub struct Application {
 
 impl Application {
     pub async fn build(args: AppArgs) -> Result<Self> {
-        let path = match args.state_db {
-            Some(path) => path,
-            None => default_state_db()?,
-        };
+        let paths = Paths::from_home()?;
+        if init::initialize(&paths)?.config_created {
+            bail!(
+                "created {}; add a provider and restart",
+                paths.config_file().display()
+            );
+        }
+        let path = args.state_db.unwrap_or_else(|| paths.state_db());
         let state = match State::open(path).await {
             Ok(state) => {
-                info!("✅ Инициализация: SQLite state | Статус: Успешно");
+                info!("state database opened");
                 state
             }
             Err(error) => {
-                error!("❌ Инициализация: SQLite state | Статус: {}", error);
+                error!("cannot open state database: {error:#}");
                 return Err(error);
             }
         };
-        let providers = ProviderRegistry::from_config(&Config::load()?)?;
+        let providers = ProviderRegistry::from_config(&Config::load(&paths)?)?;
         let provider_name = providers
             .names()
             .next()
@@ -51,10 +55,7 @@ impl Application {
             .context("configured provider is missing")?
             .default_model()
             .await?;
-        info!(
-            "✅ Инициализация: Провайдер {} | Статус: Модель {}",
-            provider_name, model.id
-        );
+        info!("provider {provider_name}, model {}", model.id);
         Ok(Self {
             state,
             providers,
@@ -65,7 +66,7 @@ impl Application {
 
     pub async fn run(self) -> Result<()> {
         info!(
-            "ℹ️ Действие: Запуск чата | Статус: Готово, Core API={}.{}",
+            "chat started, core API {}.{}",
             CORE_API_VERSION.major, CORE_API_VERSION.minor
         );
         let result = self.chat().await;
@@ -80,7 +81,7 @@ impl Application {
             .context("configured provider is missing")?;
         let runtime = AgentRuntime::new(&self.state, AGENT_ID, provider, self.model.clone())?;
         let thread_id = self.start_thread().await?;
-        info!("✅ Сессия: {} | Статус: Создана", thread_id);
+        info!("thread {thread_id} created");
         chat::run(&self.state, &runtime, &thread_id).await
     }
 
@@ -104,29 +105,4 @@ impl Application {
             .await?;
         Ok(thread_id)
     }
-}
-
-fn default_state_db() -> Result<PathBuf> {
-    #[cfg(target_os = "macos")]
-    let directory =
-        PathBuf::from(env::var_os("HOME").context("HOME is unavailable; use --state-db")?)
-            .join("Library/Application Support");
-
-    #[cfg(target_os = "windows")]
-    let directory = PathBuf::from(
-        env::var_os("LOCALAPPDATA").context("LOCALAPPDATA is unavailable; use --state-db")?,
-    );
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let directory = match env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
-        Some(path) => PathBuf::from(path),
-        None => PathBuf::from(env::var_os("HOME").context("HOME is unavailable; use --state-db")?)
-            .join(".local/share"),
-    };
-
-    ensure!(
-        directory.is_absolute(),
-        "application data directory must be absolute; use --state-db"
-    );
-    Ok(directory.join(crate::constants::APP_NAME).join("state.db"))
 }

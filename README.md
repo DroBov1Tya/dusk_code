@@ -31,6 +31,8 @@ projects/
 │       │   ├── execution.rs Execution and status contracts
 │       │   └── handler.rs user-message receipt handler
 │       ├── config.rs     provider settings from ~/.config/duskcode/config.yml
+│       ├── paths.rs      every application path in one place
+│       ├── init.rs       first-start initialization (directories, config template)
 │       ├── providers/    model catalogue and streamed chat
 │       │   ├── mod.rs    provider registry, chat types, model auto-selection
 │       │   ├── sse.rs    bounded Server-Sent Events decoder
@@ -53,7 +55,7 @@ projects/
 
 Tokio provides the async runtime and concurrency primitives. Fallible contracts use `anyhow::Result`; policy and persistence futures are `Send`.
 
-`state::State::open(path)` checks whether the database file exists before connecting, creates missing parent directories, and applies embedded SQLx migrations. The default CLI path is `~/Library/Application Support/dusk_code/state.db` on macOS, `%LOCALAPPDATA%/dusk_code/state.db` on Windows, and `$XDG_DATA_HOME/dusk_code/state.db` (or `~/.local/share/dusk_code/state.db`) elsewhere. `--state-db PATH` overrides it.
+`state::State::open(path)` checks whether the database file exists before connecting, creates missing parent directories, and applies embedded SQLx migrations. The default CLI path is `~/.config/duskcode/session/state.db`; `--state-db PATH` overrides it. All application paths are defined in `paths.rs`.
 
 The `threads` table stores a caller-assigned stable `id`, `source`, core-assigned `created_at` and `updated_at` Unix timestamps in milliseconds, `tokens_used`, `compaction_count`, `sandbox_policy`, `approval_mode`, optional `git_branch`, `git_commit_sha`, and `git_origin_url`, and `title` (which may be empty). Source and sandbox policy are non-empty caller-defined strings. `ApprovalMode::OnRequest` (`on_request`) permits asking the user for approval; `ApprovalMode::Never` (`never`) disables approval requests. The sandbox policy is stored separately. Token and compaction counts range from zero to `i64::MAX`.
 
@@ -94,7 +96,7 @@ The only supported task is currently `Task::UserMessage`:
 
 ## Chat
 
-Providers are read from `~/.config/duskcode/config.yml`; the directory and file must not be accessible by group or others:
+On first start the core creates `~/.config/duskcode/` and `~/.config/duskcode/session/` (mode 0700) and a `config.yml` template (mode 0600) without providers; existing files are never modified. Add a provider and restart. The directory and file must not be accessible by group or others:
 
 ```yaml
 providers:
