@@ -6,6 +6,7 @@ use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use tokio::sync::mpsc;
+use tracing::warn;
 
 use super::{
     context::Conversation,
@@ -83,7 +84,19 @@ impl Agent {
         }
         let turn = self.state.finish_turn(&turn.turn_id, outcome).await?;
         self.emit(ThreadEvent::TurnFinished(turn));
+        self.report_tokens().await;
         Ok(stop)
+    }
+
+    /// Counting is for the client to see; a failure here does not touch the thread.
+    async fn report_tokens(&self) {
+        match self.state.thread_tokens(&self.thread_id).await {
+            Ok(tokens) => self.emit(ThreadEvent::Tokens {
+                tokens,
+                window: self.model.context_window,
+            }),
+            Err(error) => warn!("cannot count thread tokens: {error:#}"),
+        }
     }
 
     pub(super) fn emit(&self, event: ThreadEvent) {
@@ -111,6 +124,16 @@ impl Agent {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
         };
+        // Only the last attempt is recorded: a failed one rarely gets usage reported.
+        if let Some(usage) = output.usage {
+            let recorded = self
+                .state
+                .record_usage(&turn.turn_id, &self.model.id, usage);
+            if let Err(error) = recorded.await {
+                let error = format!("cannot store the model usage: {error:#}");
+                return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+            }
+        }
         let answer = TurnAnswer {
             reasoning: recorded_reasoning(&config, &output),
             content: output.text,

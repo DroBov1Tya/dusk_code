@@ -35,8 +35,13 @@ pub enum ModelEvent {
 /// Token usage of the whole request, as the provider reports it.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Usage {
+    /// Everything the request sent, the cached part included.
     pub prompt_tokens: u64,
+    /// The part of the prompt the provider served from its cache, usually at a discount.
+    pub cached_prompt_tokens: u64,
+    /// Everything the model wrote, its reasoning included.
     pub completion_tokens: u64,
+    pub reasoning_tokens: u64,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

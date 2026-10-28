@@ -14,8 +14,11 @@ CREATE TABLE messages (
     tool_call_id TEXT CHECK ((role = 'tool') = (tool_call_id IS NOT NULL)),
     -- A client's ID for a user message; sending it again does not add the message twice.
     request_uid TEXT UNIQUE CHECK (request_uid IS NULL OR role = 'user'),
-    -- Estimated size in model tokens, used to check the context window.
-    token_count INTEGER NOT NULL CHECK (token_count >= 0),
+    -- Estimated sizes in model tokens. The context holds content and tool calls;
+    -- reasoning is never sent back, so it only counts in the thread history.
+    content_tokens INTEGER NOT NULL CHECK (content_tokens >= 0),
+    tool_calls_tokens INTEGER NOT NULL CHECK (tool_calls_tokens >= 0),
+    reasoning_tokens INTEGER NOT NULL CHECK (reasoning_tokens >= 0),
     created_at INTEGER NOT NULL CHECK (created_at >= 0),
     UNIQUE (thread_id, sequence),
     CHECK (length(trim(content)) > 0 OR tool_calls_json IS NOT NULL)

@@ -8,7 +8,7 @@ use anyhow::Result;
 use dusk_core::{
     providers::ModelEvent,
     runtime::{ThreadEvent, ThreadInput, ThreadOutput},
-    state::{Turn, TurnStatus},
+    state::{ThreadTokens, Turn, TurnStatus},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -64,6 +64,7 @@ async fn print_events(mut output: ThreadOutput) {
                 printer.finish();
                 report(&turn);
             }
+            ThreadEvent::Tokens { tokens, window } => eprintln!("{}", describe(&tokens, window)),
             ThreadEvent::Rejected { reason } => eprintln!("rejected: {reason}"),
             ThreadEvent::Retrying { attempt, error } => {
                 printer.end_reasoning();
@@ -88,6 +89,30 @@ fn report(turn: &Turn) {
         ),
         _ => {}
     }
+}
+
+/// Context and history are estimates; the provider line is what it reported.
+fn describe(tokens: &ThreadTokens, window: Option<u64>) -> String {
+    let current = &tokens.current;
+    let window = window
+        .map(|limit| format!(" of {limit}"))
+        .unwrap_or_default();
+    let spent = &tokens.spent;
+    format!(
+        "tokens: context ~{}{window} (system {}, user {}, agent {}, tool calls {}, \
+         tool results {}); history ~{}; provider {} in ({} cached), {} out in {} calls",
+        current.total(),
+        current.system,
+        current.user,
+        current.assistant,
+        current.tool_calls,
+        current.tool_results,
+        tokens.all.total(),
+        spent.prompt_tokens,
+        spent.cached_prompt_tokens,
+        spent.completion_tokens,
+        tokens.model_calls,
+    )
 }
 
 /// Reasoning goes to stderr (dimmed on a terminal), the answer to stdout.

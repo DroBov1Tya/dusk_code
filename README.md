@@ -32,6 +32,7 @@ projects/
             threads.rs       threads
             messages.rs      messages, in order
             turns.rs         turns and their steps
+            tokens.rs        token counts by author and provider usage per thread
             migrations/      one standalone schema file per table
         runtime/             what clients start, and the agent
             runtime.rs         Runtime: database, config, model, background tasks, threads
@@ -72,6 +73,10 @@ A client starts one `Runtime`. It sets up missing files, opens the database and 
 3. A model call that fails before writing anything, on a network error, a timeout, a rate limit, a server error or a cut stream, is tried up to three times in all, after pauses of one and two seconds; the client sees each failed attempt as `Retrying`. Other failures, such as a rejected API key, end the turn at once, and the client sees the error.
 4. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. Messages sent during a turn are stored after it ends, so the thread reads in the order things happened.
 5. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
+6. After each turn the client gets `Tokens`, three different numbers:
+   - `current`: the estimated size of what the model receives now, by author: system, user, agent, tool calls, tool results. It holds the messages after the thread's `context_from`; compacting will move that point.
+   - `all`: the same over the whole thread history, reasoning included.
+   - `spent`: the sums of what the provider reported per model call: prompt (and its cached part) and completion (and its reasoning part). Every call sends the whole context again, so this grows much faster than the thread.
 
 ## Files
 
@@ -126,7 +131,7 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 
 - MAIN.md is copied into a new thread as its first, `system` message; editing the file affects only chats started later. A missing or blank file means no system prompt.
 - The model receives only role and text; IDs, timestamps, cwd and attachments stay in the core. Reasoning is stored but never sent back as context.
-- Text is stored once, in `messages`; turns refer to messages and every request is rebuilt from them. Each message carries an estimated token count (UTF-8 bytes / 4); providers report usage per request only.
+- Text is stored once, in `messages`; turns refer to messages and every request is rebuilt from them. Each message carries estimated token counts (UTF-8 bytes / 4) for its text, tool calls and reasoning; providers report usage per request only.
 - At most one turn runs per thread, enforced by the database.
 - Tools run without asking. File tools only reach the directory the client was started in and the thread workspace. `run_command` runs in the client's working directory with a timeout and output caps in its own process group, so nothing it started outlives it; otherwise it can do what the user can.
 - A user message carries a request UID; sending it again returns the stored message instead of adding a second one.
@@ -135,4 +140,4 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 
 ## Limitations
 
-Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers, context compaction, thread resume or retries yet. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers, context compaction or thread resume yet. Token estimates leave out tool definitions and chat template markup, which the provider counts. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
