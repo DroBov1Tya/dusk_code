@@ -37,9 +37,9 @@ async fn read_lines(input: ThreadInput, settings: Settings) -> Result<()> {
         }
         match line.strip_prefix(NOW_PREFIX).map(str::trim) {
             Some("") => input.cancel()?,
-            Some(text) => input.send_now(text)?,
+            Some(text) => input.send_now(text).await?,
             None if line.is_empty() => {}
-            None => input.send(line)?,
+            None => input.send(line).await?,
         }
     }
     Ok(())

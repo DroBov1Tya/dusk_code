@@ -32,14 +32,15 @@ projects/
             state.rs         database handle: open, close
             threads.rs       threads
             messages.rs      messages, in order
-            turns.rs         turns and their steps
+            turns.rs         turns and their steps, written ahead
+            pending.rs       what clients sent, before the thread takes it in
             compactions.rs   summaries that replace older messages in the context
             tokens.rs        token counts by author and provider usage per thread
             migrations/      one standalone schema file per table
         runtime/             what clients start, and the agent
             runtime.rs         Runtime: database, config, model, background tasks, threads
             thread_runner.rs   a live thread: send, send now, cancel, events
-            inbox.rs           client commands while the agent works
+            inbox.rs           client input while the agent works
             agent.rs           a turn, step by step: model -> tools -> model
             compaction.rs      summarizing the context, on /compact or near the window
             generation.rs      one model call, streamed into a caller-owned output
@@ -73,9 +74,9 @@ A client starts one `Runtime`. It sets up missing files, opens the database and 
 ## How a thread works
 
 1. A user message is stored. User messages newer than the last turn are the queue.
-2. When the agent is free it starts one turn over the whole queue, checks the context size against the model window, sends the thread's messages with the tool specs and streams the answer. When the model calls tools, they run one by one and the next step sends their results back, until the model answers without calling a tool (at most 50 steps). Each step, the calls and their results, is stored in one transaction.
+2. When the agent is free it starts one turn over the whole queue, checks the context size against the model window, sends the thread's messages with the tool specs and streams the answer. When the model calls tools, they run one by one and the next step sends their results back, until the model answers without calling a tool (at most 50 steps). Each step is written ahead: its calls are stored before any tool runs, and each result right after its tool. A call left without a result, by a crash or a failed write, gets a result saying so when the turn ends or on the next start, since the model needs one per call and the tool may have had an effect.
 3. A model call that fails before writing anything, on a network error, a timeout, a rate limit, a server error or a cut stream, is tried up to three times in all, after pauses of one and two seconds; the client sees each failed attempt as `Retrying`. Other failures, such as a rejected API key, end the turn at once, and the client sees the error.
-4. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. Messages sent during a turn are stored after it ends, so the thread reads in the order things happened.
+4. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. A send returns once the message is stored as pending, so a confirmed message survives a crash. The thread takes pending messages in when it is free, after the running turn or on the next start, so the thread reads in the order things happened.
 5. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
 6. After each turn the client gets `Tokens`:
    - `context`: the size of the next request, which the context check also uses. The provider counted the last request exactly, so only messages stored after it are estimated; before the first call everything is.
@@ -150,10 +151,10 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 - Text is stored once, in `messages`; turns refer to messages and every request is rebuilt from them. Each message carries estimated token counts (UTF-8 bytes / 4) for its text, tool calls and reasoning; providers report usage per request only.
 - At most one turn runs per thread, enforced by the database.
 - Tools run without asking. File tools only reach the directory the client was started in and the thread workspace. `run_command` runs in the client's working directory with a timeout and output caps in its own process group, so nothing it started outlives it; otherwise it can do what the user can.
-- A user message carries a request UID; sending it again returns the stored message instead of adding a second one.
+- Every sent message carries a request UID from the moment it is stored as pending; taking it into the thread twice, after a crash between the two writes, adds it once.
 - Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the token limit or a filter is an error.
 - Provider responses are untrusted: sizes and idle time are bounded, redirects are refused, and upstream text never reaches error messages.
 
 ## Limitations
 
-Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers or thread resume yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers or thread resume yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
