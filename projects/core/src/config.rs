@@ -13,8 +13,6 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
 
-const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
-
 /// Written above the settings whenever the core saves the file.
 const HEADER: &str = "\
 # dusk_code settings. The core rewrites this file when settings change at runtime,
@@ -243,13 +241,9 @@ fn read_private_file(path: &Path) -> Result<Vec<u8>> {
     ensure!(metadata.is_file(), "config must be a regular file");
     ensure_private(&metadata)?;
     let mut bytes = Vec::new();
-    file.take(MAX_CONFIG_BYTES + 1)
+    (&file)
         .read_to_end(&mut bytes)
         .map_err(|_| anyhow!("cannot read config file"))?;
-    ensure!(
-        bytes.len() as u64 <= MAX_CONFIG_BYTES,
-        "config file is too large"
-    );
     Ok(bytes)
 }
 
