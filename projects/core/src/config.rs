@@ -1,4 +1,5 @@
-//! The settings in `config.yml`: providers, session recording and which tools are on.
+//! The settings in `config.yml`: providers, session recording and which tools and
+//! skills are on.
 //! `LiveConfig` keeps the current copy in memory and writes changes back.
 
 use std::{
@@ -29,6 +30,9 @@ pub struct Config {
     /// Tools switched on or off by name; a tool not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tools: BTreeMap<String, bool>,
+    /// Skills switched on or off by name; a skill not listed is on.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    skills: BTreeMap<String, bool>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -96,6 +100,14 @@ impl Config {
         self.tools.insert(name.to_owned(), enabled);
     }
 
+    pub fn skill_enabled(&self, name: &str) -> bool {
+        self.skills.get(name).copied().unwrap_or(true)
+    }
+
+    pub fn set_skill_enabled(&mut self, name: &str, enabled: bool) {
+        self.skills.insert(name.to_owned(), enabled);
+    }
+
     pub(crate) fn parse(bytes: &[u8]) -> Result<Self> {
         // YAML errors can quote input values, including secrets. Drop their source.
         let config: Self =
@@ -147,6 +159,7 @@ impl fmt::Debug for Config {
             .field("provider_count", &self.providers.len())
             .field("session", &self.session)
             .field("tools", &self.tools)
+            .field("skills", &self.skills)
             .finish()
     }
 }

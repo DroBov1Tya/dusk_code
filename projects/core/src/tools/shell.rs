@@ -14,7 +14,7 @@ use tokio::{
 use super::{
     builtin::parse_arguments,
     scope::ToolScope,
-    tool::{Tool, ToolFuture},
+    tool::{Tool, ToolContext, ToolFuture},
 };
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
@@ -35,7 +35,8 @@ impl Tool for RunCommand {
         "run_command"
     }
 
-    fn description(&self, scope: &ToolScope) -> String {
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let scope = context.scope;
         format!(
             "Run a command with sh -c in {}. Stdin is empty. Returns the exit code, stdout \
              and stderr, each cut at 32 KiB. A non-zero exit code is a normal result. Put \
@@ -62,7 +63,8 @@ impl Tool for RunCommand {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, scope: &'a ToolScope) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+        let scope = context.scope;
         Box::pin(async move {
             let arguments: RunCommandArguments = parse_arguments(arguments)?;
             ensure!(!arguments.command.trim().is_empty(), "command is empty");
@@ -169,7 +171,7 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::testing::temp_dir;
+    use crate::testing::{temp_dir, tool_context};
 
     fn scope(name: &str) -> ToolScope {
         let root = temp_dir(name);
@@ -180,7 +182,7 @@ mod tests {
     }
 
     async fn run_tool(scope: &ToolScope, arguments: Value) -> Result<String> {
-        RunCommand.call(arguments, scope).await
+        RunCommand.call(arguments, tool_context(scope)).await
     }
 
     #[tokio::test]

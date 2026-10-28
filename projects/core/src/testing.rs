@@ -2,10 +2,19 @@
 
 use std::{
     path::PathBuf,
-    sync::atomic::{AtomicUsize, Ordering},
+    sync::{
+        OnceLock,
+        atomic::{AtomicUsize, Ordering},
+    },
 };
 
-use crate::{live_config::LiveConfig, paths::Paths, state::State};
+use crate::{
+    config::Config,
+    live_config::LiveConfig,
+    paths::Paths,
+    state::State,
+    tools::{ToolContext, ToolScope},
+};
 
 /// A fresh directory under the system temp dir, unique per process and call.
 pub(crate) fn temp_dir(name: &str) -> PathBuf {
@@ -28,11 +37,7 @@ pub(crate) fn temp_live_config(name: &str) -> LiveConfig {
     let directory = temp_dir(name);
     std::fs::create_dir_all(&directory).unwrap();
     let path = directory.join("config.yml");
-    std::fs::write(
-        &path,
-        "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n",
-    )
-    .unwrap();
+    std::fs::write(&path, TEST_CONFIG).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -41,3 +46,12 @@ pub(crate) fn temp_live_config(name: &str) -> LiveConfig {
     }
     LiveConfig::load(path).unwrap()
 }
+
+/// A context with a valid config where every tool and skill is on.
+pub(crate) fn tool_context(scope: &ToolScope) -> ToolContext<'_> {
+    static CONFIG: OnceLock<Config> = OnceLock::new();
+    let config = CONFIG.get_or_init(|| Config::parse(TEST_CONFIG.as_bytes()).unwrap());
+    ToolContext { scope, config }
+}
+
+const TEST_CONFIG: &str = "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n";

@@ -20,6 +20,7 @@ projects/
         live_config.rs       the current config in memory, written back on change
         events.rs            live events published after database writes
         session.rs           starts a session: workspace folder, thread, MAIN.md
+        skills.rs            the skill graph read from skills/
         state/               SQLite records, one file per table
             state.rs         database handle: open, create, encrypt, subscribe
             threads.rs       sessions
@@ -44,6 +45,7 @@ projects/
             files.rs         read_file, list_dir, write_file, edit_file
             search.rs        search: plain-text search through a directory
             shell.rs         run_command: sh -c in the working directory
+            load_skill.rs    load_skill: walks the skill graph
         providers/           models
             provider.rs      providers by name, model discovery, stream dispatch
             chat.rs          model input: messages by role, tool specs
@@ -54,7 +56,7 @@ projects/
     cli/src/                 dusk_code binary
         main.rs, app.rs      startup: paths, config, provider, model, session
         chat.rs              line-based chat: `text` queues, `!text` sends now, `!` stops
-        commands.rs          `:tools`, `:on <tool>`, `:off <tool>`, `:reload`
+        commands.rs          `:tools`, `:skills`, `:on <name>`, `:off <name>`, `:reload`
 ```
 
 ## How a session works
@@ -73,7 +75,7 @@ A client sends text with `SessionInput` and reads `SessionEvent`s from `SessionO
 ~/.config/duskcode/
     config.yml               providers and session settings (mode 0600)
     MAIN.md                  system prompt of the main agent (mode 0600)
-    skills/<name>/SKILL.md   skills
+    skills/**/SKILL.md       skills, named by their path: skills/git/notes -> git/notes
     agents/<name>.md         system prompts of subagent kinds
     session/state.db         threads, turns and messages (mode 0600)
 ~/Documents/duskcode/
@@ -102,6 +104,21 @@ The core loads the config once into `LiveConfig`: readers take a snapshot, chang
 
 The CLI uses the first provider and its first catalogue model and starts a new session per run. `--state-db PATH` overrides the database location.
 
+## Skills
+
+Any folder under `skills/` with a `SKILL.md` is a skill, named by its path. The file opens with front matter; the rest is the instructions:
+
+```markdown
+---
+description: Preparing a release           # what the model reads to decide
+entry: true                                # offered before any skill is loaded
+links: [git/release-notes, git/changelog]  # skills this one leads to
+---
+Steps the agent follows...
+```
+
+The core reads the tree on every step, so new and edited skills apply at once, and builds the graph itself: broken files and links to missing skills are listed by `:skills` and never shown to the model. The model sees the entry skills in the description of `load_skill`; loading a skill returns its instructions and the skills it links to, so the model walks the graph one step at a time instead of reading every skill up front. A switched-off skill is hidden everywhere. Skills are switched like tools, in the `skills:` section or with `:on` and `:off`.
+
 ## Guarantees
 
 - MAIN.md is copied into a new thread as its first, `system` message; editing the file affects only chats started later. A missing or blank file means no system prompt.
@@ -116,4 +133,4 @@ The CLI uses the first provider and its first catalogue model and starts a new s
 
 ## Limitations
 
-Skills and agent prompts are not loaded yet. No permissions, MCP servers, context compaction, session resume or retries yet. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Skills and agent prompts are not loaded yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers, context compaction, session resume or retries yet. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.

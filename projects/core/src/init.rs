@@ -27,9 +27,11 @@ session:
   # answer: store user messages and model answers only
   record: full
 
-# Tools are on unless switched off here or with :off in a client, for example:
+# Tools and skills are on unless switched off here or with :off in a client, for example:
 # tools:
 #   run_command: false
+# skills:
+#   git/release-notes: false
 #
 # The core rewrites this file when a setting changes at runtime; only its own header
 # comment is kept then.

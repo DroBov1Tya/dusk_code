@@ -212,7 +212,7 @@ mod tests {
         providers::{ChatRequest, ChatStream, FinishReason},
         state::{ApprovalMode, MessageRole, ThreadInput, TurnStatus},
         testing::{temp_dir, temp_live_config, temp_state},
-        tools::{Tool, ToolFuture},
+        tools::{Tool, ToolContext, ToolFuture},
     };
 
     /// Each model call takes the next script; `Hang` never finishes, like a slow model.
@@ -283,7 +283,7 @@ mod tests {
             "echo"
         }
 
-        fn description(&self, _scope: &ToolScope) -> String {
+        fn description(&self, _context: &ToolContext<'_>) -> String {
             "Returns its text.".into()
         }
 
@@ -291,7 +291,7 @@ mod tests {
             json!({ "type": "object" })
         }
 
-        fn call<'a>(&'a self, arguments: Value, _scope: &'a ToolScope) -> ToolFuture<'a> {
+        fn call<'a>(&'a self, arguments: Value, _context: ToolContext<'a>) -> ToolFuture<'a> {
             Box::pin(async move { Ok(arguments["text"].as_str().unwrap_or_default().to_owned()) })
         }
     }

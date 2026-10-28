@@ -16,8 +16,7 @@ use serde_json::{Value, json};
 
 use super::{
     builtin::{parse_arguments, printable, read_regular},
-    scope::ToolScope,
-    tool::{Tool, ToolFuture},
+    tool::{Tool, ToolContext, ToolFuture},
 };
 
 const SKIPPED_DIRS: [&str; 3] = [".git", "target", "node_modules"];
@@ -43,7 +42,8 @@ impl Tool for Search {
         "search"
     }
 
-    fn description(&self, scope: &ToolScope) -> String {
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let scope = context.scope;
         format!(
             "Find lines containing a plain substring (not a regex) in text files under a \
              directory or in one file. Skips .git, target and node_modules. Prints \
@@ -67,7 +67,8 @@ impl Tool for Search {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, scope: &'a ToolScope) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+        let scope = context.scope;
         Box::pin(async move {
             let arguments: SearchArguments = parse_arguments(arguments)?;
             ensure!(!arguments.pattern.is_empty(), "pattern is empty");
@@ -181,7 +182,10 @@ fn trimmed(line: &str) -> &str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testing::temp_dir;
+    use crate::{
+        testing::{temp_dir, tool_context},
+        tools::ToolScope,
+    };
 
     fn scope(name: &str) -> ToolScope {
         let root = temp_dir(name);
@@ -202,7 +206,7 @@ mod tests {
         .unwrap();
         fs::write(scope.cwd().join("b.txt"), "needle\nhay\n").unwrap();
         let output = Search
-            .call(json!({ "pattern": "needle" }), &scope)
+            .call(json!({ "pattern": "needle" }), tool_context(&scope))
             .await
             .unwrap();
         assert_eq!(output, "b.txt:1: needle\nsrc/a.rs:2: let needle = 1;");
@@ -215,7 +219,10 @@ mod tests {
         fs::write(scope.cwd().join(".git/config"), "needle").unwrap();
         fs::write(scope.cwd().join("bin"), [b'n', 0xff, b'e']).unwrap();
         let output = Search
-            .call(json!({ "pattern": "needle", "path": "." }), &scope)
+            .call(
+                json!({ "pattern": "needle", "path": "." }),
+                tool_context(&scope),
+            )
             .await
             .unwrap();
         assert_eq!(output, "no matches");
@@ -228,7 +235,7 @@ mod tests {
         let text = format!("{long}\n").repeat(MAX_MATCHES + 1);
         fs::write(scope.cwd().join("a.txt"), text).unwrap();
         let output = Search
-            .call(json!({ "pattern": "x" }), &scope)
+            .call(json!({ "pattern": "x" }), tool_context(&scope))
             .await
             .unwrap();
         let lines: Vec<&str> = output.lines().collect();
@@ -241,6 +248,6 @@ mod tests {
     async fn rejects_paths_outside_the_scope() {
         let scope = scope("search_outside");
         let arguments = json!({ "pattern": "x", "path": "/etc" });
-        assert!(Search.call(arguments, &scope).await.is_err());
+        assert!(Search.call(arguments, tool_context(&scope)).await.is_err());
     }
 }

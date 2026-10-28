@@ -12,12 +12,14 @@ use serde_json::Value;
 
 use super::{
     files::{EditFile, ListDir, ReadFile, WriteFile},
+    load_skill::LoadSkill,
     search::Search,
     shell::RunCommand,
     tool::Tool,
 };
 
-pub(super) fn all() -> Vec<Box<dyn Tool>> {
+/// `skills` is the directory the skill graph is read from.
+pub(super) fn all(skills: &Path) -> Vec<Box<dyn Tool>> {
     vec![
         Box::new(ReadFile),
         Box::new(ListDir),
@@ -25,6 +27,7 @@ pub(super) fn all() -> Vec<Box<dyn Tool>> {
         Box::new(EditFile),
         Box::new(Search),
         Box::new(RunCommand),
+        Box::new(LoadSkill::new(skills.to_owned())),
     ]
 }
 
@@ -35,7 +38,7 @@ pub(super) fn parse_arguments<T: DeserializeOwned>(arguments: Value) -> Result<T
 
 /// Reads a regular file. The last path component is not followed if it is a symlink and a
 /// FIFO does not block, so a file swapped after the scope check cannot redirect the read.
-pub(super) fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
+pub(crate) fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
     let file = open_no_follow(OpenOptions::new().read(true), path)?;
     let metadata = file.metadata().context("cannot read file")?;
     ensure!(metadata.is_file(), "not a regular file");
