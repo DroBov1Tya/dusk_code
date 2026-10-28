@@ -1,7 +1,7 @@
 use anyhow::{Context, Result, bail};
 use dusk_core::{
     api::CORE_API_VERSION,
-    config::Config,
+    config::{Config, RecordMode},
     init,
     paths::Paths,
     providers::{Model, ProviderRegistry},
@@ -19,6 +19,7 @@ use crate::{
 
 pub struct Application {
     state: State,
+    record: RecordMode,
     providers: ProviderRegistry,
     provider_name: String,
     model: Model,
@@ -44,7 +45,9 @@ impl Application {
                 return Err(error);
             }
         };
-        let providers = ProviderRegistry::from_config(&Config::load(&paths)?)?;
+        let config = Config::load(&paths)?;
+        let record = config.session().record;
+        let providers = ProviderRegistry::from_config(&config)?;
         let provider_name = providers
             .names()
             .next()
@@ -58,6 +61,7 @@ impl Application {
         info!("provider {provider_name}, model {}", model.id);
         Ok(Self {
             state,
+            record,
             providers,
             provider_name,
             model,
@@ -79,7 +83,13 @@ impl Application {
             .providers
             .provider(&self.provider_name)
             .context("configured provider is missing")?;
-        let runtime = AgentRuntime::new(&self.state, AGENT_ID, provider, self.model.clone())?;
+        let runtime = AgentRuntime::new(
+            &self.state,
+            AGENT_ID,
+            provider,
+            self.model.clone(),
+            self.record,
+        )?;
         let thread_id = self.start_thread().await?;
         info!("thread {thread_id} created");
         chat::run(&self.state, &runtime, &thread_id).await

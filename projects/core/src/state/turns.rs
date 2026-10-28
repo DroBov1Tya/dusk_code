@@ -113,6 +113,7 @@ impl State {
         agent_id: &str,
         expected_attempt: u64,
         content: String,
+        reasoning: Option<String>,
         attachments: Vec<MessageAttachment>,
     ) -> Result<(Turn, Message)> {
         let timestamp = timestamp_ms()?;
@@ -135,7 +136,9 @@ impl State {
                 .context("load turn response")?;
             let message = decode_message(message)?;
             ensure!(
-                message.content == content && message.attachments == attachments,
+                message.content == content
+                    && message.reasoning == reasoning
+                    && message.attachments == attachments,
                 "turn already has a different response"
             );
             transaction
@@ -166,6 +169,7 @@ impl State {
                 role: MessageRole::Assistant,
                 agent_id: Some(agent_id.to_owned()),
                 content,
+                reasoning,
                 cwd,
                 attachments,
             },

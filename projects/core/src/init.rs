@@ -21,6 +21,11 @@ const CONFIG_TEMPLATE: &str = "\
 #     base_url: 'https://api.example.com/v1'
 #     api_key: 'sk-...'
 providers: {}
+
+session:
+  # full:   store user messages and the whole model output (reasoning, tool calls, answer)
+  # answer: store user messages and model answers only
+  record: full
 ";
 
 #[derive(Debug, Clone, PartialEq, Eq)]

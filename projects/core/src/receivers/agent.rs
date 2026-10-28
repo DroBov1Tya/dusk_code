@@ -8,6 +8,8 @@ const CONVERSATION_PAGE: u32 = 1000;
 pub enum AgentOutcome {
     Completed {
         content: String,
+        /// Stored only when the session records reasoning.
+        reasoning: Option<String>,
         attachments: Vec<MessageAttachment>,
     },
     Failed {
@@ -88,6 +90,7 @@ impl<'a> AgentReceiver<'a> {
         match response.outcome {
             AgentOutcome::Completed {
                 content,
+                reasoning,
                 attachments,
             } => {
                 let (turn, message) = self
@@ -97,6 +100,7 @@ impl<'a> AgentReceiver<'a> {
                         &self.agent_id,
                         response.expected_attempt,
                         content,
+                        reasoning,
                         attachments,
                     )
                     .await?;
@@ -121,5 +125,117 @@ impl<'a> AgentReceiver<'a> {
                 })
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+    use crate::{
+        receivers::{UserMessage, UserReceiver},
+        state::{ApprovalMode, MessageRole, ThreadInput},
+    };
+
+    async fn temp_state() -> State {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir()
+            .join(format!("dusk_agent_{}_{nanos}", std::process::id()))
+            .join("state.db");
+        State::open(path).await.unwrap()
+    }
+
+    async fn queued_turn(state: &State, uid: &str) -> Turn {
+        if state.load_thread("thread").await.unwrap().is_none() {
+            let thread = ThreadInput {
+                source: "test".into(),
+                tokens_used: 0,
+                compaction_count: 0,
+                sandbox_policy: "none".into(),
+                approval_mode: ApprovalMode::Never,
+                git_branch: None,
+                git_commit_sha: None,
+                git_origin_url: None,
+                title: String::new(),
+            };
+            state.create_thread("thread", thread).await.unwrap();
+        }
+        let message = UserMessage {
+            request_uid: uid.into(),
+            thread_id: "thread".into(),
+            content: "question".into(),
+            cwd: "/tmp".into(),
+            attachments: Vec::new(),
+        };
+        let receipt = UserReceiver::new(state).submit_message(message).await;
+        receipt.unwrap().turn.unwrap()
+    }
+
+    async fn answer(agent: &AgentReceiver<'_>, turn: &Turn, reasoning: Option<&str>) -> Message {
+        let task = agent.start_turn(&turn.turn_id, turn.attempt).await.unwrap();
+        let response = AgentResponse {
+            turn_id: task.turn.turn_id,
+            expected_attempt: task.turn.attempt,
+            outcome: AgentOutcome::Completed {
+                content: "answer".into(),
+                reasoning: reasoning.map(Into::into),
+                attachments: Vec::new(),
+            },
+        };
+        agent
+            .submit_response(response)
+            .await
+            .unwrap()
+            .message
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn stores_reasoning_only_when_given() {
+        let state = temp_state().await;
+        let agent = AgentReceiver::new(&state, "agent").unwrap();
+
+        let full = answer(&agent, &queued_turn(&state, "r1").await, Some("think")).await;
+        let short = answer(&agent, &queued_turn(&state, "r2").await, None).await;
+
+        let stored = state.list_messages("thread", 0, 10).await.unwrap();
+        let assistant: Vec<_> = stored
+            .iter()
+            .filter(|message| message.role == MessageRole::Assistant)
+            .collect();
+        assert_eq!(assistant, [&full, &short]);
+        assert_eq!(full.reasoning.as_deref(), Some("think"));
+        assert_eq!(short.reasoning, None);
+        assert!(
+            stored
+                .iter()
+                .all(|message| message.role != MessageRole::User || message.reasoning.is_none())
+        );
+        state.close().await;
+    }
+
+    #[tokio::test]
+    async fn conversation_ends_at_the_task_message() {
+        let state = temp_state().await;
+        let agent = AgentReceiver::new(&state, "agent").unwrap();
+        answer(&agent, &queued_turn(&state, "r1").await, None).await;
+        let second = queued_turn(&state, "r2").await;
+        queued_turn(&state, "r3").await;
+
+        let task = agent
+            .start_turn(&second.turn_id, second.attempt)
+            .await
+            .unwrap();
+        let history = agent.conversation(&task).await.unwrap();
+        assert_eq!(history.len(), 3);
+        assert_eq!(
+            history.last().unwrap().message_id,
+            task.user_message.message_id
+        );
+        state.close().await;
     }
 }

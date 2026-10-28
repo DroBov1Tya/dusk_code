@@ -20,6 +20,35 @@ const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 #[serde(deny_unknown_fields)]
 pub struct Config {
     providers: BTreeMap<String, ProviderConfig>,
+    #[serde(default)]
+    session: SessionConfig,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SessionConfig {
+    #[serde(default)]
+    pub record: RecordMode,
+}
+
+/// What a session stores from the model output. User messages are always stored.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RecordMode {
+    /// Everything the model produces: reasoning, tool calls and the answer.
+    #[default]
+    Full,
+    /// Only the answer.
+    Answer,
+}
+
+impl RecordMode {
+    pub fn records_reasoning(self) -> bool {
+        match self {
+            Self::Full => true,
+            Self::Answer => false,
+        }
+    }
 }
 
 #[derive(Clone, Deserialize)]
@@ -46,6 +75,7 @@ impl fmt::Debug for Config {
             .debug_struct("Config")
             .field("providers", &"[REDACTED]")
             .field("provider_count", &self.providers.len())
+            .field("session", &self.session)
             .finish()
     }
 }
@@ -133,6 +163,10 @@ impl Config {
     pub fn providers(&self) -> &BTreeMap<String, ProviderConfig> {
         &self.providers
     }
+
+    pub fn session(&self) -> &SessionConfig {
+        &self.session
+    }
 }
 
 fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
@@ -147,4 +181,32 @@ fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
     #[cfg(not(unix))]
     let _ = metadata;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PROVIDERS: &str = "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n";
+
+    fn parse(yaml: &str) -> Result<Config, serde_yaml::Error> {
+        serde_yaml::from_str(yaml)
+    }
+
+    #[test]
+    fn record_mode_defaults_to_full() {
+        assert_eq!(parse(PROVIDERS).unwrap().session().record, RecordMode::Full);
+    }
+
+    #[test]
+    fn record_mode_answer_skips_reasoning() {
+        let config = parse(&format!("{PROVIDERS}session:\n  record: answer\n")).unwrap();
+        assert_eq!(config.session().record, RecordMode::Answer);
+        assert!(!config.session().record.records_reasoning());
+    }
+
+    #[test]
+    fn unknown_record_mode_is_rejected() {
+        assert!(parse(&format!("{PROVIDERS}session:\n  record: everything\n")).is_err());
+    }
 }

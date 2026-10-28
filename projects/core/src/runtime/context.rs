@@ -38,6 +38,7 @@ mod tests {
             role,
             agent_id: None,
             content: content.into(),
+            reasoning: None,
             cwd: "/tmp".into(),
             attachments: Vec::new(),
             created_at: 0,
