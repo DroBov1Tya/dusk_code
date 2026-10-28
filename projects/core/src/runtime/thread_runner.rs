@@ -3,9 +3,10 @@
 //! so the next turn starts at once with the new message.
 //!
 //! Messages sent during a turn are held in memory and stored right after the turn ends,
-//! so the thread always reads in the order things happened.
+//! so the thread always reads in the order things happened. A message that is a command,
+//! such as `/compact`, runs at that point instead of being stored.
 
-use std::sync::Arc;
+use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use tokio::sync::mpsc;
@@ -13,12 +14,13 @@ use uuid::Uuid;
 
 use super::{
     agent::Agent,
-    inbox::{Command, Inbox, Stop},
+    inbox::{Inbox, Input, Stop},
 };
 use crate::{
+    commands::{self, Command},
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
-    state::{State, ThreadTokens, Turn},
+    state::{Compaction, CompactionReason, State, ThreadTokens, Turn},
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
@@ -37,12 +39,13 @@ pub(super) struct ThreadSetup {
     pub thread_id: String,
     pub tools: ToolRegistry,
     pub scope: ToolScope,
+    pub compact_prompt: PathBuf,
 }
 
 /// The client's side for sending. Dropping every clone ends the thread once the queue is done.
 #[derive(Clone)]
 pub struct ThreadInput {
-    commands: mpsc::UnboundedSender<Command>,
+    commands: mpsc::UnboundedSender<Input>,
 }
 
 /// The client's side for receiving.
@@ -73,6 +76,15 @@ pub enum ThreadEvent {
         result: ToolResult,
     },
     TurnFinished(Turn),
+    /// The model is summarizing the context; its text streams as `Model` events.
+    CompactionStarted {
+        reason: CompactionReason,
+    },
+    CompactionFinished(Compaction),
+    /// The context stays as it was.
+    CompactionFailed {
+        error: String,
+    },
     /// The thread's token counts, after each turn. `window` is the model's context size.
     Tokens {
         tokens: ThreadTokens,
@@ -101,6 +113,7 @@ impl ThreadRunner {
             tools: setup.tools,
             scope: setup.scope,
             thread_id: setup.thread_id,
+            compact_prompt: setup.compact_prompt,
             events,
         };
         let runner = Self {
@@ -141,23 +154,60 @@ impl ThreadRunner {
     }
 
     /// Runs turns until nothing is queued, the user cancels or the context does not fit.
+    /// The context is compacted first when it has grown too large.
     async fn run_queued(&mut self) -> Result<()> {
-        while let Some(turn) = self.agent.start_turn().await? {
-            let stop = self.agent.run_turn(&turn, &mut self.inbox).await?;
-            for text in self.inbox.take_held() {
-                self.store(text).await;
+        loop {
+            let mut stop = self.agent.compact_if_needed(None, &mut self.inbox).await;
+            if stop.is_none() {
+                let Some(turn) = self.agent.start_turn().await? else {
+                    self.handle_held().await;
+                    return Ok(());
+                };
+                stop = self.agent.run_turn(&turn, &mut self.inbox).await?;
             }
+            self.handle_held().await;
             if stop == Some(Stop::Cancelled) {
                 return Ok(());
             }
         }
-        Ok(())
     }
 
-    async fn accept(&self, command: Command) {
-        match command {
-            Command::Send(text) | Command::SendNow(text) => self.store(text).await,
-            Command::Cancel => {}
+    async fn accept(&mut self, input: Input) {
+        match input {
+            Input::Send(text) | Input::SendNow(text) => self.handle(text).await,
+            Input::Cancel => {}
+        }
+    }
+
+    /// Messages sent while the agent worked, in order. A command among them may hold
+    /// further messages while it runs.
+    async fn handle_held(&mut self) {
+        loop {
+            let held = self.inbox.take_held();
+            if held.is_empty() {
+                return;
+            }
+            for text in held {
+                self.handle(text).await;
+            }
+        }
+    }
+
+    async fn handle(&mut self, text: String) {
+        match commands::parse(&text) {
+            None => self.store(text).await,
+            Some(Err(error)) => self.agent.emit(ThreadEvent::Rejected {
+                reason: format!("{error:#}"),
+            }),
+            Some(Ok(Command::Compact { focus })) => {
+                let reason = CompactionReason::Manual;
+                let focus = focus.as_deref();
+                // A stop only ends the compaction; what was sent meanwhile is held.
+                let _ = self
+                    .agent
+                    .compact(reason, focus, None, &mut self.inbox)
+                    .await;
+            }
         }
     }
 
@@ -183,20 +233,20 @@ impl ThreadRunner {
 impl ThreadInput {
     /// Queues a message; it is answered after the running turn, together with other queued ones.
     pub fn send(&self, text: impl Into<String>) -> Result<()> {
-        self.command(Command::Send(text.into()))
+        self.command(Input::Send(text.into()))
     }
 
     /// Queues a message and stops the running turn, so the agent starts on it at once.
     pub fn send_now(&self, text: impl Into<String>) -> Result<()> {
-        self.command(Command::SendNow(text.into()))
+        self.command(Input::SendNow(text.into()))
     }
 
     /// Stops the running turn; queued messages wait for the next one.
     pub fn cancel(&self) -> Result<()> {
-        self.command(Command::Cancel)
+        self.command(Input::Cancel)
     }
 
-    fn command(&self, command: Command) -> Result<()> {
+    fn command(&self, command: Input) -> Result<()> {
         self.commands
             .send(command)
             .map_err(|_| anyhow!("thread has ended"))
@@ -219,15 +269,17 @@ mod tests {
     use super::*;
     use crate::{
         BoxFuture,
-        providers::{ChatRequest, ChatStream, FinishReason, Transient},
+        providers::{ChatMessage, ChatRequest, ChatStream, FinishReason, Transient},
         state::{MessageRole, TurnStatus},
         testing::{temp_dir, temp_live_config, temp_state},
         tools::{Tool, ToolContext},
     };
 
     /// Each model call takes the next script; `Hang` never finishes, like a slow model.
+    /// The messages of every request are kept.
     struct FakeProvider {
         scripts: Mutex<VecDeque<Vec<Step>>>,
+        requests: Mutex<Vec<Vec<ChatMessage>>>,
     }
 
     #[derive(Clone, Copy)]
@@ -256,8 +308,12 @@ mod tests {
 
         fn stream_chat<'a>(
             &'a self,
-            _request: ChatRequest<'a>,
+            request: ChatRequest<'a>,
         ) -> BoxFuture<'a, Box<dyn ChatStream>> {
+            self.requests
+                .lock()
+                .unwrap()
+                .push(request.messages.to_vec());
             let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
             if let Some(Step::Fail) = script.first() {
                 return Box::pin(async { Err(Transient("server busy".into()).into()) });
@@ -322,6 +378,7 @@ mod tests {
     fn provider(scripts: Vec<Vec<Step>>) -> Arc<FakeProvider> {
         Arc::new(FakeProvider {
             scripts: Mutex::new(scripts.into()),
+            requests: Mutex::new(Vec::new()),
         })
     }
 
@@ -360,6 +417,7 @@ mod tests {
             thread_id: "thread".into(),
             tools,
             scope: ToolScope::new(&root, &root).unwrap(),
+            compact_prompt: root.join("COMPACT.md"),
         })
     }
 
@@ -487,6 +545,110 @@ mod tests {
                 .iter()
                 .any(|event| matches!(event, ThreadEvent::TurnStarted(_)))
         );
+    }
+
+    async fn next_compaction(output: &mut ThreadOutput) -> Compaction {
+        loop {
+            match output.next_event().await {
+                Some(ThreadEvent::CompactionFinished(compaction)) => return compaction,
+                Some(ThreadEvent::CompactionFailed { error }) => panic!("{error}"),
+                Some(_) => {}
+                None => panic!("the thread ended"),
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn compact_summarizes_and_later_turns_see_the_summary() {
+        let state = thread_state("compact_manual").await;
+        let config = live_config("runner_config");
+        let provider = provider(vec![
+            vec![Step::Text("one"), Step::Done],
+            vec![Step::Text("so far: one"), Step::Done],
+            vec![Step::Text("two"), Step::Done],
+        ]);
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        let client = async move {
+            input.send("first").unwrap();
+            next_turn_finished(&mut output).await;
+            input.send("/compact the numbers").unwrap();
+            let compaction = next_compaction(&mut output).await;
+            input.send("second").unwrap();
+            next_turn_finished(&mut output).await;
+            compaction
+        };
+
+        let ((), compaction) = tokio::join!(runner.run(), client);
+
+        assert_eq!(compaction.through_sequence, 2);
+        assert_eq!(compaction.reason, CompactionReason::Manual);
+        let requests = provider.requests.lock().unwrap().clone();
+        let instructions = requests[1].last().unwrap();
+        let ChatMessage::User(instructions) = instructions else {
+            panic!("{instructions:?}");
+        };
+        assert!(instructions.ends_with("Focus the summary on: the numbers\n"));
+        assert_eq!(requests[2].len(), 2, "summary and the new message");
+        assert!(
+            matches!(&requests[2][0], ChatMessage::User(text) if text.ends_with("so far: one"))
+        );
+        assert_eq!(requests[2][1], ChatMessage::User("second".into()));
+        let stored = transcript(&state).await;
+        assert_eq!(stored.len(), 4, "messages stay stored: {stored:?}");
+    }
+
+    #[tokio::test]
+    async fn an_unknown_command_is_rejected_and_not_stored() {
+        let state = thread_state("compact_unknown").await;
+        let config = live_config("runner_config");
+        let provider = provider(Vec::new());
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        input.send("/compactt").unwrap();
+        drop(input);
+
+        runner.run().await;
+
+        let mut rejected = None;
+        while let Some(event) = output.next_event().await {
+            if let ThreadEvent::Rejected { reason } = event {
+                rejected = Some(reason);
+            }
+        }
+        assert_eq!(rejected.as_deref(), Some("unknown command /compactt"));
+        assert!(transcript(&state).await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_growing_context_is_compacted_within_the_turn() {
+        let state = thread_state("compact_auto").await;
+        let config = live_config("runner_config");
+        let long = "a tool result long enough to push the context past the limit";
+        let provider = provider(vec![
+            vec![Step::Call(long), Step::Done],
+            vec![Step::Text("used the tool"), Step::Done],
+            vec![Step::Text("done"), Step::Done],
+        ]);
+        // 16 tokens before the step and about 60 after it: past 80% of 60, within 60
+        // only after the summary.
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(60)));
+        input.send("go").unwrap();
+        drop(input);
+
+        runner.run().await;
+
+        let mut compaction = None;
+        let mut status = None;
+        while let Some(event) = output.next_event().await {
+            match event {
+                ThreadEvent::CompactionFinished(finished) => compaction = Some(finished),
+                ThreadEvent::TurnFinished(turn) => status = Some(turn.status),
+                _ => {}
+            }
+        }
+        assert_eq!(compaction.unwrap().reason, CompactionReason::Auto);
+        assert_eq!(status, Some(TurnStatus::Completed));
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests[2].len(), 1, "only the summary is left");
     }
 
     #[tokio::test]

@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use sqlx::Row;
 
 use super::{State, messages::read_tokens, timestamp_ms};
+
 use crate::providers::Usage;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -12,9 +13,10 @@ pub struct ThreadTokens {
     /// The best known size of the current context: what the provider counted for the
     /// last call plus estimates of what came after it. Before any call, `current.total()`.
     pub context: u64,
-    /// What the model receives now: the messages after the thread's compaction point.
+    /// What the model receives now: the system messages, the newest summary and the
+    /// messages after it.
     pub current: TokenCounts,
-    /// Every message the thread ever had, compacted ones included.
+    /// Every message and summary the thread ever had.
     pub all: TokenCounts,
     /// Sums of what the provider reported over every model call of the thread.
     pub spent: Usage,
@@ -34,6 +36,8 @@ pub struct TokenCounts {
     pub reasoning: u64,
     pub tool_calls: u64,
     pub tool_results: u64,
+    /// Compaction summaries, which stand in for the older messages.
+    pub summary: u64,
     /// Tool definitions, sent with every request but never stored, so the agent counts
     /// them into the current context only.
     pub tool_specs: u64,
@@ -47,6 +51,7 @@ impl TokenCounts {
             + self.reasoning
             + self.tool_calls
             + self.tool_results
+            + self.summary
             + self.tool_specs
     }
 
@@ -62,6 +67,28 @@ impl TokenCounts {
     }
 }
 
+/// Which call a usage report belongs to.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ModelCall {
+    pub thread_id: String,
+    /// `None` outside a turn, such as `/compact` while the thread is idle.
+    pub turn_id: Option<String>,
+    pub purpose: CallPurpose,
+    /// The compaction the call's context started from.
+    pub compaction_id: Option<i64>,
+    pub model: String,
+    /// The newest message the call sent.
+    pub through_sequence: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CallPurpose {
+    /// A step of the agent.
+    Answer,
+    /// A summary for a compaction.
+    Compact,
+}
+
 /// The provider's count of the newest request of a thread.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LastPrompt {
@@ -71,24 +98,20 @@ pub struct LastPrompt {
 }
 
 impl State {
-    /// Stores the usage the provider reported for one model call of a turn, which sent
-    /// the thread's messages up to `through_sequence`.
-    pub async fn record_usage(
-        &self,
-        turn_id: &str,
-        model: &str,
-        through_sequence: u64,
-        usage: Usage,
-    ) -> Result<()> {
+    pub async fn record_usage(&self, call: &ModelCall, usage: Usage) -> Result<()> {
         let timestamp = timestamp_ms()?;
         sqlx::query(
-            "INSERT INTO model_usage (turn_id, model, through_sequence, prompt_tokens,
-                cached_prompt_tokens, completion_tokens, reasoning_tokens, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO model_usage (thread_id, turn_id, purpose, compaction_id, model,
+                through_sequence, prompt_tokens, cached_prompt_tokens, completion_tokens,
+                reasoning_tokens, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
-        .bind(turn_id)
-        .bind(model)
-        .bind(sql_count(through_sequence)?)
+        .bind(&call.thread_id)
+        .bind(&call.turn_id)
+        .bind(call.purpose.as_str())
+        .bind(call.compaction_id)
+        .bind(&call.model)
+        .bind(sql_count(call.through_sequence)?)
         .bind(sql_count(usage.prompt_tokens)?)
         .bind(sql_count(usage.cached_prompt_tokens)?)
         .bind(sql_count(usage.completion_tokens)?)
@@ -100,13 +123,20 @@ impl State {
         Ok(())
     }
 
-    pub async fn last_prompt(&self, thread_id: &str) -> Result<Option<LastPrompt>> {
+    /// The newest agent step sent over the context that starts from `compaction_id`.
+    /// Steps before a compaction sent other messages, so they do not count.
+    pub async fn last_prompt(
+        &self,
+        thread_id: &str,
+        compaction_id: Option<i64>,
+    ) -> Result<Option<LastPrompt>> {
         let row = sqlx::query(
-            "SELECT prompt_tokens, through_sequence
-             FROM model_usage JOIN turns USING (turn_id) WHERE thread_id = ?
-             ORDER BY model_usage.created_at DESC, model_usage.rowid DESC LIMIT 1",
+            "SELECT prompt_tokens, through_sequence FROM model_usage
+             WHERE thread_id = ? AND purpose = 'answer' AND compaction_id IS ?
+             ORDER BY created_at DESC, rowid DESC LIMIT 1",
         )
         .bind(thread_id)
+        .bind(compaction_id)
         .fetch_optional(&self.pool)
         .await
         .context("load the last prompt size")?;
@@ -119,17 +149,20 @@ impl State {
         .transpose()
     }
 
-    /// Counts by author; `context` is left to the agent, which knows the last request.
+    /// Counts by author; `context` and tool definitions are left to the agent, which
+    /// knows the request.
     pub async fn thread_tokens(&self, thread_id: &str) -> Result<ThreadTokens> {
         let mut tokens = ThreadTokens::default();
         let groups = sqlx::query(
-            "SELECT role, sequence > threads.context_from AS in_context,
+            "SELECT role, role = 'system' OR sequence > COALESCE(
+                    (SELECT through_sequence FROM compactions WHERE thread_id = ?
+                     ORDER BY compaction_id DESC LIMIT 1), 0) AS in_context,
                 SUM(content_tokens) AS content_tokens,
                 SUM(tool_calls_tokens) AS tool_calls_tokens,
                 SUM(reasoning_tokens) AS reasoning_tokens
-             FROM messages JOIN threads ON threads.id = messages.thread_id
-             WHERE thread_id = ? GROUP BY role, in_context",
+             FROM messages WHERE thread_id = ? GROUP BY role, in_context",
         )
+        .bind(thread_id)
         .bind(thread_id)
         .fetch_all(&self.pool)
         .await
@@ -145,13 +178,27 @@ impl State {
             }
         }
 
+        let summaries = sqlx::query(
+            "SELECT COALESCE(SUM(summary_tokens), 0) AS all_tokens,
+                COALESCE((SELECT summary_tokens FROM compactions WHERE thread_id = ?
+                    ORDER BY compaction_id DESC LIMIT 1), 0) AS current_tokens
+             FROM compactions WHERE thread_id = ?",
+        )
+        .bind(thread_id)
+        .bind(thread_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("count summary tokens")?;
+        tokens.all.summary = read_tokens(&summaries, "all_tokens")?;
+        tokens.current.summary = read_tokens(&summaries, "current_tokens")?;
+
         let spent = sqlx::query(
             "SELECT COUNT(*) AS model_calls,
                 COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
                 COALESCE(SUM(cached_prompt_tokens), 0) AS cached_prompt_tokens,
                 COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
-                COALESCE(SUM(model_usage.reasoning_tokens), 0) AS reasoning_tokens
-             FROM model_usage JOIN turns USING (turn_id) WHERE thread_id = ?",
+                COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens
+             FROM model_usage WHERE thread_id = ?",
         )
         .bind(thread_id)
         .fetch_one(&self.pool)
@@ -168,6 +215,15 @@ impl State {
     }
 }
 
+impl CallPurpose {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Answer => "answer",
+            Self::Compact => "compact",
+        }
+    }
+}
+
 fn sql_count(count: u64) -> Result<i64> {
     i64::try_from(count).context("token count exceeds SQLite integer range")
 }
@@ -179,11 +235,12 @@ mod tests {
     use super::*;
     use crate::{
         providers::ToolCall,
-        state::{StepResult, TurnAnswer, TurnOutcome, TurnStep, estimate_tokens},
+        state::{CompactionReason, StepResult, TurnAnswer, TurnOutcome, TurnStep, estimate_tokens},
         testing::temp_state,
     };
 
-    /// A system prompt, a question, a tool step with reasoning and a final answer.
+    /// A system prompt, a question, a tool step with reasoning and a final answer, as
+    /// messages 1 to 5.
     async fn thread_with_a_tool_step(name: &str) -> (State, String) {
         let state = temp_state(name).await;
         state.create_thread("thread", "test").await.unwrap();
@@ -218,6 +275,17 @@ mod tests {
         (state, turn.turn_id)
     }
 
+    fn call(turn_id: &str, compaction_id: Option<i64>, through_sequence: u64) -> ModelCall {
+        ModelCall {
+            thread_id: "thread".into(),
+            turn_id: Some(turn_id.into()),
+            purpose: CallPurpose::Answer,
+            compaction_id,
+            model: "model".into(),
+            through_sequence,
+        }
+    }
+
     #[tokio::test]
     async fn splits_tokens_by_who_wrote_them() {
         let (state, _) = thread_with_a_tool_step("tokens_split").await;
@@ -233,6 +301,7 @@ mod tests {
             reasoning: 0,
             tool_calls: calls,
             tool_results: 5,
+            summary: 0,
             tool_specs: 0,
         };
         assert_eq!(tokens.current, expected);
@@ -247,19 +316,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn compacted_messages_leave_the_context_but_stay_in_history() {
+    async fn a_summary_replaces_older_messages_but_not_system_ones() {
         let (state, _) = thread_with_a_tool_step("tokens_compacted").await;
-        sqlx::query("UPDATE threads SET context_from = 2")
-            .execute(&state.pool)
+        let reason = CompactionReason::Manual;
+        state
+            .add_compaction("thread", 3, "12345678", reason)
             .await
             .unwrap();
 
         let tokens = state.thread_tokens("thread").await.unwrap();
 
-        assert_eq!(tokens.current.system, 0);
+        assert_eq!(tokens.current.system, 5, "system messages stay");
         assert_eq!(tokens.current.user, 0);
-        assert_eq!(tokens.all.system, 5);
-        assert_eq!(tokens.current.total() + 11, tokens.all.total() - 1);
+        assert_eq!(tokens.current.tool_calls, 0);
+        assert_eq!(tokens.current.tool_results, 5);
+        assert_eq!(tokens.current.summary, 2);
+        assert_eq!(tokens.all.user, 6);
+        assert_eq!(tokens.all.summary, 2);
     }
 
     #[tokio::test]
@@ -272,7 +345,7 @@ mod tests {
             reasoning_tokens: 5,
         };
         state
-            .record_usage(&turn_id, "model", 2, usage)
+            .record_usage(&call(&turn_id, None, 2), usage)
             .await
             .unwrap();
         let later = Usage {
@@ -280,7 +353,7 @@ mod tests {
             ..usage
         };
         state
-            .record_usage(&turn_id, "model", 4, later)
+            .record_usage(&call(&turn_id, None, 4), later)
             .await
             .unwrap();
 
@@ -296,7 +369,7 @@ mod tests {
                 reasoning_tokens: 10,
             }
         );
-        let last = state.last_prompt("thread").await.unwrap();
+        let last = state.last_prompt("thread", None).await.unwrap();
         assert_eq!(
             last,
             Some(LastPrompt {
@@ -304,5 +377,31 @@ mod tests {
                 through_sequence: 4
             })
         );
+    }
+
+    #[tokio::test]
+    async fn a_compaction_makes_older_prompt_counts_stale() {
+        let (state, turn_id) = thread_with_a_tool_step("tokens_stale").await;
+        let usage = Usage {
+            prompt_tokens: 100,
+            ..Usage::default()
+        };
+        state
+            .record_usage(&call(&turn_id, None, 4), usage)
+            .await
+            .unwrap();
+        let reason = CompactionReason::Auto;
+        let compaction = state
+            .add_compaction("thread", 5, "summary", reason)
+            .await
+            .unwrap();
+
+        let id = Some(compaction.compaction_id);
+        assert_eq!(state.last_prompt("thread", id).await.unwrap(), None);
+        state
+            .record_usage(&call(&turn_id, id, 5), usage)
+            .await
+            .unwrap();
+        assert!(state.last_prompt("thread", id).await.unwrap().is_some());
     }
 }

@@ -121,6 +121,59 @@ impl State {
             .map(decode_message)
             .collect()
     }
+
+    /// Messages whose text or tool calls contain `text`, best matches first.
+    pub async fn search_messages(
+        &self,
+        thread_id: &str,
+        text: &str,
+        limit: u32,
+    ) -> Result<Vec<Message>> {
+        // The index is built from trigrams, so shorter text matches nothing.
+        ensure!(
+            text.trim().chars().count() >= 3,
+            "search text needs at least 3 characters"
+        );
+        // A quoted phrase: the text is matched as it is, never read as query syntax.
+        let phrase = format!("\"{}\"", text.trim().replace('"', "\"\""));
+        sqlx::query(
+            "SELECT messages.* FROM messages_search
+             JOIN messages ON messages.rowid = messages_search.rowid
+             WHERE messages_search MATCH ? AND messages.thread_id = ?
+             ORDER BY messages_search.rank LIMIT ?",
+        )
+        .bind(phrase)
+        .bind(thread_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .context("search messages")?
+        .into_iter()
+        .map(decode_message)
+        .collect()
+    }
+
+    /// Messages from sequence `from` on, oldest first.
+    pub async fn messages_from(
+        &self,
+        thread_id: &str,
+        from: u64,
+        limit: u32,
+    ) -> Result<Vec<Message>> {
+        sqlx::query(
+            "SELECT * FROM messages WHERE thread_id = ? AND sequence >= ?
+             ORDER BY sequence LIMIT ?",
+        )
+        .bind(thread_id)
+        .bind(i64::try_from(from).context("sequence is too large")?)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .context("read messages")?
+        .into_iter()
+        .map(decode_message)
+        .collect()
+    }
 }
 
 impl NewMessage {
@@ -242,7 +295,7 @@ async fn ensure_thread_exists(
     Ok(())
 }
 
-fn decode_message(row: SqliteRow) -> Result<Message> {
+pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
     let role: String = row.try_get("role")?;
     let role = match role.as_str() {
         "system" => MessageRole::System,

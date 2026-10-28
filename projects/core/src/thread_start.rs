@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use crate::{init::create_private_dir, paths::Paths, state::State};
 
-const MAX_MAIN_PROMPT_BYTES: u64 = 256 * 1024;
+const MAX_PROMPT_BYTES: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartedThread {
@@ -24,7 +24,7 @@ pub struct StartedThread {
 /// thread without one. MAIN.md is copied into the thread as its first message: later
 /// edits to the file do not change threads already started.
 pub async fn start_thread(state: &State, paths: &Paths, source: &str) -> Result<StartedThread> {
-    let main_prompt = read_main_prompt(&paths.main_prompt())?;
+    let main_prompt = read_prompt(&paths.main_prompt())?;
     let thread_id = Uuid::now_v7().to_string();
     let workspace = paths.thread_workspace(&thread_id)?;
     create_private_dir(&workspace)?;
@@ -38,20 +38,21 @@ pub async fn start_thread(state: &State, paths: &Paths, source: &str) -> Result<
     })
 }
 
-/// A missing or blank file means no system prompt.
-fn read_main_prompt(path: &Path) -> Result<Option<String>> {
+/// Reads a prompt file such as MAIN.md; a missing or blank file means no prompt.
+pub(crate) fn read_prompt(path: &Path) -> Result<Option<String>> {
+    let name = path.file_name().unwrap_or_default().to_string_lossy();
     let file = match File::open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(anyhow!("cannot open MAIN.md")),
+        Err(_) => return Err(anyhow!("cannot open {name}")),
     };
     let mut prompt = String::new();
-    file.take(MAX_MAIN_PROMPT_BYTES + 1)
+    file.take(MAX_PROMPT_BYTES + 1)
         .read_to_string(&mut prompt)
-        .map_err(|_| anyhow!("MAIN.md is not readable UTF-8 text"))?;
+        .map_err(|_| anyhow!("{name} is not readable UTF-8 text"))?;
     ensure!(
-        prompt.len() as u64 <= MAX_MAIN_PROMPT_BYTES,
-        "MAIN.md is too large"
+        prompt.len() as u64 <= MAX_PROMPT_BYTES,
+        "{name} is too large"
     );
     Ok(Some(prompt).filter(|prompt| !prompt.trim().is_empty()))
 }
@@ -84,10 +85,10 @@ mod tests {
     #[test]
     fn blank_or_missing_main_prompt_adds_nothing() {
         let paths = temp_paths("no_prompt");
-        assert_eq!(read_main_prompt(&paths.main_prompt()).unwrap(), None);
+        assert_eq!(read_prompt(&paths.main_prompt()).unwrap(), None);
         std::fs::create_dir_all(paths.config_root()).unwrap();
         std::fs::write(paths.main_prompt(), " \n").unwrap();
-        assert_eq!(read_main_prompt(&paths.main_prompt()).unwrap(), None);
+        assert_eq!(read_prompt(&paths.main_prompt()).unwrap(), None);
     }
 
     #[tokio::test]

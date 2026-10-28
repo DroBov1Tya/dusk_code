@@ -1,6 +1,6 @@
 //! Line-based chat over a live thread. Lines are sent as they are typed:
 //! `text` queues a message, `!text` sends it now and interrupts the answer, `!` stops it,
-//! and `:command` changes settings.
+//! `:command` changes settings and `/command`, such as `/compact`, goes to the core.
 
 use std::io::{self, IsTerminal, Write};
 
@@ -64,6 +64,20 @@ async fn print_events(mut output: ThreadOutput) {
                 printer.finish();
                 report(&turn);
             }
+            ThreadEvent::CompactionStarted { reason } => {
+                eprintln!("[compacting the context: {}]", reason.as_str());
+            }
+            ThreadEvent::CompactionFinished(compaction) => {
+                printer.finish();
+                eprintln!(
+                    "[compacted messages up to #{} into a summary of ~{} tokens]",
+                    compaction.through_sequence, compaction.summary_tokens
+                );
+            }
+            ThreadEvent::CompactionFailed { error } => {
+                printer.finish();
+                eprintln!("compaction failed: {}", sanitize(&error));
+            }
             ThreadEvent::Tokens { tokens, window } => eprintln!("{}", describe(&tokens, window)),
             ThreadEvent::Rejected { reason } => eprintln!("rejected: {reason}"),
             ThreadEvent::Retrying { attempt, error } => {
@@ -100,13 +114,14 @@ fn describe(tokens: &ThreadTokens, window: Option<u64>) -> String {
     let spent = &tokens.spent;
     format!(
         "tokens: context {}{window}, estimated by author: system {}, user {}, agent {}, tool calls {}, \
-         tool results {}, tool definitions {}; history ~{}; provider {} in ({} cached), {} out in {} calls",
+         tool results {}, summary {}, tool definitions {}; history ~{}; provider {} in ({} cached), {} out in {} calls",
         tokens.context,
         current.system,
         current.user,
         current.assistant,
         current.tool_calls,
         current.tool_results,
+        current.summary,
         current.tool_specs,
         tokens.all.total(),
         spent.prompt_tokens,

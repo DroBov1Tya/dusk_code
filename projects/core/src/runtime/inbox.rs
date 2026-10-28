@@ -1,11 +1,12 @@
-//! Client commands as the thread sees them: while the agent works, messages are held
+//! Client input as the thread sees it: while the agent works, messages are held
 //! for later, `send_now` and `cancel` stop the work.
 
 use std::future::Future;
 
 use tokio::sync::mpsc;
 
-pub(super) enum Command {
+/// What a client sends to a thread.
+pub(super) enum Input {
     Send(String),
     SendNow(String),
     Cancel,
@@ -19,13 +20,13 @@ pub(super) enum Stop {
 }
 
 pub(super) struct Inbox {
-    commands: mpsc::UnboundedReceiver<Command>,
+    commands: mpsc::UnboundedReceiver<Input>,
     open: bool,
     held: Vec<String>,
 }
 
 impl Inbox {
-    pub(super) fn new(commands: mpsc::UnboundedReceiver<Command>) -> Self {
+    pub(super) fn new(commands: mpsc::UnboundedReceiver<Input>) -> Self {
         Self {
             commands,
             open: true,
@@ -34,14 +35,14 @@ impl Inbox {
     }
 
     /// Waits for the next command while idle; `None` once every client has gone.
-    pub(super) async fn next(&mut self) -> Option<Command> {
+    pub(super) async fn next(&mut self) -> Option<Input> {
         let command = self.commands.recv().await;
         self.open &= command.is_some();
         command
     }
 
     /// Commands already sent, without waiting.
-    pub(super) fn ready(&mut self) -> Vec<Command> {
+    pub(super) fn ready(&mut self) -> Vec<Input> {
         std::iter::from_fn(|| self.commands.try_recv().ok()).collect()
     }
 
@@ -53,12 +54,12 @@ impl Inbox {
             tokio::select! {
                 value = &mut work => return Ok(value),
                 command = self.commands.recv(), if self.open => match command {
-                    Some(Command::Send(text)) => self.held.push(text),
-                    Some(Command::SendNow(text)) => {
+                    Some(Input::Send(text)) => self.held.push(text),
+                    Some(Input::SendNow(text)) => {
                         self.held.push(text);
                         return Err(Stop::Preempted);
                     }
-                    Some(Command::Cancel) => return Err(Stop::Cancelled),
+                    Some(Input::Cancel) => return Err(Stop::Cancelled),
                     None => self.open = false,
                 },
             }

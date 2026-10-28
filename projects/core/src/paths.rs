@@ -5,6 +5,7 @@ use anyhow::{Result, anyhow, ensure};
 const CONFIG_ROOT: &str = ".config/duskcode";
 const CONFIG_FILE: &str = "config.yml";
 const MAIN_PROMPT: &str = "MAIN.md";
+const COMPACT_PROMPT: &str = "COMPACT.md";
 const SKILLS_DIR: &str = "skills";
 const AGENTS_DIR: &str = "agents";
 /// Holds the database; the name is the one the user chose.
@@ -46,6 +47,11 @@ impl Paths {
 
     pub fn main_prompt(&self) -> PathBuf {
         self.config_root.join(MAIN_PROMPT)
+    }
+
+    /// How to summarize a thread when its context is compacted.
+    pub fn compact_prompt(&self) -> PathBuf {
+        self.config_root.join(COMPACT_PROMPT)
     }
 
     pub fn skills_dir(&self) -> PathBuf {
