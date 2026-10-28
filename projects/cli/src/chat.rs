@@ -1,4 +1,4 @@
-//! Line-based chat over a live session. Lines are sent as they are typed:
+//! Line-based chat over a live thread. Lines are sent as they are typed:
 //! `text` queues a message, `!text` sends it now and interrupts the answer, `!` stops it,
 //! and `:command` changes settings.
 
@@ -6,8 +6,8 @@ use std::io::{self, IsTerminal, Write};
 
 use anyhow::Result;
 use dusk_core::{
-    providers::{ModelEvent, ModelProvider},
-    runtime::{SessionEvent, SessionInput, SessionOutput, SessionRunner},
+    providers::ModelEvent,
+    runtime::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner},
     state::{Turn, TurnStatus},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -17,23 +17,23 @@ use crate::commands::{self, Settings};
 const PROMPT: &str = "> ";
 const NOW_PREFIX: char = '!';
 
-pub async fn run<P: ModelProvider>(
-    runner: SessionRunner<'_, P>,
-    input: SessionInput,
-    output: SessionOutput,
+pub async fn run(
+    runner: ThreadRunner,
+    input: ThreadInput,
+    output: ThreadOutput,
     settings: Settings,
 ) -> Result<()> {
-    let (session, typing, ()) = tokio::join!(
+    let (thread, typing, ()) = tokio::join!(
         runner.run(),
         read_lines(input, settings),
         print_events(output)
     );
     typing?;
-    session
+    thread
 }
 
-/// Ends at end of input; dropping `input` lets the session finish its queue and stop.
-async fn read_lines(input: SessionInput, settings: Settings) -> Result<()> {
+/// Ends at end of input; dropping `input` lets the thread finish its queue and stop.
+async fn read_lines(input: ThreadInput, settings: Settings) -> Result<()> {
     let mut lines = BufReader::new(tokio::io::stdin()).lines();
     while let Some(line) = lines.next_line().await? {
         let line = line.trim();
@@ -54,27 +54,27 @@ async fn read_lines(input: SessionInput, settings: Settings) -> Result<()> {
     Ok(())
 }
 
-async fn print_events(mut output: SessionOutput) {
+async fn print_events(mut output: ThreadOutput) {
     let mut printer = StreamPrinter::new();
     while let Some(event) = output.next_event().await {
         match event {
-            SessionEvent::Idle => eprint!("{PROMPT}"),
-            SessionEvent::Model(event) => printer.print(&event),
-            SessionEvent::ToolStarted(call) => {
+            ThreadEvent::Idle => eprint!("{PROMPT}"),
+            ThreadEvent::Model(event) => printer.print(&event),
+            ThreadEvent::ToolStarted(call) => {
                 printer.end_reasoning();
                 eprintln!("[{}] {}", call.name, sanitize(&call.arguments.to_string()));
             }
-            SessionEvent::ToolFinished { result, .. } => {
+            ThreadEvent::ToolFinished { result, .. } => {
                 let status = if result.is_error { "failed" } else { "done" };
                 let first_line = result.content.lines().next().unwrap_or_default();
                 eprintln!("  {status}: {}", sanitize(first_line));
             }
-            SessionEvent::TurnFinished(turn) => {
+            ThreadEvent::TurnFinished(turn) => {
                 printer.finish();
                 report(&turn);
             }
-            SessionEvent::Rejected { reason } => eprintln!("rejected: {reason}"),
-            SessionEvent::ContextTooLarge { tokens, limit } => eprintln!(
+            ThreadEvent::Rejected { reason } => eprintln!("rejected: {reason}"),
+            ThreadEvent::ContextTooLarge { tokens, limit } => eprintln!(
                 "the context is about {tokens} tokens but the model accepts {limit}: \
                  switch the model or compact the context"
             ),
@@ -125,7 +125,7 @@ impl StreamPrinter {
                 let _ = stdout.write_all(sanitize(text).as_bytes());
                 let _ = stdout.flush();
             }
-            // Tool calls are shown from session events; usage and finish reasons are not.
+            // Tool calls are shown from thread events; usage and finish reasons are not.
             _ => {}
         }
     }

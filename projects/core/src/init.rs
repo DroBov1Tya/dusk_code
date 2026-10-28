@@ -12,7 +12,7 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use crate::paths::Paths;
 
 const CONFIG_TEMPLATE: &str = "\
-# dusk_code provider settings. Keep this file private (mode 0600).
+# dusk_code provider settings. Keep this file private.
 # Add at least one provider, for example:
 #
 # providers:
@@ -22,7 +22,7 @@ const CONFIG_TEMPLATE: &str = "\
 #     api_key: 'sk-...'
 providers: {}
 
-session:
+thread:
   # full:   store user messages and the whole model output (reasoning, tool calls, answer)
   # answer: store user messages and model answers only
   record: full
@@ -50,7 +50,7 @@ pub struct Initialization {
 
 pub fn initialize(paths: &Paths) -> Result<Initialization> {
     create_private_dir(paths.config_root())?;
-    create_private_dir(&paths.session_dir())?;
+    create_private_dir(&paths.records_dir())?;
     create_private_dir(paths.workspace_root())?;
     create_private_dir(&paths.skills_dir())?;
     create_private_dir(&paths.agents_dir())?;
@@ -158,7 +158,7 @@ mod tests {
         let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(paths.config_root()), 0o700);
         assert_eq!(mode(paths.workspace_root()), 0o700);
-        assert_eq!(mode(&paths.session_dir()), 0o700);
+        assert_eq!(mode(&paths.records_dir()), 0o700);
         assert_eq!(mode(&paths.config_file()), 0o600);
         assert_eq!(mode(&paths.main_prompt()), 0o600);
         assert_eq!(mode(&paths.skills_dir()), 0o700);

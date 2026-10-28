@@ -14,8 +14,9 @@ use tokio::{
 use super::{
     builtin::parse_arguments,
     scope::ToolScope,
-    tool::{Tool, ToolContext, ToolFuture},
+    tool::{Tool, ToolContext},
 };
+use crate::BoxFuture;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
@@ -63,7 +64,7 @@ impl Tool for RunCommand {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         let scope = context.scope;
         Box::pin(async move {
             let arguments: RunCommandArguments = parse_arguments(arguments)?;

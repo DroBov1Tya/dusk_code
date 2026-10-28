@@ -50,12 +50,14 @@ struct ModelEntry {
     max_input_tokens: Option<u64>,
 }
 
+/// The request body. Owned copies keep these types free of borrowed lifetimes; the
+/// copying costs nothing next to the network call.
 #[derive(Serialize)]
-struct CompletionRequest<'a> {
-    model: &'a str,
-    messages: Vec<WireMessage<'a>>,
+struct CompletionRequest {
+    model: String,
+    messages: Vec<WireMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    tools: Vec<WireTool<'a>>,
+    tools: Vec<WireTool>,
     stream: bool,
     stream_options: StreamOptions,
 }
@@ -67,54 +69,68 @@ struct StreamOptions {
 
 #[derive(Serialize)]
 #[serde(tag = "role", rename_all = "lowercase")]
-enum WireMessage<'a> {
+enum WireMessage {
     System {
-        content: &'a str,
+        content: String,
     },
     User {
-        content: &'a str,
+        content: String,
     },
     Assistant {
-        content: &'a str,
+        content: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
-        tool_calls: Vec<WireToolCall<'a>>,
+        tool_calls: Vec<WireToolCall>,
     },
     Tool {
-        tool_call_id: &'a str,
-        content: &'a str,
+        tool_call_id: String,
+        content: String,
     },
 }
 
 #[derive(Serialize)]
-struct WireToolCall<'a> {
-    id: &'a str,
+struct WireToolCall {
+    id: String,
     r#type: &'static str,
-    function: WireFunctionCall<'a>,
+    function: WireFunctionCall,
 }
 
 #[derive(Serialize)]
-struct WireFunctionCall<'a> {
-    name: &'a str,
+struct WireFunctionCall {
+    name: String,
     /// The API carries arguments as a JSON string, not an object.
     arguments: String,
 }
 
 #[derive(Serialize)]
-struct WireTool<'a> {
+struct WireTool {
     r#type: &'static str,
-    function: WireFunction<'a>,
+    function: WireFunction,
 }
 
 #[derive(Serialize)]
-struct WireFunction<'a> {
-    name: &'a str,
-    description: &'a str,
-    parameters: &'a Value,
+struct WireFunction {
+    name: String,
+    description: String,
+    parameters: Value,
 }
 
-impl<'a> From<&'a ChatMessage> for WireMessage<'a> {
-    fn from(message: &'a ChatMessage) -> Self {
-        match message {
+impl CompletionRequest {
+    fn new(request: ChatRequest<'_>) -> Self {
+        Self {
+            model: request.model.to_owned(),
+            messages: request.messages.iter().map(WireMessage::from).collect(),
+            tools: request.tools.iter().map(WireTool::from).collect(),
+            stream: true,
+            stream_options: StreamOptions {
+                include_usage: true,
+            },
+        }
+    }
+}
+
+impl From<&ChatMessage> for WireMessage {
+    fn from(message: &ChatMessage) -> Self {
+        match message.clone() {
             ChatMessage::System(content) => Self::System { content },
             ChatMessage::User(content) => Self::User { content },
             ChatMessage::Assistant { text, tool_calls } => Self::Assistant {
@@ -129,27 +145,27 @@ impl<'a> From<&'a ChatMessage> for WireMessage<'a> {
     }
 }
 
-impl<'a> From<&'a ToolCall> for WireToolCall<'a> {
-    fn from(call: &'a ToolCall) -> Self {
+impl From<&ToolCall> for WireToolCall {
+    fn from(call: &ToolCall) -> Self {
         Self {
-            id: &call.id,
+            id: call.id.clone(),
             r#type: "function",
             function: WireFunctionCall {
-                name: &call.name,
+                name: call.name.clone(),
                 arguments: call.arguments.to_string(),
             },
         }
     }
 }
 
-impl<'a> From<&'a ToolSpec> for WireTool<'a> {
-    fn from(tool: &'a ToolSpec) -> Self {
+impl From<&ToolSpec> for WireTool {
+    fn from(tool: &ToolSpec) -> Self {
         Self {
             r#type: "function",
             function: WireFunction {
-                name: &tool.name,
-                description: &tool.description,
-                parameters: &tool.parameters,
+                name: tool.name.clone(),
+                description: tool.description.clone(),
+                parameters: tool.parameters.clone(),
             },
         }
     }
@@ -241,15 +257,7 @@ impl OpenAiCompatible {
     }
 
     pub(super) async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
-        let request = CompletionRequest {
-            model: request.model,
-            messages: request.messages.iter().map(WireMessage::from).collect(),
-            tools: request.tools.iter().map(WireTool::from).collect(),
-            stream: true,
-            stream_options: StreamOptions {
-                include_usage: true,
-            },
-        };
+        let request = CompletionRequest::new(request);
         let response = self
             .client
             .post(self.completions_url.clone())
@@ -521,15 +529,11 @@ mod tests {
             description: "Current weather".into(),
             parameters: serde_json::json!({"type": "object"}),
         }];
-        let request = CompletionRequest {
+        let request = CompletionRequest::new(ChatRequest {
             model: "m",
-            messages: messages.iter().map(WireMessage::from).collect(),
-            tools: tools.iter().map(WireTool::from).collect(),
-            stream: true,
-            stream_options: StreamOptions {
-                include_usage: true,
-            },
-        };
+            messages: &messages,
+            tools: &tools,
+        });
         assert_eq!(
             serde_json::to_value(&request).unwrap(),
             serde_json::json!({

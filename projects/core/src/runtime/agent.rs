@@ -2,70 +2,69 @@
 //! response; when it calls tools, they run and the next step sends their results back,
 //! until the model answers without calling a tool.
 
+use std::sync::Arc;
+
 use anyhow::Result;
 use tokio::sync::mpsc;
 
 use super::{
-    context, generation,
+    context::Conversation,
+    generation,
     inbox::{Inbox, Stop},
-    session_runner::SessionEvent,
+    thread_runner::ThreadEvent,
 };
 use crate::{
     config::Config,
     live_config::LiveConfig,
     providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall},
-    receivers::{AgentOutcome, AgentReceiver, AgentStep},
-    state::{Message, StepResult, Turn},
+    state::{State, StepResult, Turn, TurnAnswer, TurnOutcome, TurnStep},
     tools::{ToolRegistry, ToolScope},
 };
 
 /// Bounds a model that keeps calling tools.
 const MAX_STEPS: usize = 50;
 
-pub(super) struct Agent<'a, P> {
-    pub(super) receiver: AgentReceiver<'a>,
-    pub(super) provider: &'a P,
+pub(super) struct Agent {
+    pub(super) state: Arc<State>,
+    pub(super) provider: Arc<dyn ModelProvider>,
     pub(super) model: Model,
-    pub(super) config: &'a LiveConfig,
+    pub(super) config: Arc<LiveConfig>,
     pub(super) tools: ToolRegistry,
     pub(super) scope: ToolScope,
     pub(super) thread_id: String,
-    pub(super) events: mpsc::UnboundedSender<SessionEvent>,
+    pub(super) events: mpsc::UnboundedSender<ThreadEvent>,
 }
 
 /// How one step ended.
 enum StepEnd {
-    Answered(AgentOutcome),
+    Answered(TurnOutcome),
     CalledTools,
-    Stopped(Stop, AgentOutcome),
+    Stopped(Stop, TurnOutcome),
 }
 
-impl<'a, P: ModelProvider> Agent<'a, P> {
+impl Agent {
+    /// Marks turns left running by a stopped process as interrupted.
     pub(super) async fn recover(&self) -> Result<()> {
-        self.receiver.recover(&self.thread_id).await
+        self.state.interrupt_running_turns(&self.thread_id).await
     }
 
     /// Starts a turn when something is queued and the context fits the model window.
     pub(super) async fn start_turn(&self) -> Result<Option<Turn>> {
-        let conversation = self.receiver.conversation(&self.thread_id).await?;
-        if !conversation.has_queued() {
+        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+        if !conversation.has_queued() || self.context_too_large(&conversation).is_some() {
             return Ok(None);
         }
-        if self.context_too_large(&conversation.messages).is_some() {
-            return Ok(None);
-        }
-        let turn = self.receiver.start_turn(&self.thread_id).await?;
+        let turn = self.state.start_turn(&self.thread_id).await?;
         if let Some(turn) = &turn {
-            self.emit(SessionEvent::TurnStarted(turn.clone()));
+            self.emit(ThreadEvent::TurnStarted(turn.clone()));
         }
         Ok(turn)
     }
 
     /// Runs the turn to its end and records it. Returns why it stopped early, if it did.
     pub(super) async fn run_turn(&self, turn: &Turn, inbox: &mut Inbox) -> Result<Option<Stop>> {
-        let mut outcome = AgentOutcome::Failed {
-            error_message: format!("the model made more than {MAX_STEPS} tool steps"),
-        };
+        let mut outcome =
+            TurnOutcome::Failed(format!("the model made more than {MAX_STEPS} tool steps"));
         let mut stop = None;
         for _ in 0..MAX_STEPS {
             match self.step(turn, inbox).await? {
@@ -78,26 +77,26 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
             }
             break;
         }
-        let turn = self.receiver.finish_turn(turn, outcome).await?;
-        self.emit(SessionEvent::TurnFinished(turn));
+        let turn = self.state.finish_turn(&turn.turn_id, outcome).await?;
+        self.emit(ThreadEvent::TurnFinished(turn));
         Ok(stop)
     }
 
-    pub(super) fn emit(&self, event: SessionEvent) {
-        // A client that stopped listening does not stop the session.
+    pub(super) fn emit(&self, event: ThreadEvent) {
+        // A client that stopped listening does not stop the thread.
         let _ = self.events.send(event);
     }
 
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     async fn step(&self, turn: &Turn, inbox: &mut Inbox) -> Result<StepEnd> {
-        let conversation = self.receiver.conversation(&self.thread_id).await?;
+        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         // Tool results grow the context within a turn, so every step checks it.
-        if let Some(error_message) = self.context_too_large(&conversation.messages) {
-            return Ok(StepEnd::Answered(AgentOutcome::Failed { error_message }));
+        if let Some(error) = self.context_too_large(&conversation) {
+            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config.current();
-        let messages = context::chat_messages(&conversation.messages);
+        let messages = conversation.chat_messages();
         let tools = self.tools.specs(&self.scope, &config);
         let request = ChatRequest {
             model: &self.model.id,
@@ -106,60 +105,38 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
         };
         let mut output = ModelOutput::default();
         let events = self.events.clone();
-        let generated = inbox
-            .race(generation::generate(
-                self.provider,
-                request,
-                &mut output,
-                |event| {
-                    let _ = events.send(SessionEvent::Model(event.clone()));
-                },
-            ))
-            .await;
-        let reasoning = recorded_reasoning(&config, &output);
+        let streamed = generation::generate(&*self.provider, request, &mut output, |event| {
+            let _ = events.send(ThreadEvent::Model(event.clone()));
+        });
+        let generated = inbox.race(streamed).await;
+        let answer = TurnAnswer {
+            reasoning: recorded_reasoning(&config, &output),
+            content: output.text,
+        };
         let calls = match generated {
-            Err(stop) => {
-                let partial = AgentOutcome::Interrupted {
-                    content: output.text,
-                    reasoning,
-                };
-                return Ok(StepEnd::Stopped(stop, partial));
-            }
+            Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),
             Ok(Err(error)) => {
-                return Ok(StepEnd::Answered(AgentOutcome::Failed {
-                    error_message: format!("{error:#}"),
-                }));
+                return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
             }
             Ok(Ok(calls)) if calls.is_empty() => {
-                return Ok(StepEnd::Answered(AgentOutcome::Completed {
-                    content: output.text,
-                    reasoning,
-                }));
+                return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
             }
             Ok(Ok(calls)) => calls,
         };
 
         let (results, stop) = self.call_tools(&calls, &config, inbox).await;
-        let step = AgentStep {
-            content: output.text,
-            reasoning,
+        let step = TurnStep {
+            answer,
             tool_calls: calls,
             results,
         };
-        // The tools have run; failing the turn keeps the session usable.
-        if let Err(error) = self.receiver.record_step(turn, step).await {
-            return Ok(StepEnd::Answered(AgentOutcome::Failed {
-                error_message: format!("cannot store the tool step: {error:#}"),
-            }));
+        // The tools have run; failing the turn keeps the thread usable.
+        if let Err(error) = self.state.record_step(&turn.turn_id, step).await {
+            let error = format!("cannot store the tool step: {error:#}");
+            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         Ok(match stop {
-            Some(stop) => StepEnd::Stopped(
-                stop,
-                AgentOutcome::Interrupted {
-                    content: String::new(),
-                    reasoning: None,
-                },
-            ),
+            Some(stop) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
             None => StepEnd::CalledTools,
         })
     }
@@ -178,11 +155,11 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
             let content = match stop {
                 Some(_) => "not run: the user interrupted the turn".to_owned(),
                 None => {
-                    self.emit(SessionEvent::ToolStarted(call.clone()));
+                    self.emit(ThreadEvent::ToolStarted(call.clone()));
                     match inbox.race(self.tools.call(call, &self.scope, config)).await {
                         Ok(result) => {
                             let content = result.content.clone();
-                            self.emit(SessionEvent::ToolFinished {
+                            self.emit(ThreadEvent::ToolFinished {
                                 call_id: call.id.clone(),
                                 result,
                             });
@@ -204,17 +181,23 @@ impl<'a, P: ModelProvider> Agent<'a, P> {
     }
 
     /// Reports a context past the model window to the client and returns why.
-    fn context_too_large(&self, messages: &[Message]) -> Option<String> {
-        let tokens = context::context_tokens(messages);
+    fn context_too_large(&self, conversation: &Conversation) -> Option<String> {
+        let tokens = conversation.tokens();
         let limit = self.model.context_window.filter(|&limit| tokens > limit)?;
-        self.emit(SessionEvent::ContextTooLarge { tokens, limit });
+        self.emit(ThreadEvent::ContextTooLarge { tokens, limit });
         Some(format!(
             "the context is about {tokens} tokens, past the model window of {limit}"
         ))
     }
 }
 
+/// What a stopped step keeps: the text written so far, if any.
+fn interrupted(answer: TurnAnswer) -> TurnOutcome {
+    let written = !answer.content.trim().is_empty();
+    TurnOutcome::Interrupted(written.then_some(answer))
+}
+
 fn recorded_reasoning(config: &Config, output: &ModelOutput) -> Option<String> {
-    let keep = config.session().record.records_reasoning() && !output.reasoning.trim().is_empty();
+    let keep = config.thread().record.records_reasoning() && !output.reasoning.trim().is_empty();
     keep.then(|| output.reasoning.clone())
 }

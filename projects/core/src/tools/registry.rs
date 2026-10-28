@@ -1,4 +1,4 @@
-//! The tools a session offers, by name. Built-in tools now; MCP servers and switching
+//! The tools a thread offers, by name. Built-in tools now; MCP servers and switching
 //! tools on and off later add to the same registry.
 
 use std::{collections::BTreeMap, path::Path};

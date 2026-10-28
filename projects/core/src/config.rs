@@ -1,4 +1,4 @@
-//! The settings in `config.yml`: providers, session recording and which tools and
+//! The settings in `config.yml`: providers, what threads record and which tools and
 //! skills are on.
 //! `LiveConfig` keeps the current copy in memory and writes changes back.
 
@@ -25,8 +25,9 @@ const HEADER: &str = "\
 #[serde(deny_unknown_fields)]
 pub struct Config {
     providers: BTreeMap<String, ProviderConfig>,
-    #[serde(default)]
-    session: SessionConfig,
+    /// Called `session` in older files.
+    #[serde(default, alias = "session")]
+    thread: ThreadConfig,
     /// Tools switched on or off by name; a tool not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tools: BTreeMap<String, bool>,
@@ -59,12 +60,12 @@ pub(crate) struct ApiKey(pub(crate) String);
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct SessionConfig {
+pub struct ThreadConfig {
     #[serde(default)]
     pub record: RecordMode,
 }
 
-/// What a session stores from the model output. User messages are always stored.
+/// What a thread stores from the model output. User messages are always stored.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 #[non_exhaustive]
@@ -88,8 +89,8 @@ impl Config {
         &self.providers
     }
 
-    pub fn session(&self) -> &SessionConfig {
-        &self.session
+    pub fn thread(&self) -> &ThreadConfig {
+        &self.thread
     }
 
     pub fn tool_enabled(&self, name: &str) -> bool {
@@ -157,7 +158,7 @@ impl fmt::Debug for Config {
             .debug_struct("Config")
             .field("providers", &"[REDACTED]")
             .field("provider_count", &self.providers.len())
-            .field("session", &self.session)
+            .field("thread", &self.thread)
             .field("tools", &self.tools)
             .field("skills", &self.skills)
             .finish()
@@ -245,14 +246,20 @@ mod tests {
 
     #[test]
     fn record_mode_defaults_to_full() {
-        assert_eq!(parse(PROVIDERS).unwrap().session().record, RecordMode::Full);
+        assert_eq!(parse(PROVIDERS).unwrap().thread().record, RecordMode::Full);
     }
 
     #[test]
     fn record_mode_answer_skips_reasoning() {
+        let config = parse(&format!("{PROVIDERS}thread:\n  record: answer\n")).unwrap();
+        assert_eq!(config.thread().record, RecordMode::Answer);
+        assert!(!config.thread().record.records_reasoning());
+    }
+
+    #[test]
+    fn the_older_session_section_still_reads() {
         let config = parse(&format!("{PROVIDERS}session:\n  record: answer\n")).unwrap();
-        assert_eq!(config.session().record, RecordMode::Answer);
-        assert!(!config.session().record.records_reasoning());
+        assert_eq!(config.thread().record, RecordMode::Answer);
     }
 
     #[test]

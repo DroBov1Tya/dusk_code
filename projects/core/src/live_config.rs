@@ -199,10 +199,7 @@ mod tests {
 
         let saved = Config::load_from(&path).unwrap();
         assert!(!saved.tool_enabled("search"));
-        assert!(
-            !saved.session().record.records_reasoning(),
-            "hand edit kept"
-        );
+        assert!(!saved.thread().record.records_reasoning(), "hand edit kept");
     }
 
     #[test]

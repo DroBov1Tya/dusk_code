@@ -1,4 +1,4 @@
-//! Client commands as the session sees them: while the agent works, messages are held
+//! Client commands as the thread sees them: while the agent works, messages are held
 //! for later, `send_now` and `cancel` stop the work.
 
 use std::future::Future;

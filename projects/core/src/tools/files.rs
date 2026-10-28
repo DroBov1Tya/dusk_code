@@ -9,8 +9,9 @@ use tokio::fs;
 
 use super::{
     builtin::{parse_arguments, printable, read_regular, write_regular},
-    tool::{Tool, ToolContext, ToolFuture},
+    tool::{Tool, ToolContext},
 };
+use crate::BoxFuture;
 
 /// Larger files would not fit the result limit anyway.
 const MAX_READ_BYTES: u64 = 1024 * 1024;
@@ -73,7 +74,7 @@ impl Tool for ReadFile {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         let scope = context.scope;
         Box::pin(async move {
             let arguments: ReadFileArguments = parse_arguments(arguments)?;
@@ -110,7 +111,7 @@ impl Tool for ListDir {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         let scope = context.scope;
         Box::pin(async move {
             let arguments: ListDirArguments = parse_arguments(arguments)?;
@@ -146,7 +147,7 @@ impl Tool for WriteFile {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         let scope = context.scope;
         Box::pin(async move {
             let arguments: WriteFileArguments = parse_arguments(arguments)?;
@@ -197,7 +198,7 @@ impl Tool for EditFile {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         let scope = context.scope;
         Box::pin(async move {
             let arguments: EditFileArguments = parse_arguments(arguments)?;

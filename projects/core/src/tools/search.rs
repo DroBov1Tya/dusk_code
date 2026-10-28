@@ -16,8 +16,9 @@ use serde_json::{Value, json};
 
 use super::{
     builtin::{parse_arguments, printable, read_regular},
-    tool::{Tool, ToolContext, ToolFuture},
+    tool::{Tool, ToolContext},
 };
+use crate::BoxFuture;
 
 const SKIPPED_DIRS: [&str; 3] = [".git", "target", "node_modules"];
 const MAX_FILE_BYTES: u64 = 1024 * 1024;
@@ -67,7 +68,7 @@ impl Tool for Search {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         let scope = context.scope;
         Box::pin(async move {
             let arguments: SearchArguments = parse_arguments(arguments)?;
