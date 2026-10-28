@@ -13,11 +13,22 @@ use crate::config::{Config, ProviderKind};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Model {
     pub id: String,
+    /// Maximum input tokens, when the provider's catalogue reports it.
+    pub context_window: Option<u64>,
 }
 
+/// What the agent needs from a model provider.
 pub trait ModelProvider: Send + Sync {
+    type Stream: ChatStream;
+
     /// Returns the catalogue sorted by model ID.
     fn list_models(&self) -> impl Future<Output = Result<Vec<Model>>> + Send;
+
+    fn stream_chat(
+        &self,
+        model: &str,
+        messages: &[ChatMessage],
+    ) -> impl Future<Output = Result<Self::Stream>> + Send;
 }
 
 /// Providers by config name, in name order.
@@ -74,26 +85,24 @@ impl Provider {
             .next()
             .context("provider offers no models")
     }
+}
 
-    pub async fn stream_chat(
-        &self,
-        model: &str,
-        messages: &[ChatMessage],
-    ) -> Result<ProviderStream> {
+impl ModelProvider for Provider {
+    type Stream = ProviderStream;
+
+    async fn list_models(&self) -> Result<Vec<Model>> {
+        match &self.adapter {
+            ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
+        }
+    }
+
+    async fn stream_chat(&self, model: &str, messages: &[ChatMessage]) -> Result<ProviderStream> {
         let adapter = match &self.adapter {
             ProviderAdapter::OpenAiCompatible(adapter) => {
                 StreamAdapter::OpenAiCompatible(adapter.stream_chat(model, messages).await?)
             }
         };
         Ok(ProviderStream { adapter })
-    }
-}
-
-impl ModelProvider for Provider {
-    async fn list_models(&self) -> Result<Vec<Model>> {
-        match &self.adapter {
-            ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
-        }
     }
 }
 

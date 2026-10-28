@@ -1,30 +1,22 @@
-//! User turns: one per accepted request, answered by a single agent attempt.
+//! Turns: one per agent run. A turn answers every user message of its thread up to
+//! `last_sequence`; user messages after the newest turn are the queue.
 
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 
 use crate::events::Event;
 
-use super::{
-    Message, MessageAttachment, MessageInput, MessageRole, State,
-    messages::{decode_message, insert_message},
-    timestamp_ms,
-};
+use super::{Message, MessageInput, MessageRole, State, messages::insert_message, timestamp_ms};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Turn {
-    /// The stable request UID is also the user turn ID.
     pub turn_id: String,
     pub thread_id: String,
-    pub user_message_id: String,
+    /// Sequence of the newest user message this turn answers.
+    pub last_sequence: u64,
     pub response_message_id: Option<String>,
-    pub agent_id: Option<String>,
-    /// Fences internal responses; retries are not exposed by the receiver yet.
-    pub attempt: u64,
     pub status: TurnStatus,
-    pub created_at: i64,
-    pub updated_at: i64,
-    pub started_at: Option<i64>,
+    pub started_at: i64,
     pub finished_at: Option<i64>,
     pub error_message: Option<String>,
 }
@@ -32,10 +24,38 @@ pub struct Turn {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum TurnStatus {
-    Queued,
     Running,
     Completed,
+    /// Stopped by the user or a restart; a partial answer is kept when there was one.
+    Interrupted,
     Failed,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum TurnOutcome {
+    Completed(TurnAnswer),
+    Interrupted(Option<TurnAnswer>),
+    Failed(String),
+}
+
+/// What the agent wrote; stored as the turn's assistant message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnAnswer {
+    pub content: String,
+    pub reasoning: Option<String>,
+    pub agent_id: String,
+}
+
+impl TurnStatus {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Completed => "completed",
+            Self::Interrupted => "interrupted",
+            Self::Failed => "failed",
+        }
+    }
 }
 
 impl State {
@@ -49,258 +69,157 @@ impl State {
             .transpose()
     }
 
-    pub(crate) async fn pending_turns(&self, thread_id: &str, limit: u32) -> Result<Vec<Turn>> {
-        ensure!((1..=1000).contains(&limit), "turn limit must be 1..=1000");
-        sqlx::query(
-            "SELECT turns.* FROM turns
-             JOIN messages ON messages.message_id = turns.user_message_id
-             WHERE turns.thread_id = ? AND turns.status = 'queued'
-             ORDER BY messages.sequence LIMIT ?",
+    /// Sequence of the newest message any turn of the thread has taken; 0 before the first.
+    pub(crate) async fn answered_through(&self, thread_id: &str) -> Result<u64> {
+        let sequence: i64 = sqlx::query_scalar(
+            "SELECT COALESCE(MAX(last_sequence), 0) FROM turns WHERE thread_id = ?",
         )
         .bind(thread_id)
-        .bind(i64::from(limit))
-        .fetch_all(&self.pool)
+        .fetch_one(&self.pool)
         .await
-        .context("load pending turns")?
-        .into_iter()
-        .map(decode_turn)
-        .collect()
+        .context("load answered sequence")?;
+        sequence.try_into().context("negative turn sequence")
     }
 
-    pub(crate) async fn start_turn(
-        &self,
-        turn_id: &str,
-        agent_id: &str,
-        expected_attempt: u64,
-    ) -> Result<Turn> {
+    /// Starts a turn over every queued user message. Returns `None` when nothing is queued.
+    /// The database allows one running turn per thread, so a second start fails.
+    pub(crate) async fn start_turn(&self, thread_id: &str, turn_id: &str) -> Result<Option<Turn>> {
         let timestamp = timestamp_ms()?;
-        let attempt = attempt_sql(expected_attempt)?;
         let _write = self.writes.lock().await;
-        let mut transaction = self.pool.begin().await.context("begin turn start")?;
         let row = sqlx::query(
-            "UPDATE turns SET status = 'running', agent_id = ?,
-                started_at = MAX(updated_at, ?), updated_at = MAX(updated_at, ?)
-             WHERE turn_id = ? AND status = 'queued' AND attempt = ? RETURNING *",
+            "INSERT INTO turns (turn_id, thread_id, last_sequence, status, started_at)
+             SELECT ?, ?, MAX(sequence), 'running', ? FROM messages
+             WHERE thread_id = ? AND role = 'user'
+               AND sequence > (SELECT COALESCE(MAX(last_sequence), 0) FROM turns WHERE thread_id = ?)
+             HAVING COUNT(*) > 0
+             RETURNING *",
         )
-        .bind(agent_id)
-        .bind(timestamp)
-        .bind(timestamp)
         .bind(turn_id)
-        .bind(attempt)
-        .fetch_optional(&mut *transaction)
+        .bind(thread_id)
+        .bind(timestamp)
+        .bind(thread_id)
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
         .await
         .context("start turn")?;
-        let changed = row.is_some();
-        let turn = match row {
-            Some(row) => decode_turn(row)?,
-            None => read_turn(&mut transaction, turn_id).await?,
+        let Some(row) = row else {
+            return Ok(None);
         };
-        ensure!(
-            turn.status == TurnStatus::Running
-                && turn.agent_id.as_deref() == Some(agent_id)
-                && turn.attempt == expected_attempt,
-            "turn is not available to this agent and attempt"
-        );
-        transaction.commit().await.context("commit turn start")?;
-        if changed {
-            let _ = self.events.send(Event::TurnUpdated(turn.clone()));
-        }
-        Ok(turn)
+        let turn = decode_turn(row)?;
+        let _ = self.events.send(Event::TurnStarted(turn.clone()));
+        Ok(Some(turn))
     }
 
-    pub(crate) async fn complete_turn(
+    /// Records the outcome of a running turn together with its answer message.
+    pub(crate) async fn finish_turn(
         &self,
         turn_id: &str,
-        agent_id: &str,
-        expected_attempt: u64,
-        content: String,
-        reasoning: Option<String>,
-        attachments: Vec<MessageAttachment>,
-    ) -> Result<(Turn, Message)> {
+        outcome: TurnOutcome,
+    ) -> Result<(Turn, Option<Message>)> {
+        let (status, answer, error) = match outcome {
+            TurnOutcome::Completed(answer) => (TurnStatus::Completed, Some(answer), None),
+            TurnOutcome::Interrupted(answer) => (TurnStatus::Interrupted, answer, None),
+            TurnOutcome::Failed(error) => (TurnStatus::Failed, None, Some(error)),
+        };
         let timestamp = timestamp_ms()?;
         let _write = self.writes.lock().await;
-        let mut transaction = self.pool.begin().await.context("begin turn response")?;
-        let turn = read_turn(&mut transaction, turn_id).await?;
-        ensure!(
-            turn.agent_id.as_deref() == Some(agent_id) && turn.attempt == expected_attempt,
-            "turn does not belong to this agent and attempt"
-        );
-        if turn.status == TurnStatus::Completed {
-            let message_id = turn
-                .response_message_id
-                .as_deref()
-                .context("turn has no response")?;
-            let message = sqlx::query("SELECT * FROM messages WHERE message_id = ?")
-                .bind(message_id)
-                .fetch_one(&mut *transaction)
-                .await
-                .context("load turn response")?;
-            let message = decode_message(message)?;
-            ensure!(
-                message.content == content
-                    && message.reasoning == reasoning
-                    && message.attachments == attachments,
-                "turn already has a different response"
-            );
-            transaction
-                .commit()
-                .await
-                .context("commit response replay")?;
-            return Ok((turn, message));
-        }
-        ensure!(
-            turn.status == TurnStatus::Running,
-            "only running turns accept a response"
-        );
-        let cwd: String = sqlx::query_scalar("SELECT cwd FROM messages WHERE message_id = ?")
-            .bind(&turn.user_message_id)
-            .fetch_one(&mut *transaction)
+        let mut transaction = self.pool.begin().await.context("begin turn finish")?;
+        let turn = sqlx::query("SELECT * FROM turns WHERE turn_id = ? AND status = 'running'")
+            .bind(turn_id)
+            .fetch_optional(&mut *transaction)
             .await
-            .context("load turn context")?;
-        let message_id = format!(
-            "turn-response:{}:{turn_id}:{expected_attempt}",
-            turn_id.len()
-        );
-        let message = insert_message(
-            &mut transaction,
-            &message_id,
-            &MessageInput {
-                thread_id: turn.thread_id.clone(),
-                job_id: None,
-                role: MessageRole::Assistant,
-                agent_id: Some(agent_id.to_owned()),
-                content,
-                reasoning,
-                cwd,
-                attachments,
-            },
-            None,
-            timestamp,
-        )
-        .await?;
+            .context("load running turn")?
+            .context("turn is not running")?;
+        let turn = decode_turn(turn)?;
+        let message = match answer {
+            Some(answer) => {
+                let input = answer_message(&mut transaction, &turn, answer).await?;
+                let message_id = format!("turn-response:{turn_id}");
+                Some(insert_message(&mut transaction, &message_id, &input, None, timestamp).await?)
+            }
+            None => None,
+        };
         let row = sqlx::query(
-            "UPDATE turns SET status = 'completed', response_message_id = ?,
-                updated_at = MAX(updated_at, ?), finished_at = MAX(updated_at, ?)
-             WHERE turn_id = ? AND status = 'running' AND agent_id = ? AND attempt = ? RETURNING *",
+            "UPDATE turns SET status = ?, response_message_id = ?, error_message = ?,
+                finished_at = MAX(started_at, ?)
+             WHERE turn_id = ? RETURNING *",
         )
-        .bind(&message.message_id)
-        .bind(timestamp)
+        .bind(status.as_str())
+        .bind(message.as_ref().map(|message| &message.message_id))
+        .bind(error)
         .bind(timestamp)
         .bind(turn_id)
-        .bind(agent_id)
-        .bind(attempt_sql(expected_attempt)?)
-        .fetch_optional(&mut *transaction)
+        .fetch_one(&mut *transaction)
         .await
-        .context("complete turn")?
-        .context("turn changed before completion")?;
+        .context("finish turn")?;
         let turn = decode_turn(row)?;
-        transaction.commit().await.context("commit turn response")?;
-        let _ = self.events.send(Event::MessageCreated(message.clone()));
-        let _ = self.events.send(Event::TurnUpdated(turn.clone()));
+        transaction.commit().await.context("commit turn finish")?;
+        if let Some(message) = &message {
+            let _ = self.events.send(Event::MessageCreated(message.clone()));
+        }
+        let _ = self.events.send(Event::TurnFinished(turn.clone()));
         Ok((turn, message))
     }
 
-    pub(crate) async fn fail_turn(
-        &self,
-        turn_id: &str,
-        agent_id: &str,
-        expected_attempt: u64,
-        error_message: String,
-    ) -> Result<Turn> {
-        ensure!(!error_message.trim().is_empty(), "turn error is empty");
+    /// A process that stopped mid-turn leaves it running; mark such turns interrupted.
+    pub(crate) async fn interrupt_running_turns(&self, thread_id: &str) -> Result<()> {
         let timestamp = timestamp_ms()?;
         let _write = self.writes.lock().await;
-        let mut transaction = self.pool.begin().await.context("begin turn failure")?;
-        let row = sqlx::query(
-            "UPDATE turns SET status = 'failed', error_message = ?,
-                updated_at = MAX(updated_at, ?), finished_at = MAX(updated_at, ?)
-             WHERE turn_id = ? AND status = 'running' AND agent_id = ? AND attempt = ? RETURNING *",
+        sqlx::query(
+            "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?)
+             WHERE thread_id = ? AND status = 'running'",
         )
-        .bind(&error_message)
         .bind(timestamp)
-        .bind(timestamp)
-        .bind(turn_id)
-        .bind(agent_id)
-        .bind(attempt_sql(expected_attempt)?)
-        .fetch_optional(&mut *transaction)
+        .bind(thread_id)
+        .execute(&self.pool)
         .await
-        .context("fail turn")?;
-        let changed = row.is_some();
-        let turn = match row {
-            Some(row) => decode_turn(row)?,
-            None => read_turn(&mut transaction, turn_id).await?,
-        };
-        ensure!(
-            turn.status == TurnStatus::Failed
-                && turn.agent_id.as_deref() == Some(agent_id)
-                && turn.attempt == expected_attempt
-                && turn.error_message.as_deref() == Some(&error_message),
-            "turn cannot fail with this agent, attempt and result"
-        );
-        transaction.commit().await.context("commit turn failure")?;
-        if changed {
-            let _ = self.events.send(Event::TurnUpdated(turn.clone()));
-        }
-        Ok(turn)
+        .context("interrupt running turns")?;
+        Ok(())
     }
 }
 
-pub(super) async fn insert_turn(
+/// The answer inherits the working directory of the newest message it answers.
+async fn answer_message(
     transaction: &mut Transaction<'_, Sqlite>,
-    request_uid: &str,
-    message: &Message,
-    timestamp: i64,
-) -> Result<Option<Turn>> {
-    sqlx::query(
-        "INSERT INTO turns (turn_id, thread_id, user_message_id, status, created_at, updated_at)
-         VALUES (?, ?, ?, 'queued', ?, ?) ON CONFLICT(turn_id) DO NOTHING RETURNING *",
-    )
-    .bind(request_uid)
-    .bind(&message.thread_id)
-    .bind(&message.message_id)
-    .bind(timestamp)
-    .bind(timestamp)
-    .fetch_optional(&mut **transaction)
-    .await
-    .context("create user turn")?
-    .map(decode_turn)
-    .transpose()
-}
-
-async fn read_turn(transaction: &mut Transaction<'_, Sqlite>, turn_id: &str) -> Result<Turn> {
-    let row = sqlx::query("SELECT * FROM turns WHERE turn_id = ?")
-        .bind(turn_id)
-        .fetch_optional(&mut **transaction)
-        .await
-        .context("load active turn")?
-        .context("turn does not exist")?;
-    decode_turn(row)
-}
-
-fn attempt_sql(attempt: u64) -> Result<i64> {
-    i64::try_from(attempt).context("turn attempt exceeds SQLite integer range")
+    turn: &Turn,
+    answer: TurnAnswer,
+) -> Result<MessageInput> {
+    ensure!(!answer.content.trim().is_empty(), "answer is empty");
+    let cwd: String =
+        sqlx::query_scalar("SELECT cwd FROM messages WHERE thread_id = ? AND sequence = ?")
+            .bind(&turn.thread_id)
+            .bind(i64::try_from(turn.last_sequence).context("sequence out of range")?)
+            .fetch_one(&mut **transaction)
+            .await
+            .context("load answered message")?;
+    Ok(MessageInput {
+        thread_id: turn.thread_id.clone(),
+        job_id: None,
+        role: MessageRole::Assistant,
+        agent_id: Some(answer.agent_id),
+        content: answer.content,
+        reasoning: answer.reasoning,
+        cwd,
+        attachments: Vec::new(),
+    })
 }
 
 fn decode_turn(row: SqliteRow) -> Result<Turn> {
     let status: String = row.try_get("status")?;
     let status = match status.as_str() {
-        "queued" => TurnStatus::Queued,
         "running" => TurnStatus::Running,
         "completed" => TurnStatus::Completed,
+        "interrupted" => TurnStatus::Interrupted,
         "failed" => TurnStatus::Failed,
         _ => bail!("invalid stored turn status"),
     };
-    let attempt: i64 = row.try_get("attempt")?;
+    let last_sequence: i64 = row.try_get("last_sequence")?;
     Ok(Turn {
         turn_id: row.try_get("turn_id")?,
         thread_id: row.try_get("thread_id")?,
-        user_message_id: row.try_get("user_message_id")?,
+        last_sequence: last_sequence.try_into().context("negative turn sequence")?,
         response_message_id: row.try_get("response_message_id")?,
-        agent_id: row.try_get("agent_id")?,
-        attempt: attempt.try_into().context("negative turn attempt")?,
         status,
-        created_at: row.try_get("created_at")?,
-        updated_at: row.try_get("updated_at")?,
         started_at: row.try_get("started_at")?,
         finished_at: row.try_get("finished_at")?,
         error_message: row.try_get("error_message")?,

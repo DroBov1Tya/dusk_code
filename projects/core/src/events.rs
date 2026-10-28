@@ -15,10 +15,9 @@ pub enum Event {
     ThreadUpdated(ThreadMetadata),
     TaskAccepted(Execution),
     TaskRejected(Execution),
-    ExecutionFailed(Execution),
     MessageCreated(Message),
-    TurnCreated(Turn),
-    TurnUpdated(Turn),
+    TurnStarted(Turn),
+    TurnFinished(Turn),
     JobCreated(Job),
     JobUpdated(Job),
 }

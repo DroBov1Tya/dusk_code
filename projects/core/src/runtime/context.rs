@@ -10,19 +10,31 @@ pub(super) fn chat_messages(messages: &[Message]) -> Vec<ChatMessage> {
     messages
         .iter()
         .filter_map(|message| {
-            let role = match message.role {
-                MessageRole::System => ChatRole::System,
-                MessageRole::User => ChatRole::User,
-                MessageRole::Assistant | MessageRole::Agent => ChatRole::Assistant,
-                // No tools exist yet.
-                MessageRole::Tool => return None,
-            };
             Some(ChatMessage {
-                role,
+                role: chat_role(message.role)?,
                 content: message.content.clone(),
             })
         })
         .collect()
+}
+
+/// Estimated size of what `chat_messages` sends.
+pub(super) fn context_tokens(messages: &[Message]) -> u64 {
+    messages
+        .iter()
+        .filter(|message| chat_role(message.role).is_some())
+        .map(|message| message.token_count)
+        .sum()
+}
+
+fn chat_role(role: MessageRole) -> Option<ChatRole> {
+    match role {
+        MessageRole::System => Some(ChatRole::System),
+        MessageRole::User => Some(ChatRole::User),
+        MessageRole::Assistant | MessageRole::Agent => Some(ChatRole::Assistant),
+        // No tools exist yet.
+        MessageRole::Tool => None,
+    }
 }
 
 #[cfg(test)]
@@ -42,6 +54,7 @@ mod tests {
             reasoning: None,
             cwd: "/tmp".into(),
             attachments: Vec::new(),
+            token_count: 5,
             created_at: 0,
         }
     }
@@ -76,5 +89,6 @@ mod tests {
                 },
             ]
         );
+        assert_eq!(context_tokens(&messages), 20);
     }
 }

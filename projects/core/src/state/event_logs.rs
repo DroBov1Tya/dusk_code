@@ -6,13 +6,12 @@ use sqlx::{Row, sqlite::SqliteRow};
 use crate::events::Event;
 
 use super::{
-    MessageInput, MessageRole, State,
+    Message, MessageInput, MessageRole, State,
     messages::{decode_message, insert_message, validate_context},
     timestamp_ms,
-    turns::insert_turn,
 };
 
-/// Durable receipt without the original message or generated output.
+/// Receipt of a user request, without its content.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Execution {
     pub request_uid: String,
@@ -20,39 +19,16 @@ pub struct Execution {
     /// Unix timestamp in milliseconds, assigned on first receipt.
     pub received_at: i64,
     pub status: ExecutionStatus,
-    /// Validation rejection; absent for accepted and failed executions.
+    /// Set exactly when the request was rejected.
     pub error_code: Option<RejectionCode>,
-    /// Execution failure; distinct from validation rejection.
-    pub failure_code: Option<ExecutionFailureCode>,
 }
 
-impl Execution {
-    /// Reports receipt terminality only. Inspect Turn for the user task's lifecycle.
-    pub fn is_complete(&self) -> bool {
-        match self.status {
-            ExecutionStatus::Accepted => false,
-            ExecutionStatus::Rejected | ExecutionStatus::Failed => true,
-        }
-    }
-}
-
-/// Receipt state. User-task completion and failure are recorded separately in Turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ExecutionStatus {
+    /// The message is stored and queued for the agent.
     Accepted,
     Rejected,
-    Failed,
-}
-
-impl ExecutionStatus {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Accepted => "accepted",
-            Self::Rejected => "rejected",
-            Self::Failed => "failed",
-        }
-    }
 }
 
 /// Fixed validation codes never contain user-message content.
@@ -62,6 +38,15 @@ pub enum RejectionCode {
     EmptyMessage,
     EmptyThread,
     UnknownThread,
+}
+
+impl ExecutionStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+        }
+    }
 }
 
 impl RejectionCode {
@@ -74,29 +59,16 @@ impl RejectionCode {
     }
 }
 
-/// Fixed execution-failure codes never contain provider errors or message content.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ExecutionFailureCode {
-    ExecutionFailed,
-}
-
-impl ExecutionFailureCode {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::ExecutionFailed => "execution_failed",
-        }
-    }
-}
-
 impl State {
-    /// Commits a receipt and accepted message atomically. The receipt remains metadata-only.
+    /// Commits the receipt and, when accepted, the message in one transaction. A repeated
+    /// UID returns the original receipt and message without new events; it must carry the
+    /// same input. Unknown threads are rejected by the same statement that records the receipt.
     pub(crate) async fn receive_request(
         &self,
         request_uid: &str,
         input: MessageInput,
         rejection: Option<RejectionCode>,
-    ) -> Result<Execution> {
+    ) -> Result<(Execution, Option<Message>)> {
         ensure!(!request_uid.trim().is_empty(), "request UID is empty");
         ensure!(
             input.role == MessageRole::User && input.job_id.is_none() && input.agent_id.is_none(),
@@ -141,54 +113,36 @@ impl State {
             &execution.thread_id == thread_id,
             "request UID already belongs to another thread"
         );
-        let mut original_message = None;
-        let message = if inserted && execution.status == ExecutionStatus::Accepted {
-            // User request IDs form a stable message ID namespace for transport replays.
-            Some(
-                insert_message(
+        let message = match (execution.status, inserted) {
+            (ExecutionStatus::Rejected, _) => None,
+            (ExecutionStatus::Accepted, true) => {
+                // Request UIDs form a stable message ID namespace for replays.
+                let message_id = format!("request:{request_uid}");
+                let message = insert_message(
                     &mut transaction,
-                    &format!("request:{request_uid}"),
+                    &message_id,
                     &input,
                     Some(request_uid),
                     received_at,
                 )
-                .await?,
-            )
-        } else {
-            if !inserted && execution.status != ExecutionStatus::Rejected {
+                .await?;
+                Some(message)
+            }
+            (ExecutionStatus::Accepted, false) => {
                 let original = sqlx::query("SELECT * FROM messages WHERE request_uid = ?")
                     .bind(request_uid)
-                    .fetch_optional(&mut *transaction)
+                    .fetch_one(&mut *transaction)
                     .await
-                    .context("load original request message")?
-                    .context("existing request has no persisted message")?;
+                    .context("load original request message")?;
                 let original = decode_message(original)?;
                 ensure!(
-                    original.thread_id == input.thread_id
-                        && original.content == input.content
+                    original.content == input.content
                         && original.cwd == input.cwd
                         && original.attachments == input.attachments,
                     "request UID already belongs to different input"
                 );
-                original_message = Some(original);
+                Some(original)
             }
-            // Rejected receipts have no persisted payload to compare; return the original receipt.
-            None
-        };
-        let turn = if execution.status == ExecutionStatus::Accepted {
-            let user_message = message
-                .as_ref()
-                .or(original_message.as_ref())
-                .context("accepted request has no message")?;
-            insert_turn(
-                &mut transaction,
-                request_uid,
-                user_message,
-                execution.received_at,
-            )
-            .await?
-        } else {
-            None
         };
         transaction
             .commit()
@@ -198,71 +152,16 @@ impl State {
             let event = match execution.status {
                 ExecutionStatus::Accepted => Event::TaskAccepted(execution.clone()),
                 ExecutionStatus::Rejected => Event::TaskRejected(execution.clone()),
-                ExecutionStatus::Failed => Event::ExecutionFailed(execution.clone()),
             };
             let _ = self.events.send(event);
-            if let Some(message) = message {
-                let _ = self.events.send(Event::MessageCreated(message));
+            if let Some(message) = &message {
+                let _ = self.events.send(Event::MessageCreated(message.clone()));
             }
         }
-        if let Some(turn) = turn {
-            let _ = self.events.send(Event::TurnCreated(turn));
-        }
-        Ok(execution)
+        Ok((execution, message))
     }
 
-    /// Legacy failure path for receipts without a user turn, without persisting error text.
-    /// User-turn results must go through AgentReceiver with agent and attempt validation.
-    /// Repeating a failed UID returns the original result without another event.
-    pub async fn fail_execution(&self, request_uid: &str) -> Result<Execution> {
-        ensure!(!request_uid.trim().is_empty(), "request UID is empty");
-        let _write = self.writes.lock().await;
-        let mut transaction = self.pool.begin().await.context("begin execution failure")?;
-        let has_turn: bool =
-            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM turns WHERE turn_id = ?)")
-                .bind(request_uid)
-                .fetch_one(&mut *transaction)
-                .await
-                .context("inspect execution turn")?;
-        ensure!(
-            !has_turn,
-            "user turn lifecycle must be changed through the agent receiver"
-        );
-        let row = sqlx::query(
-            "UPDATE event_logs SET status = 'failed', error_code = ?
-             WHERE request_uid = ? AND status = 'accepted' RETURNING *",
-        )
-        .bind(ExecutionFailureCode::ExecutionFailed.as_str())
-        .bind(request_uid)
-        .fetch_optional(&mut *transaction)
-        .await
-        .context("record execution failure")?;
-        let changed = row.is_some();
-        let row = match row {
-            Some(row) => row,
-            None => sqlx::query("SELECT * FROM event_logs WHERE request_uid = ?")
-                .bind(request_uid)
-                .fetch_optional(&mut *transaction)
-                .await
-                .context("load execution for failure")?
-                .context("execution does not exist")?,
-        };
-        let execution = decode_execution(row)?;
-        ensure!(
-            execution.status == ExecutionStatus::Failed,
-            "only accepted executions can fail"
-        );
-        transaction
-            .commit()
-            .await
-            .context("commit execution failure")?;
-        if changed {
-            let _ = self.events.send(Event::ExecutionFailed(execution.clone()));
-        }
-        Ok(execution)
-    }
-
-    /// Reads a receipt without message content. Missing requests return `None`.
+    /// Missing requests return `None`.
     pub async fn load_execution(&self, request_uid: &str) -> Result<Option<Execution>> {
         sqlx::query("SELECT * FROM event_logs WHERE request_uid = ?")
             .bind(request_uid)
@@ -276,28 +175,20 @@ impl State {
 
 fn decode_execution(row: SqliteRow) -> Result<Execution> {
     let status: String = row.try_get("status")?;
-    let status = match status.as_str() {
-        "accepted" => ExecutionStatus::Accepted,
-        "rejected" => ExecutionStatus::Rejected,
-        "failed" => ExecutionStatus::Failed,
-        _ => bail!("invalid stored execution status"),
-    };
     let error_code: Option<String> = row.try_get("error_code")?;
-    let (error_code, failure_code) = match (status, error_code.as_deref()) {
-        (ExecutionStatus::Accepted, None) => (None, None),
-        (ExecutionStatus::Rejected, Some("empty_message")) => {
-            (Some(RejectionCode::EmptyMessage), None)
+    let (status, error_code) = match (status.as_str(), error_code.as_deref()) {
+        ("accepted", None) => (ExecutionStatus::Accepted, None),
+        ("rejected", Some("empty_message")) => {
+            (ExecutionStatus::Rejected, Some(RejectionCode::EmptyMessage))
         }
-        (ExecutionStatus::Rejected, Some("empty_thread")) => {
-            (Some(RejectionCode::EmptyThread), None)
+        ("rejected", Some("empty_thread")) => {
+            (ExecutionStatus::Rejected, Some(RejectionCode::EmptyThread))
         }
-        (ExecutionStatus::Rejected, Some("unknown_thread")) => {
-            (Some(RejectionCode::UnknownThread), None)
-        }
-        (ExecutionStatus::Failed, Some("execution_failed")) => {
-            (None, Some(ExecutionFailureCode::ExecutionFailed))
-        }
-        _ => bail!("stored execution status and error code disagree"),
+        ("rejected", Some("unknown_thread")) => (
+            ExecutionStatus::Rejected,
+            Some(RejectionCode::UnknownThread),
+        ),
+        _ => bail!("invalid stored receipt status or code"),
     };
     Ok(Execution {
         request_uid: row.try_get("request_uid")?,
@@ -305,6 +196,5 @@ fn decode_execution(row: SqliteRow) -> Result<Execution> {
         received_at: row.try_get("received_at")?,
         status,
         error_code,
-        failure_code,
     })
 }

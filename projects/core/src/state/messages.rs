@@ -23,6 +23,8 @@ pub struct Message {
     pub reasoning: Option<String>,
     pub cwd: String,
     pub attachments: Vec<MessageAttachment>,
+    /// Estimated size in model tokens; see [`estimate_tokens`].
+    pub token_count: u64,
     /// Unix timestamp in milliseconds.
     pub created_at: i64,
 }
@@ -144,9 +146,9 @@ pub(super) async fn insert_message(
         serde_json::to_string(&input.attachments).context("encode message attachments")?;
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, job_id, request_uid, sequence,
-            role, agent_id, content, reasoning, cwd, attachments_json, created_at)
+            role, agent_id, content, reasoning, cwd, attachments_json, token_count, created_at)
          VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(message_id)
     .bind(&input.thread_id)
@@ -159,6 +161,7 @@ pub(super) async fn insert_message(
     .bind(&input.reasoning)
     .bind(&input.cwd)
     .bind(attachments)
+    .bind(i64::try_from(estimate_tokens(&input.content)).context("message is too large")?)
     .bind(timestamp)
     .fetch_one(&mut **transaction)
     .await
@@ -243,6 +246,7 @@ pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
     };
     let sequence: i64 = row.try_get("sequence")?;
     let attachments: String = row.try_get("attachments_json")?;
+    let token_count: i64 = row.try_get("token_count")?;
     Ok(Message {
         message_id: row.try_get("message_id")?,
         thread_id: row.try_get("thread_id")?,
@@ -255,6 +259,15 @@ pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
         reasoning: row.try_get("reasoning")?,
         cwd: row.try_get("cwd")?,
         attachments: serde_json::from_str(&attachments).context("decode message attachments")?,
+        token_count: token_count.try_into().context("negative token count")?,
         created_at: row.try_get("created_at")?,
     })
+}
+
+/// Providers report token usage per request, not per message, so each message carries an
+/// estimate: about four bytes of UTF-8 per token, plus the role markup around the message.
+pub fn estimate_tokens(text: &str) -> u64 {
+    const BYTES_PER_TOKEN: usize = 4;
+    const MESSAGE_OVERHEAD: u64 = 4;
+    text.len().div_ceil(BYTES_PER_TOKEN) as u64 + MESSAGE_OVERHEAD
 }

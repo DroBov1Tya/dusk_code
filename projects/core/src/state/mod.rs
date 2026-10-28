@@ -9,11 +9,11 @@ mod state;
 mod threads;
 mod turns;
 
-pub use event_logs::{Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode};
+pub use event_logs::{Execution, ExecutionStatus, RejectionCode};
 pub use jobs::{Job, JobInput, JobOutcome, JobStatus};
-pub use messages::{Message, MessageAttachment, MessageInput, MessageRole};
+pub use messages::{Message, MessageAttachment, MessageInput, MessageRole, estimate_tokens};
 pub use state::{DatabasePassword, State};
 pub use threads::{ApprovalMode, ThreadInput, ThreadMetadata};
-pub use turns::{Turn, TurnStatus};
+pub use turns::{Turn, TurnAnswer, TurnOutcome, TurnStatus};
 
 use state::timestamp_ms;

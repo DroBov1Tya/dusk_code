@@ -1,6 +1,7 @@
-//! Trusted agent runtime: executes queued turns against a model provider.
+//! The agent: live sessions that run model turns over a thread.
 
-mod agent_runtime;
+mod answer;
 mod context;
+mod session_runner;
 
-pub use agent_runtime::AgentRuntime;
+pub use session_runner::{SessionEvent, SessionInput, SessionOutput, SessionRunner};
