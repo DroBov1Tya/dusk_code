@@ -1,15 +1,18 @@
-//! User-local provider settings. Model selection belongs to runtime callers.
+//! User-local provider settings, stored at `Paths::config_file`. Model selection belongs
+//! to runtime callers.
 
 use std::{
     collections::BTreeMap,
     fmt,
     fs::{self, File},
     io::Read,
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::{Result, anyhow, ensure};
 use serde::Deserialize;
+
+use crate::paths::Paths;
 
 const MAX_CONFIG_BYTES: u64 = 1024 * 1024;
 
@@ -65,17 +68,8 @@ impl fmt::Debug for ApiKey {
 }
 
 impl Config {
-    /// Use the requested `~/.config/duskcode/config.yml` path on every platform.
-    /// `XDG_CONFIG_HOME` is deliberately ignored to keep this location stable.
-    pub fn path() -> Result<PathBuf> {
-        let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
-        let home = PathBuf::from(home);
-        ensure!(home.is_absolute(), "HOME must be an absolute path");
-        Ok(home.join(".config/duskcode/config.yml"))
-    }
-
-    pub fn load() -> Result<Self> {
-        Self::load_from(Self::path()?)
+    pub fn load(paths: &Paths) -> Result<Self> {
+        Self::load_from(paths.config_file())
     }
 
     /// Load a private local file; this method never writes config or model IDs.

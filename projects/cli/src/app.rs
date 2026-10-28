@@ -1,10 +1,9 @@
-use std::{env, path::PathBuf};
-
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, bail};
 use dusk_core::{
     api::CORE_API_VERSION,
     config::Config,
     init,
+    paths::Paths,
     providers::{Model, ProviderRegistry},
     runtime::AgentRuntime,
     state::{ApprovalMode, State, ThreadInput},
@@ -27,17 +26,14 @@ pub struct Application {
 
 impl Application {
     pub async fn build(args: AppArgs) -> Result<Self> {
-        let init = init::initialize()?;
-        if init.config_created {
+        let paths = Paths::from_home()?;
+        if init::initialize(&paths)?.config_created {
             bail!(
                 "created {}; add a provider and restart",
-                init.config_path.display()
+                paths.config_file().display()
             );
         }
-        let path = match args.state_db {
-            Some(path) => path,
-            None => default_state_db()?,
-        };
+        let path = args.state_db.unwrap_or_else(|| paths.state_db());
         let state = match State::open(path).await {
             Ok(state) => {
                 info!("state database opened");
@@ -48,7 +44,7 @@ impl Application {
                 return Err(error);
             }
         };
-        let providers = ProviderRegistry::from_config(&Config::load_from(&init.config_path)?)?;
+        let providers = ProviderRegistry::from_config(&Config::load(&paths)?)?;
         let provider_name = providers
             .names()
             .next()
@@ -109,29 +105,4 @@ impl Application {
             .await?;
         Ok(thread_id)
     }
-}
-
-fn default_state_db() -> Result<PathBuf> {
-    #[cfg(target_os = "macos")]
-    let directory =
-        PathBuf::from(env::var_os("HOME").context("HOME is unavailable; use --state-db")?)
-            .join("Library/Application Support");
-
-    #[cfg(target_os = "windows")]
-    let directory = PathBuf::from(
-        env::var_os("LOCALAPPDATA").context("LOCALAPPDATA is unavailable; use --state-db")?,
-    );
-
-    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
-    let directory = match env::var_os("XDG_DATA_HOME").filter(|value| !value.is_empty()) {
-        Some(path) => PathBuf::from(path),
-        None => PathBuf::from(env::var_os("HOME").context("HOME is unavailable; use --state-db")?)
-            .join(".local/share"),
-    };
-
-    ensure!(
-        directory.is_absolute(),
-        "application data directory must be absolute; use --state-db"
-    );
-    Ok(directory.join(crate::constants::APP_NAME).join("state.db"))
 }

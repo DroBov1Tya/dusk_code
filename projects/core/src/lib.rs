@@ -6,6 +6,7 @@ pub mod events;
 pub mod extensions;
 pub mod init;
 pub mod lifecycle;
+pub mod paths;
 pub mod persistence;
 pub mod policy;
 pub mod providers;

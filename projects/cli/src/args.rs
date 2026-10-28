@@ -18,9 +18,7 @@ pub fn parse_args() -> AppArgs {
                 .long("state-db")
                 .value_name("PATH")
                 .value_parser(value_parser!(PathBuf))
-                .help(
-                    "SQLite thread metadata database (defaults to the application data directory)",
-                ),
+                .help("SQLite state database (default: ~/.config/duskcode/session/state.db)"),
         )
         .get_matches();
     AppArgs {

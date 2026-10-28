@@ -1,15 +1,15 @@
-//! First-start initialization. Creates missing user files with private permissions
-//! and never modifies existing ones.
+//! First-start initialization. Creates the missing parts of the layout in `paths`
+//! with private permissions and never modifies existing files.
 
 use std::{
     fs::{self, DirBuilder, OpenOptions},
     io::{ErrorKind, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 
-use crate::config::Config;
+use crate::paths::Paths;
 
 const CONFIG_TEMPLATE: &str = "\
 # dusk_code provider settings. Keep this file private (mode 0600).
@@ -25,25 +25,28 @@ providers: {}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Initialization {
-    pub config_path: PathBuf,
     /// True on first start: the config is a template without providers.
     pub config_created: bool,
 }
 
-pub fn initialize() -> Result<Initialization> {
-    let config_path = Config::path()?;
-    let config_created = ensure_config(&config_path)?;
-    Ok(Initialization {
-        config_path,
-        config_created,
-    })
+pub fn initialize(paths: &Paths) -> Result<Initialization> {
+    create_private_dir(paths.root())?;
+    create_private_dir(&paths.session_dir())?;
+    let config_created = ensure_config(&paths.config_file())?;
+    // SQLite would create the file with umask permissions; an empty file is a valid new database.
+    create_private_file(&paths.state_db(), b"")?;
+    Ok(Initialization { config_created })
 }
 
 /// Creates the config template if the file is missing. Returns whether it was created.
 pub fn ensure_config(path: &Path) -> Result<bool> {
     let directory = path.parent().context("config directory is missing")?;
     create_private_dir(directory)?;
+    create_private_file(path, CONFIG_TEMPLATE.as_bytes())
+}
 
+/// Creates a mode 0600 file with `contents` if the path is free. Returns whether it was created.
+fn create_private_file(path: &Path, contents: &[u8]) -> Result<bool> {
     let mut options = OpenOptions::new();
     // create_new never follows or replaces an existing path, including symlinks.
     options.write(true).create_new(true);
@@ -55,15 +58,13 @@ pub fn ensure_config(path: &Path) -> Result<bool> {
     let mut file = match options.open(path) {
         Ok(file) => file,
         Err(error) if error.kind() == ErrorKind::AlreadyExists => return Ok(false),
-        Err(_) => bail!("cannot create config file"),
+        Err(_) => bail!("cannot create application file"),
     };
-    let written = file
-        .write_all(CONFIG_TEMPLATE.as_bytes())
-        .and_then(|()| file.sync_all());
+    let written = file.write_all(contents).and_then(|()| file.sync_all());
     if written.is_err() {
         drop(file);
         let _ = fs::remove_file(path);
-        bail!("cannot write config file");
+        bail!("cannot write application file");
     }
     Ok(true)
 }
@@ -78,10 +79,13 @@ fn create_private_dir(directory: &Path) -> Result<()> {
     }
     builder
         .create(directory)
-        .map_err(|_| anyhow!("cannot create config directory"))?;
-    let metadata =
-        fs::symlink_metadata(directory).map_err(|_| anyhow!("cannot inspect config directory"))?;
-    ensure!(metadata.is_dir(), "config directory must not be a symlink");
+        .map_err(|_| anyhow!("cannot create application directory"))?;
+    let metadata = fs::symlink_metadata(directory)
+        .map_err(|_| anyhow!("cannot inspect application directory"))?;
+    ensure!(
+        metadata.is_dir(),
+        "application directory must not be a symlink"
+    );
     Ok(())
 }
 
@@ -90,15 +94,22 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     use super::*;
+    use crate::config::Config;
 
-    fn temp_config_path(name: &str) -> PathBuf {
+    fn temp_paths(name: &str) -> Paths {
         let nanos = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        std::env::temp_dir()
-            .join(format!("dusk_init_{name}_{}_{nanos}", std::process::id()))
-            .join("duskcode/config.yml")
+        Paths::new(
+            std::env::temp_dir()
+                .join(format!("dusk_init_{name}_{}_{nanos}", std::process::id()))
+                .join("duskcode"),
+        )
+    }
+
+    fn temp_config_path(name: &str) -> std::path::PathBuf {
+        temp_paths(name).config_file()
     }
 
     #[test]
@@ -125,6 +136,21 @@ mod tests {
         let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode(&path), 0o600);
         assert_eq!(mode(path.parent().unwrap()), 0o700);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn initialize_creates_private_layout() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let paths = temp_paths("layout");
+        assert!(initialize(&paths).unwrap().config_created);
+        assert!(!initialize(&paths).unwrap().config_created);
+        let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode(paths.root()), 0o700);
+        assert_eq!(mode(&paths.session_dir()), 0o700);
+        assert_eq!(mode(&paths.config_file()), 0o600);
+        assert_eq!(mode(&paths.state_db()), 0o600);
     }
 
     #[test]
