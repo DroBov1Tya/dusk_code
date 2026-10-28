@@ -9,8 +9,7 @@ use tokio::fs;
 
 use super::{
     builtin::{parse_arguments, printable, read_regular, write_regular},
-    scope::ToolScope,
-    tool::{Tool, ToolFuture},
+    tool::{Tool, ToolContext, ToolFuture},
 };
 
 /// Larger files would not fit the result limit anyway.
@@ -55,7 +54,8 @@ impl Tool for ReadFile {
         "read_file"
     }
 
-    fn description(&self, scope: &ToolScope) -> String {
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let scope = context.scope;
         format!(
             "Read a UTF-8 text file up to 1 MiB. Relative paths resolve against {}.",
             scope.cwd().display()
@@ -73,7 +73,8 @@ impl Tool for ReadFile {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, scope: &'a ToolScope) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+        let scope = context.scope;
         Box::pin(async move {
             let arguments: ReadFileArguments = parse_arguments(arguments)?;
             read_text(&scope.resolve(&arguments.path)?).await
@@ -86,7 +87,8 @@ impl Tool for ListDir {
         "list_dir"
     }
 
-    fn description(&self, scope: &ToolScope) -> String {
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let scope = context.scope;
         format!(
             "List a directory, one sorted entry per line, directories end with /. \
              Relative paths resolve against {}.",
@@ -108,7 +110,8 @@ impl Tool for ListDir {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, scope: &'a ToolScope) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+        let scope = context.scope;
         Box::pin(async move {
             let arguments: ListDirArguments = parse_arguments(arguments)?;
             list(&scope.resolve(&arguments.path)?).await
@@ -121,7 +124,8 @@ impl Tool for WriteFile {
         "write_file"
     }
 
-    fn description(&self, scope: &ToolScope) -> String {
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let scope = context.scope;
         format!(
             "Create or overwrite a file with the given content, creating parent directories. \
              Relative paths resolve against {}; scratch files belong in {}.",
@@ -142,7 +146,8 @@ impl Tool for WriteFile {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, scope: &'a ToolScope) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+        let scope = context.scope;
         Box::pin(async move {
             let arguments: WriteFileArguments = parse_arguments(arguments)?;
             let path = scope.resolve(&arguments.path)?;
@@ -166,7 +171,8 @@ impl Tool for EditFile {
         "edit_file"
     }
 
-    fn description(&self, scope: &ToolScope) -> String {
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let scope = context.scope;
         format!(
             "Replace one exact occurrence of old_text with new_text in a file. old_text must \
              match exactly once; include surrounding lines to make it unique. \
@@ -191,7 +197,8 @@ impl Tool for EditFile {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, scope: &'a ToolScope) -> ToolFuture<'a> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> ToolFuture<'a> {
+        let scope = context.scope;
         Box::pin(async move {
             let arguments: EditFileArguments = parse_arguments(arguments)?;
             ensure!(!arguments.old_text.is_empty(), "old_text is empty");
@@ -262,7 +269,10 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     use super::*;
-    use crate::testing::temp_dir;
+    use crate::{
+        testing::{temp_dir, tool_context},
+        tools::ToolScope,
+    };
 
     fn scope(name: &str) -> (ToolScope, PathBuf) {
         let root = temp_dir(name);
@@ -277,7 +287,7 @@ mod tests {
         let (scope, _) = scope("files_read");
         fs::write(scope.cwd().join("a.txt"), "hello").unwrap();
         let output = ReadFile
-            .call(json!({ "path": "a.txt" }), &scope)
+            .call(json!({ "path": "a.txt" }), tool_context(&scope))
             .await
             .unwrap();
         assert_eq!(output, "hello");
@@ -291,7 +301,7 @@ mod tests {
         for path in ["big", "bin"] {
             assert!(
                 ReadFile
-                    .call(json!({ "path": path }), &scope)
+                    .call(json!({ "path": path }), tool_context(&scope))
                     .await
                     .is_err()
             );
@@ -305,14 +315,14 @@ mod tests {
         let outside = "../secret";
         assert!(
             ReadFile
-                .call(json!({ "path": outside }), &scope)
+                .call(json!({ "path": outside }), tool_context(&scope))
                 .await
                 .is_err()
         );
         let write = json!({ "path": outside, "content": "y" });
-        assert!(WriteFile.call(write, &scope).await.is_err());
+        assert!(WriteFile.call(write, tool_context(&scope)).await.is_err());
         let edit = json!({ "path": outside, "old_text": "x", "new_text": "y" });
-        assert!(EditFile.call(edit, &scope).await.is_err());
+        assert!(EditFile.call(edit, tool_context(&scope)).await.is_err());
         assert_eq!(fs::read_to_string(root.join("secret")).unwrap(), "x");
     }
 
@@ -320,10 +330,10 @@ mod tests {
     async fn rejects_unknown_and_missing_fields() {
         let (scope, _) = scope("files_arguments");
         let unknown = json!({ "path": "a", "extra": 1 });
-        assert!(ReadFile.call(unknown, &scope).await.is_err());
+        assert!(ReadFile.call(unknown, tool_context(&scope)).await.is_err());
         assert!(
             WriteFile
-                .call(json!({ "path": "a" }), &scope)
+                .call(json!({ "path": "a" }), tool_context(&scope))
                 .await
                 .is_err()
         );
@@ -335,7 +345,7 @@ mod tests {
         fs::create_dir(scope.cwd().join("b")).unwrap();
         fs::write(scope.cwd().join("c.txt"), "").unwrap();
         fs::write(scope.cwd().join("a.txt"), "").unwrap();
-        let output = ListDir.call(json!({}), &scope).await.unwrap();
+        let output = ListDir.call(json!({}), tool_context(&scope)).await.unwrap();
         assert_eq!(output, "a.txt\nb/\nc.txt");
     }
 
@@ -343,7 +353,10 @@ mod tests {
     async fn writes_with_parent_directories() {
         let (scope, _) = scope("files_write");
         let arguments = json!({ "path": "x/y/z.txt", "content": "abc" });
-        let output = WriteFile.call(arguments, &scope).await.unwrap();
+        let output = WriteFile
+            .call(arguments, tool_context(&scope))
+            .await
+            .unwrap();
         assert!(output.starts_with("wrote 3 bytes to "), "{output}");
         let written = fs::read_to_string(scope.cwd().join("x/y/z.txt")).unwrap();
         assert_eq!(written, "abc");
@@ -355,7 +368,10 @@ mod tests {
         let path = scope.cwd().join("a.txt");
         fs::write(&path, "one two three").unwrap();
         let arguments = json!({ "path": "a.txt", "old_text": "two", "new_text": "2" });
-        EditFile.call(arguments, &scope).await.unwrap();
+        EditFile
+            .call(arguments, tool_context(&scope))
+            .await
+            .unwrap();
         assert_eq!(fs::read_to_string(&path).unwrap(), "one 2 three");
     }
 
@@ -366,7 +382,10 @@ mod tests {
         fs::write(&path, "x y x").unwrap();
         for (old_text, expected) in [("z", "found 0 matches"), ("x", "found 2 matches")] {
             let arguments = json!({ "path": "a.txt", "old_text": old_text, "new_text": "q" });
-            let error = EditFile.call(arguments, &scope).await.unwrap_err();
+            let error = EditFile
+                .call(arguments, tool_context(&scope))
+                .await
+                .unwrap_err();
             assert!(error.to_string().contains(expected), "{error}");
         }
         assert_eq!(fs::read_to_string(&path).unwrap(), "x y x");

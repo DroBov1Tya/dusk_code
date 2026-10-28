@@ -94,7 +94,7 @@ impl Paths {
     }
 }
 
-fn is_plain_folder_name(name: &str) -> bool {
+pub(crate) fn is_plain_folder_name(name: &str) -> bool {
     !name.is_empty()
         && name.len() <= MAX_FOLDER_NAME
         && name

@@ -1,11 +1,14 @@
 //! The tools a session offers, by name. Built-in tools now; MCP servers and switching
 //! tools on and off later add to the same registry.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::Path};
 
 use serde_json::Value;
 
-use super::{scope::ToolScope, tool::Tool};
+use super::{
+    scope::ToolScope,
+    tool::{Tool, ToolContext},
+};
 use crate::{
     config::Config,
     providers::{ToolCall, ToolSpec},
@@ -27,9 +30,10 @@ pub struct ToolResult {
 }
 
 impl ToolRegistry {
-    pub fn builtin() -> Self {
+    /// The built-in tools; `skills` is the skill directory `load_skill` reads.
+    pub fn builtin(skills: &Path) -> Self {
         let mut registry = Self::default();
-        for tool in super::builtin::all() {
+        for tool in super::builtin::all(skills) {
             registry.add(tool);
         }
         registry
@@ -46,12 +50,13 @@ impl ToolRegistry {
 
     /// The tools the config has on, as the model sees them.
     pub fn specs(&self, scope: &ToolScope, config: &Config) -> Vec<ToolSpec> {
+        let context = ToolContext { scope, config };
         self.tools
             .values()
-            .filter(|tool| config.tool_enabled(tool.name()))
+            .filter(|tool| config.tool_enabled(tool.name()) && tool.available(&context))
             .map(|tool| ToolSpec {
                 name: tool.name().to_owned(),
-                description: tool.description(scope),
+                description: tool.description(&context),
                 parameters: tool.parameters(),
             })
             .collect()
@@ -70,7 +75,7 @@ impl ToolRegistry {
             Value::Object(_) => call.arguments.clone(),
             _ => return error_result("arguments must be a JSON object".into()),
         };
-        match tool.call(arguments, scope).await {
+        match tool.call(arguments, ToolContext { scope, config }).await {
             Ok(content) => ToolResult {
                 content: bounded(content),
                 is_error: false,

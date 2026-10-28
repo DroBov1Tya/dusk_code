@@ -2,12 +2,14 @@
 
 mod builtin;
 mod files;
+mod load_skill;
 mod registry;
 mod scope;
 mod search;
 mod shell;
 mod tool;
 
+pub(crate) use builtin::read_regular;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::ToolScope;
-pub use tool::{Tool, ToolFuture};
+pub use tool::{Tool, ToolContext, ToolFuture};

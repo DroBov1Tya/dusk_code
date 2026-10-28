@@ -92,10 +92,11 @@ impl Application {
             session.workspace.display()
         );
         tokio::spawn(Arc::clone(&self.config).watch(CONFIG_RELOAD_PERIOD));
-        let tools = ToolRegistry::builtin();
+        let tools = ToolRegistry::builtin(&self.paths.skills_dir());
         let settings = Settings {
             config: Arc::clone(&self.config),
             tools: tools.names().collect(),
+            skills_dir: self.paths.skills_dir(),
         };
         let (runner, input, output) = SessionRunner::new(SessionSetup {
             state: &self.state,
