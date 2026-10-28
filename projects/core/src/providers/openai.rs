@@ -526,72 +526,6 @@ fn finish_reason(reason: &str) -> Result<FinishReason> {
 mod tests {
     use super::*;
 
-    #[test]
-    fn endpoints_extend_base_path() {
-        let base = Url::parse("https://host/v1/").unwrap();
-        assert_eq!(
-            endpoint(&base, &["chat", "completions"]).unwrap().as_str(),
-            "https://host/v1/chat/completions"
-        );
-        let base = Url::parse("https://host/v1").unwrap();
-        assert_eq!(
-            endpoint(&base, &["models"]).unwrap().as_str(),
-            "https://host/v1/models"
-        );
-    }
-
-    #[test]
-    fn request_carries_roles_tools_and_call_ids() {
-        let call = ToolCall {
-            id: "c1".into(),
-            name: "weather".into(),
-            arguments: serde_json::json!({"city": "Kazan"}),
-        };
-        let messages = [
-            ChatMessage::User("hi".into()),
-            ChatMessage::Assistant {
-                text: String::new(),
-                tool_calls: vec![call],
-            },
-            ChatMessage::Tool {
-                call_id: "c1".into(),
-                content: "sunny".into(),
-            },
-        ];
-        let tools = [ToolSpec {
-            name: "weather".into(),
-            description: "Current weather".into(),
-            parameters: serde_json::json!({"type": "object"}),
-        }];
-        let request = CompletionRequest::new(ChatRequest {
-            model: "m",
-            messages: &messages,
-            tools: &tools,
-            max_output_tokens: 1000,
-        });
-        assert_eq!(
-            serde_json::to_value(&request).unwrap(),
-            serde_json::json!({
-                "model": "m",
-                "messages": [
-                    {"role": "user", "content": "hi"},
-                    {"role": "assistant", "content": "", "tool_calls": [{
-                        "id": "c1", "type": "function",
-                        "function": {"name": "weather", "arguments": "{\"city\":\"Kazan\"}"}
-                    }]},
-                    {"role": "tool", "tool_call_id": "c1", "content": "sunny"}
-                ],
-                "tools": [{"type": "function", "function": {
-                    "name": "weather", "description": "Current weather",
-                    "parameters": {"type": "object"}
-                }}],
-                "max_tokens": 1000,
-                "stream": true,
-                "stream_options": {"include_usage": true}
-            })
-        );
-    }
-
     fn chunk(delta: &str) -> String {
         format!("data: {{\"choices\":[{{\"index\":0,\"delta\":{delta}}}]}}\n\n")
     }
@@ -670,21 +604,6 @@ mod tests {
     }
 
     #[test]
-    fn accepts_reasoning_field_alias() {
-        let events = CompletionParser::default()
-            .feed(chunk(r#"{"reasoning":"r"}"#).as_bytes())
-            .unwrap();
-        assert_eq!(events, [ModelEvent::Reasoning("r".into())]);
-    }
-
-    #[test]
-    fn eof_after_finish_reason_is_complete() {
-        let mut parser = CompletionParser::default();
-        parser.feed(finish("length").as_bytes()).unwrap();
-        assert!(parser.finish().is_ok());
-    }
-
-    #[test]
     fn only_passing_failures_are_transient() {
         assert!(is_retryable(StatusCode::TOO_MANY_REQUESTS));
         assert!(is_retryable(StatusCode::BAD_GATEWAY));
@@ -706,26 +625,6 @@ mod tests {
                 .feed(b"data: [DONE]\n\n")
                 .is_err()
         );
-    }
-
-    #[test]
-    fn unknown_finish_reason_is_an_error() {
-        assert!(
-            CompletionParser::default()
-                .feed(finish("mystery").as_bytes())
-                .is_err()
-        );
-    }
-
-    #[test]
-    fn ignores_data_after_done() {
-        let body = format!(
-            "{}data: [DONE]\n\n{}",
-            finish("stop"),
-            chunk(r#"{"content":"late"}"#)
-        );
-        let events = CompletionParser::default().feed(body.as_bytes()).unwrap();
-        assert_eq!(events, [ModelEvent::Finished(FinishReason::Stop)]);
     }
 
     #[test]

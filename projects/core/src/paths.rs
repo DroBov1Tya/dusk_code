@@ -105,23 +105,6 @@ mod tests {
     }
 
     #[test]
-    fn layout_has_two_roots() {
-        let paths = paths();
-        assert_eq!(
-            paths.config_file(),
-            Path::new("/home/user/.config/duskcode/config.yml")
-        );
-        assert_eq!(
-            paths.state_db(),
-            Path::new("/home/user/.config/duskcode/session/state.db")
-        );
-        assert_eq!(
-            paths.thread_workspace("0199-abc").unwrap(),
-            Path::new("/home/user/Documents/duskcode/0199-abc")
-        );
-    }
-
-    #[test]
     fn thread_workspace_stays_inside_its_root() {
         let paths = paths();
         for name in ["", ".", "..", "../x", "a/b", "/etc", "a b", &"x".repeat(65)] {

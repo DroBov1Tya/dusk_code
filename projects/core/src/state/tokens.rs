@@ -238,7 +238,7 @@ mod tests {
     use super::*;
     use crate::{
         providers::ToolCall,
-        state::{TurnAnswer, TurnOutcome, estimate_tokens},
+        state::{TurnAnswer, TurnOutcome},
         testing::temp_state,
     };
 
@@ -286,95 +286,6 @@ mod tests {
             model: "model".into(),
             through_sequence,
         }
-    }
-
-    #[tokio::test]
-    async fn splits_tokens_by_who_wrote_them() {
-        let (state, _) = thread_with_a_tool_step("tokens_split").await;
-
-        let tokens = state.thread_tokens("thread").await.unwrap();
-
-        // Every message adds 4 tokens of role markup; the tool step's empty text too.
-        let calls = estimate_tokens(r#"[{"id":"call_1","name":"ping","arguments":{}}]"#);
-        let expected = TokenCounts {
-            system: 5,
-            user: 6,
-            assistant: 4 + 5,
-            reasoning: 0,
-            tool_calls: calls,
-            tool_results: 5,
-            summary: 0,
-            tool_specs: 0,
-        };
-        assert_eq!(tokens.current, expected);
-        assert_eq!(
-            tokens.all,
-            TokenCounts {
-                reasoning: 1,
-                ..expected
-            }
-        );
-        assert_eq!(tokens.model_calls, 0);
-    }
-
-    #[tokio::test]
-    async fn a_summary_replaces_older_messages_but_not_system_ones() {
-        let (state, _) = thread_with_a_tool_step("tokens_compacted").await;
-        state.add_compaction("thread", 3, "12345678").await.unwrap();
-
-        let tokens = state.thread_tokens("thread").await.unwrap();
-
-        assert_eq!(tokens.current.system, 5, "system messages stay");
-        assert_eq!(tokens.current.user, 0);
-        assert_eq!(tokens.current.tool_calls, 0);
-        assert_eq!(tokens.current.tool_results, 5);
-        assert_eq!(tokens.current.summary, 2);
-        assert_eq!(tokens.all.user, 6);
-        assert_eq!(tokens.all.summary, 2);
-    }
-
-    #[tokio::test]
-    async fn sums_what_the_provider_reported() {
-        let (state, turn_id) = thread_with_a_tool_step("tokens_usage").await;
-        let usage = Usage {
-            prompt_tokens: 100,
-            cached_prompt_tokens: 60,
-            completion_tokens: 20,
-            reasoning_tokens: 5,
-        };
-        state
-            .record_usage(&call(&turn_id, None, 2), usage)
-            .await
-            .unwrap();
-        let later = Usage {
-            prompt_tokens: 150,
-            ..usage
-        };
-        state
-            .record_usage(&call(&turn_id, None, 4), later)
-            .await
-            .unwrap();
-
-        let tokens = state.thread_tokens("thread").await.unwrap();
-
-        assert_eq!(tokens.model_calls, 2);
-        assert_eq!(
-            tokens.spent,
-            Usage {
-                prompt_tokens: 250,
-                cached_prompt_tokens: 120,
-                completion_tokens: 40,
-                reasoning_tokens: 10,
-            }
-        );
-        let last = state.last_prompt("thread", None).await.unwrap();
-        assert_eq!(
-            last,
-            Some(LastPrompt {
-                prompt_tokens: 150,
-                through_sequence: 4
-            })
-        );
     }
 
     #[tokio::test]

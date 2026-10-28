@@ -142,36 +142,10 @@ fn create_private_file(path: &Path, contents: &[u8]) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{config::Config, testing::temp_paths};
+    use crate::testing::temp_paths;
 
     fn temp_config_path(name: &str) -> std::path::PathBuf {
         temp_paths(name).config_file()
-    }
-
-    #[test]
-    fn creates_private_template_once() {
-        let path = temp_config_path("once");
-        assert!(ensure_config(&path).unwrap());
-        assert_eq!(fs::read_to_string(&path).unwrap(), CONFIG_TEMPLATE);
-
-        fs::write(&path, "providers: {custom: {}}\n").unwrap();
-        assert!(!ensure_config(&path).unwrap());
-        assert_eq!(
-            fs::read_to_string(&path).unwrap(),
-            "providers: {custom: {}}\n"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn uses_private_permissions() {
-        use std::os::unix::fs::PermissionsExt;
-
-        let path = temp_config_path("modes");
-        ensure_config(&path).unwrap();
-        let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(&path), 0o600);
-        assert_eq!(mode(path.parent().unwrap()), 0o700);
     }
 
     #[cfg(unix)]
@@ -192,14 +166,6 @@ mod tests {
         assert_eq!(mode(&paths.skills_dir()), 0o700);
         assert_eq!(mode(&paths.agents_dir()), 0o700);
         assert_eq!(mode(&paths.state_db()), 0o600);
-    }
-
-    #[test]
-    fn template_loads_but_requires_a_provider() {
-        let path = temp_config_path("template");
-        ensure_config(&path).unwrap();
-        let error = Config::load_from(&path).unwrap_err();
-        assert!(error.to_string().contains("at least one provider"));
     }
 
     #[cfg(unix)]

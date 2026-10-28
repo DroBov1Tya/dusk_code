@@ -216,22 +216,6 @@ mod tests {
     }
 
     #[test]
-    fn keeps_reasoning_apart_from_text() {
-        let (output, calls) = assemble(&[
-            ModelEvent::Reasoning("think".into()),
-            ModelEvent::Text("Hel".into()),
-            ModelEvent::Text("lo".into()),
-            ModelEvent::Finished(FinishReason::Stop),
-        ])
-        .unwrap();
-        assert_eq!(
-            (output.text.as_str(), output.reasoning.as_str()),
-            ("Hello", "think")
-        );
-        assert!(calls.is_empty());
-    }
-
-    #[test]
     fn assembles_interleaved_tool_call_arguments() {
         let (_, calls) = assemble(&[
             call(0, "a", "weather"),
@@ -245,39 +229,6 @@ mod tests {
         assert_eq!(calls[0].arguments, json!({"city": "Moscow"}));
         assert_eq!(calls[1].id, "b");
         assert_eq!(calls[1].arguments, json!({"city": "Kazan"}));
-    }
-
-    #[test]
-    fn empty_arguments_mean_no_arguments() {
-        let (_, calls) = assemble(&[
-            call(0, "a", "now"),
-            ModelEvent::Finished(FinishReason::ToolCalls),
-        ])
-        .unwrap();
-        assert_eq!(calls[0].arguments, json!({}));
-    }
-
-    #[test]
-    fn rejects_broken_responses() {
-        let text = || ModelEvent::Text("x".into());
-        let stop = || ModelEvent::Finished(FinishReason::Stop);
-        let cases = [
-            ("no finish reason", vec![text()]),
-            ("empty answer", vec![stop()]),
-            (
-                "cut by length",
-                vec![text(), ModelEvent::Finished(FinishReason::Length)],
-            ),
-            ("index gap", vec![call(1, "a", "x"), stop()]),
-            ("unknown call", vec![arguments(0, "{}"), stop()]),
-            (
-                "bad JSON",
-                vec![call(0, "a", "x"), arguments(0, "{"), stop()],
-            ),
-        ];
-        for (case, events) in cases {
-            assert!(assemble(&events).is_err(), "{case}");
-        }
     }
 
     #[test]

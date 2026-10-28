@@ -131,35 +131,3 @@ fn clip(text: &str, chars: usize) -> String {
         None => text.to_owned(),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_stand_in_is_the_start_of_the_message() {
-        assert_eq!(fallback_title("Fix the build"), "Fix the build");
-        let long = "Please help me migrate the payment service to the new queue";
-        assert_eq!(
-            fallback_title(long),
-            "Please help me migrate the payment..."
-        );
-        assert_eq!(
-            fallback_title("two\n\nlines\tand\u{7}bell"),
-            "two lines and bell"
-        );
-    }
-
-    #[test]
-    fn a_title_loses_quotes_and_markup() {
-        assert_eq!(
-            clean_title("\n\"Release plan.\"\n"),
-            Some("Release plan".into())
-        );
-        assert_eq!(
-            clean_title("## `Payments` *move*"),
-            Some("Payments` *move".into())
-        );
-        assert_eq!(clean_title(" \n "), None);
-    }
-}

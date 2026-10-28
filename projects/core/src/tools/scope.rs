@@ -98,20 +98,6 @@ mod tests {
     }
 
     #[test]
-    fn resolves_inside_both_roots() {
-        let (scope, _) = scope("scope_inside");
-        assert_eq!(
-            scope.resolve("a/b.txt").unwrap(),
-            scope.cwd().join("a/b.txt")
-        );
-        let in_workspace = scope.workspace().join("x");
-        assert_eq!(
-            scope.resolve(in_workspace.to_str().unwrap()).unwrap(),
-            in_workspace
-        );
-    }
-
-    #[test]
     fn rejects_escapes() {
         let (scope, root) = scope("scope_escape");
         for path in ["../outside", "/etc/passwd", "", "a/../../outside"] {

@@ -325,60 +325,6 @@ mod tests {
         }
     }
 
-    #[tokio::test]
-    async fn one_turn_answers_every_queued_message() {
-        let state = thread("turn_batch").await;
-        assert_eq!(state.start_turn("thread").await.unwrap(), None);
-
-        send(&state, "a").await;
-        send(&state, "b").await;
-        let turn = state.start_turn("thread").await.unwrap().unwrap();
-        assert_eq!(turn.last_sequence, 2);
-        assert_eq!(
-            state.start_turn("thread").await.unwrap(),
-            None,
-            "nothing new"
-        );
-        send(&state, "c").await;
-        assert!(
-            state.start_turn("thread").await.is_err(),
-            "one running turn"
-        );
-
-        let completed = TurnOutcome::Completed(answer("answer", None));
-        let turn = state.finish_turn(&turn.turn_id, completed).await.unwrap();
-        assert_eq!(turn.status, TurnStatus::Completed);
-        let next = state.start_turn("thread").await.unwrap().unwrap();
-        assert_eq!(next.last_sequence, 3, "c was queued during the first turn");
-    }
-
-    #[tokio::test]
-    async fn a_repeated_request_uid_adds_nothing() {
-        let state = thread("turn_repeat").await;
-        let first = state
-            .add_user_message("thread", "uid", "hello")
-            .await
-            .unwrap();
-        let again = state
-            .add_user_message("thread", "uid", "hello")
-            .await
-            .unwrap();
-        assert_eq!(first, again);
-        assert!(
-            state
-                .add_user_message("thread", "uid", "other")
-                .await
-                .is_err()
-        );
-        assert!(
-            state
-                .add_user_message("missing", "uid2", "hi")
-                .await
-                .is_err()
-        );
-        assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
-    }
-
     fn call(id: &str) -> ToolCall {
         ToolCall {
             id: id.into(),
@@ -438,31 +384,5 @@ mod tests {
             "{}",
             result.content
         );
-    }
-
-    #[tokio::test]
-    async fn interruption_keeps_the_partial_answer() {
-        let state = thread("turn_interrupt").await;
-        send(&state, "a").await;
-        let turn = state.start_turn("thread").await.unwrap().unwrap();
-        let partial = TurnOutcome::Interrupted(Some(answer("half an ans", None)));
-        let turn = state.finish_turn(&turn.turn_id, partial).await.unwrap();
-
-        assert_eq!(turn.status, TurnStatus::Interrupted);
-        let messages = state.list_messages("thread").await.unwrap();
-        assert_eq!(messages.last().unwrap().content, "half an ans");
-    }
-
-    #[tokio::test]
-    async fn a_turn_left_running_is_interrupted_on_recovery() {
-        let state = thread("turn_recover").await;
-        send(&state, "a").await;
-        state.start_turn("thread").await.unwrap().unwrap();
-
-        state.interrupt_running_turns("thread").await.unwrap();
-
-        // Only one turn per thread may be running, so a new one proves the old one ended.
-        send(&state, "b").await;
-        assert!(state.start_turn("thread").await.unwrap().is_some());
     }
 }

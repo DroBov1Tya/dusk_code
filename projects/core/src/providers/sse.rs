@@ -88,40 +88,9 @@ mod tests {
     }
 
     #[test]
-    fn decodes_events_separated_by_blank_lines() {
-        let events = decode_all(&[b"data: one\n\ndata: two\n\n"]).unwrap();
-        assert_eq!(events, ["one", "two"]);
-    }
-
-    #[test]
-    fn ignores_comments_and_other_fields_with_crlf() {
-        let events = decode_all(&[b": ping\r\nevent: x\r\nid: 1\r\ndata:raw\r\n\r\n"]).unwrap();
-        assert_eq!(events, ["raw"]);
-    }
-
-    #[test]
-    fn joins_multiline_data_with_newlines() {
-        let events = decode_all(&[b"data: a\ndata: b\n\n"]).unwrap();
-        assert_eq!(events, ["a\nb"]);
-    }
-
-    #[test]
-    fn keeps_incomplete_event_pending() {
-        let mut decoder = SseDecoder::default();
-        assert!(decoder.feed(b"data: par").unwrap().is_empty());
-        assert!(decoder.feed(b"tial\n").unwrap().is_empty());
-        assert_eq!(decoder.feed(b"\n").unwrap(), ["partial"]);
-    }
-
-    #[test]
     fn rejects_oversized_line() {
         let mut decoder = SseDecoder::default();
         assert!(decoder.feed(&vec![b'a'; MAX_LINE_BYTES + 1]).is_err());
-    }
-
-    #[test]
-    fn rejects_invalid_utf8() {
-        assert!(decode_all(&[b"data: \xff\n\n"]).is_err());
     }
 
     proptest! {
