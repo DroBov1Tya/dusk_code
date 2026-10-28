@@ -1,11 +1,29 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+//! Threads: one per chat session, holding its settings and counters.
 
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::events::{CoreEvent, ThreadCreated, ThreadUpdated};
+use crate::events::Event;
 
-use super::State;
+use super::{State, timestamp_ms};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadMetadata {
+    pub id: String,
+    pub source: String,
+    /// Unix timestamp in milliseconds, assigned by the core on creation.
+    pub created_at: i64,
+    /// Unix timestamp in milliseconds, non-decreasing across updates.
+    pub updated_at: i64,
+    pub tokens_used: u64,
+    pub compaction_count: u64,
+    pub sandbox_policy: String,
+    pub approval_mode: ApprovalMode,
+    pub git_branch: Option<String>,
+    pub git_commit_sha: Option<String>,
+    pub git_origin_url: Option<String>,
+    pub title: String,
+}
 
 /// Whether operations may request approval from the user.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -29,24 +47,6 @@ impl ApprovalMode {
 pub struct ThreadInput {
     pub source: String,
     /// SQLite stores non-negative signed 64-bit integers; larger counts are rejected.
-    pub tokens_used: u64,
-    pub compaction_count: u64,
-    pub sandbox_policy: String,
-    pub approval_mode: ApprovalMode,
-    pub git_branch: Option<String>,
-    pub git_commit_sha: Option<String>,
-    pub git_origin_url: Option<String>,
-    pub title: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThreadMetadata {
-    pub id: String,
-    pub source: String,
-    /// Unix timestamp in milliseconds, assigned by the core on creation.
-    pub created_at: i64,
-    /// Unix timestamp in milliseconds, non-decreasing across updates.
-    pub updated_at: i64,
     pub tokens_used: u64,
     pub compaction_count: u64,
     pub sandbox_policy: String,
@@ -91,9 +91,7 @@ impl State {
             .await
             .context("commit thread creation")?;
         // No listeners is normal and does not invalidate a committed write.
-        let _ = self.events.send(CoreEvent::ThreadCreated(ThreadCreated {
-            thread: thread.clone(),
-        }));
+        let _ = self.events.send(Event::ThreadCreated(thread.clone()));
         Ok(thread)
     }
 
@@ -133,9 +131,7 @@ impl State {
         };
         let thread = decode_thread(row)?;
         transaction.commit().await.context("commit thread update")?;
-        let _ = self.events.send(CoreEvent::ThreadUpdated(ThreadUpdated {
-            thread: thread.clone(),
-        }));
+        let _ = self.events.send(Event::ThreadUpdated(thread.clone()));
         Ok(Some(thread))
     }
 
@@ -162,13 +158,6 @@ fn validate_input(id: &str, input: &ThreadInput) -> Result<(i64, i64)> {
     let compaction_count = i64::try_from(input.compaction_count)
         .context("compaction count exceeds SQLite integer range")?;
     Ok((tokens_used, compaction_count))
-}
-
-fn timestamp_ms() -> Result<i64> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock precedes Unix epoch")?;
-    i64::try_from(elapsed.as_millis()).context("timestamp exceeds SQLite integer range")
 }
 
 fn decode_thread(row: SqliteRow) -> Result<ThreadMetadata> {

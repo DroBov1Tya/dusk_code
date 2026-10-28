@@ -1,24 +1,38 @@
-//! A configured provider, dispatching to its protocol adapter.
+//! Configured providers: built from the config by name, each dispatching to its protocol.
+
+use std::{collections::BTreeMap, future::Future};
 
 use anyhow::{Context, Result};
 
 use super::{
     chat::{ChatDelta, ChatMessage, ChatStream},
-    completion_stream::CompletionStream,
-    model::{Model, ModelProvider},
-    openai_compatible::OpenAiCompatible,
+    openai::{CompletionStream, OpenAiCompatible},
 };
+use crate::config::{Config, ProviderKind};
 
-/// A configured model provider.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Model {
+    pub id: String,
+}
+
+pub trait ModelProvider: Send + Sync {
+    /// Returns the catalogue sorted by model ID.
+    fn list_models(&self) -> impl Future<Output = Result<Vec<Model>>> + Send;
+}
+
+/// Providers by config name, in name order.
+pub struct ProviderRegistry {
+    providers: BTreeMap<String, Provider>,
+}
+
 pub struct Provider {
     adapter: ProviderAdapter,
 }
 
-pub(super) enum ProviderAdapter {
+enum ProviderAdapter {
     OpenAiCompatible(OpenAiCompatible),
 }
 
-/// A streamed answer from any provider.
 pub struct ProviderStream {
     adapter: StreamAdapter,
 }
@@ -27,11 +41,31 @@ enum StreamAdapter {
     OpenAiCompatible(CompletionStream),
 }
 
-impl Provider {
-    pub(super) fn new(adapter: ProviderAdapter) -> Self {
-        Self { adapter }
+impl ProviderRegistry {
+    /// Builds adapters without making any network requests.
+    pub fn from_config(config: &Config) -> Result<Self> {
+        let mut providers = BTreeMap::new();
+        for (name, settings) in config.providers() {
+            let adapter = match settings.kind {
+                ProviderKind::OpenAiCompatible => {
+                    ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
+                }
+            };
+            providers.insert(name.clone(), Provider { adapter });
+        }
+        Ok(Self { providers })
     }
 
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.providers.keys().map(String::as_str)
+    }
+
+    pub fn provider(&self, name: &str) -> Option<&Provider> {
+        self.providers.get(name)
+    }
+}
+
+impl Provider {
     /// Picks the first model of the catalogue so callers need no configured model ID.
     pub async fn default_model(&self) -> Result<Model> {
         self.list_models()
@@ -41,7 +75,6 @@ impl Provider {
             .context("provider offers no models")
     }
 
-    /// Sends the conversation and returns the answer as a stream.
     pub async fn stream_chat(
         &self,
         model: &str,
@@ -56,18 +89,18 @@ impl Provider {
     }
 }
 
-impl ChatStream for ProviderStream {
-    async fn next_delta(&mut self) -> Result<Option<ChatDelta>> {
-        match &mut self.adapter {
-            StreamAdapter::OpenAiCompatible(stream) => stream.next_delta().await,
-        }
-    }
-}
-
 impl ModelProvider for Provider {
     async fn list_models(&self) -> Result<Vec<Model>> {
         match &self.adapter {
             ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
+        }
+    }
+}
+
+impl ChatStream for ProviderStream {
+    async fn next_delta(&mut self) -> Result<Option<ChatDelta>> {
+        match &mut self.adapter {
+            StreamAdapter::OpenAiCompatible(stream) => stream.next_delta().await,
         }
     }
 }

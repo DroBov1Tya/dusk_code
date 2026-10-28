@@ -7,11 +7,10 @@ use std::{
 
 use anyhow::{Result, bail};
 use dusk_core::{
-    RejectionCode,
     providers::ChatDelta,
     receivers::{UserMessage, UserReceiver},
     runtime::AgentRuntime,
-    state::{State, TurnStatus},
+    state::{RejectionCode, State, TurnStatus},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 use uuid::Uuid;

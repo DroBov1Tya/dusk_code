@@ -1,6 +1,7 @@
 //! The state database handle: connection pool, write ordering and live events.
 
 use std::{
+    fmt,
     io::ErrorKind,
     path::Path,
     time::{SystemTime, UNIX_EPOCH},
@@ -15,43 +16,63 @@ use crate::events::{EventReceiver, EventSender};
 const EVENT_CAPACITY: usize = 256;
 static MIGRATOR: Migrator = sqlx::migrate!("src/state/migrations");
 
-/// Handle to the state database. Writes through one handle publish events in write order.
+/// Writes through one handle publish their events in write order.
 pub struct State {
     pub(super) pool: SqlitePool,
     pub(super) events: EventSender,
-    // Preserve write/event ordering for callers sharing this state instance.
     pub(super) writes: Mutex<()>,
 }
 
-pub(super) fn timestamp_ms() -> Result<i64> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .context("system clock precedes Unix epoch")?;
-    i64::try_from(elapsed.as_millis()).context("timestamp exceeds SQLite integer range")
-}
+/// SQLCipher key. Never serialized, logged or included in events.
+pub struct DatabasePassword(String);
 
 impl State {
-    /// Opens a file-backed database, creating parent directories and applying migrations.
-    /// The caller owns the path; no database is placed in the source tree by default.
+    /// Opens or creates a plain database. The caller owns the path.
     pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
-        Self::open_with_password(path.as_ref(), None).await
+        Self::connect(path.as_ref(), None).await
     }
 
-    /// Opens an existing encrypted database. The password remains in pool memory for reconnects.
-    pub async fn open_encrypted(path: impl AsRef<Path>, password: &str) -> Result<Self> {
-        ensure!(!password.is_empty(), "database password is empty");
-        ensure!(!password.contains('\0'), "database password contains NUL");
+    /// Creates a new encrypted database; an existing file is never overwritten or converted.
+    pub async fn create_encrypted(
+        path: impl AsRef<Path>,
+        password: &DatabasePassword,
+    ) -> Result<Self> {
+        let path = path.as_ref();
+        create_parent_dir(path).await?;
+        tokio::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(path)
+            .await
+            .context("reserve new state database")?;
+        Self::connect(path, Some(password)).await
+    }
+
+    /// The password stays in pool memory for reconnects.
+    pub async fn open_encrypted(
+        path: impl AsRef<Path>,
+        password: &DatabasePassword,
+    ) -> Result<Self> {
+        let path = path.as_ref();
         ensure!(
-            tokio::fs::metadata(path.as_ref()).await?.is_file(),
+            tokio::fs::metadata(path).await?.is_file(),
             "database does not exist"
         );
-        Self::open_with_password(path.as_ref(), Some(password)).await
+        Self::connect(path, Some(password)).await
     }
 
-    pub(crate) async fn open_with_password(path: &Path, password: Option<&str>) -> Result<Self> {
-        ensure!(!path.as_os_str().is_empty(), "state database path is empty");
+    /// Events are live only; durable records are loaded separately, without replay.
+    pub fn subscribe(&self) -> EventReceiver {
+        self.events.subscribe()
+    }
 
-        // Check before connecting so opening an existing file never creates a replacement.
+    pub async fn close(&self) {
+        self.pool.close().await;
+    }
+
+    async fn connect(path: &Path, password: Option<&DatabasePassword>) -> Result<Self> {
+        ensure!(!path.as_os_str().is_empty(), "state database path is empty");
+        // Checked before connecting so opening an existing file never creates a replacement.
         let exists = match tokio::fs::metadata(path).await {
             Ok(metadata) => {
                 ensure!(metadata.is_file(), "state database path is not a file");
@@ -60,16 +81,8 @@ impl State {
             Err(error) if error.kind() == ErrorKind::NotFound => false,
             Err(error) => return Err(error).context("inspect state database path"),
         };
-
         if !exists {
-            if let Some(parent) = path
-                .parent()
-                .filter(|parent| !parent.as_os_str().is_empty())
-            {
-                tokio::fs::create_dir_all(parent)
-                    .await
-                    .context("create state database directory")?;
-            }
+            create_parent_dir(path).await?;
         }
 
         let mut options = SqliteConnectOptions::new()
@@ -78,8 +91,8 @@ impl State {
             .foreign_keys(true)
             .disable_statement_logging();
         if let Some(password) = password {
-            // SQLCipher requires key before all other pragmas; SQLx reserves its first slot.
-            options = options.pragma("key", format!("'{}'", password.replace('\'', "''")));
+            // SQLCipher requires the key before all other pragmas; SQLx reserves its first slot.
+            options = options.pragma("key", format!("'{}'", password.0.replace('\'', "''")));
         }
         let pool = sqlx::sqlite::SqlitePoolOptions::new()
             .max_connections(1)
@@ -87,15 +100,7 @@ impl State {
             .await
             .context("open state database")?;
         if password.is_some() {
-            let version: String = sqlx::query_scalar("PRAGMA cipher_version")
-                .fetch_one(&pool)
-                .await
-                .context("SQLCipher unavailable")?;
-            ensure!(!version.is_empty(), "SQLCipher unavailable");
-            sqlx::query("SELECT count(*) FROM sqlite_master")
-                .execute(&pool)
-                .await
-                .context("unlock state database")?;
+            unlock(&pool).await?;
         }
         MIGRATOR
             .run(&pool)
@@ -109,13 +114,51 @@ impl State {
             writes: Mutex::new(()),
         })
     }
+}
 
-    /// Events are live only: durable session records can be loaded separately, without replay.
-    pub fn subscribe(&self) -> EventReceiver {
-        self.events.subscribe()
+impl DatabasePassword {
+    pub fn new(password: String) -> Result<Self> {
+        ensure!(!password.is_empty(), "database password is empty");
+        ensure!(!password.contains('\0'), "database password contains NUL");
+        Ok(Self(password))
     }
+}
 
-    pub async fn close(&self) {
-        self.pool.close().await;
+impl fmt::Debug for DatabasePassword {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("DatabasePassword([REDACTED])")
     }
+}
+
+pub(super) fn timestamp_ms() -> Result<i64> {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .context("system clock precedes Unix epoch")?;
+    i64::try_from(elapsed.as_millis()).context("timestamp exceeds SQLite integer range")
+}
+
+async fn create_parent_dir(path: &Path) -> Result<()> {
+    match path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        Some(parent) => tokio::fs::create_dir_all(parent)
+            .await
+            .context("create state database directory"),
+        None => Ok(()),
+    }
+}
+
+/// A wrong key only fails on the first read, so read once to report it here.
+async fn unlock(pool: &SqlitePool) -> Result<()> {
+    let version: String = sqlx::query_scalar("PRAGMA cipher_version")
+        .fetch_one(pool)
+        .await
+        .context("SQLCipher unavailable")?;
+    ensure!(!version.is_empty(), "SQLCipher unavailable");
+    sqlx::query("SELECT count(*) FROM sqlite_master")
+        .execute(pool)
+        .await
+        .context("unlock state database")?;
+    Ok(())
 }

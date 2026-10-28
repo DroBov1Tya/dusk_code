@@ -1,9 +1,29 @@
+//! Worker jobs: queued units of background work with retries.
+
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
-use crate::events::{Event, JobCreated, JobUpdated};
+use crate::events::Event;
 
 use super::{State, timestamp_ms};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Job {
+    pub job_id: String,
+    pub thread_id: String,
+    pub instruction: String,
+    pub created_by_agent_id: String,
+    pub worker_agent_id: Option<String>,
+    /// Unix timestamps in milliseconds. Start/finish describe the current attempt.
+    pub created_at: i64,
+    pub updated_at: i64,
+    pub started_at: Option<i64>,
+    pub finished_at: Option<i64>,
+    /// Number of explicit requeues; attempt history is not retained here.
+    pub retry_count: u64,
+    pub status: JobStatus,
+    pub error_message: Option<String>,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[non_exhaustive]
@@ -28,36 +48,18 @@ impl JobStatus {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JobInput {
-    pub thread_id: String,
-    pub instruction: String,
-    pub created_by_agent_id: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Job {
-    pub job_id: String,
-    pub thread_id: String,
-    pub instruction: String,
-    pub created_by_agent_id: String,
-    pub worker_agent_id: Option<String>,
-    /// Unix timestamps in milliseconds. Start/finish describe the current attempt.
-    pub created_at: i64,
-    pub updated_at: i64,
-    pub started_at: Option<i64>,
-    pub finished_at: Option<i64>,
-    /// Number of explicit requeues; attempt history is not retained here.
-    pub retry_count: u64,
-    pub status: JobStatus,
-    pub error_message: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum JobOutcome {
     Completed,
     Failed { error_message: String },
     Cancelled,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobInput {
+    pub thread_id: String,
+    pub instruction: String,
+    pub created_by_agent_id: String,
 }
 
 impl State {
@@ -91,9 +93,7 @@ impl State {
         .context("enqueue job")?;
         let job = decode_job(row)?;
         transaction.commit().await.context("commit job creation")?;
-        let _ = self
-            .events
-            .send(Event::JobCreated(JobCreated { job: job.clone() }));
+        let _ = self.events.send(Event::JobCreated(job.clone()));
         Ok(job)
     }
 
@@ -177,9 +177,7 @@ impl State {
         );
         transaction.commit().await.context("commit job start")?;
         if changed {
-            let _ = self
-                .events
-                .send(Event::JobUpdated(JobUpdated { job: job.clone() }));
+            let _ = self.events.send(Event::JobUpdated(job.clone()));
         }
         Ok(job)
     }
@@ -246,9 +244,7 @@ impl State {
         );
         transaction.commit().await.context("commit job finish")?;
         if changed {
-            let _ = self
-                .events
-                .send(Event::JobUpdated(JobUpdated { job: job.clone() }));
+            let _ = self.events.send(Event::JobUpdated(job.clone()));
         }
         Ok(job)
     }
@@ -280,9 +276,7 @@ impl State {
             .commit()
             .await
             .context("commit queued job cancellation")?;
-        let _ = self
-            .events
-            .send(Event::JobUpdated(JobUpdated { job: job.clone() }));
+        let _ = self.events.send(Event::JobUpdated(job.clone()));
         Ok(job)
     }
 
@@ -307,9 +301,7 @@ impl State {
         .context("job is not retryable")?;
         let job = decode_job(row)?;
         transaction.commit().await.context("commit job retry")?;
-        let _ = self
-            .events
-            .send(Event::JobUpdated(JobUpdated { job: job.clone() }));
+        let _ = self.events.send(Event::JobUpdated(job.clone()));
         Ok(job)
     }
 }

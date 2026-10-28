@@ -77,11 +77,6 @@ impl<'a> AgentRuntime<'a> {
             .await
     }
 
-    fn recorded_reasoning(&self, reasoning: String) -> Option<String> {
-        let keep = self.record.records_reasoning() && !reasoning.trim().is_empty();
-        keep.then_some(reasoning)
-    }
-
     async fn answer(
         &self,
         task: &AgentTask,
@@ -91,6 +86,11 @@ impl<'a> AgentRuntime<'a> {
         let messages = context::chat_messages(&conversation);
         let stream = self.provider.stream_chat(&self.model.id, &messages).await?;
         collect_answer(stream, on_delta).await
+    }
+
+    fn recorded_reasoning(&self, reasoning: String) -> Option<String> {
+        let keep = self.record.records_reasoning() && !reasoning.trim().is_empty();
+        keep.then_some(reasoning)
     }
 }
 

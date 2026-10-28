@@ -1,14 +1,9 @@
 //! Model providers: catalogue discovery and streamed chat behind one interface.
 
 mod chat;
-mod completion_stream;
-mod model;
-mod openai_compatible;
+mod openai;
 mod provider;
-mod provider_registry;
-mod sse_decoder;
+mod sse;
 
 pub use chat::{ChatDelta, ChatMessage, ChatRole, ChatStream};
-pub use model::{Model, ModelProvider};
-pub use provider::{Provider, ProviderStream};
-pub use provider_registry::ProviderRegistry;
+pub use provider::{Model, ModelProvider, Provider, ProviderRegistry, ProviderStream};

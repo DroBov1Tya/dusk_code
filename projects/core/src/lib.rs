@@ -1,20 +1,11 @@
-//! Async harness core contracts, transport, and persistent session records.
+//! dusk_core: all application logic. Front ends (CLI, TUI, GUI) are thin clients over it.
 
 pub mod api;
 pub mod config;
 pub mod events;
-pub mod extensions;
 pub mod init;
-pub mod lifecycle;
 pub mod paths;
-pub mod persistence;
-pub mod policy;
 pub mod providers;
 pub mod receivers;
 pub mod runtime;
 pub mod state;
-pub mod supervision;
-pub mod transport;
-
-pub use events::Event;
-pub use transport::{Execution, ExecutionFailureCode, ExecutionStatus, RejectionCode, Task};
