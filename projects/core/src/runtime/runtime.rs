@@ -13,26 +13,24 @@ use anyhow::{Context, Result, bail, ensure};
 use tokio::task::{JoinHandle, JoinSet};
 use tracing::info;
 
-use super::thread_runner::{ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup};
+use super::{
+    launcher::Launcher,
+    thread_runner::{ThreadInput, ThreadOutput, ThreadRunner},
+};
 use crate::{
     init::{self, create_private_dir},
     live_config::LiveConfig,
     paths::Paths,
-    providers::{Model, ModelProvider, Provider, ProviderRegistry},
+    providers::{Model, ProviderRegistry},
     state::{Message, State, Thread},
     thread_start::start_thread,
-    tools::{ReadHistory, ToolRegistry, ToolScope},
 };
 
 /// Hand edits to config.yml are picked up within this time.
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);
 
 pub struct Runtime {
-    paths: Paths,
-    state: Arc<State>,
-    config: Arc<LiveConfig>,
-    provider: Arc<Provider>,
-    model: Model,
+    launcher: Launcher,
     config_check: JoinHandle<()>,
     threads: Mutex<JoinSet<()>>,
     /// Threads with a running task.
@@ -69,12 +67,15 @@ impl Runtime {
         let model = provider.default_model().await?;
         info!("provider {provider_name}, model {}", model.id);
         let config_check = tokio::spawn(Arc::clone(&config).watch(CONFIG_CHECK_PERIOD));
-        Ok(Self {
-            paths,
+        let launcher = Launcher {
             state: Arc::new(state),
-            config,
             provider,
             model,
+            config,
+            paths,
+        };
+        Ok(Self {
+            launcher,
             config_check,
             threads: Mutex::new(JoinSet::new()),
             active: Arc::default(),
@@ -82,38 +83,38 @@ impl Runtime {
     }
 
     pub fn config(&self) -> &Arc<LiveConfig> {
-        &self.config
+        &self.launcher.config
     }
 
     /// The model every thread talks to.
     pub fn model(&self) -> &Model {
-        &self.model
+        &self.launcher.model
     }
 
     pub fn paths(&self) -> &Paths {
-        &self.paths
+        &self.launcher.paths
     }
 
-    /// The tools every thread gets, by name.
+    /// The tools a chat gets, by name.
     pub fn tool_names(&self) -> Vec<&'static str> {
         // Names do not depend on the thread.
-        self.tools("").names().collect()
+        self.launcher.tools("", None, 0).names().collect()
     }
 
     /// Every thread, the most recently active first, for a client to offer.
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
-        self.state.list_threads().await
+        self.launcher.state.list_threads().await
     }
 
     /// The whole history of a thread, compacted messages included, oldest first.
     pub async fn thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
-        self.state.list_messages(thread_id).await
+        self.launcher.state.list_messages(thread_id).await
     }
 
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
     /// ends once the client drops every `ThreadInput` and the queue is done.
     pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
-        let thread = start_thread(&self.state, &self.paths, source).await?;
+        let thread = start_thread(&self.launcher.state, &self.launcher.paths, source).await?;
         info!(
             "thread {} started in {}",
             thread.thread_id,
@@ -126,11 +127,12 @@ impl Runtime {
     /// unfinished is closed first: a running turn ends as interrupted, and messages sent
     /// before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
-        self.state
+        self.launcher
+            .state
             .load_thread(thread_id)
             .await?
             .with_context(|| format!("thread {thread_id} does not exist"))?;
-        let workspace = self.paths.thread_workspace(thread_id)?;
+        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
         create_private_dir(&workspace)?;
         info!("thread {thread_id} resumed in {}", workspace.display());
         self.run_thread(thread_id.to_owned(), &workspace, cwd)
@@ -138,16 +140,8 @@ impl Runtime {
 
     /// One task per thread: two would answer the same messages twice.
     fn run_thread(&self, thread_id: String, workspace: &Path, cwd: &Path) -> Result<ThreadHandle> {
-        let (runner, input, output) = ThreadRunner::new(ThreadSetup {
-            state: Arc::clone(&self.state),
-            provider: Arc::clone(&self.provider) as Arc<dyn ModelProvider>,
-            model: self.model.clone(),
-            config: Arc::clone(&self.config),
-            thread_id: thread_id.clone(),
-            tools: self.tools(&thread_id),
-            scope: ToolScope::new(cwd, workspace)?,
-            compact_prompt: self.paths.compact_prompt(),
-        });
+        let setup = self.launcher.setup(&thread_id, cwd, workspace, None, 0)?;
+        let (runner, input, output) = ThreadRunner::new(setup);
         let active = Arc::clone(&self.active);
         ensure!(
             lock(&active).insert(thread_id.clone()),
@@ -170,15 +164,7 @@ impl Runtime {
         let mut threads = std::mem::take(&mut *self.lock_threads());
         while threads.join_next().await.is_some() {}
         self.config_check.abort();
-        self.state.close().await;
-    }
-
-    /// The built-in tools plus the thread's own history.
-    fn tools(&self, thread_id: &str) -> ToolRegistry {
-        let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
-        let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
-        tools.add(Box::new(history));
-        tools
+        self.launcher.state.close().await;
     }
 
     fn lock_threads(&self) -> MutexGuard<'_, JoinSet<()>> {

@@ -3,12 +3,12 @@
 pub mod api;
 pub mod commands;
 pub mod config;
+pub mod graph;
 pub mod init;
 pub mod live_config;
 pub mod paths;
 pub mod providers;
 pub mod runtime;
-pub mod skills;
 pub mod state;
 pub mod thread_start;
 pub mod tools;

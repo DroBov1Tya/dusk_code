@@ -40,6 +40,8 @@ pub struct ThreadSetup {
     pub tools: ToolRegistry,
     pub scope: ToolScope,
     pub compact_prompt: PathBuf,
+    /// How many agents are above this thread; 0 for a chat.
+    pub depth: usize,
 }
 
 /// The client's side for sending. Dropping every clone ends the thread once the queue is done.
@@ -133,6 +135,7 @@ impl ThreadRunner {
             scope: setup.scope,
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
+            depth: setup.depth,
             events,
         };
         let runner = Self {
@@ -445,6 +448,7 @@ mod tests {
             tools,
             scope: ToolScope::new(&root, &root).unwrap(),
             compact_prompt: root.join("COMPACT.md"),
+            depth: 0,
         })
     }
 

@@ -44,6 +44,12 @@ impl ToolRegistry {
         self.tools.insert(tool.name(), tool);
     }
 
+    /// Drops every tool not named in `names`.
+    pub fn keep(&mut self, names: &[String]) {
+        self.tools
+            .retain(|name, _| names.iter().any(|kept| kept == name));
+    }
+
     pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
         self.tools.keys().copied()
     }

@@ -1,4 +1,5 @@
-//! Threads: one per chat. Everything else in a thread is its messages and turns.
+//! Threads: one per chat, and one per subagent conversation under the thread that asked
+//! it. Everything else in a thread is its messages and turns.
 
 use anyhow::{Context, Result, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
@@ -16,20 +17,44 @@ pub struct Thread {
     pub title: Option<String>,
     /// When the newest message was stored, or `created_at` before the first one.
     pub active_at: i64,
+    /// For a subagent's thread: the thread that asked it, and the agent's name.
+    pub parent_thread_id: Option<String>,
+    pub agent: Option<String>,
 }
 
 impl State {
     pub async fn create_thread(&self, id: &str, source: &str) -> Result<Thread> {
+        self.insert_thread(id, source, None, None).await
+    }
+
+    /// A thread for `agent` to work in, under the thread that asked it.
+    pub async fn create_agent_thread(&self, id: &str, parent: &str, agent: &str) -> Result<Thread> {
+        self.insert_thread(id, "agent", Some(parent), Some(agent))
+            .await
+    }
+
+    async fn insert_thread(
+        &self,
+        id: &str,
+        source: &str,
+        parent: Option<&str>,
+        agent: Option<&str>,
+    ) -> Result<Thread> {
         ensure!(!id.trim().is_empty(), "thread ID is empty");
         ensure!(!source.trim().is_empty(), "thread source is empty");
         let timestamp = timestamp_ms()?;
-        sqlx::query("INSERT INTO threads (id, source, created_at) VALUES (?, ?, ?)")
-            .bind(id)
-            .bind(source)
-            .bind(timestamp)
-            .execute(&self.pool)
-            .await
-            .context("create thread")?;
+        sqlx::query(
+            "INSERT INTO threads (id, source, created_at, parent_thread_id, agent)
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(id)
+        .bind(source)
+        .bind(timestamp)
+        .bind(parent)
+        .bind(agent)
+        .execute(&self.pool)
+        .await
+        .context("create thread")?;
         self.load_thread(id).await?.context("thread was not stored")
     }
 
@@ -48,17 +73,35 @@ impl State {
         .transpose()
     }
 
-    /// Every thread, the most recently active first.
+    /// The threads people chat in, the most recently active first. Subagent threads are
+    /// reached through `agent_threads`.
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
         sqlx::query(
             "SELECT threads.*, COALESCE(
                 (SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id),
                 threads.created_at) AS active_at
-             FROM threads ORDER BY active_at DESC, id DESC",
+             FROM threads WHERE parent_thread_id IS NULL ORDER BY active_at DESC, id DESC",
         )
         .fetch_all(&self.pool)
         .await
         .context("list threads")?
+        .into_iter()
+        .map(decode_thread)
+        .collect()
+    }
+
+    /// The subagent threads a thread started, oldest first.
+    pub async fn agent_threads(&self, parent: &str) -> Result<Vec<Thread>> {
+        sqlx::query(
+            "SELECT threads.*, COALESCE(
+                (SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id),
+                threads.created_at) AS active_at
+             FROM threads WHERE parent_thread_id = ? ORDER BY created_at, id",
+        )
+        .bind(parent)
+        .fetch_all(&self.pool)
+        .await
+        .context("list agent threads")?
         .into_iter()
         .map(decode_thread)
         .collect()
@@ -83,5 +126,7 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         created_at: row.try_get("created_at")?,
         title: row.try_get("title")?,
         active_at: row.try_get("active_at")?,
+        parent_thread_id: row.try_get("parent_thread_id")?,
+        agent: row.try_get("agent")?,
     })
 }
