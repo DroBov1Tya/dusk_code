@@ -3,22 +3,23 @@
 //! and gives each active thread its own task.
 
 use std::{
+    collections::HashSet,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, PoisonError},
+    sync::{Arc, Mutex, MutexGuard, PoisonError},
     time::Duration,
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, bail, ensure};
 use tokio::task::{JoinHandle, JoinSet};
 use tracing::info;
 
 use super::thread_runner::{ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup};
 use crate::{
-    init,
+    init::{self, create_private_dir},
     live_config::LiveConfig,
     paths::Paths,
     providers::{Model, ModelProvider, Provider, ProviderRegistry},
-    state::State,
+    state::{Message, State, Thread},
     thread_start::start_thread,
     tools::{ReadHistory, ToolRegistry, ToolScope},
 };
@@ -34,10 +35,14 @@ pub struct Runtime {
     model: Model,
     config_check: JoinHandle<()>,
     threads: Mutex<JoinSet<()>>,
+    /// Threads with a running task.
+    active: Arc<Mutex<HashSet<String>>>,
 }
 
-/// A started thread, as its client sees it.
+/// A running thread, as its client sees it.
 pub struct ThreadHandle {
+    /// What `resume_thread` takes to pick the thread up later.
+    pub thread_id: String,
     pub input: ThreadInput,
     pub output: ThreadOutput,
 }
@@ -72,6 +77,7 @@ impl Runtime {
             model,
             config_check,
             threads: Mutex::new(JoinSet::new()),
+            active: Arc::default(),
         })
     }
 
@@ -89,6 +95,16 @@ impl Runtime {
         self.tools("").names().collect()
     }
 
+    /// Every thread, the most recently active first, for a client to offer.
+    pub async fn list_threads(&self) -> Result<Vec<Thread>> {
+        self.state.list_threads().await
+    }
+
+    /// The whole history of a thread, compacted messages included, oldest first.
+    pub async fn thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
+        self.state.list_messages(thread_id).await
+    }
+
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
     /// ends once the client drops every `ThreadInput` and the queue is done.
     pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
@@ -98,18 +114,50 @@ impl Runtime {
             thread.thread_id,
             thread.workspace.display()
         );
+        self.run_thread(thread.thread_id, &thread.workspace, cwd)
+    }
+
+    /// Picks a stored thread up again, with its tools working in `cwd`. What it left
+    /// unfinished is closed first: a running turn ends as interrupted, and messages sent
+    /// before a crash are taken in.
+    pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
+        self.state
+            .load_thread(thread_id)
+            .await?
+            .with_context(|| format!("thread {thread_id} does not exist"))?;
+        let workspace = self.paths.thread_workspace(thread_id)?;
+        create_private_dir(&workspace)?;
+        info!("thread {thread_id} resumed in {}", workspace.display());
+        self.run_thread(thread_id.to_owned(), &workspace, cwd)
+    }
+
+    /// One task per thread: two would answer the same messages twice.
+    fn run_thread(&self, thread_id: String, workspace: &Path, cwd: &Path) -> Result<ThreadHandle> {
         let (runner, input, output) = ThreadRunner::new(ThreadSetup {
             state: Arc::clone(&self.state),
             provider: Arc::clone(&self.provider) as Arc<dyn ModelProvider>,
             model: self.model.clone(),
             config: Arc::clone(&self.config),
-            thread_id: thread.thread_id.clone(),
-            tools: self.tools(&thread.thread_id),
-            scope: ToolScope::new(cwd, &thread.workspace)?,
+            thread_id: thread_id.clone(),
+            tools: self.tools(&thread_id),
+            scope: ToolScope::new(cwd, workspace)?,
             compact_prompt: self.paths.compact_prompt(),
         });
-        self.lock_threads().spawn(runner.run());
-        Ok(ThreadHandle { input, output })
+        let active = Arc::clone(&self.active);
+        ensure!(
+            lock(&active).insert(thread_id.clone()),
+            "thread {thread_id} is already open"
+        );
+        let id = thread_id.clone();
+        self.lock_threads().spawn(async move {
+            runner.run().await;
+            lock(&active).remove(&id);
+        });
+        Ok(ThreadHandle {
+            thread_id,
+            input,
+            output,
+        })
     }
 
     /// Lets every thread finish its queue, stops the config check and closes the database.
@@ -128,8 +176,13 @@ impl Runtime {
         tools
     }
 
-    fn lock_threads(&self) -> std::sync::MutexGuard<'_, JoinSet<()>> {
-        // Spawning and taking the set cannot leave it half-changed.
-        self.threads.lock().unwrap_or_else(PoisonError::into_inner)
+    fn lock_threads(&self) -> MutexGuard<'_, JoinSet<()>> {
+        lock(&self.threads)
     }
+}
+
+// Inserting into and taking from these cannot leave them half-changed, so a panic
+// elsewhere does not make them unusable.
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

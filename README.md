@@ -30,7 +30,7 @@ projects/
         skills.rs            the skill graph read from skills/
         state/               SQLite records, one file per table
             state.rs         database handle: open, close
-            threads.rs       threads
+            threads.rs       threads, their titles and the list by activity
             messages.rs      messages, in order
             turns.rs         turns and their steps, written ahead
             pending.rs       what clients sent, before the thread takes it in
@@ -39,6 +39,7 @@ projects/
             migrations/      one standalone schema file per table
         runtime/             what clients start, and the agent
             runtime.rs         Runtime: database, config, model, background tasks, threads
+            title.rs           naming a thread from its first message
             thread_runner.rs   a live thread: send, send now, cancel, events
             inbox.rs           client input while the agent works
             agent.rs           a turn, step by step: model -> tools -> model
@@ -62,14 +63,18 @@ projects/
             inline_tags.rs   <think> and <tool_call> tags in text -> ModelEvents
             sse.rs           bounded Server-Sent Events decoder
     cli/src/                 dusk_code binary
-        main.rs, app.rs      starts the runtime, opens a thread, shuts down
+        main.rs, app.rs      starts the runtime, opens or lists threads, shuts down
         chat.rs              line-based chat: `text` queues, `!text` sends now, `!` stops
         commands.rs          `:tools`, `:skills`, `:on <name>`, `:off <name>`, `:reload`
 ```
 
 ## How the core runs
 
-A client starts one `Runtime`. It sets up missing files, opens the database and the config, picks the model, and checks the config file once a minute in a background task. `Runtime::new_thread` starts a thread and gives it its own task; the client only sends text with `ThreadInput` and reads `ThreadEvent`s from `ThreadOutput`. A thread task ends when the client drops its input and the queue is done; `Runtime::shutdown` waits for that, stops the background task and closes the database.
+A client starts one `Runtime`. It sets up missing files, opens the database and the config, picks the model, and checks the config file once a minute in a background task. `Runtime::new_thread` starts a thread and gives it its own task; the client only sends text with `ThreadInput` and reads `ThreadEvent`s from `ThreadOutput`.
+
+For working with threads a client has three more calls: `list_threads` gives every thread with its title, the most recently active first; `thread_messages` gives the whole history of one, compacted messages included, to show it again; `resume_thread` picks it up with a new task. Resuming closes what a stopped process left open (a running turn becomes interrupted, a running tool call gets a result saying it may have run) and takes in messages that were sent but not yet taken in. A thread has at most one task, so opening it twice is refused.
+
+A thread is named from its first message: at once with its first 35 characters and an ellipsis, then, after the first turn, by the model with a title of a few words. The client sees both as `TitleChanged`; when naming fails the stand-in stays. A thread task ends when the client drops its input and the queue is done; `Runtime::shutdown` waits for that, stops the background task and closes the database.
 
 ## How a thread works
 
@@ -138,7 +143,7 @@ tools:              # every tool is on unless switched off
 
 The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as `:off run_command` are written to disk atomically and applied in memory, and a background check re-reads the file within a minute of a hand edit (`:reload` does it at once). A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
 
-The CLI uses the first provider and its first catalogue model and starts a new thread per run. `--state-db PATH` overrides the database location.
+The CLI uses the first provider and its first catalogue model and starts a new thread per run. `--threads` lists the threads, `--thread ID` continues one after printing its history, and `--state-db PATH` overrides the database location.
 
 ## Skills
 
@@ -168,4 +173,4 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 
 ## Limitations
 
-Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers or thread resume yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions or MCP servers yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.

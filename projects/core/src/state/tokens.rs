@@ -87,6 +87,8 @@ pub enum CallPurpose {
     Answer,
     /// A summary for a compaction.
     Compact,
+    /// A name for the thread.
+    Title,
 }
 
 /// The provider's count of the newest request of a thread.
@@ -220,6 +222,7 @@ impl CallPurpose {
         match self {
             Self::Answer => "answer",
             Self::Compact => "compact",
+            Self::Title => "title",
         }
     }
 }

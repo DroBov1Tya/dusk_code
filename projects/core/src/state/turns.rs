@@ -57,6 +57,15 @@ pub struct TurnAnswer {
 }
 
 impl State {
+    pub async fn count_turns(&self, thread_id: &str) -> Result<u64> {
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM turns WHERE thread_id = ?")
+            .bind(thread_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("count turns")?;
+        count.try_into().context("negative turn count")
+    }
+
     /// Sequence of the newest message any turn of the thread has taken; 0 before the first.
     pub async fn answered_through(&self, thread_id: &str) -> Result<u64> {
         let sequence: i64 = sqlx::query_scalar(
