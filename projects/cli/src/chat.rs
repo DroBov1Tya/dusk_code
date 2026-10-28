@@ -8,7 +8,7 @@ use anyhow::Result;
 use dusk_core::{
     providers::ModelEvent,
     runtime::{ThreadEvent, ThreadInput, ThreadOutput},
-    state::{ThreadTokens, Turn, TurnStatus},
+    state::{Message, MessageRole, ThreadTokens, Turn, TurnStatus},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
 
@@ -64,6 +64,7 @@ async fn print_events(mut output: ThreadOutput) {
                 printer.finish();
                 report(&turn);
             }
+            ThreadEvent::TitleChanged { title } => eprintln!("[title: {}]", sanitize(&title)),
             ThreadEvent::OutputLimitReached { limit } => {
                 printer.end_reasoning();
                 eprintln!("\n[stopped: the answer reached the output limit of {limit} tokens]");
@@ -132,6 +133,19 @@ fn describe(tokens: &ThreadTokens, limit: u64) -> String {
     )
 }
 
+/// What was said so far: the user's messages after the prompt sign, the agent's answers
+/// as they are. System messages and tool traffic are left out.
+pub fn print_history(messages: &[Message]) {
+    for message in messages {
+        let text = sanitize(message.content.trim());
+        match message.role {
+            MessageRole::User => println!("{PROMPT}{text}"),
+            MessageRole::Assistant if !text.is_empty() => println!("{text}\n"),
+            _ => {}
+        }
+    }
+}
+
 /// Reasoning goes to stderr (dimmed on a terminal), the answer to stdout.
 struct StreamPrinter {
     dim_reasoning: bool,
@@ -186,7 +200,7 @@ impl StreamPrinter {
 
 /// Model output is untrusted: drop control characters that could drive the terminal
 /// and bidi controls that could make the displayed text misleading.
-fn sanitize(text: &str) -> String {
+pub fn sanitize(text: &str) -> String {
     text.chars()
         .filter(|&c| c == '\n' || c == '\t' || !(c.is_control() || is_bidi_control(c)))
         .collect()

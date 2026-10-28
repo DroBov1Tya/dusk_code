@@ -9,6 +9,7 @@ mod inbox;
 #[allow(clippy::module_inception)]
 mod runtime;
 mod thread_runner;
+mod title;
 
 pub use runtime::{Runtime, ThreadHandle};
 pub use thread_runner::{ThreadEvent, ThreadInput, ThreadOutput};

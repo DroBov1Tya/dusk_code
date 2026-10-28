@@ -4,8 +4,8 @@ CREATE TABLE model_usage (
     thread_id TEXT NOT NULL REFERENCES threads(id),
     -- NULL for calls outside a turn, such as /compact while the thread is idle.
     turn_id TEXT REFERENCES turns(turn_id),
-    -- 'answer' for the agent's steps, 'compact' for summaries.
-    purpose TEXT NOT NULL CHECK (purpose IN ('answer', 'compact')),
+    -- 'answer' for the agent's steps, 'compact' for summaries, 'title' for naming the thread.
+    purpose TEXT NOT NULL CHECK (purpose IN ('answer', 'compact', 'title')),
     -- The compaction the call's context started from; NULL before the first one.
     compaction_id INTEGER REFERENCES compactions(compaction_id),
     model TEXT NOT NULL CHECK (length(trim(model)) > 0),

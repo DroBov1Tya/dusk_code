@@ -81,6 +81,11 @@ pub enum ThreadEvent {
         result: ToolResult,
     },
     TurnFinished(Turn),
+    /// The thread got a name: the start of its first message at once, then one the model
+    /// gives after the first turn.
+    TitleChanged {
+        title: String,
+    },
     /// The model wrote `limit` tokens in one call and was stopped; the turn ends with
     /// what it wrote.
     OutputLimitReached {
@@ -175,7 +180,10 @@ impl ThreadRunner {
             let stop = match self.agent.compact_if_needed(None, &mut self.inbox).await {
                 Some(stop) => Some(stop),
                 None => match self.agent.start_turn().await? {
-                    Some(turn) => self.agent.run_turn(&turn, &mut self.inbox).await?,
+                    Some(turn) => match self.agent.run_turn(&turn, &mut self.inbox).await? {
+                        Some(stop) => Some(stop),
+                        None => self.agent.name_thread(&mut self.inbox).await,
+                    },
                     None => return Ok(()),
                 },
             };
@@ -208,6 +216,7 @@ impl ThreadRunner {
         let state = Arc::clone(&self.agent.state);
         let Some(command) = commands::parse(&pending.content) else {
             let message = state.admit_pending(&self.agent.thread_id, &pending).await?;
+            self.agent.title_from_first_message(&message).await?;
             self.agent.emit(ThreadEvent::Queued {
                 message_id: message.message_id,
             });
@@ -585,6 +594,7 @@ mod tests {
         let config = live_config("runner_config");
         let provider = provider(vec![
             vec![Step::Text("one"), Step::Done],
+            vec![Step::Text("Numbers"), Step::Done],
             vec![Step::Text("so far: one"), Step::Done],
             vec![Step::Text("two"), Step::Done],
         ]);
@@ -604,16 +614,17 @@ mod tests {
         assert_eq!(compaction.through_sequence, 2);
         assert_eq!(compaction.reason, CompactionReason::Manual);
         let requests = provider.requests.lock().unwrap().clone();
-        let instructions = requests[1].last().unwrap();
+        // 0 is the first turn and 1 names the thread.
+        let instructions = requests[2].last().unwrap();
         let ChatMessage::User(instructions) = instructions else {
             panic!("{instructions:?}");
         };
         assert!(instructions.ends_with("Focus the summary on: the numbers\n"));
-        assert_eq!(requests[2].len(), 2, "summary and the new message");
+        assert_eq!(requests[3].len(), 2, "summary and the new message");
         assert!(
-            matches!(&requests[2][0], ChatMessage::User(text) if text.ends_with("so far: one"))
+            matches!(&requests[3][0], ChatMessage::User(text) if text.ends_with("so far: one"))
         );
-        assert_eq!(requests[2][1], ChatMessage::User("second".into()));
+        assert_eq!(requests[3][1], ChatMessage::User("second".into()));
         let stored = transcript(&state).await;
         assert_eq!(stored.len(), 4, "messages stay stored: {stored:?}");
     }
@@ -693,6 +704,48 @@ mod tests {
             "{error}"
         );
         assert!(state.pending_messages("thread").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn the_first_message_names_the_thread_and_the_model_renames_it() {
+        let state = thread_state("title").await;
+        let config = live_config("runner_config");
+        let provider = provider(vec![
+            vec![Step::Text("Hello!"), Step::Done],
+            vec![Step::Text("\"Greeting\""), Step::Done],
+            vec![Step::Text("Fine."), Step::Done],
+        ]);
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        let client = async move {
+            let mut titles = Vec::new();
+            input
+                .send("hi there, how are you doing today, my friend?")
+                .await
+                .unwrap();
+            input.send("and now?").await.unwrap();
+            drop(input);
+            while let Some(event) = output.next_event().await {
+                if let ThreadEvent::TitleChanged { title } = event {
+                    titles.push(title);
+                }
+            }
+            titles
+        };
+
+        let ((), titles) = tokio::join!(runner.run(), client);
+
+        assert_eq!(
+            titles,
+            ["hi there, how are you doing today,...", "Greeting"]
+        );
+        let thread = state.load_thread("thread").await.unwrap().unwrap();
+        assert_eq!(thread.title.as_deref(), Some("Greeting"));
+        let requests = provider.requests.lock().unwrap().clone();
+        assert_eq!(
+            requests.len(),
+            2,
+            "both messages in one turn, then the name"
+        );
     }
 
     #[tokio::test]
