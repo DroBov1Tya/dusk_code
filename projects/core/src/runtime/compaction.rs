@@ -55,6 +55,7 @@ impl Agent {
         match self.summarize(focus, turn, inbox).await {
             Ok(Ok(compaction)) => {
                 self.emit(ThreadEvent::CompactionFinished(compaction));
+                self.report_tokens().await;
                 None
             }
             Ok(Err(stop)) => Some(stop),

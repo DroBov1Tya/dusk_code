@@ -96,7 +96,7 @@ pub enum ThreadEvent {
     CompactionFailed {
         error: String,
     },
-    /// The thread's token counts, when it starts and after each turn. `limit` is the largest request: the
+    /// The thread's token counts, when it starts and after each turn and compaction. `limit` is the largest request: the
     /// configured input limit or the model window, whichever is smaller.
     Tokens {
         tokens: ThreadTokens,
