@@ -8,6 +8,7 @@ mod threads;
 mod tokens;
 mod turns;
 
+pub(crate) use messages::estimate_tokens;
 pub use messages::{Message, MessageRole};
 pub use state::State;
 pub use threads::Thread;

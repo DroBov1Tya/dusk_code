@@ -477,8 +477,9 @@ mod tests {
         while let Some(event) = output.next_event().await {
             events.push(event);
         }
+        // The message is 6 and the echo tool definition 1 + 5 + 5.
         assert!(events.contains(&ThreadEvent::ContextTooLarge {
-            tokens: 6,
+            tokens: 17,
             limit: 3
         }));
         assert!(

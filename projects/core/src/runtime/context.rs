@@ -4,8 +4,8 @@
 use anyhow::Result;
 
 use crate::{
-    providers::ChatMessage,
-    state::{Message, MessageRole, State},
+    providers::{ChatMessage, ToolSpec},
+    state::{Message, MessageRole, State, estimate_tokens},
 };
 
 pub(super) struct Conversation {
@@ -41,6 +41,18 @@ impl Conversation {
             .map(Message::context_tokens)
             .sum()
     }
+}
+
+/// Estimated size of the tool definitions a request carries.
+pub(super) fn spec_tokens(specs: &[ToolSpec]) -> u64 {
+    specs
+        .iter()
+        .map(|spec| {
+            estimate_tokens(&spec.name)
+                + estimate_tokens(&spec.description)
+                + estimate_tokens(&spec.parameters.to_string())
+        })
+        .sum()
 }
 
 fn chat_message(message: &Message) -> Option<ChatMessage> {

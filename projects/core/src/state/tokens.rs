@@ -31,6 +31,9 @@ pub struct TokenCounts {
     pub reasoning: u64,
     pub tool_calls: u64,
     pub tool_results: u64,
+    /// Tool definitions, sent with every request but never stored, so the agent counts
+    /// them into the current context only.
+    pub tool_specs: u64,
 }
 
 impl TokenCounts {
@@ -41,6 +44,7 @@ impl TokenCounts {
             + self.reasoning
             + self.tool_calls
             + self.tool_results
+            + self.tool_specs
     }
 
     fn add(&mut self, role: &str, content: u64, tool_calls: u64, reasoning: u64) {
@@ -136,8 +140,7 @@ mod tests {
     use super::*;
     use crate::{
         providers::ToolCall,
-        state::messages::estimate_tokens,
-        state::{StepResult, TurnAnswer, TurnOutcome, TurnStep},
+        state::{StepResult, TurnAnswer, TurnOutcome, TurnStep, estimate_tokens},
         testing::temp_state,
     };
 
@@ -191,6 +194,7 @@ mod tests {
             reasoning: 0,
             tool_calls: calls,
             tool_results: 5,
+            tool_specs: 0,
         };
         assert_eq!(tokens.current, expected);
         assert_eq!(

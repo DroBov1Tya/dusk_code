@@ -4,7 +4,7 @@ members = ["projects/core", "projects/cli"]
 default-members = ["projects/cli"]
 
 [workspace.package]
-version = "0.8.0"
+version = "0.8.1"
 edition = "2024"
 publish = false
 

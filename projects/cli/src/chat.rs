@@ -100,13 +100,14 @@ fn describe(tokens: &ThreadTokens, window: Option<u64>) -> String {
     let spent = &tokens.spent;
     format!(
         "tokens: context ~{}{window} (system {}, user {}, agent {}, tool calls {}, \
-         tool results {}); history ~{}; provider {} in ({} cached), {} out in {} calls",
+         tool results {}, tool definitions {}); history ~{}; provider {} in ({} cached), {} out in {} calls",
         current.total(),
         current.system,
         current.user,
         current.assistant,
         current.tool_calls,
         current.tool_results,
+        current.tool_specs,
         tokens.all.total(),
         spent.prompt_tokens,
         spent.cached_prompt_tokens,
