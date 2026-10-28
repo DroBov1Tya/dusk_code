@@ -9,7 +9,7 @@ use tokio::sync::mpsc;
 use tracing::warn;
 
 use super::{
-    context::Conversation,
+    context::{Conversation, spec_tokens},
     generation,
     inbox::{Inbox, Stop},
     thread_runner::ThreadEvent,
@@ -17,7 +17,7 @@ use super::{
 use crate::{
     config::Config,
     live_config::LiveConfig,
-    providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, is_transient},
+    providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, ToolSpec, is_transient},
     state::{State, StepResult, Turn, TurnAnswer, TurnOutcome, TurnStep},
     tools::{ToolRegistry, ToolScope},
 };
@@ -56,7 +56,8 @@ impl Agent {
     /// Starts a turn when something is queued and the context fits the model window.
     pub(super) async fn start_turn(&self) -> Result<Option<Turn>> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
-        if !conversation.has_queued() || self.context_too_large(&conversation).is_some() {
+        let specs = self.tools.specs(&self.scope, &self.config.current());
+        if !conversation.has_queued() || self.context_too_large(&conversation, &specs).is_some() {
             return Ok(None);
         }
         let turn = self.state.start_turn(&self.thread_id).await?;
@@ -91,10 +92,14 @@ impl Agent {
     /// Counting is for the client to see; a failure here does not touch the thread.
     async fn report_tokens(&self) {
         match self.state.thread_tokens(&self.thread_id).await {
-            Ok(tokens) => self.emit(ThreadEvent::Tokens {
-                tokens,
-                window: self.model.context_window,
-            }),
+            Ok(mut tokens) => {
+                let specs = self.tools.specs(&self.scope, &self.config.current());
+                tokens.current.tool_specs = spec_tokens(&specs);
+                self.emit(ThreadEvent::Tokens {
+                    tokens,
+                    window: self.model.context_window,
+                });
+            }
             Err(error) => warn!("cannot count thread tokens: {error:#}"),
         }
     }
@@ -107,14 +112,14 @@ impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     async fn step(&self, turn: &Turn, inbox: &mut Inbox) -> Result<StepEnd> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
-        // Tool results grow the context within a turn, so every step checks it.
-        if let Some(error) = self.context_too_large(&conversation) {
-            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
-        }
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config.current();
-        let messages = conversation.chat_messages();
         let tools = self.tools.specs(&self.scope, &config);
+        // Tool results grow the context within a turn, so every step checks it.
+        if let Some(error) = self.context_too_large(&conversation, &tools) {
+            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+        }
+        let messages = conversation.chat_messages();
         let request = ChatRequest {
             model: &self.model.id,
             messages: &messages,
@@ -237,8 +242,8 @@ impl Agent {
     }
 
     /// Reports a context past the model window to the client and returns why.
-    fn context_too_large(&self, conversation: &Conversation) -> Option<String> {
-        let tokens = conversation.tokens();
+    fn context_too_large(&self, conversation: &Conversation, specs: &[ToolSpec]) -> Option<String> {
+        let tokens = conversation.tokens() + spec_tokens(specs);
         let limit = self.model.context_window.filter(|&limit| tokens > limit)?;
         self.emit(ThreadEvent::ContextTooLarge { tokens, limit });
         Some(format!(

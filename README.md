@@ -74,7 +74,7 @@ A client starts one `Runtime`. It sets up missing files, opens the database and 
 4. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. Messages sent during a turn are stored after it ends, so the thread reads in the order things happened.
 5. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
 6. After each turn the client gets `Tokens`, three different numbers:
-   - `current`: the estimated size of what the model receives now, by author: system, user, agent, tool calls, tool results. It holds the messages after the thread's `context_from`; compacting will move that point.
+   - `current`: the estimated size of what the model receives now, by author: system, user, agent, tool calls, tool results, and the tool definitions every request carries. It holds the messages after the thread's `context_from`; compacting will move that point.
    - `all`: the same over the whole thread history, reasoning included.
    - `spent`: the sums of what the provider reported per model call: prompt (and its cached part) and completion (and its reasoning part). Every call sends the whole context again, so this grows much faster than the thread.
 
@@ -140,4 +140,4 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 
 ## Limitations
 
-Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers, context compaction or thread resume yet. Token estimates leave out tool definitions and chat template markup, which the provider counts. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions, MCP servers, context compaction or thread resume yet. Token estimates leave out the chat template markup and the extra text a model template wraps tool definitions in, so they stay below what the provider counts. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
