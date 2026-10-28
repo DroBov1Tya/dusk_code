@@ -1,17 +1,15 @@
 //! Starting a thread: its workspace folder, its record and the main agent's system prompt.
 
 use std::{
-    fs::File,
-    io::{ErrorKind, Read},
+    fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
-use anyhow::{Result, anyhow, ensure};
+use anyhow::{Result, bail};
 use uuid::Uuid;
 
 use crate::{init::create_private_dir, paths::Paths, state::State};
-
-const MAX_PROMPT_BYTES: u64 = 256 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartedThread {
@@ -41,19 +39,11 @@ pub async fn start_thread(state: &State, paths: &Paths, source: &str) -> Result<
 /// Reads a prompt file such as MAIN.md; a missing or blank file means no prompt.
 pub(crate) fn read_prompt(path: &Path) -> Result<Option<String>> {
     let name = path.file_name().unwrap_or_default().to_string_lossy();
-    let file = match File::open(path) {
-        Ok(file) => file,
+    let prompt = match fs::read_to_string(path) {
+        Ok(prompt) => prompt,
         Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
-        Err(_) => return Err(anyhow!("cannot open {name}")),
+        Err(_) => bail!("cannot read {name} as UTF-8 text"),
     };
-    let mut prompt = String::new();
-    file.take(MAX_PROMPT_BYTES + 1)
-        .read_to_string(&mut prompt)
-        .map_err(|_| anyhow!("{name} is not readable UTF-8 text"))?;
-    ensure!(
-        prompt.len() as u64 <= MAX_PROMPT_BYTES,
-        "{name} is too large"
-    );
     Ok(Some(prompt).filter(|prompt| !prompt.trim().is_empty()))
 }
 
