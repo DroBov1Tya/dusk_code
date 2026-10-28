@@ -6,6 +6,7 @@ use crate::events::{Event, JobCreated, JobUpdated};
 use super::{State, timestamp_ms};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JobStatus {
     Queued,
     Running,
@@ -52,6 +53,7 @@ pub struct Job {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum JobOutcome {
     Completed,
     Failed { error_message: String },

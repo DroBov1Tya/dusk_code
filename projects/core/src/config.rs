@@ -34,6 +34,7 @@ pub struct SessionConfig {
 /// What a session stores from the model output. User messages are always stored.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[non_exhaustive]
 pub enum RecordMode {
     /// Everything the model produces: reasoning, tool calls and the answer.
     #[default]
@@ -60,6 +61,7 @@ pub struct ProviderConfig {
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]
+#[non_exhaustive]
 pub enum ProviderKind {
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible,

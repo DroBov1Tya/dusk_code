@@ -6,11 +6,11 @@ use anyhow::{Result, anyhow, bail, ensure};
 use reqwest::Response;
 use serde::Deserialize;
 
-use super::super::{ChatDelta, sse::SseDecoder};
+use super::{chat::ChatDelta, sse_decoder::SseDecoder};
 
 const DONE_MARKER: &str = "[DONE]";
 
-pub(in crate::providers) struct CompletionStream {
+pub(super) struct CompletionStream {
     response: Response,
     parser: CompletionParser,
     pending: VecDeque<ChatDelta>,
@@ -27,7 +27,7 @@ impl CompletionStream {
         }
     }
 
-    pub(in crate::providers) async fn next_delta(&mut self) -> Result<Option<ChatDelta>> {
+    pub(super) async fn next_delta(&mut self) -> Result<Option<ChatDelta>> {
         loop {
             if let Some(delta) = self.pending.pop_front() {
                 return Ok(Some(delta));

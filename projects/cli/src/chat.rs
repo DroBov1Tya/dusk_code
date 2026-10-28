@@ -99,6 +99,8 @@ impl StreamPrinter {
                 let _ = stdout.write_all(sanitize(text).as_bytes());
                 let _ = stdout.flush();
             }
+            // Kinds this client does not render yet.
+            _ => {}
         }
     }
 

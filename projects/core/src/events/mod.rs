@@ -1,5 +1,6 @@
 //! Concrete event payloads, aggregate event contract, and Tokio broadcast types.
 
+mod database_created;
 mod event;
 mod execution_failed;
 mod job_created;
@@ -13,6 +14,7 @@ mod thread_updated;
 mod turn_created;
 mod turn_updated;
 
+pub use database_created::DatabaseCreated;
 pub use event::Event;
 pub use execution_failed::ExecutionFailed;
 pub use job_created::JobCreated;
@@ -35,6 +37,3 @@ pub type EventSender = broadcast::Sender<CoreEvent>;
 pub type EventReceiver = broadcast::Receiver<CoreEvent>;
 
 // Consumers must handle Tokio broadcast lag; durable delivery is not provided.
-
-mod database_created;
-pub use database_created::DatabaseCreated;

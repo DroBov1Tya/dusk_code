@@ -1,5 +1,6 @@
 /// Receipt state. User-task completion and failure are recorded separately in Turn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ExecutionStatus {
     Accepted,
     Rejected,
@@ -18,6 +19,7 @@ impl ExecutionStatus {
 
 /// Fixed validation codes never contain user-message content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum RejectionCode {
     EmptyMessage,
     EmptyThread,
@@ -36,6 +38,7 @@ impl RejectionCode {
 
 /// Fixed execution-failure codes never contain provider errors or message content.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ExecutionFailureCode {
     ExecutionFailed,
 }

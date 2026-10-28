@@ -10,6 +10,7 @@ use super::{
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum TurnStatus {
     Queued,
     Running,

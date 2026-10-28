@@ -7,6 +7,7 @@ use crate::events::{Event, MessageCreated};
 use super::{State, timestamp_ms};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MessageRole {
     User,
     Assistant,

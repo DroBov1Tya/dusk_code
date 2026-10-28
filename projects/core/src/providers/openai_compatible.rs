@@ -1,4 +1,4 @@
-mod stream;
+//! OpenAI-compatible Chat Completions API (OpenAI, LiteLLM, vLLM and others).
 
 use std::{collections::BTreeSet, time::Duration};
 
@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::ProviderConfig;
 
-use super::{ChatMessage, ChatRole, Model};
-
-pub(super) use stream::CompletionStream;
+use super::{
+    chat::{ChatMessage, ChatRole},
+    completion_stream::CompletionStream,
+    model::Model,
+};
 
 const MAX_CATALOGUE_BYTES: usize = 4 * 1024 * 1024;
 const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);

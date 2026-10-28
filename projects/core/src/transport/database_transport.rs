@@ -24,6 +24,7 @@ impl fmt::Debug for DatabasePassword {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub enum DatabaseTask {
     CreateEncryptedDatabase {
         path: PathBuf,

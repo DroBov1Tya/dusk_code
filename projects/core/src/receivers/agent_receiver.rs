@@ -5,6 +5,7 @@ use crate::state::{Message, MessageAttachment, State, Turn};
 const CONVERSATION_PAGE: u32 = 1000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum AgentOutcome {
     Completed {
         content: String,

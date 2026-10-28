@@ -24,6 +24,7 @@ pub struct ScenarioRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum UserRequest {
     Message(UserMessage),
     Scenario(ScenarioRequest),
