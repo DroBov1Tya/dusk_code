@@ -2,6 +2,8 @@ use anyhow::{Context, Result, ensure};
 
 use crate::state::{Message, MessageAttachment, State, Turn};
 
+const CONVERSATION_PAGE: u32 = 1000;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AgentOutcome {
     Completed {
@@ -62,6 +64,23 @@ impl<'a> AgentReceiver<'a> {
             .await?
             .context("turn user message does not exist")?;
         Ok(AgentTask { turn, user_message })
+    }
+
+    /// Thread messages up to and including the task's user message, in order.
+    pub async fn conversation(&self, task: &AgentTask) -> Result<Vec<Message>> {
+        let last = task.user_message.sequence;
+        let mut messages = Vec::new();
+        let mut after = 0;
+        while after < last {
+            let page = self
+                .state
+                .list_messages(&task.turn.thread_id, after, CONVERSATION_PAGE)
+                .await?;
+            let Some(tail) = page.last() else { break };
+            after = tail.sequence;
+            messages.extend(page.into_iter().filter(|message| message.sequence <= last));
+        }
+        Ok(messages)
     }
 
     /// Core chooses the lifecycle transition and message role from the result type.

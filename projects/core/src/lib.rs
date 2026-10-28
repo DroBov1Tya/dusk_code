@@ -1,12 +1,15 @@
 //! Async harness core contracts, transport, and persistent session records.
 
 pub mod api;
+pub mod config;
 pub mod events;
 pub mod extensions;
 pub mod lifecycle;
 pub mod persistence;
 pub mod policy;
+pub mod providers;
 pub mod receivers;
+pub mod runtime;
 pub mod state;
 pub mod supervision;
 pub mod transport;
