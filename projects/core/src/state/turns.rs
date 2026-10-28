@@ -1,6 +1,10 @@
 //! Turns: one per agent run. A turn answers every user message of its thread up to
 //! `last_sequence`; user messages after the newest turn are the queue. Inside a turn the
 //! agent may take steps: a model call that asks for tools, and what the tools returned.
+//!
+//! A step is written ahead: the calls before any tool runs, each result right after its
+//! tool. A call left without a result, by a crash or a failed write, gets a placeholder
+//! when its turn ends, because a model needs one result per call.
 
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
@@ -52,21 +56,6 @@ pub struct TurnAnswer {
     pub reasoning: Option<String>,
 }
 
-/// One round of tool use: the agent's message with its calls, and what each call
-/// returned, in the same order.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TurnStep {
-    pub answer: TurnAnswer,
-    pub tool_calls: Vec<ToolCall>,
-    pub results: Vec<StepResult>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StepResult {
-    pub call_id: String,
-    pub content: String,
-}
-
 impl State {
     /// Sequence of the newest message any turn of the thread has taken; 0 before the first.
     pub async fn answered_through(&self, thread_id: &str) -> Result<u64> {
@@ -107,36 +96,44 @@ impl State {
         Ok(Some(turn))
     }
 
-    /// Stores a step of a running turn in one transaction, so a call is never kept
-    /// without its result.
-    pub async fn record_step(&self, turn_id: &str, step: TurnStep) -> Result<Vec<Message>> {
-        let call_ids = step.tool_calls.iter().map(|call| &call.id);
-        ensure!(
-            !step.tool_calls.is_empty()
-                && call_ids.eq(step.results.iter().map(|result| &result.call_id)),
-            "a step needs one result per tool call, in call order"
-        );
-        let mut new = vec![NewMessage::assistant(
-            step.answer.content,
-            step.answer.reasoning,
-            step.tool_calls,
-        )];
-        new.extend(
-            step.results
-                .into_iter()
-                .map(|result| NewMessage::tool(result.call_id, result.content)),
-        );
+    /// Stores the agent's message with its tool calls, before any of them runs.
+    pub async fn record_tool_calls(
+        &self,
+        turn_id: &str,
+        answer: TurnAnswer,
+        calls: Vec<ToolCall>,
+    ) -> Result<Message> {
+        ensure!(!calls.is_empty(), "a tool step needs a call");
+        let new = NewMessage::assistant(answer.content, answer.reasoning, calls);
         let timestamp = timestamp_ms()?;
-        let mut transaction = self.pool.begin().await.context("begin turn step")?;
+        let mut transaction = self.pool.begin().await.context("begin tool calls")?;
         let turn = read_running_turn(&mut transaction, turn_id).await?;
-        let mut messages = Vec::with_capacity(new.len());
-        for message in &new {
-            let stored =
-                insert_message(&mut transaction, &turn.thread_id, message, None, timestamp);
-            messages.push(stored.await?);
-        }
-        transaction.commit().await.context("commit turn step")?;
-        Ok(messages)
+        let message = insert_message(&mut transaction, &turn.thread_id, &new, None, timestamp);
+        let message = message.await?;
+        transaction.commit().await.context("commit tool calls")?;
+        Ok(message)
+    }
+
+    /// Stores what one call of the newest tool step returned.
+    pub async fn record_tool_result(
+        &self,
+        turn_id: &str,
+        call_id: &str,
+        content: String,
+    ) -> Result<Message> {
+        let timestamp = timestamp_ms()?;
+        let mut transaction = self.pool.begin().await.context("begin tool result")?;
+        let turn = read_running_turn(&mut transaction, turn_id).await?;
+        let open = open_calls(&mut transaction, &turn.thread_id).await?;
+        ensure!(
+            open.iter().any(|open| open == call_id),
+            "tool call {call_id} is not waiting for a result"
+        );
+        let new = NewMessage::tool(call_id.to_owned(), content);
+        let message = insert_message(&mut transaction, &turn.thread_id, &new, None, timestamp);
+        let message = message.await?;
+        transaction.commit().await.context("commit tool result")?;
+        Ok(message)
     }
 
     /// Records how a running turn ended, together with its answer message.
@@ -149,6 +146,8 @@ impl State {
         let timestamp = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin turn finish")?;
         let turn = read_running_turn(&mut transaction, turn_id).await?;
+        let unfinished = "no result: the turn ended before this call finished";
+        close_open_calls(&mut transaction, &turn.thread_id, unfinished, timestamp).await?;
         let message = match answer {
             Some(answer) => {
                 ensure!(!answer.content.trim().is_empty(), "answer is empty");
@@ -178,17 +177,23 @@ impl State {
     }
 
     /// A process that stopped mid-turn leaves it running; mark such turns interrupted.
+    /// A tool that was running then may or may not have taken effect, and its result says so.
     pub async fn interrupt_running_turns(&self, thread_id: &str) -> Result<()> {
         let timestamp = timestamp_ms()?;
+        let mut transaction = self.pool.begin().await.context("begin recovery")?;
+        let lost = "no result: the process stopped while this call ran, so it may or may not \
+                    have taken effect";
+        close_open_calls(&mut transaction, thread_id, lost, timestamp).await?;
         sqlx::query(
             "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?)
              WHERE thread_id = ? AND status = 'running'",
         )
         .bind(timestamp)
         .bind(thread_id)
-        .execute(&self.pool)
+        .execute(&mut *transaction)
         .await
         .context("interrupt running turns")?;
+        transaction.commit().await.context("commit recovery")?;
         Ok(())
     }
 }
@@ -202,6 +207,55 @@ impl TurnStatus {
             Self::Failed => "failed",
         }
     }
+}
+
+/// Calls of the thread's newest tool step that have no result yet, in call order. Older
+/// steps are always complete: the next step only starts once every call has a result.
+async fn open_calls(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+) -> Result<Vec<String>> {
+    let step = sqlx::query(
+        "SELECT sequence, tool_calls_json FROM messages
+         WHERE thread_id = ? AND tool_calls_json IS NOT NULL ORDER BY sequence DESC LIMIT 1",
+    )
+    .bind(thread_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("load the newest tool step")?;
+    let Some(step) = step else {
+        return Ok(Vec::new());
+    };
+    let sequence: i64 = step.try_get("sequence")?;
+    let calls: String = step.try_get("tool_calls_json")?;
+    let calls: Vec<ToolCall> = serde_json::from_str(&calls).context("decode tool calls")?;
+    let answered: Vec<String> = sqlx::query_scalar(
+        "SELECT tool_call_id FROM messages
+         WHERE thread_id = ? AND role = 'tool' AND sequence > ?",
+    )
+    .bind(thread_id)
+    .bind(sequence)
+    .fetch_all(&mut **transaction)
+    .await
+    .context("load tool results")?;
+    Ok(calls
+        .into_iter()
+        .map(|call| call.id)
+        .filter(|id| !answered.contains(id))
+        .collect())
+}
+
+async fn close_open_calls(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+    result: &str,
+    timestamp: i64,
+) -> Result<()> {
+    for call_id in open_calls(transaction, thread_id).await? {
+        let new = NewMessage::tool(call_id, result.to_owned());
+        insert_message(transaction, thread_id, &new, None, timestamp).await?;
+    }
+    Ok(())
 }
 
 async fn read_running_turn(
@@ -316,37 +370,65 @@ mod tests {
         assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
     }
 
+    fn call(id: &str) -> ToolCall {
+        ToolCall {
+            id: id.into(),
+            name: "echo".into(),
+            arguments: serde_json::json!({}),
+        }
+    }
+
     #[tokio::test]
-    async fn a_step_keeps_calls_with_their_results() {
+    async fn calls_are_stored_before_their_results() {
         let state = thread("turn_step").await;
         send(&state, "a").await;
         let turn = state.start_turn("thread").await.unwrap().unwrap();
-        let call = ToolCall {
-            id: "call_1".into(),
-            name: "echo".into(),
-            arguments: serde_json::json!({}),
-        };
-        let step = TurnStep {
-            answer: answer("", Some("think")),
-            tool_calls: vec![call],
-            results: vec![StepResult {
-                call_id: "call_1".into(),
-                content: "pong".into(),
-            }],
-        };
-        state.record_step(&turn.turn_id, step).await.unwrap();
-        let wrong = TurnStep {
-            answer: answer("", None),
-            tool_calls: Vec::new(),
-            results: Vec::new(),
-        };
-        assert!(state.record_step(&turn.turn_id, wrong).await.is_err());
+        let calls = vec![call("call_1"), call("call_2")];
+        let answer = answer("", Some("think"));
+        state
+            .record_tool_calls(&turn.turn_id, answer, calls)
+            .await
+            .unwrap();
+        let id = &turn.turn_id;
+        state
+            .record_tool_result(id, "call_1", "pong".into())
+            .await
+            .unwrap();
+        let again = state.record_tool_result(id, "call_1", "twice".into()).await;
+        assert!(again.is_err(), "a call gets one result");
+        let unknown = state.record_tool_result(id, "call_9", "?".into()).await;
+        assert!(unknown.is_err());
 
         let messages = state.list_messages("thread").await.unwrap();
         assert_eq!(messages[1].role, MessageRole::Assistant);
         assert_eq!(messages[1].reasoning.as_deref(), Some("think"));
-        assert_eq!(messages[1].tool_calls.len(), 1);
+        assert_eq!(messages[1].tool_calls.len(), 2);
         assert_eq!(messages[2].tool_call_id.as_deref(), Some("call_1"));
+        assert_eq!(messages.len(), 3, "call_2 is still running");
+    }
+
+    #[tokio::test]
+    async fn a_call_left_running_gets_a_result_on_recovery() {
+        let state = thread("turn_lost_call").await;
+        send(&state, "a").await;
+        let turn = state.start_turn("thread").await.unwrap().unwrap();
+        let calls = vec![call("call_1")];
+        let answer = answer("", None);
+        state
+            .record_tool_calls(&turn.turn_id, answer, calls)
+            .await
+            .unwrap();
+
+        state.interrupt_running_turns("thread").await.unwrap();
+
+        let messages = state.list_messages("thread").await.unwrap();
+        let result = messages.last().unwrap();
+        assert_eq!(result.tool_call_id.as_deref(), Some("call_1"));
+        assert!(
+            result.content.contains("may or may not"),
+            "{}",
+            result.content
+        );
     }
 
     #[tokio::test]

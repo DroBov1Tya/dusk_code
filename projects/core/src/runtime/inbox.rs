@@ -1,14 +1,15 @@
-//! Client input as the thread sees it: while the agent works, messages are held
-//! for later, `send_now` and `cancel` stop the work.
+//! Client input as the thread sees it. What clients send is already stored as pending
+//! messages; the channel only wakes the thread, and `send_now` and `cancel` stop the
+//! running work.
 
 use std::future::Future;
 
 use tokio::sync::mpsc;
 
-/// What a client sends to a thread.
+/// What a client did.
 pub(super) enum Input {
-    Send(String),
-    SendNow(String),
+    Sent,
+    SentNow,
     Cancel,
 }
 
@@ -20,54 +21,38 @@ pub(super) enum Stop {
 }
 
 pub(super) struct Inbox {
-    commands: mpsc::UnboundedReceiver<Input>,
+    inputs: mpsc::UnboundedReceiver<Input>,
     open: bool,
-    held: Vec<String>,
 }
 
 impl Inbox {
-    pub(super) fn new(commands: mpsc::UnboundedReceiver<Input>) -> Self {
-        Self {
-            commands,
-            open: true,
-            held: Vec::new(),
-        }
+    pub(super) fn new(inputs: mpsc::UnboundedReceiver<Input>) -> Self {
+        Self { inputs, open: true }
     }
 
-    /// Waits for the next command while idle; `None` once every client has gone.
-    pub(super) async fn next(&mut self) -> Option<Input> {
-        let command = self.commands.recv().await;
-        self.open &= command.is_some();
-        command
+    /// Waits while idle; `false` once every client has gone.
+    pub(super) async fn wait(&mut self) -> bool {
+        let input = self.inputs.recv().await;
+        self.open &= input.is_some();
+        // Whatever else is already there has been sent too; one wake-up is enough.
+        while self.inputs.try_recv().is_ok() {}
+        input.is_some()
     }
 
-    /// Commands already sent, without waiting.
-    pub(super) fn ready(&mut self) -> Vec<Input> {
-        std::iter::from_fn(|| self.commands.try_recv().ok()).collect()
-    }
-
-    /// Runs `work` while taking commands: messages are held until the work is done,
+    /// Runs `work` while taking input: sent messages wait until the work is done,
     /// `send_now` and `cancel` stop it. Gone clients let the work finish.
     pub(super) async fn race<T>(&mut self, work: impl Future<Output = T>) -> Result<T, Stop> {
         tokio::pin!(work);
         loop {
             tokio::select! {
                 value = &mut work => return Ok(value),
-                command = self.commands.recv(), if self.open => match command {
-                    Some(Input::Send(text)) => self.held.push(text),
-                    Some(Input::SendNow(text)) => {
-                        self.held.push(text);
-                        return Err(Stop::Preempted);
-                    }
+                input = self.inputs.recv(), if self.open => match input {
+                    Some(Input::Sent) => {}
+                    Some(Input::SentNow) => return Err(Stop::Preempted),
                     Some(Input::Cancel) => return Err(Stop::Cancelled),
                     None => self.open = false,
                 },
             }
         }
-    }
-
-    /// Messages held during the work, in the order they were sent.
-    pub(super) fn take_held(&mut self) -> Vec<String> {
-        std::mem::take(&mut self.held)
     }
 }

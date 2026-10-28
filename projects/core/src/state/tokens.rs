@@ -235,7 +235,7 @@ mod tests {
     use super::*;
     use crate::{
         providers::ToolCall,
-        state::{CompactionReason, StepResult, TurnAnswer, TurnOutcome, TurnStep, estimate_tokens},
+        state::{CompactionReason, TurnAnswer, TurnOutcome, estimate_tokens},
         testing::temp_state,
     };
 
@@ -250,22 +250,21 @@ mod tests {
             .await
             .unwrap();
         let turn = state.start_turn("thread").await.unwrap().unwrap();
-        let step = TurnStep {
-            answer: TurnAnswer {
-                content: String::new(),
-                reasoning: Some("1234".into()),
-            },
-            tool_calls: vec![ToolCall {
-                id: "call_1".into(),
-                name: "ping".into(),
-                arguments: json!({}),
-            }],
-            results: vec![StepResult {
-                call_id: "call_1".into(),
-                content: "pong".into(),
-            }],
+        let thinking = TurnAnswer {
+            content: String::new(),
+            reasoning: Some("1234".into()),
         };
-        state.record_step(&turn.turn_id, step).await.unwrap();
+        let calls = vec![ToolCall {
+            id: "call_1".into(),
+            name: "ping".into(),
+            arguments: json!({}),
+        }];
+        state
+            .record_tool_calls(&turn.turn_id, thinking, calls)
+            .await
+            .unwrap();
+        let result = state.record_tool_result(&turn.turn_id, "call_1", "pong".into());
+        result.await.unwrap();
         let answer = TurnAnswer {
             content: "1234".into(),
             reasoning: None,

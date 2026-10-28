@@ -2,15 +2,15 @@
 //! over everything queued. `send_now` stops the running turn, keeping what it wrote,
 //! so the next turn starts at once with the new message.
 //!
-//! Messages sent during a turn are held in memory and stored right after the turn ends,
+//! A send is confirmed once the message is stored as pending. The thread takes pending
+//! messages in when it is free: right away when idle, after the running turn otherwise,
 //! so the thread always reads in the order things happened. A message that is a command,
-//! such as `/compact`, runs at that point instead of being stored.
+//! such as `/compact`, runs at that point instead of joining the thread.
 
 use std::{path::PathBuf, sync::Arc};
 
-use anyhow::{Result, anyhow};
+use anyhow::{Result, ensure};
 use tokio::sync::mpsc;
-use uuid::Uuid;
 
 use super::{
     agent::Agent,
@@ -20,7 +20,7 @@ use crate::{
     commands::{self, Command},
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
-    state::{Compaction, CompactionReason, State, ThreadTokens, Turn},
+    state::{Compaction, CompactionReason, PendingMessage, State, ThreadTokens, Turn},
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
@@ -45,7 +45,9 @@ pub(super) struct ThreadSetup {
 /// The client's side for sending. Dropping every clone ends the thread once the queue is done.
 #[derive(Clone)]
 pub struct ThreadInput {
-    commands: mpsc::UnboundedSender<Input>,
+    state: Arc<State>,
+    thread_id: String,
+    inputs: mpsc::UnboundedSender<Input>,
 }
 
 /// The client's side for receiving.
@@ -103,8 +105,13 @@ pub enum ThreadEvent {
 
 impl ThreadRunner {
     pub(super) fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
-        let (command_sender, commands) = mpsc::unbounded_channel();
+        let (input_sender, inputs) = mpsc::unbounded_channel();
         let (events, event_receiver) = mpsc::unbounded_channel();
+        let input = ThreadInput {
+            state: Arc::clone(&setup.state),
+            thread_id: setup.thread_id.clone(),
+            inputs: input_sender,
+        };
         let agent = Agent {
             state: setup.state,
             provider: setup.provider,
@@ -118,10 +125,7 @@ impl ThreadRunner {
         };
         let runner = Self {
             agent,
-            inbox: Inbox::new(commands),
-        };
-        let input = ThreadInput {
-            commands: command_sender,
+            inbox: Inbox::new(inputs),
         };
         let output = ThreadOutput {
             events: event_receiver,
@@ -140,116 +144,115 @@ impl ThreadRunner {
     async fn serve(&mut self) -> Result<()> {
         self.agent.recover().await?;
         loop {
+            self.take_in().await?;
             self.run_queued().await?;
+            if self.has_pending().await? {
+                continue;
+            }
             self.agent.emit(ThreadEvent::Idle);
-            let Some(command) = self.inbox.next().await else {
+            if !self.inbox.wait().await {
                 return Ok(());
-            };
-            self.accept(command).await;
-            // Everything already sent goes into the same turn.
-            for command in self.inbox.ready() {
-                self.accept(command).await;
             }
         }
     }
 
     /// Runs turns until nothing is queued, the user cancels or the context does not fit.
-    /// The context is compacted first when it has grown too large.
+    /// The context is compacted first when it has grown too large. What was sent
+    /// meanwhile is taken in after each turn, so the next one answers it.
     async fn run_queued(&mut self) -> Result<()> {
         loop {
-            let mut stop = self.agent.compact_if_needed(None, &mut self.inbox).await;
-            if stop.is_none() {
-                let Some(turn) = self.agent.start_turn().await? else {
-                    self.handle_held().await;
-                    return Ok(());
-                };
-                stop = self.agent.run_turn(&turn, &mut self.inbox).await?;
-            }
-            self.handle_held().await;
+            let stop = match self.agent.compact_if_needed(None, &mut self.inbox).await {
+                Some(stop) => Some(stop),
+                None => match self.agent.start_turn().await? {
+                    Some(turn) => self.agent.run_turn(&turn, &mut self.inbox).await?,
+                    None => return Ok(()),
+                },
+            };
+            self.take_in().await?;
             if stop == Some(Stop::Cancelled) {
                 return Ok(());
             }
         }
     }
 
-    async fn accept(&mut self, input: Input) {
-        match input {
-            Input::Send(text) | Input::SendNow(text) => self.handle(text).await,
-            Input::Cancel => {}
-        }
-    }
-
-    /// Messages sent while the agent worked, in order. A command among them may hold
-    /// further messages while it runs.
-    async fn handle_held(&mut self) {
+    /// Takes in what clients sent, oldest first: messages join the thread, commands run.
+    /// A command can take a while, so whatever arrived meanwhile is taken in as well.
+    async fn take_in(&mut self) -> Result<()> {
         loop {
-            let held = self.inbox.take_held();
-            if held.is_empty() {
-                return;
+            let pending = self
+                .agent
+                .state
+                .pending_messages(&self.agent.thread_id)
+                .await?;
+            if pending.is_empty() {
+                return Ok(());
             }
-            for text in held {
-                self.handle(text).await;
+            for message in pending {
+                self.take(message).await?;
             }
         }
     }
 
-    async fn handle(&mut self, text: String) {
-        match commands::parse(&text) {
-            None => self.store(text).await,
-            Some(Err(error)) => self.agent.emit(ThreadEvent::Rejected {
+    async fn take(&mut self, pending: PendingMessage) -> Result<()> {
+        let state = Arc::clone(&self.agent.state);
+        let Some(command) = commands::parse(&pending.content) else {
+            let message = state.admit_pending(&self.agent.thread_id, &pending).await?;
+            self.agent.emit(ThreadEvent::Queued {
+                message_id: message.message_id,
+            });
+            return Ok(());
+        };
+        match command {
+            Err(error) => self.agent.emit(ThreadEvent::Rejected {
                 reason: format!("{error:#}"),
             }),
-            Some(Ok(Command::Compact { focus })) => {
+            Ok(Command::Compact { focus }) => {
                 let reason = CompactionReason::Manual;
-                let focus = focus.as_deref();
-                // A stop only ends the compaction; what was sent meanwhile is held.
+                // A stop only ends the compaction; the client decides what comes next.
                 let _ = self
                     .agent
-                    .compact(reason, focus, None, &mut self.inbox)
+                    .compact(reason, focus.as_deref(), None, &mut self.inbox)
                     .await;
             }
         }
+        // Removed only once done: a command cut short by a crash runs again on restart.
+        state.remove_pending(pending.pending_id).await
     }
 
-    async fn store(&self, text: String) {
-        let request_uid = Uuid::now_v7().to_string();
-        let stored = self
+    async fn has_pending(&self) -> Result<bool> {
+        let pending = self
             .agent
             .state
-            .add_user_message(&self.agent.thread_id, &request_uid, &text)
-            .await;
-        let event = match stored {
-            Ok(message) => ThreadEvent::Queued {
-                message_id: message.message_id,
-            },
-            Err(error) => ThreadEvent::Rejected {
-                reason: format!("{error:#}"),
-            },
-        };
-        self.agent.emit(event);
+            .pending_messages(&self.agent.thread_id)
+            .await?;
+        Ok(!pending.is_empty())
     }
 }
 
 impl ThreadInput {
-    /// Queues a message; it is answered after the running turn, together with other queued ones.
-    pub fn send(&self, text: impl Into<String>) -> Result<()> {
-        self.command(Input::Send(text.into()))
+    /// Queues a message; it is answered after the running turn, together with other
+    /// queued ones. Once this returns, the message is stored.
+    pub async fn send(&self, text: impl Into<String>) -> Result<()> {
+        self.deliver(text.into(), Input::Sent).await
     }
 
     /// Queues a message and stops the running turn, so the agent starts on it at once.
-    pub fn send_now(&self, text: impl Into<String>) -> Result<()> {
-        self.command(Input::SendNow(text.into()))
+    pub async fn send_now(&self, text: impl Into<String>) -> Result<()> {
+        self.deliver(text.into(), Input::SentNow).await
     }
 
     /// Stops the running turn; queued messages wait for the next one.
     pub fn cancel(&self) -> Result<()> {
-        self.command(Input::Cancel)
+        ensure!(self.inputs.send(Input::Cancel).is_ok(), "thread has ended");
+        Ok(())
     }
 
-    fn command(&self, command: Input) -> Result<()> {
-        self.commands
-            .send(command)
-            .map_err(|_| anyhow!("thread has ended"))
+    async fn deliver(&self, text: String, input: Input) -> Result<()> {
+        ensure!(!self.inputs.is_closed(), "thread has ended");
+        self.state.add_pending(&self.thread_id, &text).await?;
+        // Stored either way: a thread that has just ended takes it in on its next start.
+        let _ = self.inputs.send(input);
+        Ok(())
     }
 }
 
@@ -443,8 +446,8 @@ mod tests {
         let config = live_config("runner_config");
         let provider = provider(vec![vec![Step::Text("both"), Step::Done]]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        input.send("a").unwrap();
-        input.send("b").unwrap();
+        input.send("a").await.unwrap();
+        input.send("b").await.unwrap();
         drop(input);
 
         runner.run().await;
@@ -472,11 +475,11 @@ mod tests {
         ]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         let client = async move {
-            input.send("first").unwrap();
+            input.send("first").await.unwrap();
             while output.next_event().await
                 != Some(ThreadEvent::Model(ModelEvent::Text("partial".into())))
             {}
-            input.send_now("now").unwrap();
+            input.send_now("now").await.unwrap();
             let first = next_turn_finished(&mut output).await;
             let second = next_turn_finished(&mut output).await;
             (first.status, second.status)
@@ -502,7 +505,7 @@ mod tests {
         let provider = provider(vec![vec![Step::Hang]]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         let client = async move {
-            input.send("first").unwrap();
+            input.send("first").await.unwrap();
             while !matches!(output.next_event().await, Some(ThreadEvent::TurnStarted(_))) {}
             input.cancel().unwrap();
             let turn = next_turn_finished(&mut output).await;
@@ -526,7 +529,7 @@ mod tests {
         let config = live_config("runner_config");
         let provider = provider(Vec::new());
         let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(3)));
-        input.send("hello").unwrap();
+        input.send("hello").await.unwrap();
         drop(input);
 
         runner.run().await;
@@ -569,11 +572,11 @@ mod tests {
         ]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
         let client = async move {
-            input.send("first").unwrap();
+            input.send("first").await.unwrap();
             next_turn_finished(&mut output).await;
-            input.send("/compact the numbers").unwrap();
+            input.send("/compact the numbers").await.unwrap();
             let compaction = next_compaction(&mut output).await;
-            input.send("second").unwrap();
+            input.send("second").await.unwrap();
             next_turn_finished(&mut output).await;
             compaction
         };
@@ -598,12 +601,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_message_sent_before_a_crash_is_answered_on_the_next_start() {
+        let state = thread_state("pending_crash").await;
+        // Confirmed to the client, but the process stopped before the thread took it in.
+        state.add_pending("thread", "still there?").await.unwrap();
+        let config = live_config("runner_config");
+        let provider = provider(vec![vec![Step::Text("yes"), Step::Done]]);
+        let (runner, input, _output) = runner(&state, &provider, &config, model(None));
+        drop(input);
+
+        runner.run().await;
+
+        let transcript = transcript(&state).await;
+        assert_eq!(
+            transcript,
+            [
+                (MessageRole::User, "still there?".to_owned()),
+                (MessageRole::Assistant, "yes".to_owned())
+            ]
+        );
+        assert!(state.pending_messages("thread").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
     async fn an_unknown_command_is_rejected_and_not_stored() {
         let state = thread_state("compact_unknown").await;
         let config = live_config("runner_config");
         let provider = provider(Vec::new());
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        input.send("/compactt").unwrap();
+        input.send("/compactt").await.unwrap();
         drop(input);
 
         runner.run().await;
@@ -631,7 +657,7 @@ mod tests {
         // 16 tokens before the step and about 60 after it: past 80% of 60, within 60
         // only after the summary.
         let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(60)));
-        input.send("go").unwrap();
+        input.send("go").await.unwrap();
         drop(input);
 
         runner.run().await;
@@ -660,7 +686,7 @@ mod tests {
             vec![Step::Text("got ping"), Step::Done],
         ]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        input.send("use the tool").unwrap();
+        input.send("use the tool").await.unwrap();
         drop(input);
 
         runner.run().await;
@@ -695,7 +721,7 @@ mod tests {
             vec![Step::Text("ok"), Step::Done],
         ]);
         let (runner, input, _output) = runner(&state, &provider, &config, model(None));
-        input.send("use the tool").unwrap();
+        input.send("use the tool").await.unwrap();
         drop(input);
 
         runner.run().await;
@@ -713,7 +739,7 @@ mod tests {
         let config = live_config("retry_config");
         let provider = provider(vec![vec![Step::Fail], vec![Step::Text("ok"), Step::Done]]);
         let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
-        input.send("hello").unwrap();
+        input.send("hello").await.unwrap();
         drop(input);
 
         runner.run().await;

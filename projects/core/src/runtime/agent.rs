@@ -4,7 +4,7 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use tokio::sync::mpsc;
 use tracing::warn;
 
@@ -18,7 +18,7 @@ use crate::{
     config::Config,
     live_config::LiveConfig,
     providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, ToolSpec, is_transient},
-    state::{CallPurpose, ModelCall, State, StepResult, Turn, TurnAnswer, TurnOutcome, TurnStep},
+    state::{CallPurpose, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
     tools::{ToolRegistry, ToolScope},
 };
 
@@ -172,20 +172,18 @@ impl Agent {
             Ok(Ok(calls)) => calls,
         };
 
-        let (results, stop) = self.call_tools(&calls, &config, inbox).await;
-        let step = TurnStep {
-            answer,
-            tool_calls: calls,
-            results,
-        };
-        // The tools have run; failing the turn keeps the thread usable.
-        if let Err(error) = self.state.record_step(&turn.turn_id, step).await {
-            let error = format!("cannot store the tool step: {error:#}");
+        // On record before anything runs, so no tool takes effect without a trace.
+        let recorded = self
+            .state
+            .record_tool_calls(&turn.turn_id, answer, calls.clone());
+        if let Err(error) = recorded.await {
+            let error = format!("cannot store the tool calls: {error:#}");
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
-        Ok(match stop {
-            Some(stop) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
-            None => StepEnd::CalledTools,
+        Ok(match self.call_tools(turn, &calls, &config, inbox).await {
+            Err(error) => StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))),
+            Ok(Some(stop)) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
+            Ok(None) => StepEnd::CalledTools,
         })
     }
 
@@ -220,15 +218,16 @@ impl Agent {
         }
     }
 
-    /// Calls run one by one. After a stop the rest are not run, but each still gets a
-    /// result, because the model expects one per call.
+    /// Calls run one by one, and each result is stored as soon as it is known. After a
+    /// stop the rest are not run, but each still gets a result, because the model expects
+    /// one per call. An error means a result could not be stored.
     async fn call_tools(
         &self,
+        turn: &Turn,
         calls: &[ToolCall],
         config: &Config,
         inbox: &mut Inbox,
-    ) -> (Vec<StepResult>, Option<Stop>) {
-        let mut results = Vec::with_capacity(calls.len());
+    ) -> Result<Option<Stop>> {
         let mut stop = None;
         for call in calls {
             let content = match stop {
@@ -251,12 +250,12 @@ impl Agent {
                     }
                 }
             };
-            results.push(StepResult {
-                call_id: call.id.clone(),
-                content,
-            });
+            let stored = self
+                .state
+                .record_tool_result(&turn.turn_id, &call.id, content);
+            stored.await.context("cannot store the tool result")?;
         }
-        (results, stop)
+        Ok(stop)
     }
 
     /// Reports a context past the model window to the client and returns why.
