@@ -1,4 +1,4 @@
-//! Runs a shell command in the session workspace. The command gets its own process group,
+//! Runs a shell command in the working directory. The command gets its own process group,
 //! so everything it started is killed when it ends, times out or the turn is cancelled.
 
 use std::{process::Stdio, time::Duration};
@@ -38,7 +38,9 @@ impl Tool for RunCommand {
     fn description(&self, scope: &ToolScope) -> String {
         format!(
             "Run a command with sh -c in {}. Stdin is empty. Returns the exit code, stdout \
-             and stderr, each cut at 32 KiB. A non-zero exit code is a normal result.",
+             and stderr, each cut at 32 KiB. A non-zero exit code is a normal result. Put \
+             temporary and downloaded files in {}.",
+            scope.cwd().display(),
             scope.workspace().display()
         )
     }
@@ -78,7 +80,7 @@ async fn run(command: &str, scope: &ToolScope, timeout_seconds: u64) -> Result<S
     let mut child = Command::new("sh")
         .arg("-c")
         .arg(command)
-        .current_dir(scope.workspace())
+        .current_dir(scope.cwd())
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -201,12 +203,12 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn runs_in_the_workspace() {
+    async fn runs_in_the_working_directory() {
         let scope = scope("shell_pwd");
         let output = run_tool(&scope, json!({ "command": "pwd -P" }))
             .await
             .unwrap();
-        let expected = format!("exit code: 0\nstdout:\n{}\n", scope.workspace().display());
+        let expected = format!("exit code: 0\nstdout:\n{}\n", scope.cwd().display());
         assert_eq!(output, expected);
     }
 

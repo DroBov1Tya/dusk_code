@@ -27,12 +27,12 @@ impl ToolScope {
         })
     }
 
-    /// Relative paths are resolved against.
+    /// Commands run here and relative paths are resolved against it.
     pub fn cwd(&self) -> &Path {
         &self.cwd
     }
 
-    /// Commands run here; temporary and downloaded files belong here.
+    /// Temporary and downloaded files belong here.
     pub fn workspace(&self) -> &Path {
         &self.workspace
     }
