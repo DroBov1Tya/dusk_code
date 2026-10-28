@@ -22,13 +22,14 @@ use crate::{
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
-pub struct ThreadRunner {
+/// Runs one thread; `Runtime` gives each active thread its own task with one of these.
+pub(super) struct ThreadRunner {
     agent: Agent,
     inbox: Inbox,
 }
 
 /// Everything a running thread needs; the thread must exist.
-pub struct ThreadSetup {
+pub(super) struct ThreadSetup {
     pub state: Arc<State>,
     pub provider: Arc<dyn ModelProvider>,
     pub model: Model,
@@ -59,6 +60,11 @@ pub enum ThreadEvent {
         reason: String,
     },
     TurnStarted(Turn),
+    /// A model call failed in a way that may pass; the next attempt follows after a pause.
+    Retrying {
+        attempt: u32,
+        error: String,
+    },
     /// Everything the model streams: reasoning, text, tool calls, usage.
     Model(ModelEvent),
     ToolStarted(ToolCall),
@@ -74,10 +80,12 @@ pub enum ThreadEvent {
     },
     /// Nothing is running and nothing will start until the next message.
     Idle,
+    /// The thread stopped on an error it could not handle, such as a database failure.
+    Failed(String),
 }
 
 impl ThreadRunner {
-    pub fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
+    pub(super) fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
         let (command_sender, commands) = mpsc::unbounded_channel();
         let (events, event_receiver) = mpsc::unbounded_channel();
         let agent = Agent {
@@ -103,8 +111,15 @@ impl ThreadRunner {
         (runner, input, output)
     }
 
-    /// Runs until every `ThreadInput` is dropped and the queue is done.
-    pub async fn run(mut self) -> Result<()> {
+    /// Runs until every `ThreadInput` is dropped and the queue is done. An error ends the
+    /// thread and is reported to the client as `Failed`.
+    pub(super) async fn run(mut self) {
+        if let Err(error) = self.serve().await {
+            self.agent.emit(ThreadEvent::Failed(format!("{error:#}")));
+        }
+    }
+
+    async fn serve(&mut self) -> Result<()> {
         self.agent.recover().await?;
         loop {
             self.run_queued().await?;
@@ -199,7 +214,7 @@ mod tests {
     use super::*;
     use crate::{
         BoxFuture,
-        providers::{ChatRequest, ChatStream, FinishReason},
+        providers::{ChatRequest, ChatStream, FinishReason, Transient},
         state::{MessageRole, TurnStatus},
         testing::{temp_dir, temp_live_config, temp_state},
         tools::{Tool, ToolContext},
@@ -217,6 +232,8 @@ mod tests {
         Call(&'static str),
         Hang,
         Done,
+        /// The call fails before any output, in a way worth retrying.
+        Fail,
     }
 
     struct FakeStream {
@@ -237,6 +254,9 @@ mod tests {
             _request: ChatRequest<'a>,
         ) -> BoxFuture<'a, Box<dyn ChatStream>> {
             let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
+            if let Some(Step::Fail) = script.first() {
+                return Box::pin(async { Err(Transient("server busy".into()).into()) });
+            }
             let stream = FakeStream {
                 steps: script.into(),
                 pending: VecDeque::new(),
@@ -266,7 +286,7 @@ mod tests {
                     }
                     Some(Step::Hang) => std::future::pending().await,
                     Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
-                    None => None,
+                    Some(Step::Fail) | None => None,
                 })
             })
         }
@@ -364,7 +384,7 @@ mod tests {
         input.send("b").unwrap();
         drop(input);
 
-        runner.run().await.unwrap();
+        runner.run().await;
 
         let turn = next_turn_finished(&mut output).await;
         assert_eq!(turn.status, TurnStatus::Completed);
@@ -399,9 +419,7 @@ mod tests {
             (first.status, second.status)
         };
 
-        let (result, statuses) = tokio::join!(runner.run(), client);
-
-        result.unwrap();
+        let ((), statuses) = tokio::join!(runner.run(), client);
         assert_eq!(statuses, (TurnStatus::Interrupted, TurnStatus::Completed));
         assert_eq!(
             transcript(&state).await,
@@ -429,9 +447,7 @@ mod tests {
             turn.status
         };
 
-        let (result, status) = tokio::join!(runner.run(), client);
-
-        result.unwrap();
+        let ((), status) = tokio::join!(runner.run(), client);
         assert_eq!(status, TurnStatus::Interrupted);
         assert_eq!(transcript(&state).await.len(), 1, "nothing was written");
     }
@@ -445,7 +461,7 @@ mod tests {
         input.send("hello").unwrap();
         drop(input);
 
-        runner.run().await.unwrap();
+        runner.run().await;
 
         let mut events = Vec::new();
         while let Some(event) = output.next_event().await {
@@ -474,7 +490,7 @@ mod tests {
         input.send("use the tool").unwrap();
         drop(input);
 
-        runner.run().await.unwrap();
+        runner.run().await;
 
         let mut finished = None;
         while let Some(event) = output.next_event().await {
@@ -509,12 +525,38 @@ mod tests {
         input.send("use the tool").unwrap();
         drop(input);
 
-        runner.run().await.unwrap();
+        runner.run().await;
 
         let messages = transcript(&state).await;
         assert_eq!(
             messages[2],
             (MessageRole::Tool, "error: tool echo is switched off".into())
         );
+    }
+
+    #[tokio::test]
+    async fn a_passing_failure_is_retried() {
+        let state = thread_state("retry").await;
+        let config = live_config("retry_config");
+        let provider = provider(vec![vec![Step::Fail], vec![Step::Text("ok"), Step::Done]]);
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        input.send("hello").unwrap();
+        drop(input);
+
+        runner.run().await;
+
+        let mut retried = false;
+        let mut status = None;
+        while let Some(event) = output.next_event().await {
+            match event {
+                ThreadEvent::Retrying { attempt, error } => {
+                    retried = attempt == 1 && error == "server busy";
+                }
+                ThreadEvent::TurnFinished(turn) => status = Some(turn.status),
+                _ => {}
+            }
+        }
+        assert!(retried);
+        assert_eq!(status, Some(TurnStatus::Completed));
     }
 }

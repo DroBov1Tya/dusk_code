@@ -2,7 +2,7 @@
 //! response; when it calls tools, they run and the next step sends their results back,
 //! until the model answers without calling a tool.
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use anyhow::Result;
 use tokio::sync::mpsc;
@@ -16,13 +16,17 @@ use super::{
 use crate::{
     config::Config,
     live_config::LiveConfig,
-    providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall},
+    providers::{ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, is_transient},
     state::{State, StepResult, Turn, TurnAnswer, TurnOutcome, TurnStep},
     tools::{ToolRegistry, ToolScope},
 };
 
 /// Bounds a model that keeps calling tools.
 const MAX_STEPS: usize = 50;
+/// A model call that fails before writing anything is tried this many times in all.
+const MAX_ATTEMPTS: u32 = 3;
+/// Doubles before each further attempt.
+const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 pub(super) struct Agent {
     pub(super) state: Arc<State>,
@@ -103,12 +107,10 @@ impl Agent {
             messages: &messages,
             tools: &tools,
         };
-        let mut output = ModelOutput::default();
-        let events = self.events.clone();
-        let streamed = generation::generate(&*self.provider, request, &mut output, |event| {
-            let _ = events.send(ThreadEvent::Model(event.clone()));
-        });
-        let generated = inbox.race(streamed).await;
+        let (output, generated) = match self.call_model(request, inbox).await {
+            Ok(called) => called,
+            Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
+        };
         let answer = TurnAnswer {
             reasoning: recorded_reasoning(&config, &output),
             content: output.text,
@@ -139,6 +141,37 @@ impl Agent {
             Some(stop) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
             None => StepEnd::CalledTools,
         })
+    }
+
+    /// Streams the model's response, trying again when the call fails in a way that may
+    /// pass and nothing reached the user yet. The outer `Err` means the user stopped it
+    /// during a pause between attempts.
+    async fn call_model(
+        &self,
+        request: ChatRequest<'_>,
+        inbox: &mut Inbox,
+    ) -> Result<(ModelOutput, Result<Result<Vec<ToolCall>>, Stop>), Stop> {
+        let mut attempt = 1;
+        loop {
+            let mut output = ModelOutput::default();
+            let events = self.events.clone();
+            let streamed = generation::generate(&*self.provider, request, &mut output, |event| {
+                let _ = events.send(ThreadEvent::Model(event.clone()));
+            });
+            let generated = inbox.race(streamed).await;
+            let error = match &generated {
+                Ok(Err(error))
+                    if attempt < MAX_ATTEMPTS && output.is_empty() && is_transient(error) =>
+                {
+                    format!("{error:#}")
+                }
+                _ => return Ok((output, generated)),
+            };
+            self.emit(ThreadEvent::Retrying { attempt, error });
+            let pause = FIRST_RETRY_DELAY * 2u32.pow(attempt - 1);
+            inbox.race(tokio::time::sleep(pause)).await?;
+            attempt += 1;
+        }
     }
 
     /// Calls run one by one. After a stop the rest are not run, but each still gets a

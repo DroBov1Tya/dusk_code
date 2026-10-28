@@ -7,7 +7,7 @@ use std::io::{self, IsTerminal, Write};
 use anyhow::Result;
 use dusk_core::{
     providers::ModelEvent,
-    runtime::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner},
+    runtime::{ThreadEvent, ThreadInput, ThreadOutput},
     state::{Turn, TurnStatus},
 };
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -17,19 +17,10 @@ use crate::commands::{self, Settings};
 const PROMPT: &str = "> ";
 const NOW_PREFIX: char = '!';
 
-pub async fn run(
-    runner: ThreadRunner,
-    input: ThreadInput,
-    output: ThreadOutput,
-    settings: Settings,
-) -> Result<()> {
-    let (thread, typing, ()) = tokio::join!(
-        runner.run(),
-        read_lines(input, settings),
-        print_events(output)
-    );
-    typing?;
-    thread
+/// Reads lines and prints events at the same time; ends when the thread has ended.
+pub async fn run(input: ThreadInput, output: ThreadOutput, settings: Settings) -> Result<()> {
+    let (typing, ()) = tokio::join!(read_lines(input, settings), print_events(output));
+    typing
 }
 
 /// Ends at end of input; dropping `input` lets the thread finish its queue and stop.
@@ -74,6 +65,11 @@ async fn print_events(mut output: ThreadOutput) {
                 report(&turn);
             }
             ThreadEvent::Rejected { reason } => eprintln!("rejected: {reason}"),
+            ThreadEvent::Retrying { attempt, error } => {
+                printer.end_reasoning();
+                eprintln!("retrying after attempt {attempt}: {}", sanitize(&error));
+            }
+            ThreadEvent::Failed(error) => eprintln!("thread stopped: {}", sanitize(&error)),
             ThreadEvent::ContextTooLarge { tokens, limit } => eprintln!(
                 "the context is about {tokens} tokens but the model accepts {limit}: \
                  switch the model or compact the context"
