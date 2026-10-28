@@ -106,6 +106,16 @@ providers:
     api_key: 'sk-...'
 ```
 
+`session.record` selects what a session stores from the model output; user messages are always stored:
+
+```yaml
+session:
+  record: full    # reasoning, tool calls and the answer (default)
+  # record: answer  # the answer only
+```
+
+Reasoning is stored in `messages.reasoning` of the assistant message and is never sent back to the model as context.
+
 The CLI uses the first provider and its first catalogue model, creates a new thread, and turns every stdin line into a turn. The model receives only the role and text of the thread's messages; IDs, timestamps, cwd and attachments stay in the core. Reasoning streams to stderr, the answer to stdout, and the outcome is recorded on the turn.
 
 ## Limitations

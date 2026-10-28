@@ -1,10 +1,8 @@
 //! Async snapshot boundary. Storage backends and serialization are separate work.
 
-use std::future::Future;
-
-use anyhow::Result;
-
 use crate::{api::ApiVersion, lifecycle::LifecycleState};
+use anyhow::Result;
+use std::future::Future;
 
 #[derive(Debug, Clone)]
 pub struct CoreSnapshot {

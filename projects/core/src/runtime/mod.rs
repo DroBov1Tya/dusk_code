@@ -8,6 +8,7 @@ use anyhow::{Result, ensure};
 const MAX_ANSWER_BYTES: usize = 8 * 1024 * 1024;
 
 use crate::{
+    config::RecordMode,
     providers::{ChatDelta, ChatStream, Model, Provider},
     receivers::{AgentOutcome, AgentReceipt, AgentReceiver, AgentResponse, AgentTask},
     state::{State, Turn},
@@ -17,6 +18,14 @@ pub struct AgentRuntime<'a> {
     receiver: AgentReceiver<'a>,
     provider: &'a Provider,
     model: Model,
+    record: RecordMode,
+}
+
+/// The model output of one turn, split by kind.
+#[derive(Debug, Default, PartialEq, Eq)]
+struct Answer {
+    text: String,
+    reasoning: String,
 }
 
 impl<'a> AgentRuntime<'a> {
@@ -25,11 +34,13 @@ impl<'a> AgentRuntime<'a> {
         agent_id: impl Into<String>,
         provider: &'a Provider,
         model: Model,
+        record: RecordMode,
     ) -> Result<Self> {
         Ok(Self {
             receiver: AgentReceiver::new(state, agent_id)?,
             provider,
             model,
+            record,
         })
     }
 
@@ -49,8 +60,9 @@ impl<'a> AgentRuntime<'a> {
             .start_turn(&turn.turn_id, turn.attempt)
             .await?;
         let outcome = match self.answer(&task, &mut on_delta).await {
-            Ok(content) => AgentOutcome::Completed {
-                content,
+            Ok(answer) => AgentOutcome::Completed {
+                reasoning: self.recorded_reasoning(answer.reasoning),
+                content: answer.text,
                 attachments: Vec::new(),
             },
             Err(error) => AgentOutcome::Failed {
@@ -66,11 +78,16 @@ impl<'a> AgentRuntime<'a> {
             .await
     }
 
+    fn recorded_reasoning(&self, reasoning: String) -> Option<String> {
+        let keep = self.record.records_reasoning() && !reasoning.trim().is_empty();
+        keep.then_some(reasoning)
+    }
+
     async fn answer(
         &self,
         task: &AgentTask,
         on_delta: &mut (impl FnMut(&ChatDelta) + Send),
-    ) -> Result<String> {
+    ) -> Result<Answer> {
         let conversation = self.receiver.conversation(task).await?;
         let messages = context::chat_messages(&conversation);
         let stream = self.provider.stream_chat(&self.model.id, &messages).await?;
@@ -78,25 +95,27 @@ impl<'a> AgentRuntime<'a> {
     }
 }
 
-/// Forwards every delta and returns the answer text; reasoning is never part of the answer.
+/// Forwards every delta and collects the full output; reasoning is kept apart from the text.
 async fn collect_answer(
     mut stream: impl ChatStream,
     on_delta: &mut (impl FnMut(&ChatDelta) + Send),
-) -> Result<String> {
-    let mut answer = String::new();
-    let mut received = 0;
+) -> Result<Answer> {
+    let mut answer = Answer::default();
     while let Some(delta) = stream.next_delta().await? {
-        let text = match &delta {
-            ChatDelta::Reasoning(text) | ChatDelta::Text(text) => text,
-        };
-        received += text.len();
-        ensure!(received <= MAX_ANSWER_BYTES, "model answer is too large");
-        if let ChatDelta::Text(text) = &delta {
-            answer.push_str(text);
+        match &delta {
+            ChatDelta::Reasoning(text) => answer.reasoning.push_str(text),
+            ChatDelta::Text(text) => answer.text.push_str(text),
         }
+        ensure!(
+            answer.text.len() + answer.reasoning.len() <= MAX_ANSWER_BYTES,
+            "model answer is too large"
+        );
         on_delta(&delta);
     }
-    ensure!(!answer.trim().is_empty(), "model returned an empty answer");
+    ensure!(
+        !answer.text.trim().is_empty(),
+        "model returned an empty answer"
+    );
     Ok(answer)
 }
 
@@ -131,7 +150,13 @@ mod tests {
         )
         .await
         .unwrap();
-        assert_eq!(answer, "Hello");
+        assert_eq!(
+            answer,
+            Answer {
+                text: "Hello".into(),
+                reasoning: "think".into()
+            }
+        );
         assert_eq!(seen.len(), 3);
     }
 

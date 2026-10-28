@@ -48,6 +48,7 @@ impl<'a> Transport<'a> {
                             role: MessageRole::User,
                             agent_id: None,
                             content,
+                            reasoning: None,
                             cwd,
                             attachments,
                         },

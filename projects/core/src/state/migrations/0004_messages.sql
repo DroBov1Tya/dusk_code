@@ -7,6 +7,8 @@ CREATE TABLE messages (
     role TEXT NOT NULL CHECK (role IN ('user', 'assistant', 'system', 'tool', 'agent')),
     agent_id TEXT CHECK (agent_id IS NULL OR length(trim(agent_id)) > 0),
     content TEXT NOT NULL,
+    -- Model thinking behind an assistant message; NULL when not recorded.
+    reasoning TEXT CHECK (reasoning IS NULL OR (role = 'assistant' AND length(trim(reasoning)) > 0)),
     cwd TEXT NOT NULL CHECK (length(trim(cwd)) > 0),
     attachments_json TEXT NOT NULL DEFAULT '[]' CHECK (
         json_valid(attachments_json) AND json_type(attachments_json) = 'array'

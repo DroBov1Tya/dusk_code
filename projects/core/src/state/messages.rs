@@ -43,6 +43,8 @@ pub struct MessageInput {
     pub role: MessageRole,
     pub agent_id: Option<String>,
     pub content: String,
+    /// Model thinking; only assistant messages carry it.
+    pub reasoning: Option<String>,
     /// Historical working-directory context; it need not still exist when history is read.
     pub cwd: String,
     pub attachments: Vec<MessageAttachment>,
@@ -59,6 +61,8 @@ pub struct Message {
     pub role: MessageRole,
     pub agent_id: Option<String>,
     pub content: String,
+    /// Model thinking; `None` when not recorded.
+    pub reasoning: Option<String>,
     pub cwd: String,
     pub attachments: Vec<MessageAttachment>,
     /// Unix timestamp in milliseconds.
@@ -176,6 +180,13 @@ fn validate_input(message_id: &str, input: &MessageInput) -> Result<()> {
             .is_none_or(|id| !id.trim().is_empty()),
         "agent ID is empty"
     );
+    ensure!(
+        input
+            .reasoning
+            .as_ref()
+            .is_none_or(|text| { input.role == MessageRole::Assistant && !text.trim().is_empty() }),
+        "only an assistant message can carry reasoning, and it must not be empty"
+    );
     validate_context(&input.cwd, &input.attachments)
 }
 
@@ -191,9 +202,9 @@ pub(super) async fn insert_message(
         serde_json::to_string(&input.attachments).context("encode message attachments")?;
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, job_id, request_uid, sequence,
-            role, agent_id, content, cwd, attachments_json, created_at)
+            role, agent_id, content, reasoning, cwd, attachments_json, created_at)
          VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(message_id)
     .bind(&input.thread_id)
@@ -203,6 +214,7 @@ pub(super) async fn insert_message(
     .bind(input.role.as_str())
     .bind(&input.agent_id)
     .bind(&input.content)
+    .bind(&input.reasoning)
     .bind(&input.cwd)
     .bind(attachments)
     .bind(timestamp)
@@ -239,6 +251,7 @@ pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
         role,
         agent_id: row.try_get("agent_id")?,
         content: row.try_get("content")?,
+        reasoning: row.try_get("reasoning")?,
         cwd: row.try_get("cwd")?,
         attachments: serde_json::from_str(&attachments).context("decode message attachments")?,
         created_at: row.try_get("created_at")?,
