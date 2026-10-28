@@ -28,6 +28,8 @@ pub struct Config {
     /// Called `session` in older files.
     #[serde(default, alias = "session")]
     thread: ThreadConfig,
+    #[serde(default)]
+    limits: Limits,
     /// Tools switched on or off by name; a tool not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tools: BTreeMap<String, bool>,
@@ -65,6 +67,32 @@ pub struct ThreadConfig {
     pub record: RecordMode,
 }
 
+/// Token limits for every model call.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Limits {
+    /// A request larger than this is not sent; the context is compacted well before it.
+    /// The model window applies too, when it is smaller.
+    #[serde(default = "default_token_limit")]
+    pub max_input_tokens: u64,
+    /// The model is stopped after writing this many tokens in one call.
+    #[serde(default = "default_token_limit")]
+    pub max_output_tokens: u64,
+}
+
+impl Default for Limits {
+    fn default() -> Self {
+        Self {
+            max_input_tokens: default_token_limit(),
+            max_output_tokens: default_token_limit(),
+        }
+    }
+}
+
+fn default_token_limit() -> u64 {
+    100_000
+}
+
 /// What a thread stores from the model output. User messages are always stored.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -91,6 +119,10 @@ impl Config {
 
     pub fn thread(&self) -> &ThreadConfig {
         &self.thread
+    }
+
+    pub fn limits(&self) -> Limits {
+        self.limits
     }
 
     pub fn tool_enabled(&self, name: &str) -> bool {
@@ -127,6 +159,10 @@ impl Config {
             !self.providers.is_empty(),
             "at least one provider is required"
         );
+        ensure!(
+            self.limits.max_input_tokens > 0 && self.limits.max_output_tokens > 0,
+            "token limits must be above zero"
+        );
         for (name, provider) in &self.providers {
             ensure!(!name.trim().is_empty(), "provider name must not be empty");
             ensure!(
@@ -159,6 +195,7 @@ impl fmt::Debug for Config {
             .field("providers", &"[REDACTED]")
             .field("provider_count", &self.providers.len())
             .field("thread", &self.thread)
+            .field("limits", &self.limits)
             .field("tools", &self.tools)
             .field("skills", &self.skills)
             .finish()

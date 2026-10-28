@@ -34,10 +34,15 @@ pub(crate) async fn temp_state(name: &str) -> State {
 
 /// A config with one provider in a private directory, as `Config::load_from` requires.
 pub(crate) fn temp_live_config(name: &str) -> LiveConfig {
+    temp_live_config_with(name, "")
+}
+
+/// The same, with more settings appended as YAML.
+pub(crate) fn temp_live_config_with(name: &str, settings: &str) -> LiveConfig {
     let directory = temp_dir(name);
     std::fs::create_dir_all(&directory).unwrap();
     let path = directory.join("config.yml");
-    std::fs::write(&path, TEST_CONFIG).unwrap();
+    std::fs::write(&path, format!("{TEST_CONFIG}{settings}")).unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

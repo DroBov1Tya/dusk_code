@@ -1,6 +1,8 @@
 //! What the model sends back. Every provider turns its stream into `ModelEvent`s;
 //! `ModelOutput` assembles them into text, reasoning and tool calls.
 
+use std::fmt;
+
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -62,6 +64,23 @@ pub struct ToolCall {
     pub arguments: Value,
 }
 
+/// The model wrote as much as it may: the provider cut it at `max_tokens`, or the core
+/// stopped the stream at its own count.
+#[derive(Debug)]
+pub struct OutputLimit;
+
+impl fmt::Display for OutputLimit {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("the answer reached the output token limit")
+    }
+}
+
+impl std::error::Error for OutputLimit {}
+
+pub fn is_output_limit(error: &anyhow::Error) -> bool {
+    error.downcast_ref::<OutputLimit>().is_some()
+}
+
 /// A streamed model response.
 pub trait ChatStream: Send {
     /// Returns `None` once the response has ended; an error ends the stream.
@@ -87,6 +106,11 @@ struct PendingCall {
 }
 
 impl ModelOutput {
+    /// Estimated size of everything written so far, at four bytes per token.
+    pub fn estimated_tokens(&self) -> u64 {
+        self.size.div_ceil(4) as u64
+    }
+
     /// Nothing the user could have seen yet: no text, reasoning or tool call.
     pub fn is_empty(&self) -> bool {
         self.size == 0 && self.calls.is_empty()
@@ -126,7 +150,7 @@ impl ModelOutput {
     pub fn finish(&self) -> Result<Vec<ToolCall>> {
         match self.finish.context("model response has no finish reason")? {
             FinishReason::Stop | FinishReason::ToolCalls => {}
-            FinishReason::Length => bail!("model answer was cut by the token limit"),
+            FinishReason::Length => return Err(OutputLimit.into()),
             FinishReason::ContentFilter => bail!("model answer was blocked by the content filter"),
         }
         let calls = self

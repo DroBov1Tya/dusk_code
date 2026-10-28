@@ -64,6 +64,10 @@ async fn print_events(mut output: ThreadOutput) {
                 printer.finish();
                 report(&turn);
             }
+            ThreadEvent::OutputLimitReached { limit } => {
+                printer.end_reasoning();
+                eprintln!("\n[stopped: the answer reached the output limit of {limit} tokens]");
+            }
             ThreadEvent::CompactionStarted { reason } => {
                 eprintln!("[compacting the context: {}]", reason.as_str());
             }
@@ -78,7 +82,7 @@ async fn print_events(mut output: ThreadOutput) {
                 printer.finish();
                 eprintln!("compaction failed: {}", sanitize(&error));
             }
-            ThreadEvent::Tokens { tokens, window } => eprintln!("{}", describe(&tokens, window)),
+            ThreadEvent::Tokens { tokens, limit } => eprintln!("{}", describe(&tokens, limit)),
             ThreadEvent::Rejected { reason } => eprintln!("rejected: {reason}"),
             ThreadEvent::Retrying { attempt, error } => {
                 printer.end_reasoning();
@@ -86,7 +90,7 @@ async fn print_events(mut output: ThreadOutput) {
             }
             ThreadEvent::Failed(error) => eprintln!("thread stopped: {}", sanitize(&error)),
             ThreadEvent::ContextTooLarge { tokens, limit } => eprintln!(
-                "the context is about {tokens} tokens but the model accepts {limit}: \
+                "the context is about {tokens} tokens but the input limit is {limit}: \
                  switch the model or compact the context"
             ),
             _ => {}
@@ -106,14 +110,11 @@ fn report(turn: &Turn) {
 }
 
 /// Context and history are estimates; the provider line is what it reported.
-fn describe(tokens: &ThreadTokens, window: Option<u64>) -> String {
+fn describe(tokens: &ThreadTokens, limit: u64) -> String {
     let current = &tokens.current;
-    let window = window
-        .map(|limit| format!(" of {limit}"))
-        .unwrap_or_default();
     let spent = &tokens.spent;
     format!(
-        "tokens: context {}{window}, estimated by author: system {}, user {}, agent {}, tool calls {}, \
+        "tokens: context {} of {limit}, estimated by author: system {}, user {}, agent {}, tool calls {}, \
          tool results {}, summary {}, tool definitions {}; history ~{}; provider {} in ({} cached), {} out in {} calls",
         tokens.context,
         current.system,

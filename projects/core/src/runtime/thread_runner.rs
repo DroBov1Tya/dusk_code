@@ -20,7 +20,9 @@ use crate::{
     commands::{self, Command},
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
-    state::{Compaction, CompactionReason, PendingMessage, State, ThreadTokens, Turn},
+    state::{
+        Compaction, CompactionReason, PendingMessage, State, ThreadTokens, Turn, estimate_tokens,
+    },
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
@@ -46,6 +48,7 @@ pub(super) struct ThreadSetup {
 #[derive(Clone)]
 pub struct ThreadInput {
     state: Arc<State>,
+    config: Arc<LiveConfig>,
     thread_id: String,
     inputs: mpsc::UnboundedSender<Input>,
 }
@@ -78,6 +81,11 @@ pub enum ThreadEvent {
         result: ToolResult,
     },
     TurnFinished(Turn),
+    /// The model wrote `limit` tokens in one call and was stopped; the turn ends with
+    /// what it wrote.
+    OutputLimitReached {
+        limit: u64,
+    },
     /// The model is summarizing the context; its text streams as `Model` events.
     CompactionStarted {
         reason: CompactionReason,
@@ -87,12 +95,14 @@ pub enum ThreadEvent {
     CompactionFailed {
         error: String,
     },
-    /// The thread's token counts, after each turn. `window` is the model's context size.
+    /// The thread's token counts, after each turn. `limit` is the largest request: the
+    /// configured input limit or the model window, whichever is smaller.
     Tokens {
         tokens: ThreadTokens,
-        window: Option<u64>,
+        limit: u64,
     },
-    /// The queued turn was not started; the client should switch model or compact.
+    /// The context is past the input limit, so the queued turn was not started or the
+    /// running one ended; the client should switch model or compact.
     ContextTooLarge {
         tokens: u64,
         limit: u64,
@@ -109,6 +119,7 @@ impl ThreadRunner {
         let (events, event_receiver) = mpsc::unbounded_channel();
         let input = ThreadInput {
             state: Arc::clone(&setup.state),
+            config: Arc::clone(&setup.config),
             thread_id: setup.thread_id.clone(),
             inputs: input_sender,
         };
@@ -249,6 +260,13 @@ impl ThreadInput {
 
     async fn deliver(&self, text: String, input: Input) -> Result<()> {
         ensure!(!self.inputs.is_closed(), "thread has ended");
+        // A message that alone is past the input limit could never be answered.
+        let limit = self.config.current().limits().max_input_tokens;
+        let tokens = estimate_tokens(&text);
+        ensure!(
+            tokens <= limit,
+            "the message is about {tokens} tokens, past the input limit of {limit}"
+        );
         self.state.add_pending(&self.thread_id, &text).await?;
         // Stored either way: a thread that has just ended takes it in on its next start.
         let _ = self.inputs.send(input);
@@ -274,7 +292,7 @@ mod tests {
         BoxFuture,
         providers::{ChatMessage, ChatRequest, ChatStream, FinishReason, Transient},
         state::{MessageRole, TurnStatus},
-        testing::{temp_dir, temp_live_config, temp_state},
+        testing::{temp_dir, temp_live_config, temp_live_config_with, temp_state},
         tools::{Tool, ToolContext},
     };
 
@@ -619,6 +637,60 @@ mod tests {
                 (MessageRole::User, "still there?".to_owned()),
                 (MessageRole::Assistant, "yes".to_owned())
             ]
+        );
+        assert!(state.pending_messages("thread").await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn a_model_past_the_output_limit_is_stopped_and_its_text_kept() {
+        let state = thread_state("output_limit").await;
+        let limits = "limits:\n  max_output_tokens: 2\n";
+        let config = Arc::new(temp_live_config_with("output_limit_config", limits));
+        // The third piece takes the output to 3 tokens; the stream must not be read on.
+        let script = vec![
+            Step::Text("abcd"),
+            Step::Text("efgh"),
+            Step::Text("ijkl"),
+            Step::Hang,
+        ];
+        let provider = provider(vec![script]);
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        input.send("write a lot").await.unwrap();
+        drop(input);
+
+        runner.run().await;
+
+        let mut reached = None;
+        let mut status = None;
+        while let Some(event) = output.next_event().await {
+            match event {
+                ThreadEvent::OutputLimitReached { limit } => reached = Some(limit),
+                ThreadEvent::TurnFinished(turn) => status = Some(turn.status),
+                _ => {}
+            }
+        }
+        assert_eq!(reached, Some(2));
+        assert_eq!(status, Some(TurnStatus::Interrupted));
+        let transcript = transcript(&state).await;
+        assert_eq!(
+            transcript[1],
+            (MessageRole::Assistant, "abcdefghijkl".into())
+        );
+    }
+
+    #[tokio::test]
+    async fn a_message_past_the_input_limit_is_refused_at_once() {
+        let state = thread_state("input_limit").await;
+        let limits = "limits:\n  max_input_tokens: 10\n";
+        let config = Arc::new(temp_live_config_with("input_limit_config", limits));
+        let provider = provider(Vec::new());
+        let (_runner, input, _output) = runner(&state, &provider, &config, model(None));
+
+        let error = input.send("x".repeat(100)).await.unwrap_err();
+
+        assert!(
+            error.to_string().contains("past the input limit of 10"),
+            "{error}"
         );
         assert!(state.pending_messages("thread").await.unwrap().is_empty());
     }

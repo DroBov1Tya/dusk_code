@@ -74,7 +74,7 @@ A client starts one `Runtime`. It sets up missing files, opens the database and 
 ## How a thread works
 
 1. A user message is stored. User messages newer than the last turn are the queue.
-2. When the agent is free it starts one turn over the whole queue, checks the context size against the model window, sends the thread's messages with the tool specs and streams the answer. When the model calls tools, they run one by one and the next step sends their results back, until the model answers without calling a tool (at most 50 steps). Each step is written ahead: its calls are stored before any tool runs, and each result right after its tool. A call left without a result, by a crash or a failed write, gets a result saying so when the turn ends or on the next start, since the model needs one per call and the tool may have had an effect.
+2. When the agent is free it starts one turn over the whole queue, checks the context size against the input limit, sends the thread's messages with the tool specs and streams the answer. When the model calls tools, they run one by one and the next step sends their results back, until the model answers without calling a tool (at most 50 steps). Each step is written ahead: its calls are stored before any tool runs, and each result right after its tool. A call left without a result, by a crash or a failed write, gets a result saying so when the turn ends or on the next start, since the model needs one per call and the tool may have had an effect.
 3. A model call that fails before writing anything, on a network error, a timeout, a rate limit, a server error or a cut stream, is tried up to three times in all, after pauses of one and two seconds; the client sees each failed attempt as `Retrying`. Other failures, such as a rejected API key, end the turn at once, and the client sees the error.
 4. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. A send returns once the message is stored as pending, so a confirmed message survives a crash. The thread takes pending messages in when it is free, after the running turn or on the next start, so the thread reads in the order things happened.
 5. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
@@ -90,9 +90,16 @@ A message that starts with a known `/word` is a command for the core, not text f
 
 `/compact [focus]` summarizes the conversation. The model gets the context with the instructions from COMPACT.md (six sections: requested, completed and open tasks, the current task, paths and files, a summary) and the focus, if given. The summary then stands in for every message it covers: the model receives the system messages, the summary and the newer messages. Queued messages are never summarized away; they wait for their turn after the summary.
 
-The core also compacts on its own once the context passes 80% of the model window, so a 256k window compacts at about 205k and the rest is room for the summary request itself. It checks before each turn and after each tool step, since tool results are what fills a context fastest; a turn goes on from the summary. A failed compaction leaves the context as it was.
+The core also compacts on its own once the context passes 80% of the input limit, so a 256k limit compacts at about 205k and the rest is room for the summary request itself. It checks before each turn and after each tool step, since tool results are what fills a context fastest; a turn goes on from the summary. A failed compaction leaves the context as it was.
 
 Nothing is deleted: compacted messages stay in the database, count in `all` and can be read again by the agent with `read_history`, by message number or by any text of three characters or more (a trigram full-text index over message text and tool calls).
+
+## Limits
+
+Every model call has two limits, set in the `limits:` section of the config and 100k tokens each by default:
+
+- `max_input_tokens`: the largest request. The input limit is this or the model window, whichever is smaller; the context is compacted at 80% of it and never sent past it. A message that alone is larger is refused when it is sent.
+- `max_output_tokens`: the most the model may write in one call, reasoning included. It goes to the provider as `max_tokens`, and the core also counts what streams in and closes the connection past the limit, in case the provider ignores it. Either way the turn ends as interrupted with the text written so far, and the client gets `OutputLimitReached`. A stream cut this way reports no usage, so its cost is not counted.
 
 ## Files
 
@@ -120,6 +127,10 @@ providers:
 thread:
   record: full      # user messages and the whole model output (default)
   # record: answer  # user messages and model answers only
+
+limits:             # tokens per model call
+  max_input_tokens: 100000
+  max_output_tokens: 100000
 
 tools:              # every tool is on unless switched off
   run_command: false
