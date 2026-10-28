@@ -18,6 +18,7 @@ projects/
         init.rs              first-start setup of those paths
         config.rs            config.yml: providers and session settings
         events.rs            live events published after database writes
+        session.rs           starts a session: workspace folder and thread
         state/               SQLite records, one file per table
             state.rs         database handle: open, create, encrypt, subscribe
             threads.rs       sessions
@@ -38,7 +39,7 @@ projects/
             openai.rs        OpenAI-compatible client and stream parser
             sse.rs           bounded Server-Sent Events decoder
     cli/src/                 dusk_code binary
-        main.rs, app.rs      startup: paths, config, provider, model, thread
+        main.rs, app.rs      startup: paths, config, provider, model, session
         chat.rs              line-based chat and stream rendering
 ```
 
@@ -54,6 +55,8 @@ projects/
 ~/.config/duskcode/
     config.yml               providers and session settings (mode 0600)
     session/state.db         threads, turns and messages (mode 0600)
+~/Documents/duskcode/
+    <thread id>/             session workspace: temporary and downloaded files (mode 0700)
 ```
 
 On first start the core creates the directories (mode 0700), a config template without providers and an empty database; existing files are never modified. Add a provider and restart:
@@ -70,7 +73,7 @@ session:
   # record: answer  # user messages and model answers only
 ```
 
-The CLI uses the first provider and its first catalogue model and starts a new thread per run. `--state-db PATH` overrides the database location.
+The CLI uses the first provider and its first catalogue model and starts a new session per run. `--state-db PATH` overrides the database location.
 
 ## Guarantees
 

@@ -35,15 +35,16 @@ pub struct Initialization {
 }
 
 pub fn initialize(paths: &Paths) -> Result<Initialization> {
-    create_private_dir(paths.root())?;
+    create_private_dir(paths.config_root())?;
     create_private_dir(&paths.session_dir())?;
+    create_private_dir(paths.workspace_root())?;
     let config_created = ensure_config(&paths.config_file())?;
     // SQLite would create the file with umask permissions; an empty file is a valid new database.
     create_private_file(&paths.state_db(), b"")?;
     Ok(Initialization { config_created })
 }
 
-fn create_private_dir(directory: &Path) -> Result<()> {
+pub(crate) fn create_private_dir(directory: &Path) -> Result<()> {
     let mut builder = DirBuilder::new();
     builder.recursive(true);
     #[cfg(unix)]
@@ -96,22 +97,8 @@ fn create_private_file(path: &Path, contents: &[u8]) -> Result<bool> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use super::*;
-    use crate::config::Config;
-
-    fn temp_paths(name: &str) -> Paths {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        Paths::new(
-            std::env::temp_dir()
-                .join(format!("dusk_init_{name}_{}_{nanos}", std::process::id()))
-                .join("duskcode"),
-        )
-    }
+    use crate::{config::Config, testing::temp_paths};
 
     fn temp_config_path(name: &str) -> std::path::PathBuf {
         temp_paths(name).config_file()
@@ -152,7 +139,8 @@ mod tests {
         assert!(initialize(&paths).unwrap().config_created);
         assert!(!initialize(&paths).unwrap().config_created);
         let mode = |p: &Path| fs::metadata(p).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode(paths.root()), 0o700);
+        assert_eq!(mode(paths.config_root()), 0o700);
+        assert_eq!(mode(paths.workspace_root()), 0o700);
         assert_eq!(mode(&paths.session_dir()), 0o700);
         assert_eq!(mode(&paths.config_file()), 0o600);
         assert_eq!(mode(&paths.state_db()), 0o600);

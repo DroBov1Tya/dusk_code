@@ -133,24 +133,12 @@ impl<'a> AgentReceiver<'a> {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use super::*;
     use crate::{
         receivers::{UserMessage, UserReceiver},
         state::{ApprovalMode, MessageRole, ThreadInput},
+        testing::temp_state,
     };
-
-    async fn temp_state() -> State {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos();
-        let path = std::env::temp_dir()
-            .join(format!("dusk_agent_{}_{nanos}", std::process::id()))
-            .join("state.db");
-        State::open(path).await.unwrap()
-    }
 
     async fn queued_turn(state: &State, uid: &str) -> Turn {
         if state.load_thread("thread").await.unwrap().is_none() {
@@ -199,7 +187,7 @@ mod tests {
 
     #[tokio::test]
     async fn stores_reasoning_only_when_given() {
-        let state = temp_state().await;
+        let state = temp_state("agent").await;
         let agent = AgentReceiver::new(&state, "agent").unwrap();
 
         let full = answer(&agent, &queued_turn(&state, "r1").await, Some("think")).await;
@@ -223,7 +211,7 @@ mod tests {
 
     #[tokio::test]
     async fn conversation_ends_at_the_task_message() {
-        let state = temp_state().await;
+        let state = temp_state("agent").await;
         let agent = AgentReceiver::new(&state, "agent").unwrap();
         answer(&agent, &queued_turn(&state, "r1").await, None).await;
         let second = queued_turn(&state, "r2").await;
