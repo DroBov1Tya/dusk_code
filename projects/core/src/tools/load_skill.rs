@@ -14,7 +14,7 @@ use super::{
 use crate::{
     BoxFuture,
     config::Config,
-    skills::{Skill, SkillGraph},
+    graph::{Graph, Node, SKILL_FILE},
 };
 
 pub struct LoadSkill {
@@ -39,7 +39,7 @@ impl Tool for LoadSkill {
     }
 
     fn description(&self, context: &ToolContext<'_>) -> String {
-        let graph = SkillGraph::load(&self.directory);
+        let graph = Graph::load(&self.directory, SKILL_FILE);
         let entries = enabled(graph.entries(), context.config);
         format!(
             "Load the instructions of a skill when the task matches its description, and \
@@ -53,7 +53,7 @@ impl Tool for LoadSkill {
         json!({
             "type": "object",
             "properties": {
-                "name": { "type": "string", "description": "Skill name, as listed." }
+                "name": { "type": "string", "description": "Node name, as listed." }
             },
             "required": ["name"],
             "additionalProperties": false
@@ -61,7 +61,7 @@ impl Tool for LoadSkill {
     }
 
     fn available(&self, context: &ToolContext<'_>) -> bool {
-        SkillGraph::load(&self.directory)
+        Graph::load(&self.directory, SKILL_FILE)
             .entries()
             .any(|skill| context.config.skill_enabled(&skill.name))
     }
@@ -79,7 +79,7 @@ impl Tool for LoadSkill {
 }
 
 fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
-    let graph = SkillGraph::load(directory);
+    let graph = Graph::load(directory, SKILL_FILE);
     let skill = graph
         .get(name)
         .filter(|skill| config.skill_enabled(&skill.name))
@@ -96,7 +96,7 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
 }
 
 /// Switched-off skills are left out, wherever they would be shown.
-fn enabled<'a>(skills: impl Iterator<Item = &'a Skill>, config: &Config) -> String {
+fn enabled<'a>(skills: impl Iterator<Item = &'a Node>, config: &Config) -> String {
     skills
         .filter(|skill| config.skill_enabled(&skill.name))
         .map(|skill| format!("- {}: {}", skill.name, skill.description))

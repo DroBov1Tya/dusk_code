@@ -4,7 +4,10 @@
 use std::{path::PathBuf, sync::Arc};
 
 use anyhow::{Result, bail};
-use dusk_core::{live_config::LiveConfig, skills::SkillGraph};
+use dusk_core::{
+    graph::{Graph, SKILL_FILE},
+    live_config::LiveConfig,
+};
 
 pub const PREFIX: char = ':';
 
@@ -49,9 +52,9 @@ fn tool_list(settings: &Settings) -> String {
 /// Every skill with its state, then what is wrong with the graph.
 fn skill_list(settings: &Settings) -> String {
     let config = settings.config.current();
-    let graph = SkillGraph::load(&settings.skills_dir);
+    let graph = Graph::load(&settings.skills_dir, SKILL_FILE);
     let mut lines: Vec<String> = graph
-        .skills()
+        .nodes()
         .map(|skill| {
             let entry = if skill.entry { " (entry)" } else { "" };
             let mut line = format!(
@@ -70,7 +73,7 @@ fn skill_list(settings: &Settings) -> String {
         graph
             .problems()
             .iter()
-            .map(|problem| format!("!   {}: {}", problem.skill, problem.reason)),
+            .map(|problem| format!("!   {}: {}", problem.node, problem.reason)),
     );
     if lines.is_empty() {
         return format!("no skills in {}", settings.skills_dir.display());
@@ -80,7 +83,9 @@ fn skill_list(settings: &Settings) -> String {
 
 fn switch(settings: &Settings, name: &str, enabled: bool) -> Result<String> {
     let is_tool = settings.tools.contains(&name);
-    let is_skill = SkillGraph::load(&settings.skills_dir).get(name).is_some();
+    let is_skill = Graph::load(&settings.skills_dir, SKILL_FILE)
+        .get(name)
+        .is_some();
     let target = match (is_tool, is_skill) {
         (true, false) => Target::Tool,
         (false, true) => Target::Skill,

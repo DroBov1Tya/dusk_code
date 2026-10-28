@@ -50,7 +50,8 @@ impl Agent {
     }
 
     async fn ask_for_title(&self, inbox: &mut Inbox) -> Result<Result<(), Stop>> {
-        if self.state.count_turns(&self.thread_id).await? != 1 {
+        // A subagent's thread keeps the start of its task as its name: nobody browses it.
+        if self.depth > 0 || self.state.count_turns(&self.thread_id).await? != 1 {
             return Ok(Ok(()));
         }
         let messages = self.state.messages_from(&self.thread_id, 1, 50).await?;

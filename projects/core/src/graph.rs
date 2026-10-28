@@ -1,13 +1,15 @@
-//! Skills: instructions the agent loads when it needs them. Any folder under `skills/`
-//! that holds a `SKILL.md` is a skill named by its path, such as `git/release-notes`.
-//! Skills form a graph: `links` lead from one skill to others, and `entry` marks the
-//! skills the model is offered first.
+//! Skills and agents, both read the same way. Any folder under `skills/` that holds a
+//! `SKILL.md`, or under `agents/` that holds an `AGENT.md`, is a node named by its path,
+//! such as `git/release-notes`. Nodes form a graph: `links` lead from one to others, and
+//! `entry` marks the ones offered first. A skill's text is instructions the agent loads;
+//! an agent's text is the system prompt of the thread it works in.
 //!
 //! ```markdown
 //! ---
 //! description: Preparing a release
 //! entry: true
 //! links: [git/release-notes, git/changelog]
+//! tools: [read_file, run_command]   # agents only: the tools it gets; all when left out
 //! ---
 //! Steps the agent follows...
 //! ```
@@ -23,37 +25,40 @@ use serde::Deserialize;
 
 use crate::{paths::is_plain_folder_name, tools::read_regular};
 
-const SKILL_FILE: &str = "SKILL.md";
-const MAX_SKILL_BYTES: u64 = 256 * 1024;
+pub const SKILL_FILE: &str = "SKILL.md";
+pub const AGENT_FILE: &str = "AGENT.md";
+const MAX_NODE_BYTES: u64 = 256 * 1024;
 const MAX_DESCRIPTION_CHARS: usize = 1024;
 const MAX_DEPTH: usize = 8;
-const MAX_SKILLS: usize = 1000;
+const MAX_NODES: usize = 1000;
 const FENCE: &str = "---";
 
-/// Every skill found under one directory, with what is wrong with the rest.
+/// Every node found under one directory, with what is wrong with the rest.
 #[derive(Debug, Default)]
-pub struct SkillGraph {
-    skills: BTreeMap<String, Skill>,
-    problems: Vec<SkillProblem>,
+pub struct Graph {
+    nodes: BTreeMap<String, Node>,
+    problems: Vec<Problem>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Skill {
-    /// The path from the skills directory, with `/` between folders.
+pub struct Node {
+    /// The path from the graph's directory, with `/` between folders.
     pub name: String,
-    /// One line, as the model reads it in a skill list.
+    /// One line, as the model reads it in a list.
     pub description: String,
-    /// Offered to the model before it has loaded any skill.
+    /// Offered to the model first.
     pub entry: bool,
-    /// Skills this one leads to, as written; see `SkillGraph::links` for the valid ones.
+    /// Nodes this one leads to, as written; see `Graph::links` for the valid ones.
     pub links: Vec<String>,
+    /// For an agent, the tools it may use; `None` gives it every tool.
+    pub tools: Option<Vec<String>>,
     file: PathBuf,
 }
 
-/// A skill that could not be read, or a link to a skill that does not exist.
+/// A node that could not be read, or a link to a node that does not exist.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SkillProblem {
-    pub skill: String,
+pub struct Problem {
+    pub node: String,
     pub reason: String,
 }
 
@@ -66,19 +71,20 @@ struct FrontMatter {
     entry: bool,
     #[serde(default)]
     links: Vec<String>,
+    tools: Option<Vec<String>>,
 }
 
-impl SkillGraph {
-    /// Reads the tree now, so new and edited skills apply at once. Symlinks are not
-    /// followed; depth and size are bounded. A missing directory has no skills.
-    pub fn load(directory: &Path) -> Self {
+impl Graph {
+    /// Reads the tree of `file` nodes now, so new and edited ones apply at once. Symlinks
+    /// are not followed; depth and size are bounded. A missing directory has no nodes.
+    pub fn load(directory: &Path, file: &str) -> Self {
         let mut graph = Self::default();
         let mut pending = vec![(directory.to_owned(), Vec::<String>::new())];
         while let Some((folder, path)) = pending.pop() {
-            if !path.is_empty() && folder.join(SKILL_FILE).exists() {
-                graph.add(&folder, path.join("/"));
+            if !path.is_empty() && folder.join(file).exists() {
+                graph.add(&folder.join(file), path.join("/"));
             }
-            if path.len() < MAX_DEPTH && graph.skills.len() < MAX_SKILLS {
+            if path.len() < MAX_DEPTH && graph.nodes.len() < MAX_NODES {
                 pending.extend(subfolders(&folder).map(|name| {
                     let mut child = path.clone();
                     child.push(name.clone());
@@ -90,48 +96,48 @@ impl SkillGraph {
         graph
     }
 
-    pub fn get(&self, name: &str) -> Option<&Skill> {
-        self.skills.get(name)
+    pub fn get(&self, name: &str) -> Option<&Node> {
+        self.nodes.get(name)
     }
 
-    pub fn skills(&self) -> impl Iterator<Item = &Skill> {
-        self.skills.values()
+    pub fn nodes(&self) -> impl Iterator<Item = &Node> {
+        self.nodes.values()
     }
 
-    pub fn entries(&self) -> impl Iterator<Item = &Skill> {
-        self.skills().filter(|skill| skill.entry)
+    pub fn entries(&self) -> impl Iterator<Item = &Node> {
+        self.nodes().filter(|node| node.entry)
     }
 
-    /// The existing skills `skill` leads to.
-    pub fn links<'a>(&'a self, skill: &'a Skill) -> impl Iterator<Item = &'a Skill> {
-        skill.links.iter().filter_map(|name| self.get(name))
+    /// The existing nodes `node` leads to.
+    pub fn links<'a>(&'a self, node: &'a Node) -> impl Iterator<Item = &'a Node> {
+        node.links.iter().filter_map(|name| self.get(name))
     }
 
-    pub fn problems(&self) -> &[SkillProblem] {
+    pub fn problems(&self) -> &[Problem] {
         &self.problems
     }
 
-    fn add(&mut self, folder: &Path, name: String) {
-        match read_skill(folder, &name) {
-            Ok(skill) => {
-                self.skills.insert(name, skill);
+    fn add(&mut self, file: &Path, name: String) {
+        match read_node(file, &name) {
+            Ok(node) => {
+                self.nodes.insert(name, node);
             }
-            Err(error) => self.problems.push(SkillProblem {
-                skill: name,
+            Err(error) => self.problems.push(Problem {
+                node: name,
                 reason: format!("{error:#}"),
             }),
         }
     }
 
     fn check_links(&mut self) {
-        for skill in self.skills.values() {
-            for link in skill
+        for node in self.nodes.values() {
+            for link in node
                 .links
                 .iter()
-                .filter(|link| !self.skills.contains_key(*link))
+                .filter(|link| !self.nodes.contains_key(*link))
             {
-                self.problems.push(SkillProblem {
-                    skill: skill.name.clone(),
+                self.problems.push(Problem {
+                    node: node.name.clone(),
                     reason: format!("links to {link}, which does not exist"),
                 });
             }
@@ -139,8 +145,8 @@ impl SkillGraph {
     }
 }
 
-impl Skill {
-    /// The instructions after the front matter, read now so edits apply at once.
+impl Node {
+    /// The text after the front matter, read now so edits apply at once.
     pub fn instructions(&self) -> Result<String> {
         let text = read_text(&self.file)?;
         let (_, body) = split_front_matter(&text)?;
@@ -162,8 +168,8 @@ fn subfolders(folder: &Path) -> impl Iterator<Item = String> {
     names.into_iter()
 }
 
-fn read_skill(folder: &Path, name: &str) -> Result<Skill> {
-    let file = folder.join(SKILL_FILE);
+fn read_node(file: &Path, name: &str) -> Result<Node> {
+    let file = file.to_owned();
     let text = read_text(&file)?;
     let (front, _) = split_front_matter(&text)?;
     let front: FrontMatter =
@@ -185,19 +191,20 @@ fn read_skill(folder: &Path, name: &str) -> Result<Skill> {
         description.chars().count() <= MAX_DESCRIPTION_CHARS,
         "description is longer than {MAX_DESCRIPTION_CHARS} characters"
     );
-    Ok(Skill {
+    Ok(Node {
         name: name.to_owned(),
         description,
         entry: front.entry,
         links: front.links,
+        tools: front.tools,
         file,
     })
 }
 
-/// The skill file must be a regular file; a symlink is not followed.
+/// The file must be a regular file; a symlink is not followed.
 fn read_text(file: &Path) -> Result<String> {
-    let bytes = read_regular(file, MAX_SKILL_BYTES).context("cannot read SKILL.md")?;
-    String::from_utf8(bytes).map_err(|_| anyhow!("SKILL.md is not valid UTF-8 text"))
+    let bytes = read_regular(file, MAX_NODE_BYTES).context("cannot read the file")?;
+    String::from_utf8(bytes).map_err(|_| anyhow!("the file is not valid UTF-8 text"))
 }
 
 /// Splits `---\n<front>\n---\n<body>`.
@@ -208,7 +215,7 @@ fn split_front_matter(text: &str) -> Result<(&str, &str)> {
             rest.strip_prefix('\n')
                 .or_else(|| rest.strip_prefix("\r\n"))
         })
-        .context("SKILL.md must start with a --- front matter line")?;
+        .context("the file must start with a --- front matter line")?;
     let mut offset = 0;
     for line in rest.split_inclusive('\n') {
         if line.trim_end() == FENCE {

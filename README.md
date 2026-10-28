@@ -28,7 +28,7 @@ projects/
         config.rs            config.yml: providers, recording, tool and skill switches
         live_config.rs       the current config in memory, written back on change
         thread_start.rs      starts a thread: workspace folder, record, MAIN.md
-        skills.rs            the skill graph read from skills/
+        graph.rs             skills and agents: the graph read from skills/ and agents/
         state/               SQLite records, one file per table
             state.rs         database handle: open, close
             threads.rs       threads, their titles and the list by activity
@@ -37,9 +37,11 @@ projects/
             pending.rs       what clients sent, before the thread takes it in
             compactions.rs   summaries that replace older messages in the context
             tokens.rs        token counts by author and provider usage per thread
-            migrations/      one standalone schema file per table
+            migrations/      one schema file per table, then one per change
         runtime/             what clients start, and the agent
             runtime.rs         Runtime: database, config, model, background tasks, threads
+            launcher.rs        what a thread is built from: tools, scope, settings
+            subagent.rs        ask_agent: a task for another agent in a thread of its own
             title.rs           naming a thread from its first message
             thread_runner.rs   a live thread: send, send now, cancel, events
             inbox.rs           client input while the agent works
@@ -169,6 +171,22 @@ The core loads the config once into `LiveConfig`: readers take a snapshot, chang
 
 The CLI uses the first provider and its first catalogue model and starts a new thread per run. `--threads` lists the threads, `--thread ID` continues one after printing its history, and `--state-db PATH` overrides the database location.
 
+## Subagents
+
+Any folder under `agents/` with an `AGENT.md` is an agent, named by its path and read like a skill. Its text is the system prompt of the threads it works in; `tools` limits what it may use:
+
+```markdown
+---
+description: Reviews a diff for bugs     # what the asking model reads to choose
+entry: true                              # a chat may ask it
+links: [tester]                          # agents it may ask in turn
+tools: [read_file, run_command]          # left out: every tool
+---
+You review code...
+```
+
+The model hands work over with `ask_agent`: the agent's name and the whole task, since the agent sees nothing of the asking conversation. The agent works in a thread of its own under the asking one, with its own context, compaction and token count, and its final answer comes back as the tool result, starting with the agent's thread. Passing that thread again goes on with the same conversation; only threads the asker opened with that agent are accepted. A chat may ask the entry agents, an agent the agents it links to, and three levels down no agent may ask another. Stopping the asking turn stops the agent with it. Subagent threads are not listed among the chats; what they cost counts in the asking thread's `spent`.
+
 ## Skills
 
 Any folder under `skills/` with a `SKILL.md` is a skill, named by its path. The file opens with front matter; the rest is the instructions:
@@ -198,4 +216,4 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 
 ## Limitations
 
-Subagents are not implemented yet. Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions or MCP servers yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions or MCP servers yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. An interrupted turn keeps its text only; reasoning without text is not stored. Schema changes are new migrations from 0008 on, so an existing database is upgraded on start.

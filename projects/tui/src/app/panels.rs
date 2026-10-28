@@ -3,7 +3,11 @@
 
 use std::path::Path;
 
-use dusk_core::{config::Config, skills::SkillGraph, state::Thread};
+use dusk_core::{
+    config::Config,
+    graph::{Graph, SKILL_FILE},
+    state::Thread,
+};
 
 pub enum Panel {
     Threads(ThreadList),
@@ -42,8 +46,8 @@ impl SettingList {
             about: String::new(),
             on: config.tool_enabled(name),
         });
-        let graph = SkillGraph::load(skills_dir);
-        let skills = graph.skills().map(|skill| Setting {
+        let graph = Graph::load(skills_dir, SKILL_FILE);
+        let skills = graph.nodes().map(|skill| Setting {
             kind: SettingKind::Skill,
             name: skill.name.clone(),
             about: skill.description.clone(),

@@ -5,12 +5,15 @@ mod compaction;
 mod context;
 mod generation;
 mod inbox;
+mod launcher;
 // Named after its primary item, `Runtime`, as the style guide asks.
 #[allow(clippy::module_inception)]
 mod runtime;
+mod subagent;
 mod thread_runner;
 mod title;
 
 pub use compaction::AUTO_COMPACT_PERCENT;
 pub use runtime::{Runtime, ThreadHandle};
+pub use subagent::MAX_AGENT_DEPTH;
 pub use thread_runner::{ThreadEvent, ThreadInput, ThreadOutput};

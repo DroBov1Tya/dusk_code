@@ -18,7 +18,8 @@ pub struct ThreadTokens {
     pub current: TokenCounts,
     /// Every message and summary the thread ever had.
     pub all: TokenCounts,
-    /// Sums of what the provider reported over every model call of the thread.
+    /// Sums of what the provider reported over every model call of the thread and of the
+    /// subagents it asked.
     pub spent: Usage,
     pub model_calls: u64,
 }
@@ -200,7 +201,11 @@ impl State {
                 COALESCE(SUM(cached_prompt_tokens), 0) AS cached_prompt_tokens,
                 COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
                 COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens
-             FROM model_usage WHERE thread_id = ?",
+             FROM model_usage WHERE thread_id IN (
+                WITH RECURSIVE family(id) AS (
+                    SELECT ? UNION ALL
+                    SELECT threads.id FROM threads JOIN family ON threads.parent_thread_id = family.id
+                ) SELECT id FROM family)",
         )
         .bind(thread_id)
         .fetch_one(&self.pool)

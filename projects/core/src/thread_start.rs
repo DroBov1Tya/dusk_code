@@ -1,4 +1,5 @@
-//! Starting a thread: its workspace folder, its record and the main agent's system prompt.
+//! Starting a thread: its workspace folder, its record and its system prompt, which is
+//! MAIN.md for a chat and the agent's own text for a subagent.
 
 use std::{
     fs,
@@ -9,7 +10,7 @@ use std::{
 use anyhow::{Result, bail};
 use uuid::Uuid;
 
-use crate::{init::create_private_dir, paths::Paths, state::State};
+use crate::{graph::Node, init::create_private_dir, paths::Paths, state::State};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartedThread {
@@ -28,6 +29,29 @@ pub async fn start_thread(state: &State, paths: &Paths, source: &str) -> Result<
     create_private_dir(&workspace)?;
     state.create_thread(&thread_id, source).await?;
     if let Some(prompt) = main_prompt {
+        state.add_system_message(&thread_id, &prompt).await?;
+    }
+    Ok(StartedThread {
+        thread_id,
+        workspace,
+    })
+}
+
+/// A thread for `agent` under the thread that asks it.
+pub async fn start_agent_thread(
+    state: &State,
+    paths: &Paths,
+    parent: &str,
+    agent: &Node,
+) -> Result<StartedThread> {
+    let prompt = agent.instructions()?;
+    let thread_id = Uuid::now_v7().to_string();
+    let workspace = paths.thread_workspace(&thread_id)?;
+    create_private_dir(&workspace)?;
+    state
+        .create_agent_thread(&thread_id, parent, &agent.name)
+        .await?;
+    if !prompt.is_empty() {
         state.add_system_message(&thread_id, &prompt).await?;
     }
     Ok(StartedThread {

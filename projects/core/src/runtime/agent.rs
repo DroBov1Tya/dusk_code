@@ -42,6 +42,8 @@ pub struct Agent {
     pub thread_id: String,
     /// COMPACT.md: how to summarize the thread.
     pub compact_prompt: PathBuf,
+    /// How many agents are above this thread; 0 for a chat.
+    pub depth: usize,
     pub events: mpsc::UnboundedSender<ThreadEvent>,
 }
 
