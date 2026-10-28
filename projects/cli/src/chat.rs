@@ -45,6 +45,15 @@ async fn print_events(mut output: SessionOutput) {
         match event {
             SessionEvent::Idle => eprint!("{PROMPT}"),
             SessionEvent::Model(event) => printer.print(&event),
+            SessionEvent::ToolStarted(call) => {
+                printer.end_reasoning();
+                eprintln!("[{}] {}", call.name, sanitize(&call.arguments.to_string()));
+            }
+            SessionEvent::ToolFinished { result, .. } => {
+                let status = if result.is_error { "failed" } else { "done" };
+                let first_line = result.content.lines().next().unwrap_or_default();
+                eprintln!("  {status}: {}", sanitize(first_line));
+            }
             SessionEvent::TurnFinished(turn) => {
                 printer.finish();
                 report(&turn);
@@ -101,7 +110,7 @@ impl StreamPrinter {
                 let _ = stdout.write_all(sanitize(text).as_bytes());
                 let _ = stdout.flush();
             }
-            // Tool calls, usage and finish reasons are not rendered yet.
+            // Tool calls are shown from session events; usage and finish reasons are not.
             _ => {}
         }
     }

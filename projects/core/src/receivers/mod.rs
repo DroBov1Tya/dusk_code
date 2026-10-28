@@ -3,5 +3,5 @@
 mod agent_receiver;
 mod user_receiver;
 
-pub use agent_receiver::{AgentOutcome, AgentReceiver, Conversation};
+pub use agent_receiver::{AgentOutcome, AgentReceiver, AgentStep, Conversation};
 pub use user_receiver::{ScenarioRequest, UserMessage, UserReceipt, UserReceiver, UserRequest};

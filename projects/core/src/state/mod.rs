@@ -14,6 +14,6 @@ pub use jobs::{Job, JobInput, JobOutcome, JobStatus};
 pub use messages::{Message, MessageAttachment, MessageInput, MessageRole, estimate_tokens};
 pub use state::{DatabasePassword, State};
 pub use threads::{ApprovalMode, ThreadInput, ThreadMetadata};
-pub use turns::{Turn, TurnAnswer, TurnOutcome, TurnStatus};
+pub use turns::{StepResult, Turn, TurnAnswer, TurnOutcome, TurnStatus, TurnStep};
 
 use state::timestamp_ms;

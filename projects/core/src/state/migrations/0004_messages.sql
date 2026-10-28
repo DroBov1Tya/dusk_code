@@ -9,6 +9,11 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     -- Model thinking behind an assistant message; NULL when not recorded.
     reasoning TEXT CHECK (reasoning IS NULL OR (role = 'assistant' AND length(trim(reasoning)) > 0)),
+    -- Tools an assistant message calls, as a JSON array of {id, name, arguments}.
+    tool_calls_json TEXT CHECK (tool_calls_json IS NULL OR (role = 'assistant'
+        AND json_valid(tool_calls_json) AND json_type(tool_calls_json) = 'array')),
+    -- The call a tool message answers.
+    tool_call_id TEXT CHECK ((role = 'tool') = (tool_call_id IS NOT NULL)),
     cwd TEXT NOT NULL CHECK (length(trim(cwd)) > 0),
     -- Estimated size in model tokens, used to check the context window.
     token_count INTEGER NOT NULL CHECK (token_count >= 0),
@@ -18,7 +23,8 @@ CREATE TABLE messages (
     created_at INTEGER NOT NULL CHECK (created_at >= 0),
     UNIQUE (thread_id, sequence),
     FOREIGN KEY (job_id, thread_id) REFERENCES jobs(job_id, thread_id),
-    CHECK (length(trim(content)) > 0 OR json_array_length(attachments_json) > 0),
+    CHECK (length(trim(content)) > 0 OR json_array_length(attachments_json) > 0
+        OR tool_calls_json IS NOT NULL),
     CHECK (request_uid IS NULL OR (role = 'user' AND job_id IS NULL AND agent_id IS NULL))
 );
 

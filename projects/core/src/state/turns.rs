@@ -3,8 +3,9 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
+use uuid::Uuid;
 
-use crate::events::Event;
+use crate::{events::Event, providers::ToolCall};
 
 use super::{Message, MessageInput, MessageRole, State, messages::insert_message, timestamp_ms};
 
@@ -39,12 +40,27 @@ pub enum TurnOutcome {
     Failed(String),
 }
 
-/// What the agent wrote; stored as the turn's assistant message.
+/// What the agent wrote; stored as an assistant message.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct TurnAnswer {
     pub content: String,
     pub reasoning: Option<String>,
     pub agent_id: String,
+}
+
+/// One round of tool use inside a turn: the agent's message with its calls, and what
+/// each call returned, in the same order.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TurnStep {
+    pub answer: TurnAnswer,
+    pub tool_calls: Vec<ToolCall>,
+    pub results: Vec<StepResult>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StepResult {
+    pub call_id: String,
+    pub content: String,
 }
 
 impl TurnStatus {
@@ -110,6 +126,48 @@ impl State {
         Ok(Some(turn))
     }
 
+    /// Stores a step of a running turn in one transaction, so a call is never kept
+    /// without its result.
+    pub(crate) async fn record_step(&self, turn_id: &str, step: TurnStep) -> Result<Vec<Message>> {
+        let call_ids = step.tool_calls.iter().map(|call| &call.id);
+        ensure!(
+            !step.tool_calls.is_empty() && call_ids.eq(step.results.iter().map(|r| &r.call_id)),
+            "a step needs one result per tool call, in call order"
+        );
+        let timestamp = timestamp_ms()?;
+        let _write = self.writes.lock().await;
+        let mut transaction = self.pool.begin().await.context("begin turn step")?;
+        let turn = read_running_turn(&mut transaction, turn_id).await?;
+        let cwd = answered_cwd(&mut transaction, &turn).await?;
+        let mut inputs = vec![MessageInput {
+            tool_calls: step.tool_calls,
+            ..answer_message(&turn, step.answer, cwd.clone())
+        }];
+        inputs.extend(step.results.into_iter().map(|result| MessageInput {
+            thread_id: turn.thread_id.clone(),
+            job_id: None,
+            role: MessageRole::Tool,
+            agent_id: None,
+            content: result.content,
+            reasoning: None,
+            tool_calls: Vec::new(),
+            tool_call_id: Some(result.call_id),
+            cwd: cwd.clone(),
+            attachments: Vec::new(),
+        }));
+        let mut messages = Vec::new();
+        for input in &inputs {
+            let message_id = format!("turn-step:{}", Uuid::now_v7());
+            messages
+                .push(insert_message(&mut transaction, &message_id, input, None, timestamp).await?);
+        }
+        transaction.commit().await.context("commit turn step")?;
+        for message in &messages {
+            let _ = self.events.send(Event::MessageCreated(message.clone()));
+        }
+        Ok(messages)
+    }
+
     /// Records the outcome of a running turn together with its answer message.
     pub(crate) async fn finish_turn(
         &self,
@@ -124,16 +182,12 @@ impl State {
         let timestamp = timestamp_ms()?;
         let _write = self.writes.lock().await;
         let mut transaction = self.pool.begin().await.context("begin turn finish")?;
-        let turn = sqlx::query("SELECT * FROM turns WHERE turn_id = ? AND status = 'running'")
-            .bind(turn_id)
-            .fetch_optional(&mut *transaction)
-            .await
-            .context("load running turn")?
-            .context("turn is not running")?;
-        let turn = decode_turn(turn)?;
+        let turn = read_running_turn(&mut transaction, turn_id).await?;
         let message = match answer {
             Some(answer) => {
-                let input = answer_message(&mut transaction, &turn, answer).await?;
+                ensure!(!answer.content.trim().is_empty(), "answer is empty");
+                let cwd = answered_cwd(&mut transaction, &turn).await?;
+                let input = answer_message(&turn, answer, cwd);
                 let message_id = format!("turn-response:{turn_id}");
                 Some(insert_message(&mut transaction, &message_id, &input, None, timestamp).await?)
             }
@@ -178,30 +232,42 @@ impl State {
     }
 }
 
-/// The answer inherits the working directory of the newest message it answers.
-async fn answer_message(
+async fn read_running_turn(
     transaction: &mut Transaction<'_, Sqlite>,
-    turn: &Turn,
-    answer: TurnAnswer,
-) -> Result<MessageInput> {
-    ensure!(!answer.content.trim().is_empty(), "answer is empty");
-    let cwd: String =
-        sqlx::query_scalar("SELECT cwd FROM messages WHERE thread_id = ? AND sequence = ?")
-            .bind(&turn.thread_id)
-            .bind(i64::try_from(turn.last_sequence).context("sequence out of range")?)
-            .fetch_one(&mut **transaction)
-            .await
-            .context("load answered message")?;
-    Ok(MessageInput {
+    turn_id: &str,
+) -> Result<Turn> {
+    let row = sqlx::query("SELECT * FROM turns WHERE turn_id = ? AND status = 'running'")
+        .bind(turn_id)
+        .fetch_optional(&mut **transaction)
+        .await
+        .context("load running turn")?
+        .context("turn is not running")?;
+    decode_turn(row)
+}
+
+/// The agent's messages inherit the working directory of the newest message they answer.
+async fn answered_cwd(transaction: &mut Transaction<'_, Sqlite>, turn: &Turn) -> Result<String> {
+    sqlx::query_scalar("SELECT cwd FROM messages WHERE thread_id = ? AND sequence = ?")
+        .bind(&turn.thread_id)
+        .bind(i64::try_from(turn.last_sequence).context("sequence out of range")?)
+        .fetch_one(&mut **transaction)
+        .await
+        .context("load answered message")
+}
+
+fn answer_message(turn: &Turn, answer: TurnAnswer, cwd: String) -> MessageInput {
+    MessageInput {
         thread_id: turn.thread_id.clone(),
         job_id: None,
         role: MessageRole::Assistant,
         agent_id: Some(answer.agent_id),
         content: answer.content,
         reasoning: answer.reasoning,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
         cwd,
         attachments: Vec::new(),
-    })
+    }
 }
 
 fn decode_turn(row: SqliteRow) -> Result<Turn> {

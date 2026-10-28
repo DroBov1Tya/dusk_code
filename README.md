@@ -32,8 +32,17 @@ projects/
             agent_receiver.rs  reads a thread, starts and finishes turns
         runtime/             the agent
             session_runner.rs  live session: send, send now, cancel, events
+            inbox.rs           client commands while the agent works
+            agent.rs           a turn, step by step: model -> tools -> model
             generation.rs      one model call, streamed into a caller-owned output
             context.rs         stored messages -> model input and its token size
+        tools/               what the agent can call
+            tool.rs          the Tool interface
+            registry.rs      tools by name; failed calls become error results
+            scope.rs         where tools may act, checked after following symlinks
+            files.rs         read_file, list_dir, write_file, edit_file
+            search.rs        search: plain-text search through a directory
+            shell.rs         run_command: sh -c in the session workspace
         providers/           models
             provider.rs      providers by name, model discovery, stream dispatch
             chat.rs          model input: messages by role, tool specs
@@ -51,7 +60,7 @@ projects/
 A client sends text with `SessionInput` and reads `SessionEvent`s from `SessionOutput`; `SessionRunner` does the rest.
 
 1. A message is stored with a receipt. User messages newer than the last turn are the queue.
-2. When the agent is free it starts one turn over the whole queue, checks the context size against the model window, sends the thread's messages and streams the answer.
+2. When the agent is free it starts one turn over the whole queue, checks the context size against the model window, sends the thread's messages with the tool specs and streams the answer. When the model calls tools, they run one by one and the next step sends their results back, until the model answers without calling a tool (at most 50 steps). Each step, the calls and their results, is stored in one transaction.
 3. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. Messages sent during a turn are stored after its answer, so the thread reads in the order things happened.
 4. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
 5. Every successful write publishes an `Event` to `State::subscribe` receivers.
@@ -92,6 +101,7 @@ The CLI uses the first provider and its first catalogue model and starts a new s
 - The model receives only role and text; IDs, timestamps, cwd and attachments stay in the core. Reasoning is stored but never sent back as context.
 - Text is stored once, in `messages`; turns refer to messages and every request is rebuilt from them. Each message carries an estimated token count (UTF-8 bytes / 4); providers report usage per request only.
 - At most one turn runs per thread, enforced by the database.
+- Tools run without asking. File tools only reach the directory the client was started in and the session workspace. `run_command` runs in the workspace with a timeout and output caps in its own process group, so nothing it started outlives it; otherwise it can do what the user can.
 - A request UID is idempotent: a retry on the same thread returns the original receipt without a new event. Rejected requests get a fixed code (`empty_message`, `empty_thread`, `unknown_thread`) and are not queued.
 - Every provider turns its stream into one `ModelEvent` type: reasoning, text, tool call starts and argument pieces, usage and the finish reason. `ModelOutput` assembles them; a response cut by the token limit or a filter is an error.
 - Provider responses are untrusted: sizes and idle time are bounded, redirects are refused, and upstream text never reaches error messages.
@@ -99,4 +109,4 @@ The CLI uses the first provider and its first catalogue model and starts a new s
 
 ## Limitations
 
-Skills and agent prompts are not loaded yet. No tools, context compaction, session resume or retries yet. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
+Skills and agent prompts are not loaded yet. No permissions, MCP servers, context compaction, session resume or retries yet. Messages sent during a turn live in memory until it ends. An interrupted turn keeps its text only; reasoning without text is not stored. Schemas are standalone per table without upgrade migrations, so a schema change needs a fresh database.
