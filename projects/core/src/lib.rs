@@ -8,4 +8,8 @@ pub mod paths;
 pub mod providers;
 pub mod receivers;
 pub mod runtime;
+pub mod session;
 pub mod state;
+
+#[cfg(test)]
+mod testing;

@@ -6,10 +6,10 @@ use dusk_core::{
     paths::Paths,
     providers::{Model, ProviderRegistry},
     runtime::AgentRuntime,
-    state::{ApprovalMode, State, ThreadInput},
+    session::start_session,
+    state::State,
 };
 use tracing::{error, info};
-use uuid::Uuid;
 
 use crate::{
     args::AppArgs,
@@ -18,6 +18,7 @@ use crate::{
 };
 
 pub struct Application {
+    paths: Paths,
     state: State,
     record: RecordMode,
     providers: ProviderRegistry,
@@ -60,6 +61,7 @@ impl Application {
             .await?;
         info!("provider {provider_name}, model {}", model.id);
         Ok(Self {
+            paths,
             state,
             record,
             providers,
@@ -90,29 +92,12 @@ impl Application {
             self.model.clone(),
             self.record,
         )?;
-        let thread_id = self.start_thread().await?;
-        info!("thread {thread_id} created");
-        chat::run(&self.state, &runtime, &thread_id).await
-    }
-
-    async fn start_thread(&self) -> Result<String> {
-        let thread_id = Uuid::now_v7().to_string();
-        self.state
-            .create_thread(
-                &thread_id,
-                ThreadInput {
-                    source: THREAD_SOURCE.to_owned(),
-                    tokens_used: 0,
-                    compaction_count: 0,
-                    sandbox_policy: "none".to_owned(),
-                    approval_mode: ApprovalMode::Never,
-                    git_branch: None,
-                    git_commit_sha: None,
-                    git_origin_url: None,
-                    title: String::new(),
-                },
-            )
-            .await?;
-        Ok(thread_id)
+        let session = start_session(&self.state, &self.paths, THREAD_SOURCE).await?;
+        info!(
+            "session {} started in {}",
+            session.thread_id,
+            session.workspace.display()
+        );
+        chat::run(&self.state, &runtime, &session.thread_id).await
     }
 }
