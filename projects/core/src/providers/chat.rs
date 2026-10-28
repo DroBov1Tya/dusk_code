@@ -1,37 +1,37 @@
-//! Provider-neutral chat input and streamed output.
+//! What the model receives: the conversation and the tools it may call.
 
-use std::future::Future;
+use serde_json::Value;
 
-use anyhow::Result;
+use super::model_output::ToolCall;
 
-/// Author of a chat message as the model understands it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// One message as the model sees it: role and text, without core metadata.
+#[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
-pub enum ChatRole {
-    System,
-    User,
-    Assistant,
+pub enum ChatMessage {
+    System(String),
+    User(String),
+    Assistant {
+        text: String,
+        tool_calls: Vec<ToolCall>,
+    },
+    Tool {
+        call_id: String,
+        content: String,
+    },
 }
 
-/// Exactly what the model sees: a role and text, without core metadata.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ChatMessage {
-    pub role: ChatRole,
-    pub content: String,
+/// A tool the model may call, described the way models are trained to read it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ToolSpec {
+    pub name: String,
+    pub description: String,
+    /// JSON Schema of the arguments object.
+    pub parameters: Value,
 }
 
-/// One increment of a streamed answer.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ChatDelta {
-    /// Model thinking: shown to the user and never sent back as context.
-    Reasoning(String),
-    /// Part of the answer.
-    Text(String),
-}
-
-/// A streamed model answer.
-pub trait ChatStream: Send {
-    /// Returns `None` once the model has finished; an error ends the stream.
-    fn next_delta(&mut self) -> impl Future<Output = Result<Option<ChatDelta>>> + Send;
+#[derive(Debug, Clone, Copy)]
+pub struct ChatRequest<'a> {
+    pub model: &'a str,
+    pub messages: &'a [ChatMessage],
+    pub tools: &'a [ToolSpec],
 }

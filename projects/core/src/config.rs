@@ -30,6 +30,9 @@ pub struct ProviderConfig {
     pub kind: ProviderKind,
     pub base_url: String,
     pub(crate) api_key: ApiKey,
+    /// The server leaves `<think>` and `<tool_call>` tags inside the answer text.
+    #[serde(default)]
+    pub inline_tags: bool,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize)]

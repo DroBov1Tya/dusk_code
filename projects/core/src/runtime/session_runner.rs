@@ -9,13 +9,10 @@ use anyhow::{Result, anyhow};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::{
-    answer::{self, Answer},
-    context,
-};
+use super::{context, generation};
 use crate::{
     config::RecordMode,
-    providers::{ChatDelta, Model, ModelProvider},
+    providers::{ChatRequest, Model, ModelEvent, ModelOutput, ModelProvider, ToolCall},
     receivers::{AgentOutcome, AgentReceiver, UserMessage, UserReceiver},
     state::{State, Turn},
 };
@@ -53,7 +50,8 @@ pub enum SessionEvent {
         reason: String,
     },
     TurnStarted(Turn),
-    Delta(ChatDelta),
+    /// Everything the model streams: reasoning, text, tool calls, usage.
+    Model(ModelEvent),
     TurnFinished(Turn),
     /// The queued turn was not started; the client should switch model or compact.
     ContextTooLarge {
@@ -72,7 +70,7 @@ enum Command {
 
 /// How a running turn ended.
 enum Stop {
-    Finished(Result<()>),
+    Finished(Result<Vec<ToolCall>>),
     Cancelled,
     Preempted,
 }
@@ -149,15 +147,19 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
             self.emit(SessionEvent::TurnStarted(turn.clone()));
 
             let messages = context::chat_messages(&conversation.messages);
-            let mut answer = Answer::default();
+            let request = ChatRequest {
+                model: &self.model.id,
+                messages: &messages,
+                tools: &[],
+            };
+            let mut output = ModelOutput::default();
             let mut sent_during_turn = Vec::new();
             let stop = {
                 let provider = self.provider;
                 let events = self.events.clone();
-                let generation =
-                    answer::generate(provider, &self.model.id, &messages, &mut answer, |delta| {
-                        let _ = events.send(SessionEvent::Delta(delta.clone()));
-                    });
+                let generation = generation::generate(provider, request, &mut output, |event| {
+                    let _ = events.send(SessionEvent::Model(event.clone()));
+                });
                 tokio::pin!(generation);
                 loop {
                     tokio::select! {
@@ -178,7 +180,7 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
             let cancelled = matches!(stop, Stop::Cancelled);
             let turn = self
                 .agent
-                .finish_turn(&turn, self.outcome(stop, answer))
+                .finish_turn(&turn, self.outcome(stop, output))
                 .await?;
             self.emit(SessionEvent::TurnFinished(turn));
             for text in sent_during_turn {
@@ -221,19 +223,22 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
         self.emit(event);
     }
 
-    fn outcome(&self, stop: Stop, answer: Answer) -> AgentOutcome {
-        let reasoning = Some(answer.reasoning)
+    fn outcome(&self, stop: Stop, output: ModelOutput) -> AgentOutcome {
+        let reasoning = Some(output.reasoning)
             .filter(|reasoning| self.record.records_reasoning() && !reasoning.trim().is_empty());
         match stop {
-            Stop::Finished(Ok(())) => AgentOutcome::Completed {
-                content: answer.text,
+            Stop::Finished(Ok(calls)) if !calls.is_empty() => AgentOutcome::Failed {
+                error_message: "the model called a tool, but no tools are available yet".into(),
+            },
+            Stop::Finished(Ok(_)) => AgentOutcome::Completed {
+                content: output.text,
                 reasoning,
             },
             Stop::Finished(Err(error)) => AgentOutcome::Failed {
                 error_message: format!("{error:#}"),
             },
             Stop::Cancelled | Stop::Preempted => AgentOutcome::Interrupted {
-                content: answer.text,
+                content: output.text,
                 reasoning,
             },
         }
@@ -281,7 +286,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        providers::{ChatMessage, ChatStream},
+        providers::{ChatStream, FinishReason},
         state::{ApprovalMode, MessageRole, ThreadInput, TurnStatus},
         testing::temp_state,
     };
@@ -295,6 +300,7 @@ mod tests {
     enum Step {
         Text(&'static str),
         Hang,
+        Done,
     }
 
     struct FakeStream(VecDeque<Step>);
@@ -306,17 +312,18 @@ mod tests {
             Ok(Vec::new())
         }
 
-        async fn stream_chat(&self, _model: &str, _messages: &[ChatMessage]) -> Result<FakeStream> {
+        async fn stream_chat(&self, _request: ChatRequest<'_>) -> Result<FakeStream> {
             let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
             Ok(FakeStream(script.into()))
         }
     }
 
     impl ChatStream for FakeStream {
-        async fn next_delta(&mut self) -> Result<Option<ChatDelta>> {
+        async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
             match self.0.pop_front() {
-                Some(Step::Text(text)) => Ok(Some(ChatDelta::Text(text.into()))),
+                Some(Step::Text(text)) => Ok(Some(ModelEvent::Text(text.into()))),
                 Some(Step::Hang) => std::future::pending().await,
+                Some(Step::Done) => Ok(Some(ModelEvent::Finished(FinishReason::Stop))),
                 None => Ok(None),
             }
         }
@@ -388,7 +395,7 @@ mod tests {
     #[tokio::test]
     async fn messages_queued_before_a_turn_are_answered_together() {
         let state = session_state("together").await;
-        let provider = provider(vec![vec![Step::Text("both")]]);
+        let provider = provider(vec![vec![Step::Text("both"), Step::Done]]);
         let (runner, input, mut output) = runner(&state, &provider, model(None));
         input.send("a").unwrap();
         input.send("b").unwrap();
@@ -414,13 +421,13 @@ mod tests {
         let state = session_state("send_now").await;
         let provider = provider(vec![
             vec![Step::Text("partial"), Step::Hang],
-            vec![Step::Text("second")],
+            vec![Step::Text("second"), Step::Done],
         ]);
         let (runner, input, mut output) = runner(&state, &provider, model(None));
         let client = async move {
             input.send("first").unwrap();
             while output.next_event().await
-                != Some(SessionEvent::Delta(ChatDelta::Text("partial".into())))
+                != Some(SessionEvent::Model(ModelEvent::Text("partial".into())))
             {}
             input.send_now("now").unwrap();
             let first = next_turn_finished(&mut output).await;

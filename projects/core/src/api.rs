@@ -1,9 +1,3 @@
-//! Core API version shared with front ends.
+//! Core version shared with front ends; the single source is the workspace `Cargo.toml`.
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ApiVersion {
-    pub major: u16,
-    pub minor: u16,
-}
-
-pub const CORE_API_VERSION: ApiVersion = ApiVersion { major: 0, minor: 1 };
+pub const CORE_VERSION: &str = env!("CARGO_PKG_VERSION");
