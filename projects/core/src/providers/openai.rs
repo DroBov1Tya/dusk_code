@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Result, anyhow, bail, ensure};
 use reqwest::{
-    Client, Response, Url,
+    Client, Response, StatusCode, Url,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
     redirect::Policy,
 };
@@ -18,7 +18,7 @@ use serde_json::Value;
 use super::{
     chat::{ChatMessage, ChatRequest, ToolSpec},
     model_output::{FinishReason, ModelEvent, ToolCall, Usage},
-    provider::Model,
+    provider::{Model, Transient},
     sse::SseDecoder,
 };
 use crate::config::ProviderConfig;
@@ -266,12 +266,18 @@ impl OpenAiCompatible {
             .json(&request)
             .send()
             .await
-            .map_err(|_| anyhow!("provider completion request failed"))?;
-        ensure!(
-            response.status().is_success(),
-            "provider completion request returned HTTP {}",
-            response.status().as_u16()
-        );
+            .map_err(|_| Transient("provider completion request failed".into()))?;
+        let status = response.status();
+        if !status.is_success() {
+            let message = format!(
+                "provider completion request returned HTTP {}",
+                status.as_u16()
+            );
+            if is_retryable(status) {
+                bail!(Transient(message));
+            }
+            bail!(message);
+        }
         ensure!(
             is_event_stream(&response),
             "provider did not return a stream"
@@ -287,6 +293,11 @@ fn endpoint(base_url: &Url, segments: &[&str]) -> Result<Url> {
         .pop_if_empty()
         .extend(segments);
     Ok(url)
+}
+
+/// Timeouts, conflicts, rate limits and server errors may pass on a later attempt.
+fn is_retryable(status: StatusCode) -> bool {
+    matches!(status.as_u16(), 408 | 409 | 429) || status.is_server_error()
 }
 
 fn is_event_stream(response: &Response) -> bool {
@@ -329,7 +340,7 @@ impl CompletionStream {
                 .response
                 .chunk()
                 .await
-                .map_err(|_| anyhow!("cannot read provider stream"))?;
+                .map_err(|_| Transient("cannot read provider stream".into()))?;
             match chunk {
                 Some(bytes) => {
                     self.pending.extend(self.parser.feed(&bytes)?);
@@ -416,10 +427,11 @@ impl CompletionParser {
     /// The model is done once it reported a finish reason; `[DONE]` or EOF alone is a cut stream.
     fn finish(&mut self) -> Result<()> {
         self.done = true;
-        ensure!(
-            self.finish_seen,
-            "provider stream ended before the response was complete"
-        );
+        if !self.finish_seen {
+            bail!(Transient(
+                "provider stream ended before the response was complete".into()
+            ));
+        }
         Ok(())
     }
 
@@ -640,6 +652,16 @@ mod tests {
         let mut parser = CompletionParser::default();
         parser.feed(finish("length").as_bytes()).unwrap();
         assert!(parser.finish().is_ok());
+    }
+
+    #[test]
+    fn only_passing_failures_are_transient() {
+        assert!(is_retryable(StatusCode::TOO_MANY_REQUESTS));
+        assert!(is_retryable(StatusCode::BAD_GATEWAY));
+        assert!(!is_retryable(StatusCode::UNAUTHORIZED));
+        assert!(!is_retryable(StatusCode::BAD_REQUEST));
+        let cut = CompletionParser::default().finish().unwrap_err();
+        assert!(crate::providers::is_transient(&cut));
     }
 
     #[test]

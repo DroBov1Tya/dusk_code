@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
+    fmt,
     sync::Arc,
 };
 
@@ -25,7 +26,11 @@ pub struct Model {
     pub context_window: Option<u64>,
 }
 
-/// What the agent needs from a model provider.
+/// A failure that may pass if the same request is sent again: the network, a busy or
+/// failing server, a cut stream.
+#[derive(Debug)]
+pub struct Transient(pub String);
+
 /// What the agent needs from a model provider. Tests put a scripted model behind it.
 pub trait ModelProvider: Send + Sync {
     /// Returns the catalogue sorted by model ID.
@@ -95,6 +100,21 @@ impl Provider {
             .next()
             .context("provider offers no models")
     }
+}
+
+impl fmt::Display for Transient {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(&self.0)
+    }
+}
+
+impl std::error::Error for Transient {}
+
+/// Whether `error` or anything it wraps is a `Transient` failure.
+pub fn is_transient(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.downcast_ref::<Transient>().is_some())
 }
 
 impl ModelProvider for Provider {

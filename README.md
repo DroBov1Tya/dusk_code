@@ -34,7 +34,8 @@ projects/
             messages.rs      messages, in order
             turns.rs         turns and their steps
             migrations/      one standalone schema file per table
-        runtime/             the agent
+        runtime/             what clients start, and the agent
+            runtime.rs         Runtime: database, config, model, background tasks, threads
             thread_runner.rs   a live thread: send, send now, cancel, events
             inbox.rs           client commands while the agent works
             agent.rs           a turn, step by step: model -> tools -> model
@@ -56,20 +57,23 @@ projects/
             inline_tags.rs   <think> and <tool_call> tags in text -> ModelEvents
             sse.rs           bounded Server-Sent Events decoder
     cli/src/                 dusk_code binary
-        main.rs, app.rs      startup: paths, config, provider, model, thread
+        main.rs, app.rs      starts the runtime, opens a thread, shuts down
         chat.rs              line-based chat: `text` queues, `!text` sends now, `!` stops
         commands.rs          `:tools`, `:skills`, `:on <name>`, `:off <name>`, `:reload`
 ```
 
-## How a thread works
+## How the core runs
 
-A client sends text with `ThreadInput` and reads `ThreadEvent`s from `ThreadOutput`; `ThreadRunner` does the rest.
+A client starts one `Runtime`. It sets up missing files, opens the database and the config, picks the model, and checks the config file once a minute in a background task. `Runtime::new_thread` starts a thread and gives it its own task; the client only sends text with `ThreadInput` and reads `ThreadEvent`s from `ThreadOutput`. A thread task ends when the client drops its input and the queue is done; `Runtime::shutdown` waits for that, stops the background task and closes the database.
+
+## How a thread works
 
 1. A user message is stored. User messages newer than the last turn are the queue.
 2. When the agent is free it starts one turn over the whole queue, checks the context size against the model window, sends the thread's messages with the tool specs and streams the answer. When the model calls tools, they run one by one and the next step sends their results back, until the model answers without calling a tool (at most 50 steps). Each step, the calls and their results, is stored in one transaction.
-3. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. Messages sent during a turn are stored after it ends, so the thread reads in the order things happened.
-4. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
-5. Every successful write publishes an `Event` to `State::subscribe` receivers.
+3. A model call that fails before writing anything, on a network error, a timeout, a rate limit, a server error or a cut stream, is tried up to three times in all, after pauses of one and two seconds; the client sees each failed attempt as `Retrying`. Other failures, such as a rejected API key, end the turn at once, and the client sees the error.
+4. `send` during a turn waits for the next one; `send_now` stops the turn, keeping the text written so far, and the next turn starts at once; `cancel` only stops. Messages sent during a turn are stored after it ends, so the thread reads in the order things happened.
+5. A turn ends `completed`, `interrupted` or `failed`. A turn left running by a stopped process is marked interrupted on the next start.
+6. Every successful write publishes an `Event` to `State::subscribe` receivers.
 
 ## Files
 
@@ -101,7 +105,7 @@ tools:              # every tool is on unless switched off
   run_command: false
 ```
 
-The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as `:off run_command` are written to disk atomically and applied in memory, and a background check re-reads the file within five seconds of a hand edit (`:reload` does it at once). A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
+The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as `:off run_command` are written to disk atomically and applied in memory, and a background check re-reads the file within a minute of a hand edit (`:reload` does it at once). A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
 
 The CLI uses the first provider and its first catalogue model and starts a new thread per run. `--state-db PATH` overrides the database location.
 

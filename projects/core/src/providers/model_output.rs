@@ -82,6 +82,11 @@ struct PendingCall {
 }
 
 impl ModelOutput {
+    /// Nothing the user could have seen yet: no text, reasoning or tool call.
+    pub fn is_empty(&self) -> bool {
+        self.size == 0 && self.calls.is_empty()
+    }
+
     pub fn apply(&mut self, event: &ModelEvent) -> Result<()> {
         match event {
             ModelEvent::Reasoning(text) => self.grow(text, |output| &mut output.reasoning)?,
