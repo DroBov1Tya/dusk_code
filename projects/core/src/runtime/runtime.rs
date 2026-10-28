@@ -85,6 +85,11 @@ impl Runtime {
         &self.config
     }
 
+    /// The model every thread talks to.
+    pub fn model(&self) -> &Model {
+        &self.model
+    }
+
     pub fn paths(&self) -> &Paths {
         &self.paths
     }
