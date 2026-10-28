@@ -2,31 +2,42 @@
 //! time over everything queued. `send_now` stops the running turn, keeping what it wrote,
 //! so the next turn starts at once with the new message.
 //!
-//! Messages sent during a turn are held in memory and stored right after the turn's
-//! answer, so the thread always reads in the order things happened.
+//! Messages sent during a turn are held in memory and stored right after the turn ends,
+//! so the thread always reads in the order things happened.
 
 use anyhow::{Result, anyhow};
 use tokio::sync::mpsc;
 use uuid::Uuid;
 
-use super::{context, generation};
+use super::{
+    agent::Agent,
+    inbox::{Command, Inbox, Stop},
+};
 use crate::{
     config::RecordMode,
-    providers::{ChatRequest, Model, ModelEvent, ModelOutput, ModelProvider, ToolCall},
-    receivers::{AgentOutcome, AgentReceiver, UserMessage, UserReceiver},
+    providers::{Model, ModelEvent, ModelProvider, ToolCall},
+    receivers::{AgentReceiver, UserMessage, UserReceiver},
     state::{State, Turn},
+    tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
 pub struct SessionRunner<'a, P> {
+    agent: Agent<'a, P>,
     users: UserReceiver<'a>,
-    agent: AgentReceiver<'a>,
-    provider: &'a P,
-    model: Model,
-    record: RecordMode,
-    thread_id: String,
+    inbox: Inbox,
     cwd: String,
-    commands: mpsc::UnboundedReceiver<Command>,
-    events: mpsc::UnboundedSender<SessionEvent>,
+}
+
+/// Everything a session needs; the thread must exist.
+pub struct SessionSetup<'a, P> {
+    pub state: &'a State,
+    pub provider: &'a P,
+    pub model: Model,
+    pub record: RecordMode,
+    pub agent_id: &'a str,
+    pub thread_id: &'a str,
+    pub tools: ToolRegistry,
+    pub scope: ToolScope,
 }
 
 /// The client's side for sending. Dropping every clone ends the session once the queue is done.
@@ -52,6 +63,11 @@ pub enum SessionEvent {
     TurnStarted(Turn),
     /// Everything the model streams: reasoning, text, tool calls, usage.
     Model(ModelEvent),
+    ToolStarted(ToolCall),
+    ToolFinished {
+        call_id: String,
+        result: ToolResult,
+    },
     TurnFinished(Turn),
     /// The queued turn was not started; the client should switch model or compact.
     ContextTooLarge {
@@ -62,41 +78,26 @@ pub enum SessionEvent {
     Idle,
 }
 
-enum Command {
-    Send(String),
-    SendNow(String),
-    Cancel,
-}
-
-/// How a running turn ended.
-enum Stop {
-    Finished(Result<Vec<ToolCall>>),
-    Cancelled,
-    Preempted,
-}
-
 impl<'a, P: ModelProvider> SessionRunner<'a, P> {
-    pub fn new(
-        state: &'a State,
-        provider: &'a P,
-        model: Model,
-        record: RecordMode,
-        agent_id: &str,
-        thread_id: &str,
-        cwd: &str,
-    ) -> Result<(Self, SessionInput, SessionOutput)> {
+    pub fn new(setup: SessionSetup<'a, P>) -> Result<(Self, SessionInput, SessionOutput)> {
         let (command_sender, commands) = mpsc::unbounded_channel();
         let (events, event_receiver) = mpsc::unbounded_channel();
-        let runner = Self {
-            users: UserReceiver::new(state),
-            agent: AgentReceiver::new(state, agent_id)?,
-            provider,
-            model,
-            record,
-            thread_id: thread_id.to_owned(),
-            cwd: cwd.to_owned(),
-            commands,
+        let cwd = setup.scope.cwd().to_string_lossy().into_owned();
+        let agent = Agent {
+            receiver: AgentReceiver::new(setup.state, setup.agent_id)?,
+            provider: setup.provider,
+            model: setup.model,
+            record: setup.record,
+            tools: setup.tools,
+            scope: setup.scope,
+            thread_id: setup.thread_id.to_owned(),
             events,
+        };
+        let runner = Self {
+            agent,
+            users: UserReceiver::new(setup.state),
+            inbox: Inbox::new(commands),
+            cwd,
         };
         let input = SessionInput {
             commands: command_sender,
@@ -109,100 +110,46 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
 
     /// Runs until every `SessionInput` is dropped and the queue is done.
     pub async fn run(mut self) -> Result<()> {
-        self.agent.recover(&self.thread_id).await?;
-        let mut input_open = true;
+        self.agent.recover().await?;
         loop {
-            input_open = self.run_queued(input_open).await?;
-            self.emit(SessionEvent::Idle);
-            if !input_open {
-                return Ok(());
-            }
-            let Some(command) = self.commands.recv().await else {
+            self.run_queued().await?;
+            self.agent.emit(SessionEvent::Idle);
+            let Some(command) = self.inbox.next().await else {
                 return Ok(());
             };
-            self.accept_idle(command).await;
+            self.accept(command).await;
             // Everything already sent goes into the same turn.
-            while let Ok(command) = self.commands.try_recv() {
-                self.accept_idle(command).await;
+            for command in self.inbox.ready() {
+                self.accept(command).await;
             }
         }
     }
 
     /// Runs turns until nothing is queued, the user cancels or the context does not fit.
-    /// Returns whether the input is still open.
-    async fn run_queued(&mut self, mut input_open: bool) -> Result<bool> {
-        loop {
-            let conversation = self.agent.conversation(&self.thread_id).await?;
-            if !conversation.has_queued() {
-                return Ok(input_open);
+    async fn run_queued(&mut self) -> Result<()> {
+        while let Some(turn) = self.agent.start_turn().await? {
+            let stop = self.agent.run_turn(&turn, &mut self.inbox).await?;
+            for text in self.inbox.take_held() {
+                self.store(text).await;
             }
-            let tokens = context::context_tokens(&conversation.messages);
-            if let Some(limit) = self.model.context_window.filter(|&limit| tokens > limit) {
-                self.emit(SessionEvent::ContextTooLarge { tokens, limit });
-                return Ok(input_open);
-            }
-            let Some(turn) = self.agent.start_turn(&self.thread_id).await? else {
-                return Ok(input_open);
-            };
-            self.emit(SessionEvent::TurnStarted(turn.clone()));
-
-            let messages = context::chat_messages(&conversation.messages);
-            let request = ChatRequest {
-                model: &self.model.id,
-                messages: &messages,
-                tools: &[],
-            };
-            let mut output = ModelOutput::default();
-            let mut sent_during_turn = Vec::new();
-            let stop = {
-                let provider = self.provider;
-                let events = self.events.clone();
-                let generation = generation::generate(provider, request, &mut output, |event| {
-                    let _ = events.send(SessionEvent::Model(event.clone()));
-                });
-                tokio::pin!(generation);
-                loop {
-                    tokio::select! {
-                        result = &mut generation => break Stop::Finished(result),
-                        command = self.commands.recv(), if input_open => match command {
-                            Some(Command::Send(text)) => sent_during_turn.push(text),
-                            Some(Command::SendNow(text)) => {
-                                sent_during_turn.push(text);
-                                break Stop::Preempted;
-                            }
-                            Some(Command::Cancel) => break Stop::Cancelled,
-                            None => input_open = false,
-                        },
-                    }
-                }
-            };
-
-            let cancelled = matches!(stop, Stop::Cancelled);
-            let turn = self
-                .agent
-                .finish_turn(&turn, self.outcome(stop, output))
-                .await?;
-            self.emit(SessionEvent::TurnFinished(turn));
-            for text in sent_during_turn {
-                self.accept(text).await;
-            }
-            if cancelled {
-                return Ok(input_open);
+            if stop == Some(Stop::Cancelled) {
+                return Ok(());
             }
         }
+        Ok(())
     }
 
-    async fn accept_idle(&self, command: Command) {
+    async fn accept(&self, command: Command) {
         match command {
-            Command::Send(text) | Command::SendNow(text) => self.accept(text).await,
+            Command::Send(text) | Command::SendNow(text) => self.store(text).await,
             Command::Cancel => {}
         }
     }
 
-    async fn accept(&self, text: String) {
+    async fn store(&self, text: String) {
         let message = UserMessage {
             request_uid: Uuid::now_v7().to_string(),
-            thread_id: self.thread_id.clone(),
+            thread_id: self.agent.thread_id.clone(),
             content: text,
             cwd: self.cwd.clone(),
             attachments: Vec::new(),
@@ -220,33 +167,7 @@ impl<'a, P: ModelProvider> SessionRunner<'a, P> {
                 reason: format!("{error:#}"),
             },
         };
-        self.emit(event);
-    }
-
-    fn outcome(&self, stop: Stop, output: ModelOutput) -> AgentOutcome {
-        let reasoning = Some(output.reasoning)
-            .filter(|reasoning| self.record.records_reasoning() && !reasoning.trim().is_empty());
-        match stop {
-            Stop::Finished(Ok(calls)) if !calls.is_empty() => AgentOutcome::Failed {
-                error_message: "the model called a tool, but no tools are available yet".into(),
-            },
-            Stop::Finished(Ok(_)) => AgentOutcome::Completed {
-                content: output.text,
-                reasoning,
-            },
-            Stop::Finished(Err(error)) => AgentOutcome::Failed {
-                error_message: format!("{error:#}"),
-            },
-            Stop::Cancelled | Stop::Preempted => AgentOutcome::Interrupted {
-                content: output.text,
-                reasoning,
-            },
-        }
-    }
-
-    /// A client that stopped listening does not stop the session.
-    fn emit(&self, event: SessionEvent) {
-        let _ = self.events.send(event);
+        self.agent.emit(event);
     }
 }
 
@@ -284,11 +205,14 @@ impl SessionOutput {
 mod tests {
     use std::{collections::VecDeque, sync::Mutex};
 
+    use serde_json::{Value, json};
+
     use super::*;
     use crate::{
-        providers::{ChatStream, FinishReason},
+        providers::{ChatRequest, ChatStream, FinishReason},
         state::{ApprovalMode, MessageRole, ThreadInput, TurnStatus},
-        testing::temp_state,
+        testing::{temp_dir, temp_state},
+        tools::{Tool, ToolFuture},
     };
 
     /// Each model call takes the next script; `Hang` never finishes, like a slow model.
@@ -299,11 +223,19 @@ mod tests {
     #[derive(Clone, Copy)]
     enum Step {
         Text(&'static str),
+        /// Calls the `echo` tool with this text.
+        Call(&'static str),
         Hang,
         Done,
     }
 
-    struct FakeStream(VecDeque<Step>);
+    struct FakeStream {
+        steps: VecDeque<Step>,
+        pending: VecDeque<ModelEvent>,
+    }
+
+    /// Returns its `text` argument.
+    struct Echo;
 
     impl ModelProvider for FakeProvider {
         type Stream = FakeStream;
@@ -314,18 +246,53 @@ mod tests {
 
         async fn stream_chat(&self, _request: ChatRequest<'_>) -> Result<FakeStream> {
             let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
-            Ok(FakeStream(script.into()))
+            Ok(FakeStream {
+                steps: script.into(),
+                pending: VecDeque::new(),
+            })
         }
     }
 
     impl ChatStream for FakeStream {
         async fn next_event(&mut self) -> Result<Option<ModelEvent>> {
-            match self.0.pop_front() {
-                Some(Step::Text(text)) => Ok(Some(ModelEvent::Text(text.into()))),
-                Some(Step::Hang) => std::future::pending().await,
-                Some(Step::Done) => Ok(Some(ModelEvent::Finished(FinishReason::Stop))),
-                None => Ok(None),
+            if let Some(event) = self.pending.pop_front() {
+                return Ok(Some(event));
             }
+            Ok(match self.steps.pop_front() {
+                Some(Step::Text(text)) => Some(ModelEvent::Text(text.into())),
+                Some(Step::Call(text)) => {
+                    self.pending.push_back(ModelEvent::ToolArguments {
+                        index: 0,
+                        fragment: json!({ "text": text }).to_string(),
+                    });
+                    Some(ModelEvent::ToolCall {
+                        index: 0,
+                        id: "call_1".into(),
+                        name: "echo".into(),
+                    })
+                }
+                Some(Step::Hang) => std::future::pending().await,
+                Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
+                None => None,
+            })
+        }
+    }
+
+    impl Tool for Echo {
+        fn name(&self) -> &'static str {
+            "echo"
+        }
+
+        fn description(&self, _scope: &ToolScope) -> String {
+            "Returns its text.".into()
+        }
+
+        fn parameters(&self) -> Value {
+            json!({ "type": "object" })
+        }
+
+        fn call<'a>(&'a self, arguments: Value, _scope: &'a ToolScope) -> ToolFuture<'a> {
+            Box::pin(async move { Ok(arguments["text"].as_str().unwrap_or_default().to_owned()) })
         }
     }
 
@@ -364,15 +331,20 @@ mod tests {
         provider: &'a FakeProvider,
         model: Model,
     ) -> (SessionRunner<'a, FakeProvider>, SessionInput, SessionOutput) {
-        SessionRunner::new(
+        let root = temp_dir("runner_scope");
+        std::fs::create_dir_all(&root).unwrap();
+        let mut tools = ToolRegistry::default();
+        tools.add(Box::new(Echo));
+        SessionRunner::new(SessionSetup {
             state,
             provider,
             model,
-            RecordMode::Full,
-            "agent",
-            "thread",
-            "/tmp",
-        )
+            record: RecordMode::Full,
+            agent_id: "agent",
+            thread_id: "thread",
+            tools,
+            scope: ToolScope::new(&root, &root).unwrap(),
+        })
         .unwrap()
     }
 
@@ -496,6 +468,37 @@ mod tests {
             !events
                 .iter()
                 .any(|event| matches!(event, SessionEvent::TurnStarted(_)))
+        );
+    }
+
+    #[tokio::test]
+    async fn runs_tools_until_the_model_answers() {
+        let state = session_state("tool_loop").await;
+        let provider = provider(vec![
+            vec![Step::Call("ping"), Step::Done],
+            vec![Step::Text("got ping"), Step::Done],
+        ]);
+        let (runner, input, mut output) = runner(&state, &provider, model(None));
+        input.send("use the tool").unwrap();
+        drop(input);
+
+        runner.run().await.unwrap();
+
+        let mut finished = None;
+        while let Some(event) = output.next_event().await {
+            if let SessionEvent::ToolFinished { result, .. } = event {
+                finished = Some(result.content);
+            }
+        }
+        assert_eq!(finished.as_deref(), Some("ping"));
+        assert_eq!(
+            transcript(&state).await,
+            [
+                (MessageRole::User, "use the tool".into()),
+                (MessageRole::Assistant, String::new()),
+                (MessageRole::Tool, "ping".into()),
+                (MessageRole::Assistant, "got ping".into()),
+            ]
         );
     }
 }

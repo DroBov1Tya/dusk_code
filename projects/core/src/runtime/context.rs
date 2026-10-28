@@ -26,10 +26,12 @@ fn chat_message(message: &Message) -> Option<ChatMessage> {
         MessageRole::User => Some(ChatMessage::User(content)),
         MessageRole::Assistant | MessageRole::Agent => Some(ChatMessage::Assistant {
             text: content,
-            tool_calls: Vec::new(),
+            tool_calls: message.tool_calls.clone(),
         }),
-        // Tool results are not stored yet.
-        MessageRole::Tool => None,
+        MessageRole::Tool => Some(ChatMessage::Tool {
+            call_id: message.tool_call_id.clone()?,
+            content,
+        }),
     }
 }
 
@@ -48,6 +50,8 @@ mod tests {
             agent_id: None,
             content: content.into(),
             reasoning: None,
+            tool_calls: Vec::new(),
+            tool_call_id: (role == MessageRole::Tool).then(|| "call".into()),
             cwd: "/tmp".into(),
             attachments: Vec::new(),
             token_count: 5,
@@ -56,7 +60,7 @@ mod tests {
     }
 
     #[test]
-    fn keeps_only_role_and_text_of_conversation_messages() {
+    fn keeps_only_role_text_and_tool_links() {
         let messages = [
             message(MessageRole::System, "prompt"),
             message(MessageRole::User, "question"),
@@ -73,9 +77,13 @@ mod tests {
                     text: "answer".into(),
                     tool_calls: Vec::new()
                 },
+                ChatMessage::Tool {
+                    call_id: "call".into(),
+                    content: "tool output".into()
+                },
                 ChatMessage::User("follow-up".into()),
             ]
         );
-        assert_eq!(context_tokens(&messages), 20);
+        assert_eq!(context_tokens(&messages), 25);
     }
 }

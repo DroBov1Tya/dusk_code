@@ -73,6 +73,8 @@ impl<'a> UserReceiver<'a> {
                     agent_id: None,
                     content: message.content,
                     reasoning: None,
+                    tool_calls: Vec::new(),
+                    tool_call_id: None,
                     cwd: message.cwd,
                     attachments: message.attachments,
                 },

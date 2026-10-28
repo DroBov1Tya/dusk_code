@@ -86,6 +86,8 @@ fn system_message(thread_id: &str, workspace: &Path, prompt: String) -> MessageI
         agent_id: None,
         content: prompt,
         reasoning: None,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
         cwd: workspace.to_string_lossy().into_owned(),
         attachments: Vec::new(),
     }

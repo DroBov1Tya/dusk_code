@@ -4,6 +4,7 @@
 use std::future::Future;
 
 use anyhow::{Context, Result, bail, ensure};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Bounds memory for a provider that never finishes; every kind of output counts.
@@ -48,7 +49,7 @@ pub enum FinishReason {
     ContentFilter,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolCall {
     /// Provider-assigned; a tool result refers back to it.
     pub id: String,

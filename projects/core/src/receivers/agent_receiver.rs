@@ -4,7 +4,10 @@
 use anyhow::{Result, ensure};
 use uuid::Uuid;
 
-use crate::state::{Message, MessageRole, State, Turn, TurnAnswer, TurnOutcome};
+use crate::{
+    providers::ToolCall,
+    state::{Message, MessageRole, State, StepResult, Turn, TurnAnswer, TurnOutcome, TurnStep},
+};
 
 const CONVERSATION_PAGE: u32 = 1000;
 
@@ -35,6 +38,15 @@ pub enum AgentOutcome {
     Failed {
         error_message: String,
     },
+}
+
+/// A round of tool use: what the agent wrote and called, and what each call returned.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentStep {
+    pub content: String,
+    pub reasoning: Option<String>,
+    pub tool_calls: Vec<ToolCall>,
+    pub results: Vec<StepResult>,
 }
 
 impl Conversation {
@@ -78,6 +90,16 @@ impl<'a> AgentReceiver<'a> {
     pub async fn start_turn(&self, thread_id: &str) -> Result<Option<Turn>> {
         let turn_id = Uuid::now_v7().to_string();
         self.state.start_turn(thread_id, &turn_id).await
+    }
+
+    pub async fn record_step(&self, turn: &Turn, step: AgentStep) -> Result<()> {
+        let step = TurnStep {
+            answer: self.answer(step.content, step.reasoning),
+            tool_calls: step.tool_calls,
+            results: step.results,
+        };
+        self.state.record_step(&turn.turn_id, step).await?;
+        Ok(())
     }
 
     pub async fn finish_turn(&self, turn: &Turn, outcome: AgentOutcome) -> Result<Turn> {

@@ -15,5 +15,8 @@ uuid.workspace = true
 sqlx.workspace = true
 libsqlite3-sys.workspace = true
 
+[target.'cfg(unix)'.dependencies]
+nix.workspace = true
+
 [dev-dependencies]
 proptest.workspace = true

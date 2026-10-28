@@ -7,9 +7,10 @@ use dusk_core::{
     init,
     paths::Paths,
     providers::{Model, ProviderRegistry},
-    runtime::SessionRunner,
+    runtime::{SessionRunner, SessionSetup},
     session::start_session,
     state::State,
+    tools::{ToolRegistry, ToolScope},
 };
 use tracing::{error, info};
 
@@ -90,16 +91,16 @@ impl Application {
             session.thread_id,
             session.workspace.display()
         );
-        let cwd = env::current_dir()?.to_string_lossy().into_owned();
-        let (runner, input, output) = SessionRunner::new(
-            &self.state,
+        let (runner, input, output) = SessionRunner::new(SessionSetup {
+            state: &self.state,
             provider,
-            self.model.clone(),
-            self.record,
-            AGENT_ID,
-            &session.thread_id,
-            &cwd,
-        )?;
+            model: self.model.clone(),
+            record: self.record,
+            agent_id: AGENT_ID,
+            thread_id: &session.thread_id,
+            tools: ToolRegistry::builtin(),
+            scope: ToolScope::new(&env::current_dir()?, &session.workspace)?,
+        })?;
         chat::run(runner, input, output).await
     }
 }

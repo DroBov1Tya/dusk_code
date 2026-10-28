@@ -4,7 +4,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 
-use crate::events::Event;
+use crate::{events::Event, providers::ToolCall};
 
 use super::{State, timestamp_ms};
 
@@ -21,6 +21,8 @@ pub struct Message {
     pub content: String,
     /// Model thinking; `None` when not recorded.
     pub reasoning: Option<String>,
+    pub tool_calls: Vec<ToolCall>,
+    pub tool_call_id: Option<String>,
     pub cwd: String,
     pub attachments: Vec<MessageAttachment>,
     /// Estimated size in model tokens; see [`estimate_tokens`].
@@ -69,6 +71,10 @@ pub struct MessageInput {
     pub content: String,
     /// Model thinking; only assistant messages carry it.
     pub reasoning: Option<String>,
+    /// Only assistant messages call tools.
+    pub tool_calls: Vec<ToolCall>,
+    /// Set exactly on tool messages: the call they answer.
+    pub tool_call_id: Option<String>,
     /// Historical working-directory context; it need not still exist when history is read.
     pub cwd: String,
     pub attachments: Vec<MessageAttachment>,
@@ -80,7 +86,9 @@ impl State {
     /// Receiver-owned ID prefixes are reserved for transactional user turns and responses.
     pub async fn append_message(&self, message_id: &str, input: MessageInput) -> Result<Message> {
         ensure!(
-            !message_id.starts_with("request:") && !message_id.starts_with("turn-response:"),
+            !["request:", "turn-response:", "turn-step:"]
+                .iter()
+                .any(|prefix| message_id.starts_with(prefix)),
             "message ID prefix is reserved for receivers"
         );
         validate_input(message_id, &input)?;
@@ -144,11 +152,18 @@ pub(super) async fn insert_message(
     validate_input(message_id, input)?;
     let attachments =
         serde_json::to_string(&input.attachments).context("encode message attachments")?;
+    let tool_calls = match input.tool_calls.as_slice() {
+        [] => None,
+        calls => Some(serde_json::to_string(calls).context("encode tool calls")?),
+    };
+    let token_count =
+        estimate_tokens(&input.content) + tool_calls.as_deref().map_or(0, estimate_tokens);
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, job_id, request_uid, sequence,
-            role, agent_id, content, reasoning, cwd, attachments_json, token_count, created_at)
+            role, agent_id, content, reasoning, tool_calls_json, tool_call_id, cwd,
+            attachments_json, token_count, created_at)
          VALUES (?, ?, ?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(message_id)
     .bind(&input.thread_id)
@@ -159,9 +174,11 @@ pub(super) async fn insert_message(
     .bind(&input.agent_id)
     .bind(&input.content)
     .bind(&input.reasoning)
+    .bind(tool_calls)
+    .bind(&input.tool_call_id)
     .bind(&input.cwd)
     .bind(attachments)
-    .bind(i64::try_from(estimate_tokens(&input.content)).context("message is too large")?)
+    .bind(i64::try_from(token_count).context("message is too large")?)
     .bind(timestamp)
     .fetch_one(&mut **transaction)
     .await
@@ -179,8 +196,18 @@ fn validate_input(message_id: &str, input: &MessageInput) -> Result<()> {
     ensure!(!message_id.trim().is_empty(), "message ID is empty");
     ensure!(!input.thread_id.trim().is_empty(), "thread ID is empty");
     ensure!(
-        !input.content.trim().is_empty() || !input.attachments.is_empty(),
+        !input.content.trim().is_empty()
+            || !input.attachments.is_empty()
+            || !input.tool_calls.is_empty(),
         "message is empty"
+    );
+    ensure!(
+        input.tool_calls.is_empty() || input.role == MessageRole::Assistant,
+        "only an assistant message can call tools"
+    );
+    ensure!(
+        (input.role == MessageRole::Tool) == input.tool_call_id.is_some(),
+        "a tool message, and only a tool message, answers a tool call"
     );
     ensure!(
         input.job_id.as_ref().is_none_or(|id| !id.trim().is_empty()),
@@ -247,6 +274,11 @@ pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
     let sequence: i64 = row.try_get("sequence")?;
     let attachments: String = row.try_get("attachments_json")?;
     let token_count: i64 = row.try_get("token_count")?;
+    let tool_calls: Option<String> = row.try_get("tool_calls_json")?;
+    let tool_calls = match tool_calls {
+        Some(json) => serde_json::from_str(&json).context("decode tool calls")?,
+        None => Vec::new(),
+    };
     Ok(Message {
         message_id: row.try_get("message_id")?,
         thread_id: row.try_get("thread_id")?,
@@ -257,6 +289,8 @@ pub(super) fn decode_message(row: SqliteRow) -> Result<Message> {
         agent_id: row.try_get("agent_id")?,
         content: row.try_get("content")?,
         reasoning: row.try_get("reasoning")?,
+        tool_calls,
+        tool_call_id: row.try_get("tool_call_id")?,
         cwd: row.try_get("cwd")?,
         attachments: serde_json::from_str(&attachments).context("decode message attachments")?,
         token_count: token_count.try_into().context("negative token count")?,
