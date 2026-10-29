@@ -1,38 +1,87 @@
-//! Drawing the app. From the top: the thread and the model, the horizon that shows how
-//! full the context is, the transcript, then the status rule and the message box.
+//! Drawing the app. The statistics rail fills the left edge; the thread and
+//! message box occupy the right side at wider terminal widths.
 
 mod header;
 mod input;
 mod markdown;
 mod panels;
 pub mod screen;
+mod sidebar;
 mod theme;
 mod transcript;
 mod wrap;
 
 use ratatui::{
     Frame,
-    layout::{Constraint, Layout},
+    layout::{Constraint, Layout, Rect},
+    widgets::{Block, Borders},
 };
 
 use crate::app::App;
 
+const SPLIT_AT: u16 = 84;
+const SIDEBAR_WIDTH: u16 = 28;
+
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let screen = frame.area();
-    let input_height = input::height(app, screen.width);
-    // The empty line under the horizon lets the transcript breathe.
-    let [top, horizon, _, body, bottom] = Layout::vertical([
-        Constraint::Length(1),
+    app.compact_layout = screen.width < SPLIT_AT;
+    let sidebar_visible = !app.compact_layout && app.sidebar_visible;
+    let main = if sidebar_visible {
+        Rect {
+            x: screen.x + SIDEBAR_WIDTH + 1,
+            width: screen.width - SIDEBAR_WIDTH - 1,
+            ..screen
+        }
+    } else {
+        screen
+    };
+    let input_height = input::height(app, main.width);
+    // A single empty row keeps the header separate from the transcript.
+    let [top, _, body, bottom] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Min(1),
         Constraint::Length(input_height),
     ])
-    .areas(screen);
+    .areas(main);
     header::draw(frame, top, app);
-    header::horizon(frame, horizon, app);
+    app.sidebar_overlay = None;
+    app.sidebar_area = None;
+    app.agent_area = None;
+    app.mcp_area = None;
+    app.agent_max_scroll = 0;
+    app.mcp_max_scroll = 0;
+    if sidebar_visible {
+        let sidebar_area = Rect {
+            width: SIDEBAR_WIDTH,
+            ..screen
+        };
+        app.sidebar_area = Some(sidebar_area);
+        sidebar::draw(frame, sidebar_area, app, false);
+    }
     transcript::draw(frame, body, app);
+    if app.compact_layout && app.sidebar_overlay_open {
+        let overlay = Rect {
+            width: SIDEBAR_WIDTH.min(body.width.saturating_sub(2)),
+            ..body
+        };
+        app.sidebar_overlay = Some(overlay);
+        app.sidebar_area = Some(overlay);
+        sidebar::draw(frame, overlay, app, true);
+    }
     input::draw(frame, bottom, app);
     input::draw_commands(frame, body, app);
+    if sidebar_visible {
+        frame.render_widget(
+            Block::default()
+                .borders(Borders::LEFT)
+                .border_style(theme::fg(theme::SIDEBAR_EDGE)),
+            Rect {
+                x: screen.x + SIDEBAR_WIDTH,
+                width: 1,
+                ..screen
+            },
+        );
+    }
     panels::draw(frame, screen, app);
 }

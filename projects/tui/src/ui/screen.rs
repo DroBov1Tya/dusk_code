@@ -1,4 +1,4 @@
-//! Taking the terminal over and giving it back. Mouse reporting is on for scrolling;
+//! Taking the terminal over and giving it back. Mouse reporting is on for scrolling and folding;
 //! most terminals still select text with Shift held.
 
 use std::io::stdout;

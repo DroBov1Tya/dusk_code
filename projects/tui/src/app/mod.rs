@@ -7,7 +7,12 @@ mod keys;
 mod panels;
 mod transcript;
 
-use std::{path::PathBuf, sync::Arc};
+use std::{
+    collections::VecDeque,
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+};
 
 use dusk_core::{
     live_config::LiveConfig,
@@ -15,6 +20,7 @@ use dusk_core::{
     runtime::ThreadEvent,
     state::{Message, ThreadTokens, TurnStatus},
 };
+use ratatui::layout::Rect;
 
 pub use input::Input;
 pub use panels::{Panel, SettingKind, SettingList, ThreadList};
@@ -49,6 +55,24 @@ pub enum Activity {
     Retrying(u32),
 }
 
+/// The header row of a foldable entry on the last drawn frame.
+pub struct TranscriptHit {
+    pub row: u16,
+    pub left: u16,
+    pub right: u16,
+    pub index: usize,
+}
+
+/// Display data for an agent reported by a future core event source.
+pub struct SubagentView {
+    pub id: String,
+    pub task: String,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
+}
+
+const RATE_WINDOW: Duration = Duration::from_secs(3);
+
 pub struct App {
     pub model: String,
     pub thread_id: Option<String>,
@@ -63,10 +87,31 @@ pub struct App {
     pub limit: u64,
     /// Lines scrolled up from the bottom; 0 follows new output.
     pub scroll: usize,
+    /// Largest transcript offset on the last drawn frame.
+    pub max_scroll: usize,
     /// Height of the transcript on the last frame, for paging.
     pub viewport: usize,
+    pub transcript_area: Option<Rect>,
     /// Advances while the agent works, for the spinner.
     pub frame: usize,
+    /// Hidden by F2 when there is room.
+    pub sidebar_visible: bool,
+    pub sidebar_overlay_open: bool,
+    pub compact_layout: bool,
+    pub sidebar_overlay: Option<Rect>,
+    pub sidebar_area: Option<Rect>,
+    pub agent_area: Option<Rect>,
+    pub mcp_area: Option<Rect>,
+    pub agent_scroll: usize,
+    pub mcp_scroll: usize,
+    pub agent_max_scroll: usize,
+    pub mcp_max_scroll: usize,
+    pub transcript_hits: Vec<TranscriptHit>,
+    pub command_popup: Option<Rect>,
+    pub subagents: Vec<SubagentView>,
+    pub active_mcp: Vec<String>,
+    pub turn_started_at: Option<i64>,
+    pub last_turn_duration_ms: Option<u64>,
     pub config: Arc<LiveConfig>,
     pub tools: Vec<&'static str>,
     pub skills_dir: PathBuf,
@@ -74,6 +119,7 @@ pub struct App {
     compacting: bool,
     sent: Vec<String>,
     recall: Option<usize>,
+    output_samples: VecDeque<(Instant, usize)>,
 }
 
 impl App {
@@ -96,8 +142,27 @@ impl App {
             tokens: ThreadTokens::default(),
             limit,
             scroll: 0,
+            max_scroll: 0,
             viewport: 0,
+            transcript_area: None,
             frame: 0,
+            sidebar_visible: true,
+            sidebar_overlay_open: false,
+            compact_layout: false,
+            sidebar_overlay: None,
+            sidebar_area: None,
+            agent_area: None,
+            mcp_area: None,
+            agent_scroll: 0,
+            mcp_scroll: 0,
+            agent_max_scroll: 0,
+            mcp_max_scroll: 0,
+            transcript_hits: Vec::new(),
+            command_popup: None,
+            subagents: Vec::new(),
+            active_mcp: Vec::new(),
+            turn_started_at: None,
+            last_turn_duration_ms: None,
             config,
             tools,
             skills_dir,
@@ -105,6 +170,7 @@ impl App {
             compacting: false,
             sent: Vec::new(),
             recall: None,
+            output_samples: VecDeque::new(),
         }
     }
 
@@ -117,6 +183,23 @@ impl App {
         self.activity = Activity::Idle;
         self.tokens = ThreadTokens::default();
         self.scroll = 0;
+        self.max_scroll = 0;
+        self.transcript_area = None;
+        self.transcript_hits.clear();
+        self.command_popup = None;
+        self.sidebar_overlay = None;
+        self.sidebar_area = None;
+        self.agent_area = None;
+        self.mcp_area = None;
+        self.agent_scroll = 0;
+        self.mcp_scroll = 0;
+        self.agent_max_scroll = 0;
+        self.mcp_max_scroll = 0;
+        self.subagents.clear();
+        self.active_mcp.clear();
+        self.turn_started_at = None;
+        self.last_turn_duration_ms = None;
+        self.output_samples.clear();
         self.turn_running = false;
         self.compacting = false;
     }
@@ -127,6 +210,46 @@ impl App {
 
     pub fn tick(&mut self) {
         self.frame = self.frame.wrapping_add(1);
+        self.trim_output_samples();
+    }
+
+    /// Recent visible output divided by four bytes per estimated token.
+    pub fn approximate_tokens_per_second(&self) -> Option<f64> {
+        if !self.is_busy() {
+            return None;
+        }
+        let now = Instant::now();
+        let first = self.output_samples.front()?.0;
+        let bytes: usize = self
+            .output_samples
+            .iter()
+            .filter(|(at, _)| now.duration_since(*at) <= RATE_WINDOW)
+            .map(|(_, bytes)| *bytes)
+            .sum();
+        let seconds = now.duration_since(first).as_secs_f64().clamp(0.5, 3.0);
+        Some(bytes as f64 / 4.0 / seconds)
+    }
+
+    pub fn elapsed_ms(&self) -> Option<u64> {
+        self.turn_started_at
+            .map(|started| now_ms().saturating_sub(started).max(0) as u64)
+            .or(self.last_turn_duration_ms)
+    }
+
+    fn record_output(&mut self, text: &str) {
+        self.output_samples.push_back((Instant::now(), text.len()));
+        self.trim_output_samples();
+    }
+
+    fn trim_output_samples(&mut self) {
+        let now = Instant::now();
+        while self
+            .output_samples
+            .front()
+            .is_some_and(|(at, _)| now.duration_since(*at) > RATE_WINDOW)
+        {
+            self.output_samples.pop_front();
+        }
     }
 
     pub fn error(&mut self, text: impl Into<String>) {
@@ -135,20 +258,26 @@ impl App {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         match event {
-            ThreadEvent::TurnStarted(_) => {
+            ThreadEvent::TurnStarted(turn) => {
                 self.turn_running = true;
                 self.activity = Activity::Thinking;
+                self.turn_started_at = Some(turn.started_at);
+                self.last_turn_duration_ms = None;
+                self.output_samples.clear();
             }
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => {
+                self.record_output(&text);
                 self.transcript.add_reasoning(&text);
                 if !self.compacting {
                     self.activity = Activity::Thinking;
                 }
             }
             ThreadEvent::Model(ModelEvent::Text(text)) if self.compacting => {
+                self.record_output(&text);
                 self.transcript.add_summary(&text);
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => {
+                self.record_output(&text);
                 self.transcript.add_answer(&text);
                 self.activity = Activity::Writing;
             }
@@ -162,6 +291,11 @@ impl App {
             }
             ThreadEvent::TurnFinished(turn) => {
                 self.turn_running = false;
+                self.last_turn_duration_ms = turn
+                    .finished_at
+                    .map(|finished| finished.saturating_sub(turn.started_at).max(0) as u64);
+                self.turn_started_at = None;
+                self.output_samples.clear();
                 self.transcript.stop_running_tools();
                 match turn.status {
                     TurnStatus::Interrupted => self.transcript.notice("stopped", Tone::Info),
@@ -214,6 +348,8 @@ impl App {
             ThreadEvent::Idle => {
                 self.turn_running = false;
                 self.activity = Activity::Idle;
+                self.turn_started_at = None;
+                self.output_samples.clear();
             }
             _ => {}
         }
@@ -264,6 +400,12 @@ impl App {
             Activity::Idle
         };
     }
+}
+
+pub fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 /// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M".

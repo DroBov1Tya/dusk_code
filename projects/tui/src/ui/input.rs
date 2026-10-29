@@ -11,14 +11,10 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
-    header::filled,
-    theme::{
-        DOT, EMBER, HAZE, HORIZON_DARK, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, dusk, fg,
-        thought,
-    },
+    theme::{EMBER, HAZE, HORIZON_DARK, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, fg, thought},
     transcript::spinner,
 };
-use crate::app::{Activity, App, Focus, compact_number};
+use crate::app::{Activity, App, Focus};
 
 const MAX_ROWS: usize = 8;
 const PROMPT: &str = " \u{203A} ";
@@ -70,7 +66,8 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
 }
 
 /// The command list above the box while a command is being typed.
-pub fn draw_commands(frame: &mut Frame, above: Rect, app: &App) {
+pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
+    app.command_popup = None;
     let text = app.input.text.as_str();
     if !text.starts_with('/') || text.contains(char::is_whitespace) {
         return;
@@ -95,6 +92,7 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &App) {
         width,
         height: height.min(above.height),
     };
+    app.command_popup = Some(area);
     let lines: Vec<Line> = matching
         .iter()
         .map(|(name, about)| {
@@ -111,13 +109,13 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &App) {
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
 
-/// The rule: what the agent is doing on the left, the context on the right.
+/// The rule: what the agent is doing and how far the transcript is scrolled.
 fn status(app: &App, width: usize) -> Line<'static> {
     let doing = match (&app.activity, app.focus) {
         (Activity::Idle, Focus::Browse(_)) => {
             vec![Span::styled("up/down move  enter fold  esc back", dim())]
         }
-        (Activity::Idle, Focus::Input) => vec![Span::styled("ready", dim())],
+        (Activity::Idle, Focus::Input) => vec![Span::styled("ready  /  F2 sidebar", dim())],
         (activity, _) => {
             let (color, what) = match activity {
                 Activity::Thinking => (SUN, "thinking".to_owned()),
@@ -133,28 +131,13 @@ fn status(app: &App, width: usize) -> Line<'static> {
             ]
         }
     };
-    let fill = filled(app);
     let below = if app.scroll > 0 {
-        format!("{} lines below  ", app.scroll)
+        format!("{} lines below", app.scroll)
     } else {
         String::new()
     };
-    let context = vec![
-        Span::styled(below, fg(SUN)),
-        Span::styled(format!("{:.0}%", fill * 100.0), bold(dusk(fill))),
-        Span::styled(
-            format!(
-                " {} / {}  {DOT}  in {}  out {} ",
-                compact_number(app.tokens.context),
-                compact_number(app.limit),
-                compact_number(app.tokens.spent.prompt_tokens),
-                compact_number(app.tokens.spent.completion_tokens),
-            ),
-            dim(),
-        ),
-    ];
     let left_width: usize = doing.iter().map(Span::width).sum::<usize>() + 4;
-    let right_width: usize = context.iter().map(Span::width).sum::<usize>() + 1;
+    let right_width = below.width() + 2;
     let fill_width = width.saturating_sub(left_width + right_width);
     let mut spans = vec![Span::styled(
         format!("{HORIZON_DARK}{HORIZON_DARK} "),
@@ -165,7 +148,9 @@ fn status(app: &App, width: usize) -> Line<'static> {
         format!(" {} ", HORIZON_DARK.repeat(fill_width)),
         fg(NIGHT),
     ));
-    spans.extend(context);
+    if !below.is_empty() {
+        spans.push(Span::styled(format!(" {below} "), fg(SUN)));
+    }
     Line::from(spans)
 }
 

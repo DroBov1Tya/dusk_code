@@ -65,7 +65,7 @@ pub async fn run(
                 }
                 Action::None
             }
-            _ = clock.tick(), if app.is_busy() => {
+            _ = clock.tick(), if app.is_busy() || app.subagents.iter().any(|agent| agent.finished_at.is_none()) => {
                 app.tick();
                 Action::None
             }

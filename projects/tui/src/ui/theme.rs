@@ -11,22 +11,24 @@ pub const EMBER: Color = Color::Rgb(255, 99, 99);
 pub const TEAL: Color = Color::Rgb(94, 214, 194);
 /// Thinking, hints and anything said in passing.
 pub const HAZE: Color = Color::Rgb(128, 122, 150);
-/// Empty parts of the horizon and borders.
+/// Quiet borders and separators.
 pub const NIGHT: Color = Color::Rgb(68, 63, 88);
 /// Behind the selected entry.
 pub const GLOW: Color = Color::Rgb(44, 40, 60);
+/// A quiet contrast for the full-height statistics rail.
+pub const SIDEBAR_BG: Color = Color::Rgb(38, 35, 52);
+pub const SIDEBAR_FG: Color = Color::Rgb(230, 224, 240);
+pub const SIDEBAR_MUTED: Color = Color::Rgb(165, 157, 187);
+pub const SIDEBAR_EDGE: Color = Color::Rgb(107, 96, 132);
 
 // Glyphs, written as escapes to keep the sources ASCII.
 pub const SUN_GLYPH: &str = "\u{25D2}";
-pub const SETTING_SUN: &str = "\u{25CF}";
 pub const FOLDED: &str = "\u{25B8}";
 pub const UNFOLDED: &str = "\u{25BE}";
 pub const USER_BAR: &str = "\u{258C}";
 pub const GUTTER: &str = "\u{2502}";
 pub const CODE_BAR: &str = "\u{258F}";
-pub const HORIZON_LIT: &str = "\u{2501}";
 pub const HORIZON_DARK: &str = "\u{2500}";
-pub const COMPACT_MARK: &str = "\u{2503}";
 pub const TOOL: &str = "\u{25C6}";
 pub const TOOL_RUNNING: &str = "\u{25C7}";
 pub const DONE: &str = "\u{2713}";
@@ -36,9 +38,13 @@ pub const BULLET: &str = "\u{2022}";
 pub const ELLIPSIS: &str = "\u{2026}";
 pub const ON: &str = "\u{25CF}";
 pub const OFF: &str = "\u{25CB}";
-pub const SPINNER: [&str; 10] = [
-    "\u{280B}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283C}", "\u{2834}", "\u{2826}", "\u{2827}",
-    "\u{2807}", "\u{280F}",
+pub const SPINNER: [&str; 6] = [
+    "\u{25C7}\u{00B7}  ",
+    "\u{25C7}\u{00B7}\u{00B7} ",
+    "\u{25C7}\u{00B7}\u{00B7}\u{00B7}",
+    "\u{25C6}\u{00B7}\u{00B7}\u{00B7}",
+    "\u{25C6}\u{00B7}\u{00B7} ",
+    "\u{25C6}\u{00B7}  ",
 ];
 
 pub fn fg(color: Color) -> Style {
