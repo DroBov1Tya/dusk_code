@@ -47,12 +47,12 @@ impl Agent {
     /// leaves the context as it was.
     pub async fn compact(
         &self,
-        focus: Option<&str>,
+        instructions: Option<&str>,
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Option<Stop> {
         self.emit(ThreadEvent::CompactionStarted);
-        match self.summarize(focus, turn, inbox).await {
+        match self.summarize(instructions, turn, inbox).await {
             Ok(Ok(compaction)) => {
                 self.emit(ThreadEvent::CompactionFinished(compaction));
                 self.report_tokens().await;
@@ -69,7 +69,7 @@ impl Agent {
 
     async fn summarize(
         &self,
-        focus: Option<&str>,
+        instructions: Option<&str>,
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Result<Result<Compaction, Stop>> {
@@ -78,7 +78,7 @@ impl Agent {
             bail!("nothing to compact since the last summary");
         };
         let mut messages = conversation.chat_messages_through(through);
-        messages.push(ChatMessage::User(self.instructions(focus)?));
+        messages.push(ChatMessage::User(self.instructions(instructions)?));
         let request = ChatRequest {
             model: &self.model.id,
             messages: &messages,
@@ -113,11 +113,12 @@ impl Agent {
     }
 
     /// COMPACT.md, or the built-in text when it is missing or blank.
-    fn instructions(&self, focus: Option<&str>) -> Result<String> {
+    /// `extra` is what the user wrote after /compact.
+    fn instructions(&self, extra: Option<&str>) -> Result<String> {
         let prompt = read_prompt(&self.compact_prompt)?;
         let mut instructions = prompt.unwrap_or_else(|| COMPACT_PROMPT_TEMPLATE.to_owned());
-        if let Some(focus) = focus {
-            instructions.push_str(&format!("\nFocus the summary on: {focus}\n"));
+        if let Some(extra) = extra {
+            instructions.push_str(&format!("\nAlso follow these instructions: {extra}\n"));
         }
         Ok(instructions)
     }

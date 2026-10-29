@@ -22,7 +22,7 @@ use super::{
     mailboxes::{Mailbox, Mailboxes},
 };
 use crate::{
-    commands::{self, Command},
+    chat::commands,
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
     state::{Compaction, Message, PendingMessage, State, ThreadTokens, Turn, estimate_tokens},
@@ -285,13 +285,7 @@ impl ThreadRunner {
             Err(error) => self.agent.emit(ThreadEvent::Rejected {
                 reason: format!("{error:#}"),
             }),
-            Ok(Command::Compact { focus }) => {
-                // A stop only ends the compaction; the client decides what comes next.
-                let _ = self
-                    .agent
-                    .compact(focus.as_deref(), None, &mut self.inbox)
-                    .await;
-            }
+            Ok(command) => command.run_in_thread(&self.agent, &mut self.inbox).await,
         }
         // Removed only once done: a command cut short by a crash runs again on restart.
         state.remove_pending(pending.pending_id).await

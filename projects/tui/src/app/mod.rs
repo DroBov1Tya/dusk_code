@@ -17,6 +17,7 @@ use std::{
 };
 
 use dusk_core::{
+    chat::commands::{self, COMMANDS, Command},
     live_config::LiveConfig,
     providers::ModelEvent,
     runtime::ThreadEvent,
@@ -36,7 +37,8 @@ pub enum Action {
     Send(String),
     SendNow(String),
     Cancel,
-    ShowThreads,
+    /// A command the core answers for the client, such as the threads for /resume.
+    Command(Command),
     OpenThread(String),
     NewThread,
     Copy(String),
@@ -44,12 +46,9 @@ pub enum Action {
     Preview(String),
 }
 
-/// Commands the client runs itself; the core never sees them.
-pub const CLIENT_COMMANDS: &[(&str, &str)] = &[("/resume", "open an earlier thread")];
-
-/// Every command the box offers: the core's and the client's.
+/// Every command the box offers, as the core lists them.
 pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
-    dusk_core::commands::COMMANDS.iter().chain(CLIENT_COMMANDS)
+    COMMANDS.iter()
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -513,11 +512,16 @@ impl App {
         let text = self.input.take();
         self.sent.push(text.clone());
         self.recall = None;
-        if text.trim() == "/resume" {
-            return Action::ShowThreads;
+        // The core says what a command is; ones that do not run in the thread come
+        // back from it as something to show.
+        let command = commands::parse(&text);
+        if let Some(Ok(command)) = &command
+            && !command.runs_in_thread()
+        {
+            return Action::Command(command.clone());
         }
         self.scroll = 0;
-        if dusk_core::commands::parse(&text).is_some() {
+        if command.is_some() {
             self.transcript.notice(text.trim().to_owned(), Tone::Info);
         } else {
             self.transcript.push(Entry::User {

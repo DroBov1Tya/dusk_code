@@ -11,8 +11,8 @@ use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
 use super::{
-    Action, App, Button, Entry, Focus, Panel, Selection, SettingKind, SettingList, TEXT_COLUMN,
-    commands, panels::step,
+    Action, App, Button, Command, Entry, Focus, Panel, Selection, SettingKind, SettingList,
+    TEXT_COLUMN, commands, panels::step,
 };
 
 /// How long a first Ctrl+C waits for the second.
@@ -58,7 +58,7 @@ impl App {
             return self.panel_key(key);
         }
         match key.code {
-            KeyCode::Char('t') if ctrl => return Action::ShowThreads,
+            KeyCode::Char('t') if ctrl => return Action::Command(Command::Resume),
             KeyCode::Char('n') if ctrl => return Action::NewThread,
             KeyCode::Char('o') if ctrl => {
                 let list = SettingList::load(&self.config.current(), &self.tools, &self.skills_dir);
