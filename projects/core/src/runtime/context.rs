@@ -126,7 +126,11 @@ fn chat_message(message: &Message) -> Option<ChatMessage> {
     let content = message.content.clone();
     match message.role {
         MessageRole::System => Some(ChatMessage::System(content)),
-        MessageRole::User => Some(ChatMessage::User(content)),
+        // The model learns who wrote it; thread IDs are how agents address each other.
+        MessageRole::User => Some(ChatMessage::User(match &message.from_thread_id {
+            Some(from) => format!("[message from agent thread {from}]\n{content}"),
+            None => content,
+        })),
         MessageRole::Assistant => Some(ChatMessage::Assistant {
             text: content,
             tool_calls: message.tool_calls.clone(),
@@ -152,6 +156,7 @@ mod tests {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: (role == MessageRole::Tool).then(|| "call".into()),
+            from_thread_id: None,
             content_tokens: 5,
             tool_calls_tokens: 0,
             reasoning_tokens: 0,

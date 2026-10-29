@@ -21,7 +21,7 @@ use crate::{
         ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, ToolSpec, is_output_limit,
         is_transient,
     },
-    state::{CallPurpose, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
+    state::{CallPurpose, MessageRole, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
     tools::{Progress, ToolRegistry, ToolScope},
 };
 
@@ -83,7 +83,10 @@ impl Agent {
             match self.step(turn, inbox).await? {
                 // Tool results are what fills the context, so it is checked after each.
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
-                    None => continue,
+                    None => {
+                        self.take_agent_messages().await?;
+                        continue;
+                    }
                     Some(reason) => {
                         stop = Some(reason);
                         outcome = TurnOutcome::Interrupted(None);
@@ -101,6 +104,22 @@ impl Agent {
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;
         Ok(stop)
+    }
+
+    /// Messages from other agents join the running turn, so the next step reads them.
+    /// What clients sent waits for the next turn.
+    async fn take_agent_messages(&self) -> Result<()> {
+        for pending in self.state.pending_messages(&self.thread_id).await? {
+            if pending.from_thread_id.is_none() {
+                continue;
+            }
+            let message = self.state.admit_pending(&self.thread_id, &pending).await?;
+            self.emit(ThreadEvent::Queued {
+                message_id: message.message_id.clone(),
+            });
+            self.emit(ThreadEvent::FromAgent(message));
+        }
+        Ok(())
     }
 
     /// Counting is for the client to see; a failure here does not touch the thread.
@@ -130,6 +149,17 @@ impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     async fn step(&self, turn: &Turn, inbox: &mut Inbox) -> Result<StepEnd> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+        // Messages that joined between steps are answered by this turn, not a next one.
+        let newest_user = conversation
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::User)
+            .map(|message| message.sequence)
+            .max()
+            .unwrap_or(0);
+        if newest_user > conversation.answered_through {
+            self.state.extend_turn(&turn.turn_id, newest_user).await?;
+        }
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config.current();
         let tools = self.tools.specs(&self.scope, &config);

@@ -13,6 +13,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::{
+    loader::{Loader, agent_name, identity},
     markdown,
     theme::{
         DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, ROSE, SELECTED, SPINNER, SUN, SUN_GLYPH,
@@ -193,6 +194,24 @@ fn layout(app: &App, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
     (lines, starts)
 }
 
+/// A message from an agent, under its name and in its color, as on its card.
+fn from_agent(thread_id: &str, text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let seed = identity(thread_id);
+    let color = Loader::new(seed).color();
+    let header = Line::from(vec![
+        Span::styled(format!("   {} ", fold_mark(open)), fg(color)),
+        Span::styled(agent_name(seed), bold(color)),
+        Span::styled(
+            format!(" {DOT} message {DOT} {} lines", text.lines().count()),
+            dim(),
+        ),
+    ]);
+    folded(header, open, || {
+        let body = markdown::render(text.trim(), width.saturating_sub(2));
+        indent(body, &format!("   {GUTTER} "))
+    })
+}
+
 /// A sent message behind its bar; each pasted block is one line until opened.
 fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     let bar = || Span::styled(format!(" {USER_BAR} "), fg(ROSE));
@@ -254,6 +273,11 @@ fn entry_lines(entry: &Entry, width: usize, live: Option<&App>) -> Vec<Line<'sta
                 indent(body, &format!("   {GUTTER} "))
             })
         }
+        Entry::FromAgent {
+            thread_id,
+            text,
+            open,
+        } => from_agent(thread_id, text, *open, width),
         Entry::Notice { text, tone } => {
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),

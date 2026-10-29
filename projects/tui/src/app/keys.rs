@@ -189,7 +189,8 @@ impl App {
                     self.focus = Focus::Browse(last);
                 }
             }
-            KeyCode::Esc if self.is_busy() => return Action::Cancel,
+            // Agents can work on after the turn that asked them; Esc stops them too.
+            KeyCode::Esc if self.is_busy() || self.agents_at_work() => return Action::Cancel,
             _ => {}
         }
         Action::None

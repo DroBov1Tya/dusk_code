@@ -34,6 +34,26 @@ pub enum Entry {
         text: String,
         tone: Tone,
     },
+    /// A message another agent sent this thread, from its thread `thread_id`.
+    FromAgent {
+        thread_id: String,
+        text: String,
+        open: bool,
+    },
+}
+
+/// Longer agent messages start folded.
+const OPEN_AGENT_LINES: usize = 12;
+
+impl Entry {
+    pub fn from_agent(thread_id: String, text: String) -> Self {
+        let open = text.lines().count() <= OPEN_AGENT_LINES;
+        Self::FromAgent {
+            thread_id,
+            text,
+            open,
+        }
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -53,9 +73,12 @@ impl Transcript {
         let mut transcript = Self::default();
         for message in messages {
             match message.role {
-                MessageRole::User => transcript.push(Entry::User {
-                    text: message.content.clone(),
-                    open: false,
+                MessageRole::User => transcript.push(match &message.from_thread_id {
+                    Some(from) => Entry::from_agent(from.clone(), message.content.clone()),
+                    None => Entry::User {
+                        text: message.content.clone(),
+                        open: false,
+                    },
                 }),
                 MessageRole::Assistant => {
                     if let Some(reasoning) = &message.reasoning {
@@ -167,7 +190,7 @@ impl Transcript {
             Entry::User { text, .. } => paste::plain(text),
             Entry::Answer(text) => text.clone(),
             Entry::Reasoning { text, .. } | Entry::Summary { text, .. } => text.clone(),
-            Entry::Notice { text, .. } => text.clone(),
+            Entry::Notice { text, .. } | Entry::FromAgent { text, .. } => text.clone(),
             Entry::Tool { call, result, .. } => match result {
                 Some(result) => result.content.clone(),
                 None => call.arguments.to_string(),
@@ -180,7 +203,12 @@ impl Transcript {
             Some(Entry::User { text, .. }) => paste::has_pasted(text),
             entry => matches!(
                 entry,
-                Some(Entry::Reasoning { .. } | Entry::Tool { .. } | Entry::Summary { .. })
+                Some(
+                    Entry::Reasoning { .. }
+                        | Entry::Tool { .. }
+                        | Entry::Summary { .. }
+                        | Entry::FromAgent { .. }
+                )
             ),
         }
     }
@@ -190,7 +218,8 @@ impl Transcript {
             Entry::User { open, .. }
             | Entry::Reasoning { open, .. }
             | Entry::Tool { open, .. }
-            | Entry::Summary { open, .. },
+            | Entry::Summary { open, .. }
+            | Entry::FromAgent { open, .. },
         ) = self.entries.get_mut(index)
         {
             *open = !*open;
