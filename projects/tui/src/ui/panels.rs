@@ -17,7 +17,7 @@ use super::{
 };
 use crate::app::{App, Panel, SettingKind, SettingList, ThreadList};
 
-const KEYS: [(&str, &str); 14] = [
+const KEYS: [(&str, &str); 18] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
@@ -25,11 +25,15 @@ const KEYS: [(&str, &str); 14] = [
     ("Up / Down", "earlier messages you sent"),
     ("Tab", "walk thinking, tools and summaries"),
     ("Enter / Space", "fold or unfold the selected one"),
+    ("Left click", "fold or unfold thinking, tools and summaries"),
     ("Ctrl+R", "fold or unfold all thinking"),
-    ("PgUp / PgDn", "scroll; the mouse wheel works too"),
+    ("PgUp / PgDn", "scroll the transcript; wheel works too"),
+    ("Shift+PgUp/Dn", "scroll subagent cards"),
+    ("Alt+PgUp/Dn", "scroll MCP tools"),
     ("Ctrl+T", "threads"),
     ("Ctrl+N", "new thread"),
     ("Ctrl+O", "tools and skills"),
+    ("F2", "show or hide the statistics sidebar"),
     ("/compact", "summarize the context to free it"),
     ("Ctrl+C", "quit"),
 ];

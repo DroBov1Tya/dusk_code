@@ -18,26 +18,46 @@ use super::{
     },
     wrap,
 };
-use crate::app::{App, Entry, Focus, Tone, compact_number};
+use crate::app::{App, Entry, Focus, Tone, TranscriptHit, compact_number};
 
 /// Lines of a tool result shown when it is open.
 const MAX_RESULT_LINES: usize = 40;
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     app.viewport = area.height as usize;
+    app.transcript_area = Some(area);
+    app.transcript_hits.clear();
     if app.transcript.entries.is_empty() {
-        welcome(frame, area, app);
+        app.scroll = 0;
+        app.max_scroll = 0;
+        welcome(frame, area);
         return;
     }
     let width = area.width as usize;
     let (lines, starts) = layout(app, width);
     let height = area.height as usize;
-    let total = lines.len();
+    // The trailing blank line breathes only when it fits; it is not scrollable content.
+    let total = lines.len().saturating_sub(1);
+    app.max_scroll = if height == 0 {
+        0
+    } else {
+        total.saturating_sub(height)
+    };
     if let Focus::Browse(selected) = app.focus {
         keep_in_view(app, starts[selected], total, height);
     }
-    app.scroll = app.scroll.min(total.saturating_sub(height));
+    app.scroll = app.scroll.min(app.max_scroll);
     let top = total.saturating_sub(height + app.scroll);
+    for (index, start) in starts.into_iter().enumerate() {
+        if app.transcript.is_foldable(index) && start >= top && start < top + height {
+            app.transcript_hits.push(TranscriptHit {
+                row: area.y + (start - top) as u16,
+                left: area.x,
+                right: area.right(),
+                index,
+            });
+        }
+    }
     let visible: Vec<Line> = lines.into_iter().skip(top).take(height).collect();
     frame.render_widget(Paragraph::new(visible), area);
 }
@@ -236,7 +256,7 @@ fn fold_mark(open: bool) -> &'static str {
 }
 
 pub fn spinner(app: &App) -> &'static str {
-    SPINNER[app.frame % SPINNER.len()]
+    SPINNER[(app.frame / 3) % SPINNER.len()]
 }
 
 fn tokens(text: &str) -> String {
@@ -267,7 +287,7 @@ fn keep_in_view(app: &mut App, start: usize, total: usize, height: usize) {
 }
 
 /// A new thread: the sun on the horizon and what to do.
-fn welcome(frame: &mut Frame, area: Rect, app: &App) {
+fn welcome(frame: &mut Frame, area: Rect) {
     let width = (area.width as usize).min(44);
     let horizon: Vec<Span> = (0..width)
         .map(|x| Span::styled("\u{2500}", fg(dusk(x as f64 / width as f64))))
@@ -276,10 +296,7 @@ fn welcome(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(Span::styled(SUN_GLYPH, bold(SUN))),
         Line::from(horizon),
         Line::default(),
-        Line::from(vec![
-            Span::styled("dusk", bold(VIOLET)),
-            Span::styled(format!(" {DOT} {}", app.model), dim()),
-        ]),
+        Line::from(Span::styled("dusk", bold(VIOLET))),
         Line::default(),
         Line::from(Span::styled("Write a message to begin.", Style::new())),
         Line::from(Span::styled(

@@ -74,7 +74,8 @@ projects/
             panels.rs        threads, tool and skill switches, keys
         ui/                  drawing, one file per part of the screen
             theme.rs         the dusk palette and glyphs
-            header.rs        thread and model, and the horizon that is the context meter
+            header.rs        the thread title
+            sidebar.rs       the left rail: statistics, subagents, MCP tools
             transcript.rs    the conversation, folded and wrapped
             markdown.rs      headings, lists, quotes, code in answers
             input.rs         the status rule, the message box, the command list
@@ -85,9 +86,9 @@ projects/
 
 ## The full-screen client
 
-`dusk` shows one thread at a time. At the top are the thread title and the model; under them is the horizon, which is the context meter: it lights up from the left as the context fills, from violet through rose and amber to ember, the sun sets along it, and a mark at 80% shows where compaction begins. The rule above the message box tells what the agent is doing and gives the context in numbers: the share, the tokens used and the limit, and what the provider counted in and out.
+`dusk` shows one thread at a time, with its title on top. The left rail starts with statistics: the model, the share of the context in use, the tokens used and the limit, what the provider counted in and out, cached and thinking tokens, model calls, how long the turn runs and how many tokens a second arrive. Sections for subagents and MCP tools appear below it only when there is something to show. F2 hides the rail; on a narrow screen it opens over the transcript instead.
 
-Thinking, tool calls and compaction summaries fold into one line each. Tab walks them, Enter opens or closes one, Ctrl+R opens or closes all thinking. Messages can be sent while the agent works: Enter queues for the next turn, Alt+Enter interrupts, Esc stops. Ctrl+T lists the threads and opens one with its history, Ctrl+N starts a new one, Ctrl+O switches tools and skills, and F1 lists every key. A new thread is stored only when its first message is sent. `--thread ID` opens a thread at start.
+Thinking, tool calls and compaction summaries fold into one line each. Tab walks them, Enter or a click opens or closes one, Ctrl+R opens or closes all thinking. Messages can be sent while the agent works: Enter queues for the next turn, Alt+Enter interrupts, Esc stops. Ctrl+T lists the threads and opens one with its history, Ctrl+N starts a new one, Ctrl+O switches tools and skills, and F1 lists every key. A new thread is stored only when its first message is sent. `--thread ID` opens a thread at start.
 
 ## How the core runs
 

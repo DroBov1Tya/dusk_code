@@ -1,8 +1,11 @@
 //! Keys and mouse. Typing goes to the message; Tab walks the foldable entries; panels take
 //! every key while open.
 
-use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseEventKind};
+use crossterm::event::{
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+};
 use dusk_core::commands::COMMANDS;
+use ratatui::layout::Rect;
 
 use super::{Action, App, Focus, Panel, SettingKind, SettingList, panels::step};
 
@@ -18,8 +21,34 @@ impl App {
             }
             Event::Mouse(mouse) => {
                 match mouse.kind {
-                    MouseEventKind::ScrollUp => self.scroll_by(3, true),
-                    MouseEventKind::ScrollDown => self.scroll_by(3, false),
+                    MouseEventKind::ScrollUp if self.panel.is_none() => {
+                        self.wheel(mouse.column, mouse.row, true)
+                    }
+                    MouseEventKind::ScrollDown if self.panel.is_none() => {
+                        self.wheel(mouse.column, mouse.row, false)
+                    }
+                    MouseEventKind::Down(MouseButton::Left) if self.panel.is_none() => {
+                        let covered = self
+                            .command_popup
+                            .is_some_and(|area| inside(area, mouse.column, mouse.row))
+                            || self
+                                .sidebar_overlay
+                                .is_some_and(|area| inside(area, mouse.column, mouse.row));
+                        if !covered
+                            && let Some(index) = self
+                                .transcript_hits
+                                .iter()
+                                .find(|hit| {
+                                    mouse.row == hit.row
+                                        && mouse.column >= hit.left
+                                        && mouse.column < hit.right
+                                })
+                                .map(|hit| hit.index)
+                        {
+                            self.transcript.toggle(index);
+                            self.focus = Focus::Browse(index);
+                        }
+                    }
                     _ => {}
                 }
                 Action::None
@@ -52,12 +81,62 @@ impl App {
                 self.panel = Some(Panel::Help);
                 return Action::None;
             }
+            KeyCode::F(2) => {
+                if self.compact_layout {
+                    self.sidebar_overlay_open = !self.sidebar_overlay_open;
+                } else {
+                    self.sidebar_visible = !self.sidebar_visible;
+                }
+                return Action::None;
+            }
+            KeyCode::PageUp if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let page = self
+                    .agent_area
+                    .map_or(1, |area| area.height.saturating_sub(2) as usize)
+                    .max(1);
+                self.agent_scroll = self.agent_scroll.saturating_sub(page);
+                return Action::None;
+            }
+            KeyCode::PageDown if key.modifiers.contains(KeyModifiers::SHIFT) => {
+                let page = self
+                    .agent_area
+                    .map_or(1, |area| area.height.saturating_sub(2) as usize)
+                    .max(1);
+                self.agent_scroll = self
+                    .agent_scroll
+                    .saturating_add(page)
+                    .min(self.agent_max_scroll);
+                return Action::None;
+            }
+            KeyCode::PageUp if key.modifiers.contains(KeyModifiers::ALT) => {
+                let page = self
+                    .mcp_area
+                    .map_or(1, |area| area.height.saturating_sub(2) as usize)
+                    .max(1);
+                self.mcp_scroll = self.mcp_scroll.saturating_sub(page);
+                return Action::None;
+            }
+            KeyCode::PageDown if key.modifiers.contains(KeyModifiers::ALT) => {
+                let page = self
+                    .mcp_area
+                    .map_or(1, |area| area.height.saturating_sub(2) as usize)
+                    .max(1);
+                self.mcp_scroll = self
+                    .mcp_scroll
+                    .saturating_add(page)
+                    .min(self.mcp_max_scroll);
+                return Action::None;
+            }
             KeyCode::PageUp => {
-                self.scroll_by(self.viewport.saturating_sub(2).max(1), true);
+                if self.scroll_by(self.viewport.saturating_sub(2).max(1), true) {
+                    self.focus = Focus::Input;
+                }
                 return Action::None;
             }
             KeyCode::PageDown => {
-                self.scroll_by(self.viewport.saturating_sub(2).max(1), false);
+                if self.scroll_by(self.viewport.saturating_sub(2).max(1), false) {
+                    self.focus = Focus::Input;
+                }
                 return Action::None;
             }
             _ => {}
@@ -201,11 +280,43 @@ impl App {
         Action::None
     }
 
-    fn scroll_by(&mut self, lines: usize, up: bool) {
+    fn scroll_by(&mut self, lines: usize, up: bool) -> bool {
+        let before = self.scroll;
         self.scroll = if up {
-            self.scroll.saturating_add(lines)
+            self.scroll.saturating_add(lines).min(self.max_scroll)
         } else {
             self.scroll.saturating_sub(lines)
         };
+        self.scroll != before
     }
+
+    fn wheel(&mut self, x: u16, y: u16, up: bool) {
+        if self.command_popup.is_some_and(|area| inside(area, x, y)) {
+            return;
+        }
+        if self.agent_area.is_some_and(|area| inside(area, x, y)) {
+            self.agent_scroll = if up {
+                self.agent_scroll.saturating_sub(3)
+            } else {
+                self.agent_scroll
+                    .saturating_add(3)
+                    .min(self.agent_max_scroll)
+            };
+        } else if self.mcp_area.is_some_and(|area| inside(area, x, y)) {
+            self.mcp_scroll = if up {
+                self.mcp_scroll.saturating_sub(3)
+            } else {
+                self.mcp_scroll.saturating_add(3).min(self.mcp_max_scroll)
+            };
+        } else if self.transcript_area.is_some_and(|area| inside(area, x, y))
+            && !self.sidebar_area.is_some_and(|area| inside(area, x, y))
+            && self.scroll_by(3, up)
+        {
+            self.focus = Focus::Input;
+        }
+    }
+}
+
+fn inside(area: Rect, x: u16, y: u16) -> bool {
+    x >= area.x && x < area.right() && y >= area.y && y < area.bottom()
 }
