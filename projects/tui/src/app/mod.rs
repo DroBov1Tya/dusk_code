@@ -79,6 +79,8 @@ pub struct ButtonHit {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Button {
+    /// Folds any entry into one line, wherever it is scrolled to.
+    Hide,
     Copy,
     /// Puts a sent message back into the box.
     Edit,

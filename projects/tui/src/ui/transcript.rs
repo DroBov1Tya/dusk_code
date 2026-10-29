@@ -16,8 +16,9 @@ use super::{
     loader::{Loader, agent_name, identity},
     markdown,
     theme::{
-        DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, ROSE, SELECTED, SPINNER, SUN, SUN_GLYPH,
-        TEAL, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR, VIOLET, bold, dim, dusk, fg, thought,
+        DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, HAZE, ROSE, SELECTED, SPINNER, SUN,
+        SUN_GLYPH, TEAL, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR, VIOLET, bold, dim, dusk, fg,
+        thought,
     },
     wrap,
 };
@@ -130,12 +131,17 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     };
     let offered: &[(Button, &str, Color)] = match app.transcript.entries.get(index) {
+        Some(Entry::Notice { .. }) | None => &[],
+        Some(_) if app.transcript.is_hidden(index) => &[(Button::Copy, " copy ", TEAL)],
         Some(Entry::User { .. }) => &[
+            (Button::Hide, " hide ", HAZE),
             (Button::Edit, " edit ", ROSE),
             (Button::Copy, " copy ", TEAL),
         ],
-        Some(Entry::Notice { .. }) | None => &[],
-        Some(_) => &[(Button::Copy, " copy ", TEAL)],
+        Some(_) => &[
+            (Button::Hide, " hide ", HAZE),
+            (Button::Copy, " copy ", TEAL),
+        ],
     };
     let Some(&(from, to)) = app.entry_lines.get(index) else {
         return;
@@ -182,7 +188,14 @@ fn layout(app: &App, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
         }
         starts.push(lines.len());
         let live = streaming == Some(index);
-        let mut drawn = entry_lines(entry, text_width, live.then_some(app));
+        let mut drawn = if app.transcript.is_hidden(index) {
+            vec![hidden_line(
+                entry,
+                &app.transcript.text(index).unwrap_or_default(),
+            )]
+        } else {
+            entry_lines(entry, text_width, live.then_some(app))
+        };
         if app.focus == Focus::Browse(index)
             && let Some(header) = drawn.first_mut()
         {
@@ -192,6 +205,24 @@ fn layout(app: &App, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
     }
     lines.push(Line::default());
     (lines, starts)
+}
+
+/// What a hidden entry leaves: what it was and how long, to show it again.
+fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
+    let what = match entry {
+        Entry::User { .. } => "your message",
+        Entry::Answer(_) => "answer",
+        Entry::Reasoning { .. } => "thinking",
+        Entry::Tool { .. } => "tool call",
+        Entry::Summary { .. } => "summary",
+        Entry::FromAgent { .. } => "agent message",
+        Entry::Notice { .. } => "notice",
+    };
+    let lines = text.lines().count().max(1);
+    Line::from(vec![
+        Span::styled(format!("   {FOLDED} "), dim()),
+        Span::styled(format!("{what} hidden {DOT} {lines} lines"), dim()),
+    ])
 }
 
 /// A message from an agent, under its name and in its color, as on its card.

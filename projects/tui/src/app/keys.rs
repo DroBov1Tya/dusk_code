@@ -399,6 +399,11 @@ impl App {
         self.selection = None;
         match button {
             Button::Copy => self.transcript.text(index).map(Action::Copy),
+            Button::Hide => {
+                self.transcript.hide(index);
+                self.hover = None;
+                Some(Action::None)
+            }
             Button::Edit => {
                 let Some(Entry::User { text, .. }) = self.transcript.entries.get(index) else {
                     return None;

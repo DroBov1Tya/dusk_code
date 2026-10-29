@@ -1,6 +1,8 @@
 //! What the screen shows of a thread: a list of entries built from the stored history and
 //! then from live events. Thinking, tool calls and summaries fold into one line.
 
+use std::collections::HashSet;
+
 use super::paste;
 use dusk_core::{
     providers::ToolCall,
@@ -65,6 +67,8 @@ pub enum Tone {
 #[derive(Default)]
 pub struct Transcript {
     pub entries: Vec<Entry>,
+    /// Entries the user hid; each shows as one line until shown again.
+    pub hidden: HashSet<usize>,
 }
 
 impl Transcript {
@@ -198,7 +202,19 @@ impl Transcript {
         })
     }
 
+    pub fn hide(&mut self, index: usize) {
+        self.hidden.insert(index);
+    }
+
+    pub fn is_hidden(&self, index: usize) -> bool {
+        self.hidden.contains(&index)
+    }
+
+    /// A hidden entry opens like a folded one.
     pub fn is_foldable(&self, index: usize) -> bool {
+        if self.is_hidden(index) {
+            return true;
+        }
         match self.entries.get(index) {
             Some(Entry::User { text, .. }) => paste::has_pasted(text),
             entry => matches!(
@@ -214,6 +230,9 @@ impl Transcript {
     }
 
     pub fn toggle(&mut self, index: usize) {
+        if self.hidden.remove(&index) {
+            return;
+        }
         if let Some(
             Entry::User { open, .. }
             | Entry::Reasoning { open, .. }
