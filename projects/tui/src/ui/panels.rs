@@ -46,7 +46,7 @@ const KEYS: [(&str, &str); 21] = [
     ("Ctrl+O", "tools and skills"),
     ("F2", "show or hide the statistics sidebar"),
     ("/compact", "summarize the context to free it"),
-    ("Ctrl+C", "quit"),
+    ("Ctrl+C", "clear the box; twice within 5 s quits"),
 ];
 
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {

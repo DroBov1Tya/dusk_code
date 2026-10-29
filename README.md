@@ -72,6 +72,7 @@ You review code...
 |---|---|
 | Enter / Alt+Enter | send; interrupt and send now |
 | Esc | stop the turn |
+| Ctrl+C | clear the box; twice within 5 s quits |
 | Tab, click | open or close thinking, tool calls, summaries |
 | drag | select text and copy it |
 | hover | `copy` a message, `edit` one you sent |
