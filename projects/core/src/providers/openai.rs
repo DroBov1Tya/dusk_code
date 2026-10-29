@@ -658,11 +658,6 @@ mod tests {
             .unwrap_err();
         assert!(!format!("{error:#}").contains("secret"));
     }
-}
-
-#[cfg(test)]
-mod loopback_tests {
-    use super::*;
 
     #[test]
     fn plain_http_reaches_only_this_machine() {

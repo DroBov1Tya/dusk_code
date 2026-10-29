@@ -91,7 +91,7 @@ You review code...
 
 ## Limitations
 
-Tools run without approval; file tools are confined to the working directory and the thread workspace, `run_command` is not. No MCP servers yet. Token counts before the first model call of a thread are estimates.
+Tools run without approval; file tools are confined to the working directory and the thread workspace, `run_command` is not. No MCP servers yet. Token counts before the first model call of a thread are estimates. A command `run_command` started is stopped with its whole process group when its turn is stopped or `dusk` quits, but not when `dusk` itself is killed with `kill -9`: then it runs on, and the thread notes on its next start that the call may or may not have taken effect.
 
 ## License
 
