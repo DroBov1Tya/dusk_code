@@ -4,7 +4,7 @@ An AI agent system in Rust. All logic lives in one core library, `dusk_core`; fr
 
 ## Quick start
 
-Needs Rust 1.85 or newer and an OpenAI-compatible endpoint.
+Needs Rust 1.85 or newer and an OpenAI-compatible endpoint over HTTPS, or plain HTTP to a local server at `127.0.0.1` or `[::1]`, such as llama.cpp or Ollama.
 
 ```sh
 git clone https://github.com/DroBov1Tya/dusk_code

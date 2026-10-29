@@ -173,13 +173,23 @@ impl From<&ToolSpec> for WireTool {
     }
 }
 
+/// Plain HTTP is allowed only to a server on this machine, such as a local model, named
+/// by its address: a name could be made to resolve elsewhere.
+fn is_loopback(url: &Url) -> bool {
+    let address = url
+        .host_str()
+        .map(|host| host.trim_start_matches('[').trim_end_matches(']'))
+        .and_then(|host| host.parse::<std::net::IpAddr>().ok());
+    url.scheme() == "http" && address.is_some_and(|address| address.is_loopback())
+}
+
 impl OpenAiCompatible {
     pub fn new(config: &ProviderConfig) -> Result<Self> {
         let base_url =
             Url::parse(&config.base_url).map_err(|_| anyhow!("invalid provider base URL"))?;
         ensure!(
-            base_url.scheme() == "https" && base_url.host_str().is_some(),
-            "provider base URL must use HTTPS"
+            base_url.scheme() == "https" && base_url.host_str().is_some() || is_loopback(&base_url),
+            "provider base URL must use HTTPS, or HTTP to 127.0.0.1 or [::1]"
         );
         ensure!(
             base_url.username().is_empty()
@@ -634,5 +644,24 @@ mod tests {
             .feed(body.as_bytes())
             .unwrap_err();
         assert!(!format!("{error:#}").contains("secret"));
+    }
+}
+
+#[cfg(test)]
+mod loopback_tests {
+    use super::*;
+
+    #[test]
+    fn plain_http_reaches_only_this_machine() {
+        let url = |text: &str| Url::parse(text).unwrap();
+        assert!(is_loopback(&url("http://127.0.0.1:8080/v1")));
+        assert!(is_loopback(&url("http://[::1]:8080/v1")));
+        for remote in [
+            "http://localhost/v1",
+            "http://10.0.0.1/v1",
+            "http://example.com/v1",
+        ] {
+            assert!(!is_loopback(&url(remote)), "{remote}");
+        }
     }
 }
