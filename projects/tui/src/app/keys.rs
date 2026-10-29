@@ -26,6 +26,10 @@ impl App {
                 self.editor_paste(&text.replace("\r\n", "\n").replace('\r', "\n"));
                 Action::None
             }
+            Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Agent(_))) => {
+                self.agent_window_mouse(mouse);
+                Action::None
+            }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Paste(_))) => {
                 self.editor_mouse(mouse);
                 Action::None
@@ -67,6 +71,12 @@ impl App {
             }
             KeyCode::Char('r') if ctrl => {
                 self.transcript.toggle_reasoning();
+                return Action::None;
+            }
+            KeyCode::F(3) => {
+                if let Some(card) = self.subagents.last() {
+                    return Action::OpenAgent(card.thread_id.clone());
+                }
                 return Action::None;
             }
             KeyCode::F(1) => {
@@ -248,6 +258,7 @@ impl App {
         let up = matches!(key.code, KeyCode::Up | KeyCode::Char('k'));
         match panel {
             Panel::Paste(_) => self.editor_key(key),
+            Panel::Agent(_) => self.agent_window_key(key),
             Panel::Models(list) => match key.code {
                 _ if up || down => {
                     let count = list.choices().len();
@@ -370,6 +381,9 @@ impl App {
                 if let Some(action) = self.press_button(x, y) {
                     return action;
                 }
+                if let Some(thread_id) = self.card_at(x, y) {
+                    return Action::OpenAgent(thread_id);
+                }
                 self.selection = self.line_at(x, y).map(|at| Selection {
                     anchor: at,
                     cursor: at,
@@ -460,6 +474,18 @@ impl App {
             self.transcript.toggle(index);
             self.focus = Focus::Browse(index);
         }
+    }
+
+    /// The subagent whose card is under the mouse. Cards take three rows and a blank one
+    /// after, below the section's top border.
+    fn card_at(&self, x: u16, y: u16) -> Option<String> {
+        let area = self.agent_area.filter(|area| inside(*area, x, y))?;
+        let row = (y - area.y).checked_sub(1)? as usize + self.agent_scroll;
+        if row % 4 == 3 {
+            return None;
+        }
+        let card = self.subagents.get(row / 4)?;
+        Some(card.thread_id.clone())
     }
 
     /// The transcript line and column under the mouse, unless something covers it.

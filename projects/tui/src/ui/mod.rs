@@ -1,6 +1,7 @@
 //! Drawing the app. The statistics rail fills the left edge; the thread and
 //! message box occupy the right side at wider terminal widths.
 
+mod agent_window;
 mod header;
 mod input;
 mod loader;

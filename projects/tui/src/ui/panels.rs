@@ -14,7 +14,7 @@ use unicode_width::UnicodeWidthStr;
 use dusk_core::state::MessageRole;
 
 use super::{
-    input, markdown,
+    agent_window, input, markdown,
     theme::{
         ALIVE, DOT, DOWN, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, OFF, ON, ROSE, SUN, SUN_GLYPH,
         TEAL, USER_BAR, VIOLET, bold, dim, fg, thought,
@@ -26,7 +26,7 @@ use crate::app::{
     compact_number, paste,
 };
 
-const KEYS: [(&str, &str); 22] = [
+const KEYS: [(&str, &str); 23] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
@@ -46,6 +46,10 @@ const KEYS: [(&str, &str); 22] = [
     ("/model", "choose the model; providers are checked live"),
     ("Ctrl+N", "new thread"),
     ("Ctrl+O", "tools and skills"),
+    (
+        "F3, card click",
+        "open a subagent: its chat, actions and numbers",
+    ),
     ("F2", "show or hide the statistics sidebar"),
     ("/compact", "summarize the context to free it"),
     ("Ctrl+C", "clear the box; twice within 5 s quits"),
@@ -53,8 +57,10 @@ const KEYS: [(&str, &str); 22] = [
 
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     app.editor_hits.clear();
-    if matches!(app.panel, Some(Panel::Paste(_))) {
-        return draw_paste(frame, screen, app);
+    match app.panel {
+        Some(Panel::Paste(_)) => return draw_paste(frame, screen, app),
+        Some(Panel::Agent(_)) => return agent_window::draw(frame, screen, app),
+        _ => {}
     }
     let Some(panel) = &app.panel else {
         return;
@@ -80,7 +86,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 Some(row),
             )
         }
-        Panel::Paste(_) => return,
+        Panel::Paste(_) | Panel::Agent(_) => return,
     };
     let width = screen.width.saturating_sub(4).min(76);
     let height = (lines.len() as u16 + 2)
@@ -185,7 +191,7 @@ fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
 }
 
 /// A window centred on the screen, at most `max_width` wide, with a margin around it.
-fn window(screen: Rect, max_width: u16) -> Rect {
+pub fn window(screen: Rect, max_width: u16) -> Rect {
     let width = screen.width.saturating_sub(6).min(max_width);
     let height = screen.height.saturating_sub(4).max(3);
     Rect {

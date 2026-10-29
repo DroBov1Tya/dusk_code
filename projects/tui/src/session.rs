@@ -15,7 +15,7 @@ use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
 use crate::{
-    app::{Action, App, ModelList, Panel, Preview, ThreadList},
+    app::{Action, AgentWindow, App, ModelList, Panel, Preview, ThreadList, Transcript},
     clipboard, ui,
 };
 
@@ -108,6 +108,19 @@ pub async fn run(
                 app.open(None, None, &[]);
             }
             Action::Preview(thread_id) => preview(runtime, &mut app, thread_id).await,
+            Action::OpenAgent(thread_id) => match runtime.thread_messages(&thread_id).await {
+                Ok(history) => {
+                    let transcript = Transcript::from_history(&history);
+                    let card = app
+                        .subagents
+                        .iter()
+                        .find(|card| card.thread_id == thread_id);
+                    let parent = card.and_then(|card| card.parent.clone());
+                    let window = AgentWindow::new(thread_id, parent, transcript);
+                    app.panel = Some(Panel::Agent(window));
+                }
+                Err(error) => app.error(format!("cannot open the agent: {error:#}")),
+            },
             Action::Copy(text) => {
                 let lines = text.lines().count().max(1);
                 app.flash = Some(if clipboard::copy(&text) {

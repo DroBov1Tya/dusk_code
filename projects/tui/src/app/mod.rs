@@ -2,6 +2,7 @@
 //! doing and which panel is open. Events from the core and keys from the user change it;
 //! anything that needs the core goes back to the session as an `Action`.
 
+mod agents;
 mod editor;
 mod input;
 mod keys;
@@ -13,7 +14,7 @@ use std::{
     collections::VecDeque,
     path::PathBuf,
     sync::Arc,
-    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
+    time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
 use dusk_core::{
@@ -25,6 +26,7 @@ use dusk_core::{
 };
 use ratatui::layout::Rect;
 
+pub use agents::{AgentWindow, SubagentView};
 pub use editor::{EditorButton, EditorHit, PasteEditor};
 pub use input::Input;
 pub use panels::{ModelList, Panel, Preview, SettingKind, SettingList, ThreadList};
@@ -42,6 +44,8 @@ pub enum Action {
     OpenThread(String),
     NewThread,
     Copy(String),
+    /// Open the window of the subagent working in this thread.
+    OpenAgent(String),
     /// Load the thread the threads panel points at, for its preview.
     Preview(String),
 }
@@ -123,18 +127,6 @@ pub struct TranscriptHit {
     pub right: u16,
     pub index: usize,
 }
-
-/// A subagent the open thread asked, by the thread it works in.
-pub struct SubagentView {
-    pub thread_id: String,
-    /// The agent it works as, from `agents/`.
-    pub agent: String,
-    pub task: String,
-    pub started_at: i64,
-    pub finished_at: Option<i64>,
-}
-
-const RATE_WINDOW: Duration = Duration::from_secs(3);
 
 pub struct App {
     pub model: String,
@@ -306,20 +298,12 @@ impl App {
     }
 
     /// Recent visible output divided by four bytes per estimated token.
+    /// Output of the agent and of the subagents at work, while anything works.
     pub fn approximate_tokens_per_second(&self) -> Option<f64> {
-        if !self.is_busy() {
+        if !self.is_busy() && !self.agents_at_work() {
             return None;
         }
-        let now = Instant::now();
-        let first = self.output_samples.front()?.0;
-        let bytes: usize = self
-            .output_samples
-            .iter()
-            .filter(|(at, _)| now.duration_since(*at) <= RATE_WINDOW)
-            .map(|(_, bytes)| *bytes)
-            .sum();
-        let seconds = now.duration_since(first).as_secs_f64().clamp(0.5, 3.0);
-        Some(bytes as f64 / 4.0 / seconds)
+        agents::rate(&self.output_samples)
     }
 
     pub fn elapsed_ms(&self) -> Option<u64> {
@@ -338,7 +322,7 @@ impl App {
         while self
             .output_samples
             .front()
-            .is_some_and(|(at, _)| now.duration_since(*at) > RATE_WINDOW)
+            .is_some_and(|(at, _)| now.duration_since(*at) > agents::RATE_WINDOW)
         {
             self.output_samples.pop_front();
         }
@@ -442,7 +426,10 @@ impl App {
                 agent,
                 task,
                 ..
-            } => self.start_subagent(thread_id, agent, task),
+            } => {
+                let parent = self.thread_id.clone();
+                self.start_subagent(thread_id, agent, task, parent);
+            }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
             ThreadEvent::FromAgent(message) => {
                 let from = message.from_thread_id.unwrap_or_default();
@@ -457,53 +444,6 @@ impl App {
             }
             _ => {}
         }
-    }
-
-    /// A subagent's own thread shows only on its card; its output counts in the rate.
-    fn apply_subagent(&mut self, thread_id: &str, event: ThreadEvent) {
-        match event {
-            ThreadEvent::SubagentStarted {
-                thread_id,
-                agent,
-                task,
-                ..
-            } => self.start_subagent(thread_id, agent, task),
-            ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
-            ThreadEvent::Model(ModelEvent::Reasoning(text) | ModelEvent::Text(text)) => {
-                self.record_output(&text)
-            }
-            ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) => {
-                self.finish_subagent(thread_id)
-            }
-            _ => {}
-        }
-    }
-
-    /// Asking the same thread again brings its card back to work.
-    fn start_subagent(&mut self, thread_id: String, agent: String, task: String) {
-        self.subagents.retain(|view| view.thread_id != thread_id);
-        self.subagents.push(SubagentView {
-            thread_id,
-            agent,
-            task,
-            started_at: now_ms(),
-            finished_at: None,
-        });
-    }
-
-    fn finish_subagent(&mut self, thread_id: &str) {
-        let now = now_ms();
-        for agent in &mut self.subagents {
-            if agent.finished_at.is_none() && agent.thread_id == thread_id {
-                agent.finished_at = Some(now);
-            }
-        }
-    }
-
-    pub fn agents_at_work(&self) -> bool {
-        self.subagents
-            .iter()
-            .any(|agent| agent.finished_at.is_none())
     }
 
     /// Takes the typed text for sending; commands show as notices, messages as the user's.

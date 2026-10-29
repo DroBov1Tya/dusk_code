@@ -10,7 +10,7 @@ use dusk_core::{
     state::{Message, MessageRole, Thread},
 };
 
-use super::PasteEditor;
+use super::{AgentWindow, PasteEditor};
 
 pub enum Panel {
     Threads(ThreadList),
@@ -18,6 +18,7 @@ pub enum Panel {
     Help,
     Paste(PasteEditor),
     Models(ModelList),
+    Agent(AgentWindow),
 }
 
 /// The configured providers as the core found them, and their models to choose from.
