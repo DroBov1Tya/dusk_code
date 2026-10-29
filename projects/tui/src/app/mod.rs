@@ -424,7 +424,10 @@ impl App {
                 compact_number(limit)
             )),
             ThreadEvent::Rejected { reason } => self.error(reason),
-            ThreadEvent::Failed(error) => self.error(format!("thread stopped: {error}")),
+            ThreadEvent::Failed(error) => {
+                self.error(format!("thread stopped: {error}"));
+                self.stop_work();
+            }
             ThreadEvent::SubagentStarted {
                 thread_id,
                 agent,
@@ -451,6 +454,27 @@ impl App {
                 self.output_samples.clear();
             }
             _ => {}
+        }
+    }
+
+    /// The thread stopped: nothing runs any more, whatever the last event said.
+    pub fn stop_work(&mut self) {
+        self.activity = Activity::Idle;
+        self.turn_running = false;
+        self.compacting = false;
+        self.turn_started_at = None;
+        self.transcript.stop_running_tools();
+    }
+
+    /// A message the core refused goes back into the box instead of looking sent.
+    pub fn unsend(&mut self, text: String) {
+        if let Some(Entry::User { text: shown, .. }) = self.transcript.entries.last()
+            && *shown == text
+        {
+            self.transcript.entries.pop();
+        }
+        if self.input.is_empty() {
+            self.input.set(text);
         }
     }
 
