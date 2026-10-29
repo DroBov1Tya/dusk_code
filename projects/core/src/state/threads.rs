@@ -107,6 +107,36 @@ impl State {
         .collect()
     }
 
+    /// Every agent thread below this one, at any depth.
+    pub async fn descendant_threads(&self, id: &str) -> Result<Vec<String>> {
+        sqlx::query_scalar(
+            "WITH RECURSIVE below(id) AS (
+                SELECT id FROM threads WHERE parent_thread_id = ?
+                UNION ALL
+                SELECT threads.id FROM threads JOIN below ON threads.parent_thread_id = below.id
+             ) SELECT id FROM below",
+        )
+        .bind(id)
+        .fetch_all(&self.pool)
+        .await
+        .context("list agent threads below")
+    }
+
+    /// Messages other agents sent a thread since the last one a client sent it.
+    pub async fn agent_messages_since_client(&self, id: &str) -> Result<u64> {
+        let count: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM messages WHERE thread_id = ? AND from_thread_id IS NOT NULL
+               AND sequence > (SELECT COALESCE(MAX(sequence), 0) FROM messages
+                               WHERE thread_id = ? AND role = 'user' AND from_thread_id IS NULL)",
+        )
+        .bind(id)
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .context("count agent messages")?;
+        u64::try_from(count).context("negative message count")
+    }
+
     /// How many agent threads are above this one; 0 for a chat.
     pub async fn thread_depth(&self, id: &str) -> Result<usize> {
         let depth: i64 = sqlx::query_scalar(
@@ -145,4 +175,45 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         parent_thread_id: row.try_get("parent_thread_id")?,
         agent: row.try_get("agent")?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::testing::temp_state;
+
+    #[tokio::test]
+    async fn a_stop_and_the_agent_budget_see_the_whole_tree() {
+        let state = temp_state("agent_tree").await;
+        state.create_thread("chat", "test").await.unwrap();
+        state
+            .create_agent_thread("a", "chat", "general")
+            .await
+            .unwrap();
+        state
+            .create_agent_thread("b", "a", "general")
+            .await
+            .unwrap();
+
+        let mut below = state.descendant_threads("chat").await.unwrap();
+        below.sort();
+        assert_eq!(
+            below,
+            ["a", "b"],
+            "an idle agent does not hide the ones below it"
+        );
+
+        for _ in 0..2 {
+            let pending = state.add_pending_from("chat", "done", Some("a")).await;
+            state
+                .admit_pending("chat", &pending.unwrap())
+                .await
+                .unwrap();
+        }
+        assert_eq!(state.agent_messages_since_client("chat").await.unwrap(), 2);
+        state
+            .add_user_message("chat", "user", "go on")
+            .await
+            .unwrap();
+        assert_eq!(state.agent_messages_since_client("chat").await.unwrap(), 0);
+    }
 }

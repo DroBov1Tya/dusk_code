@@ -181,6 +181,7 @@ impl ThreadRunner {
         Mailbox {
             input: input.inputs.downgrade(),
             events: self.agent.events.downgrade(),
+            agent: self.ends_when_idle,
         }
     }
 
@@ -290,15 +291,12 @@ impl ThreadRunner {
         state.remove_pending(pending.pending_id).await
     }
 
-    /// Stopping a thread stops the agents it asked, and theirs in turn.
+    /// Stopping a thread stops every agent below it, including those under an agent that
+    /// is idle meanwhile, so none of them reports back and wakes the thread again.
     async fn cancel_agents(&self) -> Result<()> {
-        for thread in self
-            .agent
-            .state
-            .agent_threads(&self.agent.thread_id)
-            .await?
-        {
-            if let Some(mailbox) = self.mailboxes.get(&thread.id).await {
+        let below = self.agent.state.descendant_threads(&self.agent.thread_id);
+        for thread_id in below.await? {
+            if let Some(mailbox) = self.mailboxes.get(&thread_id).await {
                 mailbox.send(Input::Cancel);
             }
         }

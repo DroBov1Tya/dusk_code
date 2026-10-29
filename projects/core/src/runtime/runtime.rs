@@ -144,11 +144,17 @@ impl Runtime {
     /// unfinished is closed first: a running turn ends as interrupted, and messages sent
     /// before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
-        self.launcher
+        let thread = self
+            .launcher
             .state
             .load_thread(thread_id)
             .await?
             .with_context(|| format!("thread {thread_id} does not exist"))?;
+        // An agent's thread runs as that agent, started by the core when it is written to.
+        ensure!(
+            thread.parent_thread_id.is_none(),
+            "thread {thread_id} belongs to an agent"
+        );
         let workspace = self.launcher.paths.thread_workspace(thread_id)?;
         create_private_dir(&workspace)?;
         info!("thread {thread_id} resumed in {}", workspace.display());
@@ -190,13 +196,20 @@ impl Runtime {
     pub async fn shutdown(self) {
         let mut threads = std::mem::take(&mut *self.lock_threads());
         while threads.join_next().await.is_some() {}
-        for mailbox in self.launcher.mailboxes.lock().await.values() {
-            mailbox.send(Input::Cancel);
-        }
+        // No agent starts from here on; those at work are stopped until none is left,
+        // since one may have started a moment before the stop.
+        let mailboxes = &self.launcher.mailboxes;
+        mailboxes.close();
         let started = Instant::now();
-        while !self.launcher.mailboxes.lock().await.is_empty()
-            && started.elapsed() < AGENTS_STOP_WAIT
-        {
+        while started.elapsed() < AGENTS_STOP_WAIT {
+            let live = mailboxes.lock().await;
+            if live.is_empty() {
+                break;
+            }
+            for mailbox in live.values() {
+                mailbox.send(Input::Cancel);
+            }
+            drop(live);
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         self.config_check.abort();
