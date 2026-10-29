@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use ratatui::{
     Frame,
-    layout::Rect,
+    layout::{Position, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, Paragraph},
@@ -14,21 +14,23 @@ use unicode_width::UnicodeWidthStr;
 use dusk_core::state::MessageRole;
 
 use super::{
-    markdown,
+    input, markdown,
     theme::{
-        DOT, ELLIPSIS, GLOW, GUTTER, NIGHT, OFF, ON, ROSE, SUN, SUN_GLYPH, USER_BAR, VIOLET, bold,
-        dim, fg, thought,
+        DOT, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, OFF, ON, ROSE, SUN, SUN_GLYPH, TEAL, USER_BAR,
+        VIOLET, bold, dim, fg, thought,
     },
     wrap,
 };
-use crate::app::{App, Panel, SettingKind, SettingList, ThreadList, paste};
+use crate::app::{
+    App, EditorButton, EditorHit, Panel, SettingKind, SettingList, ThreadList, paste,
+};
 
 const KEYS: [(&str, &str); 21] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
     ("Ctrl+J", "new line"),
-    ("Ctrl+E", "open the pasted text at the cursor to edit it"),
+    ("Ctrl+E, click", "edit a pasted text in its own window"),
     ("Up / Down", "earlier messages you sent"),
     ("Tab", "walk thinking, tools and summaries"),
     ("Enter / Space", "fold or unfold the selected one"),
@@ -47,7 +49,11 @@ const KEYS: [(&str, &str); 21] = [
     ("Ctrl+C", "quit"),
 ];
 
-pub fn draw(frame: &mut Frame, screen: Rect, app: &App) {
+pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
+    app.editor_hits.clear();
+    if matches!(app.panel, Some(Panel::Paste(_))) {
+        return draw_paste(frame, screen, app);
+    }
     let Some(panel) = &app.panel else {
         return;
     };
@@ -63,6 +69,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &App) {
             )
         }
         Panel::Help => ("keys", "any key closes", help(), None),
+        Panel::Paste(_) => return,
     };
     let width = screen.width.saturating_sub(4).min(76);
     let height = (lines.len() as u16 + 2)
@@ -89,6 +96,95 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &App) {
     );
 }
 
+/// A pasted text in a window over most of the screen, with its buttons on the last row.
+fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
+    let Some(Panel::Paste(editor)) = &mut app.panel else {
+        return;
+    };
+    let area = window(screen, 130);
+    let mut title = vec![Span::styled(
+        format!(" {} ", paste::label(&editor.text.text)),
+        bold(TEAL),
+    )];
+    if editor.changed() {
+        title.push(Span::styled("changed ", fg(SUN)));
+    }
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(fg(NIGHT))
+        .title(Line::from(title));
+    let inner = block.inner(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+    if inner.height < 3 {
+        return;
+    }
+    let text_area = Rect {
+        height: inner.height - 2,
+        ..inner
+    };
+    let (rows, (column, row)) = input::layout(&editor.text, text_area.width as usize);
+    let height = text_area.height as usize;
+    if row < editor.scroll {
+        editor.scroll = row;
+    } else if row >= editor.scroll + height {
+        editor.scroll = row + 1 - height;
+    }
+    let lines: Vec<Line> = rows
+        .into_iter()
+        .skip(editor.scroll)
+        .take(height)
+        .map(|row| Line::from(row.spans))
+        .collect();
+    frame.render_widget(Paragraph::new(lines), text_area);
+    let bar = inner.bottom() - 1;
+    let buttons = if editor.confirming {
+        let question = Span::styled(" Save the changes? ", bold(SUN));
+        let line = Rect::new(inner.x, bar, inner.width, 1);
+        frame.render_widget(Paragraph::new(Line::from(question)), line);
+        vec![
+            (EditorButton::Save, " save  y ", TEAL),
+            (EditorButton::Discard, " discard  n ", EMBER),
+            (EditorButton::KeepEditing, " keep editing  Esc ", VIOLET),
+        ]
+    } else {
+        let y = text_area.y + (row - editor.scroll) as u16;
+        frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
+        vec![
+            (EditorButton::Save, " save  Ctrl+S ", TEAL),
+            (EditorButton::Close, " close  Esc ", ROSE),
+        ]
+    };
+    let mut right = inner.right();
+    for &(button, label, color) in buttons.iter().rev() {
+        let width = label.width() as u16;
+        let Some(left) = right.checked_sub(width + 1).filter(|&left| left >= inner.x) else {
+            break;
+        };
+        let shown = Line::from(Span::styled(label, fg(color).bg(GLOW)));
+        frame.render_widget(Paragraph::new(shown), Rect::new(left, bar, width, 1));
+        app.editor_hits.push(EditorHit {
+            row: bar,
+            left,
+            right: left + width,
+            button,
+        });
+        right = left;
+    }
+}
+
+/// A window centred on the screen, at most `max_width` wide, with a margin around it.
+fn window(screen: Rect, max_width: u16) -> Rect {
+    let width = screen.width.saturating_sub(6).min(max_width);
+    let height = screen.height.saturating_sub(4).max(3);
+    Rect {
+        x: screen.x + (screen.width - width) / 2,
+        y: screen.y + (screen.height - height) / 2,
+        width,
+        height,
+    }
+}
+
 /// Messages shown at the end of a preview, after the one the thread began with.
 const PREVIEW_LAST: usize = 4;
 const PREVIEW_USER_LINES: usize = 3;
@@ -99,14 +195,7 @@ const PREVIEW_MIN_WIDTH: u16 = 70;
 /// Threads take most of the screen: the list on the left and the selected thread at a
 /// glance on the right, how it began and how it stands, never its whole history.
 fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
-    let width = screen.width.saturating_sub(6).min(150);
-    let height = screen.height.saturating_sub(4).max(3);
-    let area = Rect {
-        x: screen.x + (screen.width - width) / 2,
-        y: screen.y + (screen.height - height) / 2,
-        width,
-        height,
-    };
+    let area = window(screen, 150);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(NIGHT))

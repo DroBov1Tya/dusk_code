@@ -75,7 +75,7 @@ You review code...
 | Tab, click | open or close thinking, tool calls, summaries |
 | drag | select text and copy it |
 | hover | `copy` a message, `edit` one you sent |
-| Ctrl+E, click | open a pasted text in the box to edit it |
+| Ctrl+E, click | edit a pasted text in its own window; Ctrl+S saves, Esc asks about unsaved changes |
 | Ctrl+T or `/resume` | threads, with a preview of the selected one |
 | Ctrl+N | new thread |
 | Ctrl+O | switch tools and skills |

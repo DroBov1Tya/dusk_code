@@ -9,10 +9,13 @@ use dusk_core::{
     state::{Message, MessageRole, Thread},
 };
 
+use super::PasteEditor;
+
 pub enum Panel {
     Threads(ThreadList),
     Settings(SettingList),
     Help,
+    Paste(PasteEditor),
 }
 
 pub struct ThreadList {

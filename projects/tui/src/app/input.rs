@@ -56,19 +56,6 @@ impl Input {
         self.text.push_str(&end);
     }
 
-    /// Replaces a chip with its text, to edit it; the cursor goes after it.
-    pub fn expand(&mut self, index: usize) {
-        let (Some(chip), Some(pasted)) = (paste::chip(index), self.pastes.get(index)) else {
-            return;
-        };
-        let Some(at) = self.text.find(chip) else {
-            return;
-        };
-        let pasted = pasted.clone();
-        self.text.replace_range(at..at + chip.len_utf8(), &pasted);
-        self.cursor = at + pasted.len();
-    }
-
     /// The chip right before the cursor, or right after it.
     pub fn chip_at_cursor(&self) -> Option<usize> {
         let before = self.text[..self.cursor].chars().next_back();
@@ -76,6 +63,24 @@ impl Input {
         before
             .and_then(paste::chip_index)
             .or_else(|| after.and_then(paste::chip_index))
+    }
+
+    /// Puts edited text behind a chip; text left empty takes the chip away.
+    pub fn replace_paste(&mut self, index: usize, text: String) {
+        let Some(pasted) = self.pastes.get_mut(index) else {
+            return;
+        };
+        if !text.trim().is_empty() {
+            *pasted = text;
+            return;
+        }
+        if let Some(at) = paste::chip(index).and_then(|chip| self.text.find(chip)) {
+            let chip_len = paste::chip(index).map_or(0, char::len_utf8);
+            self.text.replace_range(at..at + chip_len, "");
+            if self.cursor > at {
+                self.cursor -= chip_len;
+            }
+        }
     }
 
     /// Too many pastes for the chip characters stay plain text.
