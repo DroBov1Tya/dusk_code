@@ -1,9 +1,11 @@
 //! The bottom of the screen: a rule that tells what the agent is doing and how full the
-//! context is, then the message being typed. Typing `/` lists the commands.
+//! context is, then the message being typed, on a background of its own. Typing `/`
+//! lists the commands.
 
 use ratatui::{
     Frame,
     layout::{Position, Rect},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, Paragraph},
 };
@@ -11,38 +13,48 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        EMBER, GLOW, HAZE, HORIZON_DARK, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, fg, thought,
+        EMBER, GLOW, HAZE, HORIZON_DARK, INPUT_BG, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, fg,
+        thought,
     },
     transcript::spinner,
     wrap,
 };
 use crate::app::{Activity, App, ChipHit, Focus, Input, commands, paste};
 
-const MAX_ROWS: usize = 8;
+const MIN_ROWS: usize = 3;
+const MAX_ROWS: usize = 10;
 const PROMPT: &str = " \u{203A} ";
+/// Rows around the text: the rule above, and a blank row on each side of the text.
+const FRAME_ROWS: u16 = 3;
 
-/// Rows the box needs: the rule and the wrapped text.
+/// Rows the box needs: the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
-    rows.len().clamp(1, MAX_ROWS) as u16 + 1
+    rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16 + FRAME_ROWS
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     let rule = Rect { height: 1, ..area };
     frame.render_widget(Paragraph::new(status(app, area.width as usize)), rule);
-    let text_area = Rect {
+    let box_area = Rect {
         y: area.y + 1,
-        height: area.height - 1,
+        height: area.height.saturating_sub(1),
         ..area
+    };
+    frame.render_widget(Block::new().style(Style::new().bg(INPUT_BG)), box_area);
+    let text_area = Rect {
+        y: box_area.y + 1,
+        height: box_area.height.saturating_sub(2),
+        ..box_area
     };
     app.input_chips.clear();
     let width = text_width(area.width);
     let prompt = Span::styled(PROMPT, bold(ROSE));
     if app.input.text.is_empty() {
         let hint = if app.is_busy() {
-            "Enter queues for the next turn, Alt+Enter interrupts, Esc stops"
+            "write to queue it, Esc stops"
         } else {
-            "Message, or /compact. Alt+Enter interrupts, Ctrl+J new line, F1 keys"
+            "write, or / for commands"
         };
         let line = Line::from(vec![prompt, Span::styled(hint, thought())]);
         frame.render_widget(Paragraph::new(line), text_area);
