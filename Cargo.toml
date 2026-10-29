@@ -4,7 +4,7 @@ members = ["projects/core", "projects/tui"]
 default-members = ["projects/tui"]
 
 [workspace.package]
-version = "0.36.3"
+version = "0.36.4"
 edition = "2024"
 publish = false
 

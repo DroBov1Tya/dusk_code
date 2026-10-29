@@ -17,6 +17,7 @@ use super::{
     inbox::Input,
     mailboxes::Mailboxes,
     model_choice::ModelChoice,
+    thread_lock::ThreadLock,
     thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup},
 };
 use crate::{
@@ -67,6 +68,7 @@ impl Launcher {
             depth,
             mailboxes: Arc::clone(&self.mailboxes),
             ends_when_idle: false,
+            lock: ThreadLock::take(workspace)?,
         })
     }
 

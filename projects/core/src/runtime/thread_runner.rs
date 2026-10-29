@@ -21,6 +21,7 @@ use super::{
     inbox::{Inbox, Input, Stop},
     mailboxes::{Mailbox, Mailboxes},
     model_choice::ModelChoice,
+    thread_lock::ThreadLock,
 };
 use crate::{
     chat::commands,
@@ -40,6 +41,8 @@ pub struct ThreadRunner {
     ends_when_idle: bool,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
+    /// Keeps other processes off the thread while this runner has it.
+    _lock: ThreadLock,
 }
 
 /// Everything a running thread needs; the thread must exist.
@@ -56,6 +59,7 @@ pub struct ThreadSetup {
     pub mailboxes: Arc<Mailboxes>,
     /// A subagent's runner ends when idle instead of waiting for its client.
     pub ends_when_idle: bool,
+    pub lock: ThreadLock,
 }
 
 /// The client's side for sending. Dropping every clone ends the thread once the queue is done.
@@ -178,6 +182,7 @@ impl ThreadRunner {
             mailboxes: setup.mailboxes,
             ends_when_idle: setup.ends_when_idle,
             left: false,
+            _lock: setup.lock,
         };
         let output = ThreadOutput {
             events: event_receiver,
@@ -558,6 +563,7 @@ mod tests {
             depth: 0,
             mailboxes: Arc::default(),
             ends_when_idle: false,
+            lock: ThreadLock::take(&root).unwrap(),
         })
     }
 
