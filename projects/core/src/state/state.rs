@@ -46,6 +46,7 @@ impl State {
             .connect_with(options)
             .await
             .context("open state database")?;
+        check(&pool, path).await?;
         legacy::convert(&pool, &MIGRATOR).await?;
         MIGRATOR
             .run(&pool)
@@ -57,6 +58,27 @@ impl State {
     pub async fn close(&self) {
         self.pool.close().await;
     }
+}
+
+/// Says plainly what is wrong with a file that cannot serve as the database, before any
+/// step deeper down fails on it with a less helpful message.
+async fn check(pool: &SqlitePool, path: &Path) -> Result<()> {
+    let shown = path.display();
+    sqlx::query("SELECT COUNT(*) FROM sqlite_master")
+        .execute(pool)
+        .await
+        .with_context(|| format!("{shown} is damaged or not a dusk database"))?;
+    // A write that is rolled back: SQLite opens a read-only file without a word.
+    let mut transaction = pool.begin().await.context("begin the write check")?;
+    sqlx::query("CREATE TABLE dusk_write_check (id INTEGER)")
+        .execute(&mut *transaction)
+        .await
+        .with_context(|| format!("{shown} cannot be written"))?;
+    transaction
+        .rollback()
+        .await
+        .context("end the write check")?;
+    Ok(())
 }
 
 pub fn timestamp_ms() -> Result<i64> {
