@@ -5,26 +5,22 @@ use dusk_core::{runtime::AUTO_COMPACT_PERCENT, state::ThreadTokens};
 use ratatui::{
     Frame,
     layout::Rect,
-    style::{Color, Style},
+    style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, Paragraph},
 };
 
 use super::{
+    loader::Loader,
     theme::{
         EMBER, NIGHT, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL, VIOLET, bold, dusk, fg,
     },
-    transcript::{one_line, spinner},
+    transcript::one_line,
     wrap,
 };
 use crate::app::{App, compact_number, now_ms};
 
 const STATS_HEIGHT: u16 = 9;
-/// Pixels of a subagent figure: mirrored halves of a 5x6 grid, drawn in 5x3 cells.
-const FIGURE_WIDTH: usize = 5;
-const FIGURE_HALF: usize = 3;
-const FIGURE_PIXELS: u32 = 18;
-
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
     if overlay {
         frame.render_widget(Clear, area);
@@ -154,11 +150,12 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     let width = area.width.saturating_sub(10) as usize;
     let now = now_ms();
-    let dots = spinner(app);
     for (index, agent) in app.subagents.iter().enumerate() {
         let seed = identity(&agent.thread_id);
-        let color = icon_color(seed);
-        let icon = icon_lines(seed);
+        let loader = Loader::new(seed);
+        let color = loader.color();
+        let running = agent.finished_at.is_none();
+        let [top, middle, bottom] = loader.rows(running.then_some(app.frame));
         let name = agent_name(seed);
         let elapsed = agent
             .finished_at
@@ -166,30 +163,45 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
             .saturating_sub(agent.started_at)
             .max(0) as u64;
         let age = format_duration(elapsed);
+        let state = if running { "" } else { "done" };
         // The random name stands out; the agent it works as and the task stay quiet.
-        let state = if agent.finished_at.is_some() {
-            "done"
-        } else {
-            dots
-        };
-        lines.push(Line::from(vec![
-            Span::styled(format!("{} ", icon[0]), fg(color)),
-            Span::styled(wrap::clip(&agent.agent, width), fg(SIDEBAR_MUTED)),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled(format!("{} ", icon[1]), fg(color)),
-            // Room left by the icon, the time and the dots.
-            Span::styled(
-                wrap::clip(&name, (area.width as usize).saturating_sub(19)),
-                bold(color),
-            ),
-            Span::styled(format!(" {age} "), fg(SIDEBAR_MUTED)),
-            Span::styled(state, fg(SUN)),
-        ]));
-        lines.push(Line::from(vec![
-            Span::styled(format!("{} ", icon[2]), fg(color)),
-            Span::styled(wrap::clip(&one_line(&agent.task), width), fg(SIDEBAR_FG)),
-        ]));
+        lines.push(Line::from(
+            [
+                top,
+                vec![Span::raw(" ")],
+                vec![Span::styled(
+                    wrap::clip(&agent.agent, width),
+                    fg(SIDEBAR_MUTED),
+                )],
+            ]
+            .concat(),
+        ));
+        lines.push(Line::from(
+            [
+                middle,
+                vec![
+                    Span::raw(" "),
+                    // Room left by the loader, the time and "done".
+                    Span::styled(
+                        wrap::clip(&name, (area.width as usize).saturating_sub(19)),
+                        bold(color),
+                    ),
+                    Span::styled(format!(" {age} "), fg(SIDEBAR_MUTED)),
+                    Span::styled(state, fg(SUN)),
+                ],
+            ]
+            .concat(),
+        ));
+        lines.push(Line::from(
+            [
+                bottom,
+                vec![
+                    Span::raw(" "),
+                    Span::styled(wrap::clip(&one_line(&agent.task), width), fg(SIDEBAR_FG)),
+                ],
+            ]
+            .concat(),
+        ));
         if index + 1 < app.subagents.len() {
             lines.push(Line::default());
         }
@@ -269,48 +281,6 @@ fn agent_name(seed: u64) -> String {
         NAMES[(seed as usize) % NAMES.len()],
         (seed >> 24) & 0xff
     )
-}
-
-fn icon_color(seed: u64) -> Color {
-    Color::Rgb(
-        110 + ((seed >> 8) & 0x7f) as u8,
-        100 + ((seed >> 16) & 0x7f) as u8,
-        125 + ((seed >> 32) & 0x7f) as u8,
-    )
-}
-
-/// A figure that tells subagents apart: random pixels mirrored like a face, with half
-/// blocks for two pixel rows per cell, always the same size.
-fn icon_lines(seed: u64) -> [String; 3] {
-    let mut bits = mix(seed) & ((1 << FIGURE_PIXELS) - 1);
-    // A sparse figure reads as noise, so it is drawn as its negative instead.
-    if bits.count_ones() < FIGURE_PIXELS / 3 {
-        bits ^= (1 << FIGURE_PIXELS) - 1;
-    }
-    let pixel = |row: usize, column: usize| {
-        let column = column.min(FIGURE_WIDTH - 1 - column);
-        bits >> (row * FIGURE_HALF + column) & 1 == 1
-    };
-    std::array::from_fn(|row| {
-        (0..FIGURE_WIDTH)
-            .map(
-                |column| match (pixel(row * 2, column), pixel(row * 2 + 1, column)) {
-                    (true, true) => '\u{2588}',
-                    (true, false) => '\u{2580}',
-                    (false, true) => '\u{2584}',
-                    (false, false) => ' ',
-                },
-            )
-            .collect()
-    })
-}
-
-/// Spreads the bits of the id hash, which the name and the color already use.
-fn mix(seed: u64) -> u64 {
-    let mut value = seed.wrapping_add(0x9e3779b97f4a7c15);
-    value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
-    value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
-    value ^ (value >> 31)
 }
 
 fn format_duration(ms: u64) -> String {

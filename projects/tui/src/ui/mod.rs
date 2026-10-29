@@ -3,6 +3,7 @@
 
 mod header;
 mod input;
+mod loader;
 mod markdown;
 mod panels;
 pub mod screen;
