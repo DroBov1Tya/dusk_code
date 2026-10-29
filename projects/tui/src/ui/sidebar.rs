@@ -156,7 +156,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
         let color = loader.color();
         let running = agent.finished_at.is_none();
         let [top, middle, bottom] = loader.rows(running.then_some(app.frame));
-        let name = agent_name(seed);
+        let name = agent_name(&agent.thread_id);
         let elapsed = agent
             .finished_at
             .unwrap_or(now)

@@ -20,16 +20,25 @@ pub struct Thread {
     /// For a subagent's thread: the thread that asked it, and the agent's name.
     pub parent_thread_id: Option<String>,
     pub agent: Option<String>,
+    /// What an agent's thread goes by, such as `Fable-3a`.
+    pub name: Option<String>,
 }
 
 impl State {
     pub async fn create_thread(&self, id: &str, source: &str) -> Result<Thread> {
-        self.insert_thread(id, source, None, None).await
+        self.insert_thread(id, source, None, None, None).await
     }
 
     /// A thread for `agent` to work in, under the thread that asked it.
-    pub async fn create_agent_thread(&self, id: &str, parent: &str, agent: &str) -> Result<Thread> {
-        self.insert_thread(id, "agent", Some(parent), Some(agent))
+    /// A thread for `agent` to work in under the thread that asked it, called `name`.
+    pub async fn create_agent_thread(
+        &self,
+        id: &str,
+        parent: &str,
+        agent: &str,
+        name: &str,
+    ) -> Result<Thread> {
+        self.insert_thread(id, "agent", Some(parent), Some(agent), Some(name))
             .await
     }
 
@@ -39,19 +48,21 @@ impl State {
         source: &str,
         parent: Option<&str>,
         agent: Option<&str>,
+        name: Option<&str>,
     ) -> Result<Thread> {
         ensure!(!id.trim().is_empty(), "thread ID is empty");
         ensure!(!source.trim().is_empty(), "thread source is empty");
         let timestamp = timestamp_ms()?;
         sqlx::query(
-            "INSERT INTO threads (id, source, created_at, parent_thread_id, agent)
-             VALUES (?, ?, ?, ?, ?)",
+            "INSERT INTO threads (id, source, created_at, parent_thread_id, agent, name)
+             VALUES (?, ?, ?, ?, ?, ?)",
         )
         .bind(id)
         .bind(source)
         .bind(timestamp)
         .bind(parent)
         .bind(agent)
+        .bind(name)
         .execute(&self.pool)
         .await
         .context("create thread")?;
@@ -174,6 +185,7 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         active_at: row.try_get("active_at")?,
         parent_thread_id: row.try_get("parent_thread_id")?,
         agent: row.try_get("agent")?,
+        name: row.try_get("name")?,
     })
 }
 
@@ -186,11 +198,11 @@ mod tests {
         let state = temp_state("agent_tree").await;
         state.create_thread("chat", "test").await.unwrap();
         state
-            .create_agent_thread("a", "chat", "general")
+            .create_agent_thread("a", "chat", "general", "Aster-01")
             .await
             .unwrap();
         state
-            .create_agent_thread("b", "a", "general")
+            .create_agent_thread("b", "a", "general", "Beryl-02")
             .await
             .unwrap();
 

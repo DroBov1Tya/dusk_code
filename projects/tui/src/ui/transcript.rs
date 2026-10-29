@@ -246,7 +246,7 @@ fn from_agent(thread_id: &str, text: &str, open: bool, width: usize) -> Vec<Line
     let color = Loader::new(seed).color();
     let header = Line::from(vec![
         Span::styled(format!("   {} ", fold_mark(open)), fg(color)),
-        Span::styled(agent_name(seed), bold(color)),
+        Span::styled(agent_name(thread_id), bold(color)),
         Span::styled(
             format!(" {DOT} message {DOT} {} lines", text.lines().count()),
             dim(),
