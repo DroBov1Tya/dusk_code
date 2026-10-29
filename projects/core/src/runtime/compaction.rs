@@ -79,13 +79,14 @@ impl Agent {
         };
         let mut messages = conversation.chat_messages_through(through);
         messages.push(ChatMessage::User(self.instructions(instructions)?));
+        let choice = self.model.current();
         let request = ChatRequest {
-            model: &self.model.id,
+            model: &choice.model.id,
             messages: &messages,
             tools: &[],
             max_output_tokens: self.config.current().limits().max_output_tokens,
         };
-        let (output, generated) = match self.call_model(request, inbox).await {
+        let (output, generated) = match self.call_model(&choice, request, inbox).await {
             Ok(called) => called,
             Err(stop) => return Ok(Err(stop)),
         };
@@ -95,7 +96,7 @@ impl Agent {
                 turn_id: turn.map(|turn| turn.turn_id.clone()),
                 purpose: CallPurpose::Compact,
                 compaction_id: conversation.compaction.as_ref().map(|c| c.compaction_id),
-                model: self.model.id.clone(),
+                model: choice.model.id.clone(),
                 through_sequence: through,
             };
             self.state.record_usage(&call, usage).await?;

@@ -34,6 +34,10 @@ pub struct Config {
     /// Skills switched on or off by name; a skill not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     skills: BTreeMap<String, bool>,
+    /// The model threads talk to, as `provider/model`; the first model of the first
+    /// provider when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    model: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -131,6 +135,14 @@ impl Config {
         self.tools.insert(name.to_owned(), enabled);
     }
 
+    pub fn model(&self) -> Option<&str> {
+        self.model.as_deref()
+    }
+
+    pub fn set_model(&mut self, name: String) {
+        self.model = Some(name);
+    }
+
     pub fn skill_enabled(&self, name: &str) -> bool {
         self.skills.get(name).copied().unwrap_or(true)
     }
@@ -196,6 +208,7 @@ impl fmt::Debug for Config {
             .field("limits", &self.limits)
             .field("tools", &self.tools)
             .field("skills", &self.skills)
+            .field("model", &self.model)
             .finish()
     }
 }

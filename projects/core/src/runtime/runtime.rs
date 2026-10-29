@@ -10,19 +10,19 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 use tokio::task::{JoinHandle, JoinSet};
-use tracing::info;
+use tracing::{info, warn};
 
 use super::{
     inbox::Input,
     launcher::Launcher,
     mailboxes::Mailboxes,
+    model_choice::{self, Choice, ModelChoice},
     thread_runner::{ThreadInput, ThreadOutput, ThreadRunner},
 };
 use crate::{
     init::{self, create_private_dir},
     live_config::LiveConfig,
     paths::Paths,
-    providers::{Model, ProviderRegistry},
     state::{Message, State, Thread},
     thread_start::start_thread,
 };
@@ -60,18 +60,21 @@ impl Runtime {
         }
         let state = State::open(state_db.unwrap_or_else(|| paths.state_db())).await?;
         let config = Arc::new(LiveConfig::load(paths.config_file())?);
-        let providers = ProviderRegistry::from_config(&config.current())?;
-        let provider_name = providers.names().next().context("no provider configured")?;
-        let provider = providers
-            .provider(provider_name)
-            .context("configured provider is missing")?;
-        let model = provider.default_model().await?;
-        info!("provider {provider_name}, model {}", model.id);
+        let named = config.current().model().map(str::to_owned);
+        let choice = match model_choice::pick(&config.current(), named.as_deref()).await {
+            Ok(choice) => choice,
+            // A chosen model that is gone or down does not keep the client from starting.
+            Err(error) if named.is_some() => {
+                warn!("cannot use the configured model: {error:#}");
+                model_choice::pick(&config.current(), None).await?
+            }
+            Err(error) => return Err(error),
+        };
+        info!("model {}", choice.name());
         let config_check = tokio::spawn(Arc::clone(&config).watch(CONFIG_CHECK_PERIOD));
         let launcher = Launcher {
             state: Arc::new(state),
-            provider,
-            model,
+            model: Arc::new(ModelChoice::new(choice)),
             config,
             paths,
             mailboxes: Arc::new(Mailboxes::default()),
@@ -88,8 +91,20 @@ impl Runtime {
     }
 
     /// The model every thread talks to.
-    pub fn model(&self) -> &Model {
-        &self.launcher.model
+    /// The model threads talk to now, as `provider/model` and its details.
+    pub fn model(&self) -> Choice {
+        self.launcher.model.current()
+    }
+
+    /// Switches every thread to `choice` from its next model call, and keeps it in the
+    /// config.
+    pub fn set_model(&self, choice: Choice) -> Result<()> {
+        let name = choice.name();
+        self.launcher
+            .config
+            .update(|config| config.set_model(name))?;
+        self.launcher.model.set(choice);
+        Ok(())
     }
 
     pub fn paths(&self) -> &Paths {

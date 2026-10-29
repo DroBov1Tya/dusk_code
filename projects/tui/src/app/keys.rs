@@ -248,6 +248,21 @@ impl App {
         let up = matches!(key.code, KeyCode::Up | KeyCode::Char('k'));
         match panel {
             Panel::Paste(_) => self.editor_key(key),
+            Panel::Models(list) => match key.code {
+                _ if up || down => {
+                    let count = list.choices().len();
+                    step(&mut list.selected, count, down);
+                }
+                KeyCode::Enter => {
+                    let chosen = list.choices().get(list.selected).cloned();
+                    return chosen.map_or(Action::None, |name| {
+                        Action::Command(Command::Model { name: Some(name) })
+                    });
+                }
+                KeyCode::Char('r') => return Action::Command(Command::Model { name: None }),
+                KeyCode::Esc => self.panel = None,
+                _ => {}
+            },
             Panel::Help => self.panel = None,
             Panel::Threads(list) => match key.code {
                 _ if up || down => {

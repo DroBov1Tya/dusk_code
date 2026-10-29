@@ -16,16 +16,17 @@ use dusk_core::state::MessageRole;
 use super::{
     input, markdown,
     theme::{
-        DOT, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, OFF, ON, ROSE, SUN, SUN_GLYPH, TEAL, USER_BAR,
-        VIOLET, bold, dim, fg, thought,
+        ALIVE, DOT, DOWN, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, OFF, ON, ROSE, SUN, SUN_GLYPH,
+        TEAL, USER_BAR, VIOLET, bold, dim, fg, thought,
     },
     wrap,
 };
 use crate::app::{
-    App, EditorButton, EditorHit, Panel, SettingKind, SettingList, ThreadList, paste,
+    App, EditorButton, EditorHit, ModelList, Panel, SettingKind, SettingList, ThreadList,
+    compact_number, paste,
 };
 
-const KEYS: [(&str, &str); 21] = [
+const KEYS: [(&str, &str); 22] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
@@ -42,6 +43,7 @@ const KEYS: [(&str, &str); 21] = [
     ("Shift+PgUp/Dn", "scroll subagent cards"),
     ("Alt+PgUp/Dn", "scroll MCP tools"),
     ("Ctrl+T /resume", "threads, with a preview of each"),
+    ("/model", "choose the model; providers are checked live"),
     ("Ctrl+N", "new thread"),
     ("Ctrl+O", "tools and skills"),
     ("F2", "show or hide the statistics sidebar"),
@@ -69,6 +71,15 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             )
         }
         Panel::Help => ("keys", "any key closes", help(), None),
+        Panel::Models(list) => {
+            let (lines, row) = models(list);
+            (
+                "model",
+                "enter choose  r check again  esc close",
+                lines,
+                Some(row),
+            )
+        }
         Panel::Paste(_) => return,
     };
     let width = screen.width.saturating_sub(4).min(76);
@@ -348,6 +359,64 @@ fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
             selectable(vec![mark, title], age, row == list.selected)
         })
         .collect()
+}
+
+/// Providers with a light for whether they answered, each followed by its models. The
+/// lines, and the line of the selected model.
+fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
+    let Some(providers) = &list.providers else {
+        let checking = format!(" checking the providers {ELLIPSIS}");
+        return (vec![Line::from(Span::styled(checking, thought()))], 0);
+    };
+    let mut lines = Vec::new();
+    let mut selected_line = 0;
+    let mut index = 0;
+    for provider in providers {
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
+        let (light, about) = match &provider.models {
+            Ok(models) if models.len() == 1 => (ALIVE, "1 model".into()),
+            Ok(models) => (ALIVE, format!("{} models", models.len())),
+            Err(error) => (DOWN, error.clone()),
+        };
+        lines.push(selectable(
+            vec![
+                Span::raw(format!(" {light} ")),
+                Span::styled(provider.name.clone(), bold(VIOLET)),
+            ],
+            Span::styled(about, dim()),
+            false,
+        ));
+        for model in provider.models.as_deref().unwrap_or_default() {
+            let name = format!("{}/{}", provider.name, model.id);
+            let mark = if name == list.current {
+                Span::styled(format!("    {SUN_GLYPH} "), fg(SUN))
+            } else {
+                Span::raw("      ")
+            };
+            let window = model
+                .context_window
+                .map(|window| format!("{} tokens", compact_number(window)))
+                .unwrap_or_default();
+            if index == list.selected {
+                selected_line = lines.len();
+            }
+            lines.push(selectable(
+                vec![mark, Span::raw(model.id.clone())],
+                Span::styled(window, dim()),
+                index == list.selected,
+            ));
+            index += 1;
+        }
+    }
+    if providers.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " no providers in the config",
+            thought(),
+        )));
+    }
+    (lines, selected_line)
 }
 
 /// The lines, and the line of the selected item.

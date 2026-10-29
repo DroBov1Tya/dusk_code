@@ -16,6 +16,7 @@ use tracing::warn;
 use super::{
     inbox::Input,
     mailboxes::Mailboxes,
+    model_choice::ModelChoice,
     thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup},
 };
 use crate::{
@@ -23,7 +24,6 @@ use crate::{
     graph::{AGENT_FILE, Graph, Node},
     live_config::LiveConfig,
     paths::Paths,
-    providers::{Model, ModelProvider},
     state::{State, Thread, TurnStatus},
     tools::{
         AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, MessageParent, ReadHistory, ToolRegistry,
@@ -34,8 +34,7 @@ use crate::{
 #[derive(Clone)]
 pub struct Launcher {
     pub state: Arc<State>,
-    pub provider: Arc<dyn ModelProvider>,
-    pub model: Model,
+    pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
     pub paths: Paths,
     pub mailboxes: Arc<Mailboxes>,
@@ -54,8 +53,7 @@ impl Launcher {
     ) -> Result<ThreadSetup> {
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
-            provider: Arc::clone(&self.provider),
-            model: self.model.clone(),
+            model: Arc::clone(&self.model),
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
