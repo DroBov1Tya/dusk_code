@@ -83,6 +83,7 @@ You review code...
 | `/model` | choose the model; every provider is checked live, 🟢 answers, 🔴 does not |
 | `/compact text` | summarize the thread; the text guides the summary |
 | Ctrl+O | switch tools and skills |
+| card click, F3 | a subagent's window: its chat and actions live, tokens, tok/s, time, who asked it |
 | F2 / F1 | sidebar / every key |
 
 `--thread ID` opens a thread at start, `--state-db PATH` uses another database.

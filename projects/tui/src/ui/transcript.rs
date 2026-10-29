@@ -23,7 +23,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Button, ButtonHit, Entry, Focus, TEXT_COLUMN, Tone, TranscriptHit, compact_number,
+    App, Button, ButtonHit, Entry, Focus, TEXT_COLUMN, Tone, Transcript, TranscriptHit,
+    compact_number,
     paste::{self, Part},
 };
 
@@ -176,27 +177,41 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
 
 /// Every entry as lines, and the line each entry starts on.
 fn layout(app: &App, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
+    let browsed = match app.focus {
+        Focus::Browse(index) => Some(index),
+        Focus::Input => None,
+    };
+    let live = app.is_busy().then_some(app);
+    thread_lines(&app.transcript, width, live, browsed)
+}
+
+/// Every entry of a thread as lines, and the line each entry starts on. With `live`,
+/// the last entry is still being written; `browsed` is highlighted.
+pub fn thread_lines(
+    transcript: &Transcript,
+    width: usize,
+    live: Option<&App>,
+    browsed: Option<usize>,
+) -> (Vec<Line<'static>>, Vec<usize>) {
     let text_width = width.saturating_sub(4).max(10);
     let mut lines = Vec::new();
     let mut starts = Vec::new();
-    let entries = &app.transcript.entries;
-    let streaming = app.is_busy().then(|| entries.len().saturating_sub(1));
+    let entries = &transcript.entries;
+    let streaming = live.map(|_| entries.len().saturating_sub(1));
     for (index, entry) in entries.iter().enumerate() {
         let folded_run = index > 0 && is_meta(&entries[index - 1]) && is_meta(entry);
         if index > 0 && !folded_run {
             lines.push(Line::default());
         }
         starts.push(lines.len());
-        let live = streaming == Some(index);
-        let mut drawn = if app.transcript.is_hidden(index) {
-            vec![hidden_line(
-                entry,
-                &app.transcript.text(index).unwrap_or_default(),
-            )]
+        let writing = live.filter(|_| streaming == Some(index));
+        let mut drawn = if transcript.is_hidden(index) {
+            let text = transcript.text(index).unwrap_or_default();
+            vec![hidden_line(entry, &text)]
         } else {
-            entry_lines(entry, text_width, live.then_some(app))
+            entry_lines(entry, text_width, writing)
         };
-        if app.focus == Focus::Browse(index)
+        if browsed == Some(index)
             && let Some(header) = drawn.first_mut()
         {
             *header = std::mem::take(header).style(Style::new().bg(GLOW));
