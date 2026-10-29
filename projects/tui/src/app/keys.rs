@@ -5,12 +5,11 @@
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
-use dusk_core::commands::COMMANDS;
 use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
 use super::{
-    Action, App, Button, Focus, Panel, Selection, SettingKind, SettingList, TEXT_COLUMN,
+    Action, App, Button, Focus, Panel, Selection, SettingKind, SettingList, TEXT_COLUMN, commands,
     panels::step,
 };
 
@@ -128,9 +127,12 @@ impl App {
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
-            KeyCode::Enter if alt => return self.submit(true),
             KeyCode::Enter if shift => self.input.insert("\n"),
-            KeyCode::Enter => return self.submit(false),
+            // A command typed in part runs as the one it can only be.
+            KeyCode::Enter => {
+                self.complete_command();
+                return self.submit(alt);
+            }
             KeyCode::Char('j') if ctrl => self.input.insert("\n"),
             KeyCode::Char('u') if ctrl => {
                 self.input.take();
@@ -162,7 +164,7 @@ impl App {
         if !typed.starts_with('/') || typed.contains(char::is_whitespace) {
             return false;
         }
-        let mut fitting = COMMANDS.iter().filter(|(name, _)| name.starts_with(typed));
+        let mut fitting = commands().filter(|(name, _)| name.starts_with(typed));
         match (fitting.next(), fitting.next()) {
             (Some((name, _)), None) => {
                 self.input.set(format!("{name} "));
@@ -209,7 +211,16 @@ impl App {
         match panel {
             Panel::Help => self.panel = None,
             Panel::Threads(list) => match key.code {
-                _ if up || down => step(&mut list.selected, list.threads.len(), down),
+                _ if up || down => {
+                    step(&mut list.selected, list.threads.len(), down);
+                    let shown = list.preview.as_ref().map(|preview| &preview.thread_id);
+                    return match list.threads.get(list.selected) {
+                        Some(thread) if shown != Some(&thread.id) => {
+                            Action::Preview(thread.id.clone())
+                        }
+                        _ => Action::None,
+                    };
+                }
                 KeyCode::Enter => {
                     let chosen = list
                         .threads

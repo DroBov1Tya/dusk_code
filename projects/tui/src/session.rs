@@ -11,7 +11,7 @@ use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
 use crate::{
-    app::{Action, App, Panel, ThreadList},
+    app::{Action, App, Panel, Preview, ThreadList},
     clipboard, ui,
 };
 
@@ -89,7 +89,15 @@ pub async fn run(
                         .iter()
                         .position(|thread| Some(thread.id.as_str()) == current)
                         .unwrap_or(0);
-                    app.panel = Some(Panel::Threads(ThreadList { threads, selected }));
+                    let first = threads.get(selected).map(|thread| thread.id.clone());
+                    app.panel = Some(Panel::Threads(ThreadList {
+                        threads,
+                        selected,
+                        preview: None,
+                    }));
+                    if let Some(thread_id) = first {
+                        preview(runtime, &mut app, thread_id).await;
+                    }
                 }
                 Err(error) => app.error(format!("cannot list threads: {error:#}")),
             },
@@ -108,6 +116,7 @@ pub async fn run(
                 close(open.take()).await;
                 app.open(None, None, &[]);
             }
+            Action::Preview(thread_id) => preview(runtime, &mut app, thread_id).await,
             Action::Copy(text) => {
                 let lines = text.lines().count().max(1);
                 app.flash = Some(if clipboard::copy(&text) {
@@ -120,6 +129,17 @@ pub async fn run(
     }
     close(open.take()).await;
     Ok(())
+}
+
+/// Shows a thread in the threads panel, if the panel is still open. A preview that
+/// cannot be read just stays empty; opening the thread reports the error.
+async fn preview(runtime: &Runtime, app: &mut App, thread_id: String) {
+    let Ok(history) = runtime.thread_messages(&thread_id).await else {
+        return;
+    };
+    if let Some(Panel::Threads(list)) = &mut app.panel {
+        list.preview = Some(Preview::new(thread_id, &history));
+    }
 }
 
 /// The next event of the open thread; waits forever when none is open.

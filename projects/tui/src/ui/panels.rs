@@ -11,8 +11,14 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
+use dusk_core::state::MessageRole;
+
 use super::{
-    theme::{GLOW, NIGHT, OFF, ON, SUN, SUN_GLYPH, VIOLET, bold, dim, fg, thought},
+    markdown,
+    theme::{
+        DOT, ELLIPSIS, GLOW, GUTTER, NIGHT, OFF, ON, ROSE, SUN, SUN_GLYPH, USER_BAR, VIOLET, bold,
+        dim, fg, thought,
+    },
     wrap,
 };
 use crate::app::{App, Panel, SettingKind, SettingList, ThreadList};
@@ -32,7 +38,7 @@ const KEYS: [(&str, &str); 20] = [
     ("PgUp / PgDn", "scroll the transcript; wheel works too"),
     ("Shift+PgUp/Dn", "scroll subagent cards"),
     ("Alt+PgUp/Dn", "scroll MCP tools"),
-    ("Ctrl+T", "threads"),
+    ("Ctrl+T /resume", "threads, with a preview of each"),
     ("Ctrl+N", "new thread"),
     ("Ctrl+O", "tools and skills"),
     ("F2", "show or hide the statistics sidebar"),
@@ -45,15 +51,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &App) {
         return;
     };
     let (title, hints, lines, selected) = match panel {
-        Panel::Threads(list) => {
-            let current = app.thread_id.as_deref();
-            (
-                "threads",
-                "enter open  n new  esc close",
-                threads(list, current),
-                Some(list.selected),
-            )
-        }
+        Panel::Threads(list) => return draw_threads(frame, screen, app, list),
         Panel::Settings(list) => {
             let (lines, row) = settings(list);
             (
@@ -88,6 +86,154 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &App) {
         Paragraph::new(lines).block(block).scroll((skip as u16, 0)),
         area,
     );
+}
+
+/// Messages shown at the end of a preview, after the one the thread began with.
+const PREVIEW_LAST: usize = 4;
+const PREVIEW_USER_LINES: usize = 3;
+const PREVIEW_ANSWER_LINES: usize = 6;
+/// Below this the preview leaves the whole window to the list.
+const PREVIEW_MIN_WIDTH: u16 = 70;
+
+/// Threads take most of the screen: the list on the left and the selected thread at a
+/// glance on the right, how it began and how it stands, never its whole history.
+fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
+    let width = screen.width.saturating_sub(6).min(150);
+    let height = screen.height.saturating_sub(4).max(3);
+    let area = Rect {
+        x: screen.x + (screen.width - width) / 2,
+        y: screen.y + (screen.height - height) / 2,
+        width,
+        height,
+    };
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(fg(NIGHT))
+        .title(Line::from(Span::styled(" threads ", bold(VIOLET))))
+        .title_bottom(
+            Line::from(Span::styled(
+                " up/down choose  enter open  n new  esc close ",
+                dim(),
+            ))
+            .right_aligned(),
+        );
+    let inner = block.inner(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+    let with_preview = inner.width >= PREVIEW_MIN_WIDTH;
+    let list_width = if with_preview {
+        inner.width * 2 / 5
+    } else {
+        inner.width
+    };
+    let left = Rect {
+        width: list_width,
+        ..inner
+    };
+    let rows = fit(threads(list, app.thread_id.as_deref()), left.width as usize);
+    let skip = (list.selected + 1).saturating_sub(left.height as usize);
+    frame.render_widget(Paragraph::new(rows).scroll((skip as u16, 0)), left);
+    if !with_preview {
+        return;
+    }
+    let divider = Rect {
+        x: inner.x + list_width,
+        width: 1,
+        ..inner
+    };
+    let bar = vec![Line::from(Span::styled(GUTTER, fg(NIGHT))); divider.height as usize];
+    frame.render_widget(Paragraph::new(bar), divider);
+    let right = Rect {
+        x: divider.x + 2,
+        width: inner.width.saturating_sub(list_width + 3),
+        ..inner
+    };
+    let lines = preview(list, right.width as usize, right.height as usize);
+    frame.render_widget(Paragraph::new(lines), right);
+}
+
+fn preview(list: &ThreadList, width: usize, height: usize) -> Vec<Line<'static>> {
+    let Some(thread) = list.threads.get(list.selected) else {
+        return Vec::new();
+    };
+    let now = now_ms();
+    let title = thread.title.clone().unwrap_or_else(|| "no messages".into());
+    let mut head = vec![Line::from(Span::styled(
+        wrap::clip(&title, width),
+        bold(SUN),
+    ))];
+    let loaded = list
+        .preview
+        .as_ref()
+        .filter(|preview| preview.thread_id == thread.id);
+    let Some(preview) = loaded else {
+        head.push(Line::from(Span::styled("loading", thought())));
+        return head;
+    };
+    let meta = format!(
+        "started {} {DOT} active {} {DOT} {} messages {DOT} {} tool calls",
+        ago(now - thread.created_at),
+        ago(now - thread.active_at),
+        preview.messages.len(),
+        preview.tool_calls,
+    );
+    head.push(Line::from(Span::styled(wrap::clip(&meta, width), dim())));
+    head.push(Line::default());
+    let Some((first, rest)) = preview.messages.split_first() else {
+        head.push(Line::from(Span::styled("no messages yet", thought())));
+        return head;
+    };
+    head.extend(message_lines(first, width));
+    let last = &rest[rest.len().saturating_sub(PREVIEW_LAST)..];
+    let between = rest.len() - last.len();
+    let mut tail = Vec::new();
+    if between > 0 {
+        tail.push(Line::default());
+        let skipped = format!("   {DOT} {between} more {DOT}");
+        tail.push(Line::from(Span::styled(skipped, dim())));
+    }
+    for message in last {
+        tail.push(Line::default());
+        tail.extend(message_lines(message, width));
+    }
+    // The newest messages matter most, so a short window drops the older ones first.
+    let room = height.saturating_sub(head.len());
+    let tail = tail.split_off(tail.len().saturating_sub(room));
+    head.extend(tail);
+    head
+}
+
+/// A user message with its bar, or an answer as markdown, cut to a few lines.
+fn message_lines((role, text): &(MessageRole, String), width: usize) -> Vec<Line<'static>> {
+    let (mut lines, limit) = match role {
+        MessageRole::User => {
+            let lines = text
+                .lines()
+                .flat_map(|line| wrap::words(vec![Span::raw(line.to_owned())], width - 3, 0))
+                .map(|spans| {
+                    let bar = Span::styled(format!(" {USER_BAR} "), fg(ROSE));
+                    Line::from([vec![bar], spans].concat())
+                })
+                .collect::<Vec<_>>();
+            (lines, PREVIEW_USER_LINES)
+        }
+        _ => {
+            let lines = markdown::render(text.trim(), width - 3)
+                .into_iter()
+                .map(|line| {
+                    let mut spans = vec![Span::raw("   ")];
+                    spans.extend(line.spans);
+                    Line::from(spans)
+                })
+                .collect::<Vec<_>>();
+            (lines, PREVIEW_ANSWER_LINES)
+        }
+    };
+    if lines.len() > limit {
+        lines.truncate(limit);
+        lines.push(Line::from(Span::styled(format!("   {ELLIPSIS}"), dim())));
+    }
+    lines
 }
 
 fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
@@ -204,6 +350,13 @@ fn fit(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
             Line::from(spans).style(style)
         })
         .collect()
+}
+
+fn ago(ms: i64) -> String {
+    match age(ms).as_str() {
+        "now" => "just now".into(),
+        age => format!("{age} ago"),
+    }
 }
 
 fn age(ms: i64) -> String {

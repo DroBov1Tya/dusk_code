@@ -74,7 +74,8 @@ You review code...
 | Tab, click | open or close thinking, tool calls, summaries |
 | drag | select text and copy it |
 | hover | `copy` a message, `edit` one you sent |
-| Ctrl+T / Ctrl+N | threads / new thread |
+| Ctrl+T or `/resume` | threads, with a preview of the selected one |
+| Ctrl+N | new thread |
 | Ctrl+O | switch tools and skills |
 | F2 / F1 | sidebar / every key |
 
