@@ -1,20 +1,91 @@
 # dusk_code
 
-An AI agent system in Rust. All logic lives in one core library, `dusk_core`; front ends are thin clients over it, as Linux distributions are over one kernel. The first is `dusk`, a full-screen terminal client.
+An AI agent system in Rust. All logic lives in one core library, `dusk_core`; front ends are thin clients over it, as Linux distributions are over one kernel. The first client is `dusk`, a full-screen terminal app.
 
-```sh
-cargo run                  # dusk, the full-screen client
-cargo test --workspace
+```text
+╭ statistics ──────────────╮│ ◒ dusk  ·  Poet Agent Tea Poem Request
+│ model qwen3.8-flash      ││
+│ context 2%               ││ ▌ Ask the poet agent for a two-line poem about tea.
+│ 1.8k / 100k              ││
+│ in 3.9k   out 245        ││   ▸ thinking · ~10 tokens
+│ cache 1.7k  think 125    ││   ◆ ask_agent  poet: Write a two-line poem about tea.   ✓ 3 lines
+│ calls 3  last 00:07      ││   ▸ thinking · ~43 tokens
+╰──────────────────────────╯│
+╭ subagents ───────────────╮│   The poet came back with:
+│▀▀█▀▀ poet                ││
+│ ▄▀▄  Cinder-fc 00:02 done││   │ Steam lifts its slow calligraphy from the cup,
+│▄▄▄▄▄ Write a two-line …  ││   │ and the leaf remembers every rain it drank.
 ```
 
-## Words
+## Quick start
+
+Needs Rust 1.85 or newer (edition 2024) and an OpenAI-compatible endpoint.
+
+```sh
+git clone https://github.com/DroBov1Tya/dusk_code
+cd dusk_code
+cargo run --release
+```
+
+The first start creates `~/.config/duskcode/` with a config template and stops: add a provider to `config.yml` and run again.
+
+```yaml
+providers:
+  main:
+    kind: openai_compatible
+    base_url: 'https://api.example.com/v1'
+    api_key: 'sk-...'
+```
+
+`cargo install --path projects/tui` puts `dusk` on the `PATH`. `cargo test --workspace` runs the tests.
+
+## What it does
+
+- **Threads that survive crashes.** Messages are stored before they are acted on, tool calls before they run, results right after. A restart picks up where the process stopped.
+- **Queue, interrupt, stop.** Messages can be sent while the agent works: queued for the next turn, or sent now, stopping the running one and keeping what it wrote.
+- **Context that fits.** Token counts calibrated by the provider's own count; `/compact` and automatic compaction at 80% of the input limit; compacted messages stay readable with `read_history`.
+- **Limits on both sides.** Input and output caps per model call, enforced locally even when the provider ignores them.
+- **Subagents.** `ask_agent` hands a task to an agent working in a thread of its own, with its own context and tools. A built-in `general` agent works without any setup; more are `AGENT.md` files.
+- **Skills.** A graph of `SKILL.md` files the agent walks one step at a time with `load_skill`.
+- **Few built-in tools.** Read, write, edit and delete files, read the thread's history, run commands. Everything else belongs to MCP servers.
+- **Live config.** Tools and skills switch on and off while running; hand edits are picked up within a minute.
+
+## Architecture
+
+```text
+   dusk (TUI)                  other clients, later
+       │                              │
+       └──── ThreadInput ─▶ ◀─ ThreadEvent ┘
+                          │
+┌───────────────────────── dusk_core ──────────────────────────┐
+│ Runtime ─▶ ThreadRunner ─▶ Agent                             │
+│                              │  step: model ─▶ tools ──┐     │
+│                              │  ◀─────── results ──────┘     │
+│                              └─ ask_agent ─▶ ThreadRunner    │
+│                                              of the subagent │
+│                                                              │
+│ state/  SQLite with FTS5      providers/  OpenAI-compatible  │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| Part | What it does |
+|---|---|
+| `runtime/` | `Runtime` starts threads in tasks of their own; `ThreadRunner` takes client input, `Agent` runs turns step by step |
+| `state/` | SQLite records, one file per table, written ahead of every action |
+| `providers/` | the OpenAI-compatible client, its stream parser and one `ModelEvent` type for every provider |
+| `tools/` | the tool interface, the registry and the built-in tools, confined to the working directory and the thread workspace |
+| `graph.rs` | skills and agents, read from `skills/` and `agents/` |
+| `tui/` | the `dusk` binary: app state with no drawing in `app/`, drawing in `ui/` |
+
+### Words
 
 - **thread**: one chat. It holds messages and turns.
 - **message**: one entry in a thread: the system prompt, a user message, a model answer or a tool result.
 - **turn**: one run of the agent. It answers every user message that waited in the queue.
 - **step**: one model call inside a turn. A step that calls tools is stored with the tool results; the next step sends them back to the model.
 
-## Layout
+<details>
+<summary>Every file</summary>
 
 ```text
 projects/
@@ -84,11 +155,74 @@ projects/
             screen.rs        taking the terminal and giving it back
 ```
 
+</details>
+
 ## The full-screen client
 
 `dusk` shows one thread at a time, with its title on top. The left rail starts with statistics: the model, the share of the context in use, the tokens used and the limit, what the provider counted in and out, cached and thinking tokens, model calls, how long the turn runs and how many tokens a second arrive. Sections for subagents and MCP tools appear below it only when there is something to show. F2 hides the rail; on a narrow screen it opens over the transcript instead.
 
 Thinking, tool calls and compaction summaries fold into one line each. Tab walks them, Enter or a click opens or closes one, Ctrl+R opens or closes all thinking. Messages can be sent while the agent works: Enter queues for the next turn, Alt+Enter interrupts, Esc stops. Ctrl+T lists the threads and opens one with its history, Ctrl+N starts a new one, Ctrl+O switches tools and skills, and F1 lists every key. A new thread is stored only when its first message is sent. `--thread ID` opens a thread at start.
+
+| Key | Does |
+|---|---|
+| Enter | send; during a turn, queue for the next one |
+| Alt+Enter | interrupt the turn and send now |
+| Esc | stop the turn |
+| Tab, Enter or click | walk folded entries, open or close one |
+| Ctrl+R | open or close all thinking |
+| Ctrl+T | threads |
+| Ctrl+N | new thread |
+| Ctrl+O | switch tools and skills |
+| F2 | hide or show the left rail |
+| F1 | every key |
+
+## Configuration
+
+```text
+~/.config/duskcode/
+    config.yml               providers, recording, tool and skill switches (mode 0600)
+    MAIN.md                  system prompt of the main agent (mode 0600)
+    COMPACT.md               how to summarize a thread when its context is compacted
+    skills/**/SKILL.md       skills, named by their path: skills/git/notes -> git/notes
+    session/state.db         threads, messages, turns, compactions, usage (mode 0600)
+~/Documents/duskcode/
+    <thread id>/             thread workspace: temporary and downloaded files (mode 0700)
+```
+
+| Section | Key | Default | Meaning |
+|---|---|---|---|
+| `providers` | `kind`, `base_url`, `api_key` | none | OpenAI-compatible endpoints; `dusk` uses the first and its first model |
+| `providers` | `inline_tags` | `false` | the server leaves `<think>` and `<tool_call>` tags in the text |
+| `thread` | `record` | `full` | `full` keeps the whole model output, `answer` only answers |
+| `limits` | `max_input_tokens` | `100000` | the largest request |
+| `limits` | `max_output_tokens` | `100000` | the most the model writes in one call |
+| `tools`, `skills` | `<name>: false` | on | switch one off |
+
+On first start the core creates the directories (mode 0700), a config template without providers, a default MAIN.md and COMPACT.md and an empty database; existing files are never modified. A full config:
+
+```yaml
+providers:
+  main:
+    kind: openai_compatible
+    base_url: 'https://api.example.com/v1'
+    api_key: 'sk-...'
+    # inline_tags: true   # the server leaves <think>/<tool_call> tags in the text
+
+thread:
+  record: full      # user messages and the whole model output (default)
+  # record: answer  # user messages and model answers only
+
+limits:             # tokens per model call
+  max_input_tokens: 100000
+  max_output_tokens: 100000
+
+tools:              # every tool is on unless switched off
+  run_command: false
+```
+
+The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as switching `run_command` off are written to disk atomically and applied in memory, and a background check re-reads the file within a minute of a hand edit. A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
+
+`dusk` uses the first provider and its first catalogue model. `--thread ID` opens a thread instead of a new one, and `--state-db PATH` overrides the database location.
 
 ## How the core runs
 
@@ -127,45 +261,6 @@ Every model call has two limits, set in the `limits:` section of the config and 
 
 - `max_input_tokens`: the largest request. The input limit is this or the model window, whichever is smaller; the context is compacted at 80% of it and never sent past it. A message that alone is larger is refused when it is sent.
 - `max_output_tokens`: the most the model may write in one call, reasoning included. It goes to the provider as `max_tokens`, and the core also counts what streams in and closes the connection past the limit, in case the provider ignores it. Either way the turn ends as interrupted with the text written so far, and the client gets `OutputLimitReached`. A stream cut this way reports no usage, so its cost is not counted.
-
-## Files
-
-```text
-~/.config/duskcode/
-    config.yml               providers, recording, tool and skill switches (mode 0600)
-    MAIN.md                  system prompt of the main agent (mode 0600)
-    COMPACT.md               how to summarize a thread when its context is compacted
-    skills/**/SKILL.md       skills, named by their path: skills/git/notes -> git/notes
-    session/state.db         threads, messages, turns, compactions, usage (mode 0600)
-~/Documents/duskcode/
-    <thread id>/             thread workspace: temporary and downloaded files (mode 0700)
-```
-
-On first start the core creates the directories (mode 0700), a config template without providers, a default MAIN.md and COMPACT.md and an empty database; existing files are never modified. Add a provider and restart:
-
-```yaml
-providers:
-  main:
-    kind: openai_compatible
-    base_url: 'https://api.example.com/v1'
-    api_key: 'sk-...'
-    # inline_tags: true   # the server leaves <think>/<tool_call> tags in the text
-
-thread:
-  record: full      # user messages and the whole model output (default)
-  # record: answer  # user messages and model answers only
-
-limits:             # tokens per model call
-  max_input_tokens: 100000
-  max_output_tokens: 100000
-
-tools:              # every tool is on unless switched off
-  run_command: false
-```
-
-The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as switching `run_command` off are written to disk atomically and applied in memory, and a background check re-reads the file within a minute of a hand edit. A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
-
-`dusk` uses the first provider and its first catalogue model. `--thread ID` opens a thread instead of a new one, and `--state-db PATH` overrides the database location.
 
 ## Subagents
 
@@ -217,3 +312,7 @@ The core reads the tree on every step, so new and edited skills apply at once, a
 ## Limitations
 
 Skills are text only: files next to a `SKILL.md` are not reachable by the agent. No permissions or MCP servers yet. Estimates leave out the chat template markup, so before the first model call of a thread the context size is too low, and per-author counts stay estimates. An interrupted turn keeps its text only; reasoning without text is not stored. Schema changes are new migrations from 0008 on, so an existing database is upgraded on start.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
