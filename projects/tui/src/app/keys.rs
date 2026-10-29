@@ -5,6 +5,8 @@
 use crossterm::event::{
     Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
+use std::time::{Duration, Instant};
+
 use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
@@ -12,6 +14,9 @@ use super::{
     Action, App, Button, Entry, Focus, Panel, Selection, SettingKind, SettingList, TEXT_COLUMN,
     commands, panels::step,
 };
+
+/// How long a first Ctrl+C waits for the second.
+const QUIT_WINDOW: Duration = Duration::from_secs(5);
 
 impl App {
     pub fn handle(&mut self, event: Event) -> Action {
@@ -42,7 +47,11 @@ impl App {
             return Action::None;
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        if ctrl && matches!(key.code, KeyCode::Char('c' | 'q')) {
+        if ctrl && key.code == KeyCode::Char('c') {
+            return self.interrupt_key();
+        }
+        self.quit_armed = None;
+        if ctrl && key.code == KeyCode::Char('q') {
             return Action::Quit;
         }
         if self.panel.is_some() {
@@ -128,6 +137,21 @@ impl App {
             Focus::Input => self.input_key(key),
             Focus::Browse(selected) => self.browse_key(key, selected),
         }
+    }
+
+    /// Ctrl+C clears the box; a second one within the window quits, so one press
+    /// never loses the session.
+    fn interrupt_key(&mut self) -> Action {
+        if self
+            .quit_armed
+            .is_some_and(|armed| armed.elapsed() <= QUIT_WINDOW)
+        {
+            return Action::Quit;
+        }
+        self.input.take();
+        self.quit_armed = Some(Instant::now());
+        self.flash = Some("Ctrl+C again to quit".into());
+        Action::None
     }
 
     fn input_key(&mut self, key: KeyEvent) -> Action {
