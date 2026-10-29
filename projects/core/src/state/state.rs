@@ -9,6 +9,8 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use sqlx::{ConnectOptions, SqlitePool, migrate::Migrator, sqlite::SqliteConnectOptions};
 
+use super::legacy;
+
 static MIGRATOR: Migrator = sqlx::migrate!("src/state/migrations");
 
 // One connection, so writes never interleave: each one runs in its own transaction.
@@ -44,6 +46,7 @@ impl State {
             .connect_with(options)
             .await
             .context("open state database")?;
+        legacy::convert(&pool, &MIGRATOR).await?;
         MIGRATOR
             .run(&pool)
             .await

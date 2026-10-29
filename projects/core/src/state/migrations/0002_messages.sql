@@ -20,6 +20,9 @@ CREATE TABLE messages (
     tool_calls_tokens INTEGER NOT NULL CHECK (tool_calls_tokens >= 0),
     reasoning_tokens INTEGER NOT NULL CHECK (reasoning_tokens >= 0),
     created_at INTEGER NOT NULL CHECK (created_at >= 0),
+    -- For a user message another agent sent, such as a subagent writing to the thread
+    -- that asked it: the thread it came from.
+    from_thread_id TEXT REFERENCES threads(id) CHECK (from_thread_id IS NULL OR role = 'user'),
     UNIQUE (thread_id, sequence),
     CHECK (length(trim(content)) > 0 OR tool_calls_json IS NOT NULL)
 );
