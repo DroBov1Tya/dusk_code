@@ -1,6 +1,7 @@
 //! SQLite records of threads, messages, turns, compactions and token usage.
 
 mod compactions;
+mod legacy;
 mod messages;
 mod pending;
 // Named after its primary item, `State`, as the style guide asks.
