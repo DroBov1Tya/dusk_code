@@ -3,8 +3,9 @@
 //! its final answer comes back as the tool result. Asking the same thread again goes on
 //! with the same conversation.
 //!
-//! A chat may ask the entry agents; an agent may ask the agents it links to. Depth is
-//! bounded, so agents cannot hand work down forever.
+//! A chat may ask the entry agents; an agent may ask the agents it links to. Any thread
+//! may ask the general agent, which works like a chat: MAIN.md and every tool, so
+//! delegating needs no AGENT.md. Depth is bounded, so agents cannot hand work down forever.
 
 use std::path::{Path, PathBuf};
 
@@ -20,12 +21,17 @@ use crate::{
     BoxFuture,
     graph::{AGENT_FILE, Graph, Node},
     state::TurnStatus,
-    thread_start::start_agent_thread,
+    thread_start::{read_prompt, start_agent_thread},
     tools::{Progress, Tool, ToolContext},
 };
 
 /// A chat is at depth 0; an agent three levels down can no longer ask another.
 pub const MAX_AGENT_DEPTH: usize = 3;
+
+/// The built-in agent, asked when none is named. An `agents/general` folder replaces it.
+const GENERAL_AGENT: &str = "general";
+const GENERAL_DESCRIPTION: &str = "works like this chat, with MAIN.md and every tool; \
+for research, reading code and self-contained parts of a task";
 
 pub struct AskAgent {
     launcher: Launcher,
@@ -39,7 +45,7 @@ pub struct AskAgent {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct AskAgentArguments {
-    agent: String,
+    agent: Option<String>,
     task: String,
     thread: Option<String>,
 }
@@ -73,30 +79,36 @@ impl AskAgent {
         progress: Option<Progress<'_>>,
     ) -> Result<String> {
         ensure!(!arguments.task.trim().is_empty(), "task is empty");
-        let agent = self
-            .reachable()
-            .into_iter()
-            .find(|node| node.name == arguments.agent)
-            .with_context(|| format!("no agent {} to ask from here", arguments.agent))?;
+        let name = arguments.agent.as_deref().unwrap_or(GENERAL_AGENT);
+        // `None` is the built-in general agent.
+        let agent = self.reachable().into_iter().find(|node| node.name == name);
+        ensure!(
+            agent.is_some() || name == GENERAL_AGENT,
+            "no agent {name} to ask from here"
+        );
         let (thread_id, workspace) = match &arguments.thread {
-            Some(thread_id) => self.earlier_thread(thread_id, &agent.name).await?,
+            Some(thread_id) => self.earlier_thread(thread_id, name).await?,
             None => {
                 let paths = &self.launcher.paths;
+                let prompt = match &agent {
+                    Some(agent) => Some(agent.instructions()?),
+                    None => read_prompt(&paths.main_prompt())?,
+                };
+                let state = &self.launcher.state;
                 let thread =
-                    start_agent_thread(&self.launcher.state, paths, &self.thread_id, &agent)
-                        .await?;
+                    start_agent_thread(state, paths, &self.thread_id, name, prompt).await?;
                 (thread.thread_id, thread.workspace)
             }
         };
         let setup =
             self.launcher
-                .setup(&thread_id, cwd, &workspace, Some(&agent), self.depth + 1)?;
+                .setup(&thread_id, cwd, &workspace, agent.as_ref(), self.depth + 1)?;
         let (runner, input, mut output) = ThreadRunner::new(setup);
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::SubagentStarted {
                 call_id: progress.call_id.to_owned(),
                 thread_id: thread_id.clone(),
-                agent: agent.name.clone(),
+                agent: name.to_owned(),
                 task: arguments.task.clone(),
             });
         }
@@ -132,7 +144,7 @@ impl AskAgent {
             )),
             _ => {
                 let error = turn.error_message.unwrap_or_else(|| "stopped".into());
-                bail!("agent {} failed ({thread}): {error}", agent.name)
+                bail!("agent {name} failed ({thread}): {error}")
             }
         }
     }
@@ -167,16 +179,21 @@ impl Tool for AskAgent {
     }
 
     fn description(&self, _context: &ToolContext<'_>) -> String {
-        let agents: Vec<String> = self
-            .reachable()
+        let reachable = self.reachable();
+        let mut agents: Vec<String> = reachable
             .iter()
             .map(|node| format!("- {}: {}", node.name, node.description))
             .collect();
+        if !reachable.iter().any(|node| node.name == GENERAL_AGENT) {
+            agents.insert(0, format!("- {GENERAL_AGENT}: {GENERAL_DESCRIPTION}"));
+        }
         format!(
-            "Give a task to another agent. It works in its own thread with its own context \
-             and tools, and its final answer comes back here. It sees nothing of this \
-             conversation, so describe the task fully. The answer starts with the agent's \
-             thread; pass it as `thread` to go on with the same agent later.\nAgents:\n{}",
+            "Give a task to a subagent. It works in its own thread with its own context \
+             and tools, and its final answer comes back here, so a long search or a \
+             self-contained part of the work does not fill this conversation. It sees \
+             nothing of this conversation, so describe the task fully. Leave out `agent` \
+             for {GENERAL_AGENT}. The answer starts with the agent's thread; pass it as \
+             `thread` to go on with the same agent later.\nAgents:\n{}",
             agents.join("\n")
         )
     }
@@ -185,20 +202,19 @@ impl Tool for AskAgent {
         json!({
             "type": "object",
             "properties": {
-                "agent": { "type": "string", "description": "Agent name, as listed." },
+                "agent": {
+                    "type": "string",
+                    "description": "Agent name, as listed; general when left out."
+                },
                 "task": { "type": "string", "description": "Everything the agent needs." },
                 "thread": {
                     "type": "string",
                     "description": "A thread the agent answered from before, to continue it."
                 }
             },
-            "required": ["agent", "task"],
+            "required": ["task"],
             "additionalProperties": false
         })
-    }
-
-    fn available(&self, _context: &ToolContext<'_>) -> bool {
-        !self.reachable().is_empty()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
