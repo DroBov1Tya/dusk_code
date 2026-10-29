@@ -20,7 +20,10 @@ use super::{
 use crate::app::{App, compact_number, now_ms};
 
 const STATS_HEIGHT: u16 = 9;
-const ICON_PARTS: [&str; 4] = ["\u{25C6}", "\u{25CF}", "\u{25B2}", "\u{25C7}"];
+/// Pixels of a subagent figure: mirrored halves of a 5x6 grid, drawn in 5x3 cells.
+const FIGURE_WIDTH: usize = 5;
+const FIGURE_HALF: usize = 3;
+const FIGURE_PIXELS: u32 = 18;
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
     if overlay {
@@ -170,11 +173,11 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
             dots
         };
         lines.push(Line::from(vec![
-            Span::styled(format!(" {} ", icon[0]), fg(color)),
+            Span::styled(format!("{} ", icon[0]), fg(color)),
             Span::styled(wrap::clip(&agent.agent, width), fg(SIDEBAR_MUTED)),
         ]));
         lines.push(Line::from(vec![
-            Span::styled(format!(" {} ", icon[1]), fg(color)),
+            Span::styled(format!("{} ", icon[1]), fg(color)),
             // Room left by the icon, the time and the dots.
             Span::styled(
                 wrap::clip(&name, (area.width as usize).saturating_sub(19)),
@@ -184,7 +187,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
             Span::styled(state, fg(SUN)),
         ]));
         lines.push(Line::from(vec![
-            Span::styled(format!(" {} ", icon[2]), fg(color)),
+            Span::styled(format!("{} ", icon[2]), fg(color)),
             Span::styled(wrap::clip(&one_line(&agent.task), width), fg(SIDEBAR_FG)),
         ]));
         if index + 1 < app.subagents.len() {
@@ -276,13 +279,38 @@ fn icon_color(seed: u64) -> Color {
     )
 }
 
+/// A figure that tells subagents apart: random pixels mirrored like a face, with half
+/// blocks for two pixel rows per cell, always the same size.
 fn icon_lines(seed: u64) -> [String; 3] {
-    let piece = |shift: u32| ICON_PARTS[((seed >> shift) & 3_u64) as usize];
-    [
-        format!("\u{256D}{}{}\u{256E}", piece(0), piece(2)),
-        format!("\u{2502}{}{}\u{2502}", piece(4), piece(6)),
-        format!("\u{2570}{}{}\u{256F}", piece(10), piece(12)),
-    ]
+    let mut bits = mix(seed) & ((1 << FIGURE_PIXELS) - 1);
+    // A sparse figure reads as noise, so it is drawn as its negative instead.
+    if bits.count_ones() < FIGURE_PIXELS / 3 {
+        bits ^= (1 << FIGURE_PIXELS) - 1;
+    }
+    let pixel = |row: usize, column: usize| {
+        let column = column.min(FIGURE_WIDTH - 1 - column);
+        bits >> (row * FIGURE_HALF + column) & 1 == 1
+    };
+    std::array::from_fn(|row| {
+        (0..FIGURE_WIDTH)
+            .map(
+                |column| match (pixel(row * 2, column), pixel(row * 2 + 1, column)) {
+                    (true, true) => '\u{2588}',
+                    (true, false) => '\u{2580}',
+                    (false, true) => '\u{2584}',
+                    (false, false) => ' ',
+                },
+            )
+            .collect()
+    })
+}
+
+/// Spreads the bits of the id hash, which the name and the color already use.
+fn mix(seed: u64) -> u64 {
+    let mut value = seed.wrapping_add(0x9e3779b97f4a7c15);
+    value = (value ^ (value >> 30)).wrapping_mul(0xbf58476d1ce4e5b9);
+    value = (value ^ (value >> 27)).wrapping_mul(0x94d049bb133111eb);
+    value ^ (value >> 31)
 }
 
 fn format_duration(ms: u64) -> String {
