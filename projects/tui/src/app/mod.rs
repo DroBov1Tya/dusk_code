@@ -2,12 +2,9 @@
 //! doing and which panel is open. Events from the core and keys from the user change it;
 //! anything that needs the core goes back to the session as an `Action`.
 
-mod agents;
-mod editor;
-mod input;
+mod composer;
 mod keys;
 mod panels;
-pub mod paste;
 mod transcript;
 
 use std::{
@@ -26,10 +23,11 @@ use dusk_core::{
 };
 use ratatui::layout::Rect;
 
-pub use agents::{AgentWindow, SubagentView};
-pub use editor::{EditorButton, EditorHit, PasteEditor};
-pub use input::Input;
-pub use panels::{ModelList, Panel, Preview, SettingKind, SettingList, ThreadList};
+pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
+use panels::agents;
+pub use panels::{
+    AgentWindow, ModelList, Panel, Preview, SettingKind, SettingList, SubagentView, ThreadList,
+};
 pub use transcript::{Entry, Tone, Transcript};
 
 /// What the session does for the app.

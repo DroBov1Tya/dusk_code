@@ -10,7 +10,11 @@ use dusk_core::{
     state::{Message, MessageRole, Thread},
 };
 
-use super::{AgentWindow, PasteEditor};
+pub mod agents;
+
+pub use agents::{AgentWindow, SubagentView};
+
+use super::PasteEditor;
 
 pub enum Panel {
     Threads(ThreadList),
