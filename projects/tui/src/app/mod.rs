@@ -2,6 +2,7 @@
 //! doing and which panel is open. Events from the core and keys from the user change it;
 //! anything that needs the core goes back to the session as an `Action`.
 
+mod editor;
 mod input;
 mod keys;
 mod panels;
@@ -23,6 +24,7 @@ use dusk_core::{
 };
 use ratatui::layout::Rect;
 
+pub use editor::{EditorButton, EditorHit, PasteEditor};
 pub use input::Input;
 pub use panels::{Panel, Preview, SettingKind, SettingList, ThreadList};
 pub use transcript::{Entry, Tone, Transcript};
@@ -169,6 +171,7 @@ pub struct App {
     pub transcript_hits: Vec<TranscriptHit>,
     pub button_hits: Vec<ButtonHit>,
     pub input_chips: Vec<ChipHit>,
+    pub editor_hits: Vec<EditorHit>,
     /// The entry under the mouse, which shows its buttons.
     pub hover: Option<usize>,
     pub selection: Option<Selection>,
@@ -233,6 +236,7 @@ impl App {
             transcript_hits: Vec::new(),
             button_hits: Vec::new(),
             input_chips: Vec::new(),
+            editor_hits: Vec::new(),
             hover: None,
             selection: None,
             drawn_text: Vec::new(),

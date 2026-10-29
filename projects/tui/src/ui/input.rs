@@ -175,8 +175,8 @@ fn text_width(width: u16) -> usize {
 
 /// A row of the box: its spans, and where its chips are as (from, to, paste index).
 #[derive(Default)]
-struct Row {
-    spans: Vec<Span<'static>>,
+pub struct Row {
+    pub spans: Vec<Span<'static>>,
     chips: Vec<(usize, usize, usize)>,
     plain: String,
     width: usize,
@@ -192,7 +192,7 @@ impl Row {
 
 /// The text broken into rows of `width` columns, chips drawn as their labels, and the
 /// cursor as (column, row).
-fn layout(input: &Input, width: usize) -> (Vec<Row>, (usize, usize)) {
+pub fn layout(input: &Input, width: usize) -> (Vec<Row>, (usize, usize)) {
     let mut rows = vec![Row::default()];
     let mut at = (0, 0);
     for (offset, c) in input.text.char_indices() {

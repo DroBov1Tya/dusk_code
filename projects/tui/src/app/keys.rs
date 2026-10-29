@@ -17,6 +17,14 @@ impl App {
     pub fn handle(&mut self, event: Event) -> Action {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => self.key(key),
+            Event::Paste(text) if matches!(self.panel, Some(Panel::Paste(_))) => {
+                self.editor_paste(&text.replace("\r\n", "\n").replace('\r', "\n"));
+                Action::None
+            }
+            Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Paste(_))) => {
+                self.editor_mouse(mouse);
+                Action::None
+            }
             Event::Paste(text) if self.panel.is_none() => {
                 self.focus = Focus::Input;
                 self.input
@@ -139,7 +147,7 @@ impl App {
             }
             KeyCode::Char('e') if ctrl => {
                 if let Some(index) = self.input.chip_at_cursor() {
-                    self.input.expand(index);
+                    self.open_paste(index);
                 }
             }
             KeyCode::Char(c) if !ctrl && !alt => self.input.insert(c.encode_utf8(&mut [0; 4])),
@@ -214,6 +222,7 @@ impl App {
         let down = matches!(key.code, KeyCode::Down | KeyCode::Char('j'));
         let up = matches!(key.code, KeyCode::Up | KeyCode::Char('k'));
         match panel {
+            Panel::Paste(_) => self.editor_key(key),
             Panel::Help => self.panel = None,
             Panel::Threads(list) => match key.code {
                 _ if up || down => {
@@ -339,8 +348,7 @@ impl App {
             .iter()
             .find(|hit| y == hit.row && x >= hit.left && x < hit.right);
         if let Some(index) = chip.map(|hit| hit.index) {
-            self.input.expand(index);
-            self.focus = Focus::Input;
+            self.open_paste(index);
             return Some(Action::None);
         }
         let hit = self
