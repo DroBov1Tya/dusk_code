@@ -1,6 +1,7 @@
 //! What the screen shows of a thread: a list of entries built from the stored history and
 //! then from live events. Thinking, tool calls and summaries fold into one line.
 
+use super::paste;
 use dusk_core::{
     providers::ToolCall,
     state::{Message, MessageRole},
@@ -8,7 +9,11 @@ use dusk_core::{
 };
 
 pub enum Entry {
-    User(String),
+    /// A sent message; `open` shows its pasted blocks in full.
+    User {
+        text: String,
+        open: bool,
+    },
     Answer(String),
     Reasoning {
         text: String,
@@ -48,7 +53,10 @@ impl Transcript {
         let mut transcript = Self::default();
         for message in messages {
             match message.role {
-                MessageRole::User => transcript.push(Entry::User(message.content.clone())),
+                MessageRole::User => transcript.push(Entry::User {
+                    text: message.content.clone(),
+                    open: false,
+                }),
                 MessageRole::Assistant => {
                     if let Some(reasoning) = &message.reasoning {
                         transcript.add_reasoning(reasoning);
@@ -156,7 +164,8 @@ impl Transcript {
     /// What the copy button of an entry copies: its whole text, folded or not.
     pub fn text(&self, index: usize) -> Option<String> {
         Some(match self.entries.get(index)? {
-            Entry::User(text) | Entry::Answer(text) => text.clone(),
+            Entry::User { text, .. } => paste::plain(text),
+            Entry::Answer(text) => text.clone(),
             Entry::Reasoning { text, .. } | Entry::Summary { text, .. } => text.clone(),
             Entry::Notice { text, .. } => text.clone(),
             Entry::Tool { call, result, .. } => match result {
@@ -167,15 +176,21 @@ impl Transcript {
     }
 
     pub fn is_foldable(&self, index: usize) -> bool {
-        matches!(
-            self.entries.get(index),
-            Some(Entry::Reasoning { .. } | Entry::Tool { .. } | Entry::Summary { .. })
-        )
+        match self.entries.get(index) {
+            Some(Entry::User { text, .. }) => paste::has_pasted(text),
+            entry => matches!(
+                entry,
+                Some(Entry::Reasoning { .. } | Entry::Tool { .. } | Entry::Summary { .. })
+            ),
+        }
     }
 
     pub fn toggle(&mut self, index: usize) {
         if let Some(
-            Entry::Reasoning { open, .. } | Entry::Tool { open, .. } | Entry::Summary { open, .. },
+            Entry::User { open, .. }
+            | Entry::Reasoning { open, .. }
+            | Entry::Tool { open, .. }
+            | Entry::Summary { open, .. },
         ) = self.entries.get_mut(index)
         {
             *open = !*open;

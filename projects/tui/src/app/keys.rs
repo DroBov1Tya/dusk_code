@@ -9,8 +9,8 @@ use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
 use super::{
-    Action, App, Button, Focus, Panel, Selection, SettingKind, SettingList, TEXT_COLUMN, commands,
-    panels::step,
+    Action, App, Button, Entry, Focus, Panel, Selection, SettingKind, SettingList, TEXT_COLUMN,
+    commands, panels::step,
 };
 
 impl App {
@@ -20,7 +20,7 @@ impl App {
             Event::Paste(text) if self.panel.is_none() => {
                 self.focus = Focus::Input;
                 self.input
-                    .insert(&text.replace("\r\n", "\n").replace('\r', "\n"));
+                    .paste(&text.replace("\r\n", "\n").replace('\r', "\n"));
                 Action::None
             }
             Event::Mouse(mouse) if self.panel.is_none() => self.mouse(mouse),
@@ -136,6 +136,11 @@ impl App {
             KeyCode::Char('j') if ctrl => self.input.insert("\n"),
             KeyCode::Char('u') if ctrl => {
                 self.input.take();
+            }
+            KeyCode::Char('e') if ctrl => {
+                if let Some(index) = self.input.chip_at_cursor() {
+                    self.input.expand(index);
+                }
             }
             KeyCode::Char(c) if !ctrl && !alt => self.input.insert(c.encode_utf8(&mut [0; 4])),
             KeyCode::Backspace => self.input.backspace(),
@@ -329,6 +334,15 @@ impl App {
     }
 
     fn press_button(&mut self, x: u16, y: u16) -> Option<Action> {
+        let chip = self
+            .input_chips
+            .iter()
+            .find(|hit| y == hit.row && x >= hit.left && x < hit.right);
+        if let Some(index) = chip.map(|hit| hit.index) {
+            self.input.expand(index);
+            self.focus = Focus::Input;
+            return Some(Action::None);
+        }
         let hit = self
             .button_hits
             .iter()
@@ -338,7 +352,10 @@ impl App {
         match button {
             Button::Copy => self.transcript.text(index).map(Action::Copy),
             Button::Edit => {
-                let text = self.transcript.text(index)?;
+                let Some(Entry::User { text, .. }) = self.transcript.entries.get(index) else {
+                    return None;
+                };
+                let text = text.clone();
                 self.input.set(text);
                 self.focus = Focus::Input;
                 Some(Action::None)
