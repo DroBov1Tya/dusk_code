@@ -12,7 +12,7 @@ use ratatui::DefaultTerminal;
 
 use crate::{
     app::{Action, App, Panel, ThreadList},
-    ui,
+    clipboard, ui,
 };
 
 const THREAD_SOURCE: &str = "tui";
@@ -107,6 +107,14 @@ pub async fn run(
             Action::NewThread => {
                 close(open.take()).await;
                 app.open(None, None, &[]);
+            }
+            Action::Copy(text) => {
+                let lines = text.lines().count().max(1);
+                app.flash = Some(if clipboard::copy(&text) {
+                    format!("copied {lines} line{}", if lines == 1 { "" } else { "s" })
+                } else {
+                    "cannot copy: no clipboard tool".into()
+                });
             }
         }
     }

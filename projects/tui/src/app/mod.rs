@@ -36,6 +36,7 @@ pub enum Action {
     ShowThreads,
     OpenThread(String),
     NewThread,
+    Copy(String),
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -54,6 +55,44 @@ pub enum Activity {
     Compacting,
     Retrying(u32),
 }
+
+/// A button on the entry under the mouse, on the last drawn frame.
+pub struct ButtonHit {
+    pub row: u16,
+    pub left: u16,
+    pub right: u16,
+    pub index: usize,
+    pub button: Button,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Button {
+    Copy,
+    /// Puts a sent message back into the box.
+    Edit,
+}
+
+/// Text marked with the mouse, as (transcript line, screen column) at both ends.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Selection {
+    pub anchor: (usize, u16),
+    pub cursor: (usize, u16),
+}
+
+impl Selection {
+    /// Both ends, top first.
+    pub fn ordered(self) -> ((usize, u16), (usize, u16)) {
+        if self.anchor <= self.cursor {
+            (self.anchor, self.cursor)
+        } else {
+            (self.cursor, self.anchor)
+        }
+    }
+}
+
+/// Transcript columns left of this hold bars and indents, not text, so a selection
+/// starts after them.
+pub const TEXT_COLUMN: u16 = 3;
 
 /// The header row of a foldable entry on the last drawn frame.
 pub struct TranscriptHit {
@@ -109,6 +148,18 @@ pub struct App {
     pub agent_max_scroll: usize,
     pub mcp_max_scroll: usize,
     pub transcript_hits: Vec<TranscriptHit>,
+    pub button_hits: Vec<ButtonHit>,
+    /// The entry under the mouse, which shows its buttons.
+    pub hover: Option<usize>,
+    pub selection: Option<Selection>,
+    /// Every transcript line as plain text on the last frame, for copying a selection.
+    pub drawn_text: Vec<String>,
+    /// The first transcript line on screen on the last frame.
+    pub drawn_top: usize,
+    /// The lines each entry took on the last frame, from and to.
+    pub entry_lines: Vec<(usize, usize)>,
+    /// A short word for the status rule, such as "copied", until the next input.
+    pub flash: Option<String>,
     pub command_popup: Option<Rect>,
     pub subagents: Vec<SubagentView>,
     pub active_mcp: Vec<String>,
@@ -160,6 +211,13 @@ impl App {
             agent_max_scroll: 0,
             mcp_max_scroll: 0,
             transcript_hits: Vec::new(),
+            button_hits: Vec::new(),
+            hover: None,
+            selection: None,
+            drawn_text: Vec::new(),
+            drawn_top: 0,
+            entry_lines: Vec::new(),
+            flash: None,
             command_popup: None,
             subagents: Vec::new(),
             active_mcp: Vec::new(),
@@ -188,6 +246,9 @@ impl App {
         self.max_scroll = 0;
         self.transcript_area = None;
         self.transcript_hits.clear();
+        self.button_hits.clear();
+        self.hover = None;
+        self.selection = None;
         self.command_popup = None;
         self.sidebar_overlay = None;
         self.sidebar_area = None;

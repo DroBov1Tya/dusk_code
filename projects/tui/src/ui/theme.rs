@@ -15,6 +15,8 @@ pub const HAZE: Color = Color::Rgb(128, 122, 150);
 pub const NIGHT: Color = Color::Rgb(68, 63, 88);
 /// Behind the selected entry.
 pub const GLOW: Color = Color::Rgb(44, 40, 60);
+/// Text marked with the mouse.
+pub const SELECTED: Color = Color::Rgb(78, 66, 112);
 /// A quiet contrast for the full-height statistics rail.
 pub const SIDEBAR_BG: Color = Color::Rgb(38, 35, 52);
 pub const SIDEBAR_FG: Color = Color::Rgb(230, 224, 240);

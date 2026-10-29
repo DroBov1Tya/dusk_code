@@ -131,10 +131,10 @@ fn status(app: &App, width: usize) -> Line<'static> {
             ]
         }
     };
-    let below = if app.scroll > 0 {
-        format!("{} lines below", app.scroll)
-    } else {
-        String::new()
+    let below = match (&app.flash, app.scroll) {
+        (Some(flash), _) => flash.clone(),
+        (None, 0) => String::new(),
+        (None, scroll) => format!("{scroll} lines below"),
     };
     let left_width: usize = doing.iter().map(Span::width).sum::<usize>() + 4;
     let right_width = below.width() + 2;

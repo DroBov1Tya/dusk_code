@@ -1,13 +1,18 @@
 //! Keys and mouse. Typing goes to the message; Tab walks the foldable entries; panels take
-//! every key while open.
+//! every key while open. Dragging over the transcript marks text and copies it; a click
+//! opens or closes a folded entry or presses a button of the entry under the mouse.
 
 use crossterm::event::{
-    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEventKind,
+    Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
 };
 use dusk_core::commands::COMMANDS;
 use ratatui::layout::Rect;
+use unicode_width::UnicodeWidthChar;
 
-use super::{Action, App, Focus, Panel, SettingKind, SettingList, panels::step};
+use super::{
+    Action, App, Button, Focus, Panel, Selection, SettingKind, SettingList, TEXT_COLUMN,
+    panels::step,
+};
 
 impl App {
     pub fn handle(&mut self, event: Event) -> Action {
@@ -19,45 +24,16 @@ impl App {
                     .insert(&text.replace("\r\n", "\n").replace('\r', "\n"));
                 Action::None
             }
-            Event::Mouse(mouse) => {
-                match mouse.kind {
-                    MouseEventKind::ScrollUp if self.panel.is_none() => {
-                        self.wheel(mouse.column, mouse.row, true)
-                    }
-                    MouseEventKind::ScrollDown if self.panel.is_none() => {
-                        self.wheel(mouse.column, mouse.row, false)
-                    }
-                    MouseEventKind::Down(MouseButton::Left) if self.panel.is_none() => {
-                        let covered = self
-                            .command_popup
-                            .is_some_and(|area| inside(area, mouse.column, mouse.row))
-                            || self
-                                .sidebar_overlay
-                                .is_some_and(|area| inside(area, mouse.column, mouse.row));
-                        if !covered
-                            && let Some(index) = self
-                                .transcript_hits
-                                .iter()
-                                .find(|hit| {
-                                    mouse.row == hit.row
-                                        && mouse.column >= hit.left
-                                        && mouse.column < hit.right
-                                })
-                                .map(|hit| hit.index)
-                        {
-                            self.transcript.toggle(index);
-                            self.focus = Focus::Browse(index);
-                        }
-                    }
-                    _ => {}
-                }
-                Action::None
-            }
+            Event::Mouse(mouse) if self.panel.is_none() => self.mouse(mouse),
             _ => Action::None,
         }
     }
 
     fn key(&mut self, key: KeyEvent) -> Action {
+        self.flash = None;
+        if key.code == KeyCode::Esc && self.selection.take().is_some() {
+            return Action::None;
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         if ctrl && matches!(key.code, KeyCode::Char('c' | 'q')) {
             return Action::Quit;
@@ -315,6 +291,153 @@ impl App {
             self.focus = Focus::Input;
         }
     }
+}
+
+impl App {
+    fn mouse(&mut self, mouse: MouseEvent) -> Action {
+        let (x, y) = (mouse.column, mouse.row);
+        match mouse.kind {
+            MouseEventKind::ScrollUp => self.wheel(x, y, true),
+            MouseEventKind::ScrollDown => self.wheel(x, y, false),
+            MouseEventKind::Moved => self.hover = self.entry_at(x, y),
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.flash = None;
+                if let Some(action) = self.press_button(x, y) {
+                    return action;
+                }
+                self.selection = self.line_at(x, y).map(|at| Selection {
+                    anchor: at,
+                    cursor: at,
+                });
+            }
+            MouseEventKind::Drag(MouseButton::Left) => self.drag(x, y),
+            MouseEventKind::Up(MouseButton::Left) => return self.release(x, y),
+            _ => {}
+        }
+        Action::None
+    }
+
+    fn press_button(&mut self, x: u16, y: u16) -> Option<Action> {
+        let hit = self
+            .button_hits
+            .iter()
+            .find(|hit| y == hit.row && x >= hit.left && x < hit.right)?;
+        let (index, button) = (hit.index, hit.button);
+        self.selection = None;
+        match button {
+            Button::Copy => self.transcript.text(index).map(Action::Copy),
+            Button::Edit => {
+                let text = self.transcript.text(index)?;
+                self.input.set(text);
+                self.focus = Focus::Input;
+                Some(Action::None)
+            }
+        }
+    }
+
+    /// Past the top or bottom edge the transcript scrolls, so a selection can grow.
+    fn drag(&mut self, x: u16, y: u16) {
+        let (Some(area), Some(mut selection)) = (self.transcript_area, self.selection) else {
+            return;
+        };
+        if y < area.y {
+            self.scroll_by(1, true);
+        } else if y >= area.bottom() {
+            self.scroll_by(1, false);
+        }
+        let row = y.clamp(area.y, area.bottom().saturating_sub(1));
+        let top = self.drawn_top;
+        selection.cursor = (top + (row - area.y) as usize, x.max(area.x));
+        self.selection = Some(selection);
+    }
+
+    /// A press and release in one place is a click; anything else copies what it marked.
+    fn release(&mut self, x: u16, y: u16) -> Action {
+        let Some(selection) = self.selection else {
+            return Action::None;
+        };
+        if selection.anchor == selection.cursor {
+            self.selection = None;
+            self.click(x, y);
+            return Action::None;
+        }
+        let text = self.selected_text(selection);
+        if text.trim().is_empty() {
+            self.selection = None;
+            return Action::None;
+        }
+        Action::Copy(text)
+    }
+
+    fn click(&mut self, x: u16, y: u16) {
+        let index = self
+            .transcript_hits
+            .iter()
+            .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
+            .map(|hit| hit.index);
+        if let Some(index) = index {
+            self.transcript.toggle(index);
+            self.focus = Focus::Browse(index);
+        }
+    }
+
+    /// The transcript line and column under the mouse, unless something covers it.
+    fn line_at(&self, x: u16, y: u16) -> Option<(usize, u16)> {
+        let area = self.transcript_area?;
+        let covered = [self.command_popup, self.sidebar_overlay]
+            .into_iter()
+            .flatten()
+            .any(|over| inside(over, x, y));
+        if covered || !inside(area, x, y) {
+            return None;
+        }
+        Some((self.drawn_top + (y - area.y) as usize, x))
+    }
+
+    fn entry_at(&self, x: u16, y: u16) -> Option<usize> {
+        let (line, _) = self.line_at(x, y)?;
+        self.entry_lines
+            .iter()
+            .position(|&(from, to)| line >= from && line < to)
+    }
+
+    /// What a selection covers, line by line, without the bars and indents on the left.
+    fn selected_text(&self, selection: Selection) -> String {
+        let left = self.transcript_area.map_or(0, |area| area.x);
+        let (start, end) = selection.ordered();
+        let mut lines = Vec::new();
+        for line in start.0..=end.0 {
+            let Some(text) = self.drawn_text.get(line) else {
+                break;
+            };
+            let from = if line == start.0 { start.1 - left } else { 0 };
+            let to = if line == end.0 {
+                end.1 - left + 1
+            } else {
+                u16::MAX
+            };
+            let from = from.max(TEXT_COLUMN);
+            lines.push(
+                columns(text, from as usize, to as usize)
+                    .trim_end()
+                    .to_owned(),
+            );
+        }
+        lines.join("\n")
+    }
+}
+
+/// The part of `text` drawn in columns `from..to`; a wide character goes with its first column.
+fn columns(text: &str, from: usize, to: usize) -> String {
+    let mut column = 0;
+    let mut part = String::new();
+    for c in text.chars() {
+        if column >= from && column < to {
+            part.push(c);
+        }
+        column += c.width().unwrap_or(0);
+    }
+    part
 }
 
 fn inside(area: Rect, x: u16, y: u16) -> bool {
