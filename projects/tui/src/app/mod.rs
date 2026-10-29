@@ -26,8 +26,8 @@ use ratatui::layout::Rect;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 use panels::agents;
 pub use panels::{
-    AgentWindow, Connection, ModelList, Panel, Preview, SettingKind, SettingList, SubagentView,
-    ThreadList,
+    AgentWindow, Connection, ModelList, Panel, Preview, SettingCategory, SettingKind, SettingList,
+    SubagentView, ThreadList,
 };
 pub use transcript::{Entry, Tone, Transcript};
 
@@ -42,6 +42,7 @@ pub enum Action {
         base_url: String,
         api_key: Option<String>,
     },
+    SetAgentLimit(usize),
     Resend(String),
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),
@@ -61,6 +62,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "/connect",
             "add a provider with its URL and optional API key",
         ),
+        ("/settings", "configure concurrent agents, tools and skills"),
         (
             "/resend",
             "view local unsent messages and explicitly send one",
@@ -590,6 +592,14 @@ impl App {
         match trimmed {
             "/connect" => {
                 self.panel = Some(Panel::Connect(Connection::default()));
+                return Action::None;
+            }
+            "/settings" => {
+                self.panel = Some(Panel::Settings(SettingList::load(
+                    &self.config.current(),
+                    &self.tools,
+                    &self.skills_dir,
+                )));
                 return Action::None;
             }
             "/resend" => {

@@ -32,8 +32,6 @@ use crate::{
     },
 };
 
-/// Agents at work at once, across every thread.
-const MAX_AGENTS_AT_WORK: usize = 8;
 /// Messages from agents a chat takes between two of the user's.
 const MAX_AGENT_MESSAGES: u64 = 30;
 
@@ -139,9 +137,10 @@ impl Launcher {
                 }
                 Some(_) if running.is_none() && !self.mailboxes.is_closed() => {
                     let at_work = live.values().filter(|mailbox| mailbox.agent).count();
+                    let max_agents_at_work = self.config.current().limits().max_agents_at_work;
                     ensure!(
-                        at_work < MAX_AGENTS_AT_WORK,
-                        "{MAX_AGENTS_AT_WORK} agents are at work already; wait for one to finish"
+                        at_work < max_agents_at_work,
+                        "{max_agents_at_work} agents are at work already; wait for one to finish"
                     );
                 }
                 Some(_) => {}

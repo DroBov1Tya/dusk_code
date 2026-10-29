@@ -108,6 +108,15 @@ pub async fn run(
                     }
                 }
             },
+            Action::SetAgentLimit(limit) => match runtime.set_max_agents_at_work(limit) {
+                Ok(()) => {
+                    if let Some(Panel::Settings(list)) = &mut app.panel {
+                        list.max_agents_at_work = limit;
+                    }
+                    app.flash = Some(format!("Concurrent agents: {limit}"));
+                }
+                Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
+            },
             Action::Resend(id) => {
                 if runtime.model().is_none() {
                     app.flash =

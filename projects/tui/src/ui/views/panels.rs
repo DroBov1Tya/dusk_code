@@ -22,11 +22,11 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Connection, EditorButton, EditorHit, ModelList, Panel, SettingKind, SettingList,
+    App, Connection, EditorButton, EditorHit, ModelList, Panel, SettingCategory, SettingList,
     ThreadList, compact_number, paste,
 };
 
-const KEYS: [(&str, &str); 25] = [
+const KEYS: [(&str, &str); 26] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
@@ -45,12 +45,13 @@ const KEYS: [(&str, &str); 25] = [
     ("Ctrl+T /resume", "threads, with a preview of each"),
     ("/model", "choose the model; providers are checked live"),
     ("/connect", "add a provider URL and optional API key"),
+    ("/settings", "concurrent agent limit, tools and skills"),
     (
         "/resend",
         "view saved local messages; Enter explicitly sends one",
     ),
     ("Ctrl+N", "new thread"),
-    ("Ctrl+O", "tools and skills"),
+    ("Ctrl+O", "settings categories"),
     (
         "F3, card click",
         "open a subagent: its chat, actions and numbers",
@@ -78,12 +79,22 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         Panel::Threads(list) => return draw_threads(frame, screen, app, list),
         Panel::Settings(list) => {
             let (lines, row) = settings(list);
-            (
-                "tools and skills",
-                "space switch  r reload config  esc close",
-                lines,
-                Some(row),
-            )
+            let (title, hints) = match list.category {
+                None => ("settings", "up/down choose  enter open  esc close"),
+                Some(SettingCategory::Agents) => (
+                    "settings / agents",
+                    "left/right -/+ change  r reload  esc back",
+                ),
+                Some(SettingCategory::Tools) => (
+                    "settings / tools",
+                    "up/down choose  space/enter switch  esc/left back",
+                ),
+                Some(SettingCategory::Skills) => (
+                    "settings / skills",
+                    "up/down choose  space/enter switch  esc/left back",
+                ),
+            };
+            (title, hints, lines, Some(row))
         }
         Panel::Connect(form) => {
             let (lines, selected, rows) = connection(form, screen.width.saturating_sub(8) as usize);
@@ -467,46 +478,61 @@ fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
     (lines, selected_line)
 }
 
-/// The lines, and the line of the selected item.
+/// The category menu only navigates; values appear within their own submenu.
 fn settings(list: &SettingList) -> (Vec<Line<'static>>, usize) {
+    let Some(category) = list.category else {
+        let lines = SettingCategory::ALL
+            .iter()
+            .enumerate()
+            .map(|(index, category)| {
+                selectable(
+                    vec![Span::raw(format!("  {}", category.name()))],
+                    Span::styled("open > ", dim()),
+                    index == list.selected,
+                )
+            })
+            .collect();
+        return (lines, list.selected);
+    };
+    if category == SettingCategory::Agents {
+        return (
+            vec![selectable(
+                vec![Span::raw("  concurrent agent limit")],
+                Span::styled(
+                    format!("{}  \u{2212} / +", list.max_agents_at_work),
+                    bold(SUN),
+                ),
+                true,
+            )],
+            0,
+        );
+    }
     let mut lines = Vec::new();
-    let mut selected_line = 0;
-    let mut section = None;
-    for (index, item) in list.items.iter().enumerate() {
-        if section != Some(item.kind) {
-            section = Some(item.kind);
-            if !lines.is_empty() {
-                lines.push(Line::default());
-            }
-            let name = match item.kind {
-                SettingKind::Tool => "tools",
-                SettingKind::Skill => "skills",
-            };
-            lines.push(Line::from(Span::styled(
-                format!(" {name}"),
-                dim().add_modifier(Modifier::BOLD),
-            )));
-        }
+    for (index, item) in list
+        .items
+        .iter()
+        .filter(|item| Some(item.kind) == category.kind())
+        .enumerate()
+    {
         let switch = if item.on {
             Span::styled(format!("  {ON} "), fg(SUN))
         } else {
             Span::styled(format!("  {OFF} "), fg(NIGHT))
         };
         let name_style = if item.on { Style::new() } else { dim() };
-        let about = Span::styled(item.about.clone(), dim());
-        if index == list.selected {
-            selected_line = lines.len();
-        }
         lines.push(selectable(
             vec![switch, Span::styled(item.name.clone(), name_style)],
-            about,
+            Span::styled(item.about.clone(), dim()),
             index == list.selected,
         ));
     }
-    if list.items.is_empty() {
-        lines.push(Line::from(Span::styled(" nothing to switch", thought())));
+    if lines.is_empty() {
+        lines.push(Line::from(Span::styled(
+            format!(" no {} available", category.name()),
+            thought(),
+        )));
     }
-    (lines, selected_line)
+    (lines, list.selected)
 }
 
 /// Connection details stay in this form and are never echoed into the transcript.

@@ -159,6 +159,13 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_max_agents_at_work(&self, limit: usize) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_max_agents_at_work(limit))?;
+        Ok(())
+    }
+
     /// Switches every thread to `choice` from its next model call, and keeps it in the
     /// config.
     pub fn set_model(&self, choice: Choice) -> Result<()> {
