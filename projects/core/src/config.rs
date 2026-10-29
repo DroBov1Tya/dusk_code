@@ -90,6 +90,9 @@ pub struct Limits {
     /// The model is stopped after writing this many tokens in one call.
     #[serde(default = "default_token_limit")]
     pub max_output_tokens: u64,
+    /// Maximum number of subagents running across all threads.
+    #[serde(default = "default_max_agents_at_work")]
+    pub max_agents_at_work: usize,
 }
 
 impl Default for Limits {
@@ -97,12 +100,17 @@ impl Default for Limits {
         Self {
             max_input_tokens: default_token_limit(),
             max_output_tokens: default_token_limit(),
+            max_agents_at_work: default_max_agents_at_work(),
         }
     }
 }
 
 fn default_token_limit() -> u64 {
     100_000
+}
+
+fn default_max_agents_at_work() -> usize {
+    8
 }
 
 /// What a thread stores from the model output. User messages are always stored.
@@ -157,6 +165,10 @@ impl Config {
         self.providers.insert(name, provider);
     }
 
+    pub fn set_max_agents_at_work(&mut self, limit: usize) {
+        self.limits.max_agents_at_work = limit;
+    }
+
     pub fn skill_enabled(&self, name: &str) -> bool {
         self.skills.get(name).copied().unwrap_or(true)
     }
@@ -182,6 +194,10 @@ impl Config {
         ensure!(
             self.limits.max_input_tokens > 0 && self.limits.max_output_tokens > 0,
             "token limits must be above zero"
+        );
+        ensure!(
+            self.limits.max_agents_at_work > 0,
+            "max_agents_at_work must be above zero"
         );
         for (name, provider) in &self.providers {
             ensure!(!name.trim().is_empty(), "provider name must not be empty");

@@ -33,6 +33,8 @@ limits:
   max_input_tokens: 100000
   # The model is stopped after writing this many tokens in one call.
   max_output_tokens: 100000
+  # Maximum number of subagents working at once across all threads.
+  max_agents_at_work: 8
 
 # Tools and skills are on unless switched off here or with :off in a client, for example:
 # tools:

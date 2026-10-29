@@ -11,8 +11,8 @@ use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
 use super::{
-    Action, App, Button, Command, Entry, Focus, Panel, Selection, SettingKind, SettingList,
-    TEXT_COLUMN, commands, panels::step,
+    Action, App, Button, Command, Entry, Focus, Panel, Selection, SettingCategory, SettingKind,
+    SettingList, TEXT_COLUMN, commands, panels::step,
 };
 
 /// How long a first Ctrl+C waits for the second.
@@ -385,9 +385,35 @@ impl App {
                 _ => {}
             },
             Panel::Settings(list) => match key.code {
-                _ if up || down => step(&mut list.selected, list.items.len(), down),
+                _ if up || down => {
+                    let count = list.len();
+                    step(&mut list.selected, count, down);
+                }
+                KeyCode::Enter | KeyCode::Right if list.category.is_none() => list.open(),
+                KeyCode::Esc if list.category.is_none() => self.panel = None,
+                KeyCode::Esc | KeyCode::Backspace => list.back(),
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+')
+                    if list.category == Some(SettingCategory::Agents) =>
+                {
+                    let more = matches!(key.code, KeyCode::Right | KeyCode::Char('+'));
+                    let limit = if more {
+                        list.max_agents_at_work.saturating_add(1)
+                    } else {
+                        list.max_agents_at_work.saturating_sub(1).max(1)
+                    };
+                    return Action::SetAgentLimit(limit);
+                }
+                KeyCode::Left => list.back(),
                 KeyCode::Char(' ') | KeyCode::Enter => {
-                    let Some(item) = list.items.get_mut(list.selected) else {
+                    let Some(kind) = list.category.and_then(SettingCategory::kind) else {
+                        return Action::None;
+                    };
+                    let Some(item) = list
+                        .items
+                        .iter_mut()
+                        .filter(|item| item.kind == kind)
+                        .nth(list.selected)
+                    else {
                         return Action::None;
                     };
                     let (kind, name, on) = (item.kind, item.name.clone(), !item.on);
@@ -400,15 +426,17 @@ impl App {
                         Err(error) => self.error(format!("cannot save the setting: {error:#}")),
                     }
                 }
-                KeyCode::Char('r') => {
+                KeyCode::Char('r') if list.category.is_some() => {
+                    let (category, selected) = (list.category, list.selected);
                     if let Err(error) = self.config.reload() {
                         self.error(format!("cannot reload the config: {error:#}"));
                     }
-                    let list =
+                    let mut list =
                         SettingList::load(&self.config.current(), &self.tools, &self.skills_dir);
+                    list.category = category;
+                    list.selected = selected.min(list.len().saturating_sub(1));
                     self.panel = Some(Panel::Settings(list));
                 }
-                KeyCode::Esc => self.panel = None,
                 _ => {}
             },
         }

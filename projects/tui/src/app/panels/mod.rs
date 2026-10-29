@@ -118,8 +118,38 @@ pub struct Connection {
 }
 
 pub struct SettingList {
+    pub max_agents_at_work: usize,
     pub items: Vec<Setting>,
+    /// `None` is the category menu, where values cannot be changed.
+    pub category: Option<SettingCategory>,
     pub selected: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum SettingCategory {
+    Agents,
+    Tools,
+    Skills,
+}
+
+impl SettingCategory {
+    pub const ALL: [Self; 3] = [Self::Agents, Self::Tools, Self::Skills];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Agents => "agents",
+            Self::Tools => "tools",
+            Self::Skills => "skills",
+        }
+    }
+
+    pub fn kind(self) -> Option<SettingKind> {
+        match self {
+            Self::Agents => None,
+            Self::Tools => Some(SettingKind::Tool),
+            Self::Skills => Some(SettingKind::Skill),
+        }
+    }
 }
 
 pub struct Setting {
@@ -151,8 +181,38 @@ impl SettingList {
             on: config.skill_enabled(&skill.name),
         });
         Self {
+            max_agents_at_work: config.limits().max_agents_at_work,
             items: tools.chain(skills).collect(),
+            category: None,
             selected: 0,
+        }
+    }
+
+    pub fn len(&self) -> usize {
+        match self.category {
+            None => SettingCategory::ALL.len(),
+            Some(SettingCategory::Agents) => 1,
+            Some(category) => self
+                .items
+                .iter()
+                .filter(|item| Some(item.kind) == category.kind())
+                .count(),
+        }
+    }
+
+    pub fn open(&mut self) {
+        if self.category.is_none() {
+            self.category = SettingCategory::ALL.get(self.selected).copied();
+            self.selected = 0;
+        }
+    }
+
+    pub fn back(&mut self) {
+        if let Some(category) = self.category.take() {
+            self.selected = SettingCategory::ALL
+                .iter()
+                .position(|item| *item == category)
+                .unwrap_or(0);
         }
     }
 }
