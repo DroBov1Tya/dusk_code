@@ -62,7 +62,10 @@ pub async fn run(
             event = next_event(&mut open) => {
                 match event {
                     Some(event) => app.apply(event),
-                    None => app.error("the thread stopped; the next message opens it again"),
+                    None => {
+                        app.error("the thread stopped; the next message opens it again");
+                        app.stop_work();
+                    }
                 }
                 Action::None
             }
@@ -209,6 +212,7 @@ async fn send(
     now: bool,
 ) {
     if let Err(error) = ensure_open(runtime, app, open).await {
+        app.unsend(text);
         app.error(format!("cannot open a thread: {error:#}"));
         return;
     }
@@ -217,11 +221,12 @@ async fn send(
     };
     let input = &thread.handle.input;
     let sent = if now {
-        input.send_now(text).await
+        input.send_now(text.clone()).await
     } else {
-        input.send(text).await
+        input.send(text.clone()).await
     };
     if let Err(error) = sent {
+        app.unsend(text);
         app.error(format!("{error:#}"));
     }
 }
