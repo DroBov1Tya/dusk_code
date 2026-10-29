@@ -1,11 +1,14 @@
 //! A thread as the model sees it: its system messages, the newest compaction summary and
 //! the messages after it, and which of them are still waiting for an answer.
 
+use std::collections::HashMap;
+
 use anyhow::Result;
 
 use crate::{
     providers::{ChatMessage, ToolSpec},
     state::{Compaction, LastPrompt, Message, MessageRole, State, estimate_tokens},
+    thread_start::display_name,
 };
 
 /// Introduces a compaction summary to the model.
@@ -20,6 +23,9 @@ pub struct Conversation {
     pub answered_through: u64,
     /// The provider's count of the newest step over this context.
     pub last_prompt: Option<LastPrompt>,
+    /// Who wrote the messages other agents sent, by thread: an agent's name, or the chat
+    /// that asked.
+    pub senders: HashMap<String, String>,
 }
 
 impl Conversation {
@@ -31,11 +37,28 @@ impl Conversation {
         let compaction_id = compaction
             .as_ref()
             .map(|compaction| compaction.compaction_id);
+        let messages = state.context_messages(thread_id, after).await?;
+        let mut senders = HashMap::new();
+        for from in messages
+            .iter()
+            .filter_map(|message| message.from_thread_id.as_ref())
+        {
+            if senders.contains_key(from) {
+                continue;
+            }
+            let thread = state.load_thread(from).await?;
+            let sender = match thread {
+                Some(thread) if thread.parent_thread_id.is_some() => display_name(&thread),
+                _ => "the chat that asked you".to_owned(),
+            };
+            senders.insert(from.clone(), sender);
+        }
         Ok(Self {
-            messages: state.context_messages(thread_id, after).await?,
+            messages,
             answered_through: state.answered_through(thread_id).await?,
             last_prompt: state.last_prompt(thread_id, compaction_id).await?,
             compaction,
+            senders,
         })
     }
 
@@ -59,8 +82,12 @@ impl Conversation {
             .compaction
             .as_ref()
             .map(|compaction| ChatMessage::User(format!("{SUMMARY_INTRO}{}", compaction.summary)));
-        let system = system.into_iter().filter_map(chat_message);
-        let rest = rest.into_iter().filter_map(chat_message);
+        let system = system
+            .into_iter()
+            .filter_map(|message| chat_message(message, &self.senders));
+        let rest = rest
+            .into_iter()
+            .filter_map(|message| chat_message(message, &self.senders));
         system.chain(summary).chain(rest).collect()
     }
 
@@ -104,7 +131,9 @@ impl Conversation {
     fn estimated_after(&self, sequence: u64) -> u64 {
         self.messages
             .iter()
-            .filter(|message| message.sequence > sequence && chat_message(message).is_some())
+            .filter(|message| {
+                message.sequence > sequence && chat_message(message, &self.senders).is_some()
+            })
             .map(Message::context_tokens)
             .sum()
     }
@@ -122,13 +151,16 @@ pub fn spec_tokens(specs: &[ToolSpec]) -> u64 {
         .sum()
 }
 
-fn chat_message(message: &Message) -> Option<ChatMessage> {
+fn chat_message(message: &Message, senders: &HashMap<String, String>) -> Option<ChatMessage> {
     let content = message.content.clone();
     match message.role {
         MessageRole::System => Some(ChatMessage::System(content)),
         // The model learns who wrote it; thread IDs are how agents address each other.
         MessageRole::User => Some(ChatMessage::User(match &message.from_thread_id {
-            Some(from) => format!("[message from agent thread {from}]\n{content}"),
+            Some(from) => {
+                let sender = senders.get(from).map_or("an agent", String::as_str);
+                format!("[message from {sender}, thread {from}]\n{content}")
+            }
             None => content,
         })),
         MessageRole::Assistant => Some(ChatMessage::Assistant {
@@ -181,6 +213,7 @@ mod tests {
             }),
             answered_through: 5,
             last_prompt: None,
+            senders: HashMap::new(),
         };
 
         let messages = conversation.chat_messages();

@@ -39,7 +39,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         .border_type(BorderType::Rounded)
         .border_style(fg(NIGHT))
         .title(Line::from(vec![
-            Span::styled(format!(" {} ", agent_name(seed)), bold(color)),
+            Span::styled(format!(" {} ", agent_name(&thread_id)), bold(color)),
             Span::styled(format!("{DOT} {kind} "), dim()),
         ]))
         .title_bottom(
@@ -111,7 +111,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
         Some(parent) if Some(parent) == app.thread_id.as_ref() => {
             app.title.clone().unwrap_or_else(|| "this chat".into())
         }
-        Some(parent) => agent_name(identity(parent)),
+        Some(parent) => agent_name(parent),
         None => "this chat".into(),
     };
     let tokens = card.tokens;

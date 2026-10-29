@@ -748,7 +748,7 @@ mod tests {
     #[tokio::test]
     async fn an_agent_message_joins_the_running_turn_and_starts_no_other() {
         let state = thread_state("agent_message").await;
-        let child = state.create_agent_thread("child", "thread", "general");
+        let child = state.create_agent_thread("child", "thread", "general", "Ember-0c");
         child.await.unwrap();
         let config = live_config("runner_config");
         let provider = provider(vec![
@@ -763,7 +763,7 @@ mod tests {
         runner.run().await;
 
         let second_step = provider.requests.lock().unwrap()[1].clone();
-        let header = "[message from agent thread child]\nfound it".to_owned();
+        let header = "[message from Ember-0c, thread child]\nfound it".to_owned();
         assert_eq!(second_step.last(), Some(&ChatMessage::User(header)));
         let messages = state.list_messages("thread").await.unwrap();
         let from = messages

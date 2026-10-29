@@ -20,7 +20,8 @@ use crate::{
     BoxFuture,
     graph::{AGENT_FILE, Graph, Node},
     runtime::{ThreadEvent, launcher::Launcher},
-    thread_start::{read_prompt, start_agent_thread},
+    state::Thread,
+    thread_start::{self, display_name, read_prompt, start_agent_thread},
 };
 
 /// A chat is at depth 0; an agent three levels down can no longer ask another.
@@ -77,41 +78,22 @@ impl AskAgent {
         progress: Option<Progress<'_>>,
     ) -> Result<String> {
         ensure!(!arguments.task.trim().is_empty(), "task is empty");
-        let name = arguments.agent.as_deref().unwrap_or(GENERAL_AGENT);
-        // `None` is the built-in general agent.
-        let agent = self.reachable().into_iter().find(|node| node.name == name);
-        ensure!(
-            agent.is_some() || name == GENERAL_AGENT,
-            "no agent {name} to ask from here"
-        );
-        let thread_id = match &arguments.thread {
-            Some(thread_id) => {
-                self.check_earlier_thread(thread_id, name).await?;
-                thread_id.clone()
+        let (thread_id, name, agent) = match &arguments.thread {
+            Some(key) => {
+                let thread = self.own_agent(key).await?;
+                let agent = thread.agent.clone().unwrap_or_else(|| GENERAL_AGENT.into());
+                if let Some(asked) = &arguments.agent {
+                    ensure!(*asked == agent, "{key} works as {agent}, not {asked}");
+                }
+                (thread.id.clone(), display_name(&thread), agent)
             }
-            None => {
-                let opened = self.launcher.state.agent_threads(&self.thread_id).await?;
-                ensure!(
-                    opened.len() < MAX_AGENTS_PER_THREAD,
-                    "this thread has opened {MAX_AGENTS_PER_THREAD} agent threads; continue \
-                     one of them with `thread` instead"
-                );
-                let paths = &self.launcher.paths;
-                let prompt = match &agent {
-                    Some(agent) => Some(agent.instructions()?),
-                    None => read_prompt(&paths.main_prompt())?,
-                };
-                let state = &self.launcher.state;
-                let thread =
-                    start_agent_thread(state, paths, &self.thread_id, name, prompt).await?;
-                thread.thread_id
-            }
+            None => self.start(arguments.agent.as_deref()).await?,
         };
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::SubagentStarted {
                 call_id: progress.call_id.to_owned(),
                 thread_id: thread_id.clone(),
-                agent: name.to_owned(),
+                agent: agent.clone(),
                 task: arguments.task.clone(),
             });
         }
@@ -119,24 +101,52 @@ impl AskAgent {
             .deliver(&thread_id, &self.thread_id, &arguments.task, cwd)
             .await?;
         Ok(format!(
-            "thread: {thread_id}\nAgent {name} works on it in the background. What it writes \
-             and its final answer will come to you as messages from this thread. To send it \
-             more, call ask_agent with this thread."
+            "{name} (agent {agent}, thread {thread_id}) works on it in the background. Call \
+             it {name} when you talk about it. What it writes and its final answer will come \
+             to you as messages from {name}; to send it more, call ask_agent with thread \
+             {name}."
         ))
     }
 
-    /// A thread this thread opened with the same agent before.
-    async fn check_earlier_thread(&self, thread_id: &str, agent: &str) -> Result<()> {
-        let thread = self.launcher.state.load_thread(thread_id).await?;
-        let belongs = thread.is_some_and(|thread| {
-            thread.parent_thread_id.as_deref() == Some(self.thread_id.as_str())
-                && thread.agent.as_deref() == Some(agent)
-        });
+    /// A new thread for `agent`, the general agent when `None`: its ID, name and agent.
+    async fn start(&self, agent: Option<&str>) -> Result<(String, String, String)> {
+        let agent_name = agent.unwrap_or(GENERAL_AGENT);
+        // `None` is the built-in general agent.
+        let node = self
+            .reachable()
+            .into_iter()
+            .find(|node| node.name == agent_name);
         ensure!(
-            belongs,
-            "thread {thread_id} is not a conversation with {agent} from here"
+            node.is_some() || agent_name == GENERAL_AGENT,
+            "no agent {agent_name} to ask from here"
         );
-        Ok(())
+        let opened = self.launcher.state.agent_threads(&self.thread_id).await?;
+        ensure!(
+            opened.len() < MAX_AGENTS_PER_THREAD,
+            "this thread has opened {MAX_AGENTS_PER_THREAD} agent threads; continue one of \
+             them with `thread` instead"
+        );
+        let paths = &self.launcher.paths;
+        let prompt = match &node {
+            Some(node) => Some(node.instructions()?),
+            None => read_prompt(&paths.main_prompt())?,
+        };
+        let state = &self.launcher.state;
+        let thread = start_agent_thread(state, paths, &self.thread_id, agent_name, prompt).await?;
+        let name = thread
+            .name
+            .unwrap_or_else(|| thread_start::agent_name(&thread.thread_id));
+        Ok((thread.thread_id, name, agent_name.to_owned()))
+    }
+
+    /// An agent this thread asked before, by its name or its thread. Nothing else is
+    /// reachable: a thread ID from anywhere else is refused.
+    async fn own_agent(&self, key: &str) -> Result<Thread> {
+        let threads = self.launcher.state.agent_threads(&self.thread_id).await?;
+        threads
+            .into_iter()
+            .find(|thread| thread.id == key || display_name(thread).eq_ignore_ascii_case(key))
+            .with_context(|| format!("no agent {key} was asked from here"))
     }
 }
 
@@ -159,9 +169,10 @@ impl Tool for AskAgent {
              thread with its own context and tools, in the background, so a long search or \
              a self-contained part of the work does not fill this conversation, and several \
              can work at once. It sees nothing of this conversation, so describe the task \
-             fully. Leave out `agent` for {GENERAL_AGENT}. The call returns the agent's \
-             thread at once; what the agent writes and its final answer arrive later as \
-             messages from that thread. Pass the thread to write to the same agent again; \
+             fully. Leave out `agent` for {GENERAL_AGENT}. The call returns at once with \
+             the name the agent got, such as Fable-3a: use it for the agent, with the user \
+             too. What the agent writes and its final answer arrive later as messages from \
+             that name. Pass the name as `thread` to write to the same agent again; \
              end your turn when there is nothing else to do until it answers.\nAgents:\n{}",
             agents.join("\n")
         )
@@ -178,7 +189,8 @@ impl Tool for AskAgent {
                 "task": { "type": "string", "description": "Everything the agent needs." },
                 "thread": {
                     "type": "string",
-                    "description": "A thread the agent answered from before, to continue it."
+                    "description": "The name of an agent asked before, such as Fable-3a, \
+                        or its thread, to write to it again."
                 }
             },
             "required": ["task"],

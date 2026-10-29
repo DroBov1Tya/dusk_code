@@ -6,6 +6,9 @@ use ratatui::{style::Color, text::Span};
 
 use super::theme::fg;
 
+/// The core names agents; their loaders and colors come from the same seed.
+pub use dusk_core::thread_start::{agent_name, name_seed as identity};
+
 const WIDTH: usize = 5;
 const HEIGHT: usize = 3;
 /// The longest path; a walk that gets stuck ends sooner.
@@ -87,24 +90,6 @@ impl Loader {
         let share = age as f64 / (DOTS.len() - 1) as f64;
         blend(self.head, self.tail, share)
     }
-}
-
-/// The core's agent ID is stable; its mixed bits choose a name, colour and geometry.
-pub fn identity(id: &str) -> u64 {
-    id.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-    })
-}
-
-pub fn agent_name(seed: u64) -> String {
-    const NAMES: [&str; 8] = [
-        "Aster", "Beryl", "Cinder", "Dapple", "Ember", "Fable", "Glint", "Hollow",
-    ];
-    format!(
-        "{}-{:02x}",
-        NAMES[(seed as usize) % NAMES.len()],
-        (seed >> 24) & 0xff
-    )
 }
 
 /// A walk through neighbouring cells, diagonals included, that never crosses itself.
