@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Result, anyhow, bail, ensure};
 use reqwest::{
-    Client, Response, StatusCode, Url,
+    Client, RequestBuilder, Response, StatusCode, Url,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
     redirect::Policy,
 };
@@ -34,7 +34,7 @@ pub struct OpenAiCompatible {
     client: Client,
     models_url: Url,
     completions_url: Url,
-    authorization: HeaderValue,
+    authorization: Option<HeaderValue>,
 }
 
 #[derive(Deserialize)]
@@ -202,9 +202,14 @@ impl OpenAiCompatible {
                 && base_url.fragment().is_none(),
             "provider base URL must not contain credentials, a query or a fragment"
         );
-        let mut authorization = HeaderValue::from_str(&format!("Bearer {}", config.api_key.0))
-            .map_err(|_| anyhow!("invalid provider API key"))?;
-        authorization.set_sensitive(true);
+        let authorization = if config.api_key.0.is_empty() {
+            None
+        } else {
+            let mut value = HeaderValue::from_str(&format!("Bearer {}", config.api_key.0))
+                .map_err(|_| anyhow!("invalid provider API key"))?;
+            value.set_sensitive(true);
+            Some(value)
+        };
         // No total timeout: it would cut long streams. Requests bound their own duration.
         let client = Client::builder()
             .redirect(Policy::none())
@@ -225,9 +230,7 @@ impl OpenAiCompatible {
         // Do not retain reqwest errors or response bodies in error chains: either
         // can contain endpoint input or values echoed by an upstream server.
         let mut response = self
-            .client
-            .get(self.models_url.clone())
-            .header(AUTHORIZATION, self.authorization.clone())
+            .with_authorization(self.client.get(self.models_url.clone()))
             .header(ACCEPT, "application/json")
             .timeout(CATALOGUE_TIMEOUT)
             .send()
@@ -275,9 +278,7 @@ impl OpenAiCompatible {
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
         let request = CompletionRequest::new(request);
         let response = self
-            .client
-            .post(self.completions_url.clone())
-            .header(AUTHORIZATION, self.authorization.clone())
+            .with_authorization(self.client.post(self.completions_url.clone()))
             .header(ACCEPT, EVENT_STREAM)
             .json(&request)
             .send()
@@ -299,6 +300,13 @@ impl OpenAiCompatible {
             "provider did not return a stream"
         );
         Ok(CompletionStream::new(response))
+    }
+
+    fn with_authorization(&self, request: RequestBuilder) -> RequestBuilder {
+        match &self.authorization {
+            Some(value) => request.header(AUTHORIZATION, value.clone()),
+            None => request,
+        }
     }
 }
 

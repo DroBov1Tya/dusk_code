@@ -19,14 +19,15 @@ use dusk_core::{
     live_config::LiveConfig,
     providers::ModelEvent,
     runtime::ThreadEvent,
-    state::{Message, Task, ThreadTokens, TurnStatus},
+    state::{LocalUnsent, Message, Task, ThreadTokens, TurnStatus},
 };
 use ratatui::layout::Rect;
 
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 use panels::agents;
 pub use panels::{
-    AgentWindow, ModelList, Panel, Preview, SettingKind, SettingList, SubagentView, ThreadList,
+    AgentWindow, Connection, ModelList, Panel, Preview, SettingKind, SettingList, SubagentView,
+    ThreadList,
 };
 pub use transcript::{Entry, Tone, Transcript};
 
@@ -37,6 +38,11 @@ pub enum Action {
     Send(String),
     SendNow(String),
     Cancel,
+    Connect {
+        base_url: String,
+        api_key: Option<String>,
+    },
+    Resend(String),
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),
     OpenThread(String),
@@ -50,7 +56,17 @@ pub enum Action {
 
 /// Every command the box offers, as the core lists them.
 pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
-    COMMANDS.iter()
+    const LOCAL: &[(&str, &str)] = &[
+        (
+            "/connect",
+            "add a provider with its URL and optional API key",
+        ),
+        (
+            "/resend",
+            "view local unsent messages and explicitly send one",
+        ),
+    ];
+    COMMANDS.iter().chain(LOCAL.iter())
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -128,6 +144,8 @@ pub struct TranscriptHit {
 
 pub struct App {
     pub model: String,
+    pub provider_available: bool,
+    pub local_unsent: Vec<LocalUnsent>,
     pub thread_id: Option<String>,
     pub title: Option<String>,
     pub transcript: Transcript,
@@ -195,14 +213,16 @@ pub struct App {
 
 impl App {
     pub fn new(
-        model: String,
+        model: Option<String>,
         limit: u64,
         config: Arc<LiveConfig>,
         tools: Vec<&'static str>,
         skills_dir: PathBuf,
     ) -> Self {
         Self {
-            model,
+            provider_available: model.is_some(),
+            model: model.unwrap_or_else(|| "no model".into()),
+            local_unsent: Vec::new(),
             thread_id: None,
             title: None,
             transcript: Transcript::default(),
@@ -260,6 +280,7 @@ impl App {
     pub fn open(&mut self, thread_id: Option<String>, title: Option<String>, history: &[Message]) {
         self.thread_id = thread_id;
         self.title = title;
+        self.local_unsent.clear();
         self.transcript = Transcript::from_history(history);
         self.focus = Focus::Input;
         self.activity = Activity::Idle;
@@ -336,6 +357,49 @@ impl App {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         match event {
+            ThreadEvent::ModelSelected {
+                name,
+                context_window,
+            } => {
+                self.model = name;
+                self.provider_available = true;
+                self.limit = context_window
+                    .map_or(self.config.current().limits().max_input_tokens, |window| {
+                        window.min(self.config.current().limits().max_input_tokens)
+                    });
+            }
+            ThreadEvent::LocalUnsent(message) => {
+                if self.local_unsent.iter().any(|item| item.id == message.id) {
+                    return;
+                }
+                // Another key may have arrived before this persistence event.
+                if let Some(index) = self.transcript.entries.iter().rposition(
+                    |entry| matches!(entry, Entry::User { text, .. } if *text == message.content),
+                ) {
+                    self.transcript.entries.remove(index);
+                    self.transcript.hidden = self
+                        .transcript
+                        .hidden
+                        .iter()
+                        .filter_map(|&hidden| {
+                            if hidden == index {
+                                None
+                            } else {
+                                Some(if hidden > index { hidden - 1 } else { hidden })
+                            }
+                        })
+                        .collect();
+                    self.focus = Focus::Input;
+                }
+                self.show_local_unsent(message);
+            }
+            ThreadEvent::ProviderUnavailable => {
+                self.provider_available = false;
+                self.transcript.notice(
+                    "Provider unavailable. You can continue reading this chat; use /connect or /model to choose a provider.",
+                    Tone::Info,
+                );
+            }
             ThreadEvent::TurnStarted(turn) => {
                 self.turn_running = true;
                 self.activity = Activity::Thinking;
@@ -344,6 +408,7 @@ impl App {
                 self.output_samples.clear();
             }
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => {
+                self.provider_available = true;
                 self.record_output(&text);
                 self.transcript.add_reasoning(&text);
                 if !self.compacting {
@@ -351,10 +416,12 @@ impl App {
                 }
             }
             ThreadEvent::Model(ModelEvent::Text(text)) if self.compacting => {
+                self.provider_available = true;
                 self.record_output(&text);
                 self.transcript.add_summary(&text);
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => {
+                self.provider_available = true;
                 self.record_output(&text);
                 self.transcript.add_answer(&text);
                 self.activity = Activity::Writing;
@@ -464,6 +531,43 @@ impl App {
         self.transcript.stop_running_tools();
     }
 
+    pub fn show_local_unsent(&mut self, message: LocalUnsent) {
+        if self.local_unsent.iter().any(|item| item.id == message.id) {
+            return;
+        }
+        self.transcript.push(Entry::Notice {
+            local_id: Some(message.id.clone()),
+            text: format!(
+                "Saved locally \u{00B7} not sent \u{00B7} /resend\n{}",
+                message.content
+            ),
+            tone: Tone::Info,
+        });
+        self.local_unsent.push(message);
+    }
+
+    pub fn mark_local_sent(&mut self, id: &str) {
+        self.local_unsent.retain(|item| item.id != id);
+        for entry in &mut self.transcript.entries {
+            if let Entry::Notice {
+                local_id: Some(local_id),
+                text,
+                ..
+            } = entry
+                && local_id == id
+            {
+                *text = text.replacen(
+                    "Saved locally \u{00B7} not sent \u{00B7} /resend",
+                    "Queued by explicit resend",
+                    1,
+                );
+            }
+        }
+        if let Some(Panel::Unsent { selected }) = &mut self.panel {
+            *selected = (*selected).min(self.local_unsent.len().saturating_sub(1));
+        }
+    }
+
     /// A message the core refused goes back into the box instead of looking sent.
     pub fn unsend(&mut self, text: String) {
         if let Some(Entry::User { text: shown, .. }) = self.transcript.entries.last()
@@ -482,6 +586,24 @@ impl App {
             return Action::None;
         }
         let text = self.input.take();
+        let trimmed = text.trim();
+        match trimmed {
+            "/connect" => {
+                self.panel = Some(Panel::Connect(Connection::default()));
+                return Action::None;
+            }
+            "/resend" => {
+                self.panel = Some(Panel::Unsent { selected: 0 });
+                return Action::None;
+            }
+            _ => {}
+        }
+        // Connection secrets belong only in the masked form, never in recall/history.
+        if trimmed.split_whitespace().next() == Some("/connect") {
+            self.panel = Some(Panel::Connect(Connection::default()));
+            self.flash = Some("Enter connection details in the form".into());
+            return Action::None;
+        }
         self.sent.push(text.clone());
         self.recall = None;
         // The core says what a command is; ones that do not run in the thread come

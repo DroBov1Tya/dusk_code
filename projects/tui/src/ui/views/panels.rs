@@ -22,11 +22,11 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, EditorButton, EditorHit, ModelList, Panel, SettingKind, SettingList, ThreadList,
-    compact_number, paste,
+    App, Connection, EditorButton, EditorHit, ModelList, Panel, SettingKind, SettingList,
+    ThreadList, compact_number, paste,
 };
 
-const KEYS: [(&str, &str); 23] = [
+const KEYS: [(&str, &str); 25] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
@@ -44,6 +44,11 @@ const KEYS: [(&str, &str); 23] = [
     ("Alt+PgUp/Dn", "scroll MCP tools"),
     ("Ctrl+T /resume", "threads, with a preview of each"),
     ("/model", "choose the model; providers are checked live"),
+    ("/connect", "add a provider URL and optional API key"),
+    (
+        "/resend",
+        "view saved local messages; Enter explicitly sends one",
+    ),
     ("Ctrl+N", "new thread"),
     ("Ctrl+O", "tools and skills"),
     (
@@ -57,6 +62,9 @@ const KEYS: [(&str, &str); 23] = [
 
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     app.editor_hits.clear();
+    if let Some(Panel::Connect(form)) = &mut app.panel {
+        form.field_areas.fill(None);
+    }
     match app.panel {
         Some(Panel::Paste(_)) => return draw_paste(frame, screen, app),
         Some(Panel::Agent(_)) => return agent_window::draw(frame, screen, app),
@@ -65,6 +73,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let Some(panel) = &app.panel else {
         return;
     };
+    let mut connection_rows = Vec::new();
     let (title, hints, lines, selected) = match panel {
         Panel::Threads(list) => return draw_threads(frame, screen, app, list),
         Panel::Settings(list) => {
@@ -72,6 +81,25 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             (
                 "tools and skills",
                 "space switch  r reload config  esc close",
+                lines,
+                Some(row),
+            )
+        }
+        Panel::Connect(form) => {
+            let (lines, selected, rows) = connection(form, screen.width.saturating_sub(8) as usize);
+            connection_rows = rows;
+            (
+                "connect provider",
+                "up/down/tab/click focus  enter continue/save  esc cancel",
+                lines,
+                Some(selected),
+            )
+        }
+        Panel::Unsent { selected } => {
+            let (lines, row) = unsent(app, *selected, screen.width.saturating_sub(8) as usize);
+            (
+                "local unsent messages",
+                "up/down choose  enter send selected  esc close",
                 lines,
                 Some(row),
             )
@@ -100,6 +128,20 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     };
     let inner = height.saturating_sub(2) as usize;
     let skip = selected.map_or(0, |row| (row + 1).saturating_sub(inner));
+    if let Some(Panel::Connect(form)) = &mut app.panel {
+        for (index, row) in connection_rows.into_iter().enumerate() {
+            let start = row.max(skip);
+            let end = (row + 2).min(skip + inner);
+            if start < end {
+                form.field_areas[index] = Some(Rect::new(
+                    area.x + 1,
+                    area.y + 1 + (start - skip) as u16,
+                    area.width.saturating_sub(2),
+                    (end - start) as u16,
+                ));
+            }
+        }
+    }
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(NIGHT))
@@ -396,7 +438,7 @@ fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
         ));
         for model in provider.models.as_deref().unwrap_or_default() {
             let name = format!("{}/{}", provider.name, model.id);
-            let mark = if name == list.current {
+            let mark = if list.current.as_deref() == Some(name.as_str()) {
                 Span::styled(format!("    {SUN_GLYPH} "), fg(SUN))
             } else {
                 Span::raw("      ")
@@ -418,7 +460,7 @@ fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
     }
     if providers.is_empty() {
         lines.push(Line::from(Span::styled(
-            " no providers in the config",
+            " no providers yet; /connect adds one",
             thought(),
         )));
     }
@@ -465,6 +507,125 @@ fn settings(list: &SettingList) -> (Vec<Line<'static>>, usize) {
         lines.push(Line::from(Span::styled(" nothing to switch", thought())));
     }
     (lines, selected_line)
+}
+
+/// Connection details stay in this form and are never echoed into the transcript.
+fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Vec<usize>) {
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "HTTPS URL is required. API key is optional.",
+            dim(),
+        )),
+        Line::default(),
+    ];
+    let labels = ["base URL", "API key (optional)"];
+    let mut rows = Vec::new();
+    let mut selected = 0;
+    let field_width = width.saturating_sub(4).clamp(1, 68);
+    for (index, field) in form.fields.iter().enumerate() {
+        rows.push(lines.len());
+        lines.push(Line::from(Span::styled(
+            format!(" {}", labels[index]),
+            dim(),
+        )));
+        let at = field.text[..field.cursor].chars().count();
+        let chars: Vec<char> = if index == 1 {
+            vec!['*'; field.text.chars().count()]
+        } else {
+            field.text.chars().collect()
+        };
+        let start = at.saturating_sub(field_width / 2);
+        let mut value = String::new();
+        if start > 0 {
+            value.push('\u{2026}');
+        }
+        for position in start..=chars.len() {
+            if position == at && index == form.selected {
+                value.push('\u{258F}');
+            }
+            if let Some(c) = chars.get(position) {
+                value.push(*c);
+            }
+        }
+        if value.is_empty() {
+            value.push_str(if index == 1 {
+                "leave blank if not needed"
+            } else {
+                "required"
+            });
+        }
+        if index == form.selected {
+            selected = lines.len();
+        }
+        let style = if index == form.selected {
+            fg(SUN).bg(GLOW)
+        } else {
+            Style::new()
+        };
+        lines.push(Line::from(Span::styled(
+            format!(" {}", wrap::clip(&value, field_width)),
+            style,
+        )));
+        lines.push(Line::default());
+    }
+    if let Some(error) = &form.error {
+        lines.extend(
+            wrap::words(vec![Span::styled(error.clone(), fg(EMBER))], field_width, 0)
+                .into_iter()
+                .map(Line::from),
+        );
+    }
+    (lines, selected, rows)
+}
+
+fn unsent(app: &App, selected: usize, width: usize) -> (Vec<Line<'static>>, usize) {
+    if app.local_unsent.is_empty() {
+        return (
+            vec![Line::from(Span::styled(
+                " No local unsent messages",
+                thought(),
+            ))],
+            0,
+        );
+    }
+    let width = width.clamp(1, 70);
+    let mut lines = vec![
+        Line::from(Span::styled(
+            "Saved locally. Only Enter on a selected message sends it.",
+            dim(),
+        )),
+        Line::default(),
+    ];
+    let mut row = 0;
+    for (index, message) in app.local_unsent.iter().enumerate() {
+        if index == selected {
+            row = lines.len();
+        }
+        lines.push(selectable(
+            vec![Span::raw(format!(
+                " {}. {}",
+                index + 1,
+                wrap::clip(
+                    message.content.lines().next().unwrap_or(""),
+                    width.saturating_sub(6)
+                )
+            ))],
+            Span::styled("not sent", dim()),
+            index == selected,
+        ));
+        if index == selected {
+            let preview = paste::labelled(&message.content);
+            let wrapped = wrap::words(vec![Span::raw(preview)], width.saturating_sub(3).max(1), 0);
+            lines.extend(
+                wrapped
+                    .into_iter()
+                    .take(6)
+                    .map(|spans| Line::from([vec![Span::raw("   ")], spans].concat())),
+            );
+            lines.push(Line::default());
+        }
+    }
+    (lines, row)
 }
 
 fn help() -> Vec<Line<'static>> {

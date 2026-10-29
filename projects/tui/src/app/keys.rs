@@ -22,6 +22,14 @@ impl App {
     pub fn handle(&mut self, event: Event) -> Action {
         match event {
             Event::Key(key) if key.kind == KeyEventKind::Press => self.key(key),
+            Event::Paste(text) if matches!(self.panel, Some(Panel::Connect(_))) => {
+                if let Some(Panel::Connect(form)) = &mut self.panel {
+                    let single_line: String = text.chars().filter(|c| !c.is_control()).collect();
+                    form.fields[form.selected].insert(&single_line);
+                    form.error = None;
+                }
+                Action::None
+            }
             Event::Paste(text) if matches!(self.panel, Some(Panel::Paste(_))) => {
                 self.editor_paste(&text.replace("\r\n", "\n").replace('\r', "\n"));
                 Action::None
@@ -32,6 +40,17 @@ impl App {
             }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Paste(_))) => {
                 self.editor_mouse(mouse);
+                Action::None
+            }
+            Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Connect(_))) => {
+                if mouse.kind == MouseEventKind::Down(MouseButton::Left)
+                    && let Some(Panel::Connect(form)) = &mut self.panel
+                    && let Some(index) = form.field_areas.iter().position(|area| {
+                        area.is_some_and(|area| inside(area, mouse.column, mouse.row))
+                    })
+                {
+                    form.selected = index;
+                }
                 Action::None
             }
             Event::Paste(text) if self.panel.is_none() => {
@@ -158,6 +177,9 @@ impl App {
         {
             return Action::Quit;
         }
+        if matches!(self.panel, Some(Panel::Connect(_))) {
+            self.panel = None;
+        }
         self.input.take();
         self.quit_armed = Some(Instant::now());
         self.flash = Some("Ctrl+C again to quit".into());
@@ -257,6 +279,67 @@ impl App {
         let down = matches!(key.code, KeyCode::Down | KeyCode::Char('j'));
         let up = matches!(key.code, KeyCode::Up | KeyCode::Char('k'));
         match panel {
+            Panel::Connect(form) => {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                match key.code {
+                    KeyCode::Esc => self.panel = None,
+                    KeyCode::Up | KeyCode::Down => {
+                        step(
+                            &mut form.selected,
+                            form.fields.len(),
+                            key.code == KeyCode::Down,
+                        );
+                    }
+                    KeyCode::Tab | KeyCode::BackTab => {
+                        let back = key.code == KeyCode::BackTab
+                            || key.modifiers.contains(KeyModifiers::SHIFT);
+                        let count = form.fields.len();
+                        form.selected = if back {
+                            (form.selected + count - 1) % count
+                        } else {
+                            (form.selected + 1) % count
+                        };
+                    }
+                    KeyCode::Enter if form.selected + 1 < form.fields.len() => form.selected += 1,
+                    KeyCode::Enter => {
+                        let base_url = form.fields[0].text.trim().to_owned();
+                        if base_url.is_empty() {
+                            form.error = Some("Provider URL is required".into());
+                            form.selected = 0;
+                        } else {
+                            let key = form.fields[1].text.trim();
+                            let api_key = (!key.is_empty()).then(|| key.to_owned());
+                            return Action::Connect { base_url, api_key };
+                        }
+                    }
+                    KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => {
+                        form.fields[form.selected].insert(c.encode_utf8(&mut [0; 4]));
+                        form.error = None;
+                    }
+                    KeyCode::Backspace => form.fields[form.selected].backspace(),
+                    KeyCode::Delete => form.fields[form.selected].delete(),
+                    KeyCode::Left => form.fields[form.selected].left(),
+                    KeyCode::Right => form.fields[form.selected].right(),
+                    KeyCode::Home => form.fields[form.selected].home(),
+                    KeyCode::End => form.fields[form.selected].end(),
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Panel::Unsent { selected } => {
+                match key.code {
+                    _ if up || down => step(selected, self.local_unsent.len(), down),
+                    KeyCode::Enter => {
+                        return self
+                            .local_unsent
+                            .get(*selected)
+                            .map_or(Action::None, |item| Action::Resend(item.id.clone()));
+                    }
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
+                return Action::None;
+            }
             Panel::Paste(_) => self.editor_key(key),
             Panel::Agent(_) => self.agent_window_key(key),
             Panel::Models(list) => match key.code {

@@ -15,7 +15,7 @@ pub struct Thread {
     pub created_at: i64,
     /// `None` until the first message.
     pub title: Option<String>,
-    /// When the newest message was stored, or `created_at` before the first one.
+    /// When the newest message or local unsent input was stored, or `created_at`.
     pub active_at: i64,
     /// For a subagent's thread: the thread that asked it, and the agent's name.
     pub parent_thread_id: Option<String>,
@@ -71,9 +71,9 @@ impl State {
 
     pub async fn load_thread(&self, id: &str) -> Result<Option<Thread>> {
         sqlx::query(
-            "SELECT threads.*, COALESCE(
-                (SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id),
-                threads.created_at) AS active_at
+            "SELECT threads.*, MAX(threads.created_at,
+                COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
+                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
              FROM threads WHERE id = ?",
         )
         .bind(id)
@@ -88,9 +88,9 @@ impl State {
     /// reached through `agent_threads`.
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
         sqlx::query(
-            "SELECT threads.*, COALESCE(
-                (SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id),
-                threads.created_at) AS active_at
+            "SELECT threads.*, MAX(threads.created_at,
+                COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
+                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
              FROM threads WHERE parent_thread_id IS NULL ORDER BY active_at DESC, id DESC",
         )
         .fetch_all(&self.pool)
@@ -104,9 +104,9 @@ impl State {
     /// The subagent threads a thread started, oldest first.
     pub async fn agent_threads(&self, parent: &str) -> Result<Vec<Thread>> {
         sqlx::query(
-            "SELECT threads.*, COALESCE(
-                (SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id),
-                threads.created_at) AS active_at
+            "SELECT threads.*, MAX(threads.created_at,
+                COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
+                COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
              FROM threads WHERE parent_thread_id = ? ORDER BY created_at, id",
         )
         .bind(parent)

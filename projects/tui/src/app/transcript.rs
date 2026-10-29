@@ -33,6 +33,7 @@ pub enum Entry {
         open: bool,
     },
     Notice {
+        local_id: Option<String>,
         text: String,
         tone: Tone,
     },
@@ -119,6 +120,7 @@ impl Transcript {
 
     pub fn notice(&mut self, text: impl Into<String>, tone: Tone) {
         self.push(Entry::Notice {
+            local_id: None,
             text: text.into(),
             tone,
         });

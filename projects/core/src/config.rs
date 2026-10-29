@@ -22,6 +22,7 @@ const HEADER: &str = "\
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Config {
+    #[serde(default)]
     providers: BTreeMap<String, ProviderConfig>,
     /// Called `session` in older files.
     #[serde(default, alias = "session")]
@@ -43,24 +44,33 @@ pub struct Config {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ProviderConfig {
+    #[serde(default)]
     pub kind: ProviderKind,
     pub base_url: String,
+    #[serde(default, skip_serializing_if = "ApiKey::is_empty")]
     pub api_key: ApiKey,
     /// The server leaves `<think>` and `<tool_call>` tags inside the answer text.
     #[serde(default, skip_serializing_if = "is_false")]
     pub inline_tags: bool,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ProviderKind {
+    #[default]
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible,
 }
 
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Default, Serialize, Deserialize)]
 #[serde(transparent)]
 pub struct ApiKey(pub String);
+
+impl ApiKey {
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -143,6 +153,10 @@ impl Config {
         self.model = Some(name);
     }
 
+    pub fn set_provider(&mut self, name: String, provider: ProviderConfig) {
+        self.providers.insert(name, provider);
+    }
+
     pub fn skill_enabled(&self, name: &str) -> bool {
         self.skills.get(name).copied().unwrap_or(true)
     }
@@ -166,10 +180,6 @@ impl Config {
 
     fn validate(&self) -> Result<()> {
         ensure!(
-            !self.providers.is_empty(),
-            "at least one provider is required"
-        );
-        ensure!(
             self.limits.max_input_tokens > 0 && self.limits.max_output_tokens > 0,
             "token limits must be above zero"
         );
@@ -180,9 +190,10 @@ impl Config {
                 "provider base URL must not be empty"
             );
             ensure!(
-                !provider.api_key.0.trim().is_empty()
-                    && !provider.api_key.0.chars().any(char::is_control),
-                "provider API key is empty or invalid"
+                provider.api_key.0.is_empty()
+                    || (!provider.api_key.0.trim().is_empty()
+                        && !provider.api_key.0.chars().any(char::is_control)),
+                "provider API key is invalid"
             );
         }
         Ok(())
@@ -292,7 +303,7 @@ mod tests {
     fn unknown_fields_and_values_are_rejected() {
         assert!(parse(&format!("{PROVIDERS}session:\n  record: everything\n")).is_err());
         assert!(parse(&format!("{PROVIDERS}tool: {{}}\n")).is_err());
-        assert!(parse("providers: {}\n").is_err(), "no provider");
+        assert!(parse("providers: {}\n").is_ok(), "offline config");
     }
 
     #[test]

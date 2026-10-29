@@ -324,14 +324,17 @@ fn entry_lines(entry: &Entry, width: usize, live: Option<&App>) -> Vec<Line<'sta
             text,
             open,
         } => from_agent(thread_id, text, *open, width),
-        Entry::Notice { text, tone } => {
+        Entry::Notice { text, tone, .. } => {
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),
                 Tone::Error => (FAILED, fg(EMBER)),
             };
-            let spans = vec![Span::styled(text.clone(), style)];
-            wrap::words(spans, width.saturating_sub(2), 0)
-                .into_iter()
+            // Each line of a notice wraps on its own, so a line break stays a line break.
+            text.lines()
+                .flat_map(|line| {
+                    let spans = vec![Span::styled(line.to_owned(), style)];
+                    wrap::words(spans, width.saturating_sub(2), 0)
+                })
                 .enumerate()
                 .map(|(row, spans)| {
                     let lead = if row == 0 {

@@ -3,6 +3,8 @@
 
 use std::path::Path;
 
+use ratatui::layout::Rect;
+
 use dusk_core::{
     config::Config,
     graph::{Graph, SKILL_FILE},
@@ -14,7 +16,7 @@ pub mod agents;
 
 pub use agents::{AgentWindow, SubagentView};
 
-use super::PasteEditor;
+use super::{Input, PasteEditor};
 
 pub enum Panel {
     Threads(ThreadList),
@@ -23,12 +25,14 @@ pub enum Panel {
     Paste(PasteEditor),
     Models(ModelList),
     Agent(AgentWindow),
+    Connect(Connection),
+    Unsent { selected: usize },
 }
 
 /// The configured providers as the core found them, and their models to choose from.
 pub struct ModelList {
     /// `provider/model` in use.
-    pub current: String,
+    pub current: Option<String>,
     /// `None` while the core checks the providers.
     pub providers: Option<Vec<ProviderStatus>>,
     /// Among `choices`.
@@ -36,7 +40,7 @@ pub struct ModelList {
 }
 
 impl ModelList {
-    pub fn checking(current: String) -> Self {
+    pub fn checking(current: Option<String>) -> Self {
         Self {
             current,
             providers: None,
@@ -44,7 +48,7 @@ impl ModelList {
         }
     }
 
-    pub fn checked(current: String, providers: Vec<ProviderStatus>) -> Self {
+    pub fn checked(current: Option<String>, providers: Vec<ProviderStatus>) -> Self {
         let mut list = Self {
             current,
             providers: Some(providers),
@@ -53,7 +57,7 @@ impl ModelList {
         list.selected = list
             .choices()
             .iter()
-            .position(|name| *name == list.current)
+            .position(|name| Some(name) == list.current.as_ref())
             .unwrap_or(0);
         list
     }
@@ -102,6 +106,15 @@ impl Preview {
             tool_calls,
         }
     }
+}
+
+#[derive(Default)]
+pub struct Connection {
+    pub fields: [Input; 2],
+    pub selected: usize,
+    pub error: Option<String>,
+    /// Visible label and value rows on the last drawn frame.
+    pub field_areas: [Option<Rect>; 2],
 }
 
 pub struct SettingList {

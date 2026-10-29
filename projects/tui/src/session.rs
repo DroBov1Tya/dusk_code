@@ -8,7 +8,8 @@ use anyhow::Result;
 use crossterm::event::EventStream;
 use dusk_core::{
     chat::commands::{Answer, Command},
-    providers::Model,
+    config::{ApiKey, ProviderConfig, ProviderKind},
+    providers::{Model, validate_provider},
     runtime::{Runtime, ThreadEvent, ThreadHandle},
 };
 use futures::StreamExt;
@@ -36,11 +37,14 @@ pub async fn run(
     thread: Option<String>,
 ) -> Result<()> {
     let config = runtime.config().clone();
-    let model = runtime.model().model;
-    let limit = input_limit(runtime, &model);
+    let choice = runtime.model();
+    let limit = choice.as_ref().map_or(
+        runtime.config().current().limits().max_input_tokens,
+        |choice| input_limit(runtime, &choice.model),
+    );
     let skills_dir = runtime.paths().skills_dir();
     let mut app = App::new(
-        model.id.clone(),
+        choice.as_ref().map(|choice| choice.name()),
         limit,
         config,
         runtime.tool_names(),
@@ -53,6 +57,11 @@ pub async fn run(
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(FRAME);
     loop {
+        if let Some(choice) = runtime.model() {
+            // A configured model supplies metadata, not proof of provider availability.
+            app.model = choice.name();
+            app.limit = input_limit(runtime, &choice.model);
+        }
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let action = tokio::select! {
             key = keys.next() => match key {
@@ -79,6 +88,48 @@ pub async fn run(
             Action::Quit => break,
             Action::Send(text) => send(runtime, &mut app, &mut open, text, false).await,
             Action::SendNow(text) => send(runtime, &mut app, &mut open, text, true).await,
+            Action::Connect { base_url, api_key } => match connect(runtime, base_url, api_key) {
+                Ok(()) => {
+                    app.panel = Some(Panel::Models(ModelList::checking(
+                        runtime.model().map(|choice| choice.name()),
+                    )));
+                    terminal.draw(|frame| ui::draw(frame, &mut app))?;
+                    answer(runtime, &mut app, Command::Model { name: None }).await;
+                    app.flash = Some(
+                        "Provider saved; choose a model, then /resend for local messages".into(),
+                    );
+                }
+                Err(_) => {
+                    if let Some(Panel::Connect(form)) = &mut app.panel {
+                        form.error = Some(
+                            "Could not save provider. Check the HTTPS URL and config access."
+                                .into(),
+                        );
+                    }
+                }
+            },
+            Action::Resend(id) => {
+                if runtime.model().is_none() {
+                    app.flash =
+                        Some("Connect a provider and choose a model before resending".into());
+                    continue;
+                }
+                if let Err(error) = ensure_open(runtime, &mut app, &mut open).await {
+                    app.error(format!("cannot open the thread: {error:#}"));
+                    continue;
+                }
+                if let Some(thread_id) = &app.thread_id {
+                    match runtime.resend_local_unsent(thread_id, &id).await {
+                        Ok(()) => {
+                            app.mark_local_sent(&id);
+                            app.flash = Some("Local message queued".into());
+                        }
+                        Err(error) => {
+                            app.error(format!("cannot resend the local message: {error:#}"))
+                        }
+                    }
+                }
+            }
             Action::Cancel => {
                 if let Some(thread) = &open
                     && let Err(error) = thread.handle.input.cancel()
@@ -89,7 +140,9 @@ pub async fn run(
             Action::Command(command) => {
                 // Checking providers takes a moment; the window says so meanwhile.
                 if command == (Command::Model { name: None }) {
-                    app.panel = Some(Panel::Models(ModelList::checking(runtime.model().name())));
+                    app.panel = Some(Panel::Models(ModelList::checking(
+                        runtime.model().map(|choice| choice.name()),
+                    )));
                     terminal.draw(|frame| ui::draw(frame, &mut app))?;
                 }
                 answer(runtime, &mut app, command).await;
@@ -138,6 +191,28 @@ pub async fn run(
     Ok(())
 }
 
+/// Allocates the internal name against the configuration read during the same update.
+/// Existing providers remain intact even when their generated-looking names are occupied.
+fn connect(runtime: &Runtime, base_url: String, api_key: Option<String>) -> Result<()> {
+    let provider = ProviderConfig {
+        kind: ProviderKind::OpenAiCompatible,
+        base_url,
+        api_key: ApiKey(api_key.unwrap_or_default()),
+        inline_tags: false,
+    };
+    validate_provider(&provider)?;
+    runtime.config().update(|config| {
+        let mut index = 1usize;
+        let mut name = format!("provider-{index}");
+        while config.providers().contains_key(&name) {
+            index += 1;
+            name = format!("provider-{index}");
+        }
+        config.set_provider(name, provider);
+    })?;
+    Ok(())
+}
+
 /// Shows what the core answered to a command that does not run in the thread.
 async fn answer(runtime: &Runtime, app: &mut App, command: Command) {
     match command.answer(runtime).await {
@@ -163,7 +238,8 @@ async fn answer(runtime: &Runtime, app: &mut App, command: Command) {
         Ok(Answer::ModelSwitched(choice)) => {
             app.panel = None;
             app.limit = input_limit(runtime, &choice.model);
-            app.model = choice.model.id.clone();
+            app.model = choice.name();
+            app.provider_available = true;
             app.flash = Some(format!("model {}", choice.name()));
         }
         Err(error) => {
@@ -273,6 +349,9 @@ async fn resume(runtime: &Runtime, app: &mut App, thread_id: &str) -> Result<Ope
         .await?;
     app.open(Some(thread_id.to_owned()), title, &history);
     app.tasks = runtime.thread_tasks(thread_id).await?;
+    for message in runtime.local_unsent(thread_id).await? {
+        app.show_local_unsent(message);
+    }
     Ok(OpenThread {
         handle,
         ended: false,

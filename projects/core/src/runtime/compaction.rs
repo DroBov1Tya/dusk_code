@@ -2,7 +2,7 @@
 //! of the older messages. It runs on `/compact`, and on its own before the context
 //! outgrows the model window.
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use tracing::warn;
 
 use super::{
@@ -79,7 +79,7 @@ impl Agent {
         };
         let mut messages = conversation.chat_messages_through(through);
         messages.push(ChatMessage::User(self.instructions(instructions)?));
-        let choice = self.model.current();
+        let choice = self.model.current().context("provider is unavailable")?;
         let request = ChatRequest {
             model: &choice.model.id,
             messages: &messages,

@@ -16,7 +16,7 @@ use super::{
 use crate::{
     BoxFuture,
     chat::inline_tags::TagSplitter,
-    config::{Config, ProviderKind},
+    config::{Config, ProviderConfig, ProviderKind},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,16 +68,7 @@ impl ProviderRegistry {
     pub fn from_config(config: &Config) -> Result<Self> {
         let mut providers = BTreeMap::new();
         for (name, settings) in config.providers() {
-            let adapter = match settings.kind {
-                ProviderKind::OpenAiCompatible => {
-                    ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
-                }
-            };
-            let provider = Provider {
-                adapter,
-                inline_tags: settings.inline_tags,
-            };
-            providers.insert(name.clone(), Arc::new(provider));
+            providers.insert(name.clone(), Arc::new(Provider::new(settings)?));
         }
         Ok(Self { providers })
     }
@@ -91,7 +82,29 @@ impl ProviderRegistry {
     }
 }
 
+/// Validates endpoint security and optional credentials without a network request.
+pub fn validate_provider(settings: &ProviderConfig) -> Result<()> {
+    match settings.kind {
+        ProviderKind::OpenAiCompatible => {
+            OpenAiCompatible::new(settings)?;
+        }
+    }
+    Ok(())
+}
+
 impl Provider {
+    pub fn new(settings: &ProviderConfig) -> Result<Self> {
+        let adapter = match settings.kind {
+            ProviderKind::OpenAiCompatible => {
+                ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
+            }
+        };
+        Ok(Self {
+            adapter,
+            inline_tags: settings.inline_tags,
+        })
+    }
+
     /// Picks the first model of the catalogue so callers need no configured model ID.
     pub async fn default_model(&self) -> Result<Model> {
         self.list_models()

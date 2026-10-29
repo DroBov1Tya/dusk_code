@@ -51,7 +51,9 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     let width = text_width(area.width);
     let prompt = Span::styled(PROMPT, bold(ROSE));
     if app.input.text.is_empty() {
-        let hint = if app.is_busy() {
+        let hint = if !app.provider_available {
+            "provider unavailable; /connect or /model to choose a provider"
+        } else if app.is_busy() {
             "write to queue it, Esc stops"
         } else {
             "write, or / for commands"
@@ -135,7 +137,22 @@ fn status(app: &App, width: usize) -> Line<'static> {
         (Activity::Idle, Focus::Browse(_)) => {
             vec![Span::styled("up/down move  enter fold  esc back", dim())]
         }
-        (Activity::Idle, Focus::Input) => vec![Span::styled("ready  /  F2 sidebar", dim())],
+        (Activity::Idle, Focus::Input) => {
+            let state = if app.provider_available {
+                "ready"
+            } else {
+                "provider unavailable"
+            };
+            let saved = if app.local_unsent.is_empty() {
+                String::new()
+            } else {
+                format!("  {} unsent \u{00B7} /resend", app.local_unsent.len())
+            };
+            vec![Span::styled(
+                format!("{state}{saved}  /  F2 sidebar"),
+                dim(),
+            )]
+        }
         (activity, _) => {
             let (color, what) = match activity {
                 Activity::Thinking => (SUN, "thinking".to_owned()),
