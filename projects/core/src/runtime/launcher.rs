@@ -10,7 +10,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use tracing::warn;
 
 use super::{
@@ -24,12 +24,17 @@ use crate::{
     graph::{AGENT_FILE, Graph, Node},
     live_config::LiveConfig,
     paths::Paths,
-    state::{State, Thread, TurnStatus},
+    state::{State, Thread, TurnStatus, estimate_tokens},
     tools::{
         AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, MessageParent, ReadHistory, ToolRegistry,
         ToolScope,
     },
 };
+
+/// Agents at work at once, across every thread.
+const MAX_AGENTS_AT_WORK: usize = 8;
+/// Messages from agents a chat takes between two of the user's.
+const MAX_AGENT_MESSAGES: u64 = 30;
 
 #[derive(Clone)]
 pub struct Launcher {
@@ -91,7 +96,9 @@ impl Launcher {
 
     /// Stores a message from one agent's thread to another and makes sure it is read:
     /// a running thread is woken, a stopped agent thread is started. A chat that is
-    /// not open takes the message in when it is opened again. Boxed, because a started
+    /// not open takes the message in when it is opened again. Agents are bounded: so
+    /// many at work at once, and so many messages to a chat between two of the user's,
+    /// so agents cannot keep each other busy without end. Boxed, because a started
     /// agent may deliver in turn.
     pub fn deliver<'a>(
         &'a self,
@@ -101,22 +108,49 @@ impl Launcher {
         cwd: &'a Path,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            self.state.add_pending_from(to, content, Some(from)).await?;
+            let limit = self.config.current().limits().max_input_tokens;
+            let tokens = estimate_tokens(content);
+            ensure!(
+                tokens <= limit,
+                "the message is about {tokens} tokens, past the input limit of {limit}"
+            );
+            // Held until the message is stored and its reader is sure to see it.
             let mut live = self.mailboxes.lock().await;
-            if live
-                .get(to)
-                .is_some_and(|mailbox| mailbox.send(Input::Sent))
-            {
-                return Ok(());
-            }
+            let running = live.get(to).filter(|mailbox| mailbox.is_live()).cloned();
             let thread = self
                 .state
                 .load_thread(to)
                 .await?
                 .with_context(|| format!("thread {to} does not exist"))?;
+            match &thread.parent_thread_id {
+                None => {
+                    let received = self.state.agent_messages_since_client(to).await?;
+                    ensure!(
+                        received < MAX_AGENT_MESSAGES,
+                        "the chat has had {MAX_AGENT_MESSAGES} agent messages since the user \
+                         last wrote; it takes no more until then"
+                    );
+                }
+                Some(_) if running.is_none() && !self.mailboxes.is_closed() => {
+                    let at_work = live.values().filter(|mailbox| mailbox.agent).count();
+                    ensure!(
+                        at_work < MAX_AGENTS_AT_WORK,
+                        "{MAX_AGENTS_AT_WORK} agents are at work already; wait for one to finish"
+                    );
+                }
+                Some(_) => {}
+            }
+            self.state.add_pending_from(to, content, Some(from)).await?;
+            if running.is_some_and(|mailbox| mailbox.send(Input::Sent)) {
+                return Ok(());
+            }
+            // After shutdown, or for a chat that is not open, the message waits stored.
             let Some(parent) = thread.parent_thread_id.clone() else {
                 return Ok(());
             };
+            if self.mailboxes.is_closed() {
+                return Ok(());
+            }
             let (runner, input, output) = self.agent_runner(&thread, cwd).await?;
             live.insert(to.to_owned(), runner.mailbox(&input));
             drop(live);
@@ -152,8 +186,8 @@ impl Launcher {
     /// so a stop does not wake the asking agent again.
     async fn report(self, mut output: ThreadOutput, thread: Thread, parent: String, cwd: PathBuf) {
         while let Some(event) = output.next_event().await {
-            if let ThreadEvent::TurnFinished(turn) = &event {
-                let report = match turn.status {
+            let report = match &event {
+                ThreadEvent::TurnFinished(turn) => match turn.status {
                     TurnStatus::Completed => {
                         let answer = self
                             .answer(&thread.id, turn.response_message_id.as_deref())
@@ -165,12 +199,15 @@ impl Launcher {
                         turn.error_message.as_deref().unwrap_or("no reason given")
                     )),
                     _ => None,
-                };
-                if let Some(report) = report
-                    && let Err(error) = self.deliver(&parent, &thread.id, &report, &cwd).await
-                {
-                    warn!("cannot report agent thread {}: {error:#}", thread.id);
-                }
+                },
+                // The runner itself stopped, such as on a database error.
+                ThreadEvent::Failed(error) => Some(format!("failed: {error}")),
+                _ => None,
+            };
+            if let Some(report) = report
+                && let Err(error) = self.deliver(&parent, &thread.id, &report, &cwd).await
+            {
+                warn!("cannot report agent thread {}: {error:#}", thread.id);
             }
             if let Some(mailbox) = self.mailboxes.get(&parent).await {
                 mailbox.emit(ThreadEvent::Subagent {

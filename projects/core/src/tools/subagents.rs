@@ -28,6 +28,8 @@ pub const MAX_AGENT_DEPTH: usize = 3;
 
 /// The built-in agent, asked when none is named. An `agents/general` folder replaces it.
 pub const GENERAL_AGENT: &str = "general";
+/// Agent threads one thread may open; asking an earlier one again is not limited.
+const MAX_AGENTS_PER_THREAD: usize = 16;
 const GENERAL_DESCRIPTION: &str = "works like this chat, with MAIN.md and every tool; \
 for research, reading code and self-contained parts of a task";
 
@@ -88,6 +90,12 @@ impl AskAgent {
                 thread_id.clone()
             }
             None => {
+                let opened = self.launcher.state.agent_threads(&self.thread_id).await?;
+                ensure!(
+                    opened.len() < MAX_AGENTS_PER_THREAD,
+                    "this thread has opened {MAX_AGENTS_PER_THREAD} agent threads; continue \
+                     one of them with `thread` instead"
+                );
                 let paths = &self.launcher.paths;
                 let prompt = match &agent {
                     Some(agent) => Some(agent.instructions()?),
