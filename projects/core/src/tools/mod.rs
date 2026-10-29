@@ -13,4 +13,4 @@ pub use builtin::read_regular;
 pub use history::ReadHistory;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::ToolScope;
-pub use tool::{Tool, ToolContext};
+pub use tool::{Progress, Tool, ToolContext};

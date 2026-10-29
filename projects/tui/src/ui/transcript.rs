@@ -316,10 +316,18 @@ fn welcome(frame: &mut Frame, area: Rect) {
 
 /// What a tool call is about, in a few words: its command or path when it has one.
 fn preview(arguments: &serde_json::Value) -> String {
+    let text = |key: &str| arguments.get(key).and_then(|value| value.as_str());
+    if let (Some(agent), Some(task)) = (text("agent"), text("task")) {
+        return format!("{agent}: {}", one_line(task));
+    }
     for key in ["command", "path", "search", "name"] {
-        if let Some(value) = arguments.get(key).and_then(|value| value.as_str()) {
-            return value.split_whitespace().collect::<Vec<_>>().join(" ");
+        if let Some(value) = text(key) {
+            return one_line(value);
         }
     }
     arguments.to_string()
+}
+
+pub fn one_line(text: &str) -> String {
+    text.split_whitespace().collect::<Vec<_>>().join(" ")
 }

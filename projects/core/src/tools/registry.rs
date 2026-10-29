@@ -7,7 +7,7 @@ use serde_json::Value;
 
 use super::{
     scope::ToolScope,
-    tool::{Tool, ToolContext},
+    tool::{Progress, Tool, ToolContext},
 };
 use crate::{
     config::Config,
@@ -56,7 +56,11 @@ impl ToolRegistry {
 
     /// The tools the config has on, as the model sees them.
     pub fn specs(&self, scope: &ToolScope, config: &Config) -> Vec<ToolSpec> {
-        let context = ToolContext { scope, config };
+        let context = ToolContext {
+            scope,
+            config,
+            progress: None,
+        };
         self.tools
             .values()
             .filter(|tool| config.tool_enabled(tool.name()) && tool.available(&context))
@@ -70,7 +74,13 @@ impl ToolRegistry {
 
     /// Never fails: an unknown, switched-off or failed call becomes an error result for
     /// the model. A model may call a tool it was not offered, so the switch is checked here.
-    pub async fn call(&self, call: &ToolCall, scope: &ToolScope, config: &Config) -> ToolResult {
+    pub async fn call(
+        &self,
+        call: &ToolCall,
+        scope: &ToolScope,
+        config: &Config,
+        progress: Progress<'_>,
+    ) -> ToolResult {
         let Some(tool) = self.tools.get(call.name.as_str()) else {
             return error_result(format!("unknown tool {}", call.name));
         };
@@ -81,7 +91,12 @@ impl ToolRegistry {
             Value::Object(_) => call.arguments.clone(),
             _ => return error_result("arguments must be a JSON object".into()),
         };
-        match tool.call(arguments, ToolContext { scope, config }).await {
+        let context = ToolContext {
+            scope,
+            config,
+            progress: Some(progress),
+        };
+        match tool.call(arguments, context).await {
             Ok(content) => ToolResult {
                 content: bounded(content),
                 is_error: false,

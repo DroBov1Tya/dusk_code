@@ -183,6 +183,8 @@ You review code...
 
 The model hands work over with `ask_agent`: the agent's name and the whole task, since the agent sees nothing of the asking conversation. The agent works in a thread of its own under the asking one, with its own context, compaction and token count, and its final answer comes back as the tool result, starting with the agent's thread. Passing that thread again goes on with the same conversation; only threads the asker opened with that agent are accepted. A chat may ask the entry agents, an agent the agents it links to, and three levels down no agent may ask another. Stopping the asking turn stops the agent with it. Subagent threads are not listed among the chats; what they cost counts in the asking thread's `spent`.
 
+While an agent works, the asking thread reports it to its client: `SubagentStarted` names the call, the agent's thread and the task, and every event of that thread follows wrapped in `Subagent`, an agent's own agents wrapped once more. `dusk` gives each a card in the left rail with a random name and icon, the time it runs and the task.
+
 ## Skills
 
 Any folder under `skills/` with a `SKILL.md` is a skill, named by its path. The file opens with front matter; the rest is the instructions:
