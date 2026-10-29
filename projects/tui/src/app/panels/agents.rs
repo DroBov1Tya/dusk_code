@@ -10,7 +10,7 @@ use std::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{providers::ModelEvent, runtime::ThreadEvent, state::ThreadTokens};
 
-use super::{App, Entry, Panel, Transcript, TranscriptHit, now_ms};
+use crate::app::{App, Entry, Panel, Transcript, TranscriptHit, now_ms};
 
 /// Output older than this no longer counts toward tokens per second.
 pub const RATE_WINDOW: Duration = Duration::from_secs(3);

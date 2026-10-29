@@ -1,17 +1,13 @@
 //! Drawing the app. The statistics rail fills the left edge; the thread and
 //! message box occupy the right side at wider terminal widths.
 
-mod agent_window;
-mod header;
-mod input;
 mod loader;
-mod markdown;
-mod panels;
 pub mod screen;
-mod sidebar;
+mod text;
 mod theme;
-mod transcript;
-mod wrap;
+mod views;
+
+use views::{header, input, panels, sidebar, transcript};
 
 use ratatui::{
     Frame,
