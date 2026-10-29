@@ -12,4 +12,6 @@ pub use model_output::{
     ChatStream, FinishReason, ModelEvent, ModelOutput, OutputLimit, ToolCall, Usage,
     is_output_limit,
 };
-pub use provider::{Model, ModelProvider, Provider, ProviderRegistry, Transient, is_transient};
+pub use provider::{
+    Model, ModelProvider, Provider, ProviderRegistry, Transient, is_transient, validate_provider,
+};

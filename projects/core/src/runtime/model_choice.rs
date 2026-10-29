@@ -25,7 +25,12 @@ pub struct ProviderStatus {
 }
 
 pub struct ModelChoice {
-    current: RwLock<Choice>,
+    current: RwLock<Selection>,
+}
+
+struct Selection {
+    choice: Option<Choice>,
+    revision: Arc<()>,
 }
 
 #[derive(Clone)]
@@ -46,21 +51,129 @@ impl Choice {
 impl ModelChoice {
     pub fn new(choice: Choice) -> Self {
         Self {
-            current: RwLock::new(choice),
+            current: RwLock::new(Selection {
+                choice: Some(choice),
+                revision: Arc::new(()),
+            }),
         }
     }
 
-    pub fn current(&self) -> Choice {
+    pub fn offline() -> Self {
+        Self {
+            current: RwLock::new(Selection {
+                choice: None,
+                revision: Arc::new(()),
+            }),
+        }
+    }
+
+    pub fn current(&self) -> Option<Choice> {
         // A choice is replaced whole, so a panic elsewhere cannot leave it half-written.
         self.current
             .read()
             .unwrap_or_else(PoisonError::into_inner)
+            .choice
             .clone()
     }
 
     pub fn set(&self, choice: Choice) {
-        *self.current.write().unwrap_or_else(PoisonError::into_inner) = choice;
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        current.choice = Some(choice);
+        current.revision = Arc::new(());
     }
+
+    pub fn set_if_empty(&self, choice: Choice) -> bool {
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        if current.choice.is_some() {
+            return false;
+        }
+        current.choice = Some(choice);
+        current.revision = Arc::new(());
+        true
+    }
+
+    pub fn revision(&self) -> Arc<()> {
+        Arc::clone(
+            &self
+                .current
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+                .revision,
+        )
+    }
+
+    pub fn set_if_empty_at_revision(&self, choice: Choice, revision: &Arc<()>) -> bool {
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        if current.choice.is_some() || !Arc::ptr_eq(&current.revision, revision) {
+            return false;
+        }
+        current.choice = Some(choice);
+        current.revision = Arc::new(());
+        true
+    }
+
+    pub fn replace_provider(&self, name: &str, provider: Arc<dyn ModelProvider>) {
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        // Even an offline selection must reject discovery started before reconnect.
+        current.revision = Arc::new(());
+        if let Some(choice) = current
+            .choice
+            .as_mut()
+            .filter(|choice| choice.provider_name == name)
+        {
+            choice.provider = provider;
+        }
+    }
+
+    /// A catalogue response applies only to the selection and adapter it checked.
+    pub fn refresh_model(&self, expected: &Choice, model: Model) -> Option<Choice> {
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        let choice = current.choice.as_mut()?;
+        if choice.provider_name != expected.provider_name
+            || choice.model.id != expected.model.id
+            || !Arc::ptr_eq(&choice.provider, &expected.provider)
+        {
+            return None;
+        }
+        choice.model = model;
+        Some(choice.clone())
+    }
+}
+
+/// Reloads metadata for a saved selection without replacing its adapter.
+pub async fn refresh(choice: &Choice) -> Result<Model> {
+    tokio::time::timeout(CHECK_TIMEOUT, choice.provider.list_models())
+        .await
+        .context("model metadata refresh timed out")??
+        .into_iter()
+        .find(|model| model.id == choice.model.id)
+        .context("saved model is missing from the provider catalogue")
+}
+
+/// Constructs a saved model without asking the provider for its catalogue. This keeps
+/// local history available while the provider is down.
+pub fn configured(config: &Config) -> Result<Option<Choice>> {
+    let Some(name) = config.model() else {
+        return Ok(None);
+    };
+    let Some((provider_name, id)) = name.split_once('/') else {
+        return Ok(None);
+    };
+    if provider_name.is_empty() || id.trim().is_empty() {
+        return Ok(None);
+    }
+    let registry = ProviderRegistry::from_config(config)?;
+    let Some(provider) = registry.provider(provider_name) else {
+        return Ok(None);
+    };
+    Ok(Some(Choice {
+        provider_name: provider_name.to_owned(),
+        provider,
+        model: Model {
+            id: id.to_owned(),
+            context_window: None,
+        },
+    }))
 }
 
 /// `name` as `provider/model`, or when `None` the first model of the first provider that

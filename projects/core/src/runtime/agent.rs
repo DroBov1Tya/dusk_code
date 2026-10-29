@@ -59,6 +59,9 @@ impl Agent {
 
     /// Starts a turn when something is queued and the context fits the input limit.
     pub async fn start_turn(&self) -> Result<Option<Turn>> {
+        if self.model.current().is_none() {
+            return Ok(None);
+        }
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         let specs = self.tools.specs(&self.scope, &self.config.current());
         if !conversation.has_queued() || self.context_too_large(&conversation, &specs).is_some() {
@@ -165,7 +168,7 @@ impl Agent {
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         let messages = conversation.chat_messages();
-        let choice = self.model.current();
+        let choice = self.model.current().context("provider is unavailable")?;
         let request = ChatRequest {
             model: &choice.model.id,
             messages: &messages,
@@ -211,6 +214,9 @@ impl Agent {
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }
             Ok(Err(error)) => {
+                if is_transient(&error) {
+                    self.emit(ThreadEvent::ProviderUnavailable);
+                }
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
             }
             Ok(Ok(calls)) if calls.is_empty() => {
@@ -316,8 +322,7 @@ impl Agent {
         let configured = self.config.current().limits().max_input_tokens;
         self.model
             .current()
-            .model
-            .context_window
+            .and_then(|choice| choice.model.context_window)
             .map_or(configured, |window| window.min(configured))
     }
 

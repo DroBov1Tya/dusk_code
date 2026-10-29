@@ -13,13 +13,13 @@ use crate::paths::Paths;
 
 const CONFIG_TEMPLATE: &str = "\
 # dusk_code provider settings. Keep this file private.
-# Add at least one provider, for example:
+# Add a provider when you are ready to connect, for example:
 #
 # providers:
 #   main:
 #     kind: openai_compatible
 #     base_url: 'https://api.example.com/v1'
-#     api_key: 'sk-...'
+#     api_key: 'sk-...' # optional for local providers
 providers: {}
 
 thread:

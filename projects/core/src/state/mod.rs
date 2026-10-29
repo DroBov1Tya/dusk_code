@@ -2,6 +2,7 @@
 
 mod compactions;
 mod legacy;
+mod local_unsent;
 mod messages;
 mod pending;
 // Named after its primary item, `State`, as the style guide asks.
@@ -13,6 +14,7 @@ mod tokens;
 mod turns;
 
 pub use compactions::Compaction;
+pub use local_unsent::LocalUnsent;
 pub use messages::estimate_tokens;
 pub use messages::{Message, MessageRole};
 pub use pending::PendingMessage;

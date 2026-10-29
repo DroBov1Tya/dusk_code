@@ -36,7 +36,7 @@ pub enum Answer {
     Threads(Vec<Thread>),
     /// Every configured provider, checked just now, and the model in use.
     Providers {
-        current: String,
+        current: Option<String>,
         providers: Vec<ProviderStatus>,
     },
     /// Every thread talks to this model from now on.
@@ -72,7 +72,7 @@ impl Command {
         match self {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
             Self::Model { name: None } => Ok(Answer::Providers {
-                current: runtime.model().name(),
+                current: runtime.model().map(|choice| choice.name()),
                 providers: model::check(runtime).await?,
             }),
             Self::Model { name: Some(name) } => {

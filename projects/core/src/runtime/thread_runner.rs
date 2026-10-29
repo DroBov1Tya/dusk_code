@@ -28,7 +28,8 @@ use crate::{
     live_config::LiveConfig,
     providers::{ModelEvent, ToolCall},
     state::{
-        Compaction, Message, PendingMessage, State, Task, ThreadTokens, Turn, estimate_tokens,
+        Compaction, LocalUnsent, Message, PendingMessage, State, Task, ThreadTokens, Turn,
+        estimate_tokens,
     },
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
@@ -67,6 +68,8 @@ pub struct ThreadSetup {
 pub struct ThreadInput {
     state: Arc<State>,
     config: Arc<LiveConfig>,
+    model: Arc<ModelChoice>,
+    events: mpsc::UnboundedSender<ThreadEvent>,
     thread_id: String,
     inputs: mpsc::UnboundedSender<Input>,
 }
@@ -79,6 +82,15 @@ pub struct ThreadOutput {
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum ThreadEvent {
+    /// The active model changed or was discovered after the thread opened.
+    ModelSelected {
+        name: String,
+        context_window: Option<u64>,
+    },
+    /// Saved locally, outside the model queue, until the client explicitly resends it.
+    LocalUnsent(LocalUnsent),
+    /// The selected provider could not answer, or no model is selected.
+    ProviderUnavailable,
     Queued {
         message_id: String,
     },
@@ -162,6 +174,8 @@ impl ThreadRunner {
         let input = ThreadInput {
             state: Arc::clone(&setup.state),
             config: Arc::clone(&setup.config),
+            model: Arc::clone(&setup.model),
+            events: events.clone(),
             thread_id: setup.thread_id.clone(),
             inputs: input_sender,
         };
@@ -216,6 +230,18 @@ impl ThreadRunner {
         // The client sees the context size before the first turn, too.
         self.agent.report_tokens().await;
         loop {
+            if self.agent.model.current().is_none() {
+                self.agent.emit(ThreadEvent::Idle);
+                if self.ends_when_idle {
+                    return Ok(());
+                }
+                match self.inbox.wait().await {
+                    None => return Ok(()),
+                    Some(Input::Cancel) => self.cancel_agents().await?,
+                    Some(_) => {}
+                }
+                continue;
+            }
             self.take_in().await?;
             self.run_queued().await?;
             if self.has_pending().await? {
@@ -367,6 +393,12 @@ impl ThreadInput {
             tokens <= limit,
             "the message is about {tokens} tokens, past the input limit of {limit}"
         );
+        if self.model.current().is_none() {
+            let message = self.state.add_local_unsent(&self.thread_id, &text).await?;
+            let _ = self.events.send(ThreadEvent::LocalUnsent(message));
+            let _ = self.events.send(ThreadEvent::ProviderUnavailable);
+            return Ok(());
+        }
         self.state.add_pending(&self.thread_id, &text).await?;
         // Stored either way: a thread that has just ended takes it in on its next start.
         let _ = self.inputs.send(input);

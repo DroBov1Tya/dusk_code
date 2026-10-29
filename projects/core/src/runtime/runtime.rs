@@ -8,7 +8,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use tokio::task::{JoinHandle, JoinSet};
 use tracing::{info, warn};
 
@@ -17,13 +17,15 @@ use super::{
     launcher::Launcher,
     mailboxes::Mailboxes,
     model_choice::{self, Choice, ModelChoice},
-    thread_runner::{ThreadInput, ThreadOutput, ThreadRunner},
+    thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner},
 };
 use crate::{
+    config::{ApiKey, ProviderConfig, ProviderKind},
     init::{self, create_private_dir},
     live_config::LiveConfig,
     paths::Paths,
-    state::{Message, State, Task, Thread},
+    providers::Provider,
+    state::{LocalUnsent, Message, State, Task, Thread},
     thread_start::start_thread,
 };
 
@@ -35,6 +37,7 @@ const AGENTS_STOP_WAIT: Duration = Duration::from_secs(5);
 pub struct Runtime {
     launcher: Launcher,
     config_check: JoinHandle<()>,
+    model_discovery: Option<JoinHandle<()>>,
     threads: Mutex<JoinSet<()>>,
 }
 
@@ -48,40 +51,74 @@ pub struct ThreadHandle {
 
 impl Runtime {
     /// Sets up missing files, opens the database and the config, and picks the first
-    /// configured provider and its first model. `state_db` replaces the default database
-    /// path. On a first start the config has no provider yet; the error says where to
-    /// add one.
+    /// saved model without a network request. `state_db` replaces the default database
+    /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
-        if init::initialize(&paths)?.config_created {
-            bail!(
-                "created {}; add a provider and restart",
-                paths.config_file().display()
-            );
-        }
+        init::initialize(&paths)?;
         let state = State::open(state_db.unwrap_or_else(|| paths.state_db())).await?;
         let config = Arc::new(LiveConfig::load(paths.config_file())?);
-        let named = config.current().model().map(str::to_owned);
-        let choice = match model_choice::pick(&config.current(), named.as_deref()).await {
+        let choice = match model_choice::configured(&config.current()) {
             Ok(choice) => choice,
-            // A chosen model that is gone or down does not keep the client from starting.
-            Err(error) if named.is_some() => {
-                warn!("cannot use the configured model: {error:#}");
-                model_choice::pick(&config.current(), None).await?
+            Err(error) => {
+                warn!("configured provider is unavailable: {error:#}");
+                None
             }
-            Err(error) => return Err(error),
         };
-        info!("model {}", choice.name());
+        if let Some(choice) = &choice {
+            info!("model {}", choice.name());
+        } else {
+            info!("no model selected; local history is available");
+        }
         let config_check = tokio::spawn(Arc::clone(&config).watch(CONFIG_CHECK_PERIOD));
         let launcher = Launcher {
             state: Arc::new(state),
-            model: Arc::new(ModelChoice::new(choice)),
-            config,
+            model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
+            config: Arc::clone(&config),
             paths,
             mailboxes: Arc::new(Mailboxes::default()),
+        };
+        let model_discovery = if !config.current().providers().is_empty() {
+            let config = Arc::clone(&config);
+            let model = Arc::clone(&launcher.model);
+            let mailboxes = Arc::clone(&launcher.mailboxes);
+            Some(tokio::spawn(async move {
+                let revision = model.revision();
+                let selected = if let Some(saved) = model.current() {
+                    model_choice::refresh(&saved)
+                        .await
+                        .map(|metadata| model.refresh_model(&saved, metadata))
+                } else {
+                    model_choice::pick(&config.current(), None)
+                        .await
+                        .map(|choice| {
+                            if model.set_if_empty_at_revision(choice, &revision) {
+                                model.current()
+                            } else {
+                                None
+                            }
+                        })
+                };
+                match selected {
+                    Ok(Some(selected)) => {
+                        for mailbox in mailboxes.lock().await.values() {
+                            mailbox.emit(ThreadEvent::ModelSelected {
+                                name: selected.name(),
+                                context_window: selected.model.context_window,
+                            });
+                            mailbox.send(Input::Sent);
+                        }
+                    }
+                    Ok(None) => {}
+                    Err(error) => warn!("model discovery is unavailable: {error:#}"),
+                }
+            }))
+        } else {
+            None
         };
         Ok(Self {
             launcher,
             config_check,
+            model_discovery,
             threads: Mutex::new(JoinSet::new()),
         })
     }
@@ -90,10 +127,36 @@ impl Runtime {
         &self.launcher.config
     }
 
-    /// The model every thread talks to.
     /// The model threads talk to now, as `provider/model` and its details.
-    pub fn model(&self) -> Choice {
+    pub fn model(&self) -> Option<Choice> {
         self.launcher.model.current()
+    }
+
+    /// Adds or replaces a provider in the private YAML config. A model can be chosen
+    /// separately through `/model`; saving this setting makes no network request.
+    pub fn connect_provider(
+        &self,
+        name: String,
+        base_url: String,
+        api_key: Option<String>,
+    ) -> Result<()> {
+        ensure!(!name.trim().is_empty(), "provider name must not be empty");
+        ensure!(
+            !name.contains('/') && !name.chars().any(char::is_control),
+            "provider name is invalid"
+        );
+        let provider = ProviderConfig {
+            kind: ProviderKind::OpenAiCompatible,
+            base_url,
+            api_key: ApiKey(api_key.unwrap_or_default()),
+            inline_tags: false,
+        };
+        let adapter = Arc::new(Provider::new(&provider)?);
+        self.launcher
+            .config
+            .update(|config| config.set_provider(name.clone(), provider))?;
+        self.launcher.model.replace_provider(&name, adapter);
+        Ok(())
     }
 
     /// Switches every thread to `choice` from its next model call, and keeps it in the
@@ -103,7 +166,18 @@ impl Runtime {
         self.launcher
             .config
             .update(|config| config.set_model(name))?;
-        self.launcher.model.set(choice);
+        self.launcher.model.set(choice.clone());
+        let mailboxes = Arc::clone(&self.launcher.mailboxes);
+        let selected = choice;
+        tokio::spawn(async move {
+            for mailbox in mailboxes.lock().await.values() {
+                mailbox.emit(ThreadEvent::ModelSelected {
+                    name: selected.name(),
+                    context_window: selected.model.context_window,
+                });
+                mailbox.send(Input::Sent);
+            }
+        });
         Ok(())
     }
 
@@ -125,6 +199,31 @@ impl Runtime {
     /// The whole history of a thread, compacted messages included, oldest first.
     pub async fn thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         self.launcher.state.list_messages(thread_id).await
+    }
+
+    /// Local messages waiting for an explicit resend. They are not model history.
+    pub async fn local_unsent(&self, thread_id: &str) -> Result<Vec<LocalUnsent>> {
+        self.launcher.state.local_unsent(thread_id).await
+    }
+
+    pub async fn add_local_unsent(&self, thread_id: &str, content: &str) -> Result<LocalUnsent> {
+        self.launcher
+            .state
+            .add_local_unsent(thread_id, content)
+            .await
+    }
+
+    /// Explicitly queue one local message. Never called during startup or recovery.
+    pub async fn resend_local_unsent(&self, thread_id: &str, id: &str) -> Result<()> {
+        ensure!(self.model().is_some(), "provider is unavailable");
+        self.launcher
+            .state
+            .promote_local_unsent(thread_id, id)
+            .await?;
+        if let Some(mailbox) = self.launcher.mailboxes.get(thread_id).await {
+            mailbox.send(Input::Sent);
+        }
+        Ok(())
     }
 
     /// The task board an agent keeps in a thread.
@@ -218,6 +317,9 @@ impl Runtime {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         self.config_check.abort();
+        if let Some(discovery) = self.model_discovery {
+            discovery.abort();
+        }
         self.launcher.state.close().await;
     }
 
