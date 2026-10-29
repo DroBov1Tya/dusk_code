@@ -21,7 +21,7 @@ use crate::{
     graph::{AGENT_FILE, Graph, Node},
     state::TurnStatus,
     thread_start::start_agent_thread,
-    tools::{Tool, ToolContext},
+    tools::{Progress, Tool, ToolContext},
 };
 
 /// A chat is at depth 0; an agent three levels down can no longer ask another.
@@ -66,7 +66,12 @@ impl AskAgent {
         }
     }
 
-    async fn ask(&self, arguments: AskAgentArguments, cwd: &Path) -> Result<String> {
+    async fn ask(
+        &self,
+        arguments: AskAgentArguments,
+        cwd: &Path,
+        progress: Option<Progress<'_>>,
+    ) -> Result<String> {
         ensure!(!arguments.task.trim().is_empty(), "task is empty");
         let agent = self
             .reachable()
@@ -87,14 +92,28 @@ impl AskAgent {
             self.launcher
                 .setup(&thread_id, cwd, &workspace, Some(&agent), self.depth + 1)?;
         let (runner, input, mut output) = ThreadRunner::new(setup);
+        if let Some(progress) = progress {
+            progress.emit(ThreadEvent::SubagentStarted {
+                call_id: progress.call_id.to_owned(),
+                thread_id: thread_id.clone(),
+                agent: agent.name.clone(),
+                task: arguments.task.clone(),
+            });
+        }
         input.send(arguments.task).await?;
         // The thread ends once its queue is done: this one message.
         drop(input);
         let last_turn = async {
             let mut finished = None;
             while let Some(event) = output.next_event().await {
-                if let ThreadEvent::TurnFinished(turn) = event {
-                    finished = Some(turn);
+                if let ThreadEvent::TurnFinished(turn) = &event {
+                    finished = Some(turn.clone());
+                }
+                if let Some(progress) = progress {
+                    progress.emit(ThreadEvent::Subagent {
+                        thread_id: thread_id.clone(),
+                        event: Box::new(event),
+                    });
                 }
             }
             finished
@@ -187,7 +206,7 @@ impl Tool for AskAgent {
         Box::pin(async move {
             let arguments: AskAgentArguments =
                 serde_json::from_value(arguments).context("invalid arguments")?;
-            self.ask(arguments, &cwd).await
+            self.ask(arguments, &cwd, context.progress).await
         })
     }
 }

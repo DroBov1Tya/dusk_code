@@ -22,7 +22,7 @@ use crate::{
         is_transient,
     },
     state::{CallPurpose, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
-    tools::{ToolRegistry, ToolScope},
+    tools::{Progress, ToolRegistry, ToolScope},
 };
 
 /// Bounds a model that keeps calling tools.
@@ -246,7 +246,12 @@ impl Agent {
                 Some(_) => "not run: the user interrupted the turn".to_owned(),
                 None => {
                     self.emit(ThreadEvent::ToolStarted(call.clone()));
-                    match inbox.race(self.tools.call(call, &self.scope, config)).await {
+                    let progress = Progress {
+                        call_id: &call.id,
+                        events: &self.events,
+                    };
+                    let called = self.tools.call(call, &self.scope, config, progress);
+                    match inbox.race(called).await {
                         Ok(result) => {
                             let content = result.content.clone();
                             self.emit(ThreadEvent::ToolFinished {

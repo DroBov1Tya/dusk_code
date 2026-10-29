@@ -110,6 +110,19 @@ pub enum ThreadEvent {
         tokens: u64,
         limit: u64,
     },
+    /// The tool call `call_id` gave `task` to `agent`, which works in thread `thread_id`.
+    SubagentStarted {
+        call_id: String,
+        thread_id: String,
+        agent: String,
+        task: String,
+    },
+    /// An event of a subagent's thread, while the call that asked it waits. A subagent's
+    /// own subagents come wrapped once more.
+    Subagent {
+        thread_id: String,
+        event: Box<ThreadEvent>,
+    },
     /// Nothing is running and nothing will start until the next message.
     Idle,
     /// The thread stopped on an error it could not handle, such as a database failure.

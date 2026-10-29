@@ -5,9 +5,10 @@ use std::{future::Future, pin::Pin};
 
 use anyhow::Result;
 use serde_json::Value;
+use tokio::sync::mpsc;
 
 use super::scope::ToolScope;
-use crate::config::Config;
+use crate::{config::Config, runtime::ThreadEvent};
 
 /// Boxed so tools of different kinds, built-in or MCP, fit in one registry.
 pub type BoxFuture<'a, String> = Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;
@@ -17,6 +18,22 @@ pub type BoxFuture<'a, String> = Pin<Box<dyn Future<Output = Result<String>> + S
 pub struct ToolContext<'a> {
     pub scope: &'a ToolScope,
     pub config: &'a Config,
+    /// The running call; `None` while tools are only described to the model.
+    pub progress: Option<Progress<'a>>,
+}
+
+/// Where a running call reports what happens inside it, such as a subagent at work.
+#[derive(Clone, Copy)]
+pub struct Progress<'a> {
+    pub call_id: &'a str,
+    pub events: &'a mpsc::UnboundedSender<ThreadEvent>,
+}
+
+impl Progress<'_> {
+    pub fn emit(&self, event: ThreadEvent) {
+        // A client that stopped listening does not stop the call.
+        let _ = self.events.send(event);
+    }
 }
 
 pub trait Tool: Send + Sync {

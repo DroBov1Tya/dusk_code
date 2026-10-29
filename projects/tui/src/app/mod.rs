@@ -63,9 +63,11 @@ pub struct TranscriptHit {
     pub index: usize,
 }
 
-/// Display data for an agent reported by a future core event source.
+/// A subagent the open thread asked, by the thread it works in.
 pub struct SubagentView {
-    pub id: String,
+    pub thread_id: String,
+    /// The agent it works as, from `agents/`.
+    pub agent: String,
     pub task: String,
     pub started_at: i64,
     pub finished_at: Option<i64>,
@@ -297,6 +299,8 @@ impl App {
                 self.turn_started_at = None;
                 self.output_samples.clear();
                 self.transcript.stop_running_tools();
+                // A stopped turn takes its subagents down with it.
+                self.finish_subagents(None);
                 match turn.status {
                     TurnStatus::Interrupted => self.transcript.notice("stopped", Tone::Info),
                     TurnStatus::Failed => {
@@ -345,6 +349,13 @@ impl App {
             )),
             ThreadEvent::Rejected { reason } => self.error(reason),
             ThreadEvent::Failed(error) => self.error(format!("thread stopped: {error}")),
+            ThreadEvent::SubagentStarted {
+                thread_id,
+                agent,
+                task,
+                ..
+            } => self.start_subagent(thread_id, agent, task),
+            ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
             ThreadEvent::Idle => {
                 self.turn_running = false;
                 self.activity = Activity::Idle;
@@ -352,6 +363,48 @@ impl App {
                 self.output_samples.clear();
             }
             _ => {}
+        }
+    }
+
+    /// A subagent's own thread shows only on its card; its output counts in the rate.
+    fn apply_subagent(&mut self, thread_id: &str, event: ThreadEvent) {
+        match event {
+            ThreadEvent::SubagentStarted {
+                thread_id,
+                agent,
+                task,
+                ..
+            } => self.start_subagent(thread_id, agent, task),
+            ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
+            ThreadEvent::Model(ModelEvent::Reasoning(text) | ModelEvent::Text(text)) => {
+                self.record_output(&text)
+            }
+            ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) => {
+                self.finish_subagents(Some(thread_id))
+            }
+            _ => {}
+        }
+    }
+
+    /// Asking the same thread again brings its card back to work.
+    fn start_subagent(&mut self, thread_id: String, agent: String, task: String) {
+        self.subagents.retain(|view| view.thread_id != thread_id);
+        self.subagents.push(SubagentView {
+            thread_id,
+            agent,
+            task,
+            started_at: now_ms(),
+            finished_at: None,
+        });
+    }
+
+    /// `None` finishes every subagent still at work.
+    fn finish_subagents(&mut self, thread_id: Option<&str>) {
+        let now = now_ms();
+        for agent in &mut self.subagents {
+            if agent.finished_at.is_none() && thread_id.is_none_or(|id| id == agent.thread_id) {
+                agent.finished_at = Some(now);
+            }
         }
     }
 

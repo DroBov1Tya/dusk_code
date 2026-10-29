@@ -56,7 +56,11 @@ pub fn temp_live_config_with(name: &str, settings: &str) -> LiveConfig {
 pub fn tool_context(scope: &ToolScope) -> ToolContext<'_> {
     static CONFIG: OnceLock<Config> = OnceLock::new();
     let config = CONFIG.get_or_init(|| Config::parse(TEST_CONFIG.as_bytes()).unwrap());
-    ToolContext { scope, config }
+    ToolContext {
+        scope,
+        config,
+        progress: None,
+    }
 }
 
 const TEST_CONFIG: &str = "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n";

@@ -14,7 +14,7 @@ use super::{
     theme::{
         EMBER, NIGHT, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL, VIOLET, bold, dusk, fg,
     },
-    transcript::spinner,
+    transcript::{one_line, spinner},
     wrap,
 };
 use crate::app::{App, compact_number, now_ms};
@@ -153,7 +153,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     let now = now_ms();
     let dots = spinner(app);
     for (index, agent) in app.subagents.iter().enumerate() {
-        let seed = identity(&agent.id);
+        let seed = identity(&agent.thread_id);
         let color = icon_color(seed);
         let icon = icon_lines(seed);
         let name = agent_name(seed);
@@ -163,25 +163,29 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
             .saturating_sub(agent.started_at)
             .max(0) as u64;
         let age = format_duration(elapsed);
+        // The random name stands out; the agent it works as and the task stay quiet.
+        let state = if agent.finished_at.is_some() {
+            "done"
+        } else {
+            dots
+        };
         lines.push(Line::from(vec![
             Span::styled(format!(" {} ", icon[0]), fg(color)),
-            Span::styled(wrap::clip(&name, width.saturating_sub(5)), bold(color)),
-            Span::styled(format!(" {age}"), fg(SIDEBAR_MUTED)),
+            Span::styled(wrap::clip(&agent.agent, width), fg(SIDEBAR_MUTED)),
         ]));
         lines.push(Line::from(vec![
             Span::styled(format!(" {} ", icon[1]), fg(color)),
-            Span::styled(wrap::clip(&agent.task, width), fg(SIDEBAR_MUTED)),
+            // Room left by the icon, the time and the dots.
+            Span::styled(
+                wrap::clip(&name, (area.width as usize).saturating_sub(19)),
+                bold(color),
+            ),
+            Span::styled(format!(" {age} "), fg(SIDEBAR_MUTED)),
+            Span::styled(state, fg(SUN)),
         ]));
         lines.push(Line::from(vec![
             Span::styled(format!(" {} ", icon[2]), fg(color)),
-            Span::styled(
-                if agent.finished_at.is_some() {
-                    "done"
-                } else {
-                    dots
-                },
-                fg(SUN),
-            ),
+            Span::styled(wrap::clip(&one_line(&agent.task), width), fg(SIDEBAR_FG)),
         ]));
         if index + 1 < app.subagents.len() {
             lines.push(Line::default());
@@ -258,9 +262,9 @@ fn agent_name(seed: u64) -> String {
         "Aster", "Beryl", "Cinder", "Dapple", "Ember", "Fable", "Glint", "Hollow",
     ];
     format!(
-        "{}-{:04x}",
+        "{}-{:02x}",
         NAMES[(seed as usize) % NAMES.len()],
-        (seed >> 24) & 0xffff
+        (seed >> 24) & 0xff
     )
 }
 
