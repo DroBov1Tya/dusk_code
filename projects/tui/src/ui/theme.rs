@@ -19,6 +19,8 @@ pub const GLOW: Color = Color::Rgb(44, 40, 60);
 pub const SELECTED: Color = Color::Rgb(78, 66, 112);
 /// A quiet contrast for the full-height statistics rail.
 pub const SIDEBAR_BG: Color = Color::Rgb(38, 35, 52);
+/// Behind the message box, so it stands apart from the transcript.
+pub const INPUT_BG: Color = Color::Rgb(30, 27, 42);
 pub const SIDEBAR_FG: Color = Color::Rgb(230, 224, 240);
 pub const SIDEBAR_MUTED: Color = Color::Rgb(165, 157, 187);
 pub const SIDEBAR_EDGE: Color = Color::Rgb(107, 96, 132);
