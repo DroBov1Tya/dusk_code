@@ -1,12 +1,12 @@
-//! Panels shown over the transcript: threads to open, switches for tools and skills, and
-//! the keys.
+//! Panels shown over the transcript: threads to open with a preview of each, switches
+//! for tools and skills, and the keys.
 
 use std::path::Path;
 
 use dusk_core::{
     config::Config,
     graph::{Graph, SKILL_FILE},
-    state::Thread,
+    state::{Message, MessageRole, Thread},
 };
 
 pub enum Panel {
@@ -18,6 +18,33 @@ pub enum Panel {
 pub struct ThreadList {
     pub threads: Vec<Thread>,
     pub selected: usize,
+    /// The selected thread at a glance, once loaded.
+    pub preview: Option<Preview>,
+}
+
+/// What a thread is about without its whole history: how it began and how it stands.
+pub struct Preview {
+    pub thread_id: String,
+    /// User messages and answers with text, oldest first.
+    pub messages: Vec<(MessageRole, String)>,
+    pub tool_calls: usize,
+}
+
+impl Preview {
+    pub fn new(thread_id: String, history: &[Message]) -> Self {
+        let messages = history
+            .iter()
+            .filter(|message| matches!(message.role, MessageRole::User | MessageRole::Assistant))
+            .filter(|message| !message.content.trim().is_empty())
+            .map(|message| (message.role, message.content.clone()))
+            .collect();
+        let tool_calls = history.iter().map(|message| message.tool_calls.len()).sum();
+        Self {
+            thread_id,
+            messages,
+            tool_calls,
+        }
+    }
 }
 
 pub struct SettingList {

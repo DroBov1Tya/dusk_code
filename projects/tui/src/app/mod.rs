@@ -23,7 +23,7 @@ use dusk_core::{
 use ratatui::layout::Rect;
 
 pub use input::Input;
-pub use panels::{Panel, SettingKind, SettingList, ThreadList};
+pub use panels::{Panel, Preview, SettingKind, SettingList, ThreadList};
 pub use transcript::{Entry, Tone, Transcript};
 
 /// What the session does for the app.
@@ -37,6 +37,16 @@ pub enum Action {
     OpenThread(String),
     NewThread,
     Copy(String),
+    /// Load the thread the threads panel points at, for its preview.
+    Preview(String),
+}
+
+/// Commands the client runs itself; the core never sees them.
+pub const CLIENT_COMMANDS: &[(&str, &str)] = &[("/resume", "open an earlier thread")];
+
+/// Every command the box offers: the core's and the client's.
+pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)> {
+    dusk_core::commands::COMMANDS.iter().chain(CLIENT_COMMANDS)
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -477,6 +487,9 @@ impl App {
         let text = self.input.take();
         self.sent.push(text.clone());
         self.recall = None;
+        if text.trim() == "/resume" {
+            return Action::ShowThreads;
+        }
         self.scroll = 0;
         if dusk_core::commands::parse(&text).is_some() {
             self.transcript.notice(text.trim().to_owned(), Tone::Info);

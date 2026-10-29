@@ -1,7 +1,6 @@
 //! The bottom of the screen: a rule that tells what the agent is doing and how full the
 //! context is, then the message being typed. Typing `/` lists the commands.
 
-use dusk_core::commands::COMMANDS;
 use ratatui::{
     Frame,
     layout::{Position, Rect},
@@ -14,7 +13,7 @@ use super::{
     theme::{EMBER, HAZE, HORIZON_DARK, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, fg, thought},
     transcript::spinner,
 };
-use crate::app::{Activity, App, Focus};
+use crate::app::{Activity, App, Focus, commands};
 
 const MAX_ROWS: usize = 8;
 const PROMPT: &str = " \u{203A} ";
@@ -72,8 +71,7 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
     if !text.starts_with('/') || text.contains(char::is_whitespace) {
         return;
     }
-    let matching: Vec<_> = COMMANDS
-        .iter()
+    let matching: Vec<_> = commands()
         .filter(|(name, _)| name.starts_with(text))
         .collect();
     if matching.is_empty() {
