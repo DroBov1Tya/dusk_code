@@ -21,13 +21,14 @@ use super::{
     },
     wrap,
 };
-use crate::app::{App, Panel, SettingKind, SettingList, ThreadList};
+use crate::app::{App, Panel, SettingKind, SettingList, ThreadList, paste};
 
-const KEYS: [(&str, &str); 20] = [
+const KEYS: [(&str, &str); 21] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
     ("Ctrl+J", "new line"),
+    ("Ctrl+E", "open the pasted text at the cursor to edit it"),
     ("Up / Down", "earlier messages you sent"),
     ("Tab", "walk thinking, tools and summaries"),
     ("Enter / Space", "fold or unfold the selected one"),
@@ -207,7 +208,7 @@ fn preview(list: &ThreadList, width: usize, height: usize) -> Vec<Line<'static>>
 fn message_lines((role, text): &(MessageRole, String), width: usize) -> Vec<Line<'static>> {
     let (mut lines, limit) = match role {
         MessageRole::User => {
-            let lines = text
+            let lines = paste::labelled(text)
                 .lines()
                 .flat_map(|line| wrap::words(vec![Span::raw(line.to_owned())], width - 3, 0))
                 .map(|spans| {

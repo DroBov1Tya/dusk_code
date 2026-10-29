@@ -28,6 +28,7 @@ providers:
 
 - Threads survive crashes: messages and tool calls are stored before they are acted on.
 - Messages can be queued while the agent works, or sent at once, interrupting it.
+- A paste over 1500 characters shows as one chip in the box and as a folded block in the thread; the model gets it whole, in `<pasted>` tags.
 - `/compact` and automatic compaction at 80% of the input limit; old messages stay readable with `read_history`.
 - Input and output token limits per model call, enforced locally.
 - Subagents: `ask_agent` hands a task to an agent in a thread of its own. The built-in `general` agent needs no setup; others are `agents/**/AGENT.md` files.
@@ -74,6 +75,7 @@ You review code...
 | Tab, click | open or close thinking, tool calls, summaries |
 | drag | select text and copy it |
 | hover | `copy` a message, `edit` one you sent |
+| Ctrl+E, click | open a pasted text in the box to edit it |
 | Ctrl+T or `/resume` | threads, with a preview of the selected one |
 | Ctrl+N | new thread |
 | Ctrl+O | switch tools and skills |

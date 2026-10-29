@@ -22,6 +22,7 @@ use super::{
 };
 use crate::app::{
     App, Button, ButtonHit, Entry, Focus, TEXT_COLUMN, Tone, TranscriptHit, compact_number,
+    paste::{self, Part},
 };
 
 /// Lines of a tool result shown when it is open.
@@ -53,9 +54,17 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     app.scroll = app.scroll.min(app.max_scroll);
     let top = total.saturating_sub(height + app.scroll);
     for (index, &start) in starts.iter().enumerate() {
-        if app.transcript.is_foldable(index) && start >= top && start < top + height {
+        if !app.transcript.is_foldable(index) {
+            continue;
+        }
+        // A folded entry opens from its header; a message with a paste, from any row.
+        let end = match app.transcript.entries[index] {
+            Entry::User { .. } => starts.get(index + 1).copied().unwrap_or(total),
+            _ => start + 1,
+        };
+        for line in start.max(top)..end.min(top + height) {
             app.transcript_hits.push(TranscriptHit {
-                row: area.y + (start - top) as u16,
+                row: area.y + (line - top) as u16,
                 left: area.x,
                 right: area.right(),
                 index,
@@ -120,7 +129,7 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     };
     let offered: &[(Button, &str, Color)] = match app.transcript.entries.get(index) {
-        Some(Entry::User(_)) => &[
+        Some(Entry::User { .. }) => &[
             (Button::Edit, " edit ", ROSE),
             (Button::Copy, " copy ", TEAL),
         ],
@@ -184,16 +193,42 @@ fn layout(app: &App, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
     (lines, starts)
 }
 
+/// A sent message behind its bar; each pasted block is one line until opened.
+fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
+    let bar = || Span::styled(format!(" {USER_BAR} "), fg(ROSE));
+    let mut lines = Vec::new();
+    for part in paste::split(text) {
+        match part {
+            Part::Text(text) => lines.extend(
+                text.trim_matches('\n')
+                    .lines()
+                    .flat_map(|line| wrap::words(vec![Span::raw(line.to_owned())], width, 0))
+                    .map(|spans| Line::from([vec![bar()], spans].concat())),
+            ),
+            Part::Pasted(pasted) => {
+                lines.push(Line::from(vec![
+                    bar(),
+                    Span::styled(format!("{} ", fold_mark(open)), fg(TEAL)),
+                    Span::styled(paste::label(pasted), fg(TEAL)),
+                ]));
+                if open {
+                    let gutter = || Span::styled(format!("{GUTTER} "), dim());
+                    lines.extend(
+                        plain(pasted, width.saturating_sub(2), Style::new())
+                            .into_iter()
+                            .map(|line| Line::from([vec![bar(), gutter()], line.spans].concat())),
+                    );
+                }
+            }
+        }
+    }
+    lines
+}
+
 /// `live` is set while the entry is still being written.
 fn entry_lines(entry: &Entry, width: usize, live: Option<&App>) -> Vec<Line<'static>> {
     match entry {
-        Entry::User(text) => {
-            let bar = || Span::styled(format!(" {USER_BAR} "), fg(ROSE));
-            text.lines()
-                .flat_map(|line| wrap::words(vec![Span::raw(line.to_owned())], width, 0))
-                .map(|spans| Line::from([vec![bar()], spans].concat()))
-                .collect()
-        }
+        Entry::User { text, open } => user(text, *open, width),
         Entry::Answer(text) => indent(markdown::render(text.trim_end(), width), "   "),
         Entry::Reasoning { text, open } => {
             let marker = live.map_or(fold_mark(*open), |app| spinner(app));

@@ -5,6 +5,7 @@
 mod input;
 mod keys;
 mod panels;
+pub mod paste;
 mod transcript;
 
 use std::{
@@ -80,6 +81,14 @@ pub enum Button {
     Copy,
     /// Puts a sent message back into the box.
     Edit,
+}
+
+/// A paste chip in the message box on the last drawn frame.
+pub struct ChipHit {
+    pub row: u16,
+    pub left: u16,
+    pub right: u16,
+    pub index: usize,
 }
 
 /// Text marked with the mouse, as (transcript line, screen column) at both ends.
@@ -159,6 +168,7 @@ pub struct App {
     pub mcp_max_scroll: usize,
     pub transcript_hits: Vec<TranscriptHit>,
     pub button_hits: Vec<ButtonHit>,
+    pub input_chips: Vec<ChipHit>,
     /// The entry under the mouse, which shows its buttons.
     pub hover: Option<usize>,
     pub selection: Option<Selection>,
@@ -222,6 +232,7 @@ impl App {
             mcp_max_scroll: 0,
             transcript_hits: Vec::new(),
             button_hits: Vec::new(),
+            input_chips: Vec::new(),
             hover: None,
             selection: None,
             drawn_text: Vec::new(),
@@ -494,7 +505,10 @@ impl App {
         if dusk_core::commands::parse(&text).is_some() {
             self.transcript.notice(text.trim().to_owned(), Tone::Info);
         } else {
-            self.transcript.push(Entry::User(text.clone()));
+            self.transcript.push(Entry::User {
+                text: text.clone(),
+                open: false,
+            });
         }
         if now {
             Action::SendNow(text)

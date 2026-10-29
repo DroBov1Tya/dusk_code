@@ -10,21 +10,24 @@ use ratatui::{
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
-    theme::{EMBER, HAZE, HORIZON_DARK, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, fg, thought},
+    theme::{
+        EMBER, GLOW, HAZE, HORIZON_DARK, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, fg, thought,
+    },
     transcript::spinner,
+    wrap,
 };
-use crate::app::{Activity, App, Focus, commands};
+use crate::app::{Activity, App, ChipHit, Focus, Input, commands, paste};
 
 const MAX_ROWS: usize = 8;
 const PROMPT: &str = " \u{203A} ";
 
 /// Rows the box needs: the rule and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
-    let (rows, _) = layout(&app.input.text, app.input.cursor, text_width(width));
+    let (rows, _) = layout(&app.input, text_width(width));
     rows.len().clamp(1, MAX_ROWS) as u16 + 1
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
+pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     let rule = Rect { height: 1, ..area };
     frame.render_widget(Paragraph::new(status(app, area.width as usize)), rule);
     let text_area = Rect {
@@ -32,6 +35,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         height: area.height - 1,
         ..area
     };
+    app.input_chips.clear();
     let width = text_width(area.width);
     let prompt = Span::styled(PROMPT, bold(ROSE));
     if app.input.text.is_empty() {
@@ -45,21 +49,27 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         show_cursor(frame, app, text_area, (0, 0));
         return;
     }
-    let (rows, cursor) = layout(&app.input.text, app.input.cursor, width);
+    let (rows, cursor) = layout(&app.input, width);
     let skip = (cursor.1 + 1).saturating_sub(text_area.height as usize);
-    let lines: Vec<Line> = rows
-        .into_iter()
-        .enumerate()
-        .skip(skip)
-        .map(|(row, text)| {
-            let lead = if row == 0 {
-                prompt.clone()
-            } else {
-                Span::raw("   ")
-            };
-            Line::from(vec![lead, Span::raw(text)])
-        })
-        .collect();
+    let left = text_area.x + PROMPT.width() as u16;
+    let mut lines = Vec::new();
+    for (row, shown) in rows.into_iter().enumerate().skip(skip) {
+        let y = text_area.y + (row - skip) as u16;
+        for &(from, to, index) in &shown.chips {
+            app.input_chips.push(ChipHit {
+                row: y,
+                left: left + from as u16,
+                right: left + to as u16,
+                index,
+            });
+        }
+        let lead = if row == 0 {
+            prompt.clone()
+        } else {
+            Span::raw("   ")
+        };
+        lines.push(Line::from([vec![lead], shown.spans].concat()));
+    }
     frame.render_widget(Paragraph::new(lines), text_area);
     show_cursor(frame, app, text_area, (cursor.0, cursor.1 - skip));
 }
@@ -163,32 +173,71 @@ fn text_width(width: u16) -> usize {
     (width as usize).saturating_sub(PROMPT.width() + 1).max(1)
 }
 
-/// The text broken into rows of `width` columns, and the cursor as (column, row).
-fn layout(text: &str, cursor: usize, width: usize) -> (Vec<String>, (usize, usize)) {
-    let mut rows = vec![String::new()];
-    let mut column = 0;
+/// A row of the box: its spans, and where its chips are as (from, to, paste index).
+#[derive(Default)]
+struct Row {
+    spans: Vec<Span<'static>>,
+    chips: Vec<(usize, usize, usize)>,
+    plain: String,
+    width: usize,
+}
+
+impl Row {
+    fn flush(&mut self) {
+        if !self.plain.is_empty() {
+            self.spans.push(Span::raw(std::mem::take(&mut self.plain)));
+        }
+    }
+}
+
+/// The text broken into rows of `width` columns, chips drawn as their labels, and the
+/// cursor as (column, row).
+fn layout(input: &Input, width: usize) -> (Vec<Row>, (usize, usize)) {
+    let mut rows = vec![Row::default()];
     let mut at = (0, 0);
-    for (offset, c) in text.char_indices() {
-        if offset == cursor {
-            at = (column, rows.len() - 1);
+    for (offset, c) in input.text.char_indices() {
+        if offset == input.cursor {
+            at = (rows.last().map_or(0, |row| row.width), rows.len() - 1);
         }
         if c == '\n' {
-            rows.push(String::new());
-            column = 0;
+            rows.push(Row::default());
             continue;
         }
-        let char_width = c.width().unwrap_or(0);
-        if column + char_width > width {
-            rows.push(String::new());
-            column = 0;
+        let chip = paste::chip_index(c).and_then(|index| {
+            let pasted = input.pastes.get(index)?;
+            Some((
+                index,
+                wrap::clip(&format!("[{}]", paste::label(pasted)), width),
+            ))
+        });
+        let char_width = match &chip {
+            Some((_, label)) => label.width(),
+            None => c.width().unwrap_or(0),
+        };
+        if rows
+            .last()
+            .is_some_and(|row| row.width + char_width > width)
+        {
+            rows.push(Row::default());
         }
-        if let Some(row) = rows.last_mut() {
-            row.push(c);
+        let Some(row) = rows.last_mut() else {
+            continue;
+        };
+        match chip {
+            Some((index, label)) => {
+                row.flush();
+                row.chips.push((row.width, row.width + char_width, index));
+                row.spans.push(Span::styled(label, fg(TEAL).bg(GLOW)));
+            }
+            None => row.plain.push(c),
         }
-        column += char_width;
+        row.width += char_width;
     }
-    if cursor >= text.len() {
-        at = (column, rows.len() - 1);
+    if input.cursor >= input.text.len() {
+        at = (rows.last().map_or(0, |row| row.width), rows.len() - 1);
+    }
+    for row in &mut rows {
+        row.flush();
     }
     (rows, at)
 }
