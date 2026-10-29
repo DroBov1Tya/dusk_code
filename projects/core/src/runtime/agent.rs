@@ -203,6 +203,13 @@ impl Agent {
                 self.emit(ThreadEvent::OutputLimitReached { limit });
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }
+            // The connection broke after the model wrote something: what it wrote stays in
+            // the thread, so the next turn can go on from it.
+            Ok(Err(error)) if !answer.content.trim().is_empty() => {
+                let error = format!("{error:#}");
+                self.emit(ThreadEvent::AnswerCut { error });
+                return Ok(StepEnd::Answered(interrupted(answer)));
+            }
             Ok(Err(error)) => {
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
             }

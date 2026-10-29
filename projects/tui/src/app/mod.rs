@@ -441,6 +441,9 @@ impl App {
                     .push(Entry::from_agent(from, message.content));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::AnswerCut { error } => self.error(format!(
+                "the answer broke off ({error}); what it wrote is kept"
+            )),
             ThreadEvent::Idle => {
                 self.turn_running = false;
                 self.activity = Activity::Idle;

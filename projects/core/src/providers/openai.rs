@@ -440,6 +440,11 @@ impl CompletionParser {
                 break;
             }
             if data == DONE_MARKER {
+                // Some servers end with [DONE] alone; it still means the answer is whole.
+                if !self.finish_seen {
+                    self.finish_seen = true;
+                    events.push(ModelEvent::Finished(FinishReason::Stop));
+                }
                 self.finish()?;
                 break;
             }
@@ -448,7 +453,8 @@ impl CompletionParser {
         Ok(events)
     }
 
-    /// The model is done once it reported a finish reason; `[DONE]` or EOF alone is a cut stream.
+    /// The model is done once it reported a finish reason or `[DONE]`; EOF before either is
+    /// a cut stream.
     fn finish(&mut self) -> Result<()> {
         self.done = true;
         if !self.finish_seen {
@@ -624,16 +630,19 @@ mod tests {
     }
 
     #[test]
-    fn cut_stream_is_an_error() {
+    fn a_stream_ends_with_a_finish_reason_or_done_and_not_with_eof() {
         let mut parser = CompletionParser::default();
         parser
             .feed(chunk(r#"{"content":"partial"}"#).as_bytes())
             .unwrap();
-        assert!(parser.finish().is_err());
-        assert!(
-            CompletionParser::default()
-                .feed(b"data: [DONE]\n\n")
-                .is_err()
+        assert!(parser.finish().is_err(), "EOF before the end is a cut");
+
+        let mut parser = CompletionParser::default();
+        let body = format!("{}data: [DONE]\n\n", chunk(r#"{"content":"whole"}"#));
+        let events = parser.feed(body.as_bytes()).unwrap();
+        assert_eq!(
+            events.last(),
+            Some(&ModelEvent::Finished(FinishReason::Stop))
         );
     }
 

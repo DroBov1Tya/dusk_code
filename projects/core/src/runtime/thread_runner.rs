@@ -105,6 +105,11 @@ pub enum ThreadEvent {
     OutputLimitReached {
         limit: u64,
     },
+    /// The model's answer broke off, such as on a dropped connection; the turn ends with
+    /// what it wrote.
+    AnswerCut {
+        error: String,
+    },
     /// The model is summarizing the context; its text streams as `Model` events.
     CompactionStarted,
     CompactionFinished(Compaction),
@@ -405,6 +410,8 @@ mod tests {
         Done,
         /// The call fails before any output, in a way worth retrying.
         Fail,
+        /// The connection drops where this step stands.
+        Break,
     }
 
     struct FakeStream {
@@ -461,6 +468,7 @@ mod tests {
                     }
                     Some(Step::Hang) => std::future::pending().await,
                     Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
+                    Some(Step::Break) => return Err(Transient("connection reset".into()).into()),
                     Some(Step::Fail) | None => None,
                 })
             })
@@ -779,6 +787,30 @@ mod tests {
             1,
             "no second turn"
         );
+    }
+
+    #[tokio::test]
+    async fn an_answer_cut_off_keeps_what_was_written() {
+        let state = thread_state("answer_cut").await;
+        let config = live_config("runner_config");
+        let provider = provider(vec![vec![Step::Text("half an answer"), Step::Break]]);
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        input.send("tell me").await.unwrap();
+        drop(input);
+
+        runner.run().await;
+
+        let mut cut = false;
+        while let Some(event) = output.next_event().await {
+            cut |= matches!(event, ThreadEvent::AnswerCut { .. });
+        }
+        assert!(cut, "the client hears why the answer stopped");
+        let turn = state.list_messages("thread").await.unwrap();
+        assert_eq!(
+            turn.last().map(|message| message.content.as_str()),
+            Some("half an answer")
+        );
+        assert_eq!(state.count_turns("thread").await.unwrap(), 1);
     }
 
     #[tokio::test]
