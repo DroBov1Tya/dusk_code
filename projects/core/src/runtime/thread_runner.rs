@@ -26,7 +26,9 @@ use crate::{
     chat::commands,
     live_config::LiveConfig,
     providers::{ModelEvent, ToolCall},
-    state::{Compaction, Message, PendingMessage, State, ThreadTokens, Turn, estimate_tokens},
+    state::{
+        Compaction, Message, PendingMessage, State, Task, ThreadTokens, Turn, estimate_tokens,
+    },
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
@@ -134,6 +136,8 @@ pub enum ThreadEvent {
         thread_id: String,
         event: Box<ThreadEvent>,
     },
+    /// The thread's task board changed: every task with its steps.
+    Tasks(Vec<Task>),
     /// Another agent wrote to this thread; the message has joined it.
     FromAgent(Message),
     /// Nothing is running and nothing will start until the next message.

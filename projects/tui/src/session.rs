@@ -267,6 +267,7 @@ async fn resume(runtime: &Runtime, app: &mut App, thread_id: &str) -> Result<Ope
         .resume_thread(thread_id, &env::current_dir()?)
         .await?;
     app.open(Some(thread_id.to_owned()), title, &history);
+    app.tasks = runtime.thread_tasks(thread_id).await?;
     Ok(OpenThread {
         handle,
         ended: false,

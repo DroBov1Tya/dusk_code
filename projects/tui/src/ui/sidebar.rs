@@ -13,7 +13,8 @@ use ratatui::{
 use super::{
     loader::{Loader, agent_name, identity},
     theme::{
-        EMBER, NIGHT, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL, VIOLET, bold, dusk, fg,
+        DONE, DOT, EMBER, NIGHT, OFF, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL, VIOLET,
+        bold, dusk, fg,
     },
     transcript::one_line,
     wrap,
@@ -39,6 +40,16 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
         app,
     );
     let mut y = area.y + stats_height;
+    if !app.tasks.is_empty() && y < area.bottom() {
+        let lines = task_lines(app, area.width.saturating_sub(4) as usize);
+        let remaining = area.bottom() - y;
+        // The board takes what it needs, up to half of what is left.
+        let height = (lines.len() as u16 + 2)
+            .min(remaining.div_ceil(2).max(3))
+            .min(remaining);
+        tasks(frame, Rect { y, height, ..area }, lines);
+        y += height;
+    }
     let agents_active = !app.subagents.is_empty();
     let mcp_active = !app.active_mcp.is_empty();
     if agents_active && y < area.bottom() {
@@ -138,6 +149,62 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
         .border_type(BorderType::Rounded)
         .border_style(fg(NIGHT))
         .title(Line::from(Span::styled(" statistics ", bold(VIOLET))));
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .block(block),
+        area,
+    );
+}
+
+/// The agent's board: each task with how many steps are done, and the steps of the ones
+/// still open.
+fn task_lines(app: &App, width: usize) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let (open, done): (Vec<_>, Vec<_>) = app.tasks.iter().partition(|task| !task.done);
+    for task in open.into_iter().chain(done) {
+        let finished = task.items.iter().filter(|item| item.done).count();
+        let (mark, color) = if task.done { (DONE, TEAL) } else { (OFF, SUN) };
+        let count = format!(" {finished}/{}", task.items.len());
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {mark} "), fg(color)),
+            Span::styled(
+                wrap::clip(&task.description, width.saturating_sub(count.len() + 3)),
+                if task.done {
+                    fg(SIDEBAR_MUTED)
+                } else {
+                    bold(SIDEBAR_FG)
+                },
+            ),
+            Span::styled(count, fg(SIDEBAR_MUTED)),
+        ]));
+        if task.done {
+            continue;
+        }
+        for item in &task.items {
+            let (mark, color) = if item.done {
+                (DONE, TEAL)
+            } else {
+                (DOT, SIDEBAR_MUTED)
+            };
+            lines.push(Line::from(vec![
+                Span::styled(format!("   {mark} "), fg(color)),
+                Span::styled(
+                    wrap::clip(&item.description, width.saturating_sub(5)),
+                    fg(if item.done { SIDEBAR_MUTED } else { SIDEBAR_FG }),
+                ),
+            ]));
+        }
+    }
+    lines
+}
+
+fn tasks(frame: &mut Frame, area: Rect, lines: Vec<Line<'static>>) {
+    let block = Block::bordered()
+        .style(Style::new().bg(SIDEBAR_BG))
+        .border_type(BorderType::Rounded)
+        .border_style(fg(NIGHT))
+        .title(Line::from(Span::styled(" tasks ", bold(SUN))));
     frame.render_widget(
         Paragraph::new(lines)
             .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))

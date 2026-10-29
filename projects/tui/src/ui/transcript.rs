@@ -369,10 +369,7 @@ fn tool(
     };
     let name = Span::styled(call.name.clone(), bold(TEAL));
     let room = width.saturating_sub(call.name.len() + status.width() + 6);
-    let arguments = Span::styled(
-        format!("  {}  ", wrap::clip(&preview(&call.arguments), room)),
-        dim(),
-    );
+    let arguments = Span::styled(format!("  {}  ", wrap::clip(&preview(call), room)), dim());
     let header = Line::from(vec![mark, name, arguments, status]);
     folded(header, open, || {
         let gutter = format!("   {GUTTER} ");
@@ -516,11 +513,20 @@ fn welcome(frame: &mut Frame, area: Rect) {
 }
 
 /// What a tool call is about, in a few words: its command or path when it has one.
-fn preview(arguments: &serde_json::Value) -> String {
+fn preview(call: &ToolCall) -> String {
+    let arguments = &call.arguments;
     let text = |key: &str| arguments.get(key).and_then(|value| value.as_str());
-    if let Some(task) = text("task") {
-        let agent = text("agent").unwrap_or("general");
-        return format!("{agent}: {}", one_line(task));
+    match call.name.as_str() {
+        "ask_agent" => {
+            let agent = text("thread").or(text("agent")).unwrap_or("general");
+            return format!("{agent}: {}", one_line(text("task").unwrap_or_default()));
+        }
+        "tasks" => {
+            let action = text("action").unwrap_or_default();
+            let about = text("task").or(text("id")).unwrap_or_default();
+            return one_line(&format!("{action} {about}"));
+        }
+        _ => {}
     }
     for key in ["command", "path", "search", "name"] {
         if let Some(value) = text(key) {

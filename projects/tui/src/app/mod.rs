@@ -22,7 +22,7 @@ use dusk_core::{
     live_config::LiveConfig,
     providers::ModelEvent,
     runtime::ThreadEvent,
-    state::{Message, ThreadTokens, TurnStatus},
+    state::{Message, Task, ThreadTokens, TurnStatus},
 };
 use ratatui::layout::Rect;
 
@@ -180,6 +180,8 @@ pub struct App {
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
     pub subagents: Vec<SubagentView>,
+    /// The agent's task board in the open thread.
+    pub tasks: Vec<Task>,
     pub active_mcp: Vec<String>,
     pub turn_started_at: Option<i64>,
     pub last_turn_duration_ms: Option<u64>,
@@ -241,6 +243,7 @@ impl App {
             quit_armed: None,
             command_popup: None,
             subagents: Vec::new(),
+            tasks: Vec::new(),
             active_mcp: Vec::new(),
             turn_started_at: None,
             last_turn_duration_ms: None,
@@ -280,6 +283,7 @@ impl App {
         self.agent_max_scroll = 0;
         self.mcp_max_scroll = 0;
         self.subagents.clear();
+        self.tasks.clear();
         self.active_mcp.clear();
         self.turn_started_at = None;
         self.last_turn_duration_ms = None;
@@ -436,6 +440,7 @@ impl App {
                 self.transcript
                     .push(Entry::from_agent(from, message.content));
             }
+            ThreadEvent::Tasks(tasks) => self.tasks = tasks,
             ThreadEvent::Idle => {
                 self.turn_running = false;
                 self.activity = Activity::Idle;
