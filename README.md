@@ -1,10 +1,9 @@
 # dusk_code
 
-An AI agent system in Rust. All logic lives in one core library, `dusk_core`; front ends are thin clients over it, as Linux distributions are over one kernel: `dusk`, a full-screen terminal client, and `dusk_code`, a line-based one for scripts.
+An AI agent system in Rust. All logic lives in one core library, `dusk_core`; front ends are thin clients over it, as Linux distributions are over one kernel. The first is `dusk`, a full-screen terminal client.
 
 ```sh
 cargo run                  # dusk, the full-screen client
-cargo run -p dusk_code     # the line-based client
 cargo test --workspace
 ```
 
@@ -64,10 +63,6 @@ projects/
             openai.rs        OpenAI-compatible client and stream parser
             inline_tags.rs   <think> and <tool_call> tags in text -> ModelEvents
             sse.rs           bounded Server-Sent Events decoder
-    cli/src/                 dusk_code binary
-        main.rs, app.rs      starts the runtime, opens or lists threads, shuts down
-        chat.rs              line-based chat: `text` queues, `!text` sends now, `!` stops
-        commands.rs          `:tools`, `:skills`, `:on <name>`, `:off <name>`, `:reload`
     tui/src/                 dusk binary: the full-screen client
         main.rs, args.rs     starts the runtime and takes the screen
         session.rs           the loop: keys, thread events, opening and closing threads
@@ -167,9 +162,9 @@ tools:              # every tool is on unless switched off
   run_command: false
 ```
 
-The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as `:off run_command` are written to disk atomically and applied in memory, and a background check re-reads the file within a minute of a hand edit (`:reload` does it at once). A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
+The core loads the config once into `LiveConfig`: readers take a snapshot, changes such as switching `run_command` off are written to disk atomically and applied in memory, and a background check re-reads the file within a minute of a hand edit. A broken file is reported and the last good config stays in use. A rewrite keeps only the core's own header comment. Each agent step takes a fresh snapshot, so switches apply from the next step; a switched-off tool is neither offered to the model nor run.
 
-The CLI uses the first provider and its first catalogue model and starts a new thread per run. `--threads` lists the threads, `--thread ID` continues one after printing its history, and `--state-db PATH` overrides the database location.
+`dusk` uses the first provider and its first catalogue model. `--thread ID` opens a thread instead of a new one, and `--state-db PATH` overrides the database location.
 
 ## Subagents
 
@@ -200,7 +195,7 @@ links: [git/release-notes, git/changelog]  # skills this one leads to
 Steps the agent follows...
 ```
 
-The core reads the tree on every step, so new and edited skills apply at once, and builds the graph itself: broken files and links to missing skills are listed by `:skills` and never shown to the model. The model sees the entry skills in the description of `load_skill`; loading a skill returns its instructions and the skills it links to, so the model walks the graph one step at a time instead of reading every skill up front. A switched-off skill is hidden everywhere. Skills are switched like tools, in the `skills:` section or with `:on` and `:off`.
+The core reads the tree on every step, so new and edited skills apply at once, and builds the graph itself: broken files and links to missing skills are left out and never shown to the model. The model sees the entry skills in the description of `load_skill`; loading a skill returns its instructions and the skills it links to, so the model walks the graph one step at a time instead of reading every skill up front. A switched-off skill is hidden everywhere. Skills are switched like tools, in the `skills:` section.
 
 ## Guarantees
 
