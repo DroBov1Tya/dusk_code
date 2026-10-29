@@ -6,12 +6,18 @@
 //! only shows the answer.
 
 mod compact;
+mod model;
 mod resume;
 
 use anyhow::{Result, bail};
 
 use crate::{
-    runtime::{Runtime, agent::Agent, inbox::Inbox},
+    runtime::{
+        Runtime,
+        agent::Agent,
+        inbox::Inbox,
+        model_choice::{Choice, ProviderStatus},
+    },
     state::Thread,
 };
 
@@ -21,11 +27,20 @@ pub enum Command {
     Compact { instructions: Option<String> },
     /// Lists the threads to open again.
     Resume,
+    /// Lists the providers with their models, or switches to `provider/model`.
+    Model { name: Option<String> },
 }
 
 /// What a client command answers.
 pub enum Answer {
     Threads(Vec<Thread>),
+    /// Every configured provider, checked just now, and the model in use.
+    Providers {
+        current: String,
+        providers: Vec<ProviderStatus>,
+    },
+    /// Every thread talks to this model from now on.
+    ModelSwitched(Choice),
 }
 
 /// Every command, for clients to show: name and what it does.
@@ -35,6 +50,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "summarize the conversation to free the context; text after it guides the summary",
     ),
     ("/resume", "open an earlier thread"),
+    ("/model", "choose the model; every provider is checked live"),
 ];
 
 impl Command {
@@ -48,13 +64,20 @@ impl Command {
             Self::Compact { instructions } => {
                 compact::run(agent, instructions.as_deref(), inbox).await;
             }
-            Self::Resume => {}
+            Self::Resume | Self::Model { .. } => {}
         }
     }
 
     pub async fn answer(self, runtime: &Runtime) -> Result<Answer> {
         match self {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
+            Self::Model { name: None } => Ok(Answer::Providers {
+                current: runtime.model().name(),
+                providers: model::check(runtime).await?,
+            }),
+            Self::Model { name: Some(name) } => {
+                Ok(Answer::ModelSwitched(model::switch(runtime, &name).await?))
+            }
             Self::Compact { .. } => bail!("/compact runs in a thread"),
         }
     }
@@ -77,6 +100,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
             instructions: argument,
         }),
         "resume" => Ok(Command::Resume),
+        "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })
 }

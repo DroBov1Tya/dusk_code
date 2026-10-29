@@ -12,15 +12,13 @@ use super::{
     context::{Conversation, spec_tokens},
     generation,
     inbox::{Inbox, Stop},
+    model_choice::{Choice, ModelChoice},
     thread_runner::ThreadEvent,
 };
 use crate::{
     config::Config,
     live_config::LiveConfig,
-    providers::{
-        ChatRequest, Model, ModelOutput, ModelProvider, ToolCall, ToolSpec, is_output_limit,
-        is_transient,
-    },
+    providers::{ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient},
     state::{CallPurpose, MessageRole, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
     tools::{Progress, ToolRegistry, ToolScope},
 };
@@ -34,8 +32,7 @@ const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
 
 pub struct Agent {
     pub state: Arc<State>,
-    pub provider: Arc<dyn ModelProvider>,
-    pub model: Model,
+    pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
     pub tools: ToolRegistry,
     pub scope: ToolScope,
@@ -168,13 +165,14 @@ impl Agent {
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         let messages = conversation.chat_messages();
+        let choice = self.model.current();
         let request = ChatRequest {
-            model: &self.model.id,
+            model: &choice.model.id,
             messages: &messages,
             tools: &tools,
             max_output_tokens: config.limits().max_output_tokens,
         };
-        let (output, generated) = match self.call_model(request, inbox).await {
+        let (output, generated) = match self.call_model(&choice, request, inbox).await {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
         };
@@ -185,7 +183,7 @@ impl Agent {
                 turn_id: Some(turn.turn_id.clone()),
                 purpose: CallPurpose::Answer,
                 compaction_id: conversation.compaction.as_ref().map(|c| c.compaction_id),
-                model: self.model.id.clone(),
+                model: choice.model.id.clone(),
                 through_sequence: conversation.newest_sequence(),
             };
             if let Err(error) = self.state.record_usage(&call, usage).await {
@@ -234,6 +232,7 @@ impl Agent {
     /// during a pause between attempts.
     pub async fn call_model(
         &self,
+        choice: &Choice,
         request: ChatRequest<'_>,
         inbox: &mut Inbox,
     ) -> Result<(ModelOutput, Result<Result<Vec<ToolCall>>, Stop>), Stop> {
@@ -241,7 +240,7 @@ impl Agent {
         loop {
             let mut output = ModelOutput::default();
             let events = self.events.clone();
-            let streamed = generation::generate(&*self.provider, request, &mut output, |event| {
+            let streamed = generation::generate(&*choice.provider, request, &mut output, |event| {
                 let _ = events.send(ThreadEvent::Model(event.clone()));
             });
             let generated = inbox.race(streamed).await;
@@ -309,6 +308,8 @@ impl Agent {
     pub fn input_limit(&self) -> u64 {
         let configured = self.config.current().limits().max_input_tokens;
         self.model
+            .current()
+            .model
             .context_window
             .map_or(configured, |window| window.min(configured))
     }

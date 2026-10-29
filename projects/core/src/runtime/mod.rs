@@ -7,6 +7,7 @@ mod generation;
 pub mod inbox;
 pub mod launcher;
 mod mailboxes;
+pub mod model_choice;
 // Named after its primary item, `Runtime`, as the style guide asks.
 #[allow(clippy::module_inception)]
 mod runtime;

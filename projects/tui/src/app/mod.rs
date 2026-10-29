@@ -27,7 +27,7 @@ use ratatui::layout::Rect;
 
 pub use editor::{EditorButton, EditorHit, PasteEditor};
 pub use input::Input;
-pub use panels::{Panel, Preview, SettingKind, SettingList, ThreadList};
+pub use panels::{ModelList, Panel, Preview, SettingKind, SettingList, ThreadList};
 pub use transcript::{Entry, Tone, Transcript};
 
 /// What the session does for the app.

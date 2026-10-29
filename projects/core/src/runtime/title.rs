@@ -61,15 +61,16 @@ impl Agent {
             .context("the thread has no user message")?;
         let prompt = format!("{TITLE_PROMPT}{}", clip(&first.content, MAX_PROMPT_CHARS));
         let max_output = self.config.current().limits().max_output_tokens;
+        let choice = self.model.current();
         let request = ChatRequest {
-            model: &self.model.id,
+            model: &choice.model.id,
             messages: &[ChatMessage::User(prompt)],
             tools: &[],
             max_output_tokens: max_output.min(TITLE_OUTPUT_TOKENS),
         };
         // Not shown to the client: the title arrives as one event.
         let mut output = ModelOutput::default();
-        let generated = generation::generate(&*self.provider, request, &mut output, |_| {});
+        let generated = generation::generate(&*choice.provider, request, &mut output, |_| {});
         let generated = match inbox.race(generated).await {
             Ok(generated) => generated,
             Err(stop) => return Ok(Err(stop)),
@@ -80,7 +81,7 @@ impl Agent {
                 turn_id: None,
                 purpose: CallPurpose::Title,
                 compaction_id: None,
-                model: self.model.id.clone(),
+                model: choice.model.id.clone(),
                 through_sequence: first.sequence,
             };
             self.state.record_usage(&call, usage).await?;

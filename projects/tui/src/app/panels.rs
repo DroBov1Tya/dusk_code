@@ -6,6 +6,7 @@ use std::path::Path;
 use dusk_core::{
     config::Config,
     graph::{Graph, SKILL_FILE},
+    runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Thread},
 };
 
@@ -16,6 +17,54 @@ pub enum Panel {
     Settings(SettingList),
     Help,
     Paste(PasteEditor),
+    Models(ModelList),
+}
+
+/// The configured providers as the core found them, and their models to choose from.
+pub struct ModelList {
+    /// `provider/model` in use.
+    pub current: String,
+    /// `None` while the core checks the providers.
+    pub providers: Option<Vec<ProviderStatus>>,
+    /// Among `choices`.
+    pub selected: usize,
+}
+
+impl ModelList {
+    pub fn checking(current: String) -> Self {
+        Self {
+            current,
+            providers: None,
+            selected: 0,
+        }
+    }
+
+    pub fn checked(current: String, providers: Vec<ProviderStatus>) -> Self {
+        let mut list = Self {
+            current,
+            providers: Some(providers),
+            selected: 0,
+        };
+        list.selected = list
+            .choices()
+            .iter()
+            .position(|name| *name == list.current)
+            .unwrap_or(0);
+        list
+    }
+
+    /// Every model of every provider that answered, as `provider/model`, in order.
+    pub fn choices(&self) -> Vec<String> {
+        let providers = self.providers.iter().flatten();
+        providers
+            .flat_map(|provider| {
+                let models = provider.models.as_deref().unwrap_or_default();
+                models
+                    .iter()
+                    .map(|model| format!("{}/{}", provider.name, model.id))
+            })
+            .collect()
+    }
 }
 
 pub struct ThreadList {

@@ -49,6 +49,7 @@ providers:
 
 | Key | Default | Meaning |
 |---|---|---|
+| `model` | first model of the first provider that answers | `provider/model`, also set by `/model` |
 | `limits.max_input_tokens` | `100000` | the largest request |
 | `limits.max_output_tokens` | `100000` | the most the model writes in one call |
 | `thread.record` | `full` | `answer` keeps only answers, not reasoning |
@@ -79,6 +80,8 @@ You review code...
 | Ctrl+E, click | edit a pasted text in its own window; Ctrl+S saves, Esc asks about unsaved changes |
 | Ctrl+T or `/resume` | threads, with a preview of the selected one |
 | Ctrl+N | new thread |
+| `/model` | choose the model; every provider is checked live, 🟢 answers, 🔴 does not |
+| `/compact text` | summarize the thread; the text guides the summary |
 | Ctrl+O | switch tools and skills |
 | F2 / F1 | sidebar / every key |
 

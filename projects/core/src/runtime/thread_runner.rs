@@ -20,11 +20,12 @@ use super::{
     agent::Agent,
     inbox::{Inbox, Input, Stop},
     mailboxes::{Mailbox, Mailboxes},
+    model_choice::ModelChoice,
 };
 use crate::{
     chat::commands,
     live_config::LiveConfig,
-    providers::{Model, ModelEvent, ModelProvider, ToolCall},
+    providers::{ModelEvent, ToolCall},
     state::{Compaction, Message, PendingMessage, State, ThreadTokens, Turn, estimate_tokens},
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
@@ -42,8 +43,7 @@ pub struct ThreadRunner {
 /// Everything a running thread needs; the thread must exist.
 pub struct ThreadSetup {
     pub state: Arc<State>,
-    pub provider: Arc<dyn ModelProvider>,
-    pub model: Model,
+    pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
     pub thread_id: String,
     pub tools: ToolRegistry,
@@ -154,7 +154,6 @@ impl ThreadRunner {
         };
         let agent = Agent {
             state: setup.state,
-            provider: setup.provider,
             model: setup.model,
             config: setup.config,
             tools: setup.tools,
@@ -379,7 +378,10 @@ mod tests {
     use super::*;
     use crate::{
         BoxFuture,
-        providers::{ChatMessage, ChatRequest, ChatStream, FinishReason, Transient},
+        providers::{
+            ChatMessage, ChatRequest, ChatStream, FinishReason, Model, ModelProvider, Transient,
+        },
+        runtime::model_choice::Choice,
         state::{MessageRole, TurnStatus},
         testing::{temp_dir, temp_live_config, temp_live_config_with, temp_state},
         tools::{Tool, ToolContext},
@@ -530,10 +532,14 @@ mod tests {
         std::fs::create_dir_all(&root).unwrap();
         let mut tools = ToolRegistry::default();
         tools.add(tool);
-        ThreadRunner::new(ThreadSetup {
-            state: Arc::clone(state),
+        let choice = Choice {
+            provider_name: "fake".into(),
             provider: Arc::clone(provider) as Arc<dyn ModelProvider>,
             model,
+        };
+        ThreadRunner::new(ThreadSetup {
+            state: Arc::clone(state),
+            model: Arc::new(ModelChoice::new(choice)),
             config: Arc::clone(config),
             thread_id: "thread".into(),
             tools,

@@ -41,6 +41,9 @@ pub const DOT: &str = "\u{00B7}";
 pub const BULLET: &str = "\u{2022}";
 pub const ELLIPSIS: &str = "\u{2026}";
 pub const ON: &str = "\u{25CF}";
+/// A provider that answered, and one that did not.
+pub const ALIVE: &str = "\u{1F7E2}";
+pub const DOWN: &str = "\u{1F534}";
 pub const OFF: &str = "\u{25CB}";
 pub const SPINNER: [&str; 6] = [
     "\u{25C7}\u{00B7}  ",

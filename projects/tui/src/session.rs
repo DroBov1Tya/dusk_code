@@ -7,14 +7,15 @@ use std::{env, time::Duration};
 use anyhow::Result;
 use crossterm::event::EventStream;
 use dusk_core::{
-    chat::commands::Answer,
+    chat::commands::{Answer, Command},
+    providers::Model,
     runtime::{Runtime, ThreadEvent, ThreadHandle},
 };
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
 use crate::{
-    app::{Action, App, Panel, Preview, ThreadList},
+    app::{Action, App, ModelList, Panel, Preview, ThreadList},
     clipboard, ui,
 };
 
@@ -35,11 +36,8 @@ pub async fn run(
     thread: Option<String>,
 ) -> Result<()> {
     let config = runtime.config().clone();
-    let configured = config.current().limits().max_input_tokens;
-    let model = runtime.model();
-    let limit = model
-        .context_window
-        .map_or(configured, |window| window.min(configured));
+    let model = runtime.model().model;
+    let limit = input_limit(runtime, &model);
     let skills_dir = runtime.paths().skills_dir();
     let mut app = App::new(
         model.id.clone(),
@@ -85,25 +83,15 @@ pub async fn run(
                     app.error(format!("{error:#}"));
                 }
             }
-            Action::Command(command) => match command.answer(runtime).await {
-                Ok(Answer::Threads(threads)) => {
-                    let current = app.thread_id.as_deref();
-                    let selected = threads
-                        .iter()
-                        .position(|thread| Some(thread.id.as_str()) == current)
-                        .unwrap_or(0);
-                    let first = threads.get(selected).map(|thread| thread.id.clone());
-                    app.panel = Some(Panel::Threads(ThreadList {
-                        threads,
-                        selected,
-                        preview: None,
-                    }));
-                    if let Some(thread_id) = first {
-                        preview(runtime, &mut app, thread_id).await;
-                    }
+            Action::Command(command) => {
+                // Checking providers takes a moment; the window says so meanwhile.
+                if command == (Command::Model { name: None }) {
+                    app.panel = Some(Panel::Models(ModelList::checking(runtime.model().name())));
+                    terminal.draw(|frame| ui::draw(frame, &mut app))?;
                 }
-                Err(error) => app.error(format!("{error:#}")),
-            },
+                answer(runtime, &mut app, command).await;
+            }
+
             Action::OpenThread(thread_id) if app.thread_id.as_deref() == Some(&thread_id) => {}
             Action::OpenThread(thread_id) => {
                 close(open.take()).await;
@@ -132,6 +120,49 @@ pub async fn run(
     }
     close(open.take()).await;
     Ok(())
+}
+
+/// Shows what the core answered to a command that does not run in the thread.
+async fn answer(runtime: &Runtime, app: &mut App, command: Command) {
+    match command.answer(runtime).await {
+        Ok(Answer::Threads(threads)) => {
+            let current = app.thread_id.as_deref();
+            let selected = threads
+                .iter()
+                .position(|thread| Some(thread.id.as_str()) == current)
+                .unwrap_or(0);
+            let first = threads.get(selected).map(|thread| thread.id.clone());
+            app.panel = Some(Panel::Threads(ThreadList {
+                threads,
+                selected,
+                preview: None,
+            }));
+            if let Some(thread_id) = first {
+                preview(runtime, app, thread_id).await;
+            }
+        }
+        Ok(Answer::Providers { current, providers }) => {
+            app.panel = Some(Panel::Models(ModelList::checked(current, providers)));
+        }
+        Ok(Answer::ModelSwitched(choice)) => {
+            app.panel = None;
+            app.limit = input_limit(runtime, &choice.model);
+            app.model = choice.model.id.clone();
+            app.flash = Some(format!("model {}", choice.name()));
+        }
+        Err(error) => {
+            app.panel = None;
+            app.error(format!("{error:#}"));
+        }
+    }
+}
+
+/// The largest request: the configured input limit, or the model window when smaller.
+fn input_limit(runtime: &Runtime, model: &Model) -> u64 {
+    let configured = runtime.config().current().limits().max_input_tokens;
+    model
+        .context_window
+        .map_or(configured, |window| window.min(configured))
 }
 
 /// Shows a thread in the threads panel, if the panel is still open. A preview that
