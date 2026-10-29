@@ -23,7 +23,7 @@ use crate::{
     init::{self, create_private_dir},
     live_config::LiveConfig,
     paths::Paths,
-    state::{Message, State, Thread},
+    state::{Message, State, Task, Thread},
     thread_start::start_thread,
 };
 
@@ -125,6 +125,11 @@ impl Runtime {
     /// The whole history of a thread, compacted messages included, oldest first.
     pub async fn thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         self.launcher.state.list_messages(thread_id).await
+    }
+
+    /// The task board an agent keeps in a thread.
+    pub async fn thread_tasks(&self, thread_id: &str) -> Result<Vec<Task>> {
+        self.launcher.state.thread_tasks(thread_id).await
     }
 
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task

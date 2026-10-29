@@ -32,8 +32,9 @@ providers:
 - `/compact` and automatic compaction at 80% of the input limit; old messages stay readable with `read_history`.
 - Input and output token limits per model call, enforced locally.
 - Subagents: `ask_agent` hands a task to an agent working in the background in a thread of its own; calling it again with that thread writes to the agent while it works. The agent writes back with `message_parent`, and its final answer arrives on its own. Messages go through the database and are read between steps; Esc stops the agents too. Each agent gets a name from the core, such as `Fable-3a`, stored with its thread and unique among its siblings; the asking agent learns it at once, addresses the agent by it and reads its messages under it. The built-in `general` agent needs no setup; others are `agents/**/AGENT.md` files.
+- Task board: with `tasks` an agent writes down the tasks it sets itself, each with steps, looks at the board and marks a step or a whole task done. Every agent has its own board in its thread, kept in the database past any compaction; `dusk` shows it in the sidebar.
 - Skills: `skills/**/SKILL.md` files the agent loads with `load_skill`.
-- Built-in tools: read, write, edit and delete files, read the thread history, run commands.
+- Built-in tools: read, write, edit and delete files, read the thread history, run commands, keep a task board.
 
 ## Configuration
 

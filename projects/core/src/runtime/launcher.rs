@@ -26,7 +26,7 @@ use crate::{
     paths::Paths,
     state::{State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, MessageParent, ReadHistory, ToolRegistry,
+        AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, MessageParent, ReadHistory, Tasks, ToolRegistry,
         ToolScope,
     },
 };
@@ -77,6 +77,10 @@ impl Launcher {
         let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
         let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
         tools.add(Box::new(history));
+        tools.add(Box::new(Tasks::new(
+            Arc::clone(&self.state),
+            thread_id.to_owned(),
+        )));
         if depth < MAX_AGENT_DEPTH {
             let asker = agent.map(|agent| agent.name.clone());
             let ask = AskAgent::new(self.clone(), thread_id.to_owned(), asker);
