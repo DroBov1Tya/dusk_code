@@ -154,7 +154,11 @@ impl From<&ToolCall> for WireToolCall {
             r#type: "function",
             function: WireFunctionCall {
                 name: call.name.clone(),
-                arguments: call.arguments.to_string(),
+                // Arguments that were not JSON go back as the model wrote them.
+                arguments: match &call.arguments {
+                    Value::String(raw) => raw.clone(),
+                    arguments => arguments.to_string(),
+                },
             },
         }
     }

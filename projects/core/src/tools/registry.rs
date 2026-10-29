@@ -89,6 +89,11 @@ impl ToolRegistry {
         }
         let arguments = match &call.arguments {
             Value::Object(_) => call.arguments.clone(),
+            Value::String(raw) => {
+                let error = serde_json::from_str::<Value>(raw).err();
+                let reason = error.map_or("not an object".into(), |error| error.to_string());
+                return error_result(format!("arguments are not valid JSON ({reason})"));
+            }
             _ => return error_result("arguments must be a JSON object".into()),
         };
         let context = ToolContext {

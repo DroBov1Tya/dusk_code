@@ -157,11 +157,12 @@ impl ModelOutput {
             .calls
             .iter()
             .map(|call| {
-                // An empty string is how some servers send "no arguments".
+                // An empty string is how some servers send "no arguments". Text that is not
+                // JSON is kept as it came: the tool call fails, and the model is told why.
                 let arguments = match call.arguments.trim() {
                     "" => Value::Object(Default::default()),
                     json => serde_json::from_str(json)
-                        .with_context(|| format!("invalid arguments for tool {}", call.name))?,
+                        .unwrap_or_else(|_| Value::String(call.arguments.clone())),
                 };
                 Ok(ToolCall {
                     id: call.id.clone(),
@@ -229,6 +230,17 @@ mod tests {
         assert_eq!(calls[0].arguments, json!({"city": "Moscow"}));
         assert_eq!(calls[1].id, "b");
         assert_eq!(calls[1].arguments, json!({"city": "Kazan"}));
+    }
+
+    #[test]
+    fn arguments_that_are_not_json_stay_as_written() {
+        let (_, calls) = assemble(&[
+            call(0, "a", "read_file"),
+            arguments(0, "{\"path\": \"cut"),
+            ModelEvent::Finished(FinishReason::ToolCalls),
+        ])
+        .unwrap();
+        assert_eq!(calls[0].arguments, json!("{\"path\": \"cut"));
     }
 
     #[test]
