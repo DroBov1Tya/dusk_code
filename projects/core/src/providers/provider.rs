@@ -10,12 +10,12 @@ use anyhow::{Context, Result};
 
 use super::{
     chat::ChatRequest,
-    inline_tags::TagSplitter,
     model_output::{ChatStream, ModelEvent},
     openai::{CompletionStream, OpenAiCompatible},
 };
 use crate::{
     BoxFuture,
+    chat::inline_tags::TagSplitter,
     config::{Config, ProviderKind},
 };
 

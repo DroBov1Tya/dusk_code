@@ -16,7 +16,6 @@ use tracing::warn;
 use super::{
     inbox::Input,
     mailboxes::Mailboxes,
-    subagent::{AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, MessageParent},
     thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup},
 };
 use crate::{
@@ -26,7 +25,10 @@ use crate::{
     paths::Paths,
     providers::{Model, ModelProvider},
     state::{State, Thread, TurnStatus},
-    tools::{ReadHistory, ToolRegistry, ToolScope},
+    tools::{
+        AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, MessageParent, ReadHistory, ToolRegistry,
+        ToolScope,
+    },
 };
 
 #[derive(Clone)]

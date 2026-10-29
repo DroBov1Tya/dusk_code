@@ -6,7 +6,10 @@ use std::{env, time::Duration};
 
 use anyhow::Result;
 use crossterm::event::EventStream;
-use dusk_core::runtime::{Runtime, ThreadEvent, ThreadHandle};
+use dusk_core::{
+    chat::commands::Answer,
+    runtime::{Runtime, ThreadEvent, ThreadHandle},
+};
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
@@ -82,8 +85,8 @@ pub async fn run(
                     app.error(format!("{error:#}"));
                 }
             }
-            Action::ShowThreads => match runtime.list_threads().await {
-                Ok(threads) => {
+            Action::Command(command) => match command.answer(runtime).await {
+                Ok(Answer::Threads(threads)) => {
                     let current = app.thread_id.as_deref();
                     let selected = threads
                         .iter()
@@ -99,7 +102,7 @@ pub async fn run(
                         preview(runtime, &mut app, thread_id).await;
                     }
                 }
-                Err(error) => app.error(format!("cannot list threads: {error:#}")),
+                Err(error) => app.error(format!("{error:#}")),
             },
             Action::OpenThread(thread_id) if app.thread_id.as_deref() == Some(&thread_id) => {}
             Action::OpenThread(thread_id) => {

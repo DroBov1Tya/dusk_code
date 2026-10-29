@@ -9,7 +9,7 @@ use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::model_output::ModelEvent;
+use crate::providers::ModelEvent;
 
 const THINK_OPEN: &str = "<think>";
 const THINK_CLOSE: &str = "</think>";

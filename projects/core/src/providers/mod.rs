@@ -2,7 +2,6 @@
 //! event type for everything a model sends back.
 
 mod chat;
-mod inline_tags;
 mod model_output;
 mod openai;
 mod provider;
