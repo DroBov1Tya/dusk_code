@@ -5,20 +5,24 @@ use dusk_core::{providers::ToolCall, tools::ToolResult};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect},
-    style::Style,
+    style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
 };
 
+use unicode_width::UnicodeWidthStr;
+
 use super::{
     markdown,
     theme::{
-        DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, ROSE, SPINNER, SUN, SUN_GLYPH, TEAL, TOOL,
-        TOOL_RUNNING, UNFOLDED, USER_BAR, VIOLET, bold, dim, dusk, fg, thought,
+        DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, ROSE, SELECTED, SPINNER, SUN, SUN_GLYPH,
+        TEAL, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR, VIOLET, bold, dim, dusk, fg, thought,
     },
     wrap,
 };
-use crate::app::{App, Entry, Focus, Tone, TranscriptHit, compact_number};
+use crate::app::{
+    App, Button, ButtonHit, Entry, Focus, TEXT_COLUMN, Tone, TranscriptHit, compact_number,
+};
 
 /// Lines of a tool result shown when it is open.
 const MAX_RESULT_LINES: usize = 40;
@@ -48,7 +52,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     app.scroll = app.scroll.min(app.max_scroll);
     let top = total.saturating_sub(height + app.scroll);
-    for (index, start) in starts.into_iter().enumerate() {
+    for (index, &start) in starts.iter().enumerate() {
         if app.transcript.is_foldable(index) && start >= top && start < top + height {
             app.transcript_hits.push(TranscriptHit {
                 row: area.y + (start - top) as u16,
@@ -58,8 +62,100 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
             });
         }
     }
+    app.drawn_top = top;
+    app.drawn_text = lines.iter().map(plain_text).collect();
+    app.entry_lines = starts
+        .iter()
+        .zip(starts.iter().skip(1).chain([&total]))
+        .map(|(&from, &to)| (from, to))
+        .collect();
     let visible: Vec<Line> = lines.into_iter().skip(top).take(height).collect();
     frame.render_widget(Paragraph::new(visible), area);
+    highlight(frame, area, app);
+    buttons(frame, area, app);
+}
+
+fn plain_text(line: &Line) -> String {
+    line.spans
+        .iter()
+        .map(|span| span.content.as_ref())
+        .collect()
+}
+
+/// Marks the selected text on screen, up to where each line's text ends.
+fn highlight(frame: &mut Frame, area: Rect, app: &App) {
+    let Some(selection) = app.selection else {
+        return;
+    };
+    let (start, end) = selection.ordered();
+    let text_left = area.x + TEXT_COLUMN;
+    for row in 0..area.height {
+        let line = app.drawn_top + row as usize;
+        if line < start.0 || line > end.0 {
+            continue;
+        }
+        let drawn = app.drawn_text.get(line).map_or(0, |text| text.width()) as u16;
+        let from = if line == start.0 { start.1 } else { area.x }.max(text_left);
+        let to = if line == end.0 {
+            end.1 + 1
+        } else {
+            area.right()
+        }
+        .min(area.x + drawn);
+        let buffer = frame.buffer_mut();
+        for x in from..to {
+            buffer[(x, area.y + row)].set_bg(SELECTED);
+        }
+    }
+}
+
+/// Buttons on the first row in view of the entry under the mouse, or the browsed one.
+fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
+    app.button_hits.clear();
+    let browsed = match app.focus {
+        Focus::Browse(index) => Some(index),
+        Focus::Input => None,
+    };
+    let Some(index) = app.hover.or(browsed) else {
+        return;
+    };
+    let offered: &[(Button, &str, Color)] = match app.transcript.entries.get(index) {
+        Some(Entry::User(_)) => &[
+            (Button::Edit, " edit ", ROSE),
+            (Button::Copy, " copy ", TEAL),
+        ],
+        Some(Entry::Notice { .. }) | None => &[],
+        Some(_) => &[(Button::Copy, " copy ", TEAL)],
+    };
+    let Some(&(from, to)) = app.entry_lines.get(index) else {
+        return;
+    };
+    let line = from.max(app.drawn_top);
+    if offered.is_empty() || line >= to || line >= app.drawn_top + area.height as usize {
+        return;
+    }
+    let row = area.y + (line - app.drawn_top) as u16;
+    let mut right = area.right();
+    for &(button, label, color) in offered.iter().rev() {
+        let width = label.width() as u16;
+        let Some(left) = right.checked_sub(width + 1).filter(|&left| left >= area.x) else {
+            break;
+        };
+        let place = Rect::new(left, row, width + 1, 1);
+        let shown = Line::from(vec![
+            Span::raw(" "),
+            Span::styled(label, fg(color).bg(GLOW)),
+        ]);
+        frame.render_widget(Paragraph::new(shown), place);
+        app.button_hits.push(ButtonHit {
+            row,
+            left: left + 1,
+            right: left + 1 + width,
+            index,
+            button,
+        });
+        right = left;
+    }
 }
 
 /// Every entry as lines, and the line each entry starts on.

@@ -3,6 +3,7 @@
 
 mod app;
 mod args;
+mod clipboard;
 mod session;
 mod ui;
 

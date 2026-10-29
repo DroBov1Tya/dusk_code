@@ -153,6 +153,19 @@ impl Transcript {
         }
     }
 
+    /// What the copy button of an entry copies: its whole text, folded or not.
+    pub fn text(&self, index: usize) -> Option<String> {
+        Some(match self.entries.get(index)? {
+            Entry::User(text) | Entry::Answer(text) => text.clone(),
+            Entry::Reasoning { text, .. } | Entry::Summary { text, .. } => text.clone(),
+            Entry::Notice { text, .. } => text.clone(),
+            Entry::Tool { call, result, .. } => match result {
+                Some(result) => result.content.clone(),
+                None => call.arguments.to_string(),
+            },
+        })
+    }
+
     pub fn is_foldable(&self, index: usize) -> bool {
         matches!(
             self.entries.get(index),

@@ -137,6 +137,7 @@ projects/
     tui/src/                 dusk binary: the full-screen client
         main.rs, args.rs     starts the runtime and takes the screen
         session.rs           the loop: keys, thread events, opening and closing threads
+        clipboard.rs         copying: a system tool or the OSC 52 sequence
         app/                 what the client knows, with no drawing
             mod.rs           the open thread, activity, tokens; applies thread events
             transcript.rs    entries: messages, foldable thinking, tool calls, summaries
@@ -161,6 +162,8 @@ projects/
 
 `dusk` shows one thread at a time, with its title on top. The left rail starts with statistics: the model, the share of the context in use, the tokens used and the limit, what the provider counted in and out, cached and thinking tokens, model calls, how long the turn runs and how many tokens a second arrive. Sections for subagents and MCP tools appear below it only when there is something to show. F2 hides the rail; on a narrow screen it opens over the transcript instead.
 
+The client takes the mouse, so it selects text itself: dragging over the transcript marks text, and releasing copies it, without the bars and indents on the left. A message under the mouse shows its buttons: `copy` takes its whole text, folded or not, and `edit` puts a message you sent back into the box. Copying goes through `pbcopy`, `wl-copy` or `xclip` where one exists, and through the terminal's OSC 52 sequence, which also works over SSH.
+
 Thinking, tool calls and compaction summaries fold into one line each. Tab walks them, Enter or a click opens or closes one, Ctrl+R opens or closes all thinking. Messages can be sent while the agent works: Enter queues for the next turn, Alt+Enter interrupts, Esc stops. Ctrl+T lists the threads and opens one with its history, Ctrl+N starts a new one, Ctrl+O switches tools and skills, and F1 lists every key. A new thread is stored only when its first message is sent. `--thread ID` opens a thread at start.
 
 | Key | Does |
@@ -169,6 +172,8 @@ Thinking, tool calls and compaction summaries fold into one line each. Tab walks
 | Alt+Enter | interrupt the turn and send now |
 | Esc | stop the turn |
 | Tab, Enter or click | walk folded entries, open or close one |
+| drag | select text and copy it; Esc clears the selection |
+| hover | `copy` on every message, `edit` on yours puts it back in the box |
 | Ctrl+R | open or close all thinking |
 | Ctrl+T | threads |
 | Ctrl+N | new thread |
