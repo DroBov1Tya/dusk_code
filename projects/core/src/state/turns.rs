@@ -105,6 +105,19 @@ impl State {
         Ok(Some(turn))
     }
 
+    /// Counts user messages that joined a running turn, such as messages from other
+    /// agents taken in between steps, as answered by it, so no second turn takes them.
+    pub async fn extend_turn(&self, turn_id: &str, through: u64) -> Result<()> {
+        let through = i64::try_from(through).context("sequence exceeds SQLite range")?;
+        sqlx::query("UPDATE turns SET last_sequence = MAX(last_sequence, ?) WHERE turn_id = ?")
+            .bind(through)
+            .bind(turn_id)
+            .execute(&self.pool)
+            .await
+            .context("extend turn")?;
+        Ok(())
+    }
+
     /// Stores the agent's message with its tool calls, before any of them runs.
     pub async fn record_tool_calls(
         &self,

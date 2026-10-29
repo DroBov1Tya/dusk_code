@@ -3,10 +3,9 @@
 //! and gives each active thread its own task.
 
 use std::{
-    collections::HashSet,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard, PoisonError},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail, ensure};
@@ -14,7 +13,9 @@ use tokio::task::{JoinHandle, JoinSet};
 use tracing::info;
 
 use super::{
+    inbox::Input,
     launcher::Launcher,
+    mailboxes::Mailboxes,
     thread_runner::{ThreadInput, ThreadOutput, ThreadRunner},
 };
 use crate::{
@@ -28,13 +29,13 @@ use crate::{
 
 /// Hand edits to config.yml are picked up within this time.
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);
+/// How long shutdown waits for stopped subagents to end.
+const AGENTS_STOP_WAIT: Duration = Duration::from_secs(5);
 
 pub struct Runtime {
     launcher: Launcher,
     config_check: JoinHandle<()>,
     threads: Mutex<JoinSet<()>>,
-    /// Threads with a running task.
-    active: Arc<Mutex<HashSet<String>>>,
 }
 
 /// A running thread, as its client sees it.
@@ -73,12 +74,12 @@ impl Runtime {
             model,
             config,
             paths,
+            mailboxes: Arc::new(Mailboxes::default()),
         };
         Ok(Self {
             launcher,
             config_check,
             threads: Mutex::new(JoinSet::new()),
-            active: Arc::default(),
         })
     }
 
@@ -121,6 +122,7 @@ impl Runtime {
             thread.workspace.display()
         );
         self.run_thread(thread.thread_id, &thread.workspace, cwd)
+            .await
     }
 
     /// Picks a stored thread up again, with its tools working in `cwd`. What it left
@@ -135,22 +137,31 @@ impl Runtime {
         let workspace = self.launcher.paths.thread_workspace(thread_id)?;
         create_private_dir(&workspace)?;
         info!("thread {thread_id} resumed in {}", workspace.display());
-        self.run_thread(thread_id.to_owned(), &workspace, cwd)
+        self.run_thread(thread_id.to_owned(), &workspace, cwd).await
     }
 
     /// One task per thread: two would answer the same messages twice.
-    fn run_thread(&self, thread_id: String, workspace: &Path, cwd: &Path) -> Result<ThreadHandle> {
+    async fn run_thread(
+        &self,
+        thread_id: String,
+        workspace: &Path,
+        cwd: &Path,
+    ) -> Result<ThreadHandle> {
         let setup = self.launcher.setup(&thread_id, cwd, workspace, None, 0)?;
         let (runner, input, output) = ThreadRunner::new(setup);
-        let active = Arc::clone(&self.active);
-        ensure!(
-            lock(&active).insert(thread_id.clone()),
-            "thread {thread_id} is already open"
-        );
+        let mailboxes = Arc::clone(&self.launcher.mailboxes);
+        {
+            let mut live = mailboxes.lock().await;
+            ensure!(
+                !live.contains_key(&thread_id),
+                "thread {thread_id} is already open"
+            );
+            live.insert(thread_id.clone(), runner.mailbox(&input));
+        }
         let id = thread_id.clone();
         self.lock_threads().spawn(async move {
             runner.run().await;
-            lock(&active).remove(&id);
+            mailboxes.remove(&id).await;
         });
         Ok(ThreadHandle {
             thread_id,
@@ -159,10 +170,20 @@ impl Runtime {
         })
     }
 
-    /// Lets every thread finish its queue, stops the config check and closes the database.
+    /// Lets every chat finish its queue, stops the agents still at work, stops the
+    /// config check and closes the database.
     pub async fn shutdown(self) {
         let mut threads = std::mem::take(&mut *self.lock_threads());
         while threads.join_next().await.is_some() {}
+        for mailbox in self.launcher.mailboxes.lock().await.values() {
+            mailbox.send(Input::Cancel);
+        }
+        let started = Instant::now();
+        while !self.launcher.mailboxes.lock().await.is_empty()
+            && started.elapsed() < AGENTS_STOP_WAIT
+        {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
         self.config_check.abort();
         self.launcher.state.close().await;
     }

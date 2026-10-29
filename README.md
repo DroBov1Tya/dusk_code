@@ -31,7 +31,7 @@ providers:
 - A paste over 1500 characters shows as one chip in the box and as a folded block in the thread; the model gets it whole, in `<pasted>` tags.
 - `/compact` and automatic compaction at 80% of the input limit; old messages stay readable with `read_history`.
 - Input and output token limits per model call, enforced locally.
-- Subagents: `ask_agent` hands a task to an agent in a thread of its own. The built-in `general` agent needs no setup; others are `agents/**/AGENT.md` files.
+- Subagents: `ask_agent` hands a task to an agent working in the background in a thread of its own; calling it again with that thread writes to the agent while it works. The agent writes back with `message_parent`, and its final answer arrives on its own. Messages go through the database and are read between steps; Esc stops the agents too. The built-in `general` agent needs no setup; others are `agents/**/AGENT.md` files.
 - Skills: `skills/**/SKILL.md` files the agent loads with `load_skill`.
 - Built-in tools: read, write, edit and delete files, read the thread history, run commands.
 

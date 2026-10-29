@@ -30,13 +30,19 @@ impl Inbox {
         Self { inputs, open: true }
     }
 
-    /// Waits while idle; `false` once every client has gone.
-    pub async fn wait(&mut self) -> bool {
+    /// Waits while idle for what woke the thread; `None` once every client has gone.
+    pub async fn wait(&mut self) -> Option<Input> {
         let input = self.inputs.recv().await;
         self.open &= input.is_some();
-        // Whatever else is already there has been sent too; one wake-up is enough.
-        while self.inputs.try_recv().is_ok() {}
-        input.is_some()
+        // Whatever else is already there has been sent too; one wake-up is enough, but a
+        // stop among them still counts.
+        let mut input = input?;
+        while let Ok(next) = self.inputs.try_recv() {
+            if matches!(next, Input::Cancel) {
+                input = next;
+            }
+        }
+        Some(input)
     }
 
     /// Runs `work` while taking input: sent messages wait until the work is done,

@@ -107,6 +107,22 @@ impl State {
         .collect()
     }
 
+    /// How many agent threads are above this one; 0 for a chat.
+    pub async fn thread_depth(&self, id: &str) -> Result<usize> {
+        let depth: i64 = sqlx::query_scalar(
+            "WITH RECURSIVE above(id) AS (
+                SELECT parent_thread_id FROM threads WHERE id = ?
+                UNION ALL
+                SELECT threads.parent_thread_id FROM threads JOIN above ON threads.id = above.id
+             ) SELECT COUNT(*) FROM above WHERE id IS NOT NULL",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .context("count thread depth")?;
+        usize::try_from(depth).context("negative depth")
+    }
+
     pub async fn set_title(&self, id: &str, title: &str) -> Result<()> {
         ensure!(!title.trim().is_empty(), "title is empty");
         sqlx::query("UPDATE threads SET title = ? WHERE id = ?")

@@ -388,8 +388,6 @@ impl App {
                 self.turn_started_at = None;
                 self.output_samples.clear();
                 self.transcript.stop_running_tools();
-                // A stopped turn takes its subagents down with it.
-                self.finish_subagents(None);
                 match turn.status {
                     TurnStatus::Interrupted => self.transcript.notice("stopped", Tone::Info),
                     TurnStatus::Failed => {
@@ -445,6 +443,11 @@ impl App {
                 ..
             } => self.start_subagent(thread_id, agent, task),
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
+            ThreadEvent::FromAgent(message) => {
+                let from = message.from_thread_id.unwrap_or_default();
+                self.transcript
+                    .push(Entry::from_agent(from, message.content));
+            }
             ThreadEvent::Idle => {
                 self.turn_running = false;
                 self.activity = Activity::Idle;
@@ -469,7 +472,7 @@ impl App {
                 self.record_output(&text)
             }
             ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) => {
-                self.finish_subagents(Some(thread_id))
+                self.finish_subagent(thread_id)
             }
             _ => {}
         }
@@ -487,14 +490,19 @@ impl App {
         });
     }
 
-    /// `None` finishes every subagent still at work.
-    fn finish_subagents(&mut self, thread_id: Option<&str>) {
+    fn finish_subagent(&mut self, thread_id: &str) {
         let now = now_ms();
         for agent in &mut self.subagents {
-            if agent.finished_at.is_none() && thread_id.is_none_or(|id| id == agent.thread_id) {
+            if agent.finished_at.is_none() && agent.thread_id == thread_id {
                 agent.finished_at = Some(now);
             }
         }
+    }
+
+    pub fn agents_at_work(&self) -> bool {
+        self.subagents
+            .iter()
+            .any(|agent| agent.finished_at.is_none())
     }
 
     /// Takes the typed text for sending; commands show as notices, messages as the user's.

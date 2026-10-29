@@ -21,6 +21,8 @@ pub struct Message {
     pub tool_calls: Vec<ToolCall>,
     /// Set exactly on tool messages: the call they answer.
     pub tool_call_id: Option<String>,
+    /// For a user message another agent sent: the thread it came from.
+    pub from_thread_id: Option<String>,
     /// Estimated sizes in model tokens; see `estimate_tokens`.
     pub content_tokens: u64,
     pub tool_calls_tokens: u64,
@@ -46,6 +48,7 @@ pub struct NewMessage {
     reasoning: Option<String>,
     tool_calls: Vec<ToolCall>,
     tool_call_id: Option<String>,
+    from_thread_id: Option<String>,
 }
 
 impl Message {
@@ -63,6 +66,18 @@ impl State {
         thread_id: &str,
         request_uid: &str,
         content: &str,
+    ) -> Result<Message> {
+        self.add_message_from(thread_id, request_uid, content, None)
+            .await
+    }
+
+    /// The same for a message another agent sent; `from` is that agent's thread.
+    pub async fn add_message_from(
+        &self,
+        thread_id: &str,
+        request_uid: &str,
+        content: &str,
+        from: Option<&str>,
     ) -> Result<Message> {
         ensure!(!request_uid.trim().is_empty(), "request UID is empty");
         ensure!(!content.trim().is_empty(), "message is empty");
@@ -82,7 +97,8 @@ impl State {
             return Ok(message);
         }
         ensure_thread_exists(&mut transaction, thread_id).await?;
-        let new = NewMessage::user(content);
+        let mut new = NewMessage::user(content);
+        new.from_thread_id = from.map(str::to_owned);
         let message = insert_message(
             &mut transaction,
             thread_id,
@@ -196,6 +212,7 @@ impl NewMessage {
             reasoning,
             tool_calls,
             tool_call_id: None,
+            from_thread_id: None,
         }
     }
 
@@ -206,6 +223,7 @@ impl NewMessage {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: Some(call_id),
+            from_thread_id: None,
         }
     }
 
@@ -216,6 +234,7 @@ impl NewMessage {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            from_thread_id: None,
         }
     }
 }
@@ -259,9 +278,9 @@ pub async fn insert_message(
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, sequence, role, content, reasoning,
             tool_calls_json, tool_call_id, request_uid, content_tokens, tool_calls_tokens,
-            reasoning_tokens, created_at)
+            reasoning_tokens, created_at, from_thread_id)
          VALUES (?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(Uuid::now_v7().to_string())
     .bind(thread_id)
@@ -276,6 +295,7 @@ pub async fn insert_message(
     .bind(i64::try_from(tool_calls_tokens).context("tool calls are too large")?)
     .bind(i64::try_from(reasoning_tokens).context("reasoning is too large")?)
     .bind(timestamp)
+    .bind(&message.from_thread_id)
     .fetch_one(&mut **transaction)
     .await
     .context("store message")?;
@@ -319,6 +339,7 @@ pub fn decode_message(row: SqliteRow) -> Result<Message> {
         reasoning: row.try_get("reasoning")?,
         tool_calls,
         tool_call_id: row.try_get("tool_call_id")?,
+        from_thread_id: row.try_get("from_thread_id")?,
         content_tokens: read_tokens(&row, "content_tokens")?,
         tool_calls_tokens: read_tokens(&row, "tool_calls_tokens")?,
         reasoning_tokens: read_tokens(&row, "reasoning_tokens")?,

@@ -1,4 +1,4 @@
-//! Messages a client sent that the thread has not taken in yet.
+//! Messages a client or another agent sent that the thread has not taken in yet.
 
 use anyhow::{Context, Result, ensure};
 use sqlx::Row;
@@ -11,21 +11,35 @@ pub struct PendingMessage {
     pub pending_id: i64,
     pub request_uid: String,
     pub content: String,
+    /// The agent's thread for a message another agent sent; `None` for a client's.
+    pub from_thread_id: Option<String>,
 }
 
 impl State {
     /// Stores what a client sent; once this returns, the message survives a crash.
     pub async fn add_pending(&self, thread_id: &str, content: &str) -> Result<PendingMessage> {
+        self.add_pending_from(thread_id, content, None).await
+    }
+
+    /// The same for a message another agent sent; `from` is that agent's thread.
+    pub async fn add_pending_from(
+        &self,
+        thread_id: &str,
+        content: &str,
+        from: Option<&str>,
+    ) -> Result<PendingMessage> {
         ensure!(!content.trim().is_empty(), "message is empty");
         let request_uid = Uuid::now_v7().to_string();
         let pending_id = sqlx::query_scalar(
-            "INSERT INTO pending_messages (thread_id, request_uid, content, created_at)
-             VALUES (?, ?, ?, ?) RETURNING pending_id",
+            "INSERT INTO pending_messages (thread_id, request_uid, content, created_at,
+                from_thread_id)
+             VALUES (?, ?, ?, ?, ?) RETURNING pending_id",
         )
         .bind(thread_id)
         .bind(&request_uid)
         .bind(content)
         .bind(timestamp_ms()?)
+        .bind(from)
         .fetch_one(&self.pool)
         .await
         .context("store sent message")?;
@@ -33,13 +47,14 @@ impl State {
             pending_id,
             request_uid,
             content: content.to_owned(),
+            from_thread_id: from.map(str::to_owned),
         })
     }
 
     /// Oldest first.
     pub async fn pending_messages(&self, thread_id: &str) -> Result<Vec<PendingMessage>> {
         let rows = sqlx::query(
-            "SELECT pending_id, request_uid, content FROM pending_messages
+            "SELECT pending_id, request_uid, content, from_thread_id FROM pending_messages
              WHERE thread_id = ? ORDER BY pending_id",
         )
         .bind(thread_id)
@@ -52,6 +67,7 @@ impl State {
                     pending_id: row.try_get("pending_id")?,
                     request_uid: row.try_get("request_uid")?,
                     content: row.try_get("content")?,
+                    from_thread_id: row.try_get("from_thread_id")?,
                 })
             })
             .collect()
@@ -64,8 +80,9 @@ impl State {
         thread_id: &str,
         pending: &PendingMessage,
     ) -> Result<Message> {
+        let from = pending.from_thread_id.as_deref();
         let message = self
-            .add_user_message(thread_id, &pending.request_uid, &pending.content)
+            .add_message_from(thread_id, &pending.request_uid, &pending.content, from)
             .await?;
         self.remove_pending(pending.pending_id).await?;
         Ok(message)

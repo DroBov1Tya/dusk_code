@@ -89,6 +89,24 @@ impl Loader {
     }
 }
 
+/// The core's agent ID is stable; its mixed bits choose a name, colour and geometry.
+pub fn identity(id: &str) -> u64 {
+    id.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
+pub fn agent_name(seed: u64) -> String {
+    const NAMES: [&str; 8] = [
+        "Aster", "Beryl", "Cinder", "Dapple", "Ember", "Fable", "Glint", "Hollow",
+    ];
+    format!(
+        "{}-{:02x}",
+        NAMES[(seed as usize) % NAMES.len()],
+        (seed >> 24) & 0xff
+    )
+}
+
 /// A walk through neighbouring cells, diagonals included, that never crosses itself.
 fn walk(random: &mut Random) -> Vec<(usize, usize)> {
     let mut path = vec![(random.below(WIDTH), random.below(HEIGHT))];

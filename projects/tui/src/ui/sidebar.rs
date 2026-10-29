@@ -11,7 +11,7 @@ use ratatui::{
 };
 
 use super::{
-    loader::Loader,
+    loader::{Loader, agent_name, identity},
     theme::{
         EMBER, NIGHT, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL, VIOLET, bold, dusk, fg,
     },
@@ -263,24 +263,6 @@ fn scroll_limit(line_count: usize, area: Rect) -> usize {
     } else {
         line_count.saturating_sub(visible).min(u16::MAX as usize)
     }
-}
-
-/// The core's agent ID is stable; its mixed bits choose a name, colour and geometry.
-fn identity(id: &str) -> u64 {
-    id.bytes().fold(0xcbf29ce484222325_u64, |hash, byte| {
-        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-    })
-}
-
-fn agent_name(seed: u64) -> String {
-    const NAMES: [&str; 8] = [
-        "Aster", "Beryl", "Cinder", "Dapple", "Ember", "Fable", "Glint", "Hollow",
-    ];
-    format!(
-        "{}-{:02x}",
-        NAMES[(seed as usize) % NAMES.len()],
-        (seed >> 24) & 0xff
-    )
 }
 
 fn format_duration(ms: u64) -> String {

@@ -5,7 +5,11 @@
 //! A send is confirmed once the message is stored as pending. The thread takes pending
 //! messages in when it is free: right away when idle, after the running turn otherwise,
 //! so the thread always reads in the order things happened. A message that is a command,
-//! such as `/compact`, runs at that point instead of joining the thread.
+//! such as `/compact`, runs at that point instead of joining the thread. Messages from
+//! other agents also join a running turn, between its steps.
+//!
+//! A subagent's runner ends once it is idle; a new message starts it again. Stopping a
+//! thread stops the agents it asked.
 
 use std::{path::PathBuf, sync::Arc};
 
@@ -15,12 +19,13 @@ use tokio::sync::mpsc;
 use super::{
     agent::Agent,
     inbox::{Inbox, Input, Stop},
+    mailboxes::{Mailbox, Mailboxes},
 };
 use crate::{
     commands::{self, Command},
     live_config::LiveConfig,
     providers::{Model, ModelEvent, ModelProvider, ToolCall},
-    state::{Compaction, PendingMessage, State, ThreadTokens, Turn, estimate_tokens},
+    state::{Compaction, Message, PendingMessage, State, ThreadTokens, Turn, estimate_tokens},
     tools::{ToolRegistry, ToolResult, ToolScope},
 };
 
@@ -28,6 +33,10 @@ use crate::{
 pub struct ThreadRunner {
     agent: Agent,
     inbox: Inbox,
+    mailboxes: Arc<Mailboxes>,
+    ends_when_idle: bool,
+    /// Took itself out of the mailboxes, so another runner of the thread may be there now.
+    left: bool,
 }
 
 /// Everything a running thread needs; the thread must exist.
@@ -42,6 +51,9 @@ pub struct ThreadSetup {
     pub compact_prompt: PathBuf,
     /// How many agents are above this thread; 0 for a chat.
     pub depth: usize,
+    pub mailboxes: Arc<Mailboxes>,
+    /// A subagent's runner ends when idle instead of waiting for its client.
+    pub ends_when_idle: bool,
 }
 
 /// The client's side for sending. Dropping every clone ends the thread once the queue is done.
@@ -117,12 +129,13 @@ pub enum ThreadEvent {
         agent: String,
         task: String,
     },
-    /// An event of a subagent's thread, while the call that asked it waits. A subagent's
-    /// own subagents come wrapped once more.
+    /// An event of a subagent's thread. A subagent's own subagents come wrapped once more.
     Subagent {
         thread_id: String,
         event: Box<ThreadEvent>,
     },
+    /// Another agent wrote to this thread; the message has joined it.
+    FromAgent(Message),
     /// Nothing is running and nothing will start until the next message.
     Idle,
     /// The thread stopped on an error it could not handle, such as a database failure.
@@ -154,6 +167,9 @@ impl ThreadRunner {
         let runner = Self {
             agent,
             inbox: Inbox::new(inputs),
+            mailboxes: setup.mailboxes,
+            ends_when_idle: setup.ends_when_idle,
+            left: false,
         };
         let output = ThreadOutput {
             events: event_receiver,
@@ -161,11 +177,23 @@ impl ThreadRunner {
         (runner, input, output)
     }
 
-    /// Runs until every `ThreadInput` is dropped and the queue is done. An error ends the
-    /// thread and is reported to the client as `Failed`.
+    /// How other threads reach this one while it runs.
+    pub fn mailbox(&self, input: &ThreadInput) -> Mailbox {
+        Mailbox {
+            input: input.inputs.downgrade(),
+            events: self.agent.events.downgrade(),
+        }
+    }
+
+    /// Runs until every `ThreadInput` is dropped and the queue is done, or for a
+    /// subagent until it is idle. An error ends the thread and is reported to the client
+    /// as `Failed`.
     pub async fn run(mut self) {
         if let Err(error) = self.serve().await {
             self.agent.emit(ThreadEvent::Failed(format!("{error:#}")));
+        }
+        if self.ends_when_idle && !self.left {
+            self.mailboxes.remove(&self.agent.thread_id).await;
         }
     }
 
@@ -180,8 +208,17 @@ impl ThreadRunner {
                 continue;
             }
             self.agent.emit(ThreadEvent::Idle);
-            if !self.inbox.wait().await {
-                return Ok(());
+            if self.ends_when_idle {
+                if self.leave_if_idle().await? {
+                    return Ok(());
+                }
+                continue;
+            }
+            match self.inbox.wait().await {
+                None => return Ok(()),
+                // The agents this thread asked may still be at work.
+                Some(Input::Cancel) => self.cancel_agents().await?,
+                Some(_) => {}
             }
         }
     }
@@ -203,7 +240,7 @@ impl ThreadRunner {
             };
             self.take_in().await?;
             if stop == Some(Stop::Cancelled) {
-                return Ok(());
+                return self.cancel_agents().await;
             }
         }
     }
@@ -228,12 +265,20 @@ impl ThreadRunner {
 
     async fn take(&mut self, pending: PendingMessage) -> Result<()> {
         let state = Arc::clone(&self.agent.state);
-        let Some(command) = commands::parse(&pending.content) else {
+        // Another agent's message is never a command, whatever it starts with.
+        let command = match pending.from_thread_id {
+            Some(_) => None,
+            None => commands::parse(&pending.content),
+        };
+        let Some(command) = command else {
             let message = state.admit_pending(&self.agent.thread_id, &pending).await?;
             self.agent.title_from_first_message(&message).await?;
             self.agent.emit(ThreadEvent::Queued {
-                message_id: message.message_id,
+                message_id: message.message_id.clone(),
             });
+            if message.from_thread_id.is_some() {
+                self.agent.emit(ThreadEvent::FromAgent(message));
+            }
             return Ok(());
         };
         match command {
@@ -250,6 +295,34 @@ impl ThreadRunner {
         }
         // Removed only once done: a command cut short by a crash runs again on restart.
         state.remove_pending(pending.pending_id).await
+    }
+
+    /// Stopping a thread stops the agents it asked, and theirs in turn.
+    async fn cancel_agents(&self) -> Result<()> {
+        for thread in self
+            .agent
+            .state
+            .agent_threads(&self.agent.thread_id)
+            .await?
+        {
+            if let Some(mailbox) = self.mailboxes.get(&thread.id).await {
+                mailbox.send(Input::Cancel);
+            }
+        }
+        Ok(())
+    }
+
+    /// Ends a subagent's runner unless a message came in meanwhile. Checked under the
+    /// mailboxes lock, which a sender holds after storing its message, so a message
+    /// either finds this runner live or finds it gone and starts a new one.
+    async fn leave_if_idle(&mut self) -> Result<bool> {
+        let mut live = self.mailboxes.lock().await;
+        if self.has_pending().await? {
+            return Ok(false);
+        }
+        live.remove(&self.agent.thread_id);
+        self.left = true;
+        Ok(true)
     }
 
     async fn has_pending(&self) -> Result<bool> {
@@ -448,10 +521,21 @@ mod tests {
         config: &Arc<LiveConfig>,
         model: Model,
     ) -> (ThreadRunner, ThreadInput, ThreadOutput) {
+        runner_with(state, provider, config, model, Box::new(Echo))
+    }
+
+    /// A runner whose only tool is `tool`, which the scripts call as `echo`.
+    fn runner_with(
+        state: &Arc<State>,
+        provider: &Arc<FakeProvider>,
+        config: &Arc<LiveConfig>,
+        model: Model,
+        tool: Box<dyn Tool>,
+    ) -> (ThreadRunner, ThreadInput, ThreadOutput) {
         let root = temp_dir("runner_scope");
         std::fs::create_dir_all(&root).unwrap();
         let mut tools = ToolRegistry::default();
-        tools.add(Box::new(Echo));
+        tools.add(tool);
         ThreadRunner::new(ThreadSetup {
             state: Arc::clone(state),
             provider: Arc::clone(provider) as Arc<dyn ModelProvider>,
@@ -462,6 +546,8 @@ mod tests {
             scope: ToolScope::new(&root, &root).unwrap(),
             compact_prompt: root.join("COMPACT.md"),
             depth: 0,
+            mailboxes: Arc::default(),
+            ends_when_idle: false,
         })
     }
 
@@ -630,6 +716,67 @@ mod tests {
         assert_eq!(status, Some(TurnStatus::Completed));
         let requests = provider.requests.lock().unwrap();
         assert_eq!(requests[2].len(), 1, "only the summary is left");
+    }
+
+    /// Like a subagent writing back while the asking turn runs a tool.
+    struct WriteBack(Arc<State>);
+
+    impl Tool for WriteBack {
+        fn name(&self) -> &'static str {
+            "echo"
+        }
+
+        fn description(&self, _context: &ToolContext<'_>) -> String {
+            "Lets the subagent write back.".into()
+        }
+
+        fn parameters(&self) -> Value {
+            json!({ "type": "object" })
+        }
+
+        fn call<'a>(
+            &'a self,
+            _arguments: Value,
+            _context: ToolContext<'a>,
+        ) -> BoxFuture<'a, String> {
+            Box::pin(async move {
+                let sent = self.0.add_pending_from("thread", "found it", Some("child"));
+                sent.await?;
+                Ok("asked".into())
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn an_agent_message_joins_the_running_turn_and_starts_no_other() {
+        let state = thread_state("agent_message").await;
+        let child = state.create_agent_thread("child", "thread", "general");
+        child.await.unwrap();
+        let config = live_config("runner_config");
+        let provider = provider(vec![
+            vec![Step::Call("go"), Step::Done],
+            vec![Step::Text("it found it"), Step::Done],
+        ]);
+        let tool = Box::new(WriteBack(Arc::clone(&state)));
+        let (runner, input, _output) = runner_with(&state, &provider, &config, model(None), tool);
+        input.send("ask the child").await.unwrap();
+        drop(input);
+
+        runner.run().await;
+
+        let second_step = provider.requests.lock().unwrap()[1].clone();
+        let header = "[message from agent thread child]\nfound it".to_owned();
+        assert_eq!(second_step.last(), Some(&ChatMessage::User(header)));
+        let messages = state.list_messages("thread").await.unwrap();
+        let from = messages
+            .iter()
+            .find(|message| message.content == "found it");
+        assert_eq!(from.unwrap().from_thread_id.as_deref(), Some("child"));
+        assert_eq!(
+            state.count_turns("thread").await.unwrap(),
+            1,
+            "no second turn"
+        );
     }
 
     #[tokio::test]
