@@ -118,6 +118,22 @@ impl State {
         .collect()
     }
 
+    /// The chat a thread belongs to: itself for a chat, the top of its tree for an agent.
+    pub async fn root_thread(&self, id: &str) -> Result<String> {
+        sqlx::query_scalar(
+            "WITH RECURSIVE above(id, parent) AS (
+                SELECT id, parent_thread_id FROM threads WHERE id = ?
+                UNION ALL
+                SELECT threads.id, threads.parent_thread_id
+                FROM threads JOIN above ON threads.id = above.parent
+             ) SELECT id FROM above WHERE parent IS NULL",
+        )
+        .bind(id)
+        .fetch_one(&self.pool)
+        .await
+        .context("find the chat of a thread")
+    }
+
     /// Every agent thread below this one, at any depth.
     pub async fn descendant_threads(&self, id: &str) -> Result<Vec<String>> {
         sqlx::query_scalar(
@@ -206,6 +222,8 @@ mod tests {
             .await
             .unwrap();
 
+        assert_eq!(state.root_thread("b").await.unwrap(), "chat");
+        assert_eq!(state.root_thread("chat").await.unwrap(), "chat");
         let mut below = state.descendant_threads("chat").await.unwrap();
         below.sort();
         assert_eq!(

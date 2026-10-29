@@ -31,6 +31,9 @@ pub const MAX_AGENT_DEPTH: usize = 3;
 pub const GENERAL_AGENT: &str = "general";
 /// Agent threads one thread may open; asking an earlier one again is not limited.
 const MAX_AGENTS_PER_THREAD: usize = 16;
+/// Agent threads in one chat's whole tree: the per-thread cap alone allows thousands
+/// three levels down.
+const MAX_AGENTS_PER_CHAT: usize = 32;
 const GENERAL_DESCRIPTION: &str = "works like this chat, with MAIN.md and every tool; \
 for research, reading code and self-contained parts of a task";
 
@@ -119,6 +122,14 @@ impl AskAgent {
         ensure!(
             node.is_some() || agent_name == GENERAL_AGENT,
             "no agent {agent_name} to ask from here"
+        );
+        let state = &self.launcher.state;
+        let chat = state.root_thread(&self.thread_id).await?;
+        let in_chat = state.descendant_threads(&chat).await?.len();
+        ensure!(
+            in_chat < MAX_AGENTS_PER_CHAT,
+            "this chat has {MAX_AGENTS_PER_CHAT} agents already; continue one of them with \
+             `thread` or do the work yourself"
         );
         let opened = self.launcher.state.agent_threads(&self.thread_id).await?;
         ensure!(
