@@ -74,10 +74,10 @@ jobs:
           fi
           printf '%s\n' "$version" > "dist/$name/resources/VERSION"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
-          cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
-          "./$name/duskcode" --version
+          "./dist/$name/duskcode" --version
       - name: Upload
         if: startsWith(github.ref, 'refs/tags/v')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256 --repo "$GITHUB_REPOSITORY"
+        # GitHub keeps a SHA-256 digest of every asset; installers check against it.
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz --repo "$GITHUB_REPOSITORY"

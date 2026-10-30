@@ -44,9 +44,9 @@ case "$(uname -s)-$(uname -m)" in
 esac
 
 if [ "$version" = "latest" ]; then
-  base="https://github.com/$repo/releases/latest/download"
+  api="https://api.github.com/repos/$repo/releases/latest"
 else
-  base="https://github.com/$repo/releases/download/$version"
+  api="https://api.github.com/repos/$repo/releases/tags/$version"
 fi
 archive="duskcode-$target.tar.gz"
 
@@ -56,18 +56,25 @@ trap 'rm -rf "$work"; [ -z "$binary_stage" ] || rm -f "$binary_stage"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 step "Downloading"
-note "$version  $target"
+# The release names its tag, and GitHub keeps the SHA-256 of every file in it.
+curl -fsSL --proto '=https' --tlsv1.2 -H 'Accept: application/vnd.github+json' \
+  -o "$work/release.json" "$api" || fail "cannot read the $version release from GitHub"
+tag="$(tr ',' '\n' < "$work/release.json" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+expected="$(tr ',' '\n' < "$work/release.json" | awk -v name="\"$archive\"" '
+  index($0, "\"name\"") && index($0, name) { found = 1; next }
+  found && /"digest":/ { sub(/.*"sha256:/, ""); sub(/".*/, ""); print; exit }
+  found && /"name":/ { exit }')"
+[ -n "$tag" ] || fail "unexpected answer from GitHub"
+[ -n "$expected" ] || fail "$tag has no build for $target yet: release builds take a few minutes after a tag"
+note "$tag  $target"
 # A progress bar on a terminal; quiet otherwise.
 if [ -t 2 ]; then progress="-#"; else progress="-sS"; fi
-curl -fL "$progress" --proto '=https' --tlsv1.2 -o "$work/$archive" "$base/$archive" \
-  || fail "cannot download $archive"
-curl -fsSL --proto '=https' --tlsv1.2 -o "$work/$archive.sha256" "$base/$archive.sha256" \
-  || fail "cannot download the checksum"
+curl -fL "$progress" --proto '=https' --tlsv1.2 -o "$work/$archive" \
+  "https://github.com/$repo/releases/download/$tag/$archive" || fail "cannot download $archive"
 ok "$archive"
 
 step "Verifying"
 
-expected="$(cut -d ' ' -f 1 < "$work/$archive.sha256")"
 if command -v sha256sum >/dev/null 2>&1; then
   actual="$(sha256sum "$work/$archive" | cut -d ' ' -f 1)"
 else
@@ -83,9 +90,7 @@ binary_version="$("$package/duskcode" --version)"
 binary_version="${binary_version#duskcode }"
 printf '%s\n' "$binary_version" | LC_ALL=C grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
   || fail "invalid binary version"
-if [ "$version" != latest ] && [ "$version" != "v$binary_version" ]; then
-  fail "binary does not match the requested release"
-fi
+[ "$tag" = "v$binary_version" ] || fail "binary does not match the $tag release"
 ok "duskcode $binary_version runs here"
 # 0.65.1 is the first resource-aware release. Historical binary-only archives,
 # including the stable 0.60.0, remain installable; newer packages must fail closed.

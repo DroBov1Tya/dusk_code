@@ -1,7 +1,7 @@
 //! Updating the binary from the GitHub releases. The stable channel follows the full
 //! releases, the round versions; the dev channel follows every tag, pre-releases too.
-//! An update downloads the archive built for this target, checks it against its
-//! published SHA-256, and moves the new binary over the running one, which goes on
+//! An update downloads the archive built for this target, checks it against the
+//! SHA-256 digest GitHub keeps for every release asset, and moves the new binary over the running one, which goes on
 //! until it is started again. Prompts and skills that ship with dusk are brought up to
 //! date at that start, see `builtin`.
 
@@ -80,16 +80,22 @@ pub(super) struct Release {
 #[derive(Deserialize)]
 struct Asset {
     name: String,
+    /// `sha256:<hex>`, computed by GitHub on upload.
+    digest: Option<String>,
 }
 
 impl Release {
-    /// Both the archive for this target and its checksum are uploaded.
+    /// The archive for this target is uploaded and GitHub has its digest.
     pub(super) fn ready(&self) -> bool {
+        self.digest().is_some()
+    }
+
+    /// The SHA-256 of this target's archive, in lowercase hex.
+    fn digest(&self) -> Option<String> {
         let archive = format!("duskcode-{TARGET}.tar.gz");
-        let checksum = format!("{archive}.sha256");
-        [archive, checksum]
-            .iter()
-            .all(|name| self.assets.iter().any(|asset| &asset.name == name))
+        let asset = self.assets.iter().find(|asset| asset.name == archive)?;
+        let hex = asset.digest.as_deref()?.strip_prefix("sha256:")?;
+        Some(hex.to_ascii_lowercase())
     }
 }
 
@@ -206,6 +212,15 @@ pub async fn install(tag: &str) -> Result<PathBuf> {
     );
     ensure!(!TARGET.is_empty(), "this build does not know its target");
     let client = client()?;
+    let release = get_json::<Release>(&client, &format!("releases/tags/{tag}"))
+        .await
+        .with_context(|| format!("cannot read release {tag}"))?;
+    let expected = release.digest().with_context(|| {
+        format!(
+            "{tag} has no build for {TARGET} yet; right after a release is tagged its \
+             builds take a few minutes on GitHub, so try again later"
+        )
+    })?;
     let name = format!("duskcode-{TARGET}");
     let base = format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}.tar.gz");
     let archive = download(&client, &base).await.with_context(|| {
@@ -214,11 +229,8 @@ pub async fn install(tag: &str) -> Result<PathBuf> {
              tagged its builds take a few minutes on GitHub, so try again later"
         )
     })?;
-    let published = download(&client, &format!("{base}.sha256")).await?;
-    let published = String::from_utf8_lossy(&published);
-    let expected = published.split_whitespace().next().unwrap_or_default();
     ensure!(
-        hex(&Sha256::digest(&archive)) == expected.to_ascii_lowercase(),
+        hex(&Sha256::digest(&archive)) == expected,
         "the download does not match its checksum; nothing was changed"
     );
     let binary = std::env::current_exe()
