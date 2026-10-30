@@ -116,9 +116,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     pictures(frame, app);
 }
 
-/// Pictures over the previews, unless something is drawn on top of the thread: the
-/// terminal paints them above every cell, so a window would be hidden under them.
+/// Explicitly requested pictures over the previews, unless something is drawn on top
+/// of the thread: the terminal paints them above every cell, hiding a window under them.
 fn pictures(frame: &mut Frame, app: &App) {
+    // Detection cannot confirm that a payload was displayed. Keep the cell preview
+    // by default; replacing it with an unacknowledged picture can leave a blank card.
+    if !matches!(
+        std::env::var("DUSKCODE_GRAPHICS").as_deref(),
+        Ok("kitty" | "iterm2" | "sixel")
+    ) {
+        return;
+    }
     let covered = app.panel.is_some()
         || app.sidebar_overlay.is_some()
         || app.command_popup.is_some()
