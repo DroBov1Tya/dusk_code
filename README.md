@@ -11,6 +11,11 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - File reading, writing, editing and deletion; shell commands; loading skills from `SKILL.md` files.
 - Background subagents with separate threads and messages to their parent.
 - Persistent task boards displayed in the terminal sidebar.
+- Expert agents in `agents/<name>/AGENT.md` and skills in `skills/<name>/SKILL.md`, both
+  editable in `/settings`; agents may improve skills and write new ones from repeated,
+  verified practice.
+- MCP servers over stdio or HTTP, added and switched in `/settings`.
+- Raw log files for the core and the terminal client.
 
 ## Install
 

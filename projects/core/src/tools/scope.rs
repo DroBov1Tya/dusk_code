@@ -1,5 +1,6 @@
-//! Where tools may act: the directory the client was started in and the thread workspace,
-//! never the config folder, which holds the API keys and the settings that bound the agent.
+//! Where tools may act: the directory the client was started in, the thread workspace and
+//! the skills and agents folders, so agents can write and improve them. Never the rest of
+//! the config folder, which holds the API keys and the settings that bound the agent.
 //! Paths are resolved after following symlinks, so neither `..` nor a link leads outside.
 
 use std::{
@@ -14,6 +15,8 @@ pub struct ToolScope {
     cwd: PathBuf,
     workspace: PathBuf,
     protected: Option<PathBuf>,
+    /// Folders open to the tools wherever they are, the protected one included.
+    shared: Vec<PathBuf>,
 }
 
 impl ToolScope {
@@ -27,12 +30,20 @@ impl ToolScope {
                 .canonicalize()
                 .context("thread workspace is not accessible")?,
             protected: None,
+            shared: Vec::new(),
         })
     }
 
     /// Keeps the tools out of `folder` and everything under it.
     pub fn protect(mut self, folder: &Path) -> Self {
         self.protected = folder.canonicalize().ok();
+        self
+    }
+
+    /// Opens `folder` to the tools, even inside the protected one. A missing folder
+    /// stays closed.
+    pub fn share(mut self, folder: &Path) -> Self {
+        self.shared.extend(folder.canonicalize().ok());
         self
     }
 
@@ -52,6 +63,13 @@ impl ToolScope {
         ensure!(!path.trim().is_empty(), "path is empty");
         let path = self.cwd.join(path);
         let resolved = resolve_existing_prefix(&path)?;
+        if self
+            .shared
+            .iter()
+            .any(|shared| resolved.starts_with(shared))
+        {
+            return Ok(resolved);
+        }
         ensure!(
             resolved.starts_with(&self.cwd) || resolved.starts_with(&self.workspace),
             "path is outside the working directory and the thread workspace"
@@ -145,5 +163,22 @@ mod tests {
                 .is_err()
         );
         assert!(scope.resolve(".config/other.yml").is_ok());
+
+        let skills = scope.cwd().join(".config/duskcode/skills");
+        fs::create_dir_all(&skills).unwrap();
+        let elsewhere = ToolScope::new(&scope.workspace().to_owned(), scope.workspace())
+            .unwrap()
+            .protect(&scope.cwd().join(".config/duskcode"))
+            .share(&skills);
+        assert!(
+            elsewhere
+                .resolve(&format!("{}/x/SKILL.md", skills.display()))
+                .is_ok()
+        );
+        assert!(
+            elsewhere
+                .resolve(&format!("{}/../config.yml", skills.display()))
+                .is_err()
+        );
     }
 }
