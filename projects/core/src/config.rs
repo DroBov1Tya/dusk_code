@@ -13,6 +13,8 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
 
+use crate::{modes, tools::ToolKind};
+
 /// MCP server names are this long at most.
 const MAX_MCP_NAME: usize = 24;
 
@@ -45,6 +47,12 @@ pub struct Config {
     /// provider when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    /// The chat's mode, by its file in `modes/`; MAIN when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mode: Option<String>,
+    /// Tool switches of the modes other than MAIN, which uses `tools`.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    modes: BTreeMap<String, BTreeMap<String, bool>>,
     /// How hard the model reasons; the provider's default when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     effort: Option<Effort>,
@@ -296,6 +304,34 @@ impl Config {
 
     pub fn set_tool_enabled(&mut self, name: &str, enabled: bool) {
         self.tools.insert(name.to_owned(), enabled);
+    }
+
+    pub fn mode(&self) -> &str {
+        self.mode.as_deref().unwrap_or(modes::MAIN)
+    }
+
+    pub fn set_mode(&mut self, mode: String) {
+        self.mode = (mode != modes::MAIN).then_some(mode);
+    }
+
+    /// A tool's switch in a mode: the user's, else the mode's default, else MAIN's.
+    pub fn mode_tool_enabled(&self, mode: &str, name: &str, kind: ToolKind) -> bool {
+        if mode == modes::MAIN {
+            return self.tool_enabled(name);
+        }
+        let switched = self.modes.get(mode).and_then(|tools| tools.get(name));
+        switched
+            .copied()
+            .or_else(|| modes::default_tool(mode, name, kind))
+            .unwrap_or_else(|| self.tool_enabled(name))
+    }
+
+    pub fn set_mode_tool_enabled(&mut self, mode: &str, name: &str, enabled: bool) {
+        if mode == modes::MAIN {
+            return self.set_tool_enabled(name, enabled);
+        }
+        let tools = self.modes.entry(mode.to_owned()).or_default();
+        tools.insert(name.to_owned(), enabled);
     }
 
     pub fn model(&self) -> Option<&str> {

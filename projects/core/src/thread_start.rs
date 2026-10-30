@@ -1,5 +1,6 @@
 //! Starting a thread: its workspace folder, its record and its system prompt, which is
-//! MAIN.md for a chat and for the general agent, and the agent's own text for others.
+//! the mode's for a chat, MAIN mode's for the general agent, and the agent's own text for
+//! others.
 
 use std::{
     fs,
@@ -12,6 +13,7 @@ use uuid::Uuid;
 
 use crate::{
     init::create_private_dir,
+    modes,
     paths::Paths,
     state::{State, Thread},
 };
@@ -25,18 +27,25 @@ pub struct StartedThread {
     pub workspace: PathBuf,
 }
 
+/// Stands in a chat's first message when its mode has no prompt.
+const NO_PROMPT: &str = "(no prompt)";
+
 /// The folder is created first, so a failed write leaves an empty folder rather than a
-/// thread without one. MAIN.md is copied into the thread as its first message: later
-/// edits to the file do not change threads already started.
-pub async fn start_thread(state: &State, paths: &Paths, source: &str) -> Result<StartedThread> {
-    let main_prompt = read_prompt(&paths.main_prompt())?;
+/// thread without one. A chat's first message is the prompt of the mode it starts in,
+/// kept for the record; each request puts the prompt of the current mode in its place.
+pub async fn start_thread(
+    state: &State,
+    paths: &Paths,
+    source: &str,
+    mode: &str,
+) -> Result<StartedThread> {
+    let prompt = modes::prompt(&paths.modes_dir(), mode)?;
     let thread_id = Uuid::now_v7().to_string();
     let workspace = paths.thread_workspace(&thread_id)?;
     create_private_dir(&workspace)?;
     state.create_thread(&thread_id, source).await?;
-    if let Some(prompt) = main_prompt {
-        state.add_system_message(&thread_id, &prompt).await?;
-    }
+    let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
+    state.add_system_message(&thread_id, prompt).await?;
     Ok(StartedThread {
         thread_id,
         name: None,

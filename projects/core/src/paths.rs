@@ -4,7 +4,9 @@ use anyhow::{Result, anyhow, ensure};
 
 const CONFIG_ROOT: &str = ".config/duskcode";
 const CONFIG_FILE: &str = "config.yml";
-const MAIN_PROMPT: &str = "MAIN.md";
+/// Where MAIN.md was before modes; moved into `modes/` at start.
+const LEGACY_MAIN_PROMPT: &str = "MAIN.md";
+const MODES_DIR: &str = "modes";
 const COMPACT_PROMPT: &str = "COMPACT.md";
 const MEMORY_FILE: &str = "MEMORY.md";
 const FORK_PROMPT: &str = "FORK.md";
@@ -47,8 +49,18 @@ impl Paths {
         self.config_root.join(CONFIG_FILE)
     }
 
+    /// The prompt of every mode, one file each.
+    pub fn modes_dir(&self) -> PathBuf {
+        self.config_root.join(MODES_DIR)
+    }
+
+    /// MAIN mode's prompt, which the general agent works with too.
     pub fn main_prompt(&self) -> PathBuf {
-        self.config_root.join(MAIN_PROMPT)
+        crate::modes::file(&self.modes_dir(), crate::modes::MAIN)
+    }
+
+    pub fn legacy_main_prompt(&self) -> PathBuf {
+        self.config_root.join(LEGACY_MAIN_PROMPT)
     }
 
     /// How to summarize a thread when its context is compacted.

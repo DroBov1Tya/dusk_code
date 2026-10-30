@@ -267,7 +267,8 @@ impl App {
                     poll.active = true;
                 }
             }
-            KeyCode::Tab => {
+            KeyCode::Tab => return Action::NextMode,
+            KeyCode::BackTab => {
                 if let Some(last) = self.transcript.last_foldable() {
                     self.focus = Focus::Browse(last);
                 }
@@ -309,7 +310,7 @@ impl App {
                 self.transcript.toggle(selected);
                 None
             }
-            KeyCode::Esc | KeyCode::Tab => {
+            KeyCode::Esc | KeyCode::BackTab => {
                 self.focus = Focus::Input;
                 None
             }

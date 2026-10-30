@@ -72,6 +72,7 @@ pub async fn run(
             app.model = name;
             app.limit = input_limit(runtime, &choice.model);
             app.effort = runtime.config().current().effort();
+            app.mode = runtime.config().current().mode().to_owned();
         }
         // Read before the statuses: a server that settles in between still gets a frame.
         let mcp_starting = runtime.mcp_starting();
@@ -310,6 +311,10 @@ pub async fn run(
                 answer(runtime, &mut app, &mut open, command).await;
             }
 
+            Action::NextMode => match runtime.next_mode() {
+                Ok(mode) => app.mode = mode,
+                Err(error) => app.error(format!("cannot switch the mode: {error:#}")),
+            },
             Action::StopAgent(thread_id) => match runtime.stop_agent(&thread_id).await {
                 Ok(()) => app.flash = Some("stopping the agent".into()),
                 Err(error) => app.error(format!("cannot stop the agent: {error:#}")),

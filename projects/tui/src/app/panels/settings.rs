@@ -65,6 +65,8 @@ pub struct AgentRow {
 
 pub struct SettingsView {
     pub max_agents_at_work: usize,
+    /// The mode whose tools are shown.
+    pub mode: String,
     pub tools: Vec<ToolInfo>,
     pub skills: Vec<SkillInfo>,
     pub mcp: Vec<McpInfo>,
@@ -148,6 +150,7 @@ impl SettingsView {
         let AgentTree { problems, .. } = settings.agents;
         Self {
             max_agents_at_work: settings.max_agents_at_work,
+            mode: settings.mode,
             tools: settings.tools,
             skills: settings.skills,
             mcp: settings.mcp,

@@ -11,6 +11,9 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - `/fork`: a detailed summary of the thread (`FORK.md` says how) starts a new one.
 - File reading, writing, editing and deletion; shell commands; loading skills from `SKILL.md` files.
 - Background subagents with separate threads and messages to their parent.
+- Modes switched with Tab: MAIN works itself, PLAN only reads and plans, ORCHESTRATOR
+  hands work to agents. Each is a prompt in `~/.config/duskcode/modes/` with its own
+  tool switches; any other `.md` there is a mode too.
 - Persistent task boards displayed in the terminal sidebar.
 - Expert agents in `agents/<name>/AGENT.md` and skills in `skills/<name>/SKILL.md`, both
   editable in `/settings`; agents may improve skills and write new ones from repeated,

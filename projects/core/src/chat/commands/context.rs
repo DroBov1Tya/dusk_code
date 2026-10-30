@@ -1,6 +1,7 @@
 //! `/context`: what the next request of a thread carries, part by part: the system
 //! prompt, the summary of compacted history, every tool definition, and the messages,
-//! with tool results counted by tool. Before a thread exists, MAIN.md and the tools.
+//! with tool results counted by tool. Before a thread exists, the
+//! mode's prompt and the tools.
 
 use std::collections::BTreeMap;
 
@@ -30,20 +31,28 @@ pub struct ContextSection {
 pub async fn report(
     state: &State,
     thread_id: Option<&str>,
-    main_prompt: Option<String>,
+    mode: &str,
+    prompt: Option<String>,
     specs: &[ToolSpec],
     limit: u64,
 ) -> Result<ContextReport> {
     let mut sections = Vec::new();
     let conversation = match thread_id {
-        Some(thread_id) => Some(Conversation::load(state, thread_id).await?),
+        Some(thread_id) => {
+            let mut conversation = Conversation::load(state, thread_id).await?;
+            conversation.prompt = Some(prompt.clone());
+            Some(conversation)
+        }
         None => None,
     };
     match &conversation {
         Some(conversation) => sections.extend(thread_sections(conversation)),
         None => {
-            let tokens = main_prompt.as_deref().map_or(0, estimate_tokens);
-            sections.push(section("system prompt", vec![("MAIN.md".into(), tokens)]));
+            let tokens = prompt.as_deref().map_or(0, estimate_tokens);
+            sections.push(section(
+                "system prompt",
+                vec![(format!("{mode}.md"), tokens)],
+            ));
         }
     }
     let tools = specs
@@ -72,7 +81,9 @@ fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
         }
         let kind = match message.role {
             MessageRole::System => {
-                system.push((first_line(&message.content), tokens));
+                if let Some(content) = conversation.content(message) {
+                    system.push((first_line(&content), estimate_tokens(&content)));
+                }
                 continue;
             }
             MessageRole::Tool => {

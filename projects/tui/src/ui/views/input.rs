@@ -161,6 +161,17 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     show_cursor(frame, app, text_area, (cursor.0, cursor.1 - skip));
 }
 
+/// The chat's mode as a cell of its own colour; Tab switches it.
+fn mode_chip(mode: &str) -> Span<'static> {
+    let color = match mode {
+        "MAIN" => TEAL,
+        "PLAN" => SUN,
+        "ORCHESTRATOR" => VIOLET,
+        _ => ROSE,
+    };
+    Span::styled(format!(" {} ", mode.to_lowercase()), bold(NIGHT).bg(color))
+}
+
 /// The repository, branch, commits, changed files and the distance to the upstream.
 fn git_line(summary: &GitSummary) -> Line<'static> {
     let dot = || Span::styled(" \u{00B7} ", dim());
@@ -419,6 +430,11 @@ fn status(app: &App, width: usize) -> Line<'static> {
         (None, 0) => String::new(),
         (None, scroll) => format!("{scroll} lines below"),
     };
+    let mut doing = doing;
+    if !app.mode.is_empty() {
+        doing.insert(0, Span::raw(" "));
+        doing.insert(0, mode_chip(&app.mode));
+    }
     let left_width: usize = doing.iter().map(Span::width).sum::<usize>() + 4;
     let right_width = below.width() + 2;
     let fill_width = width.saturating_sub(left_width + right_width);

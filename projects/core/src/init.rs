@@ -11,7 +11,7 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 
 use tracing::{info, warn};
 
-use crate::{paths::Paths, skills};
+use crate::{modes, paths::Paths, skills};
 
 const CONFIG_TEMPLATE: &str = "\
 # dusk_code provider settings. Keep this file private.
@@ -46,11 +46,6 @@ limits:
 #
 # The core rewrites this file when a setting changes at runtime; only its own header
 # comment is kept then.
-";
-
-const MAIN_PROMPT_TEMPLATE: &str = "\
-You are the main agent of dusk_code, working with the user in a chat.
-Answer directly and concisely, in the language the user writes in.
 ";
 
 /// Also used when COMPACT.md is missing or blank.
@@ -115,12 +110,39 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
         Err(error) => warn!("cannot add the built-in skills: {error:#}"),
     }
     let config_created = ensure_config(&paths.config_file())?;
-    create_private_file(&paths.main_prompt(), MAIN_PROMPT_TEMPLATE.as_bytes())?;
+    create_private_dir(&paths.modes_dir())?;
+    move_legacy_main_prompt(paths)?;
+    for mode in [modes::MAIN, modes::PLAN, modes::ORCHESTRATOR] {
+        let template = modes::template(mode).unwrap_or_default();
+        create_private_file(&modes::file(&paths.modes_dir(), mode), template.as_bytes())?;
+    }
     create_private_file(&paths.compact_prompt(), COMPACT_PROMPT_TEMPLATE.as_bytes())?;
     create_private_file(&paths.fork_prompt(), FORK_PROMPT_TEMPLATE.as_bytes())?;
     // SQLite would create the file with umask permissions; an empty file is a valid new database.
     create_private_file(&paths.state_db(), b"")?;
     Ok(Initialization { config_created })
+}
+
+/// Before modes, MAIN.md sat in the config root. A MAIN.md the user wrote becomes the
+/// orchestrator's prompt, as it was written to coordinate; the untouched template is
+/// MAIN mode's. The file is moved, never rewritten, and only into a free place.
+fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
+    let legacy = paths.legacy_main_prompt();
+    let Ok(text) = fs::read_to_string(&legacy) else {
+        return Ok(());
+    };
+    let mode = if text.trim() == modes::MAIN_TEMPLATE.trim() {
+        modes::MAIN
+    } else {
+        modes::ORCHESTRATOR
+    };
+    let target = modes::file(&paths.modes_dir(), mode);
+    if fs::symlink_metadata(&target).is_ok() {
+        return Ok(());
+    }
+    fs::rename(&legacy, &target).context("cannot move MAIN.md into modes")?;
+    info!("MAIN.md moved to modes/{mode}.md");
+    Ok(())
 }
 
 pub fn create_private_dir(directory: &Path) -> Result<()> {
@@ -201,6 +223,22 @@ mod tests {
         assert_eq!(mode(&paths.skills_dir()), 0o700);
         assert_eq!(mode(&paths.agents_dir()), 0o700);
         assert_eq!(mode(&paths.state_db()), 0o600);
+    }
+
+    #[test]
+    fn a_written_main_prompt_becomes_the_orchestrator() {
+        let paths = temp_paths("legacy_main");
+        fs::create_dir_all(paths.config_root()).unwrap();
+        fs::write(paths.legacy_main_prompt(), "Coordinate the agents.").unwrap();
+        initialize(&paths).unwrap();
+        assert!(!paths.legacy_main_prompt().exists());
+        let orchestrator = modes::file(&paths.modes_dir(), modes::ORCHESTRATOR);
+        assert_eq!(
+            fs::read_to_string(orchestrator).unwrap(),
+            "Coordinate the agents."
+        );
+        let main = fs::read_to_string(paths.main_prompt()).unwrap();
+        assert_eq!(main, modes::MAIN_TEMPLATE);
     }
 
     #[cfg(unix)]

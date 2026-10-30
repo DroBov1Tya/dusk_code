@@ -26,6 +26,9 @@ pub struct Conversation {
     /// Who wrote the messages other agents sent, by thread: an agent's name, or the chat
     /// that asked.
     pub senders: HashMap<String, String>,
+    /// For a chat, the prompt of its current mode, which takes the place of its first
+    /// message; `Some(None)` leaves the place empty. `None` keeps the message.
+    pub prompt: Option<Option<String>>,
 }
 
 impl Conversation {
@@ -59,7 +62,17 @@ impl Conversation {
             last_prompt: state.last_prompt(thread_id, compaction_id).await?,
             compaction,
             senders,
+            prompt: None,
         })
+    }
+
+    /// What a message says to the model: a chat's first message is its mode's prompt.
+    pub fn content(&self, message: &Message) -> Option<String> {
+        let slot = message.sequence == 1 && message.role == MessageRole::System;
+        match &self.prompt {
+            Some(prompt) if slot => prompt.clone(),
+            _ => Some(message.content.clone()),
+        }
     }
 
     pub fn has_queued(&self) -> bool {
@@ -84,7 +97,8 @@ impl Conversation {
             .map(|compaction| ChatMessage::User(format!("{SUMMARY_INTRO}{}", compaction.summary)));
         let system = system
             .into_iter()
-            .filter_map(|message| chat_message(message, &self.senders));
+            .filter_map(|message| self.content(message))
+            .map(ChatMessage::System);
         let rest = rest
             .into_iter()
             .filter_map(|message| chat_message(message, &self.senders));
@@ -214,6 +228,7 @@ mod tests {
             answered_through: 5,
             last_prompt: None,
             senders: HashMap::new(),
+            prompt: None,
         };
 
         let messages = conversation.chat_messages();
@@ -226,5 +241,33 @@ mod tests {
         assert_eq!(conversation.newest_sequence(), 6);
         assert_eq!(conversation.compactable_through(), Some(5), "6 is queued");
         assert_eq!(conversation.tokens(&[]), 5 + 5 + 2 + 5);
+    }
+
+    #[test]
+    fn a_chat_mode_prompt_takes_the_place_of_the_first_message_only() {
+        let mut conversation = Conversation {
+            messages: vec![
+                message(1, MessageRole::System, "old prompt"),
+                message(2, MessageRole::System, "fork summary"),
+            ],
+            compaction: None,
+            answered_through: 0,
+            last_prompt: None,
+            senders: HashMap::new(),
+            prompt: Some(Some("plan prompt".into())),
+        };
+        let system = |conversation: &Conversation| conversation.chat_messages();
+        assert_eq!(
+            system(&conversation),
+            [
+                ChatMessage::System("plan prompt".into()),
+                ChatMessage::System("fork summary".into())
+            ]
+        );
+        conversation.prompt = Some(None);
+        assert_eq!(
+            system(&conversation),
+            [ChatMessage::System("fork summary".into())]
+        );
     }
 }

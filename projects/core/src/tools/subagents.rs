@@ -6,7 +6,7 @@
 //! none is lost, and arrives between the reader's steps.
 //!
 //! A chat may ask the entry agents; an agent may ask the agents it links to. Any thread
-//! may ask the general agent, which works like a chat: MAIN.md and every tool, so
+//! may ask the general agent, which works like a chat: MAIN mode's prompt and every tool, so
 //! delegating needs no AGENT.md. Depth is bounded, so agents cannot hand work down forever.
 
 use std::path::Path;

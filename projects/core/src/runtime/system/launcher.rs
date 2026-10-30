@@ -68,6 +68,7 @@ impl Launcher {
                 .share(&self.paths.agents_dir()),
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),
+            modes_dir: self.paths.modes_dir(),
             depth,
             mailboxes: Arc::clone(&self.mailboxes),
             ends_when_idle: false,
@@ -81,6 +82,7 @@ impl Launcher {
     /// with a `tools` list keeps only those, and that way back.
     pub fn tools(&self, thread_id: &str, agent: Option<&Identity>, depth: usize) -> ToolRegistry {
         let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
+        tools.chat = depth == 0;
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
                 tools.add(Box::new(tool));

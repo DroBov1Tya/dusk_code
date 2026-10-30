@@ -79,6 +79,8 @@ pub enum Action {
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),
     OpenThread(String),
+    /// Move the chat to its next mode.
+    NextMode,
     /// Stop one subagent and the agents it asked.
     StopAgent(String),
     Copy(String),
@@ -189,6 +191,8 @@ pub struct TranscriptHit {
 
 pub struct App {
     pub model: String,
+    /// The chat's mode: its prompt and tools.
+    pub mode: String,
     /// The reasoning effort; `None` leaves it to the provider.
     pub effort: Option<Effort>,
     pub provider_available: bool,
@@ -294,6 +298,7 @@ impl App {
             provider_available: model.is_some(),
             model: model.unwrap_or_else(|| "no model".into()),
             effort: None,
+            mode: String::new(),
             local_unsent: Vec::new(),
             thread_id: None,
             title: None,

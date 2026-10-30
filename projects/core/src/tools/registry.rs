@@ -20,6 +20,8 @@ const MAX_RESULT_BYTES: usize = 64 * 1024;
 #[derive(Default)]
 pub struct ToolRegistry {
     tools: BTreeMap<String, Box<dyn Tool>>,
+    /// A chat's tools follow the switches of the chat's mode; an agent's follow MAIN's.
+    pub chat: bool,
 }
 
 /// What the model gets back from a call.
@@ -65,6 +67,13 @@ impl ToolRegistry {
         kinds
     }
 
+    fn enabled(&self, tool: &dyn Tool, config: &Config) -> bool {
+        match self.chat {
+            true => config.mode_tool_enabled(config.mode(), tool.name(), tool.kind()),
+            false => config.tool_enabled(tool.name()),
+        }
+    }
+
     /// The tools the config has on, as the model sees them.
     pub fn specs(&self, scope: &ToolScope, config: &Config) -> Vec<ToolSpec> {
         let context = ToolContext {
@@ -74,7 +83,7 @@ impl ToolRegistry {
         };
         self.tools
             .values()
-            .filter(|tool| config.tool_enabled(tool.name()) && tool.available(&context))
+            .filter(|tool| self.enabled(tool.as_ref(), config) && tool.available(&context))
             .map(|tool| ToolSpec {
                 name: tool.name().to_owned(),
                 description: tool.description(&context),
@@ -95,7 +104,7 @@ impl ToolRegistry {
         let Some(tool) = self.tools.get(call.name.as_str()) else {
             return error_result(format!("unknown tool {}", call.name));
         };
-        if !config.tool_enabled(tool.name()) {
+        if !self.enabled(tool.as_ref(), config) {
             return error_result(format!("tool {} is switched off", call.name));
         }
         let arguments = match &call.arguments {
