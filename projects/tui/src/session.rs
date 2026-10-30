@@ -174,6 +174,18 @@ pub async fn run(
                 }
                 Err(error) => editor_error(&mut app, format!("not saved: {error:#}")),
             },
+            Action::OpenAgentFile(name) => match runtime.agent(&name) {
+                Ok(agent) => open_editor(&mut app, FileEditor::agent(agent), false),
+                Err(error) => app.flash = Some(format!("cannot open the agent: {error:#}")),
+            },
+            Action::SaveAgentFile { name, text } => match runtime.save_agent(&name, &text).await {
+                Ok(agent) => {
+                    open_editor(&mut app, FileEditor::agent(agent), true);
+                    app.flash = Some(format!("agent {name} saved"));
+                    answer(runtime, &mut app, &mut open, Command::Settings).await;
+                }
+                Err(error) => editor_error(&mut app, format!("not saved: {error:#}")),
+            },
             Action::OpenMcp(name) => {
                 let text = name.as_deref().map(|name| runtime.mcp_server_text(name));
                 match text.transpose() {

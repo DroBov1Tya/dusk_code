@@ -10,7 +10,8 @@ use dusk_core::{
     chat::commands::{Command, Settings},
     graph::Problem,
     mcp::{McpInfo, McpState},
-    skills::{SkillInfo, SkillText},
+    graph::NodeText,
+    skills::SkillInfo,
 };
 
 use super::{Panel, step};
@@ -94,6 +95,8 @@ pub struct FileEditor {
 #[derive(Clone, PartialEq, Eq)]
 pub enum EditTarget {
     Skill(String),
+    /// An agent's AGENT.md, by the agent's name.
+    Agent(String),
     /// `None` for a server not saved yet.
     Mcp(Option<String>),
 }
@@ -184,6 +187,12 @@ impl SettingsView {
         (agent.depth > 0).then_some(agent)
     }
 
+    /// The agent on a row that has an AGENT.md to edit.
+    fn agent_file(&self, row: usize) -> Option<String> {
+        let agent = self.agent(row)?;
+        agent.version.map(|_| agent.name.clone())
+    }
+
     /// What switching `row` asks of the core.
     fn switch(&self, row: usize) -> Option<Action> {
         let (kind, name, on) = match self.category? {
@@ -214,8 +223,12 @@ impl SettingsView {
 }
 
 impl FileEditor {
-    pub fn skill(skill: SkillText) -> Self {
+    pub fn skill(skill: NodeText) -> Self {
         Self::new(EditTarget::Skill(skill.name), skill.metadata, skill.text)
+    }
+
+    pub fn agent(agent: NodeText) -> Self {
+        Self::new(EditTarget::Agent(agent.name), agent.metadata, agent.text)
     }
 
     /// An MCP server's YAML, or the template for a new one, with how it stands.
@@ -251,7 +264,7 @@ impl FileEditor {
 
     pub fn title(&self) -> &str {
         match &self.target {
-            EditTarget::Skill(name) | EditTarget::Mcp(Some(name)) => name,
+            EditTarget::Skill(name) | EditTarget::Agent(name) | EditTarget::Mcp(Some(name)) => name,
             EditTarget::Mcp(None) => "new MCP server",
         }
     }
@@ -384,6 +397,13 @@ impl App {
                 };
                 return Action::SetAgentLimit(limit);
             }
+            (Some(SettingCategory::Agents), KeyCode::Enter)
+                if view.agent_file(view.selected).is_some() =>
+            {
+                if let Some(name) = view.agent_file(view.selected) {
+                    return Action::OpenAgentFile(name);
+                }
+            }
             (Some(SettingCategory::Skills), KeyCode::Enter) => {
                 if let Some(skill) = view.skills.get(view.selected) {
                     return Action::OpenSkill(skill.name.clone());
@@ -459,7 +479,7 @@ impl App {
     }
 }
 
-/// A click opens a category, a skill, or selects a row; a second click on a selected
+/// A click opens a category or a file, or selects a row; a second click on a selected
 /// row switches it.
 fn click_row(view: &mut SettingsView, row: usize) -> Action {
     match view.category {
@@ -468,23 +488,39 @@ fn click_row(view: &mut SettingsView, row: usize) -> Action {
             view.selected = 0;
             view.top = 0;
         }
-        Some(category @ (SettingCategory::Skills | SettingCategory::Mcp)) => {
+        Some(category) if opens_file(view, category, row) => {
             view.selected = row;
             let unsaved = view.editor.as_ref().is_some_and(FileEditor::changed);
             if let Some(editor) = view.editor.as_mut().filter(|_| unsaved) {
                 editor.error = Some("save or revert this one first".into());
-            } else if category == SettingCategory::Skills
-                && let Some(skill) = view.skills.get(row)
-            {
-                return Action::OpenSkill(skill.name.clone());
-            } else if let Some(server) = view.mcp.get(row) {
-                return Action::OpenMcp(Some(server.name.clone()));
+                return Action::None;
             }
+            return match category {
+                SettingCategory::Agents => view.agent_file(row).map(Action::OpenAgentFile),
+                SettingCategory::Skills => view
+                    .skills
+                    .get(row)
+                    .map(|skill| Action::OpenSkill(skill.name.clone())),
+                _ => view
+                    .mcp
+                    .get(row)
+                    .map(|server| Action::OpenMcp(Some(server.name.clone()))),
+            }
+            .unwrap_or(Action::None);
         }
         Some(_) if view.selected == row => return view.switch(row).unwrap_or(Action::None),
         Some(_) => view.selected = row,
     }
     Action::None
+}
+
+/// Whether a click on `row` opens a file beside the list rather than selecting it.
+fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> bool {
+    match category {
+        SettingCategory::Agents => view.agent_file(row).is_some(),
+        SettingCategory::Skills | SettingCategory::Mcp => true,
+        SettingCategory::Tools => false,
+    }
 }
 
 fn press(view: &mut SettingsView, button: FileButton) -> Action {
@@ -497,12 +533,17 @@ fn press(view: &mut SettingsView, button: FileButton) -> Action {
             name: name.clone(),
             text,
         },
+        (FileButton::Save, EditTarget::Agent(name)) => Action::SaveAgentFile {
+            name: name.clone(),
+            text,
+        },
         (FileButton::Save, EditTarget::Mcp(old)) => Action::SaveMcp {
             old: old.clone(),
             text,
         },
         // Reading the file again drops every change.
         (FileButton::Revert, EditTarget::Skill(name)) => Action::OpenSkill(name.clone()),
+        (FileButton::Revert, EditTarget::Agent(name)) => Action::OpenAgentFile(name.clone()),
         (FileButton::Revert, EditTarget::Mcp(name)) => Action::OpenMcp(name.clone()),
         (FileButton::Close, _) if editor.changed() => {
             editor.error = Some("unsaved: save with Ctrl+S or revert with Ctrl+R".into());

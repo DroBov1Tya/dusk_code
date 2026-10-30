@@ -7,21 +7,15 @@
 //! license beside it. A skill whose front matter names a `source` came from elsewhere.
 //! Every other skill is the user's own.
 
-use std::{
-    fs,
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::Path};
 
 use include_dir::{Dir, DirEntry, include_dir};
 
-use anyhow::{Context, Result, ensure};
-use serde_json::Value;
+use anyhow::{Context, Result};
 
 use crate::{
     config::Config,
-    graph::{Graph, SKILL_FILE, check_node, read_text, split_front_matter},
-    paths::is_plain_folder_name,
+    graph::{Graph, SKILL_FILE},
 };
 
 /// The skills dusk ships, with their licenses and `NOTICE.md`.
@@ -55,16 +49,6 @@ pub struct SkillInfo {
     pub enabled: bool,
     /// Why the skill cannot be used as it is; it can still be opened and fixed.
     pub problem: Option<String>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SkillText {
-    pub name: String,
-    /// The front matter fields with plain values, by name, such as `description` and
-    /// `license`.
-    pub metadata: Vec<(String, String)>,
-    /// The whole file, front matter included.
-    pub text: String,
 }
 
 /// Every skill, the ones that cannot be read included, by name.
@@ -151,69 +135,6 @@ fn kind(name: &str, has_source: bool) -> SkillKind {
     }
 }
 
-/// The skill's file as it is on disk now.
-pub fn read(directory: &Path, name: &str) -> Result<SkillText> {
-    let text = read_text(&file(directory, name)?)?;
-    Ok(SkillText {
-        name: name.to_owned(),
-        metadata: metadata(&text),
-        text,
-    })
-}
-
-/// Replaces the skill's file with `text` once it reads as a skill. The file is written
-/// beside the old one and moved over it, so a failed write leaves the old one whole.
-pub fn save(directory: &Path, name: &str, text: &str) -> Result<SkillText> {
-    let path = file(directory, name)?;
-    ensure!(path.is_file(), "skill {name} does not exist");
-    check_node(text, name)?;
-    let temporary = path.with_extension("md.saving");
-    let mut out = fs::File::create(&temporary).context("cannot write the skill")?;
-    out.write_all(text.as_bytes())
-        .and_then(|()| out.sync_all())
-        .context("cannot write the skill")?;
-    fs::rename(&temporary, &path).context("cannot replace the skill")?;
-    read(directory, name)
-}
-
-/// The skill's file by name; the name is folder names joined by `/`, never a way out of
-/// the directory.
-fn file(directory: &Path, name: &str) -> Result<PathBuf> {
-    ensure!(
-        !name.is_empty() && name.split('/').all(is_plain_folder_name),
-        "invalid skill name {name:?}"
-    );
-    Ok(directory.join(name).join(SKILL_FILE))
-}
-
-fn metadata(text: &str) -> Vec<(String, String)> {
-    let Ok((front, _)) = split_front_matter(text) else {
-        return Vec::new();
-    };
-    let Ok(Value::Object(fields)) = serde_saphyr::from_str::<Value>(front) else {
-        return Vec::new();
-    };
-    fields
-        .into_iter()
-        .filter_map(|(key, value)| Some((key, plain(&value)?)))
-        .collect()
-}
-
-/// A scalar as text, a list of scalars joined; anything deeper is left out.
-fn plain(value: &Value) -> Option<String> {
-    match value {
-        Value::String(text) => Some(text.split_whitespace().collect::<Vec<_>>().join(" ")),
-        Value::Bool(flag) => Some(flag.to_string()),
-        Value::Number(number) => Some(number.to_string()),
-        Value::Array(items) => items
-            .iter()
-            .map(plain)
-            .collect::<Option<Vec<_>>>()
-            .map(|items| items.join(", ")),
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,25 +179,5 @@ mod tests {
                 0
             );
         }
-    }
-
-    #[test]
-    fn a_skill_is_saved_only_when_it_reads_as_one() {
-        let directory = temp_dir("skills_save");
-        fs::create_dir_all(directory.join("notes")).unwrap();
-        let good = "---\nname: notes\ndescription: Taking notes\nlicense: MIT\n---\nWrite.\n";
-        fs::write(directory.join("notes").join(SKILL_FILE), good).unwrap();
-
-        let skill = read(&directory, "notes").unwrap();
-        assert!(skill.metadata.contains(&("license".into(), "MIT".into())));
-        assert!(save(&directory, "notes", "no front matter").is_err());
-        assert_eq!(
-            read(&directory, "notes").unwrap().text,
-            good,
-            "a refused save keeps it"
-        );
-        assert!(read(&directory, "../notes").is_err());
-        let edited = good.replace("Write.", "Write more.");
-        assert_eq!(save(&directory, "notes", &edited).unwrap().text, edited);
     }
 }
