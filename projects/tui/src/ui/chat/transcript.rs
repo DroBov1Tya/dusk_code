@@ -4,7 +4,7 @@
 use dusk_core::{providers::ToolCall, tools::ToolResult};
 use ratatui::{
     Frame,
-    layout::{Alignment, Rect},
+    layout::{Alignment, Rect, Size},
     style::{Color, Style},
     text::{Line, Span},
     widgets::Paragraph,
@@ -23,8 +23,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Button, ButtonHit, Entry, Focus, ImageSpot, Layout, TEXT_COLUMN, Tone, Transcript,
-    TranscriptHit, compact_number,
+    App, Button, ButtonHit, Entry, Focus, ImageSpot, Layout, ShownPreview, TEXT_COLUMN, Tone,
+    Transcript, TranscriptHit, compact_number,
     paste::{self, Part},
 };
 
@@ -111,7 +111,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
             }
         })
         .collect();
-    // A picture goes only where its whole preview shows; a cut one stays in half blocks.
+    // The rows of each preview that show; the rest are above or below the thread.
     let earlier_images = app
         .layout
         .as_ref()
@@ -123,15 +123,20 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
             line: spot.line + earlier,
             ..spot
         }))
-        .filter(|spot| spot.line >= top && spot.line + spot.height as usize <= top + height)
-        .map(|spot| {
-            let area = Rect {
-                x: area.x + spot.column,
-                y: area.y + (spot.line - top) as u16,
-                width: spot.width.min(area.width.saturating_sub(spot.column)),
-                height: spot.height,
-            };
-            (area, spot.artifact)
+        .filter_map(|spot| {
+            let from = spot.line.max(top);
+            let to = (spot.line + spot.height as usize).min(top + height);
+            (from < to).then(|| ShownPreview {
+                area: Rect {
+                    x: area.x + spot.column,
+                    y: area.y + (from - top) as u16,
+                    width: spot.width.min(area.width.saturating_sub(spot.column)),
+                    height: (to - from) as u16,
+                },
+                card: Size::new(spot.width, spot.height),
+                skip: (from - spot.line) as u16,
+                artifact: spot.artifact,
+            })
         })
         .collect();
     app.drawn_top = top;
