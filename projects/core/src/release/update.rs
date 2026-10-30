@@ -16,6 +16,7 @@ use anyhow::{Context, Result, ensure};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use tokio::sync::watch;
 
 use crate::{config::Config, init::paths::Paths};
 
@@ -66,6 +67,34 @@ pub struct UpdateInfo {
     /// The release has the archive for this target; right after a tag it may still be
     /// building on GitHub.
     pub ready: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum InstallStage {
+    Preparing,
+    Downloading,
+    Verifying,
+    Installing,
+    Complete,
+}
+
+/// Download byte counts stay available through verification and installation.
+/// A missing or zero content length does not give a useful percentage.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InstallProgress {
+    pub stage: InstallStage,
+    pub downloaded: u64,
+    pub total: Option<u64>,
+}
+
+impl Default for InstallProgress {
+    fn default() -> Self {
+        Self {
+            stage: InstallStage::Preparing,
+            downloaded: 0,
+            total: None,
+        }
+    }
 }
 
 #[derive(Deserialize)]
@@ -206,6 +235,16 @@ pub async fn update_now(paths: &Paths) -> Result<String> {
 /// Downloads `tag` for this target and puts it in place of the running binary. Returns
 /// where the binary is.
 pub async fn install(tag: &str) -> Result<PathBuf> {
+    let (progress, _) = watch::channel(InstallProgress::default());
+    install_with_progress(tag, progress).await
+}
+
+/// Like `install`, with the latest stage and download counts in a bounded channel.
+/// Closing the receiver does not cancel an installation.
+pub async fn install_with_progress(
+    tag: &str,
+    progress: watch::Sender<InstallProgress>,
+) -> Result<PathBuf> {
     ensure!(
         tag.starts_with('v') && version(tag).is_some(),
         "invalid version {tag}"
@@ -223,26 +262,36 @@ pub async fn install(tag: &str) -> Result<PathBuf> {
     })?;
     let name = format!("duskcode-{TARGET}");
     let base = format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}.tar.gz");
-    let archive = download(&client, &base).await.with_context(|| {
+    let archive = download(&client, &base, &progress).await.with_context(|| {
         format!(
             "cannot download the {tag} build for {TARGET}; right after a release is \
              tagged its builds take a few minutes on GitHub, so try again later"
         )
     })?;
-    ensure!(
-        hex(&Sha256::digest(&archive)) == expected,
-        "the download does not match its checksum; nothing was changed"
-    );
-    let binary = std::env::current_exe()
-        .and_then(fs::canonicalize)
-        .context("cannot find the running binary")?;
-    let directory = binary.parent().context("the binary has no folder")?;
-    let work = directory.join(format!(".duskcode-update-{}", uuid::Uuid::now_v7()));
-    let installed = unpack_into(&archive, &work, &name, &binary, tag.trim_start_matches('v'));
-    // The work folder holds only what this update wrote.
-    let _ = fs::remove_dir_all(&work);
-    installed?;
-    Ok(binary)
+    progress.send_modify(|value| value.stage = InstallStage::Verifying);
+    let version = tag.trim_start_matches('v').to_owned();
+    // Hashing, tar, and filesystem work must not stop the caller's event loop.
+    // Once started, this block finishes replacement and cleanup even if the caller exits.
+    tokio::task::spawn_blocking(move || {
+        ensure!(
+            hex(&Sha256::digest(&archive)) == expected,
+            "the download does not match its checksum; nothing was changed"
+        );
+        progress.send_modify(|value| value.stage = InstallStage::Installing);
+        let binary = std::env::current_exe()
+            .and_then(fs::canonicalize)
+            .context("cannot find the running binary")?;
+        let directory = binary.parent().context("the binary has no folder")?;
+        let work = directory.join(format!(".duskcode-update-{}", uuid::Uuid::now_v7()));
+        let installed = unpack_into(&archive, &work, &name, &binary, &version);
+        // The work folder holds only what this update wrote.
+        let _ = fs::remove_dir_all(&work);
+        installed?;
+        progress.send_modify(|value| value.stage = InstallStage::Complete);
+        Ok(binary)
+    })
+    .await
+    .context("the update installer stopped")?
 }
 
 /// Unpacks the archive in `work` and moves its binary over `binary`, in the same folder
@@ -305,7 +354,11 @@ async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -
         .context("unexpected answer from GitHub")
 }
 
-async fn download(client: &Client, url: &str) -> Result<Vec<u8>> {
+async fn download(
+    client: &Client,
+    url: &str,
+    progress: &watch::Sender<InstallProgress>,
+) -> Result<Vec<u8>> {
     let mut response = client
         .get(url)
         .send()
@@ -314,6 +367,11 @@ async fn download(client: &Client, url: &str) -> Result<Vec<u8>> {
     if !response.status().is_success() {
         return Err(refused(response).await);
     }
+    progress.send_replace(InstallProgress {
+        stage: InstallStage::Downloading,
+        downloaded: 0,
+        total: response.content_length().filter(|total| *total > 0),
+    });
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.context("the download broke off")? {
         bytes.extend_from_slice(&chunk);
@@ -321,6 +379,7 @@ async fn download(client: &Client, url: &str) -> Result<Vec<u8>> {
             bytes.len() <= MAX_ARCHIVE_BYTES,
             "the download is too large"
         );
+        progress.send_modify(|value| value.downloaded = bytes.len() as u64);
     }
     Ok(bytes)
 }

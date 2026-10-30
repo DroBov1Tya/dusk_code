@@ -5,7 +5,7 @@ use ratatui::layout::Rect;
 
 use dusk_core::{
     chat::commands::ContextReport,
-    release::update::UpdateInfo,
+    release::update::{InstallProgress, UpdateInfo},
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Thread, UndoPoint},
 };
@@ -37,6 +37,7 @@ pub enum Panel {
     Update {
         info: Option<UpdateInfo>,
         note: Option<String>,
+        progress: Option<InstallProgress>,
         /// The update button on the last drawn frame, as (row, left, right).
         button: Option<(u16, u16, u16)>,
     },

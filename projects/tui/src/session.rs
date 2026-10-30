@@ -4,6 +4,9 @@
 
 use std::{
     env,
+    future::Future,
+    path::PathBuf,
+    pin::Pin,
     time::{Duration, Instant},
 };
 
@@ -14,7 +17,7 @@ use dusk_core::{
     config::Effort,
     config::{ApiKey, ProviderConfig, ProviderKind},
     providers::validate_provider,
-    release::update::Channel,
+    release::update::{Channel, InstallProgress},
     runtime::{Runtime, ThreadEvent, ThreadHandle},
 };
 use futures::StreamExt;
@@ -42,6 +45,12 @@ struct OpenThread {
     handle: ThreadHandle,
     /// The thread's task ended; the next message opens it again.
     ended: bool,
+}
+
+struct InstallingUpdate<'a> {
+    tag: String,
+    progress: tokio::sync::watch::Receiver<InstallProgress>,
+    result: Pin<Box<dyn Future<Output = Result<PathBuf>> + Send + 'a>>,
 }
 
 pub async fn run(
@@ -81,7 +90,13 @@ pub async fn run(
     let mut shown_title = String::new();
     let mut terminal_status = crate::host::terminal::TerminalStatus::new();
     let mut known_model = choice.as_ref().map(|choice| choice.name());
+    let mut update: Option<InstallingUpdate<'_>> = None;
     loop {
+        if let Some(update) = &mut update
+            && let Some(Panel::Update { progress, .. }) = &mut app.panel
+        {
+            *progress = Some(*update.progress.borrow_and_update());
+        }
         if let Some(choice) = runtime.model() {
             let name = choice.name();
             // A saved model is not proof the provider answers, but one the core picked
@@ -166,6 +181,25 @@ pub async fn run(
             shown_title = title;
         }
         let action = tokio::select! {
+            result = async {
+                match &mut update {
+                    Some(update) => update.result.as_mut().await,
+                    None => std::future::pending().await,
+                }
+            } => {
+                if let Some(update) = update.take() {
+                    let success = result.is_ok();
+                    let note = match result {
+                        Ok(_) => format!("{} installed; start duskcode again to use it", update.tag),
+                        Err(error) => format!("not updated: {error:#}"),
+                    };
+                    if let Some(Panel::Update { progress, .. }) = &mut app.panel {
+                        *progress = success.then(|| *update.progress.borrow());
+                    }
+                    set_update_note(&mut app, note);
+                }
+                Action::None
+            }
             key = keys.next() => match key {
                 Some(event) => app.handle(event?),
                 None => Action::Quit,
@@ -202,6 +236,7 @@ pub async fn run(
                 || app.agents_at_work()
                 || app.task_timers_run()
                 || runtime.discovering_model()
+                || update.is_some()
                 || mcp_starting => {
                 app.tick();
                 Action::None
@@ -209,6 +244,9 @@ pub async fn run(
         };
         match action {
             Action::None => {}
+            Action::Quit if update.is_some() => {
+                app.flash = Some("the update is still installing; wait before closing".into());
+            }
             Action::Quit => break,
             Action::Send(text) => send(runtime, &mut app, &mut open, text, false).await,
             Action::SendNow(text) => send(runtime, &mut app, &mut open, text, true).await,
@@ -407,6 +445,7 @@ pub async fn run(
                     app.panel = Some(Panel::Update {
                         info: None,
                         note,
+                        progress: None,
                         button: None,
                     });
                     terminal.draw(|frame| ui::draw(frame, &mut app))?;
@@ -421,13 +460,32 @@ pub async fn run(
             }
 
             Action::InstallUpdate(tag) => {
-                set_update_note(&mut app, format!("downloading {tag}"));
-                terminal.draw(|frame| ui::draw(frame, &mut app))?;
-                let note = match runtime.install_update(&tag).await {
-                    Ok(_) => format!("{tag} installed; start duskcode again to use it"),
-                    Err(error) => format!("not updated: {error:#}"),
-                };
-                set_update_note(&mut app, note);
+                if update.is_none() {
+                    let (sender, progress) =
+                        tokio::sync::watch::channel(InstallProgress::default());
+                    let installing_tag = tag.clone();
+                    let result = Box::pin(async move {
+                        runtime
+                            .install_update_with_progress(&installing_tag, sender)
+                            .await
+                    });
+                    update = Some(InstallingUpdate {
+                        tag,
+                        progress,
+                        result,
+                    });
+                    if let Some(Panel::Update {
+                        progress,
+                        note,
+                        button,
+                        ..
+                    }) = &mut app.panel
+                    {
+                        *progress = Some(InstallProgress::default());
+                        *note = None;
+                        *button = None;
+                    }
+                }
             }
             Action::NextMode => match runtime.next_mode() {
                 Ok(mode) => app.mode = mode,
@@ -554,6 +612,7 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             app.panel = Some(Panel::Update {
                 info: Some(info),
                 note: None,
+                progress: None,
                 button: None,
             });
         }

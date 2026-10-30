@@ -11,7 +11,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use dusk_core::{chat::commands::ContextReport, state::MessageRole};
+use dusk_core::{chat::commands::ContextReport, release::update::InstallStage, state::MessageRole};
 
 use super::{
     agent_window, input, markdown, settings,
@@ -320,7 +320,13 @@ const UPDATE_BUTTON: &str = " update ";
 
 /// The running version, the newest on the channel, and a button to install it.
 fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
-    let Some(Panel::Update { info, note, button }) = &mut app.panel else {
+    let Some(Panel::Update {
+        info,
+        note,
+        progress,
+        button,
+    }) = &mut app.panel
+    else {
         return;
     };
     *button = None;
@@ -370,18 +376,65 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
                     .into_iter()
                     .map(|spans| Line::from([vec![Span::raw(" ")], spans].concat())),
             );
-        } else if info.newer {
+        } else if info.newer && progress.is_none() {
             button_line = Some(lines.len());
             lines.push(Line::from(vec![
                 Span::raw(" "),
                 Span::styled(UPDATE_BUTTON, bold(NIGHT).bg(TEAL)),
                 Span::styled(format!("  to {}", info.latest), dim()),
             ]));
-        } else {
+        } else if !info.newer {
             lines.push(Line::from(Span::styled(
                 " up to date on this channel",
                 dim(),
             )));
+        }
+    }
+    if let Some(progress) = progress {
+        let stage = match progress.stage {
+            InstallStage::Preparing => "preparing update",
+            InstallStage::Downloading => "downloading",
+            InstallStage::Verifying => "verifying checksum",
+            InstallStage::Installing => "installing update",
+            InstallStage::Complete => "installed",
+        };
+        let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+        let marker = if progress.stage == InstallStage::Complete {
+            "✓"
+        } else {
+            spinner[app.frame % spinner.len()]
+        };
+        lines.push(Line::from(Span::styled(
+            format!(" {marker} {stage}"),
+            bold(TEAL),
+        )));
+        if progress.stage == InstallStage::Downloading {
+            let bytes = match progress.total.filter(|total| *total > 0) {
+                Some(total) => {
+                    let fraction = (progress.downloaded as f64 / total as f64).clamp(0.0, 1.0);
+                    let bar_width = room.saturating_sub(2).min(32);
+                    let filled = (fraction * bar_width as f64) as usize;
+                    lines.push(Line::from(Span::styled(
+                        format!(
+                            " [{}{}]",
+                            "█".repeat(filled),
+                            "░".repeat(bar_width - filled)
+                        ),
+                        fg(TEAL),
+                    )));
+                    format!(
+                        "{:.0}%  {} / {total} bytes",
+                        fraction * 100.0,
+                        progress.downloaded
+                    )
+                }
+                None => format!("{} bytes received; total unknown", progress.downloaded),
+            };
+            lines.extend(
+                wrap::words(vec![Span::styled(bytes, dim())], room, 0)
+                    .into_iter()
+                    .map(|spans| Line::from([vec![Span::raw(" ")], spans].concat())),
+            );
         }
     }
     if let Some(note) = note {
@@ -412,13 +465,16 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
             left + UPDATE_BUTTON.width() as u16,
         ));
     }
+    let help = match progress.as_ref().map(|progress| progress.stage) {
+        Some(InstallStage::Complete) => " c channel  esc close ",
+        Some(_) => " update in progress; please wait ",
+        None => " enter update  c channel  esc close ",
+    };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(NIGHT))
         .title(Line::from(Span::styled(" update ", bold(VIOLET))))
-        .title_bottom(
-            Line::from(Span::styled(" enter update  c channel  esc close ", dim())).right_aligned(),
-        );
+        .title_bottom(Line::from(Span::styled(help, dim())).right_aligned());
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }

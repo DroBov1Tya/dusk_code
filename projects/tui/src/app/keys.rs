@@ -7,6 +7,7 @@ use crossterm::event::{
 };
 use std::time::{Duration, Instant};
 
+use dusk_core::release::update::InstallStage;
 use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
@@ -56,6 +57,7 @@ impl App {
                 match &self.panel {
                     Some(Panel::Update {
                         info: Some(info),
+                        progress: None,
                         button: Some((row, left, right)),
                         ..
                     }) if pressed
@@ -429,9 +431,13 @@ impl App {
                 }
                 return Action::None;
             }
-            Panel::Update { info, .. } => {
+            Panel::Update { info, progress, .. } => {
+                // Once replacement starts there is no safe cancellation contract.
+                if progress.is_some_and(|progress| progress.stage != InstallStage::Complete) {
+                    return Action::None;
+                }
                 match key.code {
-                    KeyCode::Enter => {
+                    KeyCode::Enter if progress.is_none() => {
                         if let Some(info) = info.as_ref().filter(|info| info.newer && info.ready) {
                             return Action::InstallUpdate(info.latest.clone());
                         }
