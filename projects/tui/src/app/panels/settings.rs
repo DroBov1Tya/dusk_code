@@ -334,6 +334,7 @@ impl FileEditor {
             target,
             metadata,
             text: Input {
+                command_cycle: None,
                 text: text.clone(),
                 cursor: 0,
                 pastes: Vec::new(),

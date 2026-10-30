@@ -5,6 +5,7 @@ use dusk_core::runtime::AUTO_COMPACT_PERCENT;
 use ratatui::{
     Frame,
     layout::Rect,
+    style::Style,
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, Paragraph},
 };
@@ -13,7 +14,10 @@ use super::sidebar::format_duration;
 use super::{
     loader::{Loader, agent_name, identity},
     panels::window,
-    theme::{DOT, EMBER, GLOW, GUTTER, NIGHT, SUN, TEAL, bold, dim, dusk, fg, thought},
+    theme::{
+        DOT, EMBER, GLOW, GUTTER, SIDEBAR_BG, SIDEBAR_EDGE, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL,
+        bold, dusk, fg,
+    },
     transcript::{one_line, thread_lines},
     wrap,
 };
@@ -47,16 +51,17 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         .find(|card| card.thread_id == thread_id);
     let kind = card.map_or("agent", |card| card.agent.as_str());
     let block = Block::bordered()
+        .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
+        .border_style(fg(SIDEBAR_EDGE))
         .title(Line::from(vec![
             Span::styled(format!(" {} ", agent_name(&thread_id)), bold(color)),
-            Span::styled(format!("{DOT} {kind} "), dim()),
+            Span::styled(format!("{DOT} {kind} "), fg(SIDEBAR_MUTED)),
         ]))
         .title_bottom(
             Line::from(Span::styled(
                 " wheel or PgUp/PgDn scroll  click opens  Ctrl+R thinking  s stop  esc close ",
-                dim(),
+                fg(SIDEBAR_MUTED),
             ))
             .right_aligned(),
         );
@@ -92,11 +97,11 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         })
         .chain([Line::from(Span::styled(
             "\u{2500}".repeat(width),
-            fg(NIGHT),
+            fg(SIDEBAR_EDGE),
         ))])
         .collect();
     frame.render_widget(
-        Paragraph::new(header),
+        Paragraph::new(header).style(Style::new().fg(SIDEBAR_FG).bg(GLOW)),
         Rect {
             height: HEADER_ROWS,
             ..inner
@@ -118,7 +123,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
         .find(|card| card.thread_id == thread_id)
     else {
         return [
-            vec![Span::styled("no numbers yet", thought())],
+            vec![Span::styled("no numbers yet", fg(SIDEBAR_MUTED))],
             Vec::new(),
             Vec::new(),
         ];
@@ -153,7 +158,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
     [
         vec![
             state,
-            Span::styled(format!("  {DOT}  asked by "), dim()),
+            Span::styled(format!("  {DOT}  asked by "), fg(SIDEBAR_MUTED)),
             Span::raw(wrap::clip(&parent, width.saturating_sub(30))),
         ],
         vec![
@@ -169,13 +174,16 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
                     compact_number(tokens.spent.reasoning_tokens),
                     tokens.model_calls,
                 ),
-                dim(),
+                fg(SIDEBAR_MUTED),
             ),
             Span::styled(rate, fg(TEAL)),
         ],
         vec![
-            Span::styled(format!("task {GUTTER} "), dim()),
-            Span::raw(wrap::clip(&one_line(&card.task), width.saturating_sub(8))),
+            Span::styled(format!("task {GUTTER} "), fg(SIDEBAR_MUTED)),
+            Span::styled(
+                wrap::clip(&one_line(&card.task), width.saturating_sub(8)),
+                bold(SIDEBAR_FG),
+            ),
         ],
     ]
 }
@@ -205,7 +213,10 @@ fn conversation(frame: &mut Frame, area: Rect, app: &mut App) {
         })
         .collect();
     let visible: Vec<Line> = lines.into_iter().skip(top).take(height).collect();
-    frame.render_widget(Paragraph::new(visible), area);
+    frame.render_widget(
+        Paragraph::new(visible).style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG)),
+        area,
+    );
     if let Some(Panel::Agent(agent_window)) = &mut app.panel {
         agent_window.max_scroll = max_scroll;
         agent_window.scroll = scroll;

@@ -73,6 +73,7 @@ pub async fn run(
     let mut git_clock = tokio::time::interval(GIT_PERIOD);
     let cwd = env::current_dir()?;
     let mut shown_title = String::new();
+    let mut terminal_status = ui::screen::TerminalStatus::new();
     let mut known_model = choice.as_ref().map(|choice| choice.name());
     loop {
         if let Some(choice) = runtime.model() {
@@ -132,6 +133,7 @@ pub async fn run(
         {
             send(runtime, &mut app, &mut open, text, false).await;
         }
+        terminal_status.update(app.is_busy() || app.agents_at_work());
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {

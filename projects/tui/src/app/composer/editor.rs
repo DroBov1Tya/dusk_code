@@ -41,6 +41,7 @@ impl PasteEditor {
         Self {
             index,
             text: Input {
+                command_cycle: None,
                 text: text.clone(),
                 cursor: 0,
                 pastes: Vec::new(),

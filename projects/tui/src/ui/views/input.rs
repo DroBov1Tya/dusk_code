@@ -347,7 +347,11 @@ fn draw_queue(frame: &mut Frame, area: Rect, app: &mut App) {
 /// The command list above the box while a command is being typed.
 pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
     app.command_popup = None;
-    let text = app.input.text.as_str();
+    let text = app
+        .input
+        .command_cycle
+        .as_ref()
+        .map_or(app.input.text.as_str(), |(prefix, _)| prefix.as_str());
     if !text.starts_with('/') || text.contains(char::is_whitespace) {
         return;
     }
@@ -362,7 +366,7 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
         .map(|(name, about)| name.width() + about.width() + 6)
         .max()
         .unwrap_or(0)
-        .min(above.width as usize) as u16;
+        .min(above.width.saturating_sub(1) as usize) as u16;
     let height = matching.len() as u16 + 2;
     let area = Rect {
         x: above.x + 1,
@@ -371,11 +375,33 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
         height: height.min(above.height),
     };
     app.command_popup = Some(area);
+    let selected = app
+        .input
+        .command_cycle
+        .as_ref()
+        .map_or(0, |(_, selected)| *selected);
+    let visible = area.height.saturating_sub(2) as usize;
+    let skip = (selected + 1).saturating_sub(visible);
     let lines: Vec<Line> = matching
         .iter()
-        .map(|(name, about)| {
+        .enumerate()
+        .skip(skip)
+        .take(visible)
+        .map(|(index, (name, about))| {
+            let selected = app
+                .input
+                .command_cycle
+                .as_ref()
+                .is_some_and(|(_, selected)| *selected == index);
             Line::from(vec![
-                Span::styled(format!(" {name}"), bold(VIOLET)),
+                Span::styled(
+                    format!(" {}{name}", if selected { "> " } else { "  " }),
+                    if selected {
+                        bold(SUN).bg(GLOW)
+                    } else {
+                        bold(VIOLET)
+                    },
+                ),
                 Span::styled(format!("  {about}"), dim()),
             ])
         })
