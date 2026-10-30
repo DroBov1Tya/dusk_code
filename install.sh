@@ -6,6 +6,33 @@
 # when it is writable, otherwise to ~/.local/bin. DUSKCODE_VERSION=v0.46.0 picks a release.
 set -eu
 
+# Colours and marks only on a terminal, and never with NO_COLOR set.
+if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
+  esc="$(printf '\033')"
+  reset="${esc}[0m" bold="${esc}[1m" dim="${esc}[2m"
+  violet="${esc}[38;2;157;124;255m" rose="${esc}[38;2;240;122;176m"
+  teal="${esc}[38;2;94;214;194m" sun="${esc}[38;2;255;180;84m" ember="${esc}[38;2;255;99;99m"
+else
+  reset="" bold="" dim="" violet="" rose="" teal="" sun="" ember=""
+fi
+case "${LC_ALL:-${LC_CTYPE:-${LANG:-}}}" in
+  *UTF-8* | *utf8* | *UTF8* | *utf-8*) step_mark="\342\227\206" ok_mark="\342\234\223" fail_mark="\342\234\227" ;;
+  *) step_mark=">" ok_mark="+" fail_mark="x" ;;
+esac
+step_mark="$(printf "$step_mark")" ok_mark="$(printf "$ok_mark")" fail_mark="$(printf "$fail_mark")"
+
+step() { printf '\n  %s%s%s %s%s%s\n' "$violet" "$step_mark" "$reset" "$bold" "$1" "$reset"; }
+ok() { printf '    %s%s%s %s\n' "$teal" "$ok_mark" "$reset" "$1"; }
+note() { printf '    %s%s%s\n' "$dim" "$1" "$reset"; }
+# A path as people write it: the home folder as ~.
+short() { case "$1" in "$HOME"/*) printf '~/%s' "${1#"$HOME"/}" ;; *) printf '%s' "$1" ;; esac; }
+fail() {
+  printf '\n  %s%s %s%s\n    nothing was installed\n\n' "$ember" "$fail_mark" "$1" "$reset" >&2
+  exit 1
+}
+
+printf '\n  %sdusk%s%scode%s  %sinstaller%s\n' "$bold$violet" "$reset" "$rose" "$reset" "$dim" "$reset"
+
 repo="DroBov1Tya/dusk_code"
 version="${DUSKCODE_VERSION:-latest}"
 
@@ -13,7 +40,7 @@ case "$(uname -s)-$(uname -m)" in
   Darwin-arm64) target="aarch64-apple-darwin" ;;
   Linux-x86_64 | Linux-amd64) target="x86_64-unknown-linux-musl" ;;
   Linux-aarch64 | Linux-arm64) target="aarch64-unknown-linux-musl" ;;
-  *) echo "duskcode: no build for $(uname -s) $(uname -m)" >&2; exit 1 ;;
+  *) fail "no build for $(uname -s) $(uname -m)" ;;
 esac
 
 if [ "$version" = "latest" ]; then
@@ -28,9 +55,17 @@ binary_stage=""
 trap 'rm -rf "$work"; [ -z "$binary_stage" ] || rm -f "$binary_stage"' EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
-echo "Downloading $archive"
-curl -fsSL --proto '=https' --tlsv1.2 -o "$work/$archive" "$base/$archive"
-curl -fsSL --proto '=https' --tlsv1.2 -o "$work/$archive.sha256" "$base/$archive.sha256"
+step "Downloading"
+note "$version  $target"
+# A progress bar on a terminal; quiet otherwise.
+if [ -t 2 ]; then progress="-#"; else progress="-sS"; fi
+curl -fL "$progress" --proto '=https' --tlsv1.2 -o "$work/$archive" "$base/$archive" \
+  || fail "cannot download $archive"
+curl -fsSL --proto '=https' --tlsv1.2 -o "$work/$archive.sha256" "$base/$archive.sha256" \
+  || fail "cannot download the checksum"
+ok "$archive"
+
+step "Verifying"
 
 expected="$(cut -d ' ' -f 1 < "$work/$archive.sha256")"
 if command -v sha256sum >/dev/null 2>&1; then
@@ -38,24 +73,20 @@ if command -v sha256sum >/dev/null 2>&1; then
 else
   actual="$(shasum -a 256 "$work/$archive" | cut -d ' ' -f 1)"
 fi
-if [ "$expected" != "$actual" ]; then
-  echo "duskcode: checksum mismatch, nothing installed" >&2
-  exit 1
-fi
+[ "$expected" = "$actual" ] || fail "checksum mismatch"
+ok "sha256 $(printf '%s' "$actual" | cut -c 1-16)..."
 
 tar -xzf "$work/$archive" -C "$work"
 package="$work/duskcode-$target"
 resources="$package/resources"
 binary_version="$("$package/duskcode" --version)"
 binary_version="${binary_version#duskcode }"
-if ! printf '%s\n' "$binary_version" | LC_ALL=C grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$'; then
-  echo "duskcode: invalid binary version, nothing installed" >&2
-  exit 1
-fi
+printf '%s\n' "$binary_version" | LC_ALL=C grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+  || fail "invalid binary version"
 if [ "$version" != latest ] && [ "$version" != "v$binary_version" ]; then
-  echo "duskcode: binary does not match the requested release, nothing installed" >&2
-  exit 1
+  fail "binary does not match the requested release"
 fi
+ok "duskcode $binary_version runs here"
 # 0.65.1 is the first resource-aware release. Historical binary-only archives,
 # including the stable 0.60.0, remain installable; newer packages must fail closed.
 major="${binary_version%%.*}"
@@ -67,27 +98,28 @@ if [ "$major" -gt 0 ] || [ "$minor" -gt 65 ] || { [ "$minor" -eq 65 ] && [ "$pat
   resource_aware=true
 fi
 if [ "$resource_aware" = true ] || [ -e "$resources" ] || [ -L "$resources" ]; then
+  step "Installing skills, agents and prompts"
   if [ ! -f "$resources/FORMAT" ] || [ "$(cat "$resources/FORMAT")" != 1 ] || \
      [ ! -f "$resources/VERSION" ] || [ "$(cat "$resources/VERSION")" != "$binary_version" ]; then
-    echo "duskcode: missing or incompatible resources for $binary_version, nothing installed" >&2
-    exit 1
+    fail "missing or incompatible resources for $binary_version"
   fi
   # The new binary validates and stages its resources using an OS advisory lock.
   # No config/UI initialization, resource download, or final binary activation here.
-  "$package/duskcode" --install-resources "$resources"
+  "$package/duskcode" --install-resources "$resources" || fail "cannot stage the resources"
+  skills="$(find "$resources/skills" -name SKILL.md | wc -l | tr -d ' ')"
+  agents="$(find "$resources/agents" -name AGENT.md | wc -l | tr -d ' ')"
+  ok "$skills skills, $agents agents"
 fi
+step "Installing the binary"
 data_home="${XDG_DATA_HOME:-$HOME/.local/share}"
 case "$data_home" in
   /*) ;;
-  *) echo "duskcode: XDG_DATA_HOME must be absolute" >&2; exit 1 ;;
+  *) fail "XDG_DATA_HOME must be absolute" ;;
 esac
 app_dir="$data_home/duskcode"
 bin_dir="$app_dir/bin"
 mkdir -p "$bin_dir"
-if [ -L "$bin_dir" ]; then
-  echo "duskcode: install directory must not be a symlink" >&2
-  exit 1
-fi
+[ ! -L "$bin_dir" ] || fail "install directory must not be a symlink"
 # Stage beside the installed binary; only the final rename activates the update.
 # A failure here can leave an unused complete snapshot, never a mismatched binary.
 binary_stage="$(mktemp "$bin_dir/.duskcode.XXXXXX")"
@@ -103,8 +135,12 @@ else
 fi
 ln -sf "$bin_dir/duskcode" "$link_dir/duskcode"
 
-echo "Installed $("$bin_dir/duskcode" --version) to $bin_dir, linked from $link_dir/duskcode"
+ok "$(short "$bin_dir/duskcode")"
+ok "linked from $(short "$link_dir/duskcode")"
+
+printf '\n  %s%s %s%s is ready%s\n' "$teal" "$ok_mark" "$bold" "$("$bin_dir/duskcode" --version)" "$reset"
 case ":$PATH:" in
-  *":$link_dir:"*) echo "Run: duskcode" ;;
-  *) echo "Add $link_dir to PATH, for example: echo 'export PATH=\"$link_dir:\$PATH\"' >> ~/.profile" ;;
+  *":$link_dir:"*) printf '    run %sduskcode%s in the folder to work in\n\n' "$sun" "$reset" ;;
+  *) printf '    add %s to PATH first:\n    %secho '"'"'export PATH="%s:$PATH"'"'"' >> ~/.profile%s\n\n' \
+       "$(short "$link_dir")" "$sun" "$link_dir" "$reset" ;;
 esac
