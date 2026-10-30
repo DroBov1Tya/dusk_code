@@ -367,6 +367,7 @@ impl Agent {
         let mut stop = None;
         for call in calls {
             let mut artifacts = Vec::new();
+            let mut finished = None;
             let content = match stop {
                 Some(_) => "not run: the user interrupted the turn".to_owned(),
                 None => {
@@ -380,10 +381,7 @@ impl Agent {
                         Ok(result) => {
                             let content = result.content.clone();
                             artifacts = result.artifacts.clone();
-                            self.emit(ThreadEvent::ToolFinished {
-                                call_id: call.id.clone(),
-                                result,
-                            });
+                            finished = Some(result);
                             content
                         }
                         Err(reason) => {
@@ -400,6 +398,13 @@ impl Agent {
                 artifacts,
             );
             stored.await.context("cannot store the tool result")?;
+            // A visible result must already be available when the thread is reopened.
+            if let Some(result) = finished {
+                self.emit(ThreadEvent::ToolFinished {
+                    call_id: call.id.clone(),
+                    result,
+                });
+            }
         }
         Ok(stop)
     }
