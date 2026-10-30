@@ -32,7 +32,7 @@ use crate::{
     providers::Provider,
     release::update::{self, Channel, UpdateInfo},
     runtime::chat::thread_start::{FORK_INTRO, start_thread},
-    state::{LocalUnsent, Message, State, Task, Thread},
+    state::{LocalUnsent, Message, State, Task, Thread, UndoPoint},
     tools::{ToolKind, ToolScope},
     util::sync::lock,
 };
@@ -381,6 +381,10 @@ impl Runtime {
             .config
             .update(|config| config.set_max_agents_at_work(limit))?;
         Ok(())
+    }
+
+    pub async fn undo_points(&self, thread_id: &str) -> Result<Vec<UndoPoint>> {
+        self.launcher.state.undo_points(thread_id).await
     }
 
     pub fn set_max_goal_rounds(&self, rounds: u32) -> Result<()> {

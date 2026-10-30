@@ -11,11 +11,12 @@ mod goal;
 mod model;
 mod resume;
 mod settings;
+mod undo;
 
 pub use context::{ContextReport, ContextSection, report as context_report};
 pub use settings::{Settings, ToolInfo};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use crate::{
     config::Effort,
@@ -28,7 +29,7 @@ use crate::{
         agent::{Agent, Inbox},
         model_choice::{Choice, ProviderStatus},
     },
-    state::Thread,
+    state::{Thread, UndoPoint},
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,6 +55,12 @@ pub enum Command {
     Effort { level: Option<String> },
     /// Sets the standing goal, or shows, pauses, resumes, clears or completes it.
     Goal { argument: Option<String> },
+    /// Lists the user's messages of a thread; a client fills in its open thread. With a
+    /// sequence, takes the thread back to before that message.
+    Undo {
+        thread_id: Option<String>,
+        sequence: Option<u64>,
+    },
 }
 
 /// What a client command answers.
@@ -71,6 +78,8 @@ pub enum Answer {
     Settings(Settings),
     Context(ContextReport),
     Update(UpdateInfo),
+    /// The user's messages the thread can go back to, oldest first.
+    UndoPoints(Vec<UndoPoint>),
     /// The effort now; `changed` when the command set it.
     Effort {
         current: Option<Effort>,
@@ -102,6 +111,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     ("/update", "the newest version, and installing it"),
     (
+        "/undo",
+        "take the thread back to before one of your messages",
+    ),
+    (
         "/goal",
         "a goal worked on turn after turn until done; pause, resume, clear",
     ),
@@ -112,7 +125,13 @@ impl Command {
     pub fn runs_in_thread(&self) -> bool {
         matches!(
             self,
-            Self::Compact { .. } | Self::Fork { .. } | Self::Goal { .. }
+            Self::Compact { .. }
+                | Self::Fork { .. }
+                | Self::Goal { .. }
+                | Self::Undo {
+                    sequence: Some(_),
+                    ..
+                }
         )
     }
 
@@ -126,6 +145,11 @@ impl Command {
                 let _ = agent.fork(instructions.as_deref(), inbox).await;
             }
             Self::Goal { argument } => goal::run(agent, argument.as_deref()).await,
+            Self::Undo {
+                sequence: Some(sequence),
+                ..
+            } => undo::run(agent, sequence).await,
+            Self::Undo { sequence: None, .. } => {}
             Self::Resume
             | Self::New
             | Self::Model { .. }
@@ -177,6 +201,14 @@ impl Command {
             Self::Compact { .. } => bail!("/compact runs in a thread"),
             Self::Fork { .. } => bail!("/fork runs in a thread"),
             Self::Goal { .. } => bail!("/goal runs in a thread"),
+            Self::Undo {
+                thread_id,
+                sequence: None,
+            } => {
+                let thread_id = thread_id.context("no thread to undo in")?;
+                Ok(Answer::UndoPoints(runtime.undo_points(&thread_id).await?))
+            }
+            Self::Undo { .. } => bail!("/undo <n> runs in a thread"),
         }
     }
 }
@@ -207,6 +239,17 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "effort" => Ok(Command::Effort { level: argument }),
         "update" => Ok(Command::Update { channel: argument }),
         "goal" => Ok(Command::Goal { argument }),
+        "undo" => match argument.map(|number| number.parse::<u64>()) {
+            None => Ok(Command::Undo {
+                thread_id: None,
+                sequence: None,
+            }),
+            Some(Ok(sequence)) => Ok(Command::Undo {
+                thread_id: None,
+                sequence: Some(sequence),
+            }),
+            Some(Err(_)) => Err(anyhow::anyhow!("/undo takes a message number")),
+        },
         "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })

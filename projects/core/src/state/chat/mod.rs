@@ -10,6 +10,7 @@ mod tasks;
 mod threads;
 mod tokens;
 mod turns;
+mod undo;
 
 pub use compactions::Compaction;
 pub use goals::{Goal, GoalStatus};
@@ -20,5 +21,6 @@ pub use tasks::{Task, TaskItem};
 pub use threads::Thread;
 pub use tokens::{CallPurpose, LastPrompt, ModelCall, ThreadTokens, TokenCounts};
 pub use turns::{Turn, TurnAnswer, TurnOutcome, TurnStatus};
+pub use undo::UndoPoint;
 
 use super::{State, timestamp_ms};
