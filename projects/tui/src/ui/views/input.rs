@@ -19,21 +19,36 @@ use super::{
     transcript::spinner,
     wrap,
 };
-use crate::app::{Activity, App, ChipHit, Focus, Input, InputRow, commands, paste};
+use crate::app::{
+    Activity, App, ChipHit, Focus, Input, InputRow, QueueButton, QueueHit, commands, paste,
+};
 
 const MIN_ROWS: usize = 3;
 const MAX_ROWS: usize = 10;
+/// Queued messages shown above the box; older ones wait unseen.
+const MAX_QUEUED: usize = 4;
 const PROMPT: &str = " \u{203A} ";
 /// Rows around the text: the rule above, and a blank row on each side of the text.
 const FRAME_ROWS: u16 = 3;
 
-/// Rows the box needs: the rule, the padding and the wrapped text.
+/// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
-    rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16 + FRAME_ROWS
+    queue_rows(app) + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16 + FRAME_ROWS
+}
+
+fn queue_rows(app: &App) -> u16 {
+    app.queued.len().min(MAX_QUEUED) as u16
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
+    let queued = queue_rows(app);
+    draw_queue(frame, Rect { height: queued, ..area }, app);
+    let area = Rect {
+        y: area.y + queued,
+        height: area.height.saturating_sub(queued),
+        ..area
+    };
     let rule = Rect { height: 1, ..area };
     frame.render_widget(Paragraph::new(status(app, area.width as usize)), rule);
     let box_area = Rect {
@@ -56,7 +71,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         let hint = if !app.provider_available {
             "provider unavailable; /connect or /model to choose a provider"
         } else if app.is_busy() {
-            "write to queue it, Esc stops"
+            "write to queue it; Alt+Enter sends now, Esc stops"
         } else {
             "write, or / for commands"
         };
@@ -98,6 +113,48 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     frame.render_widget(Paragraph::new(lines), text_area);
     show_cursor(frame, app, text_area, (cursor.0, cursor.1 - skip));
+}
+
+/// The messages waiting for the turn to end, each with its buttons; the newest are shown
+/// when there are more than fit.
+fn draw_queue(frame: &mut Frame, area: Rect, app: &mut App) {
+    app.queue_hits.clear();
+    let skip = app.queued.len().saturating_sub(area.height as usize);
+    const SEND: &str = " send now ";
+    const REMOVE: &str = " \u{00D7} ";
+    let buttons = SEND.width() + REMOVE.width() + 1;
+    let mut lines = Vec::new();
+    for (index, text) in app.queued.iter().enumerate().skip(skip) {
+        let row = area.y + lines.len() as u16;
+        let label = format!("   \u{29D7} {}", paste::labelled(text).replace('\n', " "));
+        let room = (area.width as usize).saturating_sub(buttons);
+        let label = wrap::clip(&label, room);
+        let gap = room.saturating_sub(label.width());
+        let send_left = area.x + (label.width() + gap) as u16;
+        let remove_left = send_left + SEND.width() as u16 + 1;
+        let hits = [
+            (area.x, send_left, QueueButton::Edit),
+            (send_left, send_left + SEND.width() as u16, QueueButton::SendNow),
+            (remove_left, remove_left + REMOVE.width() as u16, QueueButton::Remove),
+        ];
+        for (left, right, button) in hits {
+            app.queue_hits.push(QueueHit {
+                row,
+                left,
+                right,
+                index,
+                button,
+            });
+        }
+        lines.push(Line::from(vec![
+            Span::styled(label, thought()),
+            Span::raw(" ".repeat(gap)),
+            Span::styled(SEND, fg(SUN).bg(GLOW)),
+            Span::raw(" "),
+            Span::styled(REMOVE, fg(EMBER).bg(GLOW)),
+        ]));
+    }
+    frame.render_widget(Paragraph::new(lines), area);
 }
 
 /// The command list above the box while a command is being typed.

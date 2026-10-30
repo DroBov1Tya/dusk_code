@@ -78,6 +78,12 @@ pub async fn run(
                 editor.update_mcp(&view.mcp);
             }
         }
+        // What waited for the turn goes once the agent is free.
+        if !app.is_busy()
+            && let Some(text) = app.release_queue()
+        {
+            send(runtime, &mut app, &mut open, text, false).await;
+        }
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let action = tokio::select! {
             key = keys.next() => match key {

@@ -26,9 +26,9 @@ use crate::app::{
 };
 
 const KEYS: [(&str, &str); 28] = [
-    ("Enter", "send; it waits if the agent is busy"),
+    ("Enter", "send; while the agent works it waits above the box"),
     ("Alt+Enter", "send now, interrupting the agent"),
-    ("Esc", "stop the agent"),
+    ("Esc", "stop the agent; queued messages return to the box"),
     ("Shift+Enter", "new line; Ctrl+J or \\ then Enter too"),
     ("Ctrl+E, click", "edit a pasted text in its own window"),
     ("Shift+arrows", "select typed text; Ctrl+A all, drag works too"),

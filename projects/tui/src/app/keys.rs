@@ -263,7 +263,10 @@ impl App {
                 }
             }
             // Agents can work on after the turn that asked them; Esc stops them too.
-            KeyCode::Esc if self.is_busy() || self.agents_at_work() => return Action::Cancel,
+            KeyCode::Esc if self.is_busy() || self.agents_at_work() => {
+                self.unqueue_into_box();
+                return Action::Cancel;
+            }
             _ => {}
         }
         Action::None
@@ -529,6 +532,14 @@ impl App {
     }
 
     fn press_button(&mut self, x: u16, y: u16) -> Option<Action> {
+        let queued = self
+            .queue_hits
+            .iter()
+            .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
+            .map(|hit| (hit.index, hit.button));
+        if let Some((index, button)) = queued {
+            return Some(self.press_queued(index, button));
+        }
         let chip = self
             .input_chips
             .iter()

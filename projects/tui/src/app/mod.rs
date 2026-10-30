@@ -5,6 +5,7 @@
 mod composer;
 mod keys;
 mod panels;
+mod queue;
 mod transcript;
 
 use std::{
@@ -29,6 +30,7 @@ pub use panels::{
     AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, ModelList, Panel,
     Preview, SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
+pub use queue::{QueueButton, QueueHit};
 pub use transcript::{Entry, Layout, Tone, Transcript};
 
 /// What the session does for the app.
@@ -224,6 +226,9 @@ pub struct App {
     /// A drag that started in the message box selects there.
     pub input_dragging: bool,
     pub editor_hits: Vec<EditorHit>,
+    /// Messages written while the agent works, oldest first.
+    pub queued: Vec<String>,
+    pub queue_hits: Vec<QueueHit>,
     /// The entry under the mouse, which shows its buttons.
     pub hover: Option<usize>,
     pub selection: Option<Selection>,
@@ -307,6 +312,8 @@ impl App {
             input_area: None,
             input_dragging: false,
             editor_hits: Vec::new(),
+            queued: Vec::new(),
+            queue_hits: Vec::new(),
             hover: None,
             selection: None,
             layout: None,
@@ -659,14 +666,14 @@ impl App {
         {
             return Action::Command(command.clone());
         }
-        self.scroll = 0;
         if command.is_some() {
+            self.scroll = 0;
             self.transcript.notice(text.trim().to_owned(), Tone::Info);
+        } else if self.is_busy() && !now {
+            self.queued.push(text);
+            return Action::None;
         } else {
-            self.transcript.push(Entry::User {
-                text: text.clone(),
-                open: false,
-            });
+            self.show_sent(&text);
         }
         if now {
             Action::SendNow(text)
