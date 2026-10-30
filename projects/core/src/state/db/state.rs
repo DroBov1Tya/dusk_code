@@ -11,7 +11,7 @@ use sqlx::{ConnectOptions, SqlitePool, migrate::Migrator, sqlite::SqliteConnectO
 
 use super::legacy;
 
-static MIGRATOR: Migrator = sqlx::migrate!("src/state/migrations");
+static MIGRATOR: Migrator = sqlx::migrate!("src/state/db/migrations");
 
 // One connection, so writes never interleave: each one runs in its own transaction.
 pub struct State {

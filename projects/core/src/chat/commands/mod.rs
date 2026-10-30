@@ -17,8 +17,7 @@ use anyhow::{Result, bail};
 use crate::{
     runtime::{
         Runtime,
-        agent::Agent,
-        inbox::Inbox,
+        agent::{Agent, Inbox},
         model_choice::{Choice, ProviderStatus},
     },
     state::Thread,

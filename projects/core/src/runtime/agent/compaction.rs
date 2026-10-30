@@ -5,12 +5,8 @@
 use anyhow::{Context, Result, bail};
 use tracing::warn;
 
-use super::{
-    agent::Agent,
-    context::Conversation,
-    inbox::{Inbox, Stop},
-    thread_runner::ThreadEvent,
-};
+use super::{Agent, Inbox, Stop};
+use crate::runtime::{chat::Conversation, system::ThreadEvent};
 use crate::{
     init::COMPACT_PROMPT_TEMPLATE,
     providers::{ChatMessage, ChatRequest},

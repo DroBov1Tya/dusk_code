@@ -8,12 +8,13 @@ use anyhow::{Context, Result};
 use tokio::sync::mpsc;
 use tracing::warn;
 
-use super::{
-    context::{Conversation, spec_tokens},
-    generation,
-    inbox::{Inbox, Stop},
-    model_choice::{Choice, ModelChoice},
-    thread_runner::ThreadEvent,
+use super::{Inbox, Stop, generation};
+use crate::runtime::{
+    chat::{Conversation, spec_tokens},
+    system::{
+        ThreadEvent,
+        model_choice::{Choice, ModelChoice},
+    },
 };
 use crate::{
     config::Config,

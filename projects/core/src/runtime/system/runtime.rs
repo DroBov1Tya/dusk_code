@@ -13,12 +13,10 @@ use tokio::task::{JoinHandle, JoinSet};
 use tracing::{info, warn};
 
 use super::{
-    inbox::Input,
-    launcher::Launcher,
-    mailboxes::Mailboxes,
+    Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner,
     model_choice::{self, Choice, ModelChoice},
-    thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner},
 };
+use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     agents::{AgentTree, Agents},
     config::{ApiKey, ProviderConfig, ProviderKind},

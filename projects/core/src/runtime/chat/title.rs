@@ -4,11 +4,9 @@
 use anyhow::{Context, Result};
 use tracing::warn;
 
-use super::{
-    agent::Agent,
-    generation,
-    inbox::{Inbox, Stop},
-    thread_runner::ThreadEvent,
+use crate::runtime::{
+    agent::{Agent, Inbox, Stop, generation},
+    system::ThreadEvent,
 };
 use crate::{
     providers::{ChatMessage, ChatRequest, ModelOutput},
