@@ -1,5 +1,6 @@
 //! dusk_core: all application logic. Front ends (CLI, TUI, GUI) are thin clients over it.
 
+pub mod agents;
 pub mod api;
 pub mod chat;
 pub mod config;
@@ -10,6 +11,7 @@ pub mod mcp;
 pub mod paths;
 pub mod providers;
 pub mod runtime;
+pub mod skills;
 pub mod state;
 pub mod thread_start;
 pub mod tools;

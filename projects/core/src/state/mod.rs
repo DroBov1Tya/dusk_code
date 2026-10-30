@@ -1,6 +1,8 @@
-//! SQLite records of threads, messages, turns, compactions and token usage.
+//! SQLite records of threads, messages, turns, compactions, token usage, tasks and agent
+//! identities.
 
 mod compactions;
+mod identities;
 mod legacy;
 mod local_unsent;
 mod messages;
@@ -14,6 +16,7 @@ mod tokens;
 mod turns;
 
 pub use compactions::Compaction;
+pub use identities::Identity;
 pub use local_unsent::LocalUnsent;
 pub use messages::estimate_tokens;
 pub use messages::{Message, MessageRole};

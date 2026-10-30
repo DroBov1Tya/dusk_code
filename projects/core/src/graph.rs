@@ -1,13 +1,14 @@
 //! Skills and agents, both read the same way. Any folder under `skills/` that holds a
 //! `SKILL.md`, or under `agents/` that holds an `AGENT.md`, is a node named by its path,
 //! such as `git/release-notes`. Nodes form a graph: `links` lead from one to others, and
-//! `entry` marks the ones offered first. A skill's text is instructions the agent loads;
-//! an agent's text is the system prompt of the thread it works in.
+//! entries are the ones offered first. Every node is an entry unless it says
+//! `entry: false`, so skills written for other tools work as they are. A skill's text is
+//! instructions the agent loads; an agent's text is the system prompt of the thread it
+//! works in.
 //!
 //! ```markdown
 //! ---
 //! description: Preparing a release
-//! entry: true
 //! links: [git/release-notes, git/changelog]
 //! tools: [read_file, run_command]   # agents only: the tools it gets; all when left out
 //! ---
@@ -67,7 +68,7 @@ pub struct Problem {
 struct FrontMatter {
     name: Option<String>,
     description: String,
-    #[serde(default)]
+    #[serde(default = "yes")]
     entry: bool,
     #[serde(default)]
     links: Vec<String>,
@@ -146,6 +147,10 @@ impl Graph {
 }
 
 impl Node {
+    pub fn file(&self) -> &Path {
+        &self.file
+    }
+
     /// The text after the front matter, read now so edits apply at once.
     pub fn instructions(&self) -> Result<String> {
         let text = read_text(&self.file)?;
@@ -169,9 +174,21 @@ fn subfolders(folder: &Path) -> impl Iterator<Item = String> {
 }
 
 fn read_node(file: &Path, name: &str) -> Result<Node> {
-    let file = file.to_owned();
-    let text = read_text(&file)?;
-    let (front, _) = split_front_matter(&text)?;
+    let text = read_text(file)?;
+    parse_node(&text, name, file.to_owned())
+}
+
+/// Whether `text` would read as the node `name`: its front matter and description.
+pub fn check_node(text: &str, name: &str) -> Result<()> {
+    ensure!(
+        text.len() as u64 <= MAX_NODE_BYTES,
+        "the text is over {MAX_NODE_BYTES} bytes"
+    );
+    parse_node(text, name, PathBuf::new()).map(drop)
+}
+
+fn parse_node(text: &str, name: &str, file: PathBuf) -> Result<Node> {
+    let (front, _) = split_front_matter(text)?;
     let front: FrontMatter =
         serde_yaml::from_str(front).map_err(|_| anyhow!("front matter is not valid YAML"))?;
     if let Some(declared) = &front.name {
@@ -201,14 +218,18 @@ fn read_node(file: &Path, name: &str) -> Result<Node> {
     })
 }
 
+fn yes() -> bool {
+    true
+}
+
 /// The file must be a regular file; a symlink is not followed.
-fn read_text(file: &Path) -> Result<String> {
+pub fn read_text(file: &Path) -> Result<String> {
     let bytes = read_regular(file, MAX_NODE_BYTES).context("cannot read the file")?;
     String::from_utf8(bytes).map_err(|_| anyhow!("the file is not valid UTF-8 text"))
 }
 
 /// Splits `---\n<front>\n---\n<body>`.
-fn split_front_matter(text: &str) -> Result<(&str, &str)> {
+pub fn split_front_matter(text: &str) -> Result<(&str, &str)> {
     let rest = text
         .strip_prefix(FENCE)
         .and_then(|rest| {

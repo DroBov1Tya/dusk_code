@@ -14,28 +14,23 @@ use std::path::Path;
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tracing::info;
 
 use super::{Progress, Tool, ToolContext};
 use crate::{
     BoxFuture,
-    graph::{AGENT_FILE, Graph, Node},
+    agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
     runtime::{ThreadEvent, launcher::Launcher},
+    state::Identity,
     state::Thread,
     thread_start::{self, display_name, read_prompt, start_agent_thread},
 };
 
-/// A chat is at depth 0; an agent three levels down can no longer ask another.
-pub const MAX_AGENT_DEPTH: usize = 3;
-
-/// The built-in agent, asked when none is named. An `agents/general` folder replaces it.
-pub const GENERAL_AGENT: &str = "general";
 /// Agent threads one thread may open; asking an earlier one again is not limited.
 const MAX_AGENTS_PER_THREAD: usize = 16;
 /// Agent threads in one chat's whole tree: the per-thread cap alone allows thousands
 /// three levels down.
 const MAX_AGENTS_PER_CHAT: usize = 32;
-const GENERAL_DESCRIPTION: &str = "works like this chat, with MAIN.md and every tool; \
-for research, reading code and self-contained parts of a task";
 
 pub struct AskAgent {
     launcher: Launcher,
@@ -62,16 +57,18 @@ impl AskAgent {
         }
     }
 
-    /// The agents this thread may ask: the entries for a chat, the links for an agent.
-    fn reachable(&self) -> Vec<Node> {
-        let graph = Graph::load(&self.launcher.paths.agents_dir(), AGENT_FILE);
-        match &self.asker {
-            None => graph.entries().cloned().collect(),
-            Some(asker) => match graph.get(asker) {
-                Some(node) => graph.links(node).cloned().collect(),
-                None => Vec::new(),
-            },
-        }
+    /// The agents this thread may ask: the entries for a chat, the links for an agent,
+    /// those switched on.
+    fn reachable(&self) -> Vec<Identity> {
+        let config = self.launcher.config.current();
+        self.launcher
+            .agents
+            .reachable(self.asker.as_deref(), &config)
+    }
+
+    fn builtin_general(&self) -> bool {
+        let config = self.launcher.config.current();
+        self.launcher.agents.builtin_general(&config)
     }
 
     async fn ask(
@@ -114,15 +111,12 @@ impl AskAgent {
     /// A new thread for `agent`, the general agent when `None`: its ID, name and agent.
     async fn start(&self, agent: Option<&str>) -> Result<(String, String, String)> {
         let agent_name = agent.unwrap_or(GENERAL_AGENT);
-        // `None` is the built-in general agent.
-        let node = self
+        let known = self
             .reachable()
-            .into_iter()
-            .find(|node| node.name == agent_name);
-        ensure!(
-            node.is_some() || agent_name == GENERAL_AGENT,
-            "no agent {agent_name} to ask from here"
-        );
+            .iter()
+            .any(|identity| identity.name == agent_name);
+        let builtin = !known && agent_name == GENERAL_AGENT && self.builtin_general();
+        ensure!(known || builtin, "no agent {agent_name} to ask from here");
         let state = &self.launcher.state;
         let chat = state.root_thread(&self.thread_id).await?;
         let in_chat = state.descendant_threads(&chat).await?.len();
@@ -138,9 +132,12 @@ impl AskAgent {
              them with `thread` instead"
         );
         let paths = &self.launcher.paths;
-        let prompt = match &node {
-            Some(node) => Some(node.instructions()?),
-            None => read_prompt(&paths.main_prompt())?,
+        let prompt = if builtin {
+            read_prompt(&paths.main_prompt())?
+        } else {
+            let (identity, prompt) = self.launcher.agents.prompt(agent_name).await?;
+            info!("agent {agent_name} starts at version {}", identity.version);
+            Some(prompt)
         };
         let state = &self.launcher.state;
         let thread = start_agent_thread(state, paths, &self.thread_id, agent_name, prompt).await?;
@@ -167,12 +164,12 @@ impl Tool for AskAgent {
     }
 
     fn description(&self, _context: &ToolContext<'_>) -> String {
-        let reachable = self.reachable();
-        let mut agents: Vec<String> = reachable
+        let mut agents: Vec<String> = self
+            .reachable()
             .iter()
-            .map(|node| format!("- {}: {}", node.name, node.description))
+            .map(|identity| format!("- {}: {}", identity.name, identity.description))
             .collect();
-        if !reachable.iter().any(|node| node.name == GENERAL_AGENT) {
+        if self.builtin_general() {
             agents.insert(0, format!("- {GENERAL_AGENT}: {GENERAL_DESCRIPTION}"));
         }
         format!(

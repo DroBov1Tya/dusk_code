@@ -22,15 +22,12 @@ use super::{
 };
 use crate::{
     BoxFuture,
-    graph::{AGENT_FILE, Graph, Node},
+    agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
     live_config::LiveConfig,
     mcp::McpServers,
     paths::Paths,
-    state::{State, Thread, TurnStatus, estimate_tokens},
-    tools::{
-        AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, McpTool, MessageParent, ReadHistory, Tasks,
-        ToolRegistry, ToolScope,
-    },
+    state::{Identity, State, Thread, TurnStatus, estimate_tokens},
+    tools::{AskAgent, McpTool, MessageParent, ReadHistory, Tasks, ToolRegistry, ToolScope},
 };
 
 /// Messages from agents a chat takes between two of the user's.
@@ -44,6 +41,7 @@ pub struct Launcher {
     pub paths: Paths,
     pub mailboxes: Arc<Mailboxes>,
     pub mcp: Arc<McpServers>,
+    pub agents: Arc<Agents>,
 }
 
 impl Launcher {
@@ -54,7 +52,7 @@ impl Launcher {
         thread_id: &str,
         cwd: &Path,
         workspace: &Path,
-        agent: Option<&Node>,
+        agent: Option<&Identity>,
         depth: usize,
     ) -> Result<ThreadSetup> {
         Ok(ThreadSetup {
@@ -76,7 +74,7 @@ impl Launcher {
     /// history, other agents while the depth allows, and for an agent a way to write to
     /// the thread that asked it. An agent
     /// with a `tools` list keeps only those, and that way back.
-    pub fn tools(&self, thread_id: &str, agent: Option<&Node>, depth: usize) -> ToolRegistry {
+    pub fn tools(&self, thread_id: &str, agent: Option<&Identity>, depth: usize) -> ToolRegistry {
         let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
@@ -186,10 +184,9 @@ impl Launcher {
     ) -> Result<(ThreadRunner, ThreadInput, ThreadOutput)> {
         let depth = self.state.thread_depth(&thread.id).await?;
         let name = thread.agent.as_deref().unwrap_or(GENERAL_AGENT);
-        let graph = Graph::load(&self.paths.agents_dir(), AGENT_FILE);
-        let node = graph.get(name);
+        let identity = self.agents.get(name);
         let workspace = self.paths.thread_workspace(&thread.id)?;
-        let mut setup = self.setup(&thread.id, cwd, &workspace, node, depth)?;
+        let mut setup = self.setup(&thread.id, cwd, &workspace, identity.as_ref(), depth)?;
         setup.ends_when_idle = true;
         Ok(ThreadRunner::new(setup))
     }

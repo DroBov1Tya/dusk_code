@@ -38,6 +38,9 @@ pub struct Config {
     /// Skills switched on or off by name; a skill not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     skills: BTreeMap<String, bool>,
+    /// Agents switched on or off by name; an agent not listed is on.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    agents: BTreeMap<String, bool>,
     /// The model threads talk to, as `provider/model`; the first model of the first
     /// provider when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -209,6 +212,14 @@ impl Config {
         self.limits.max_agents_at_work = limit;
     }
 
+    pub fn agent_enabled(&self, name: &str) -> bool {
+        self.agents.get(name).copied().unwrap_or(true)
+    }
+
+    pub fn set_agent_enabled(&mut self, name: &str, enabled: bool) {
+        self.agents.insert(name.to_owned(), enabled);
+    }
+
     pub fn skill_enabled(&self, name: &str) -> bool {
         self.skills.get(name).copied().unwrap_or(true)
     }
@@ -298,6 +309,7 @@ impl fmt::Debug for Config {
             .field("limits", &self.limits)
             .field("tools", &self.tools)
             .field("skills", &self.skills)
+            .field("agents", &self.agents)
             .field("model", &self.model)
             .field("mcp", &self.mcp.keys().collect::<Vec<_>>())
             .finish()

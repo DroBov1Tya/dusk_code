@@ -86,6 +86,9 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
         .with_context(|| format!("no skill named {name}"))?;
     let instructions = skill.instructions()?;
     ensure!(!instructions.is_empty(), "skill {name} has no instructions");
+    // Skills name their own scripts and references by paths inside their folder.
+    let folder = skill.file().parent().unwrap_or(directory).display();
+    let instructions = format!("The files of this skill are in {folder}.\n\n{instructions}");
     let next = enabled(graph.links(skill), config);
     if next.is_empty() {
         return Ok(instructions);
