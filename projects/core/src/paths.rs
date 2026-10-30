@@ -54,6 +54,10 @@ impl Paths {
         self.config_root.join(COMPACT_PROMPT)
     }
 
+    pub fn logs_dir(&self) -> PathBuf {
+        self.config_root.join("logs")
+    }
+
     pub fn skills_dir(&self) -> PathBuf {
         self.config_root.join(SKILLS_DIR)
     }

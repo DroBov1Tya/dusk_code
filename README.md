@@ -25,6 +25,13 @@ and links `duskcode` from `/usr/local/bin`, or `~/.local/bin` when that is not w
 Run `duskcode` in the folder to work in. `duskcode remove` asks once, then deletes the
 binary, its link and `~/.config/duskcode`.
 
+## Logs
+
+The core writes `~/.config/duskcode/logs/core.log` and the terminal client
+`~/.config/duskcode/logs/tui.log`, as plain text. `DUSKCODE_LOG` sets the level the way
+`RUST_LOG` does (`DUSKCODE_LOG=debug duskcode`); `info` by default. Tool arguments,
+outputs and secrets are not logged.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
