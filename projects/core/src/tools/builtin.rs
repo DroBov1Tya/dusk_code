@@ -11,9 +11,9 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 use super::{
+    console::RunCommand,
     files::{DeleteFile, EditFile, ReadFile, WriteFile},
-    load_skill::LoadSkill,
-    shell::RunCommand,
+    harness::LoadSkill,
     tool::Tool,
 };
 

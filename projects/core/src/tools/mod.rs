@@ -1,26 +1,23 @@
 //! Tools the agent can call: one interface and one registry for every kind of tool.
 
-mod ask_user;
+//!
+//! Each kind of tool has a folder: `files`, `console`, `agents` and `harness`, the tools
+//! about the thread itself. MCP tools come from servers; `mcp` wraps them.
+
+mod agents;
 mod builtin;
+mod console;
 mod files;
-mod history;
-mod load_skill;
+mod harness;
 mod mcp;
 mod registry;
-mod remember;
 mod scope;
-mod shell;
-mod subagents;
-mod tasks;
 mod tool;
 
-pub use ask_user::{AskUser, Question};
+pub use agents::{AskAgent, MessageParent};
 pub use builtin::read_regular;
-pub use history::ReadHistory;
+pub use harness::{AskUser, Question, ReadHistory, Remember, Tasks};
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
-pub use remember::Remember;
 pub use scope::ToolScope;
-pub use subagents::{AskAgent, MessageParent};
-pub use tasks::Tasks;
 pub use tool::{Progress, Tool, ToolContext, ToolKind};

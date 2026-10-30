@@ -8,7 +8,7 @@ use std::sync::Arc;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{Tool, ToolContext, builtin::parse_arguments};
+use crate::tools::{Tool, ToolContext, builtin::parse_arguments};
 use crate::{
     BoxFuture,
     runtime::ThreadEvent,
