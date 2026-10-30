@@ -18,6 +18,8 @@ use crate::{
     config::Config,
     graph::{AGENT_FILE, Graph, Problem, read_text, split_front_matter},
     state::{Identity, State},
+    sync::{read, write},
+    thread_start::fnv1a,
 };
 
 /// The built-in agent, asked when none is named. An `agents/general` folder replaces it.
@@ -231,20 +233,6 @@ fn read_prompt(identity: &Identity) -> Result<(String, String)> {
     Ok((body.trim().to_owned(), fingerprint(text.as_bytes())))
 }
 
-/// FNV-1a, enough to notice an edit; not a defence against anyone.
 fn fingerprint(bytes: &[u8]) -> String {
-    let hash = bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-    });
-    format!("{hash:016x}")
-}
-
-// Writes replace whole values, so a panic cannot leave them half-changed.
-fn read<T>(lock: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
-    lock.read().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-fn write<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
-    lock.write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
+    format!("{:016x}", fnv1a(bytes))
 }

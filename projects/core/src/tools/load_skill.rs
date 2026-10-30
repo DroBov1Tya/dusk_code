@@ -1,7 +1,11 @@
 //! `load_skill`: how the model walks the skill graph. Its description lists the entry
 //! skills; loading a skill returns its instructions and the skills it leads to.
 
-use std::path::{Path, PathBuf};
+use std::{
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
+};
 
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
@@ -15,10 +19,19 @@ use crate::{
     BoxFuture,
     config::Config,
     graph::{Graph, Node, SKILL_FILE},
+    sync::lock,
 };
+
+/// The graph is described to the model several times a step; reading it again this
+/// soon would find the same files.
+const GRAPH_TTL: Duration = Duration::from_secs(5);
+/// Each skill listed costs tokens in every request.
+const MAX_LISTED: usize = 60;
+const MAX_LISTED_CHARS: usize = 400;
 
 pub struct LoadSkill {
     directory: PathBuf,
+    graph: Mutex<Option<(Instant, Arc<Graph>)>>,
 }
 
 #[derive(Deserialize)]
@@ -29,7 +42,22 @@ struct LoadSkillArguments {
 
 impl LoadSkill {
     pub fn new(directory: PathBuf) -> Self {
-        Self { directory }
+        Self {
+            directory,
+            graph: Mutex::default(),
+        }
+    }
+
+    fn graph(&self) -> Arc<Graph> {
+        let mut cached = lock(&self.graph);
+        match &*cached {
+            Some((read, graph)) if read.elapsed() < GRAPH_TTL => Arc::clone(graph),
+            _ => {
+                let graph = Arc::new(Graph::load(&self.directory, SKILL_FILE));
+                *cached = Some((Instant::now(), Arc::clone(&graph)));
+                graph
+            }
+        }
     }
 }
 
@@ -39,7 +67,7 @@ impl Tool for LoadSkill {
     }
 
     fn description(&self, context: &ToolContext<'_>) -> String {
-        let graph = Graph::load(&self.directory, SKILL_FILE);
+        let graph = self.graph();
         let entries = enabled(graph.entries(), context.config);
         format!(
             "Load the instructions of a skill when the task matches its description, and \
@@ -61,7 +89,7 @@ impl Tool for LoadSkill {
     }
 
     fn available(&self, context: &ToolContext<'_>) -> bool {
-        Graph::load(&self.directory, SKILL_FILE)
+        self.graph()
             .entries()
             .any(|skill| context.config.skill_enabled(&skill.name))
     }
@@ -100,9 +128,19 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
 
 /// Switched-off skills are left out, wherever they would be shown.
 fn enabled<'a>(skills: impl Iterator<Item = &'a Node>, config: &Config) -> String {
-    skills
+    let skills: Vec<&Node> = skills
         .filter(|skill| config.skill_enabled(&skill.name))
-        .map(|skill| format!("- {}: {}", skill.name, skill.description))
-        .collect::<Vec<_>>()
-        .join("\n")
+        .collect();
+    let mut listed: Vec<String> = skills
+        .iter()
+        .take(MAX_LISTED)
+        .map(|skill| {
+            let description: String = skill.description.chars().take(MAX_LISTED_CHARS).collect();
+            format!("- {}: {description}", skill.name)
+        })
+        .collect();
+    if skills.len() > MAX_LISTED {
+        listed.push(format!("({} more not listed)", skills.len() - MAX_LISTED));
+    }
+    listed.join("\n")
 }

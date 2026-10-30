@@ -80,7 +80,7 @@ impl SubagentView {
 
 impl AgentWindow {
     pub fn new(thread_id: String, parent: Option<String>, mut transcript: Transcript) -> Self {
-        for entry in &mut transcript.entries {
+        for entry in transcript.entries_mut() {
             if let Entry::FromAgent {
                 thread_id, text, ..
             } = entry

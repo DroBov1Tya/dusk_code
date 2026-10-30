@@ -52,6 +52,31 @@ impl State {
     }
 
     /// Oldest first.
+    pub async fn drop_pending(&self, thread_id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM pending_messages WHERE thread_id = ?")
+            .bind(thread_id)
+            .execute(&self.pool)
+            .await
+            .context("drop waiting messages")?;
+        Ok(())
+    }
+
+    /// Threads with messages waiting to be read.
+    pub async fn threads_with_pending(&self) -> Result<Vec<String>> {
+        sqlx::query_scalar("SELECT DISTINCT thread_id FROM pending_messages")
+            .fetch_all(&self.pool)
+            .await
+            .context("list threads with waiting messages")
+    }
+
+    pub async fn has_pending(&self, thread_id: &str) -> Result<bool> {
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM pending_messages WHERE thread_id = ?)")
+            .bind(thread_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("look for waiting messages")
+    }
+
     pub async fn pending_messages(&self, thread_id: &str) -> Result<Vec<PendingMessage>> {
         let rows = sqlx::query(
             "SELECT pending_id, request_uid, content, from_thread_id FROM pending_messages

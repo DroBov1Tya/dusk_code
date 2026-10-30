@@ -11,6 +11,8 @@ use crate::BoxFuture;
 
 /// Bounds memory for a provider that never finishes; every kind of output counts.
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
+/// Tool calls one answer may make; real answers make a few.
+const MAX_TOOL_CALLS: usize = 128;
 
 /// One increment of a streamed model response.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -126,6 +128,12 @@ impl ModelOutput {
                     "tool calls arrived out of order"
                 );
                 ensure!(!name.trim().is_empty(), "tool call has no name");
+                ensure!(
+                    self.calls.len() < MAX_TOOL_CALLS,
+                    "model made more than {MAX_TOOL_CALLS} tool calls in one answer"
+                );
+                self.size += id.len() + name.len();
+                ensure!(self.size <= MAX_OUTPUT_BYTES, "model answer is too large");
                 self.calls.push(PendingCall {
                     id: id.clone(),
                     name: name.clone(),
@@ -156,7 +164,8 @@ impl ModelOutput {
         let calls = self
             .calls
             .iter()
-            .map(|call| {
+            .enumerate()
+            .map(|(index, call)| {
                 // An empty string is how some servers send "no arguments". Text that is not
                 // JSON is kept as it came: the tool call fails, and the model is told why.
                 let arguments = match call.arguments.trim() {
@@ -164,8 +173,16 @@ impl ModelOutput {
                     json => serde_json::from_str(json)
                         .unwrap_or_else(|_| Value::String(call.arguments.clone())),
                 };
+                // Results are matched to calls by ID, so a missing or repeated one is
+                // replaced; some servers send the same ID for parallel calls.
+                let repeated = self.calls[..index].iter().any(|other| other.id == call.id);
+                let id = if call.id.trim().is_empty() || repeated {
+                    format!("call_{index}")
+                } else {
+                    call.id.clone()
+                };
                 Ok(ToolCall {
-                    id: call.id.clone(),
+                    id,
                     name: call.name.clone(),
                     arguments,
                 })
@@ -230,6 +247,19 @@ mod tests {
         assert_eq!(calls[0].arguments, json!({"city": "Moscow"}));
         assert_eq!(calls[1].id, "b");
         assert_eq!(calls[1].arguments, json!({"city": "Kazan"}));
+    }
+
+    #[test]
+    fn missing_and_repeated_call_ids_are_made_unique() {
+        let (_, calls) = assemble(&[
+            call(0, "same", "weather"),
+            call(1, "same", "weather"),
+            call(2, "", "weather"),
+            ModelEvent::Finished(FinishReason::ToolCalls),
+        ])
+        .unwrap();
+        let ids: Vec<&str> = calls.iter().map(|call| call.id.as_str()).collect();
+        assert_eq!(ids, ["same", "call_1", "call_2"]);
     }
 
     #[test]

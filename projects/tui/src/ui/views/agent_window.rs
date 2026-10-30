@@ -9,6 +9,7 @@ use ratatui::{
     widgets::{Block, BorderType, Clear, Paragraph},
 };
 
+use super::sidebar::format_duration;
 use super::{
     loader::{Loader, agent_name, identity},
     panels::window,
@@ -191,9 +192,4 @@ fn conversation(frame: &mut Frame, area: Rect, app: &mut App) {
         agent_window.scroll = scroll;
         agent_window.hits = hits;
     }
-}
-
-fn format_duration(ms: u64) -> String {
-    let seconds = ms / 1_000;
-    format!("{:02}:{:02}", seconds / 60, seconds % 60)
 }

@@ -59,7 +59,7 @@ impl Launcher {
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
-            scope: ToolScope::new(cwd, workspace)?,
+            scope: ToolScope::new(cwd, workspace)?.protect(self.paths.config_root()),
             compact_prompt: self.paths.compact_prompt(),
             depth,
             mailboxes: Arc::clone(&self.mailboxes),
@@ -102,12 +102,12 @@ impl Launcher {
         tools
     }
 
-    /// Stores a message from one agent's thread to another and makes sure it is read:
-    /// a running thread is woken, a stopped agent thread is started. A chat that is
-    /// not open takes the message in when it is opened again. Agents are bounded: so
-    /// many at work at once, and so many messages to a chat between two of the user's,
-    /// so agents cannot keep each other busy without end. Boxed, because a started
-    /// agent may deliver in turn.
+    /// Stores a message from one agent's thread to another and wakes its reader: a running
+    /// thread is woken, a stopped agent thread is started. A message is never lost to a
+    /// limit: it waits stored. Agents are bounded, so many at work at once: past that, an
+    /// agent starts when another one ends. A chat is not woken by more than so many agent
+    /// messages between two of the user's, so agents cannot keep it busy without end; the
+    /// rest waits for the user's next message. Boxed, because a started agent may deliver.
     pub fn deliver<'a>(
         &'a self,
         to: &'a str,
@@ -122,56 +122,85 @@ impl Launcher {
                 tokens <= limit,
                 "the message is about {tokens} tokens, past the input limit of {limit}"
             );
-            // Held until the message is stored and its reader is sure to see it.
-            let mut live = self.mailboxes.lock().await;
-            let running = live.get(to).filter(|mailbox| mailbox.is_live()).cloned();
             let thread = self
                 .state
                 .load_thread(to)
                 .await?
                 .with_context(|| format!("thread {to} does not exist"))?;
-            match &thread.parent_thread_id {
-                None => {
-                    let received = self.state.agent_messages_since_client(to).await?;
-                    ensure!(
-                        received < MAX_AGENT_MESSAGES,
-                        "the chat has had {MAX_AGENT_MESSAGES} agent messages since the user \
-                         last wrote; it takes no more until then"
-                    );
-                }
-                Some(_) if running.is_none() && !self.mailboxes.is_closed() => {
-                    let at_work = live.values().filter(|mailbox| mailbox.agent).count();
-                    let max_agents_at_work = self.config.current().limits().max_agents_at_work;
-                    ensure!(
-                        at_work < max_agents_at_work,
-                        "{max_agents_at_work} agents are at work already; wait for one to finish"
-                    );
-                }
-                Some(_) => {}
-            }
+            let chat_is_full = thread.parent_thread_id.is_none()
+                && self.state.agent_messages_since_client(to).await? >= MAX_AGENT_MESSAGES;
             self.state.add_pending_from(to, content, Some(from)).await?;
-            if running.is_some_and(|mailbox| mailbox.send(Input::Sent)) {
+            if chat_is_full {
                 return Ok(());
             }
-            // After shutdown, or for a chat that is not open, the message waits stored.
+            self.wake(&thread, cwd).await
+        })
+    }
+
+    /// Makes sure a thread with stored messages reads them: a running one is woken, a
+    /// stopped agent thread is started while fewer than the limit are at work. A chat that
+    /// is not open reads them when it is opened again.
+    fn wake<'a>(&'a self, thread: &'a Thread, cwd: &'a Path) -> BoxFuture<'a, ()> {
+        Box::pin(async move {
+            // Held until the reader is sure to see the message: a runner that leaves checks
+            // for stored messages under the same lock.
+            let mut live = self.mailboxes.lock().await;
+            if let Some(mailbox) = live.get(&thread.id).filter(|mailbox| mailbox.is_live())
+                && mailbox.send(Input::Sent)
+            {
+                return Ok(());
+            }
             let Some(parent) = thread.parent_thread_id.clone() else {
                 return Ok(());
             };
-            if self.mailboxes.is_closed() {
+            let at_work = live.values().filter(|mailbox| mailbox.agent).count();
+            if self.mailboxes.is_closed()
+                || self.model.current().is_none()
+                || at_work >= self.config.current().limits().max_agents_at_work
+            {
                 return Ok(());
             }
-            let (runner, input, output) = self.agent_runner(&thread, cwd).await?;
-            live.insert(to.to_owned(), runner.mailbox(&input));
+            let (runner, input, output) = self.agent_runner(thread, cwd).await?;
+            live.insert(thread.id.clone(), runner.mailbox(&input));
             drop(live);
+            let launcher = self.clone();
+            let folder = cwd.to_owned();
             tokio::spawn(async move {
                 // Kept for as long as the runner, which ends on its own when idle.
-                let _input = input;
-                runner.run().await;
+                let ended_well = runner.run().await;
+                drop(input);
+                // A slot is free: agents whose messages waited for one start now. Not
+                // after a failure, which the next agent would likely meet as well.
+                if ended_well {
+                    launcher.wake_waiting(&folder).await;
+                }
             });
             let reports: Pin<Box<dyn Future<Output = ()> + Send>> =
-                Box::pin(self.clone().report(output, thread, parent, cwd.to_owned()));
+                Box::pin(
+                    self.clone()
+                        .report(output, thread.clone(), parent, cwd.to_owned()),
+                );
             tokio::spawn(reports);
             Ok(())
+        })
+    }
+
+    /// Wakes every agent thread that has stored messages and no runner.
+    fn wake_waiting<'a>(&'a self, cwd: &'a Path) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
+        Box::pin(async move {
+            let waiting = match self.state.threads_with_pending().await {
+                Ok(waiting) => waiting,
+                Err(error) => return warn!("cannot look for waiting agents: {error:#}"),
+            };
+            for thread_id in waiting {
+                let thread = match self.state.load_thread(&thread_id).await {
+                    Ok(Some(thread)) if thread.parent_thread_id.is_some() => thread,
+                    _ => continue,
+                };
+                if let Err(error) = self.wake(&thread, cwd).await {
+                    warn!("cannot start agent thread {thread_id}: {error:#}");
+                }
+            }
         })
     }
 

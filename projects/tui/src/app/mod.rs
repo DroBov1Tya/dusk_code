@@ -29,7 +29,7 @@ pub use panels::{
     AgentRow, AgentWindow, Connection, HitTarget, ModelList, Panel, Preview, SettingCategory,
     SettingsHit, SettingsView, SkillButton, SkillEditor, SubagentView, SwitchKind, ThreadList,
 };
-pub use transcript::{Entry, Tone, Transcript};
+pub use transcript::{Entry, Layout, Tone, Transcript};
 
 /// What the session does for the app.
 pub enum Action {
@@ -200,8 +200,10 @@ pub struct App {
     /// The entry under the mouse, which shows its buttons.
     pub hover: Option<usize>,
     pub selection: Option<Selection>,
-    /// Every transcript line as plain text on the last frame, for copying a selection.
-    pub drawn_text: Vec<String>,
+    /// The transcript lines of the earlier entries, kept between frames.
+    pub layout: Option<Layout>,
+    /// The lines of the last entry on the last frame, as plain text.
+    pub tail_text: Vec<String>,
     /// The first transcript line on screen on the last frame.
     pub drawn_top: usize,
     /// The lines each entry took on the last frame, from and to.
@@ -227,6 +229,18 @@ pub struct App {
 }
 
 impl App {
+    /// A transcript line as drawn on the last frame, as plain text.
+    pub fn drawn_text(&self, line: usize) -> Option<&str> {
+        let earlier = self
+            .layout
+            .as_ref()
+            .map_or(&[][..], |layout| &layout.text[..]);
+        match earlier.get(line) {
+            Some(text) => Some(text),
+            None => self.tail_text.get(line - earlier.len()).map(String::as_str),
+        }
+    }
+
     pub fn new(model: Option<String>, limit: u64, config: Arc<LiveConfig>) -> Self {
         Self {
             provider_available: model.is_some(),
@@ -265,7 +279,8 @@ impl App {
             editor_hits: Vec::new(),
             hover: None,
             selection: None,
-            drawn_text: Vec::new(),
+            layout: None,
+            tail_text: Vec::new(),
             drawn_top: 0,
             entry_lines: Vec::new(),
             flash: None,
@@ -386,19 +401,7 @@ impl App {
                 if let Some(index) = self.transcript.entries.iter().rposition(
                     |entry| matches!(entry, Entry::User { text, .. } if *text == message.content),
                 ) {
-                    self.transcript.entries.remove(index);
-                    self.transcript.hidden = self
-                        .transcript
-                        .hidden
-                        .iter()
-                        .filter_map(|&hidden| {
-                            if hidden == index {
-                                None
-                            } else {
-                                Some(if hidden > index { hidden - 1 } else { hidden })
-                            }
-                        })
-                        .collect();
+                    self.transcript.remove(index);
                     self.focus = Focus::Input;
                 }
                 self.show_local_unsent(message);
@@ -558,7 +561,7 @@ impl App {
 
     pub fn mark_local_sent(&mut self, id: &str) {
         self.local_unsent.retain(|item| item.id != id);
-        for entry in &mut self.transcript.entries {
+        for entry in self.transcript.entries_mut() {
             if let Entry::Notice {
                 local_id: Some(local_id),
                 text,
@@ -583,7 +586,7 @@ impl App {
         if let Some(Entry::User { text: shown, .. }) = self.transcript.entries.last()
             && *shown == text
         {
-            self.transcript.entries.pop();
+            self.transcript.entries_mut().pop();
         }
         if self.input.is_empty() {
             self.input.set(text);

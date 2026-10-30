@@ -31,6 +31,11 @@ use crate::{
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 const CALL_TIMEOUT: Duration = Duration::from_secs(300);
+/// Tool descriptions go into every request, so a server's are bounded.
+const MAX_TOOLS: usize = 128;
+const MAX_DESCRIPTION_CHARS: usize = 1024;
+/// More than the model is shown of a result; the registry cuts it further.
+const MAX_RESULT_BYTES: usize = 1024 * 1024;
 
 pub struct McpClient {
     service: RunningService<RoleClient, ()>,
@@ -89,11 +94,12 @@ impl McpClient {
             .map_err(|error| anyhow!("cannot list the tools: {error}"))?;
         Ok(tools
             .into_iter()
+            .take(MAX_TOOLS)
             .map(|tool| RemoteTool {
                 name: tool.name.into_owned(),
                 description: tool
                     .description
-                    .map(|text| text.into_owned())
+                    .map(|text| text.chars().take(MAX_DESCRIPTION_CHARS).collect())
                     .unwrap_or_default(),
                 input_schema: Value::Object((*tool.input_schema).clone()),
             })
@@ -110,13 +116,21 @@ impl McpClient {
             .await
             .map_err(|_| anyhow!("the server did not answer in {}s", CALL_TIMEOUT.as_secs()))?
             .map_err(|error| anyhow!("the call failed: {error}"))?;
-        let mut text: Vec<String> = result.content.iter().map(content_text).collect();
+        let mut text = String::new();
+        for part in &result.content {
+            if text.len() >= MAX_RESULT_BYTES {
+                break;
+            }
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&content_text(part));
+        }
         if text.is_empty()
             && let Some(structured) = &result.structured_content
         {
-            text.push(structured.to_string());
+            text = structured.to_string();
         }
-        let text = text.join("\n");
         if result.is_error == Some(true) {
             bail!("{text}");
         }

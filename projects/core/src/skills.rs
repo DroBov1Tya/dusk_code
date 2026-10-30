@@ -16,7 +16,7 @@ use std::{
 use include_dir::{Dir, DirEntry, include_dir};
 
 use anyhow::{Context, Result, ensure};
-use serde_yaml::Value;
+use serde_json::Value;
 
 use crate::{
     config::Config,
@@ -59,8 +59,8 @@ pub struct SkillInfo {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SkillText {
     pub name: String,
-    /// The front matter fields with plain values, in file order, such as `description`
-    /// and `license`.
+    /// The front matter fields with plain values, by name, such as `description` and
+    /// `license`.
     pub metadata: Vec<(String, String)>,
     /// The whole file, front matter included.
     pub text: String,
@@ -187,12 +187,12 @@ fn metadata(text: &str) -> Vec<(String, String)> {
     let Ok((front, _)) = split_front_matter(text) else {
         return Vec::new();
     };
-    let Ok(Value::Mapping(fields)) = serde_yaml::from_str::<Value>(front) else {
+    let Ok(Value::Object(fields)) = serde_saphyr::from_str::<Value>(front) else {
         return Vec::new();
     };
     fields
         .into_iter()
-        .filter_map(|(key, value)| Some((plain(&key)?, plain(&value)?)))
+        .filter_map(|(key, value)| Some((key, plain(&value)?)))
         .collect()
 }
 
@@ -202,7 +202,7 @@ fn plain(value: &Value) -> Option<String> {
         Value::String(text) => Some(text.split_whitespace().collect::<Vec<_>>().join(" ")),
         Value::Bool(flag) => Some(flag.to_string()),
         Value::Number(number) => Some(number.to_string()),
-        Value::Sequence(items) => items
+        Value::Array(items) => items
             .iter()
             .map(plain)
             .collect::<Option<Vec<_>>>()

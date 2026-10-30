@@ -27,6 +27,7 @@ const THREAD_SOURCE: &str = "tui";
 /// How long a closing thread may take to stop its turn and finish.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 const FRAME: Duration = Duration::from_millis(80);
+const MAX_EVENTS_PER_FRAME: usize = 512;
 
 struct OpenThread {
     handle: ThreadHandle,
@@ -74,7 +75,19 @@ pub async fn run(
             },
             event = next_event(&mut open) => {
                 match event {
-                    Some(event) => app.apply(event),
+                    Some(event) => {
+                        app.apply(event);
+                        // Everything that has arrived meanwhile is drawn in one frame, so
+                        // fast streams do not cost a frame per token.
+                        if let Some(thread) = &mut open {
+                            for _ in 0..MAX_EVENTS_PER_FRAME {
+                                let Some(event) = thread.handle.output.ready_event() else {
+                                    break;
+                                };
+                                app.apply(event);
+                            }
+                        }
+                    }
                     None => {
                         app.error("the thread stopped; the next message opens it again");
                         app.stop_work();
@@ -152,7 +165,12 @@ pub async fn run(
                     {
                         let (cursor, scroll) = (editor.text.cursor, editor.scroll);
                         *editor = SkillEditor::new(skill);
-                        editor.text.cursor = cursor.min(editor.text.text.len());
+                        // The file was read again and may differ: stay on a char boundary.
+                        let mut cursor = cursor.min(editor.text.text.len());
+                        while !editor.text.text.is_char_boundary(cursor) {
+                            cursor -= 1;
+                        }
+                        editor.text.cursor = cursor;
                         editor.scroll = scroll;
                     }
                     app.flash = Some(format!("skill {name} saved"));

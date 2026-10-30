@@ -390,7 +390,7 @@ fn scroll_limit(line_count: usize, area: Rect) -> usize {
     }
 }
 
-fn format_duration(ms: u64) -> String {
+pub fn format_duration(ms: u64) -> String {
     let seconds = ms / 1_000;
     let minutes = seconds / 60;
     if minutes >= 60 {

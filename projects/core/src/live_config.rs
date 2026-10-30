@@ -7,14 +7,17 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock},
+    sync::{Arc, Mutex, MutexGuard, RwLock},
     time::{Duration, SystemTime},
 };
 
 use anyhow::{Context, Result, anyhow};
 use tracing::warn;
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    sync::{lock, read, write},
+};
 
 pub struct LiveConfig {
     path: PathBuf,
@@ -44,7 +47,7 @@ impl LiveConfig {
 
     /// A snapshot: later changes do not affect it.
     pub fn current(&self) -> Arc<Config> {
-        Arc::clone(&self.current.read().unwrap_or_else(PoisonError::into_inner))
+        Arc::clone(&read(&self.current))
     }
 
     /// Reads the file now, for example after something was added through a client.
@@ -66,7 +69,7 @@ impl LiveConfig {
         write_atomically(&self.path, yaml.as_bytes())?;
         *loaded = FileStamp::of(&self.path)?;
         let config = Arc::new(config);
-        *self.current.write().unwrap_or_else(PoisonError::into_inner) = Arc::clone(&config);
+        *write(&self.current) = Arc::clone(&config);
         Ok(config)
     }
 
@@ -96,14 +99,14 @@ impl LiveConfig {
     fn read_from_disk(&self, loaded: &mut FileStamp) -> Result<()> {
         let stamp = FileStamp::of(&self.path)?;
         let config = Config::load_from(&self.path)?;
-        *self.current.write().unwrap_or_else(PoisonError::into_inner) = Arc::new(config);
+        *write(&self.current) = Arc::new(config);
         *loaded = stamp;
         Ok(())
     }
 
     fn lock_loaded(&self) -> MutexGuard<'_, FileStamp> {
         // The guarded value is a plain stamp, still valid after a panic elsewhere.
-        self.loaded.lock().unwrap_or_else(PoisonError::into_inner)
+        lock(&self.loaded)
     }
 }
 

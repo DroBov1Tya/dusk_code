@@ -231,13 +231,13 @@ impl Config {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         // YAML errors can quote input values, including secrets. Drop their source.
         let config: Self =
-            serde_yaml::from_slice(bytes).map_err(|_| anyhow!("invalid configuration YAML"))?;
+            serde_saphyr::from_slice(bytes).map_err(|_| anyhow!("invalid configuration YAML"))?;
         config.validate()?;
         Ok(config)
     }
 
     pub fn to_yaml(&self) -> Result<String> {
-        let body = serde_yaml::to_string(self).context("cannot encode configuration")?;
+        let body = serde_saphyr::to_string(self).context("cannot encode configuration")?;
         Ok(format!("{HEADER}{body}"))
     }
 

@@ -1,6 +1,6 @@
 # dusk_code
 
-A Rust AI agent application with a shared core library, `dusk_core`, and a terminal client, `dusk`.
+A Rust AI agent application with a shared core library, `dusk_core`, and a terminal client, `duskcode`.
 
 ## Features
 
@@ -11,6 +11,19 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - File reading, writing, editing and deletion; shell commands; loading skills from `SKILL.md` files.
 - Background subagents with separate threads and messages to their parent.
 - Persistent task boards displayed in the terminal sidebar.
+
+## Install
+
+macOS on Apple silicon, Linux on x86_64 and arm64:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh
+```
+
+The script checks the release checksum, puts the binary in `~/.local/share/duskcode/bin`
+and links `duskcode` from `/usr/local/bin`, or `~/.local/bin` when that is not writable.
+Run `duskcode` in the folder to work in. `duskcode remove` asks once, then deletes the
+binary, its link and `~/.config/duskcode`.
 
 ## License
 

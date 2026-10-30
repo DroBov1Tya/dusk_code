@@ -4,9 +4,11 @@
 use ratatui::text::Span;
 use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
-/// Lines after the first start with `indent` spaces, so list items hang neatly.
+/// Lines after the first start with `indent` spaces, so list items hang neatly. The
+/// indent takes at most half the line, so text written to indent far cannot blow up.
 pub fn words(spans: Vec<Span<'static>>, width: usize, indent: usize) -> Vec<Vec<Span<'static>>> {
-    let width = width.max(indent + 1);
+    let width = width.max(2);
+    let indent = indent.min(width / 2);
     let mut lines = Vec::new();
     let mut line = Vec::new();
     let mut used = 0;

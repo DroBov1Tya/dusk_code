@@ -1,4 +1,5 @@
-//! Where tools may act: the directory the client was started in and the thread workspace.
+//! Where tools may act: the directory the client was started in and the thread workspace,
+//! never the config folder, which holds the API keys and the settings that bound the agent.
 //! Paths are resolved after following symlinks, so neither `..` nor a link leads outside.
 
 use std::{
@@ -12,6 +13,7 @@ use anyhow::{Context, Result, bail, ensure};
 pub struct ToolScope {
     cwd: PathBuf,
     workspace: PathBuf,
+    protected: Option<PathBuf>,
 }
 
 impl ToolScope {
@@ -24,7 +26,14 @@ impl ToolScope {
             workspace: workspace
                 .canonicalize()
                 .context("thread workspace is not accessible")?,
+            protected: None,
         })
+    }
+
+    /// Keeps the tools out of `folder` and everything under it.
+    pub fn protect(mut self, folder: &Path) -> Self {
+        self.protected = folder.canonicalize().ok();
+        self
     }
 
     /// Commands run here and relative paths are resolved against it.
@@ -46,6 +55,13 @@ impl ToolScope {
         ensure!(
             resolved.starts_with(&self.cwd) || resolved.starts_with(&self.workspace),
             "path is outside the working directory and the thread workspace"
+        );
+        ensure!(
+            !self
+                .protected
+                .as_ref()
+                .is_some_and(|protected| resolved.starts_with(protected)),
+            "path is inside the dusk config folder, which tools may not touch"
         );
         Ok(resolved)
     }
@@ -115,5 +131,19 @@ mod tests {
                 "through a dangling symlink"
             );
         }
+    }
+
+    #[test]
+    fn the_config_folder_is_off_limits_inside_the_cwd() {
+        let (scope, _) = scope("scope_config");
+        fs::create_dir_all(scope.cwd().join(".config/duskcode")).unwrap();
+        let scope = scope.clone().protect(&scope.cwd().join(".config/duskcode"));
+        assert!(scope.resolve(".config/duskcode/config.yml").is_err());
+        assert!(
+            scope
+                .resolve(".config/duskcode/../duskcode/skills/x")
+                .is_err()
+        );
+        assert!(scope.resolve(".config/other.yml").is_ok());
     }
 }

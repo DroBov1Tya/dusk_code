@@ -45,11 +45,18 @@ pub fn render(text: &str, width: usize) -> Vec<Line<'static>> {
     lines
 }
 
+/// Deeper or longer markers are plain text: nesting is never that deep in real answers.
+const MAX_LEAD: usize = 16;
+const MAX_DIGITS: usize = 9;
+
 /// The marker a line starts with, how far its wrapped lines hang, the text after the
 /// marker and the style of that text.
 fn classify(source: &str) -> (Vec<Span<'static>>, usize, &str, Style) {
     let trimmed = source.trim_start();
     let lead = source.len() - trimmed.len();
+    if lead > MAX_LEAD {
+        return (Vec::new(), 0, source, Style::new());
+    }
     let hashes = trimmed.chars().take_while(|&c| c == '#').count();
     if (1..=6).contains(&hashes) && trimmed[hashes..].starts_with(' ') {
         return (Vec::new(), 0, trimmed[hashes..].trim(), bold(VIOLET));
@@ -65,7 +72,7 @@ fn classify(source: &str) -> (Vec<Span<'static>>, usize, &str, Style) {
         return (vec![bar], 2, rest, thought());
     }
     let digits = trimmed.chars().take_while(char::is_ascii_digit).count();
-    if digits > 0 && trimmed[digits..].starts_with(". ") {
+    if (1..=MAX_DIGITS).contains(&digits) && trimmed[digits..].starts_with(". ") {
         let number = format!("{}{}. ", " ".repeat(lead), &trimmed[..digits]);
         let indent = number.len();
         return (
