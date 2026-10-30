@@ -16,7 +16,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tracing::info;
 
-use super::{Progress, Tool, ToolContext};
+use super::{Progress, Tool, ToolContext, ToolKind};
 use crate::{
     BoxFuture,
     agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
@@ -174,6 +174,10 @@ impl Tool for AskAgent {
         "ask_agent"
     }
 
+    fn kind(&self) -> ToolKind {
+        ToolKind::Agents
+    }
+
     fn description(&self, _context: &ToolContext<'_>) -> String {
         let reachable = self.reachable();
         let mut agents: Vec<String> = reachable
@@ -277,6 +281,10 @@ impl MessageParent {
 impl Tool for MessageParent {
     fn name(&self) -> &'static str {
         "message_parent"
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Agents
     }
 
     fn description(&self, _context: &ToolContext<'_>) -> String {

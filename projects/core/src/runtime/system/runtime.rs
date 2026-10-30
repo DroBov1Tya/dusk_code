@@ -19,6 +19,7 @@ use super::{
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     agents::{AgentTree, Agents},
+    chat::commands::{ContextReport, context_report},
     config::{ApiKey, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
     graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
@@ -30,9 +31,8 @@ use crate::{
     skills::{self, SkillInfo},
     state::{LocalUnsent, Message, State, Task, Thread},
     sync::lock,
-    chat::commands::{ContextReport, context_report},
     thread_start::{read_prompt, start_thread},
-    tools::ToolScope,
+    tools::{ToolKind, ToolScope},
 };
 
 /// Hand edits to config.yml are picked up within this time.
@@ -298,13 +298,10 @@ impl Runtime {
     }
 
     /// The tools a chat gets, by name.
-    pub fn tool_names(&self) -> Vec<String> {
-        // Names do not depend on the thread.
-        self.launcher
-            .tools("", None, 0)
-            .names()
-            .map(str::to_owned)
-            .collect()
+    /// Every tool with its kind, by kind and then by name.
+    pub fn tool_kinds(&self) -> Vec<(String, ToolKind)> {
+        // Tools do not depend on the thread.
+        self.launcher.tools("", None, 0).kinds()
     }
 
     /// How each MCP server in the config stands.

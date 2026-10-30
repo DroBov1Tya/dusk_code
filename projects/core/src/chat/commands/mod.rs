@@ -12,7 +12,7 @@ mod resume;
 mod settings;
 
 pub use context::{ContextReport, ContextSection, report as context_report};
-pub use settings::Settings;
+pub use settings::{Settings, ToolInfo};
 
 use anyhow::{Result, bail};
 
@@ -67,7 +67,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/resume", "open an earlier thread"),
     ("/model", "choose the model; every provider is checked live"),
     ("/settings", "switch agents, tools and skills; edit skills"),
-    ("/context", "what the context holds: prompt, tools, messages"),
+    (
+        "/context",
+        "what the context holds: prompt, tools, messages",
+    ),
 ];
 
 impl Command {
@@ -94,9 +97,9 @@ impl Command {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
             Self::New => Ok(Answer::NewThread),
             Self::Settings => Ok(Answer::Settings(settings::run(runtime).await?)),
-            Self::Context { thread_id } => {
-                Ok(Answer::Context(runtime.context(thread_id.as_deref()).await?))
-            }
+            Self::Context { thread_id } => Ok(Answer::Context(
+                runtime.context(thread_id.as_deref()).await?,
+            )),
             Self::Model { name: None } => Ok(Answer::Providers {
                 current: runtime.model().map(|choice| choice.name()),
                 providers: model::check(runtime).await?,

@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use super::{Tool, ToolContext};
+use super::{Tool, ToolContext, ToolKind};
 use crate::{BoxFuture, mcp::McpServer};
 
 /// Models accept tool names this long at most.
@@ -44,6 +44,10 @@ impl McpTool {
 impl Tool for McpTool {
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Mcp
     }
 
     fn description(&self, _context: &ToolContext<'_>) -> String {

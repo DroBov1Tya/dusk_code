@@ -368,7 +368,9 @@ mod tests {
         assert!(node.metadata.contains(&("license".into(), "MIT".into())));
         assert!(save_node_text(&directory, SKILL_FILE, "notes", "no front matter").is_err());
         assert_eq!(
-            read_node_text(&directory, SKILL_FILE, "notes").unwrap().text,
+            read_node_text(&directory, SKILL_FILE, "notes")
+                .unwrap()
+                .text,
             good,
             "a refused save keeps it"
         );

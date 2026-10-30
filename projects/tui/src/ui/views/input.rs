@@ -13,8 +13,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        EMBER, GLOW, HAZE, HORIZON_DARK, INPUT_BG, NIGHT, ROSE, SELECTED, SUN, TEAL, VIOLET, bold, dim, fg,
-        thought,
+        EMBER, GLOW, HAZE, HORIZON_DARK, INPUT_BG, NIGHT, ROSE, SELECTED, SUN, TEAL, VIOLET, bold,
+        dim, fg, thought,
     },
     transcript::spinner,
     wrap,
@@ -43,7 +43,14 @@ fn queue_rows(app: &App) -> u16 {
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     let queued = queue_rows(app);
-    draw_queue(frame, Rect { height: queued, ..area }, app);
+    draw_queue(
+        frame,
+        Rect {
+            height: queued,
+            ..area
+        },
+        app,
+    );
     let area = Rect {
         y: area.y + queued,
         height: area.height.saturating_sub(queued),
@@ -134,8 +141,16 @@ fn draw_queue(frame: &mut Frame, area: Rect, app: &mut App) {
         let remove_left = send_left + SEND.width() as u16 + 1;
         let hits = [
             (area.x, send_left, QueueButton::Edit),
-            (send_left, send_left + SEND.width() as u16, QueueButton::SendNow),
-            (remove_left, remove_left + REMOVE.width() as u16, QueueButton::Remove),
+            (
+                send_left,
+                send_left + SEND.width() as u16,
+                QueueButton::SendNow,
+            ),
+            (
+                remove_left,
+                remove_left + REMOVE.width() as u16,
+                QueueButton::Remove,
+            ),
         ];
         for (left, right, button) in hits {
             app.queue_hits.push(QueueHit {

@@ -9,7 +9,7 @@ use tokio::fs;
 
 use super::{
     builtin::{parse_arguments, printable, read_regular, write_regular},
-    tool::{Tool, ToolContext},
+    tool::{Tool, ToolContext, ToolKind},
 };
 use crate::BoxFuture;
 
@@ -48,6 +48,10 @@ impl Tool for ReadFile {
         "read_file"
     }
 
+    fn kind(&self) -> ToolKind {
+        ToolKind::Files
+    }
+
     fn description(&self, context: &ToolContext<'_>) -> String {
         let scope = context.scope;
         format!(
@@ -79,6 +83,10 @@ impl Tool for ReadFile {
 impl Tool for WriteFile {
     fn name(&self) -> &'static str {
         "write_file"
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Files
     }
 
     fn description(&self, context: &ToolContext<'_>) -> String {
@@ -128,6 +136,10 @@ impl Tool for EditFile {
         "edit_file"
     }
 
+    fn kind(&self) -> ToolKind {
+        ToolKind::Files
+    }
+
     fn description(&self, context: &ToolContext<'_>) -> String {
         let scope = context.scope;
         format!(
@@ -175,6 +187,10 @@ impl Tool for EditFile {
 impl Tool for DeleteFile {
     fn name(&self) -> &'static str {
         "delete_file"
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Files
     }
 
     fn description(&self, context: &ToolContext<'_>) -> String {

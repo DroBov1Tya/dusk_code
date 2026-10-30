@@ -33,11 +33,13 @@ const LAST_BRANCH: &str = "\u{2517}\u{2501}\u{2501}";
 /// Rows the front matter box may take at most.
 const METADATA_ROWS: u16 = 8;
 
-/// A list item: its lines, and where its switch is on the first, as columns from the
-/// row's start.
+/// A list item: its lines, and where its switch is on the first of its own lines, as
+/// columns from the row's start. The first `lead` lines head a group and are not part
+/// of the item.
 struct Row {
     lines: Vec<Line<'static>>,
     switch: Option<(u16, u16)>,
+    lead: usize,
 }
 
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
@@ -127,7 +129,7 @@ fn list(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
             break;
         }
         let selectable = index < view.len();
-        let first = area.y + lines.len() as u16;
+        let first = area.y + (lines.len() + row.lead) as u16;
         if let Some((from, to)) = row.switch {
             // First, so a click on the switch wins over the row under it.
             view.hits.insert(
@@ -140,9 +142,13 @@ fn list(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
                 },
             );
         }
-        for line in row.lines {
+        for (at, line) in row.lines.into_iter().enumerate() {
             if lines.len() >= height {
                 break;
+            }
+            if at < row.lead {
+                lines.push(line);
+                continue;
             }
             if selectable {
                 view.hits.push(SettingsHit {
@@ -173,14 +179,11 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
                     width,
                 )],
                 switch: None,
+                lead: 0,
             })
             .collect(),
         Some(SettingCategory::Agents) => agent_rows(view, width),
-        Some(SettingCategory::Tools) => view
-            .tools
-            .iter()
-            .map(|(name, on)| switch_row(vec![Span::raw(format!("  {name}"))], *on, width))
-            .collect(),
+        Some(SettingCategory::Tools) => tool_rows(view, width),
         Some(SettingCategory::Skills) => {
             let mut rows: Vec<Row> = view
                 .skills
@@ -287,6 +290,7 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
             width,
         )],
         switch: None,
+        lead: 0,
     }];
     rows.extend(view.agents.iter().map(|agent| agent_row(agent, width)));
     for problem in &view.problems {
@@ -296,6 +300,7 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 fg(EMBER),
             ))],
             switch: None,
+            lead: 0,
         });
     }
     if view.agents.len() <= 2 {
@@ -315,6 +320,7 @@ fn agent_row(agent: &AgentRow, width: usize) -> Row {
                 Span::styled(format!("  {}", agent.description), dim()),
             ])],
             switch: None,
+            lead: 0,
         };
     }
     let trace = if agent.active { TEAL } else { NIGHT };
@@ -348,6 +354,35 @@ fn agent_row(agent: &AgentRow, width: usize) -> Row {
 }
 
 /// `left`, clipped to leave room for an on/off switch at the right edge.
+/// Tools grouped by kind, each group under its name.
+fn tool_rows(view: &SettingsView, width: usize) -> Vec<Row> {
+    let mut rows = Vec::new();
+    let mut kind = None;
+    for tool in &view.tools {
+        let mut row = switch_row(
+            vec![Span::raw(format!("    {}", tool.name))],
+            tool.enabled,
+            width,
+        );
+        if kind != Some(tool.kind) {
+            kind = Some(tool.kind);
+            let gap = if rows.is_empty() {
+                vec![]
+            } else {
+                vec![Line::default()]
+            };
+            row.lead = gap.len() + 1;
+            let heading = Line::from(Span::styled(
+                format!("  {}", tool.kind.name()),
+                bold(VIOLET),
+            ));
+            row.lines = [gap, vec![heading], row.lines].concat();
+        }
+        rows.push(row);
+    }
+    rows
+}
+
 fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Row {
     let label = if on { " on  " } else { " off " };
     let switch = Span::styled(
@@ -364,6 +399,7 @@ fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Row {
     Row {
         lines: vec![line],
         switch: Some((to.saturating_sub(label.len() as u16), to)),
+        lead: 0,
     }
 }
 
@@ -371,6 +407,7 @@ fn note(text: &str) -> Row {
     Row {
         lines: vec![Line::from(Span::styled(text.to_owned(), dim()))],
         switch: None,
+        lead: 0,
     }
 }
 

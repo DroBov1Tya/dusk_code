@@ -7,10 +7,10 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{
     agents::{AgentNode, AgentTree},
-    chat::commands::{Command, Settings},
+    chat::commands::{Command, Settings, ToolInfo},
+    graph::NodeText,
     graph::Problem,
     mcp::{McpInfo, McpState},
-    graph::NodeText,
     skills::SkillInfo,
 };
 
@@ -65,7 +65,7 @@ pub struct AgentRow {
 
 pub struct SettingsView {
     pub max_agents_at_work: usize,
-    pub tools: Vec<(String, bool)>,
+    pub tools: Vec<ToolInfo>,
     pub skills: Vec<SkillInfo>,
     pub mcp: Vec<McpInfo>,
     /// The chat first, then every agent under it.
@@ -201,8 +201,8 @@ impl SettingsView {
                 (SwitchKind::Agent, agent.name.clone(), agent.enabled)
             }
             SettingCategory::Tools => {
-                let (name, on) = self.tools.get(row)?;
-                (SwitchKind::Tool, name.clone(), *on)
+                let tool = self.tools.get(row)?;
+                (SwitchKind::Tool, tool.name.clone(), tool.enabled)
             }
             SettingCategory::Skills => {
                 let skill = self.skills.get(row)?;

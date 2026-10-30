@@ -28,9 +28,14 @@ pub enum Panel {
     Models(ModelList),
     Agent(AgentWindow),
     Connect(Connection),
-    Unsent { selected: usize },
+    Unsent {
+        selected: usize,
+    },
     /// What the context holds; `row` is the line kept in view while scrolling.
-    Context { report: ContextReport, row: usize },
+    Context {
+        report: ContextReport,
+        row: usize,
+    },
 }
 
 /// The configured providers as the core found them, and their models to choose from.
