@@ -7,6 +7,7 @@ use dusk_core::{
     chat::commands::ContextReport,
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Thread},
+    update::UpdateInfo,
 };
 
 pub mod agents;
@@ -30,6 +31,14 @@ pub enum Panel {
     Connect(Connection),
     Unsent {
         selected: usize,
+    },
+    /// The newest version and the button that installs it; `info` is `None` while the
+    /// core asks GitHub, and `note` says what the last step did.
+    Update {
+        info: Option<UpdateInfo>,
+        note: Option<String>,
+        /// The update button on the last drawn frame, as (row, left, right).
+        button: Option<(u16, u16, u16)>,
     },
     /// The reasoning efforts to choose from: default first.
     Effort {

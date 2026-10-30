@@ -11,7 +11,11 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 
 use tracing::{info, warn};
 
-use crate::{modes, paths::Paths, skills};
+use crate::{
+    builtin::{self, Synced},
+    modes,
+    paths::Paths,
+};
 
 const CONFIG_TEMPLATE: &str = "\
 # dusk_code provider settings. Keep this file private.
@@ -93,6 +97,8 @@ Use exactly these sections:
 pub struct Initialization {
     /// True on first start: the config is a template without providers.
     pub config_created: bool,
+    /// What this start did to the prompts and skills dusk ships.
+    pub builtin: Synced,
 }
 
 pub fn initialize(paths: &Paths) -> Result<Initialization> {
@@ -101,26 +107,30 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     create_private_dir(paths.workspace_root())?;
     create_private_dir(&paths.skills_dir())?;
     create_private_dir(&paths.agents_dir())?;
-    // Missing skills only make the agent know less; they never stop the start.
-    match skills::install_builtin(&paths.skills_dir()) {
-        Ok(written) if !written.is_empty() => {
-            info!("built-in skills added: {}", written.join(", "))
-        }
-        Ok(_) => {}
-        Err(error) => warn!("cannot add the built-in skills: {error:#}"),
-    }
     let config_created = ensure_config(&paths.config_file())?;
     create_private_dir(&paths.modes_dir())?;
     move_legacy_main_prompt(paths)?;
-    for mode in [modes::MAIN, modes::PLAN, modes::ORCHESTRATOR] {
-        let template = modes::template(mode).unwrap_or_default();
-        create_private_file(&modes::file(&paths.modes_dir(), mode), template.as_bytes())?;
-    }
-    create_private_file(&paths.compact_prompt(), COMPACT_PROMPT_TEMPLATE.as_bytes())?;
-    create_private_file(&paths.fork_prompt(), FORK_PROMPT_TEMPLATE.as_bytes())?;
+    // Shipped files out of date only make the agent know less; they never stop the start.
+    let builtin = match builtin::sync(paths) {
+        Ok(synced) => {
+            for (what, files) in [("added", &synced.written), ("updated", &synced.updated)] {
+                if !files.is_empty() {
+                    info!("shipped files {what}: {}", files.join(", "));
+                }
+            }
+            synced
+        }
+        Err(error) => {
+            warn!("cannot bring the shipped files up to date: {error:#}");
+            Synced::default()
+        }
+    };
     // SQLite would create the file with umask permissions; an empty file is a valid new database.
     create_private_file(&paths.state_db(), b"")?;
-    Ok(Initialization { config_created })
+    Ok(Initialization {
+        config_created,
+        builtin,
+    })
 }
 
 /// Before modes, MAIN.md sat in the config root. A MAIN.md the user wrote becomes the

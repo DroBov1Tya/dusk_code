@@ -34,6 +34,7 @@ use crate::{
     sync::lock,
     thread_start::start_thread,
     tools::{ToolKind, ToolScope},
+    update::{self, Channel, UpdateInfo},
 };
 
 /// Introduces a /fork summary to the model in the new thread.
@@ -53,6 +54,8 @@ pub struct Runtime {
     agents_check: JoinHandle<()>,
     model_discovery: Option<JoinHandle<()>>,
     threads: Mutex<JoinSet<()>>,
+    /// Shipped files the user changed, kept at the start, with the new version beside.
+    kept_builtin: Vec<String>,
 }
 
 /// A running thread, as its client sees it.
@@ -68,7 +71,7 @@ impl Runtime {
     /// saved model without a network request. `state_db` replaces the default database
     /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
-        init::initialize(&paths)?;
+        let initialized = init::initialize(&paths)?;
         let state = State::open(state_db.unwrap_or_else(|| paths.state_db())).await?;
         let config = Arc::new(LiveConfig::load(paths.config_file())?);
         let choice = match model_choice::configured(&config.current()) {
@@ -143,7 +146,30 @@ impl Runtime {
             agents_check,
             model_discovery,
             threads: Mutex::new(JoinSet::new()),
+            kept_builtin: initialized.builtin.kept,
         })
+    }
+
+    /// Shipped prompts and skills the user changed: kept, with the new version beside
+    /// each as `.new`, by their path in the config folder.
+    pub fn kept_builtin(&self) -> &[String] {
+        &self.kept_builtin
+    }
+
+    /// The newest version on the update channel; `channel` switches the channel first.
+    pub async fn check_update(&self, channel: Option<Channel>) -> Result<UpdateInfo> {
+        if let Some(channel) = channel {
+            self.config()
+                .update(|config| config.set_update_channel(channel))?;
+        }
+        update::check(self.config().current().update_channel()).await
+    }
+
+    /// Puts release `tag` in place of the running binary; it applies at the next start.
+    pub async fn install_update(&self, tag: &str) -> Result<PathBuf> {
+        let binary = update::install(tag).await?;
+        info!("updated to {tag} at {}", binary.display());
+        Ok(binary)
     }
 
     pub fn config(&self) -> &Arc<LiveConfig> {

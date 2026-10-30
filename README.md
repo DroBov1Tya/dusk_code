@@ -37,6 +37,9 @@ The script checks the release checksum, puts the binary in `~/.local/share/duskc
 and links `duskcode` from `/usr/local/bin`, or `~/.local/bin` when that is not writable.
 Releases are the round versions (0.50.0, 0.60.0); every tag between them is a
 pre-release, installed by name with `... | DUSKCODE_VERSION=v0.53.0 sh`.
+`/update` installs the newest release in place (or the newest pre-release on the dev
+channel). Prompts and skills dusk ships follow the binary at the next start; a file you
+changed is kept, and the new version is put beside it as `<file>.new`.
 Run `duskcode` in the folder to work in. `duskcode remove` asks once, then deletes the
 binary, its link and `~/.config/duskcode`.
 

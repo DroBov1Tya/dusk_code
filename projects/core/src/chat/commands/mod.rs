@@ -16,7 +16,10 @@ pub use settings::{Settings, ToolInfo};
 
 use anyhow::{Result, bail};
 
-use crate::config::Effort;
+use crate::{
+    config::Effort,
+    update::{Channel, UpdateInfo},
+};
 
 use crate::{
     runtime::{
@@ -44,6 +47,8 @@ pub enum Command {
     /// Describes the thread in detail and goes on in a new thread from that; the
     /// argument is extra instructions for the description.
     Fork { instructions: Option<String> },
+    /// The newest version on the update channel; `dev` or `stable` switches it first.
+    Update { channel: Option<String> },
     /// Shows the reasoning effort, or sets it: low, medium, high or default.
     Effort { level: Option<String> },
 }
@@ -62,6 +67,7 @@ pub enum Answer {
     NewThread,
     Settings(Settings),
     Context(ContextReport),
+    Update(UpdateInfo),
     /// The effort now; `changed` when the command set it.
     Effort {
         current: Option<Effort>,
@@ -87,6 +93,11 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "/context",
         "what the context holds: prompt, tools, messages",
     ),
+    (
+        "/effort",
+        "how hard the model reasons: low, medium, high or default",
+    ),
+    ("/update", "the newest version, and installing it"),
 ];
 
 impl Command {
@@ -109,7 +120,8 @@ impl Command {
             | Self::Model { .. }
             | Self::Settings
             | Self::Context { .. }
-            | Self::Effort { .. } => {}
+            | Self::Effort { .. }
+            | Self::Update { .. } => {}
         }
     }
 
@@ -118,6 +130,15 @@ impl Command {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
             Self::New => Ok(Answer::NewThread),
             Self::Settings => Ok(Answer::Settings(settings::run(runtime).await?)),
+            Self::Update { channel } => {
+                let channel = match channel.as_deref() {
+                    None => None,
+                    Some("stable") => Some(Channel::Stable),
+                    Some("dev") => Some(Channel::Dev),
+                    Some(other) => bail!("unknown channel {other}; stable or dev"),
+                };
+                Ok(Answer::Update(runtime.check_update(channel).await?))
+            }
             Self::Effort { level: None } => Ok(Answer::Effort {
                 current: runtime.config().current().effort(),
                 changed: false,
@@ -172,6 +193,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "settings" => Ok(Command::Settings),
         "context" => Ok(Command::Context { thread_id: None }),
         "effort" => Ok(Command::Effort { level: argument }),
+        "update" => Ok(Command::Update { channel: argument }),
         "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })

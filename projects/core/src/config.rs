@@ -13,7 +13,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::{modes, tools::ToolKind};
+use crate::{modes, tools::ToolKind, update::Channel};
 
 /// MCP server names are this long at most.
 const MAX_MCP_NAME: usize = 24;
@@ -53,6 +53,9 @@ pub struct Config {
     /// Tool switches of the modes other than MAIN, which uses `tools`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     modes: BTreeMap<String, BTreeMap<String, bool>>,
+    /// Which releases /update offers; stable when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    update_channel: Option<Channel>,
     /// How hard the model reasons; the provider's default when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     effort: Option<Effort>,
@@ -340,6 +343,14 @@ impl Config {
 
     pub fn set_model(&mut self, name: String) {
         self.model = Some(name);
+    }
+
+    pub fn update_channel(&self) -> Channel {
+        self.update_channel.unwrap_or_default()
+    }
+
+    pub fn set_update_channel(&mut self, channel: Channel) {
+        self.update_channel = (channel != Channel::Stable).then_some(channel);
     }
 
     pub fn effort(&self) -> Option<Effort> {
