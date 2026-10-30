@@ -12,6 +12,7 @@
 //! links: [git/release-notes, git/changelog]
 //! tools: [read_file, run_command]   # agents only: the tools it gets; all when left out
 //! source: Anthropic                 # where a node not written here comes from
+//! tags: [git, release]              # short words a client shows beside the name
 //! ---
 //! Steps the agent follows...
 //! ```
@@ -31,6 +32,8 @@ pub const SKILL_FILE: &str = "SKILL.md";
 pub const AGENT_FILE: &str = "AGENT.md";
 const MAX_NODE_BYTES: u64 = 256 * 1024;
 const MAX_DESCRIPTION_CHARS: usize = 1024;
+const MAX_TAGS: usize = 6;
+const MAX_TAG_CHARS: usize = 24;
 const MAX_DEPTH: usize = 8;
 const MAX_NODES: usize = 1000;
 const FENCE: &str = "---";
@@ -65,6 +68,8 @@ pub struct Node {
     pub tools: Option<Vec<String>>,
     /// The company or project the node comes from, for one not written here.
     pub source: Option<String>,
+    /// Short words a client shows beside the name.
+    pub tags: Vec<String>,
     file: PathBuf,
 }
 
@@ -86,6 +91,8 @@ struct FrontMatter {
     links: Vec<String>,
     tools: Option<Vec<String>>,
     source: Option<String>,
+    #[serde(default)]
+    tags: Vec<String>,
 }
 
 impl Graph {
@@ -228,6 +235,14 @@ fn parse_node(text: &str, name: &str, file: PathBuf) -> Result<Node> {
         links: front.links,
         tools: front.tools,
         source: front.source,
+        tags: front
+            .tags
+            .iter()
+            .map(|tag| tag.trim())
+            .filter(|tag| !tag.is_empty())
+            .take(MAX_TAGS)
+            .map(|tag| tag.chars().take(MAX_TAG_CHARS).collect())
+            .collect(),
         file,
     })
 }

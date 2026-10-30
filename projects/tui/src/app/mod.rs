@@ -26,8 +26,8 @@ use ratatui::layout::Rect;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 use panels::agents;
 pub use panels::{
-    AgentRow, AgentWindow, Connection, HitTarget, ModelList, Panel, Preview, SettingCategory,
-    SettingsHit, SettingsView, SkillButton, SkillEditor, SubagentView, SwitchKind, ThreadList,
+    AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, ModelList, Panel,
+    Preview, SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
 pub use transcript::{Entry, Layout, Tone, Transcript};
 
@@ -43,7 +43,7 @@ pub enum Action {
         api_key: Option<String>,
     },
     SetAgentLimit(usize),
-    /// Turn an agent, a tool or a skill on or off.
+    /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {
         kind: SwitchKind,
         name: String,
@@ -55,6 +55,14 @@ pub enum Action {
         name: String,
         text: String,
     },
+    /// Read an MCP server's YAML into the settings; `None` starts a new one.
+    OpenMcp(Option<String>),
+    /// Save an MCP server in place of `old`; empty text removes it.
+    SaveMcp {
+        old: Option<String>,
+        text: String,
+    },
+    RestartMcp(String),
     Resend(String),
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),

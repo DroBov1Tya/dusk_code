@@ -13,7 +13,7 @@ pub mod settings;
 
 pub use agents::{AgentWindow, SubagentView};
 pub use settings::{
-    AgentRow, HitTarget, SettingCategory, SettingsHit, SettingsView, SkillButton, SkillEditor,
+    AgentRow, FileButton, FileEditor, HitTarget, SettingCategory, SettingsHit, SettingsView,
     SwitchKind,
 };
 

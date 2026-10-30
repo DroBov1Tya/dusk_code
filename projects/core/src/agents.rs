@@ -45,6 +45,8 @@ pub struct AgentNode {
     pub version: Option<i64>,
     /// Its own switch; the chat is always on.
     pub enabled: bool,
+    /// The agents it may ask, drawn under it or elsewhere in the tree.
+    pub links: Vec<String>,
     pub children: Vec<AgentNode>,
 }
 
@@ -146,10 +148,30 @@ impl Agents {
         Ok((identity, text))
     }
 
-    /// The chat and every agent it can reach, as deep as agents may ask each other. An
-    /// agent several others link to appears under each of them.
+    /// The chat and every agent it can reach, each drawn once: under the chat when the
+    /// chat may ask it, else under the nearest agent that links to it. `links` names
+    /// whom each may ask, wherever those are drawn.
     pub fn tree(&self, config: &Config) -> AgentTree {
         let identities = read(&self.identities).clone();
+        let mut placed: Vec<(&str, Option<&str>)> = Vec::new();
+        let mut level: Vec<&str> = identities
+            .iter()
+            .filter(|identity| identity.entry)
+            .map(|identity| identity.name.as_str())
+            .collect();
+        placed.extend(level.iter().map(|name| (*name, None)));
+        for _ in 1..MAX_AGENT_DEPTH {
+            let mut next = Vec::new();
+            for asker in level {
+                for link in links(asker, &identities) {
+                    if placed.iter().all(|(name, _)| *name != link) {
+                        placed.push((link, Some(asker)));
+                        next.push(link);
+                    }
+                }
+            }
+            level = next;
+        }
         let mut children = Vec::new();
         if self.get(GENERAL_AGENT).is_none() {
             children.push(AgentNode {
@@ -157,21 +179,18 @@ impl Agents {
                 description: GENERAL_DESCRIPTION.into(),
                 version: None,
                 enabled: config.agent_enabled(GENERAL_AGENT),
+                links: Vec::new(),
                 children: Vec::new(),
             });
         }
-        children.extend(
-            identities
-                .iter()
-                .filter(|identity| identity.entry)
-                .map(|identity| node(identity, &identities, config, 1)),
-        );
+        children.extend(branches(None, &placed, &identities, config));
         AgentTree {
             root: AgentNode {
                 name: "chat".into(),
                 description: "MAIN.md".into(),
                 version: None,
                 enabled: true,
+                links: Vec::new(),
                 children,
             },
             problems: read(&self.problems).clone(),
@@ -179,24 +198,42 @@ impl Agents {
     }
 }
 
-fn node(identity: &Identity, all: &[Identity], config: &Config, depth: usize) -> AgentNode {
-    let children = if depth < MAX_AGENT_DEPTH {
-        identity
-            .links
-            .iter()
-            .filter_map(|link| all.iter().find(|other| other.name == *link))
-            .map(|linked| node(linked, all, config, depth + 1))
-            .collect()
-    } else {
-        Vec::new()
+/// The agents `asker` links to that exist.
+fn links<'a>(asker: &str, all: &'a [Identity]) -> Vec<&'a str> {
+    let Some(identity) = all.iter().find(|identity| identity.name == asker) else {
+        return Vec::new();
     };
-    AgentNode {
-        name: identity.name.clone(),
-        description: identity.description.clone(),
-        version: Some(identity.version),
-        enabled: config.agent_enabled(&identity.name),
-        children,
-    }
+    identity
+        .links
+        .iter()
+        .filter_map(|link| all.iter().find(|other| other.name == *link))
+        .map(|other| other.name.as_str())
+        .collect()
+}
+
+/// The nodes drawn under `parent`, with theirs below them.
+fn branches(
+    parent: Option<&str>,
+    placed: &[(&str, Option<&str>)],
+    all: &[Identity],
+    config: &Config,
+) -> Vec<AgentNode> {
+    placed
+        .iter()
+        .filter(|(_, above)| *above == parent)
+        .filter_map(|(name, _)| all.iter().find(|identity| identity.name == *name))
+        .map(|identity| AgentNode {
+            name: identity.name.clone(),
+            description: identity.description.clone(),
+            version: Some(identity.version),
+            enabled: config.agent_enabled(&identity.name),
+            links: links(&identity.name, all)
+                .into_iter()
+                .map(Into::into)
+                .collect(),
+            children: branches(Some(&identity.name), placed, all, config),
+        })
+        .collect()
 }
 
 fn read_agents(directory: &std::path::Path) -> (Vec<Identity>, Vec<Problem>) {
