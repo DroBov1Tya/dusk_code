@@ -11,7 +11,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use dusk_core::state::MessageRole;
+use dusk_core::{chat::commands::ContextReport, state::MessageRole};
 
 use super::{
     agent_window, input, markdown, settings,
@@ -25,7 +25,7 @@ use crate::app::{
     App, Connection, EditorButton, EditorHit, ModelList, Panel, ThreadList, compact_number, paste,
 };
 
-const KEYS: [(&str, &str); 28] = [
+const KEYS: [(&str, &str); 29] = [
     ("Enter", "send; while the agent works it waits above the box"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent; queued messages return to the box"),
@@ -59,6 +59,7 @@ const KEYS: [(&str, &str); 28] = [
     ),
     ("F2", "show or hide the statistics sidebar"),
     ("/compact", "summarize the context to free it"),
+    ("/context", "what the context holds, part by part"),
     ("Ctrl+C", "clear the box, or copy a selection; twice quits"),
 ];
 
@@ -100,6 +101,9 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             )
         }
         Panel::Help => ("keys", "any key closes", help(), None),
+        Panel::Context { report, .. } => {
+            ("context", "up/down scroll  any other key closes", context(report), None)
+        }
         Panel::Models(list) => {
             let (lines, row) = models(list);
             (
@@ -122,7 +126,14 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         height,
     };
     let inner = height.saturating_sub(2) as usize;
-    let skip = selected.map_or(0, |row| (row + 1).saturating_sub(inner));
+    let skip = match &app.panel {
+        // The context scrolls by its top row rather than following a selection.
+        Some(Panel::Context { row, .. }) => (*row).min(lines.len().saturating_sub(inner)),
+        _ => selected.map_or(0, |row| (row + 1).saturating_sub(inner)),
+    };
+    if let Some(Panel::Context { row, .. }) = &mut app.panel {
+        *row = skip;
+    }
     if let Some(Panel::Connect(form)) = &mut app.panel {
         for (index, row) in connection_rows.into_iter().enumerate() {
             let start = row.max(skip);
@@ -579,6 +590,51 @@ fn unsent(app: &App, selected: usize, width: usize) -> (Vec<Line<'static>>, usiz
         }
     }
     (lines, row)
+}
+
+/// The context by part, each with its share of the limit, then what it is made of.
+fn context(report: &ContextReport) -> Vec<Line<'static>> {
+    let share = |tokens: u64| {
+        let percent = tokens.saturating_mul(100) / report.limit.max(1);
+        format!("{:>6}  {percent:>3}%", compact_number(tokens))
+    };
+    let mut lines = vec![
+        Line::from(vec![
+            Span::styled(" in context", bold(SUN)),
+            Span::raw("\t"),
+            Span::styled(
+                format!(
+                    "{} of {}  ",
+                    compact_number(report.total),
+                    compact_number(report.limit)
+                ),
+                bold(SUN),
+            ),
+        ]),
+        Line::from(Span::styled(
+            " parts are estimates; the total is the provider's count when known",
+            dim(),
+        )),
+    ];
+    for section in &report.sections {
+        lines.push(Line::default());
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {}", section.name), bold(VIOLET)),
+            Span::raw("\t"),
+            Span::styled(format!("{}  ", share(section.tokens)), bold(VIOLET)),
+        ]));
+        if section.items.is_empty() {
+            lines.push(Line::from(Span::styled("   none", dim())));
+        }
+        for (name, tokens) in &section.items {
+            lines.push(Line::from(vec![
+                Span::raw(format!("   {name}")),
+                Span::raw("\t"),
+                Span::styled(format!("{}  ", share(*tokens)), dim()),
+            ]));
+        }
+    }
+    lines
 }
 
 fn help() -> Vec<Line<'static>> {

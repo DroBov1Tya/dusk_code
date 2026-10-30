@@ -30,7 +30,9 @@ use crate::{
     skills::{self, SkillInfo},
     state::{LocalUnsent, Message, State, Task, Thread},
     sync::lock,
-    thread_start::start_thread,
+    chat::commands::{ContextReport, context_report},
+    thread_start::{read_prompt, start_thread},
+    tools::ToolScope,
 };
 
 /// Hand edits to config.yml are picked up within this time.
@@ -197,6 +199,25 @@ impl Runtime {
             .config
             .update(|config| config.set_agent_enabled(name, enabled))?;
         Ok(())
+    }
+
+    /// What the next request of a chat thread carries; before a thread, MAIN.md and the
+    /// tools a chat gets.
+    pub async fn context(&self, thread_id: Option<&str>) -> Result<ContextReport> {
+        let launcher = &self.launcher;
+        let config = launcher.config.current();
+        let cwd = std::env::current_dir()?;
+        let scope = ToolScope::new(&cwd, &cwd)?;
+        let specs = launcher
+            .tools(thread_id.unwrap_or_default(), None, 0)
+            .specs(&scope, &config);
+        let main_prompt = read_prompt(&launcher.paths.main_prompt())?;
+        let configured = config.limits().max_input_tokens;
+        let limit = self
+            .model()
+            .and_then(|choice| choice.model.context_window)
+            .map_or(configured, |window| window.min(configured));
+        context_report(&launcher.state, thread_id, main_prompt, &specs, limit).await
     }
 
     /// An agent's AGENT.md as it is on disk; reading it again throws edits away.

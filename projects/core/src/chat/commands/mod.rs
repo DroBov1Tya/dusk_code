@@ -6,10 +6,12 @@
 //! only shows the answer.
 
 mod compact;
+mod context;
 mod model;
 mod resume;
 mod settings;
 
+pub use context::{ContextReport, ContextSection, report as context_report};
 pub use settings::Settings;
 
 use anyhow::{Result, bail};
@@ -35,6 +37,8 @@ pub enum Command {
     Model { name: Option<String> },
     /// What a client offers to switch: tools, skills, agents and limits.
     Settings,
+    /// What the next request of the thread carries; a client fills in its open thread.
+    Context { thread_id: Option<String> },
 }
 
 /// What a client command answers.
@@ -50,6 +54,7 @@ pub enum Answer {
     /// The client closes the open thread and shows an empty one.
     NewThread,
     Settings(Settings),
+    Context(ContextReport),
 }
 
 /// Every command, for clients to show: name and what it does.
@@ -62,6 +67,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/resume", "open an earlier thread"),
     ("/model", "choose the model; every provider is checked live"),
     ("/settings", "switch agents, tools and skills; edit skills"),
+    ("/context", "what the context holds: prompt, tools, messages"),
 ];
 
 impl Command {
@@ -75,7 +81,11 @@ impl Command {
             Self::Compact { instructions } => {
                 compact::run(agent, instructions.as_deref(), inbox).await;
             }
-            Self::Resume | Self::New | Self::Model { .. } | Self::Settings => {}
+            Self::Resume
+            | Self::New
+            | Self::Model { .. }
+            | Self::Settings
+            | Self::Context { .. } => {}
         }
     }
 
@@ -84,6 +94,9 @@ impl Command {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
             Self::New => Ok(Answer::NewThread),
             Self::Settings => Ok(Answer::Settings(settings::run(runtime).await?)),
+            Self::Context { thread_id } => {
+                Ok(Answer::Context(runtime.context(thread_id.as_deref()).await?))
+            }
             Self::Model { name: None } => Ok(Answer::Providers {
                 current: runtime.model().map(|choice| choice.name()),
                 providers: model::check(runtime).await?,
@@ -115,6 +128,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "resume" => Ok(Command::Resume),
         "new" => Ok(Command::New),
         "settings" => Ok(Command::Settings),
+        "context" => Ok(Command::Context { thread_id: None }),
         "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })

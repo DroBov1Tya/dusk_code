@@ -266,6 +266,10 @@ pub async fn run(
                     app.error(format!("{error:#}"));
                 }
             }
+            Action::Command(Command::Context { .. }) => {
+                let thread_id = app.thread_id.clone();
+                answer(runtime, &mut app, &mut open, Command::Context { thread_id }).await;
+            }
             Action::Command(command) => {
                 // Checking providers takes a moment; the window says so meanwhile.
                 if command == (Command::Model { name: None }) {
@@ -371,6 +375,9 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             Some(Panel::Settings(view)) => view.refresh(settings),
             _ => app.panel = Some(Panel::Settings(SettingsView::new(settings))),
         },
+        Ok(Answer::Context(report)) => {
+            app.panel = Some(Panel::Context { report, row: 0 });
+        }
         Ok(Answer::NewThread) => {
             close(open.take()).await;
             app.panel = None;
