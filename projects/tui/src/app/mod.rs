@@ -284,6 +284,8 @@ pub struct App {
     pub subagents: Vec<SubagentView>,
     /// The agent's task board in the open thread.
     pub tasks: Vec<Task>,
+    /// A newer release the core found in the background, such as `v0.66.5`.
+    pub update_available: Option<String>,
     /// The open thread's standing goal.
     pub goal: Option<Goal>,
     /// Rounds a goal may run before it pauses, as the config says.
@@ -359,6 +361,7 @@ impl App {
             queued: Vec::new(),
             queue_hits: Vec::new(),
             goal: None,
+            update_available: None,
             undone: None,
             paths: None,
             goal_rounds: config.current().limits().max_goal_rounds,

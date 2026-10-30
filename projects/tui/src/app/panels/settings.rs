@@ -659,10 +659,12 @@ fn click_row(view: &mut SettingsView, row: usize) -> Action {
         }
         Some(SettingCategory::Models) => {
             view.selected = row;
-            view.manual_context = None;
             if row == 5 {
-                view.edit_manual_context();
+                if view.manual_context.is_none() {
+                    view.edit_manual_context();
+                }
             } else {
+                view.manual_context = None;
                 return view.model_action(row).unwrap_or(Action::None);
             }
         }

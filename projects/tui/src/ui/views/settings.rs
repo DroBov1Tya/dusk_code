@@ -340,7 +340,7 @@ fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
         )),
     ];
     if let Some(error) = &view.model_error {
-        heading.push(Line::from(Span::styled(format!("  {error}"), fg(EMBER))));
+        heading.extend(indented(error, fg(EMBER), "  ", width));
     }
     heading.push(Line::default());
     rows[0].lead = heading.len();
@@ -402,11 +402,24 @@ fn mcp_row(server: &McpInfo, width: usize) -> Row {
         McpState::Failed(error) => (format!("{FAILED} {error}"), fg(EMBER)),
         _ => (server.target.clone(), dim()),
     };
-    row.lines.push(Line::from(vec![
-        Span::raw("    "),
-        Span::styled(wrap::clip(&text, width.saturating_sub(5)), style),
-    ]));
+    // A failure is shown in full; an address stays on one line.
+    match &server.state {
+        McpState::Failed(_) => row.lines.extend(indented(&text, style, "    ", width)),
+        _ => row.lines.push(Line::from(vec![
+            Span::raw("    "),
+            Span::styled(wrap::clip(&text, width.saturating_sub(5)), style),
+        ])),
+    }
     row
+}
+
+/// `text` wrapped by words under `lead`, every line of it.
+fn indented(text: &str, style: Style, lead: &str, width: usize) -> Vec<Line<'static>> {
+    let room = width.saturating_sub(lead.width() + 1).max(1);
+    text.lines()
+        .flat_map(|line| wrap::words(vec![Span::styled(line.to_owned(), style)], room, 0))
+        .map(|spans| Line::from([vec![Span::raw(lead.to_owned())], spans].concat()))
+        .collect()
 }
 
 /// The name and tags with the switch, then the description, or why it cannot be used.
@@ -707,11 +720,29 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     if area.height <= top + 2 {
         return;
     }
+    // An error longer than the room beside the buttons takes rows of its own above them.
+    let error_lines = match &editor.error {
+        Some(error) if error.width() > area.width.saturating_sub(46) as usize => {
+            indented(error, fg(EMBER), " ", area.width as usize)
+        }
+        _ => Vec::new(),
+    };
+    let error_rows = (error_lines.len() as u16).min(area.height.saturating_sub(top + 3) / 2);
     let text_area = Rect {
         y: area.y + top,
-        height: area.height - top - 1,
+        height: area.height - top - 1 - error_rows,
         ..area
     };
+    if error_rows > 0 {
+        frame.render_widget(
+            Paragraph::new(error_lines),
+            Rect {
+                y: text_area.bottom(),
+                height: error_rows,
+                ..area
+            },
+        );
+    }
     let (rows, (column, row)) = input::layout(&editor.text, text_area.width as usize);
     let height = text_area.height as usize;
     if row < editor.scroll {
@@ -729,7 +760,7 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     let y = text_area.y + (row - editor.scroll) as u16;
     frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
     let bar = area.bottom() - 1;
-    if let Some(error) = &editor.error {
+    if let Some(error) = editor.error.as_ref().filter(|_| error_rows == 0) {
         let room = area.width.saturating_sub(46) as usize;
         let line = Line::from(Span::styled(wrap::clip(error, room), fg(EMBER)));
         frame.render_widget(Paragraph::new(line), Rect::new(area.x, bar, area.width, 1));
