@@ -50,6 +50,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let area = window(screen, 150);
     let title = match view.category {
         None => " settings ".to_owned(),
+        Some(SettingCategory::Tools) => format!(" settings / tools in {} mode ", view.mode),
         Some(category) => format!(" settings / {} ", category.name()),
     };
     let block = Block::bordered()

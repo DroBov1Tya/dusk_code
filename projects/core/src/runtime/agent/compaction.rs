@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use tracing::warn;
 
 use super::{Agent, Inbox, Stop};
-use crate::runtime::{chat::Conversation, system::ThreadEvent};
+use crate::runtime::system::ThreadEvent;
 use crate::{
     init::{COMPACT_PROMPT_TEMPLATE, FORK_PROMPT_TEMPLATE},
     providers::{ChatMessage, ChatRequest},
@@ -26,7 +26,7 @@ impl Agent {
     /// to work on: a queued message, or the running `turn`.
     pub async fn compact_if_needed(&self, turn: Option<&Turn>, inbox: &mut Inbox) -> Option<Stop> {
         let limit = self.input_limit();
-        let conversation = match Conversation::load(&self.state, &self.thread_id).await {
+        let conversation = match self.conversation().await {
             Ok(conversation) => conversation,
             Err(error) => {
                 warn!("cannot check the context size: {error:#}");
@@ -114,7 +114,7 @@ impl Agent {
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Result<Result<(String, u64), Stop>> {
-        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+        let conversation = self.conversation().await?;
         let Some(through) = conversation.compactable_through() else {
             bail!("nothing to summarize since the last summary");
         };

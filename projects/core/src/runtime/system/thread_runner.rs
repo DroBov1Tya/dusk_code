@@ -51,6 +51,7 @@ pub struct ThreadSetup {
     pub scope: ToolScope,
     pub compact_prompt: PathBuf,
     pub fork_prompt: PathBuf,
+    pub modes_dir: PathBuf,
     /// How many agents are above this thread; 0 for a chat.
     pub depth: usize,
     pub mailboxes: Arc<Mailboxes>,
@@ -191,6 +192,7 @@ impl ThreadRunner {
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
             fork_prompt: setup.fork_prompt,
+            modes_dir: setup.modes_dir,
             depth: setup.depth,
             events,
         };
@@ -606,6 +608,7 @@ mod tests {
             scope: ToolScope::new(&root, &root).unwrap(),
             compact_prompt: root.join("COMPACT.md"),
             fork_prompt: root.join("FORK.md"),
+            modes_dir: root.join("modes"),
             depth: 0,
             mailboxes: Arc::default(),
             ends_when_idle: false,

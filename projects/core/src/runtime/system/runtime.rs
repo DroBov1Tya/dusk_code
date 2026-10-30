@@ -26,12 +26,13 @@ use crate::{
     init::{self, create_private_dir},
     live_config::LiveConfig,
     mcp::{McpInfo, McpServers, McpStatus},
+    modes,
     paths::Paths,
     providers::Provider,
     skills::{self, SkillInfo},
     state::{LocalUnsent, Message, State, Task, Thread},
     sync::lock,
-    thread_start::{read_prompt, start_thread},
+    thread_start::start_thread,
     tools::{ToolKind, ToolScope},
 };
 
@@ -231,7 +232,7 @@ impl Runtime {
         Ok(())
     }
 
-    /// What the next request of a chat thread carries; before a thread, MAIN.md and the
+    /// What the next request of a chat thread carries; before a thread, the mode's prompt and the
     /// tools a chat gets.
     pub async fn context(&self, thread_id: Option<&str>) -> Result<ContextReport> {
         let launcher = &self.launcher;
@@ -241,13 +242,28 @@ impl Runtime {
         let specs = launcher
             .tools(thread_id.unwrap_or_default(), None, 0)
             .specs(&scope, &config);
-        let main_prompt = read_prompt(&launcher.paths.main_prompt())?;
+        let mode = config.mode().to_owned();
+        let prompt = modes::prompt(&launcher.paths.modes_dir(), &mode)?;
         let configured = config.limits().max_input_tokens;
         let limit = self
             .model()
             .and_then(|choice| choice.model.context_window)
             .map_or(configured, |window| window.min(configured));
-        context_report(&launcher.state, thread_id, main_prompt, &specs, limit).await
+        context_report(&launcher.state, thread_id, &mode, prompt, &specs, limit).await
+    }
+
+    /// Every mode of the chat, in the order Tab walks them.
+    pub fn modes(&self) -> Vec<String> {
+        modes::list(&self.launcher.paths.modes_dir())
+    }
+
+    /// Moves the chat to the next mode; its prompt and tools apply from the next step.
+    pub fn next_mode(&self) -> Result<String> {
+        let current = self.config().current().mode().to_owned();
+        let next = modes::next(&self.launcher.paths.modes_dir(), &current);
+        self.config()
+            .update(|config| config.set_mode(next.clone()))?;
+        Ok(next)
     }
 
     /// An agent's AGENT.md as it is on disk; reading it again throws edits away.
@@ -264,9 +280,10 @@ impl Runtime {
     }
 
     pub fn set_tool_enabled(&self, name: &str, enabled: bool) -> Result<()> {
-        self.launcher
-            .config
-            .update(|config| config.set_tool_enabled(name, enabled))?;
+        self.launcher.config.update(|config| {
+            let mode = config.mode().to_owned();
+            config.set_mode_tool_enabled(&mode, name, enabled);
+        })?;
         Ok(())
     }
 
@@ -444,7 +461,9 @@ impl Runtime {
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
     /// ends once the client drops every `ThreadInput` and the queue is done.
     pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
-        let thread = start_thread(&self.launcher.state, &self.launcher.paths, source).await?;
+        let mode = self.config().current().mode().to_owned();
+        let thread =
+            start_thread(&self.launcher.state, &self.launcher.paths, source, &mode).await?;
         info!(
             "thread {} started in {}",
             thread.thread_id,
@@ -454,14 +473,16 @@ impl Runtime {
             .await
     }
 
-    /// A new chat thread that starts from a /fork summary of another, after MAIN.md.
+    /// A new chat thread that starts from a /fork summary of another, after its prompt.
     pub async fn fork_thread(
         &self,
         source: &str,
         summary: &str,
         cwd: &Path,
     ) -> Result<ThreadHandle> {
-        let thread = start_thread(&self.launcher.state, &self.launcher.paths, source).await?;
+        let mode = self.config().current().mode().to_owned();
+        let thread =
+            start_thread(&self.launcher.state, &self.launcher.paths, source, &mode).await?;
         let summary = format!("{FORK_INTRO}{summary}");
         self.launcher
             .state

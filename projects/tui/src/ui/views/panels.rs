@@ -26,7 +26,7 @@ use crate::app::{
     compact_number, paste,
 };
 
-const KEYS: [(&str, &str); 29] = [
+const KEYS: [(&str, &str); 30] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -41,7 +41,8 @@ const KEYS: [(&str, &str); 29] = [
     ),
     ("Ctrl+C/X", "copy or cut the selected typed text"),
     ("Up / Down", "earlier messages you sent"),
-    ("Tab", "walk thinking, tools and summaries"),
+    ("Tab", "switch the mode: main, plan, orchestrator"),
+    ("Shift+Tab", "walk thinking, tools and summaries"),
     ("Enter / Space", "fold or unfold the selected one"),
     ("Left click", "fold or unfold thinking, tools and summaries"),
     ("Drag", "select text and copy it; Esc clears"),

@@ -27,7 +27,7 @@ pub struct ThreadTokens {
 /// Estimated tokens by who wrote them.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct TokenCounts {
-    /// MAIN.md and other system instructions.
+    /// The mode's prompt and other system instructions.
     pub system: u64,
     /// What the client sent.
     pub user: u64,

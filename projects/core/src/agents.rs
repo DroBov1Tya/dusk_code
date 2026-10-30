@@ -24,7 +24,7 @@ use crate::{
 
 /// The built-in agent, asked when none is named. An `agents/general` folder replaces it.
 pub const GENERAL_AGENT: &str = "general";
-pub const GENERAL_DESCRIPTION: &str = "works like this chat, with MAIN.md and every tool; \
+pub const GENERAL_DESCRIPTION: &str = "works like the chat in MAIN mode, with every tool; \
 for research, reading code and self-contained parts of a task";
 /// A chat is at depth 0; an agent three levels down can no longer ask another.
 pub const MAX_AGENT_DEPTH: usize = 3;
@@ -187,7 +187,7 @@ impl Agents {
         AgentTree {
             root: AgentNode {
                 name: "chat".into(),
-                description: "MAIN.md".into(),
+                description: "the chat, in its mode".into(),
                 version: None,
                 enabled: true,
                 links: Vec::new(),

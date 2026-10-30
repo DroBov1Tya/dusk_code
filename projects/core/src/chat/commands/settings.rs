@@ -9,6 +9,8 @@ use crate::{
 
 pub struct Settings {
     pub max_agents_at_work: usize,
+    /// The chat's mode, whose switches `tools` shows.
+    pub mode: String,
     /// Every tool by kind and then by name.
     pub tools: Vec<ToolInfo>,
     pub skills: Vec<SkillInfo>,
@@ -29,13 +31,14 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         .tool_kinds()
         .into_iter()
         .map(|(name, kind)| ToolInfo {
-            enabled: config.tool_enabled(&name),
+            enabled: config.mode_tool_enabled(config.mode(), &name, kind),
             name,
             kind,
         })
         .collect();
     Ok(Settings {
         max_agents_at_work: config.limits().max_agents_at_work,
+        mode: config.mode().to_owned(),
         tools,
         skills: runtime.skills(),
         agents: runtime.agent_tree(),

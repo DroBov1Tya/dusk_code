@@ -8,6 +8,7 @@ pub mod init;
 pub mod live_config;
 pub mod logs;
 pub mod mcp;
+pub mod modes;
 pub mod paths;
 pub mod providers;
 pub mod runtime;
