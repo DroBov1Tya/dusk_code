@@ -108,6 +108,22 @@ pub async fn run(
                 editor.update_mcp(&view.mcp);
             }
         }
+        // /undo changed the history: it is read again, and the message goes back to the box.
+        if let Some(text) = app.undone.take()
+            && let Some(thread_id) = app.thread_id.clone()
+        {
+            match runtime.thread_messages(&thread_id).await {
+                Ok(history) => {
+                    let (title, goal) = (app.title.take(), app.goal.take());
+                    let (tasks, tokens) = (std::mem::take(&mut app.tasks), app.tokens);
+                    app.open(Some(thread_id), title, &history);
+                    (app.goal, app.tasks, app.tokens) = (goal, tasks, tokens);
+                    app.input.set(text);
+                    app.flash = Some("went back; the message is in the box".into());
+                }
+                Err(error) => app.error(format!("cannot read the thread again: {error:#}")),
+            }
+        }
         // A fork summary opens its new thread; this one stays as it was.
         if let Some(summary) = app.forked.take() {
             close(open.take()).await;
@@ -353,6 +369,14 @@ pub async fn run(
                     app.error(format!("{error:#}"));
                 }
             }
+            Action::Command(Command::Undo { sequence, .. }) => {
+                let thread_id = app.thread_id.clone();
+                let command = Command::Undo {
+                    thread_id,
+                    sequence,
+                };
+                answer(runtime, &mut app, &mut open, command).await;
+            }
             Action::Command(Command::Context { .. }) => {
                 let thread_id = app.thread_id.clone();
                 answer(runtime, &mut app, &mut open, Command::Context { thread_id }).await;
@@ -499,6 +523,13 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
                     selected: selected.unwrap_or(0),
                 });
             }
+        }
+        Ok(Answer::UndoPoints(points)) if points.is_empty() => {
+            app.flash = Some("nothing to undo yet".into());
+        }
+        Ok(Answer::UndoPoints(points)) => {
+            let selected = points.len() - 1;
+            app.panel = Some(Panel::Undo { points, selected });
         }
         Ok(Answer::Update(info)) => {
             app.panel = Some(Panel::Update {

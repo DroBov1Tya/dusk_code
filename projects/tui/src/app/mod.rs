@@ -254,6 +254,9 @@ pub struct App {
     pub queue_hits: Vec<QueueHit>,
     /// A /fork summary waiting for its new thread.
     pub forked: Option<String>,
+    /// /undo took the thread back to this message: the history is read again and the
+    /// text goes back into the box.
+    pub undone: Option<String>,
     /// A question the agent asked, until it is answered or declined.
     pub poll: Option<Poll>,
     /// The entry under the mouse, which shows its buttons.
@@ -352,6 +355,7 @@ impl App {
             queued: Vec::new(),
             queue_hits: Vec::new(),
             goal: None,
+            undone: None,
             goal_rounds: config.current().limits().max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
@@ -589,6 +593,7 @@ impl App {
             )),
             ThreadEvent::Rejected { reason } => self.error(reason),
             ThreadEvent::Forked { summary } => self.forked = Some(summary),
+            ThreadEvent::Undone { text } => self.undone = Some(text),
             ThreadEvent::Failed(error) => {
                 self.error(format!("thread stopped: {error}"));
                 self.stop_work();

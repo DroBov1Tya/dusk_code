@@ -131,6 +131,30 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 Some(*selected),
             )
         }
+        Panel::Undo { points, selected } => {
+            let room = screen.width.saturating_sub(16).min(66) as usize;
+            let lines = points
+                .iter()
+                .enumerate()
+                .map(|(index, point)| {
+                    let text = paste::labelled(&point.text).replace('\n', " ");
+                    selectable(
+                        vec![
+                            Span::styled(format!(" {:>3}  ", index + 1), dim()),
+                            Span::raw(wrap::clip(&text, room)),
+                        ],
+                        Span::raw(" "),
+                        index == *selected,
+                    )
+                })
+                .collect();
+            (
+                "undo: go back to before",
+                "up/down choose  enter go back, the text returns to the box  esc close",
+                lines,
+                Some(*selected),
+            )
+        }
         Panel::Context { report, .. } => (
             "context",
             "up/down scroll  any other key closes",

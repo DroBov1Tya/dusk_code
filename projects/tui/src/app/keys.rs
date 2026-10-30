@@ -373,6 +373,7 @@ impl App {
         if matches!(self.panel, Some(Panel::Settings(_))) {
             return self.settings_key(key);
         }
+        let busy = self.is_busy();
         let Some(panel) = &mut self.panel else {
             return Action::None;
         };
@@ -439,6 +440,24 @@ impl App {
                             return Action::Command(Command::Update {
                                 channel: Some(channel),
                             });
+                        }
+                    }
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Panel::Undo { points, selected } => {
+                match key.code {
+                    _ if up || down => step(selected, points.len(), down),
+                    KeyCode::Enter if busy => {
+                        self.flash = Some("stop the agent first: Esc".into());
+                    }
+                    KeyCode::Enter => {
+                        let sequence = points.get(*selected).map(|point| point.sequence);
+                        self.panel = None;
+                        if let Some(sequence) = sequence {
+                            return Action::Send(format!("/undo {sequence}"));
                         }
                     }
                     KeyCode::Esc => self.panel = None,

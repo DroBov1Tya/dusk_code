@@ -7,7 +7,7 @@ use dusk_core::{
     chat::commands::ContextReport,
     release::update::UpdateInfo,
     runtime::model_choice::ProviderStatus,
-    state::{Message, MessageRole, Thread},
+    state::{Message, MessageRole, Thread, UndoPoint},
 };
 
 pub mod agents;
@@ -42,6 +42,11 @@ pub enum Panel {
     },
     /// The reasoning efforts to choose from: default first.
     Effort {
+        selected: usize,
+    },
+    /// The user's messages to take the thread back to, oldest first.
+    Undo {
+        points: Vec<UndoPoint>,
         selected: usize,
     },
     /// What the context holds; `row` is the line kept in view while scrolling.

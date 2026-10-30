@@ -169,6 +169,11 @@ pub enum ThreadEvent {
         /// The message queued to start work on it, for a client to show as sent.
         started: Option<String>,
     },
+    /// /undo took the thread back; `text` is the message it went back to, for the
+    /// client to offer again.
+    Undone {
+        text: String,
+    },
     /// /fork wrote its summary; a client opens a new thread that starts from it.
     Forked {
         summary: String,

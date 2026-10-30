@@ -9,6 +9,9 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - Queued messages, interruption, and turn cancellation.
 - Manual and automatic context compaction, with access to earlier thread history.
 - `/fork`: a detailed summary of the thread (`FORK.md` says how) starts a new one.
+- `/undo`: pick one of your messages with the arrows; the thread goes back to before
+  it (later messages, turns and compactions are removed) and its text returns to the
+  box to edit and send again.
 - `/goal <text>`: a standing goal. Every request carries it, and a turn that ends
   without it done starts the next round, up to `limits.max_goal_rounds` (10, set in
   `/settings` -> agents). The model marks it done, pauses or sets one with the `goal`
