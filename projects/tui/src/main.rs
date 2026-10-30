@@ -4,6 +4,7 @@
 mod app;
 mod args;
 mod clipboard;
+mod git;
 mod remove;
 mod session;
 mod ui;
