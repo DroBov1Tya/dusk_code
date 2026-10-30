@@ -20,13 +20,15 @@ use crate::{
         Action, AgentWindow, App, FileEditor, ModelList, Panel, Preview, SettingCategory,
         SettingsView, SwitchKind, ThreadList, Transcript,
     },
-    clipboard, ui,
+    clipboard, git, ui,
 };
 
 const THREAD_SOURCE: &str = "tui";
 /// How long a closing thread may take to stop its turn and finish.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 const FRAME: Duration = Duration::from_millis(80);
+/// How often the git line is read again; edits made outside show within it.
+const GIT_PERIOD: Duration = Duration::from_secs(5);
 const MAX_EVENTS_PER_FRAME: usize = 512;
 
 struct OpenThread {
@@ -53,6 +55,8 @@ pub async fn run(
     }
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(FRAME);
+    let mut git_clock = tokio::time::interval(GIT_PERIOD);
+    let cwd = env::current_dir()?;
     let mut shown_title = String::new();
     let mut known_model = choice.as_ref().map(|choice| choice.name());
     loop {
@@ -119,6 +123,10 @@ pub async fn run(
                 Action::None
             }
             // While the core looks for a model, the clock redraws what it finds.
+            _ = git_clock.tick() => {
+                app.git = git::summary(&cwd).await;
+                Action::None
+            }
             _ = clock.tick(), if app.is_busy()
                 || app.agents_at_work()
                 || app.task_timers_run()

@@ -23,6 +23,7 @@ use crate::app::{
     Activity, App, ChipHit, Focus, Input, InputRow, PollHit, PollTarget, QueueButton, QueueHit,
     commands, paste,
 };
+use crate::git::GitSummary;
 
 const MIN_ROWS: usize = 3;
 const MAX_ROWS: usize = 10;
@@ -35,7 +36,11 @@ const FRAME_ROWS: u16 = 3;
 /// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
-    poll_rows(app) + queue_rows(app) + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16 + FRAME_ROWS
+    poll_rows(app)
+        + queue_rows(app)
+        + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16
+        + FRAME_ROWS
+        + u16::from(app.git.is_some())
 }
 
 /// The question's border, its text, the options, the own answer and the buttons.
@@ -62,6 +67,18 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     let area = Rect {
         y: area.y + polled,
         height: area.height.saturating_sub(polled),
+        ..area
+    };
+    if let Some(summary) = &app.git {
+        let bottom = Rect {
+            y: area.bottom().saturating_sub(1),
+            height: 1,
+            ..area
+        };
+        frame.render_widget(Paragraph::new(git_line(summary)), bottom);
+    }
+    let area = Rect {
+        height: area.height.saturating_sub(u16::from(app.git.is_some())),
         ..area
     };
     let queued = queue_rows(app);
@@ -142,6 +159,38 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     frame.render_widget(Paragraph::new(lines), text_area);
     show_cursor(frame, app, text_area, (cursor.0, cursor.1 - skip));
+}
+
+/// The repository, branch, commits, changed files and the distance to the upstream.
+fn git_line(summary: &GitSummary) -> Line<'static> {
+    let dot = || Span::styled(" \u{00B7} ", dim());
+    let mut spans = vec![
+        Span::styled(format!("  {}", summary.repository), dim()),
+        dot(),
+        Span::styled(
+            summary.branch.clone().unwrap_or_else(|| "detached".into()),
+            fg(TEAL),
+        ),
+        dot(),
+        Span::styled(format!("{} commits", summary.commits), dim()),
+        dot(),
+    ];
+    spans.push(match summary.changed {
+        0 => Span::styled("clean", dim()),
+        changed => Span::styled(format!("{changed} changed"), fg(SUN)),
+    });
+    if let Some((ahead, behind)) = summary.ahead_behind {
+        spans.push(dot());
+        spans.push(Span::styled(
+            format!("\u{2191}{ahead} \u{2193}{behind}"),
+            if ahead + behind == 0 {
+                dim()
+            } else {
+                fg(VIOLET)
+            },
+        ));
+    }
+    Line::from(spans)
 }
 
 const SEND: &str = " send ";

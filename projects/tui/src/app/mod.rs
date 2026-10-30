@@ -248,6 +248,8 @@ pub struct App {
     pub entry_lines: Vec<(usize, usize)>,
     /// A short word for the status rule, such as "copied", until the next input.
     pub flash: Option<String>,
+    /// The repository the client runs in, for the line under the box.
+    pub git: Option<crate::git::GitSummary>,
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
@@ -328,6 +330,7 @@ impl App {
             drawn_top: 0,
             entry_lines: Vec::new(),
             flash: None,
+            git: None,
             quit_armed: None,
             command_popup: None,
             subagents: Vec::new(),
