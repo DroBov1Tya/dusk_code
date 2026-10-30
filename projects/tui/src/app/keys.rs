@@ -223,6 +223,9 @@ impl App {
     }
 
     fn input_key(&mut self, key: KeyEvent) -> Action {
+        if key.code != KeyCode::Tab {
+            self.input.command_cycle = None;
+        }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
@@ -277,7 +280,7 @@ impl App {
                     self.recall(!down);
                 }
             }
-            KeyCode::Tab if self.complete_command() => {}
+            KeyCode::Tab if self.cycle_command() => {}
             KeyCode::Tab if self.poll.is_some() => {
                 if let Some(poll) = &mut self.poll {
                     poll.active = true;
@@ -297,6 +300,29 @@ impl App {
             _ => {}
         }
         Action::None
+    }
+
+    /// Tab selects a candidate without submitting or changing the operating mode.
+    fn cycle_command(&mut self) -> bool {
+        let typed = self.input.text.as_str();
+        if !typed.starts_with('/') || typed.contains(char::is_whitespace) {
+            self.input.command_cycle = None;
+            return false;
+        }
+        let (prefix, previous) = match &self.input.command_cycle {
+            Some((prefix, selected)) => (prefix.clone(), Some(*selected)),
+            None => (typed.to_owned(), None),
+        };
+        let fitting: Vec<_> = commands()
+            .filter(|(name, _)| name.starts_with(&prefix))
+            .collect();
+        if !fitting.is_empty() {
+            let selected = previous.map_or(0, |selected| (selected + 1) % fitting.len());
+            self.input.set(fitting[selected].0.to_owned());
+            self.input.command_cycle = Some((prefix, selected));
+        }
+        // Even an unknown slash token owns Tab until the command token ends.
+        true
     }
 
     /// Finishes a command name when only one fits what is typed.

@@ -6,6 +6,8 @@ use super::paste::{self, PASTE_THRESHOLD, Part};
 #[derive(Default)]
 pub struct Input {
     pub text: String,
+    /// The slash prefix and candidate selected by repeated Tab presses.
+    pub command_cycle: Option<(String, usize)>,
     /// Byte offset into `text`, always on a character boundary.
     pub cursor: usize,
     /// What each chip in `text` stands for, by its index.
@@ -21,6 +23,7 @@ impl Input {
 
     /// The message to send, each chip replaced by its paste in tags.
     pub fn take(&mut self) -> String {
+        self.command_cycle = None;
         self.cursor = 0;
         self.anchor = None;
         let text = std::mem::take(&mut self.text);
@@ -37,6 +40,7 @@ impl Input {
 
     /// A sent message back in the box, its pasted blocks as chips again.
     pub fn set(&mut self, message: String) {
+        self.command_cycle = None;
         self.text.clear();
         self.pastes.clear();
         self.anchor = None;
@@ -51,6 +55,7 @@ impl Input {
 
     /// Long text becomes a chip; short text is typed in.
     pub fn paste(&mut self, text: &str) {
+        self.command_cycle = None;
         self.delete_selection();
         if text.chars().count() <= PASTE_THRESHOLD {
             return self.insert(text);
@@ -148,6 +153,7 @@ impl Input {
 
     /// Puts the cursor on a byte offset, clamped to a character boundary.
     pub fn place(&mut self, offset: usize) {
+        self.command_cycle = None;
         let mut offset = offset.min(self.text.len());
         while !self.text.is_char_boundary(offset) {
             offset -= 1;
@@ -156,12 +162,14 @@ impl Input {
     }
 
     pub fn insert(&mut self, text: &str) {
+        self.command_cycle = None;
         self.delete_selection();
         self.text.insert_str(self.cursor, text);
         self.cursor += text.len();
     }
 
     pub fn backspace(&mut self) {
+        self.command_cycle = None;
         if self.delete_selection() {
             return;
         }
@@ -172,6 +180,7 @@ impl Input {
     }
 
     pub fn delete(&mut self) {
+        self.command_cycle = None;
         if self.delete_selection() {
             return;
         }

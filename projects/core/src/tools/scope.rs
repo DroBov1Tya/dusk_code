@@ -166,7 +166,7 @@ mod tests {
 
         let skills = scope.cwd().join(".config/duskcode/skills");
         fs::create_dir_all(&skills).unwrap();
-        let elsewhere = ToolScope::new(&scope.workspace().to_owned(), scope.workspace())
+        let elsewhere = ToolScope::new(scope.workspace(), scope.workspace())
             .unwrap()
             .protect(&scope.cwd().join(".config/duskcode"))
             .share(&skills);
