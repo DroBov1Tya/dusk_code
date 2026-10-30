@@ -17,9 +17,10 @@ use super::{
 };
 use crate::app::Transcript;
 
-const THUMBNAIL_WIDTH: usize = 20;
-const THUMBNAIL_HEIGHT: usize = 6;
-const STACK_AT: usize = 42;
+/// The preview's largest size in cells; each cell shows two pixels, one above the other.
+const THUMBNAIL_WIDTH: usize = 56;
+const THUMBNAIL_HEIGHT: usize = 14;
+const STACK_AT: usize = 60;
 const GAP: usize = 2;
 const BACKGROUND: [u8; 3] = [30, 27, 42];
 
@@ -30,7 +31,7 @@ pub fn render(
 ) -> Vec<Line<'static>> {
     let width = width.max(2);
     let stacked = width < STACK_AT;
-    let thumbnail_width = THUMBNAIL_WIDTH.min(if stacked { width } else { width / 3 });
+    let thumbnail_width = THUMBNAIL_WIDTH.min(if stacked { width } else { width / 2 });
     let text_width = if stacked {
         width
     } else {
@@ -72,7 +73,7 @@ pub fn render(
                 .min((THUMBNAIL_HEIGHT * 2) as f64 / image.height() as f64);
             let w = ((image.width() as f64 * scale).floor() as u32).max(1);
             let h = ((image.height() as f64 * scale).floor() as u32).max(1);
-            let image = imageops::resize(&*image, w, h, FilterType::Triangle);
+            let image = imageops::resize(&*image, w, h, FilterType::Lanczos3);
             (0..h)
                 .step_by(2)
                 .map(|y| {

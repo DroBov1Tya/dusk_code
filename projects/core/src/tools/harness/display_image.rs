@@ -213,6 +213,8 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
         }
         let client = client
             .https_only(true)
+            // Wikimedia and others refuse requests that do not name their client.
+            .user_agent(concat!("duskcode/", env!("CARGO_PKG_VERSION")))
             .referer(false)
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
