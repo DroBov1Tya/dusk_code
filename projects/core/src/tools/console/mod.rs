@@ -1,5 +1,6 @@
 //! Console tools: commands in the working directory.
 
+mod job_lease;
 mod jobs;
 mod run_command;
 

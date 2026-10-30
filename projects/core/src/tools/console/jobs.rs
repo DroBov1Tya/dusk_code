@@ -18,11 +18,14 @@ use tokio::{
 use tracing::warn;
 use uuid::Uuid;
 
-use super::run_command::{ProcessGroup, spawn};
+use super::{
+    job_lease::{JobLease, Owner},
+    run_command::{ProcessGroup, spawn},
+};
 use crate::{
     BoxFuture,
     runtime::agent::{Input, Mailboxes},
-    state::State,
+    state::{BackgroundJob, State},
     tools::{Tool, ToolContext, ToolKind, builtin::parse_arguments},
     util::sync::lock,
 };
@@ -36,6 +39,7 @@ pub struct JobManager {
     state: Arc<State>,
     mailboxes: Arc<Mailboxes>,
     live: AsyncMutex<HashMap<String, Arc<RunningJob>>>,
+    lease: Arc<JobLease>,
 }
 
 struct RunningJob {
@@ -59,12 +63,41 @@ pub struct JobOwner {
 }
 
 impl JobManager {
-    pub fn new(state: Arc<State>, mailboxes: Arc<Mailboxes>) -> Arc<Self> {
-        Arc::new(Self {
+    pub async fn new(
+        state: Arc<State>,
+        mailboxes: Arc<Mailboxes>,
+        database: &std::path::Path,
+    ) -> Result<Arc<Self>> {
+        let lease = Arc::new(JobLease::take(database)?);
+        for (id, path) in state.unfinished_job_owners().await? {
+            if let Owner::Abandoned(abandoned) = JobLease::inspect(&id, &path) {
+                // Keep the OS lock while fencing recovery by the immutable owner ID.
+                state.interrupt_jobs(&abandoned.id).await?;
+                drop(abandoned);
+            }
+        }
+        Ok(Arc::new(Self {
             state,
             mailboxes,
+            lease,
             live: AsyncMutex::new(HashMap::new()),
-        })
+        }))
+    }
+
+    fn status(&self, job: &BackgroundJob) -> String {
+        if job.status != "running" {
+            return job.status.clone();
+        }
+        let (Some(id), Some(path)) = (&job.owner_runtime_id, &job.owner_lease_path) else {
+            return "unknown (owner unavailable)".into();
+        };
+        if id == &self.lease.id {
+            return "running".into();
+        }
+        match JobLease::inspect(id, path) {
+            Owner::Live => "running (another runtime)".into(),
+            Owner::Abandoned(_) | Owner::Unknown => "unknown (owner unavailable)".into(),
+        }
     }
 
     pub async fn has_running(&self, thread_id: &str) -> bool {
@@ -101,13 +134,24 @@ impl JobManager {
             state: Arc::clone(&self.state),
             job_id: job_id.clone(),
             armed: true,
+            lease: Arc::clone(&self.lease),
         };
-        self.state.create_job(owner, &job_id, command).await?;
+        self.state
+            .create_job(
+                owner,
+                &job_id,
+                command,
+                &self.lease.id,
+                self.lease.stored_path()?,
+            )
+            .await?;
         ensure!(!self.mailboxes.is_closed(), "the runtime is shutting down");
         let child = match spawn(command, cwd) {
             Ok(child) => child,
             Err(error) => {
-                self.state.remove_unstarted_job(&job_id).await?;
+                self.state
+                    .remove_unstarted_job(&job_id, &self.lease.id)
+                    .await?;
                 return Err(error);
             }
         };
@@ -127,12 +171,13 @@ impl JobManager {
         let state = Arc::clone(&self.state);
         let mailboxes = Arc::clone(&self.mailboxes);
         let id = job_id.clone();
+        let lease = Arc::clone(&self.lease);
         tokio::spawn(async move {
             let (status, output) = execute(child, &job, cancelled, timeout_seconds).await;
             // A transient state failure must not lose the result. Keep ownership and
             // bounded output until storage succeeds, or shutdown closes the database.
             loop {
-                match state.finish_job(&id, status, &output).await {
+                match state.finish_job(&id, &lease.id, status, &output).await {
                     Ok(()) => break,
                     Err(_) if state.pool.is_closed() => {
                         warn!(job_id = %id, "database closed before job completion could be saved");
@@ -160,7 +205,7 @@ impl JobManager {
     }
 
     async fn cancel(&self, owner: &str, id: &str) -> Result<String> {
-        self.state.job(owner, id).await?;
+        let stored = self.state.job(owner, id).await?;
         if let Some(job) = self.live.lock().await.get(id) {
             ensure!(
                 job.owner == owner,
@@ -169,6 +214,11 @@ impl JobManager {
             job.cancel.send_replace(true);
             return Ok(format!("cancellation requested for job {id}"));
         }
+        ensure!(
+            stored.status != "running",
+            "job {id}: {}; this runtime cannot cancel its process",
+            self.status(&stored)
+        );
         Ok(format!("job {id} is already finished"))
     }
 
@@ -204,6 +254,7 @@ struct UnstartedJob {
     state: Arc<State>,
     job_id: String,
     armed: bool,
+    lease: Arc<JobLease>,
 }
 impl Drop for UnstartedJob {
     fn drop(&mut self) {
@@ -212,8 +263,9 @@ impl Drop for UnstartedJob {
         }
         let state = Arc::clone(&self.state);
         let id = self.job_id.clone();
+        let lease = Arc::clone(&self.lease);
         tokio::spawn(async move {
-            if let Err(error) = state.remove_unstarted_job(&id).await {
+            if let Err(error) = state.remove_unstarted_job(&id, &lease.id).await {
                 warn!(job_id = %id, "cannot remove unstarted job: {error:#}");
             }
         });
@@ -389,7 +441,7 @@ impl Tool for Jobs {
                         format!(
                             "{}: {} — {}",
                             job.job_id,
-                            job.status,
+                            manager.status(&job),
                             job.command.chars().take(120).collect::<String>()
                         )
                     })
@@ -402,8 +454,9 @@ impl Tool for Jobs {
             }
             let job = manager.state.job(thread_id, &id).await?;
             if matches!(arguments.action, Action::Status) {
-                return Ok(format!("{}: {}", job.job_id, job.status));
+                return Ok(format!("{}: {}", job.job_id, manager.status(&job)));
             }
+            let status = manager.status(&job);
             let live = manager.live.lock().await;
             let output = match live.get(&id).filter(|job| job.owner == *thread_id) {
                 Some(job) => format!(
@@ -413,7 +466,7 @@ impl Tool for Jobs {
                 ),
                 None => job.output,
             };
-            Ok(format!("job {id}: {}\n{output}", job.status))
+            Ok(format!("job {id}: {status}\n{output}"))
         })
     }
 }

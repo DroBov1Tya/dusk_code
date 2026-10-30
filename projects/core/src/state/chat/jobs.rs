@@ -11,10 +11,19 @@ pub struct BackgroundJob {
     pub command: String,
     pub status: String,
     pub output: String,
+    pub owner_runtime_id: Option<String>,
+    pub owner_lease_path: Option<String>,
 }
 
 impl State {
-    pub async fn create_job(&self, thread_id: &str, job_id: &str, command: &str) -> Result<()> {
+    pub async fn create_job(
+        &self,
+        thread_id: &str,
+        job_id: &str,
+        command: &str,
+        runtime_id: &str,
+        lease_path: &str,
+    ) -> Result<()> {
         let mut transaction = self.pool.begin().await.context("begin background job")?;
         // Only finished history is pruned. Its completion event/message keeps the result.
         sqlx::query(
@@ -30,22 +39,25 @@ impl State {
         .execute(&mut *transaction)
         .await?;
         sqlx::query(
-            "INSERT INTO background_jobs (job_id, thread_id, command, status, created_at)
-             VALUES (?, ?, ?, 'running', ?)",
+            "INSERT INTO background_jobs (job_id, thread_id, command, status, created_at, owner_runtime_id, owner_lease_path)
+             VALUES (?, ?, ?, 'running', ?, ?, ?)",
         )
         .bind(job_id)
         .bind(thread_id)
         .bind(command)
         .bind(timestamp_ms()?)
+        .bind(runtime_id)
+        .bind(lease_path)
         .execute(&mut *transaction)
         .await
         .context("store background job")?;
         transaction.commit().await.context("commit background job")
     }
 
-    pub async fn remove_unstarted_job(&self, job_id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM background_jobs WHERE job_id = ? AND status = 'running'")
+    pub async fn remove_unstarted_job(&self, job_id: &str, runtime_id: &str) -> Result<()> {
+        sqlx::query("DELETE FROM background_jobs WHERE job_id = ? AND owner_runtime_id = ? AND status = 'running'")
             .bind(job_id)
+            .bind(runtime_id)
             .execute(&self.pool)
             .await
             .context("remove unstarted job")?;
@@ -54,16 +66,23 @@ impl State {
 
     /// Outcome and notification are committed together, at most once per job. A replay
     /// after admission cannot enqueue another event, because the status is already final.
-    pub async fn finish_job(&self, job_id: &str, status: &str, output: &str) -> Result<()> {
+    pub async fn finish_job(
+        &self,
+        job_id: &str,
+        runtime_id: &str,
+        status: &str,
+        output: &str,
+    ) -> Result<()> {
         let mut transaction = self.pool.begin().await.context("begin job completion")?;
         let owner: Option<String> = sqlx::query_scalar(
             "UPDATE background_jobs SET status = ?, output = ?, finished_at = ?
-             WHERE job_id = ? AND status = 'running' RETURNING thread_id",
+             WHERE job_id = ? AND owner_runtime_id = ? AND status = 'running' RETURNING thread_id",
         )
         .bind(status)
         .bind(output)
         .bind(timestamp_ms()?)
         .bind(job_id)
+        .bind(runtime_id)
         .fetch_optional(&mut *transaction)
         .await
         .context("store job outcome")?;
@@ -79,15 +98,24 @@ impl State {
         transaction.commit().await.context("commit job completion")
     }
 
-    /// A process from a previous runtime may have taken effect. Never start it again.
-    pub async fn interrupt_jobs(&self) -> Result<()> {
-        let unfinished: Vec<String> =
-            sqlx::query_scalar("SELECT job_id FROM background_jobs WHERE status = 'running'")
-                .fetch_all(&self.pool)
-                .await
-                .context("find interrupted jobs")?;
+    pub async fn unfinished_job_owners(&self) -> Result<Vec<(String, String)>> {
+        sqlx::query_as("SELECT DISTINCT owner_runtime_id, owner_lease_path FROM background_jobs
+            WHERE status = 'running' AND owner_runtime_id IS NOT NULL AND owner_lease_path IS NOT NULL")
+            .fetch_all(&self.pool).await.context("find background job owners")
+    }
+
+    /// The caller must hold the owner's abandoned lease through this whole operation.
+    /// Its processes may have taken effect. Never start them again.
+    pub async fn interrupt_jobs(&self, runtime_id: &str) -> Result<()> {
+        let unfinished: Vec<String> = sqlx::query_scalar(
+            "SELECT job_id FROM background_jobs WHERE status = 'running' AND owner_runtime_id = ?",
+        )
+        .bind(runtime_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("find interrupted jobs")?;
         for job_id in unfinished {
-            self.finish_job(&job_id, "interrupted",
+            self.finish_job(&job_id, runtime_id, "interrupted",
                 "The application stopped before this job's outcome was recorded. Its effects are unknown; it was not restarted.")
                 .await?;
         }
@@ -96,7 +124,7 @@ impl State {
 
     pub async fn jobs(&self, thread_id: &str) -> Result<Vec<BackgroundJob>> {
         let rows = sqlx::query(
-            "SELECT job_id, command, status, output FROM background_jobs WHERE thread_id = ? ORDER BY created_at, job_id",
+            "SELECT job_id, command, status, output, owner_runtime_id, owner_lease_path FROM background_jobs WHERE thread_id = ? ORDER BY created_at, job_id",
         ).bind(thread_id).fetch_all(&self.pool).await.context("list background jobs")?;
         rows.into_iter()
             .map(|row| {
@@ -105,6 +133,8 @@ impl State {
                     command: row.try_get("command")?,
                     status: row.try_get("status")?,
                     output: row.try_get("output")?,
+                    owner_runtime_id: row.try_get("owner_runtime_id")?,
+                    owner_lease_path: row.try_get("owner_lease_path")?,
                 })
             })
             .collect()

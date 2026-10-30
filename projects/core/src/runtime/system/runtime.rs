@@ -91,8 +91,9 @@ impl Runtime {
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
         let initialized = init::initialize(&paths)?;
         let state_db = state_db.unwrap_or_else(|| paths.state_db());
-        let state = State::open(&state_db).await?;
-        state.interrupt_jobs().await?;
+        let state = Arc::new(State::open(&state_db).await?);
+        let mailboxes = Arc::new(Mailboxes::default());
+        let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes), &state_db).await?;
         let config = Arc::new(LiveConfig::load(paths.config_file())?);
         let choice = match model_choice::configured(&config.current()) {
             Ok(choice) => choice,
@@ -107,7 +108,6 @@ impl Runtime {
             info!("no model selected; local history is available");
         }
         let config_check = tokio::spawn(Arc::clone(&config).watch(CONFIG_CHECK_PERIOD));
-        let state = Arc::new(state);
         let agents = Agents::new(paths.agents_dir(), Arc::clone(&state));
         if let Err(error) = agents.scan().await {
             warn!("cannot read the agents: {error:#}");
@@ -115,8 +115,6 @@ impl Runtime {
         let agents_check = tokio::spawn(Arc::clone(&agents).watch(CONFIG_CHECK_PERIOD));
         let updates = Arc::new(UpdateWatch::default());
         let update_check = tokio::spawn(Arc::clone(&updates).run(Arc::clone(&config)));
-        let mailboxes = Arc::new(Mailboxes::default());
-        let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes));
         let launcher = Launcher {
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),

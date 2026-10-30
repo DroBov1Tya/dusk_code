@@ -11,7 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use dusk_core::{providers::ModelEvent, runtime::ThreadEvent, state::ThreadTokens};
 use ratatui::layout::{Position, Rect};
 
-use crate::app::{Action, App, Entry, Panel, Transcript, TranscriptHit, now_ms};
+use crate::app::{Action, App, Entry, Panel, Tone, Transcript, TranscriptHit, now_ms};
 
 /// Output older than this no longer counts toward tokens per second.
 pub const RATE_WINDOW: Duration = Duration::from_secs(3);
@@ -131,6 +131,7 @@ impl AgentWindow {
                 transcript.finish_tool(&call_id, result)
             }
             ThreadEvent::TurnFinished(_) => transcript.stop_running_tools(),
+            ThreadEvent::FromJob(message) => transcript.notice(message.content, Tone::Info),
             ThreadEvent::FromAgent(message) => {
                 let from = message.from_thread_id.unwrap_or_default();
                 let entry = if self.parent.as_ref() == Some(&from) {
