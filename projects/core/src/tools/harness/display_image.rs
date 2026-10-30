@@ -184,6 +184,7 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
             .trim_start_matches('[')
             .trim_end_matches(']')
             .parse::<IpAddr>();
+        let named = literal.is_err();
         let addresses = match literal {
             Ok(ip) => vec![SocketAddr::new(ip, 443)],
             Err(_) => tokio::net::lookup_host((host, 443))
@@ -196,15 +197,22 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
             !addresses.is_empty() && addresses.len() <= 16,
             "image host has no bounded address set"
         );
+        // A proxy in fake-ip mode answers every name from its own range and resolves
+        // the real address itself. Such a name goes through the proxy from the
+        // environment when one is set, else to the pinned fake address its TUN catches.
+        let faked = named && addresses.iter().all(|address| fake_ip(address.ip()));
         ensure!(
-            addresses.iter().all(|address| public_ip(address.ip())),
+            faked || addresses.iter().all(|address| public_ip(address.ip())),
             "image host is not public internet"
         );
         // Each redirect gets a fresh independent client. Resolution is pinned before
         // connect; TLS SNI/certificate verification still uses the original hostname.
-        let client = reqwest::Client::builder()
+        let mut client = reqwest::Client::builder();
+        if !faked {
+            client = client.no_proxy();
+        }
+        let client = client
             .https_only(true)
-            .no_proxy()
             .referer(false)
             .redirect(reqwest::redirect::Policy::none())
             .retry(reqwest::retry::never())
@@ -270,6 +278,11 @@ fn public_ip(ip: IpAddr) -> bool {
     }
 }
 
+/// 198.18.0.0/15, where Clash and Surge put the addresses they answer in fake-ip mode.
+fn fake_ip(ip: IpAddr) -> bool {
+    matches!(ip, IpAddr::V4(ip) if matches!(ip.octets(), [198, 18 | 19, _, _]))
+}
+
 fn public_v4(ip: Ipv4Addr) -> bool {
     let [a, b, c, _] = ip.octets();
     let special = matches!(a, 0 | 10 | 127 | 224..=255)
@@ -330,4 +343,26 @@ fn decode(original: Vec<u8>) -> Result<Decoded> {
         width,
         height,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Only a name a fake-ip resolver answered may use that range; the address itself
+    /// stays private.
+    #[tokio::test]
+    async fn a_fake_ip_address_by_itself_is_refused() {
+        let error = fetch("https://198.18.0.1/logo.png").await.unwrap_err();
+        assert_eq!(error.to_string(), "image host is not public internet");
+    }
+
+    #[tokio::test]
+    #[ignore = "network"]
+    async fn a_public_image_loads() {
+        let bytes = fetch("https://www.python.org/static/img/python-logo.png")
+            .await
+            .unwrap();
+        assert!(bytes.starts_with(b"\x89PNG"));
+    }
 }
