@@ -25,7 +25,10 @@ use super::{
 };
 use crate::app::{App, compact_number, now_ms};
 
-const STATS_HEIGHT: u16 = 9;
+/// The statistics block: eleven lines and its border.
+const STATS_HEIGHT: u16 = 13;
+/// The connectors block folded: its border around one line that sums them up.
+const CONNECTORS_FOLDED: u16 = 3;
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
     if overlay {
         frame.render_widget(Clear, area);
@@ -62,10 +65,13 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
     let mcp_active = !app.mcp.is_empty();
     if agents_active && y < area.bottom() {
         let remaining = area.bottom() - y;
-        let height = if mcp_active {
-            remaining.div_ceil(2).max(3).min(remaining)
-        } else {
-            remaining
+        let height = match (mcp_active, app.connectors_open) {
+            (false, _) => remaining,
+            (true, false) => remaining
+                .saturating_sub(CONNECTORS_FOLDED)
+                .max(3)
+                .min(remaining),
+            (true, true) => remaining.div_ceil(2).max(3).min(remaining),
         };
         let section = Rect { y, height, ..area };
         app.agent_area = Some(section);
@@ -73,11 +79,11 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
         y += height;
     }
     if mcp_active && y < area.bottom() {
-        let section = Rect {
-            y,
-            height: area.bottom() - y,
-            ..area
+        let height = match app.connectors_open {
+            true => area.bottom() - y,
+            false => CONNECTORS_FOLDED.min(area.bottom() - y),
         };
+        let section = Rect { y, height, ..area };
         app.mcp_area = Some(section);
         mcp(frame, section, app);
     }
@@ -108,49 +114,64 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
         .approximate_tokens_per_second()
         .map(|value| format!("~{value:.1} tok/s"))
         .unwrap_or_else(|| "-- tok/s".into());
+    let label = |text: &str| Span::styled(format!(" {text:<8}"), fg(SIDEBAR_MUTED));
+    let heading = |text: &str| {
+        let rule = "\u{2500}".repeat(inner_width.saturating_sub(text.len() + 3));
+        Line::from(vec![
+            Span::styled(format!(" {text} "), bold(SIDEBAR_MUTED)),
+            Span::styled(rule, fg(NIGHT)),
+        ])
+    };
+    let context_color = if near_compaction { EMBER } else { dusk(fill) };
     let lines = vec![
         Line::from(vec![
-            Span::styled(" model ", fg(SIDEBAR_MUTED)),
+            label("model"),
             Span::styled(
-                wrap::clip(&model_label(app), inner_width.saturating_sub(7)),
+                wrap::clip(&model_label(app), inner_width.saturating_sub(9)),
                 bold(VIOLET),
             ),
         ]),
         Line::from(vec![
-            Span::styled(" context ", fg(SIDEBAR_MUTED)),
-            Span::styled(
-                format!("{percent:.0}%"),
-                bold(if near_compaction { EMBER } else { dusk(fill) }),
-            ),
+            label("mode"),
+            Span::styled(app.mode.to_lowercase(), fg(SIDEBAR_FG)),
+        ]),
+        heading("context"),
+        Line::from(vec![
+            label("used"),
+            Span::styled(format!("{percent:.0}%"), bold(context_color)),
             Span::styled(if near_compaction { "  compact" } else { "" }, fg(EMBER)),
         ]),
-        Line::from(Span::styled(
-            format!(
-                " {} / {}",
-                compact_number(app.tokens.context),
-                compact_number(app.limit)
-            ),
-            fg(SIDEBAR_MUTED),
-        )),
         Line::from(vec![
-            Span::styled(" in ", fg(SIDEBAR_MUTED)),
+            label("of"),
+            Span::styled(
+                format!(
+                    "{} / {}",
+                    compact_number(app.tokens.context),
+                    compact_number(app.limit)
+                ),
+                fg(SIDEBAR_FG),
+            ),
+        ]),
+        heading("tokens"),
+        Line::from(vec![
+            label("in"),
             Span::styled(compact_number(spent.prompt_tokens), fg(TEAL)),
-            Span::styled("   out ", fg(SIDEBAR_MUTED)),
+            Span::styled("  out ", fg(SIDEBAR_MUTED)),
             Span::styled(compact_number(spent.completion_tokens), fg(SUN)),
         ]),
-        Line::from(Span::styled(
-            format!(
-                " cache {}  think {}",
-                compact_number(spent.cached_prompt_tokens),
-                compact_number(spent.reasoning_tokens)
-            ),
-            fg(SIDEBAR_MUTED),
-        )),
         Line::from(vec![
-            Span::styled(format!(" calls {model_calls}  "), fg(SIDEBAR_MUTED)),
-            Span::styled(format!("{time_label} {elapsed}"), fg(SUN)),
+            label("cache"),
+            Span::styled(compact_number(spent.cached_prompt_tokens), fg(SIDEBAR_FG)),
+            Span::styled("  think ", fg(SIDEBAR_MUTED)),
+            Span::styled(compact_number(spent.reasoning_tokens), fg(SIDEBAR_FG)),
         ]),
-        Line::from(Span::styled(format!(" output {rate}"), fg(TEAL))),
+        heading("activity"),
+        Line::from(vec![
+            label(time_label),
+            Span::styled(elapsed, fg(SUN)),
+            Span::styled(format!("  calls {model_calls}"), fg(SIDEBAR_MUTED)),
+        ]),
+        Line::from(vec![label("output"), Span::styled(rate, fg(TEAL))]),
     ];
     let block = Block::bordered()
         .style(Style::new().bg(SIDEBAR_BG))
@@ -330,10 +351,51 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     );
 }
 
-/// Each MCP server with how it stands: its tools once ready, why it failed otherwise.
+/// The MCP servers. Folded, one line sums them up; unfolded, each server shows how it
+/// stands: its tools once ready, why it failed otherwise. A click folds and unfolds.
 fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
     let width = area.width.saturating_sub(4) as usize;
     let mut lines = Vec::new();
+    let mark = if app.connectors_open {
+        UNFOLDED
+    } else {
+        FOLDED
+    };
+    let title = Line::from(vec![
+        Span::styled(" connectors ", bold(TEAL)),
+        Span::styled(format!("{mark} "), fg(SIDEBAR_MUTED)),
+    ]);
+    if !app.connectors_open {
+        let ready = app
+            .mcp
+            .iter()
+            .filter(|server| matches!(server.state, McpState::Ready(_)))
+            .count();
+        let failed = app
+            .mcp
+            .iter()
+            .filter(|server| matches!(server.state, McpState::Failed(_)))
+            .count();
+        let mut summary = vec![Span::styled(format!(" {ON} {ready} ready"), fg(TEAL))];
+        if failed > 0 {
+            summary.push(Span::styled(
+                format!("  {FAILED} {failed} failed"),
+                fg(EMBER),
+            ));
+        }
+        let block = Block::bordered()
+            .style(Style::new().bg(SIDEBAR_BG))
+            .border_type(BorderType::Rounded)
+            .border_style(fg(NIGHT))
+            .title(title);
+        frame.render_widget(
+            Paragraph::new(Line::from(summary))
+                .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+                .block(block),
+            area,
+        );
+        return;
+    }
     for server in &app.mcp {
         let (mark, color, state) = match &server.state {
             McpState::Off => (OFF, SIDEBAR_MUTED, "off".to_owned()),
@@ -366,7 +428,7 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
         .style(Style::new().bg(SIDEBAR_BG))
         .border_type(BorderType::Rounded)
         .border_style(fg(NIGHT))
-        .title(Line::from(Span::styled(" MCP ", bold(TEAL))));
+        .title(title);
     if app.mcp_max_scroll > 0 {
         block = block.title_bottom(Line::from(Span::styled(
             " wheel to scroll ",

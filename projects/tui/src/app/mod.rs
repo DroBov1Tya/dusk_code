@@ -226,6 +226,8 @@ pub struct App {
     pub sidebar_area: Option<Rect>,
     pub agent_area: Option<Rect>,
     pub mcp_area: Option<Rect>,
+    /// The connectors section shows each MCP server; folded, a summary.
+    pub connectors_open: bool,
     /// Each open task's block on the last drawn frame, to unfold it with a click.
     pub task_hits: Vec<(Rect, String)>,
     /// Tasks unfolded to show their steps.
@@ -323,6 +325,7 @@ impl App {
             sidebar_area: None,
             agent_area: None,
             mcp_area: None,
+            connectors_open: false,
             task_hits: Vec::new(),
             unfolded_tasks: Vec::new(),
             agent_scroll: 0,
