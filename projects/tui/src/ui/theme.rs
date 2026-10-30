@@ -23,6 +23,8 @@ pub const SELECTED: Color = Color::Rgb(78, 66, 112);
 pub const SIDEBAR_BG: Color = Color::Rgb(38, 35, 52);
 /// Behind the message box, so it stands apart from the transcript.
 pub const INPUT_BG: Color = Color::Rgb(30, 27, 42);
+/// Behind messages queued while the agent works, so they stand apart from the thread.
+pub const QUEUED_BG: Color = Color::Rgb(40, 36, 56);
 pub const SIDEBAR_FG: Color = Color::Rgb(230, 224, 240);
 pub const SIDEBAR_MUTED: Color = Color::Rgb(165, 157, 187);
 pub const SIDEBAR_EDGE: Color = Color::Rgb(107, 96, 132);

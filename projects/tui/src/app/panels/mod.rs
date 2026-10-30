@@ -15,8 +15,8 @@ pub mod settings;
 
 pub use agents::{AgentWindow, SubagentView};
 pub use settings::{
-    AgentRow, FileButton, FileEditor, HitTarget, SettingCategory, SettingsHit, SettingsView,
-    SwitchKind,
+    AgentRow, FileButton, FileEditor, HitTarget, McpRow, SettingCategory, SettingsHit,
+    SettingsView, SwitchKind,
 };
 
 use super::{Input, PasteEditor};

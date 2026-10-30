@@ -5,7 +5,7 @@
 use dusk_core::{
     catalog::skills::{SkillInfo, SkillKind},
     config::{ContextPolicy, ContextPreset},
-    mcp::{McpInfo, McpState},
+    mcp::{McpInfo, McpState, McpToolInfo},
     release::update::Channel,
 };
 use ratatui::{
@@ -27,8 +27,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    AgentRow, App, FileButton, FileEditor, HitTarget, Input, Panel, SettingCategory, SettingsHit,
-    SettingsView,
+    AgentRow, App, FileButton, FileEditor, HitTarget, Input, McpRow, Panel, SettingCategory,
+    SettingsHit, SettingsView,
 };
 
 const ROOT: &str = "\u{25C9}";
@@ -120,7 +120,7 @@ fn hints(view: &SettingsView) -> &'static str {
             " up/down choose  enter open  space switch  r reload  esc back "
         }
         (Some(SettingCategory::Mcp), None) => {
-            " up/down choose  enter edit  n new  c reconnect  space switch  esc back "
+            " up/down choose  enter edit  t tools  n new  c reconnect  space switch  esc back "
         }
     }
 }
@@ -202,16 +202,24 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
         Some(SettingCategory::Agents) => agent_rows(view, width),
         Some(SettingCategory::Tools) => tool_rows(view, width),
         Some(SettingCategory::Personalize) => {
-            let about = format!(
-                "    keeps what you ask it to remember in MEMORY.md, up to {} characters \
-                 (memory.max_chars in config.yml)",
-                view.memory.max_chars
-            );
-            vec![described(
-                switch_row(vec![Span::raw("  memory")], view.memory.enabled, width),
-                &about,
-                width,
-            )]
+            let about = "    keeps what you ask it to remember in MEMORY.md; the size is \
+                         memory.max_chars in config.yml";
+            vec![
+                described(
+                    switch_row(vec![Span::raw("  memory")], view.memory.enabled, width),
+                    about,
+                    width,
+                ),
+                Row {
+                    lines: vec![right(
+                        vec![Span::raw("  memory size, characters")],
+                        Span::styled(format!("\u{2212} {} +  ", view.memory.max_chars), bold(SUN)),
+                        width,
+                    )],
+                    switch: None,
+                    lead: 0,
+                },
+            ]
         }
         Some(SettingCategory::System) => system_rows(view, width),
         Some(SettingCategory::Updates) => {
@@ -237,9 +245,14 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
         }
         Some(SettingCategory::Mcp) => {
             let mut rows: Vec<Row> = view
-                .mcp
-                .iter()
-                .map(|server| mcp_row(server, width))
+                .mcp_rows()
+                .into_iter()
+                .map(|row| match row {
+                    McpRow::Server(server) => {
+                        mcp_row(server, view.mcp_open.contains(&server.name), width)
+                    }
+                    McpRow::Tool(_, tool) => mcp_tool_row(tool, width),
+                })
                 .collect();
             if rows.is_empty() {
                 rows.push(note("  no MCP servers: press n to add one"));
@@ -376,14 +389,42 @@ fn manual_context_line(input: &Input, width: usize) -> Line<'static> {
     Line::from(spans)
 }
 
+/// A tool of an open server, with its switch and the first line the server gave of it.
+fn mcp_tool_row(tool: &McpToolInfo, width: usize) -> Row {
+    let short = tool
+        .name
+        .split_once("__")
+        .map_or(tool.name.as_str(), |(_, tool)| tool);
+    let name = Span::styled(
+        format!("      {short}"),
+        if tool.enabled { Style::new() } else { dim() },
+    );
+    let mut row = switch_row(vec![name], tool.enabled, width);
+    let about = tool.description.lines().next().unwrap_or("").trim();
+    if !about.is_empty() {
+        row.lines.push(Line::from(Span::styled(
+            wrap::clip(&format!("        {about}"), width),
+            dim(),
+        )));
+    }
+    row
+}
+
 /// The name, where it runs and how it stands, with the switch; then its command line or
 /// URL, or why it failed.
-fn mcp_row(server: &McpInfo, width: usize) -> Row {
+fn mcp_row(server: &McpInfo, open: bool, width: usize) -> Row {
     let on = server.state != McpState::Off;
     let (state, color) = match &server.state {
         McpState::Off => ("off".to_owned(), NIGHT),
         McpState::Starting => ("starting".to_owned(), SUN),
-        McpState::Ready(tools) => (format!("{} tools", tools.len()), TEAL),
+        McpState::Ready(_) => {
+            let on = server.tools.iter().filter(|tool| tool.enabled).count();
+            let mark = if open { "\u{25BE}" } else { "\u{25B8}" };
+            match server.tools.len() {
+                all if on == all => (format!("{all} tools {mark}"), TEAL),
+                all => (format!("{on}/{all} tools {mark}"), SUN),
+            }
+        }
         McpState::Failed(_) => ("failed".to_owned(), EMBER),
     };
     let place = if server.remote { "remote" } else { "local" };

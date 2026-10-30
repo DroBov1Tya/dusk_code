@@ -54,7 +54,17 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     } else {
         screen
     };
-    let input_height = input::height(app, main.width);
+    // The card reaches back to the rail, so no strip of the terminal shows beside it.
+    let card = if sidebar_visible {
+        Rect {
+            x: main.x - GAP,
+            width: main.width + GAP,
+            ..main
+        }
+    } else {
+        main
+    };
+    let input_height = input::height(app, card.width);
     // A single empty row keeps the header separate from the transcript.
     let [top, _, body, bottom] = Layout::vertical([
         Constraint::Length(1),
@@ -89,7 +99,15 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         app.sidebar_area = Some(overlay);
         sidebar::draw(frame, overlay, app, true);
     }
-    input::draw(frame, bottom, app);
+    input::draw(
+        frame,
+        Rect {
+            x: card.x,
+            width: card.width,
+            ..bottom
+        },
+        app,
+    );
     input::draw_commands(frame, body, app);
     input::draw_paths(frame, body, app);
     panels::draw(frame, screen, app);

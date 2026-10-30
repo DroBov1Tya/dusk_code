@@ -481,6 +481,10 @@ impl Config {
         self.memory.enabled = enabled;
     }
 
+    pub fn set_memory_chars(&mut self, chars: usize) {
+        self.memory.max_chars = chars;
+    }
+
     pub fn update_channel(&self) -> Channel {
         self.update_channel.unwrap_or_default()
     }
@@ -588,6 +592,10 @@ impl Config {
         ensure!(
             self.limits.max_agents_at_work > 0,
             "max_agents_at_work must be above zero"
+        );
+        ensure!(
+            self.memory.max_chars > 0,
+            "memory.max_chars must be above zero"
         );
         ensure!(
             self.limits.max_goal_rounds > 0,

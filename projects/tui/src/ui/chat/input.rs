@@ -13,8 +13,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        EMBER, GLOW, HAZE, INPUT_BG, NIGHT, ROSE, SELECTED, SUN, TEAL, VIOLET, bold, dim, fg,
-        thought,
+        EMBER, GLOW, HAZE, INPUT_BG, NIGHT, QUEUED_BG, ROSE, SELECTED, SUN, TEAL, VIOLET, bold,
+        dim, fg, thought,
     },
     transcript::spinner,
     wrap,
@@ -421,12 +421,15 @@ fn draw_queue(frame: &mut Frame, area: Rect, app: &mut App) {
         lines.push(Line::from(vec![
             Span::styled(label, thought()),
             Span::raw(" ".repeat(gap)),
-            Span::styled(SEND, fg(SUN).bg(GLOW)),
+            Span::styled(SEND, fg(SUN).bg(NIGHT)),
             Span::raw(" "),
-            Span::styled(REMOVE, fg(EMBER).bg(GLOW)),
+            Span::styled(REMOVE, fg(EMBER).bg(NIGHT)),
         ]));
     }
-    frame.render_widget(Paragraph::new(lines), area);
+    frame.render_widget(
+        Paragraph::new(lines).style(Style::new().bg(QUEUED_BG)),
+        area,
+    );
 }
 
 /// The command list above the box while a command is being typed.

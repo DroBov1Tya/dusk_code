@@ -270,6 +270,15 @@ pub async fn run(
                 }
                 Err(error) => app.error(format!("cannot save the goal rounds: {error:#}")),
             },
+            Action::SetMemoryChars(chars) => match runtime.set_memory_chars(chars) {
+                Ok(()) => {
+                    if let Some(Panel::Settings(list)) = &mut app.panel {
+                        list.memory.max_chars = chars;
+                    }
+                    app.flash = Some(format!("Memory: up to {chars} characters"));
+                }
+                Err(error) => app.error(format!("cannot save the memory size: {error:#}")),
+            },
             Action::Switch { kind, name, on } => {
                 let saved = match kind {
                     SwitchKind::Agent => runtime.set_agent_enabled(&name, on),
