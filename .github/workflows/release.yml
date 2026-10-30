@@ -20,7 +20,14 @@ jobs:
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes
+        # Only round versions (minor a multiple of ten, patch zero) are full releases;
+        # every other tag ships as a pre-release, which "latest" skips.
+        run: |
+          flag=--prerelease
+          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.([0-9]+)\.0$ ]] && (( BASH_REMATCH[1] % 10 == 0 )); then
+            flag=--latest
+          fi
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" --generate-notes "$flag"
 
   build:
     needs: create
