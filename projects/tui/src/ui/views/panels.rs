@@ -162,7 +162,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             None,
         ),
         Panel::Models(list) => {
-            let (lines, row) = models(list);
+            let (lines, row) = models(list, screen.width.saturating_sub(8).min(72) as usize);
             (
                 "model",
                 "enter choose  r check again  esc close",
@@ -327,6 +327,9 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
     let row = |label: &str, value: Span<'static>| {
         Line::from(vec![Span::styled(format!(" {label:<10}"), dim()), value])
     };
+    let width = screen.width.saturating_sub(4).min(84);
+    // Text wraps inside the border and one column of air on each side.
+    let room = width.saturating_sub(4) as usize;
     let mut lines = Vec::new();
     let mut button_line = None;
     if let Some(info) = info {
@@ -356,7 +359,18 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
             channel("dev"),
         ]));
         lines.push(Line::default());
-        if info.newer {
+        if info.newer && !info.ready {
+            let waiting = format!(
+                "{} is tagged, but its build for this machine is not on GitHub yet: \
+                 release builds take a few minutes after a tag. Try again shortly.",
+                info.latest
+            );
+            lines.extend(
+                wrap::words(vec![Span::styled(waiting, fg(SUN))], room, 0)
+                    .into_iter()
+                    .map(|spans| Line::from([vec![Span::raw(" ")], spans].concat())),
+            );
+        } else if info.newer {
             button_line = Some(lines.len());
             lines.push(Line::from(vec![
                 Span::raw(" "),
@@ -371,9 +385,18 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
         }
     }
     if let Some(note) = note {
-        lines.push(Line::from(Span::styled(format!(" {note}"), fg(SUN))));
+        if !lines.is_empty() {
+            lines.push(Line::default());
+        }
+        // The whole reason, wrapped: the window grows to hold it.
+        for line in note.lines() {
+            lines.extend(
+                wrap::words(vec![Span::styled(line.to_owned(), fg(SUN))], room, 0)
+                    .into_iter()
+                    .map(|spans| Line::from([vec![Span::raw(" ")], spans].concat())),
+            );
+        }
     }
-    let width = screen.width.saturating_sub(4).min(70);
     let height = (lines.len() as u16 + 2).min(screen.height);
     let area = Rect {
         x: screen.x + (screen.width - width) / 2,
@@ -558,7 +581,7 @@ fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
 
 /// Providers with a light for whether they answered, each followed by its models. The
 /// lines, and the line of the selected model.
-fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
+fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
     let Some(providers) = &list.providers else {
         let checking = format!(" checking the providers {ELLIPSIS}");
         return (vec![Line::from(Span::styled(checking, thought()))], 0);
@@ -573,7 +596,7 @@ fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
         let (light, about) = match &provider.models {
             Ok(models) if models.len() == 1 => (ALIVE, "1 model".into()),
             Ok(models) => (ALIVE, format!("{} models", models.len())),
-            Err(error) => (DOWN, error.clone()),
+            Err(_) => (DOWN, "unavailable".into()),
         };
         lines.push(selectable(
             vec![
@@ -583,6 +606,14 @@ fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
             Span::styled(about, dim()),
             false,
         ));
+        // Why a provider failed, in full under its name.
+        if let Err(error) = &provider.models {
+            lines.extend(
+                wrap::words(vec![Span::styled(error.clone(), fg(EMBER))], width, 0)
+                    .into_iter()
+                    .map(|spans| Line::from([vec![Span::raw("    ")], spans].concat())),
+            );
+        }
         for model in provider.models.as_deref().unwrap_or_default() {
             let name = format!("{}/{}", provider.name, model.id);
             let mark = if list.current.as_deref() == Some(name.as_str()) {

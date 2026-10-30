@@ -30,7 +30,10 @@ use crate::{
     init::{self, create_private_dir},
     mcp::{McpInfo, McpServers, McpStatus},
     providers::Provider,
-    release::update::{self, Channel, UpdateInfo},
+    release::{
+        update::{self, Channel, UpdateInfo},
+        watch::UpdateWatch,
+    },
     runtime::chat::thread_start::{FORK_INTRO, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread, UndoPoint},
     tools::{ToolKind, ToolScope},
@@ -51,6 +54,8 @@ pub struct Runtime {
     launcher: Launcher,
     config_check: JoinHandle<()>,
     agents_check: JoinHandle<()>,
+    update_check: JoinHandle<()>,
+    updates: Arc<UpdateWatch>,
     model_discovery: Option<JoinHandle<()>>,
     threads: Mutex<JoinSet<()>>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
@@ -107,6 +112,8 @@ impl Runtime {
             warn!("cannot read the agents: {error:#}");
         }
         let agents_check = tokio::spawn(Arc::clone(&agents).watch(CONFIG_CHECK_PERIOD));
+        let updates = Arc::new(UpdateWatch::default());
+        let update_check = tokio::spawn(Arc::clone(&updates).run(Arc::clone(&config)));
         let launcher = Launcher {
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
@@ -158,6 +165,8 @@ impl Runtime {
             launcher,
             config_check,
             agents_check,
+            update_check,
+            updates,
             model_discovery,
             threads: Mutex::new(JoinSet::new()),
             kept_builtin: initialized.builtin.kept,
@@ -423,6 +432,12 @@ impl Runtime {
         })
     }
 
+    /// A newer release on the update channel whose build is ready, once the background
+    /// check has seen one.
+    pub fn available_update(&self) -> Option<String> {
+        self.updates.found()
+    }
+
     pub async fn undo_points(&self, thread_id: &str) -> Result<Vec<UndoPoint>> {
         self.launcher.state.undo_points(thread_id).await
     }
@@ -684,6 +699,7 @@ impl Runtime {
         }
         self.config_check.abort();
         self.agents_check.abort();
+        self.update_check.abort();
         if let Some(discovery) = self.model_discovery {
             discovery.abort();
         }

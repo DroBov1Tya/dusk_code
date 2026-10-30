@@ -12,7 +12,7 @@ use std::{
     time::Duration,
 };
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Context, Result, ensure};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -63,13 +63,34 @@ pub struct UpdateInfo {
     pub commits_behind: Option<u64>,
     /// `latest` is newer than the running version.
     pub newer: bool,
+    /// The release has the archive for this target; right after a tag it may still be
+    /// building on GitHub.
+    pub ready: bool,
 }
 
 #[derive(Deserialize)]
-struct Release {
-    tag_name: String,
+pub(super) struct Release {
+    pub(super) tag_name: String,
     prerelease: bool,
     draft: bool,
+    #[serde(default)]
+    assets: Vec<Asset>,
+}
+
+#[derive(Deserialize)]
+struct Asset {
+    name: String,
+}
+
+impl Release {
+    /// Both the archive for this target and its checksum are uploaded.
+    pub(super) fn ready(&self) -> bool {
+        let archive = format!("duskcode-{TARGET}.tar.gz");
+        let checksum = format!("{archive}.sha256");
+        [archive, checksum]
+            .iter()
+            .all(|name| self.assets.iter().any(|asset| &asset.name == name))
+    }
 }
 
 #[derive(Deserialize)]
@@ -80,14 +101,7 @@ struct Comparison {
 /// The newest version on `channel`, and how far the running one is behind it.
 pub async fn check(channel: Channel) -> Result<UpdateInfo> {
     let client = client()?;
-    let release = match channel {
-        Channel::Stable => get_json::<Release>(&client, "releases/latest").await?,
-        Channel::Dev => get_json::<Vec<Release>>(&client, "releases?per_page=20")
-            .await?
-            .into_iter()
-            .find(|release| !release.draft)
-            .context("there are no releases yet")?,
-    };
+    let release = newest(&client, channel).await?;
     let current = format!("v{VERSION}");
     let newer = version(&release.tag_name) > version(&current);
     let compare = format!("compare/{current}...{}", release.tag_name);
@@ -101,11 +115,55 @@ pub async fn check(channel: Channel) -> Result<UpdateInfo> {
     };
     Ok(UpdateInfo {
         newer,
+        ready: release.ready(),
         current,
         channel,
         latest: release.tag_name,
         prerelease: release.prerelease,
         commits_behind,
+    })
+}
+
+/// Where the newest release of a channel is listed.
+pub(super) fn releases_url(channel: Channel) -> String {
+    let path = match channel {
+        Channel::Stable => "releases/latest",
+        Channel::Dev => "releases?per_page=20",
+    };
+    format!("{API}/{REPOSITORY}/{path}")
+}
+
+async fn newest(client: &Client, channel: Channel) -> Result<Release> {
+    let response = client
+        .get(releases_url(channel))
+        .header("Accept", "application/vnd.github+json")
+        .send()
+        .await
+        .context("cannot reach GitHub")?;
+    if !response.status().is_success() {
+        let error = refused(response).await;
+        return Err(error.context(match channel {
+            Channel::Stable => "cannot read the newest full release",
+            Channel::Dev => "cannot read the releases",
+        }));
+    }
+    newest_from(response, channel).await
+}
+
+/// The newest release in a successful answer to `releases_url`.
+pub(super) async fn newest_from(response: reqwest::Response, channel: Channel) -> Result<Release> {
+    Ok(match channel {
+        Channel::Stable => response
+            .json::<Release>()
+            .await
+            .context("unexpected answer from GitHub")?,
+        Channel::Dev => response
+            .json::<Vec<Release>>()
+            .await
+            .context("unexpected answer from GitHub")?
+            .into_iter()
+            .find(|release| !release.draft)
+            .context("there are no releases yet")?,
     })
 }
 
@@ -125,6 +183,11 @@ pub async fn update_now(paths: &Paths) -> Result<String> {
             info.latest
         ));
     }
+    ensure!(
+        info.ready,
+        "{} is tagged, but its build for {TARGET} is not on GitHub yet; try again in a few minutes",
+        info.latest
+    );
     let binary = install(&info.latest).await?;
     Ok(format!(
         "updated {} to {} in {}",
@@ -145,9 +208,12 @@ pub async fn install(tag: &str) -> Result<PathBuf> {
     let client = client()?;
     let name = format!("duskcode-{TARGET}");
     let base = format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}.tar.gz");
-    let archive = download(&client, &base)
-        .await
-        .with_context(|| format!("no {tag} build for {TARGET}"))?;
+    let archive = download(&client, &base).await.with_context(|| {
+        format!(
+            "cannot download the {tag} build for {TARGET}; right after a release is \
+             tagged its builds take a few minutes on GitHub, so try again later"
+        )
+    })?;
     let published = download(&client, &format!("{base}.sha256")).await?;
     let published = String::from_utf8_lossy(&published);
     let expected = published.split_whitespace().next().unwrap_or_default();
@@ -201,7 +267,7 @@ fn unpack_into(
     fs::rename(&new, binary).context("cannot replace the binary")
 }
 
-fn client() -> Result<Client> {
+pub(super) fn client() -> Result<Client> {
     Client::builder()
         .user_agent(format!("duskcode/{VERSION}"))
         .timeout(TIMEOUT)
@@ -218,9 +284,8 @@ async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -
         .send()
         .await
         .context("cannot reach GitHub")?;
-    let status = response.status();
-    if !status.is_success() {
-        bail!("GitHub answered {status}");
+    if !response.status().is_success() {
+        return Err(refused(response).await);
     }
     response
         .json()
@@ -234,11 +299,9 @@ async fn download(client: &Client, url: &str) -> Result<Vec<u8>> {
         .send()
         .await
         .context("cannot reach GitHub")?;
-    ensure!(
-        response.status().is_success(),
-        "GitHub answered {}",
-        response.status()
-    );
+    if !response.status().is_success() {
+        return Err(refused(response).await);
+    }
     let mut bytes = Vec::new();
     while let Some(chunk) = response.chunk().await.context("the download broke off")? {
         bytes.extend_from_slice(&chunk);
@@ -250,8 +313,58 @@ async fn download(client: &Client, url: &str) -> Result<Vec<u8>> {
     Ok(bytes)
 }
 
+/// Why GitHub said no, in words: a missing release, a used-up rate limit with the time
+/// it lifts, or GitHub's own message, cut short.
+pub(super) async fn refused(response: reqwest::Response) -> anyhow::Error {
+    const MAX_MESSAGE: usize = 300;
+    let status = response.status();
+    let header = |name: &str| {
+        response
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|value| value.parse::<u64>().ok())
+    };
+    let limited = header("x-ratelimit-remaining") == Some(0);
+    let reset = header("x-ratelimit-reset");
+    let message = response
+        .json::<serde_json::Value>()
+        .await
+        .ok()
+        .and_then(|body| body.get("message")?.as_str().map(str::to_owned))
+        .map(|message| message.chars().take(MAX_MESSAGE).collect::<String>());
+    let code = status.as_u16();
+    if limited || code == 429 {
+        let wait = reset
+            .and_then(|reset| reset.checked_sub(now_seconds()))
+            .map_or("later".to_owned(), |seconds| {
+                format!("in {} min", seconds.div_ceil(60).max(1))
+            });
+        return anyhow::anyhow!(
+            "GitHub allows 60 requests an hour without a token and they are used up \
+             ({status}); it answers again {wait}"
+        );
+    }
+    let what = match code {
+        404 => "not found: the release or its build is not on GitHub (yet)".to_owned(),
+        403 => "access refused".to_owned(),
+        500..=599 => "GitHub has a problem on its side; try again later".to_owned(),
+        _ => "unexpected answer".to_owned(),
+    };
+    match message {
+        Some(message) => anyhow::anyhow!("GitHub answered {status}, {what}: {message}"),
+        None => anyhow::anyhow!("GitHub answered {status}, {what}"),
+    }
+}
+
+pub(super) fn now_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |since| since.as_secs())
+}
+
 /// `v1.2.3` as numbers, for ordering; `None` for anything else.
-fn version(tag: &str) -> Option<(u64, u64, u64)> {
+pub(super) fn version(tag: &str) -> Option<(u64, u64, u64)> {
     let mut parts = tag.strip_prefix('v')?.split('.').map(str::parse);
     let version = (
         parts.next()?.ok()?,

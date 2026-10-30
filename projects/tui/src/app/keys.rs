@@ -432,7 +432,7 @@ impl App {
             Panel::Update { info, .. } => {
                 match key.code {
                     KeyCode::Enter => {
-                        if let Some(info) = info.as_ref().filter(|info| info.newer) {
+                        if let Some(info) = info.as_ref().filter(|info| info.newer && info.ready) {
                             return Action::InstallUpdate(info.latest.clone());
                         }
                     }

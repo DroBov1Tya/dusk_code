@@ -157,6 +157,7 @@ pub async fn run(
         }
         terminal_status.update(app.is_busy() || app.agents_at_work());
         app.refresh_paths();
+        app.update_available = runtime.available_update();
         refresh_system(runtime, &mut app).await;
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
@@ -554,6 +555,10 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             close(open.take()).await;
             app.panel = None;
             app.open(None, None, &[]);
+        }
+        // The update window stays and says the whole reason.
+        Err(error) if matches!(app.panel, Some(Panel::Update { .. })) => {
+            set_update_note(app, format!("cannot check for updates: {error:#}"));
         }
         Err(error) => {
             app.panel = None;

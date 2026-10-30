@@ -135,6 +135,10 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     if !below.is_empty() {
         card = card.title(Line::from(Span::styled(format!(" {below} "), fg(SUN))).right_aligned());
     }
+    if let Some(tag) = &app.update_available {
+        let note = format!(" {tag} is out \u{00B7} /update ");
+        card = card.title_bottom(Line::from(Span::styled(note, fg(TEAL))).right_aligned());
+    }
     frame.render_widget(card, box_area);
     let text_area = Rect {
         x: box_area.x + SIDE,
