@@ -35,6 +35,10 @@ use crate::{
     tools::{ToolKind, ToolScope},
 };
 
+/// Introduces a /fork summary to the model in the new thread.
+const FORK_INTRO: &str = "This thread goes on from an earlier one, described below. Its \
+messages are not here; work from this description.\n\n";
+
 /// Hand edits to config.yml are picked up within this time.
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);
 /// How long shutdown waits for stopped subagents to end.
@@ -446,6 +450,24 @@ impl Runtime {
             thread.thread_id,
             thread.workspace.display()
         );
+        self.run_thread(thread.thread_id, &thread.workspace, cwd)
+            .await
+    }
+
+    /// A new chat thread that starts from a /fork summary of another, after MAIN.md.
+    pub async fn fork_thread(
+        &self,
+        source: &str,
+        summary: &str,
+        cwd: &Path,
+    ) -> Result<ThreadHandle> {
+        let thread = start_thread(&self.launcher.state, &self.launcher.paths, source).await?;
+        let summary = format!("{FORK_INTRO}{summary}");
+        self.launcher
+            .state
+            .add_system_message(&thread.thread_id, &summary)
+            .await?;
+        info!("thread {} forked", thread.thread_id);
         self.run_thread(thread.thread_id, &thread.workspace, cwd)
             .await
     }

@@ -8,6 +8,7 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - Conversation threads and messages stored in SQLite; existing threads can be resumed.
 - Queued messages, interruption, and turn cancellation.
 - Manual and automatic context compaction, with access to earlier thread history.
+- `/fork`: a detailed summary of the thread (`FORK.md` says how) starts a new one.
 - File reading, writing, editing and deletion; shell commands; loading skills from `SKILL.md` files.
 - Background subagents with separate threads and messages to their parent.
 - Persistent task boards displayed in the terminal sidebar.

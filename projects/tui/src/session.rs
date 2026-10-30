@@ -19,7 +19,7 @@ use ratatui::DefaultTerminal;
 use crate::{
     app::{
         Action, AgentWindow, App, EFFORTS, FileEditor, ModelList, Panel, Preview, SettingCategory,
-        SettingsView, SwitchKind, ThreadList, Transcript,
+        SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
     clipboard, git, ui,
 };
@@ -83,6 +83,25 @@ pub async fn run(
             view.mcp = runtime.mcp_servers();
             if let Some(editor) = &mut view.editor {
                 editor.update_mcp(&view.mcp);
+            }
+        }
+        // A fork summary opens its new thread; this one stays as it was.
+        if let Some(summary) = app.forked.take() {
+            close(open.take()).await;
+            match runtime.fork_thread(THREAD_SOURCE, &summary, &cwd).await {
+                Ok(handle) => {
+                    app.open(Some(handle.thread_id.clone()), None, &[]);
+                    app.transcript.notice(
+                        "forked: this thread goes on from a summary of the last one",
+                        Tone::Info,
+                    );
+                    app.transcript.add_summary(&summary);
+                    open = Some(OpenThread {
+                        handle,
+                        ended: false,
+                    });
+                }
+                Err(error) => app.error(format!("cannot fork: {error:#}")),
             }
         }
         // What waited for the turn goes once the agent is free.

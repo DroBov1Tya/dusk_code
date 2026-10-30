@@ -1,6 +1,9 @@
 //! Compaction: the model summarizes the context so far, and the summary takes the place
 //! of the older messages. It runs on `/compact`, and on its own before the context
-//! outgrows the model window.
+//! outgrows the model window. `/fork` writes a fuller summary the same way, for a new
+//! thread to start from.
+
+use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use tracing::warn;
@@ -8,7 +11,7 @@ use tracing::warn;
 use super::{Agent, Inbox, Stop};
 use crate::runtime::{chat::Conversation, system::ThreadEvent};
 use crate::{
-    init::COMPACT_PROMPT_TEMPLATE,
+    init::{COMPACT_PROMPT_TEMPLATE, FORK_PROMPT_TEMPLATE},
     providers::{ChatMessage, ChatRequest},
     state::{CallPurpose, Compaction, ModelCall, Turn},
     thread_start::read_prompt,
@@ -69,12 +72,54 @@ impl Agent {
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Result<Result<Compaction, Stop>> {
+        let prompt =
+            self.instructions(&self.compact_prompt, COMPACT_PROMPT_TEMPLATE, instructions)?;
+        let (summary, through) = match self.write_summary(prompt, turn, inbox).await? {
+            Ok(written) => written,
+            Err(stop) => return Ok(Err(stop)),
+        };
+        let compaction = self
+            .state
+            .add_compaction(&self.thread_id, through, &summary);
+        Ok(Ok(compaction.await?))
+    }
+
+    /// `/fork`: describes the thread in detail for a new thread to start from. This
+    /// thread is left as it was. A failure is reported to the client.
+    pub async fn fork(&self, instructions: Option<&str>, inbox: &mut Inbox) -> Option<Stop> {
+        let written = async {
+            let prompt =
+                self.instructions(&self.fork_prompt, FORK_PROMPT_TEMPLATE, instructions)?;
+            self.write_summary(prompt, None, inbox).await
+        };
+        match written.await {
+            Ok(Ok((summary, _))) => {
+                self.emit(ThreadEvent::Forked { summary });
+                None
+            }
+            Ok(Err(stop)) => Some(stop),
+            Err(error) => {
+                let reason = format!("cannot fork: {error:#}");
+                self.emit(ThreadEvent::Rejected { reason });
+                None
+            }
+        }
+    }
+
+    /// Asks the model to summarize everything that is not queued with `prompt`. Returns
+    /// the summary and the newest message it covers.
+    async fn write_summary(
+        &self,
+        prompt: String,
+        turn: Option<&Turn>,
+        inbox: &mut Inbox,
+    ) -> Result<Result<(String, u64), Stop>> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         let Some(through) = conversation.compactable_through() else {
-            bail!("nothing to compact since the last summary");
+            bail!("nothing to summarize since the last summary");
         };
         let mut messages = conversation.chat_messages_through(through);
-        messages.push(ChatMessage::User(self.instructions(instructions)?));
+        messages.push(ChatMessage::User(prompt));
         let choice = self.model.current().context("provider is unavailable")?;
         let request = ChatRequest {
             model: &choice.model.id,
@@ -106,15 +151,14 @@ impl Agent {
         if summary.is_empty() {
             bail!("the model wrote no summary");
         }
-        let compaction = self.state.add_compaction(&self.thread_id, through, summary);
-        Ok(Ok(compaction.await?))
+        Ok(Ok((summary.to_owned(), through)))
     }
 
-    /// COMPACT.md, or the built-in text when it is missing or blank.
-    /// `extra` is what the user wrote after /compact.
-    fn instructions(&self, extra: Option<&str>) -> Result<String> {
-        let prompt = read_prompt(&self.compact_prompt)?;
-        let mut instructions = prompt.unwrap_or_else(|| COMPACT_PROMPT_TEMPLATE.to_owned());
+    /// The prompt file, or the built-in text when it is missing or blank. `extra` is
+    /// what the user wrote after the command.
+    fn instructions(&self, file: &Path, builtin: &str, extra: Option<&str>) -> Result<String> {
+        let prompt = read_prompt(file)?;
+        let mut instructions = prompt.unwrap_or_else(|| builtin.to_owned());
         if let Some(extra) = extra {
             instructions.push_str(&format!("\nAlso follow these instructions: {extra}\n"));
         }

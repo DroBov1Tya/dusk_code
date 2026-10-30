@@ -50,6 +50,7 @@ pub struct ThreadSetup {
     pub tools: ToolRegistry,
     pub scope: ToolScope,
     pub compact_prompt: PathBuf,
+    pub fork_prompt: PathBuf,
     /// How many agents are above this thread; 0 for a chat.
     pub depth: usize,
     pub mailboxes: Arc<Mailboxes>,
@@ -159,6 +160,10 @@ pub enum ThreadEvent {
     Question(Question),
     /// Another agent wrote to this thread; the message has joined it.
     FromAgent(Message),
+    /// /fork wrote its summary; a client opens a new thread that starts from it.
+    Forked {
+        summary: String,
+    },
     /// Nothing is running and nothing will start until the next message.
     Idle,
     /// The thread stopped on an error it could not handle, such as a database failure.
@@ -185,6 +190,7 @@ impl ThreadRunner {
             scope: setup.scope,
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
+            fork_prompt: setup.fork_prompt,
             depth: setup.depth,
             events,
         };
@@ -599,6 +605,7 @@ mod tests {
             tools,
             scope: ToolScope::new(&root, &root).unwrap(),
             compact_prompt: root.join("COMPACT.md"),
+            fork_prompt: root.join("FORK.md"),
             depth: 0,
             mailboxes: Arc::default(),
             ends_when_idle: false,

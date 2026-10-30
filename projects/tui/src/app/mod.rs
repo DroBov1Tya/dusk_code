@@ -117,6 +117,8 @@ pub enum Activity {
     Writing,
     Tool(String),
     Compacting,
+    /// /fork is describing the thread for a new one.
+    Forking,
     Retrying(u32),
 }
 
@@ -237,6 +239,8 @@ pub struct App {
     /// Messages written while the agent works, oldest first.
     pub queued: Vec<String>,
     pub queue_hits: Vec<QueueHit>,
+    /// A /fork summary waiting for its new thread.
+    pub forked: Option<String>,
     /// A question the agent asked, until it is answered or declined.
     pub poll: Option<Poll>,
     /// The entry under the mouse, which shows its buttons.
@@ -328,6 +332,7 @@ impl App {
             queued: Vec::new(),
             queue_hits: Vec::new(),
             poll: None,
+            forked: None,
             hover: None,
             selection: None,
             layout: None,
@@ -557,6 +562,7 @@ impl App {
                 compact_number(limit)
             )),
             ThreadEvent::Rejected { reason } => self.error(reason),
+            ThreadEvent::Forked { summary } => self.forked = Some(summary),
             ThreadEvent::Failed(error) => {
                 self.error(format!("thread stopped: {error}"));
                 self.stop_work();
@@ -691,6 +697,9 @@ impl App {
                 text
             }
         };
+        if let Some(Ok(Command::Fork { .. })) = &command {
+            self.activity = Activity::Forking;
+        }
         if command.is_some() {
             self.scroll = 0;
             self.transcript.notice(text.trim().to_owned(), Tone::Info);
