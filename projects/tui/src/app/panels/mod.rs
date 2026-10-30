@@ -166,10 +166,10 @@ pub enum SettingKind {
 }
 
 impl SettingList {
-    pub fn load(config: &Config, tools: &[&str], skills_dir: &Path) -> Self {
-        let tools = tools.iter().map(|&name| Setting {
+    pub fn load(config: &Config, tools: &[String], skills_dir: &Path) -> Self {
+        let tools = tools.iter().map(|name| Setting {
             kind: SettingKind::Tool,
-            name: name.to_owned(),
+            name: name.clone(),
             about: String::new(),
             on: config.tool_enabled(name),
         });

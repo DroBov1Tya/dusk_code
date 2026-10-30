@@ -2,6 +2,7 @@
 //! their event sources have supplied something to show.
 
 use dusk_core::{
+    mcp::McpState,
     runtime::AUTO_COMPACT_PERCENT,
     state::{Task, ThreadTokens},
 };
@@ -16,8 +17,8 @@ use ratatui::{
 use super::{
     loader::{Loader, agent_name, identity},
     theme::{
-        DONE, DOT, EMBER, FOLDED, NIGHT, ON, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL,
-        UNFOLDED, VIOLET, bold, dusk, fg,
+        DONE, DOT, EMBER, FAILED, FOLDED, NIGHT, OFF, ON, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED,
+        SUN, TEAL, UNFOLDED, VIOLET, bold, dusk, fg,
     },
     transcript::one_line,
     wrap,
@@ -58,7 +59,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
         );
     }
     let agents_active = !app.subagents.is_empty();
-    let mcp_active = !app.active_mcp.is_empty();
+    let mcp_active = !app.mcp.is_empty();
     if agents_active && y < area.bottom() {
         let remaining = area.bottom() - y;
         let height = if mcp_active {
@@ -329,19 +330,42 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     );
 }
 
+/// Each MCP server with how it stands: its tools once ready, why it failed otherwise.
 fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
-    let lines: Vec<Line> = app
-        .active_mcp
-        .iter()
-        .map(|name| Line::from(Span::styled(format!(" {}", name), fg(TEAL))))
-        .collect();
+    let width = area.width.saturating_sub(4) as usize;
+    let mut lines = Vec::new();
+    for server in &app.mcp {
+        let (mark, color, state) = match &server.state {
+            McpState::Starting => (OFF, SUN, "starting".to_owned()),
+            McpState::Ready(tools) => {
+                let plural = if tools.len() == 1 { "" } else { "s" };
+                (ON, TEAL, format!("{} tool{plural}", tools.len()))
+            }
+            McpState::Failed(_) => (FAILED, EMBER, "failed".to_owned()),
+        };
+        let room = width.saturating_sub(state.len() + 3);
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {mark} "), fg(color)),
+            Span::styled(fill(&server.name, room), bold(SIDEBAR_FG)),
+            Span::styled(format!(" {state}"), fg(SIDEBAR_MUTED)),
+        ]));
+        if let McpState::Failed(error) = &server.state {
+            lines.push(Line::from(Span::styled(
+                format!(
+                    "   {}",
+                    wrap::clip(&one_line(error), width.saturating_sub(3))
+                ),
+                fg(SIDEBAR_MUTED),
+            )));
+        }
+    }
     app.mcp_max_scroll = scroll_limit(lines.len(), area);
     app.mcp_scroll = app.mcp_scroll.min(app.mcp_max_scroll);
     let mut block = Block::bordered()
         .style(Style::new().bg(SIDEBAR_BG))
         .border_type(BorderType::Rounded)
         .border_style(fg(NIGHT))
-        .title(Line::from(Span::styled(" MCP tools ", bold(TEAL))));
+        .title(Line::from(Span::styled(" MCP ", bold(TEAL))));
     if app.mcp_max_scroll > 0 {
         block = block.title_bottom(Line::from(Span::styled(
             " wheel to scroll ",

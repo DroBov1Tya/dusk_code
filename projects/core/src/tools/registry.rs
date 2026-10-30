@@ -1,5 +1,4 @@
-//! The tools a thread offers, by name. Built-in tools now; MCP servers and switching
-//! tools on and off later add to the same registry.
+//! The tools a thread offers, by name: built-in ones and those of MCP servers.
 
 use std::{collections::BTreeMap, path::Path};
 
@@ -19,7 +18,7 @@ const MAX_RESULT_BYTES: usize = 64 * 1024;
 
 #[derive(Default)]
 pub struct ToolRegistry {
-    tools: BTreeMap<&'static str, Box<dyn Tool>>,
+    tools: BTreeMap<String, Box<dyn Tool>>,
 }
 
 /// What the model gets back from a call.
@@ -41,7 +40,7 @@ impl ToolRegistry {
 
     /// A later tool with the same name replaces the earlier one.
     pub fn add(&mut self, tool: Box<dyn Tool>) {
-        self.tools.insert(tool.name(), tool);
+        self.tools.insert(tool.name().to_owned(), tool);
     }
 
     /// Drops every tool not named in `names`.
@@ -50,8 +49,8 @@ impl ToolRegistry {
             .retain(|name, _| names.iter().any(|kept| kept == name));
     }
 
-    pub fn names(&self) -> impl Iterator<Item = &'static str> + '_ {
-        self.tools.keys().copied()
+    pub fn names(&self) -> impl Iterator<Item = &str> {
+        self.tools.keys().map(String::as_str)
     }
 
     /// The tools the config has on, as the model sees them.
