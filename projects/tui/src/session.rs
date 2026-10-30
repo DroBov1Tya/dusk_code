@@ -86,7 +86,10 @@ pub async fn run(
                 Action::None
             }
             // While the core looks for a model, the clock redraws what it finds.
-            _ = clock.tick(), if app.is_busy() || app.agents_at_work() || runtime.discovering_model() => {
+            _ = clock.tick(), if app.is_busy()
+                || app.agents_at_work()
+                || app.task_timers_run()
+                || runtime.discovering_model() => {
                 app.tick();
                 Action::None
             }

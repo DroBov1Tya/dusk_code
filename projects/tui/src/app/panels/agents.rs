@@ -206,6 +206,18 @@ impl App {
         });
     }
 
+    /// Whether an unfolded task shows a step whose timer runs.
+    pub fn task_timers_run(&self) -> bool {
+        self.tasks.iter().any(|task| {
+            !task.done
+                && self.unfolded_tasks.contains(&task.task_id)
+                && task
+                    .items
+                    .iter()
+                    .any(|item| item.started_at.is_some() && !item.done)
+        })
+    }
+
     pub fn agents_at_work(&self) -> bool {
         self.subagents
             .iter()

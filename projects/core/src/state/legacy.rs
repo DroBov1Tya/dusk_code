@@ -93,3 +93,91 @@ pub async fn convert(pool: &SqlitePool, migrator: &Migrator) -> Result<()> {
     transaction.commit().await.context("commit upgrade")?;
     Ok(())
 }
+
+/// The migrations of the task tables before steps got timers.
+const TASK_TABLES: [i64; 2] = [8, 9];
+/// What they make now, in order.
+const TASK_TABLES_SQL: [&str; 2] = [
+    include_str!("migrations/0008_tasks.sql"),
+    include_str!("migrations/0009_task_items.sql"),
+];
+
+/// Databases made before steps had timers and tasks listed their steps. Both tables are
+/// built again from the migrations now and keep their data; a step done back then counts
+/// as started and finished when its task was made.
+pub async fn convert_tasks(pool: &SqlitePool, migrator: &Migrator) -> Result<()> {
+    let ledger: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master
+                        WHERE type = 'table' AND name = '_sqlx_migrations')",
+    )
+    .fetch_one(pool)
+    .await
+    .context("look for the migration record")?;
+    if !ledger {
+        return Ok(());
+    }
+    let recorded: Option<Vec<u8>> =
+        sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = ?")
+            .bind(TASK_TABLES[0])
+            .fetch_optional(pool)
+            .await
+            .context("read the task migration record")?;
+    let migrations: Vec<_> = migrator
+        .iter()
+        .filter(|migration| TASK_TABLES.contains(&migration.version))
+        .collect();
+    ensure!(migrations.len() == 2, "no task migrations");
+    let Some(recorded) = recorded else {
+        return Ok(());
+    };
+    if recorded[..] == migrations[0].checksum[..] {
+        return Ok(());
+    }
+    let mut transaction = pool.begin().await.context("begin task upgrade")?;
+    sqlx::raw_sql(
+        "DROP INDEX tasks_thread;
+         ALTER TABLE task_items RENAME TO old_task_items;
+         ALTER TABLE tasks RENAME TO old_tasks;",
+    )
+    .execute(&mut *transaction)
+    .await
+    .context("set the old task tables aside")?;
+    for (version, sql) in TASK_TABLES.iter().zip(TASK_TABLES_SQL) {
+        sqlx::raw_sql(sql)
+            .execute(&mut *transaction)
+            .await
+            .with_context(|| format!("apply migration {version}"))?;
+    }
+    sqlx::raw_sql(
+        "INSERT INTO tasks (task_id, thread_id, description, item_ids, done, created_at,
+                            updated_at)
+         SELECT task_id, thread_id, description,
+                (SELECT json_group_array(item_id) FROM
+                    (SELECT item_id FROM old_task_items i
+                     WHERE i.task_id = t.task_id ORDER BY position)),
+                done, created_at, created_at
+         FROM old_tasks t;
+         INSERT INTO task_items (item_id, task_id, description, done, created_at, updated_at,
+                                 started_at, finished_at)
+         SELECT i.item_id, i.task_id, i.description, i.done, t.created_at, t.created_at,
+                CASE WHEN i.done = 1 THEN t.created_at END,
+                CASE WHEN i.done = 1 THEN t.created_at END
+         FROM old_task_items i JOIN old_tasks t USING (task_id);
+         DROP TABLE old_task_items;
+         DROP TABLE old_tasks;",
+    )
+    .execute(&mut *transaction)
+    .await
+    .context("move the tasks over")?;
+    for migration in &migrations {
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = ?, description = ? WHERE version = ?")
+            .bind(migration.checksum.as_ref())
+            .bind(migration.description.as_ref())
+            .bind(migration.version)
+            .execute(&mut *transaction)
+            .await
+            .context("record a task migration")?;
+    }
+    transaction.commit().await.context("commit task upgrade")?;
+    Ok(())
+}

@@ -174,6 +174,10 @@ pub struct App {
     pub sidebar_area: Option<Rect>,
     pub agent_area: Option<Rect>,
     pub mcp_area: Option<Rect>,
+    /// Each open task's block on the last drawn frame, to unfold it with a click.
+    pub task_hits: Vec<(Rect, String)>,
+    /// Tasks unfolded to show their steps.
+    pub unfolded_tasks: Vec<String>,
     pub agent_scroll: usize,
     pub mcp_scroll: usize,
     pub agent_max_scroll: usize,
@@ -245,6 +249,8 @@ impl App {
             sidebar_area: None,
             agent_area: None,
             mcp_area: None,
+            task_hits: Vec::new(),
+            unfolded_tasks: Vec::new(),
             agent_scroll: 0,
             mcp_scroll: 0,
             agent_max_scroll: 0,
@@ -298,6 +304,8 @@ impl App {
         self.sidebar_area = None;
         self.agent_area = None;
         self.mcp_area = None;
+        self.task_hits.clear();
+        self.unfolded_tasks.clear();
         self.agent_scroll = 0;
         self.mcp_scroll = 0;
         self.agent_max_scroll = 0;
