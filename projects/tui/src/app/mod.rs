@@ -8,6 +8,7 @@ mod keys;
 pub use keys::EFFORTS;
 mod goal;
 mod panels;
+mod paths;
 mod poll;
 mod queue;
 mod transcript;
@@ -36,6 +37,7 @@ pub use panels::{
     AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, ModelList, Panel,
     Preview, SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
+pub use paths::PathPopup;
 pub use poll::{Poll, PollHit, PollTarget};
 pub use queue::{QueueButton, QueueHit};
 pub use transcript::{Entry, Layout, Tone, Transcript};
@@ -277,6 +279,8 @@ pub struct App {
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
+    /// What the folder of a path being typed holds.
+    pub paths: Option<PathPopup>,
     pub subagents: Vec<SubagentView>,
     /// The agent's task board in the open thread.
     pub tasks: Vec<Task>,
@@ -356,6 +360,7 @@ impl App {
             queue_hits: Vec::new(),
             goal: None,
             undone: None,
+            paths: None,
             goal_rounds: config.current().limits().max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,

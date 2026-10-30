@@ -225,6 +225,7 @@ impl App {
     fn input_key(&mut self, key: KeyEvent) -> Action {
         if key.code != KeyCode::Tab {
             self.input.command_cycle = None;
+            self.end_path_cycle();
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let alt = key.modifiers.contains(KeyModifiers::ALT);
@@ -280,6 +281,7 @@ impl App {
                     self.recall(!down);
                 }
             }
+            KeyCode::Tab if self.cycle_path() => {}
             KeyCode::Tab if self.cycle_command() => {}
             KeyCode::Tab if self.poll.is_some() => {
                 if let Some(poll) = &mut self.poll {

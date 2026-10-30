@@ -150,6 +150,7 @@ pub async fn run(
             send(runtime, &mut app, &mut open, text, false).await;
         }
         terminal_status.update(app.is_busy() || app.agents_at_work());
+        app.refresh_paths();
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {

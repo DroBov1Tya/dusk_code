@@ -88,6 +88,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     }
     input::draw(frame, bottom, app);
     input::draw_commands(frame, body, app);
+    input::draw_paths(frame, body, app);
     if sidebar_visible {
         frame.render_widget(
             Block::default()
