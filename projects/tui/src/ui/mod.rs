@@ -1,13 +1,15 @@
 //! Drawing the app. The statistics rail fills the left edge on a colour of its own; the
 //! thread and the message card take the rest, with air between them and no rule.
 
+mod chat;
 mod loader;
-pub mod screen;
+mod sidebar;
 mod text;
 mod theme;
-mod views;
+mod windows;
 
-use views::{header, input, panels, sidebar, transcript};
+use chat::{header, input, transcript};
+use windows::panels;
 
 use ratatui::{
     Frame,

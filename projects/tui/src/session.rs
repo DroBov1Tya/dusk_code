@@ -25,7 +25,7 @@ use crate::{
         Action, AgentWindow, App, EFFORTS, FileEditor, ModelList, Panel, Preview, SettingCategory,
         SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
-    clipboard, git, ui,
+    ui,
 };
 
 const THREAD_SOURCE: &str = "tui";
@@ -79,7 +79,7 @@ pub async fn run(
     let mut system_clock = tokio::time::interval(SYSTEM_PERIOD);
     let cwd = env::current_dir()?;
     let mut shown_title = String::new();
-    let mut terminal_status = ui::screen::TerminalStatus::new();
+    let mut terminal_status = crate::host::terminal::TerminalStatus::new();
     let mut known_model = choice.as_ref().map(|choice| choice.name());
     loop {
         if let Some(choice) = runtime.model() {
@@ -162,7 +162,7 @@ pub async fn run(
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {
-            ui::screen::set_title(&title);
+            crate::host::terminal::set_title(&title);
             shown_title = title;
         }
         let action = tokio::select! {
@@ -195,7 +195,7 @@ pub async fn run(
             // While the core looks for a model, the clock redraws what it finds.
             _ = system_clock.tick(), if system_open(&app) => Action::None,
             _ = git_clock.tick() => {
-                app.git = git::summary(&cwd).await;
+                app.git = crate::host::git::summary(&cwd).await;
                 Action::None
             }
             _ = clock.tick(), if app.is_busy()
@@ -455,7 +455,7 @@ pub async fn run(
             },
             Action::Copy(text) => {
                 let lines = text.lines().count().max(1);
-                app.flash = Some(if clipboard::copy(&text) {
+                app.flash = Some(if crate::host::clipboard::copy(&text) {
                     format!("copied {lines} line{}", if lines == 1 { "" } else { "s" })
                 } else {
                     "cannot copy: no clipboard tool".into()

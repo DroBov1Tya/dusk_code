@@ -3,15 +3,10 @@
 //! anything that needs the core goes back to the session as an `Action`.
 
 mod composer;
-mod images;
 mod keys;
+mod thread;
 pub use keys::EFFORTS;
-mod goal;
 mod panels;
-mod paths;
-mod poll;
-mod queue;
-mod transcript;
 
 use std::{
     collections::VecDeque,
@@ -30,17 +25,17 @@ use dusk_core::{
 };
 use ratatui::layout::Rect;
 
+pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
-pub use goal::{GoalButton, GoalHit};
 use panels::agents;
 pub use panels::{
     AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, ModelList, Panel,
     Preview, SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
-pub use paths::PathPopup;
-pub use poll::{Poll, PollHit, PollTarget};
-pub use queue::{QueueButton, QueueHit};
-pub use transcript::{Entry, Layout, Tone, Transcript};
+pub use thread::goal::{GoalButton, GoalHit};
+pub use thread::poll::{Poll, PollHit, PollTarget};
+pub use thread::queue::{QueueButton, QueueHit};
+pub use thread::transcript::{Entry, Layout, Tone, Transcript};
 
 /// What the session does for the app.
 pub enum Action {
@@ -275,7 +270,7 @@ pub struct App {
     /// A short word for the status rule, such as "copied", until the next input.
     pub flash: Option<String>,
     /// The repository the client runs in, for the line under the box.
-    pub git: Option<crate::git::GitSummary>,
+    pub git: Option<crate::host::git::GitSummary>,
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,

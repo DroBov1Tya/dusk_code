@@ -25,7 +25,7 @@ use crate::app::{
     Activity, App, ChipHit, Focus, GoalButton, GoalHit, Input, InputRow, PollHit, PollTarget,
     QueueButton, QueueHit, commands, paste,
 };
-use crate::git::GitSummary;
+use crate::host::git::GitSummary;
 
 const MIN_ROWS: usize = 3;
 const MAX_ROWS: usize = 10;

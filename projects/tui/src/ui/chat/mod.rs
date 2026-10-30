@@ -1,11 +1,7 @@
-//! Screen regions and overlay windows.
+//! The conversation: the thread name above, the transcript, and the message card.
 
-pub mod agent_window;
 pub mod header;
 pub mod input;
-pub mod panels;
-pub mod settings;
-pub mod sidebar;
 pub mod transcript;
 
 use super::{
