@@ -1,20 +1,10 @@
-//! The runtime: what clients start, and the agent that runs each thread.
+//! The runtime, in three parts: `agent` runs one thread's agent (its steps, model calls,
+//! compaction and the messages waiting for it), `chat` builds what the model reads, and
+//! `system` starts and keeps the threads that clients and agents open.
 
 pub mod agent;
-mod compaction;
-mod context;
-mod generation;
-pub mod inbox;
-pub mod launcher;
-mod mailboxes;
-pub mod model_choice;
-mod thread_lock;
-// Named after its primary item, `Runtime`, as the style guide asks.
-#[allow(clippy::module_inception)]
-mod runtime;
-mod thread_runner;
-mod title;
+pub mod chat;
+pub mod system;
 
-pub use compaction::AUTO_COMPACT_PERCENT;
-pub use runtime::{Runtime, ThreadHandle};
-pub use thread_runner::{ThreadEvent, ThreadInput, ThreadOutput};
+pub use agent::AUTO_COMPACT_PERCENT;
+pub use system::{Runtime, ThreadEvent, ThreadHandle, ThreadInput, ThreadOutput, model_choice};

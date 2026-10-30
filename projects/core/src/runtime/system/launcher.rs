@@ -14,12 +14,10 @@ use anyhow::{Context, Result, ensure};
 use tracing::warn;
 
 use super::{
-    inbox::Input,
-    mailboxes::Mailboxes,
+    ThreadEvent, ThreadInput, ThreadLock, ThreadOutput, ThreadRunner, ThreadSetup,
     model_choice::ModelChoice,
-    thread_lock::ThreadLock,
-    thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup},
 };
+use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     BoxFuture,
     agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},

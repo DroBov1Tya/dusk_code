@@ -1,30 +1,17 @@
-//! SQLite records of threads, messages, turns, compactions, token usage, tasks and agent
-//! identities.
+//! SQLite records, in three parts: `db` opens the database and keeps its schema current,
+//! old databases included; `chat` holds what a thread is made of, from its messages and
+//! turns to its token usage and task board; `agents` holds the agent identities.
 
-mod compactions;
-mod identities;
-mod legacy;
-mod local_unsent;
-mod messages;
-mod pending;
-// Named after its primary item, `State`, as the style guide asks.
-#[allow(clippy::module_inception)]
-mod state;
-mod tasks;
-mod threads;
-mod tokens;
-mod turns;
+mod agents;
+mod chat;
+mod db;
 
-pub use compactions::Compaction;
-pub use identities::Identity;
-pub use local_unsent::LocalUnsent;
-pub use messages::estimate_tokens;
-pub use messages::{Message, MessageRole};
-pub use pending::PendingMessage;
-pub use state::State;
-pub use tasks::{Task, TaskItem};
-pub use threads::Thread;
-pub use tokens::{CallPurpose, LastPrompt, ModelCall, ThreadTokens, TokenCounts};
-pub use turns::{Turn, TurnAnswer, TurnOutcome, TurnStatus};
+pub use agents::Identity;
+pub use chat::{
+    CallPurpose, Compaction, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
+    PendingMessage, Task, TaskItem, Thread, ThreadTokens, TokenCounts, Turn, TurnAnswer,
+    TurnOutcome, TurnStatus, estimate_tokens,
+};
+pub use db::State;
 
-use state::timestamp_ms;
+use db::timestamp_ms;

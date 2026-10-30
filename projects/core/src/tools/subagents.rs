@@ -20,7 +20,7 @@ use super::{Progress, Tool, ToolContext};
 use crate::{
     BoxFuture,
     agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
-    runtime::{ThreadEvent, launcher::Launcher},
+    runtime::{ThreadEvent, system::Launcher},
     state::Identity,
     state::Thread,
     thread_start::{self, display_name, read_prompt, start_agent_thread},

@@ -16,13 +16,8 @@ use std::{path::PathBuf, sync::Arc};
 use anyhow::{Result, ensure};
 use tokio::sync::mpsc;
 
-use super::{
-    agent::Agent,
-    inbox::{Inbox, Input, Stop},
-    mailboxes::{Mailbox, Mailboxes},
-    model_choice::ModelChoice,
-    thread_lock::ThreadLock,
-};
+use super::{ThreadLock, model_choice::ModelChoice};
+use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
 use crate::{
     chat::commands,
     live_config::LiveConfig,
