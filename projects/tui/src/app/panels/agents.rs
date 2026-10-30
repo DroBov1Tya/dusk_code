@@ -9,6 +9,7 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{providers::ModelEvent, runtime::ThreadEvent, state::ThreadTokens};
+use ratatui::layout::{Position, Rect};
 
 use crate::app::{App, Entry, Panel, Transcript, TranscriptHit, now_ms};
 
@@ -46,6 +47,8 @@ pub struct AgentWindow {
     pub max_scroll: usize,
     /// Fold headers on the last drawn frame.
     pub hits: Vec<TranscriptHit>,
+    /// The window with its border on the last drawn frame; a click outside closes it.
+    pub area: Rect,
 }
 
 impl SubagentView {
@@ -93,6 +96,7 @@ impl AgentWindow {
             scroll: 0,
             max_scroll: 0,
             hits: Vec::new(),
+            area: Rect::default(),
         }
     }
 
@@ -234,6 +238,11 @@ impl App {
         match mouse.kind {
             MouseEventKind::ScrollUp => window.scroll_by(WHEEL, true),
             MouseEventKind::ScrollDown => window.scroll_by(WHEEL, false),
+            MouseEventKind::Down(MouseButton::Left)
+                if !window.area.contains(Position::new(x, y)) =>
+            {
+                self.panel = None;
+            }
             MouseEventKind::Down(MouseButton::Left) => {
                 let hit = window
                     .hits

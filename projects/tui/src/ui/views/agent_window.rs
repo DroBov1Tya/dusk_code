@@ -22,9 +22,11 @@ use crate::app::{App, Panel, TranscriptHit, compact_number};
 const HEADER_ROWS: u16 = 4;
 
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
-    let Some(Panel::Agent(agent_window)) = &app.panel else {
+    let Some(Panel::Agent(agent_window)) = &mut app.panel else {
         return;
     };
+    let area = window(screen, 150);
+    agent_window.area = area;
     let thread_id = agent_window.thread_id.clone();
     let seed = identity(&thread_id);
     let loader = Loader::new(seed);
@@ -33,7 +35,6 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         .subagents
         .iter()
         .find(|card| card.thread_id == thread_id);
-    let area = window(screen, 150);
     let kind = card.map_or("agent", |card| card.agent.as_str());
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
