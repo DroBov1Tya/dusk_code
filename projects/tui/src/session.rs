@@ -56,10 +56,17 @@ pub async fn run(
     }
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(FRAME);
+    let mut known_model = choice.as_ref().map(|choice| choice.name());
     loop {
         if let Some(choice) = runtime.model() {
-            // A configured model supplies metadata, not proof of provider availability.
-            app.model = choice.name();
+            let name = choice.name();
+            // A saved model is not proof the provider answers, but one the core picked
+            // after start was found over the network. No thread may exist yet to say so.
+            if known_model.as_deref() != Some(name.as_str()) {
+                app.provider_available = true;
+                known_model = Some(name.clone());
+            }
+            app.model = name;
             app.limit = input_limit(runtime, &choice.model);
         }
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
@@ -78,7 +85,8 @@ pub async fn run(
                 }
                 Action::None
             }
-            _ = clock.tick(), if app.is_busy() || app.agents_at_work() => {
+            // While the core looks for a model, the clock redraws what it finds.
+            _ = clock.tick(), if app.is_busy() || app.agents_at_work() || runtime.discovering_model() => {
                 app.tick();
                 Action::None
             }
