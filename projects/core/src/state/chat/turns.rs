@@ -85,7 +85,7 @@ impl State {
         let row = sqlx::query(
             "INSERT INTO turns (turn_id, thread_id, last_sequence, status, started_at)
              SELECT ?, ?, MAX(sequence), 'running', ? FROM messages
-             WHERE thread_id = ? AND role = 'user'
+             WHERE thread_id = ? AND (role = 'user' OR from_job_id IS NOT NULL)
                AND sequence > (SELECT COALESCE(MAX(last_sequence), 0) FROM turns WHERE thread_id = ?)
              HAVING COUNT(*) > 0
              RETURNING *",

@@ -1,6 +1,6 @@
 //! The tools a thread offers, by name: built-in ones and those of MCP servers.
 
-use std::{collections::BTreeMap, path::Path, time::Instant};
+use std::{collections::BTreeMap, path::Path, sync::Arc, time::Instant};
 
 use serde_json::Value;
 use tracing::info;
@@ -25,6 +25,7 @@ pub struct ToolRegistry {
     pub chat: bool,
     /// Set only from trusted launcher depth, never from model/config identity.
     root: bool,
+    pub(crate) jobs: Option<Arc<super::JobManager>>,
 }
 
 /// What the model gets back from a call.
@@ -53,6 +54,13 @@ impl ToolRegistry {
             registry.add(tool);
         }
         registry
+    }
+
+    pub(crate) async fn has_running_jobs(&self, thread_id: &str) -> bool {
+        match &self.jobs {
+            Some(jobs) => jobs.has_running(thread_id).await,
+            None => false,
+        }
     }
 
     /// A later tool with the same name replaces the earlier one.

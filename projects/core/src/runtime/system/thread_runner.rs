@@ -163,6 +163,8 @@ pub enum ThreadEvent {
     Question(Question),
     /// Another agent wrote to this thread; the message has joined it.
     FromAgent(Message),
+    /// A background process result joined this thread at a safe execution boundary.
+    FromJob(Message),
     /// The standing goal changed, or the thread opened with one; `note` says what
     /// happened in a line.
     Goal {
@@ -263,6 +265,9 @@ impl ThreadRunner {
             });
         }
         loop {
+            if self.ends_when_idle && self.mailboxes.is_closed() {
+                return Ok(());
+            }
             if self.agent.model.current().is_none() {
                 self.agent.emit(ThreadEvent::Idle);
                 if self.ends_when_idle {
@@ -282,7 +287,20 @@ impl ThreadRunner {
             }
             self.agent.emit(ThreadEvent::Idle);
             if self.ends_when_idle {
-                if self.leave_if_idle().await? {
+                if self
+                    .agent
+                    .tools
+                    .has_running_jobs(&self.agent.thread_id)
+                    .await
+                {
+                    // Keep this runner while its processes work, without starting a
+                    // second agent. Completion wakes this same inbox for a new turn.
+                    match self.inbox.wait().await {
+                        None => return Ok(()),
+                        Some(Input::Cancel) => self.cancel_agents().await?,
+                        Some(_) => {}
+                    }
+                } else if self.leave_if_idle().await? {
                     return Ok(());
                 }
                 continue;
@@ -405,17 +423,22 @@ impl ThreadRunner {
     async fn take(&mut self, pending: PendingMessage) -> Result<()> {
         let state = Arc::clone(&self.agent.state);
         // Another agent's message is never a command, whatever it starts with.
-        let command = match pending.from_thread_id {
-            Some(_) => None,
-            None => commands::parse(&pending.content),
+        let command = if pending.from_thread_id.is_some() || pending.from_job_id.is_some() {
+            None
+        } else {
+            commands::parse(&pending.content)
         };
         let Some(command) = command else {
             let message = state.admit_pending(&self.agent.thread_id, &pending).await?;
-            self.agent.title_from_first_message(&message).await?;
+            if message.from_job_id.is_none() {
+                self.agent.title_from_first_message(&message).await?;
+            }
             self.agent.emit(ThreadEvent::Queued {
                 message_id: message.message_id.clone(),
             });
-            if message.from_thread_id.is_some() {
+            if message.from_job_id.is_some() {
+                self.agent.emit(ThreadEvent::FromJob(message));
+            } else if message.from_thread_id.is_some() {
                 self.agent.emit(ThreadEvent::FromAgent(message));
             } else {
                 self.agent.emit(ThreadEvent::UserMessage(message));

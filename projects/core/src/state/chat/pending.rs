@@ -13,6 +13,7 @@ pub struct PendingMessage {
     pub content: String,
     /// The agent's thread for a message another agent sent; `None` for a client's.
     pub from_thread_id: Option<String>,
+    pub from_job_id: Option<String>,
 }
 
 impl State {
@@ -48,12 +49,13 @@ impl State {
             request_uid,
             content: content.to_owned(),
             from_thread_id: from.map(str::to_owned),
+            from_job_id: None,
         })
     }
 
-    /// Oldest first.
+    /// Drops queued requests; runtime-owned job results remain for the next resume.
     pub async fn drop_pending(&self, thread_id: &str) -> Result<()> {
-        sqlx::query("DELETE FROM pending_messages WHERE thread_id = ?")
+        sqlx::query("DELETE FROM pending_messages WHERE thread_id = ? AND from_job_id IS NULL")
             .bind(thread_id)
             .execute(&self.pool)
             .await
@@ -79,7 +81,7 @@ impl State {
 
     pub async fn pending_messages(&self, thread_id: &str) -> Result<Vec<PendingMessage>> {
         let rows = sqlx::query(
-            "SELECT pending_id, request_uid, content, from_thread_id FROM pending_messages
+            "SELECT pending_id, request_uid, content, from_thread_id, from_job_id FROM pending_messages
              WHERE thread_id = ? ORDER BY pending_id",
         )
         .bind(thread_id)
@@ -93,6 +95,7 @@ impl State {
                     request_uid: row.try_get("request_uid")?,
                     content: row.try_get("content")?,
                     from_thread_id: row.try_get("from_thread_id")?,
+                    from_job_id: row.try_get("from_job_id")?,
                 })
             })
             .collect()
@@ -106,9 +109,13 @@ impl State {
         pending: &PendingMessage,
     ) -> Result<Message> {
         let from = pending.from_thread_id.as_deref();
-        let message = self
-            .add_message_from(thread_id, &pending.request_uid, &pending.content, from)
-            .await?;
+        let message = match &pending.from_job_id {
+            Some(job) => self.admit_job(thread_id, job, &pending.content).await?,
+            None => {
+                self.add_message_from(thread_id, &pending.request_uid, &pending.content, from)
+                    .await?
+            }
+        };
         self.remove_pending(pending.pending_id).await?;
         Ok(message)
     }

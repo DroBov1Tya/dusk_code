@@ -1,14 +1,15 @@
 //! Runs a shell command in the working directory. The command gets its own process group,
-//! so everything it started is killed when it ends, times out or the turn is cancelled.
+//! so everything it started is killed when it ends or times out. Foreground commands
+//! also stop with the turn; background commands belong to the runtime job manager.
 
-use std::{process::Stdio, time::Duration};
+use std::{path::Path, process::Stdio, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
-    process::Command,
+    process::{Child, Command},
 };
 
 use crate::BoxFuture;
@@ -22,13 +23,24 @@ const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
 const MAX_STREAM_BYTES: usize = 32 * 1024;
 
-pub struct RunCommand;
+#[derive(Default)]
+pub struct RunCommand {
+    jobs: Option<super::jobs::JobOwner>,
+}
+
+impl RunCommand {
+    pub(crate) fn with_jobs(jobs: super::jobs::JobOwner) -> Self {
+        Self { jobs: Some(jobs) }
+    }
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RunCommandArguments {
     command: String,
     timeout_seconds: Option<u64>,
+    #[serde(default)]
+    background: bool,
 }
 
 impl Tool for RunCommand {
@@ -48,7 +60,11 @@ impl Tool for RunCommand {
              temporary and downloaded files in {}.",
             scope.cwd().display(),
             scope.workspace().display()
-        )
+        ) + if self.jobs.is_some() {
+            " Set background=true to start a job and continue immediately. Returns job_id after spawn; the result joins this agent automatically at a safe boundary, even after this turn ends. Jobs survive turn cancellation; use jobs(action=cancel) to stop one. At most 8 jobs per thread and 64 per runtime; commands are limited to 16 KiB. Incomplete jobs are never restarted after application restart."
+        } else {
+            ""
+        }
     }
 
     fn parameters(&self) -> Value {
@@ -56,6 +72,7 @@ impl Tool for RunCommand {
             "type": "object",
             "properties": {
                 "command": { "type": "string", "description": "Shell command line." },
+                "background": { "type": "boolean", "description": "Return immediately and deliver completion to this agent automatically. Defaults to false." },
                 "timeout_seconds": {
                     "type": "integer",
                     "minimum": 1,
@@ -78,23 +95,24 @@ impl Tool for RunCommand {
                 (1..=MAX_TIMEOUT_SECONDS).contains(&timeout),
                 "timeout_seconds must be between 1 and {MAX_TIMEOUT_SECONDS}"
             );
+            if arguments.background {
+                let owner = self
+                    .jobs
+                    .as_ref()
+                    .context("background jobs require a running thread")?;
+                let id = owner
+                    .manager
+                    .start(&owner.thread_id, &arguments.command, scope.cwd(), timeout)
+                    .await?;
+                return Ok(format!("background job started: job_id={id}"));
+            }
             run(&arguments.command, scope, timeout).await
         })
     }
 }
 
 async fn run(command: &str, scope: &ToolScope, timeout_seconds: u64) -> Result<String> {
-    let mut child = Command::new("sh")
-        .arg("-c")
-        .arg(command)
-        .current_dir(scope.cwd())
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .process_group(0)
-        .kill_on_drop(true)
-        .spawn()
-        .context("cannot start sh")?;
+    let mut child = spawn(command, scope.cwd())?;
     let mut group = ProcessGroup(child.id());
     ensure!(group.0.is_some(), "command exited before it started");
     let stdout = child.stdout.take().context("stdout is not captured")?;
@@ -124,12 +142,26 @@ async fn run(command: &str, scope: &ToolScope, timeout_seconds: u64) -> Result<S
     Ok(output)
 }
 
+pub(super) fn spawn(command: &str, cwd: &Path) -> Result<Child> {
+    Command::new("sh")
+        .arg("-c")
+        .arg(command)
+        .current_dir(cwd)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .process_group(0)
+        .kill_on_drop(true)
+        .spawn()
+        .context("cannot start sh")
+}
+
 /// Kills the whole group when dropped, so a cancelled or timed-out command leaves nothing
 /// behind. Kills at most once: a later kill could hit a new group that reused the ID.
-struct ProcessGroup(Option<u32>);
+pub(super) struct ProcessGroup(pub(super) Option<u32>);
 
 impl ProcessGroup {
-    fn kill(&mut self) {
+    pub(super) fn kill(&mut self) {
         let Some(id) = self.0.take() else {
             return;
         };
@@ -187,7 +219,9 @@ mod tests {
     }
 
     async fn run_tool(scope: &ToolScope, arguments: Value) -> Result<String> {
-        RunCommand.call(arguments, tool_context(scope)).await
+        RunCommand::default()
+            .call(arguments, tool_context(scope))
+            .await
     }
 
     #[tokio::test]

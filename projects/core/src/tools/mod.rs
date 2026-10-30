@@ -16,6 +16,7 @@ mod tool;
 
 pub use agents::{AskAgent, MessageParent};
 pub use builtin::read_regular;
+pub(crate) use console::{JobManager, JobOwner, Jobs, RunCommand};
 pub use harness::{AskUser, DisplayImage, GoalTool, Question, ReadHistory, Remember, Tasks};
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};

@@ -60,7 +60,7 @@ impl State {
     /// `after`: the system messages and everything newer.
     pub async fn context_messages(&self, thread_id: &str, after: u64) -> Result<Vec<Message>> {
         sqlx::query(
-            "SELECT * FROM messages WHERE thread_id = ? AND (role = 'system' OR sequence > ?)
+            "SELECT * FROM messages WHERE thread_id = ? AND ((role = 'system' AND from_job_id IS NULL) OR sequence > ?)
              ORDER BY sequence",
         )
         .bind(thread_id)

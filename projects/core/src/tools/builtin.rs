@@ -24,7 +24,7 @@ pub fn all(skills: &Path) -> Vec<Box<dyn Tool>> {
         Box::new(WriteFile),
         Box::new(EditFile),
         Box::new(DeleteFile),
-        Box::new(RunCommand),
+        Box::new(RunCommand::default()),
         Box::new(LoadSkill::new(skills.to_owned())),
     ]
 }

@@ -25,6 +25,8 @@ pub struct Message {
     pub artifacts: Vec<ImageArtifact>,
     /// For a user message another agent sent: the thread it came from.
     pub from_thread_id: Option<String>,
+    /// A process completion, distinct from user input and system instructions.
+    pub from_job_id: Option<String>,
     /// Estimated sizes in model tokens; see `estimate_tokens`.
     pub content_tokens: u64,
     pub tool_calls_tokens: u64,
@@ -40,6 +42,7 @@ pub enum MessageRole {
     User,
     Assistant,
     Tool,
+    Job,
 }
 
 /// A message about to be stored. The constructors allow only valid combinations.
@@ -52,6 +55,7 @@ pub struct NewMessage {
     tool_call_id: Option<String>,
     artifacts: Vec<ImageArtifact>,
     from_thread_id: Option<String>,
+    from_job_id: Option<String>,
 }
 
 impl Message {
@@ -207,6 +211,12 @@ impl State {
 }
 
 impl NewMessage {
+    pub fn job(job_id: &str, content: &str) -> Self {
+        let mut message = Self::plain(MessageRole::Job, content);
+        message.from_job_id = Some(job_id.to_owned());
+        message
+    }
+
     pub fn system(content: &str) -> Self {
         Self::plain(MessageRole::System, content)
     }
@@ -228,6 +238,7 @@ impl NewMessage {
             tool_call_id: None,
             artifacts: Vec::new(),
             from_thread_id: None,
+            from_job_id: None,
         }
     }
 
@@ -240,6 +251,7 @@ impl NewMessage {
             tool_call_id: Some(call_id),
             artifacts: Vec::new(),
             from_thread_id: None,
+            from_job_id: None,
         }
     }
 
@@ -252,6 +264,7 @@ impl NewMessage {
             tool_call_id: None,
             artifacts: Vec::new(),
             from_thread_id: None,
+            from_job_id: None,
         }
     }
 
@@ -264,7 +277,7 @@ impl NewMessage {
 impl MessageRole {
     fn as_str(self) -> &'static str {
         match self {
-            Self::System => "system",
+            Self::System | Self::Job => "system",
             Self::User => "user",
             Self::Assistant => "assistant",
             Self::Tool => "tool",
@@ -305,9 +318,9 @@ pub async fn insert_message(
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, sequence, role, content, reasoning,
             tool_calls_json, tool_call_id, request_uid, content_tokens, tool_calls_tokens,
-            reasoning_tokens, created_at, from_thread_id, artifacts_json)
+            reasoning_tokens, created_at, from_thread_id, artifacts_json, from_job_id)
          VALUES (?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(Uuid::now_v7().to_string())
     .bind(thread_id)
@@ -324,6 +337,7 @@ pub async fn insert_message(
     .bind(timestamp)
     .bind(&message.from_thread_id)
     .bind(artifacts)
+    .bind(&message.from_job_id)
     .fetch_one(&mut **transaction)
     .await
     .context("store message")?;
@@ -345,7 +359,9 @@ async fn ensure_thread_exists(
 
 pub fn decode_message(row: SqliteRow) -> Result<Message> {
     let role: String = row.try_get("role")?;
+    let from_job_id: Option<String> = row.try_get("from_job_id")?;
     let role = match role.as_str() {
+        "system" if from_job_id.is_some() => MessageRole::Job,
         "system" => MessageRole::System,
         "user" => MessageRole::User,
         "assistant" => MessageRole::Assistant,
@@ -374,6 +390,7 @@ pub fn decode_message(row: SqliteRow) -> Result<Message> {
         tool_call_id: row.try_get("tool_call_id")?,
         artifacts,
         from_thread_id: row.try_get("from_thread_id")?,
+        from_job_id,
         content_tokens: read_tokens(&row, "content_tokens")?,
         tool_calls_tokens: read_tokens(&row, "tool_calls_tokens")?,
         reasoning_tokens: read_tokens(&row, "reasoning_tokens")?,

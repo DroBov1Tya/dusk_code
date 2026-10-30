@@ -170,6 +170,7 @@ impl Transcript {
                         open: false,
                     },
                 }),
+                MessageRole::Job => transcript.notice(message.content.clone(), Tone::Info),
                 MessageRole::Assistant => {
                     if let Some(reasoning) = &message.reasoning {
                         transcript.add_reasoning(reasoning);

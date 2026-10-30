@@ -27,8 +27,8 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AskAgent, AskUser, DisplayImage, GoalTool, McpTool, MessageParent, ReadHistory, Remember,
-        Tasks, ToolRegistry, ToolScope,
+        AskAgent, AskUser, DisplayImage, GoalTool, JobManager, JobOwner, Jobs, McpTool,
+        MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -44,6 +44,7 @@ pub struct Launcher {
     pub mailboxes: Arc<Mailboxes>,
     pub mcp: Arc<McpServers>,
     pub agents: Arc<Agents>,
+    pub(crate) jobs: Arc<JobManager>,
 }
 
 impl Launcher {
@@ -85,11 +86,18 @@ impl Launcher {
         let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
         tools.chat = depth == 0;
         tools.set_depth(depth);
+        tools.jobs = Some(Arc::clone(&self.jobs));
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
                 tools.add(Box::new(tool));
             }
         }
+        let owner = JobOwner {
+            manager: Arc::clone(&self.jobs),
+            thread_id: thread_id.to_owned(),
+        };
+        tools.add(Box::new(RunCommand::with_jobs(owner.clone())));
+        tools.add(Box::new(Jobs(owner)));
         let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
         tools.add(Box::new(history));
         tools.add(Box::new(Tasks::new(

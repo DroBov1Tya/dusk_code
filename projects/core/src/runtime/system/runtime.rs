@@ -36,7 +36,7 @@ use crate::{
     },
     runtime::chat::thread_start::{FORK_INTRO, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread, UndoPoint},
-    tools::{ToolKind, ToolScope},
+    tools::{JobManager, ToolKind, ToolScope},
     util::{
         sync::lock,
         usage::{self, ProcessUsage},
@@ -92,6 +92,7 @@ impl Runtime {
         let initialized = init::initialize(&paths)?;
         let state_db = state_db.unwrap_or_else(|| paths.state_db());
         let state = State::open(&state_db).await?;
+        state.interrupt_jobs().await?;
         let config = Arc::new(LiveConfig::load(paths.config_file())?);
         let choice = match model_choice::configured(&config.current()) {
             Ok(choice) => choice,
@@ -114,12 +115,15 @@ impl Runtime {
         let agents_check = tokio::spawn(Arc::clone(&agents).watch(CONFIG_CHECK_PERIOD));
         let updates = Arc::new(UpdateWatch::default());
         let update_check = tokio::spawn(Arc::clone(&updates).run(Arc::clone(&config)));
+        let mailboxes = Arc::new(Mailboxes::default());
+        let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes));
         let launcher = Launcher {
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
             config: Arc::clone(&config),
             paths,
-            mailboxes: Arc::new(Mailboxes::default()),
+            mailboxes,
+            jobs,
             mcp: McpServers::start(&config.current()),
             agents,
         };
@@ -702,6 +706,7 @@ impl Runtime {
         // since one may have started a moment before the stop.
         let mailboxes = &self.launcher.mailboxes;
         mailboxes.close();
+        self.launcher.jobs.shutdown().await;
         let started = Instant::now();
         while started.elapsed() < AGENTS_STOP_WAIT {
             let live = mailboxes.lock().await;

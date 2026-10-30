@@ -160,14 +160,18 @@ impl Agent {
     /// What clients sent waits for the next turn.
     async fn take_agent_messages(&self) -> Result<()> {
         for pending in self.state.pending_messages(&self.thread_id).await? {
-            if pending.from_thread_id.is_none() {
+            if pending.from_thread_id.is_none() && pending.from_job_id.is_none() {
                 continue;
             }
             let message = self.state.admit_pending(&self.thread_id, &pending).await?;
             self.emit(ThreadEvent::Queued {
                 message_id: message.message_id.clone(),
             });
-            self.emit(ThreadEvent::FromAgent(message));
+            self.emit(if message.from_job_id.is_some() {
+                ThreadEvent::FromJob(message)
+            } else {
+                ThreadEvent::FromAgent(message)
+            });
         }
         Ok(())
     }
@@ -203,7 +207,7 @@ impl Agent {
         let newest_user = conversation
             .messages
             .iter()
-            .filter(|message| message.role == MessageRole::User)
+            .filter(|message| matches!(message.role, MessageRole::User | MessageRole::Job))
             .map(|message| message.sequence)
             .max()
             .unwrap_or(0);

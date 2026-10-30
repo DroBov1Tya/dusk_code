@@ -644,6 +644,9 @@ impl App {
                 self.start_subagent(thread_id, agent, task, parent);
             }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
+            ThreadEvent::FromJob(message) => {
+                self.transcript.notice(message.content, Tone::Info);
+            }
             ThreadEvent::FromAgent(message) => {
                 let from = message.from_thread_id.unwrap_or_default();
                 self.transcript

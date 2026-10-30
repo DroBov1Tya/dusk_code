@@ -94,6 +94,7 @@ fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
             MessageRole::User if message.from_thread_id.is_some() => "from agents",
             MessageRole::User => "from you",
             MessageRole::Assistant => "model answers and tool calls",
+            MessageRole::Job => "background job results",
         };
         let entry = messages.entry(kind).or_default();
         *entry = (entry.0 + 1, entry.1 + tokens);

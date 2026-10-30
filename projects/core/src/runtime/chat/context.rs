@@ -141,7 +141,8 @@ impl Conversation {
     }
 
     fn is_queued(&self, message: &Message) -> bool {
-        message.role == MessageRole::User && message.sequence > self.answered_through
+        matches!(message.role, MessageRole::User | MessageRole::Job)
+            && message.sequence > self.answered_through
     }
 
     fn estimated_after(&self, sequence: u64) -> u64 {
@@ -171,6 +172,10 @@ fn chat_message(message: &Message, senders: &HashMap<String, String>) -> Option<
     let content = message.content.clone();
     match message.role {
         MessageRole::System => Some(ChatMessage::System(content)),
+        MessageRole::Job => Some(ChatMessage::User(format!(
+            "[external process result; job {}]\n{content}",
+            message.from_job_id.as_deref().unwrap_or("unknown")
+        ))),
         // The model learns who wrote it; thread IDs are how agents address each other.
         MessageRole::User => Some(ChatMessage::User(match &message.from_thread_id {
             Some(from) => {
@@ -206,6 +211,7 @@ mod tests {
             tool_call_id: (role == MessageRole::Tool).then(|| "call".into()),
             artifacts: Vec::new(),
             from_thread_id: None,
+            from_job_id: None,
             content_tokens: 5,
             tool_calls_tokens: 0,
             reasoning_tokens: 0,

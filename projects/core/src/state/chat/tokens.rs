@@ -157,13 +157,14 @@ impl State {
     pub async fn thread_tokens(&self, thread_id: &str) -> Result<ThreadTokens> {
         let mut tokens = ThreadTokens::default();
         let groups = sqlx::query(
-            "SELECT role, role = 'system' OR sequence > COALESCE(
+            "SELECT CASE WHEN from_job_id IS NOT NULL THEN 'job' ELSE role END AS author,
+                (role = 'system' AND from_job_id IS NULL) OR sequence > COALESCE(
                     (SELECT through_sequence FROM compactions WHERE thread_id = ?
                      ORDER BY compaction_id DESC LIMIT 1), 0) AS in_context,
                 SUM(content_tokens) AS content_tokens,
                 SUM(tool_calls_tokens) AS tool_calls_tokens,
                 SUM(reasoning_tokens) AS reasoning_tokens
-             FROM messages WHERE thread_id = ? GROUP BY role, in_context",
+             FROM messages WHERE thread_id = ? GROUP BY author, in_context",
         )
         .bind(thread_id)
         .bind(thread_id)
@@ -171,7 +172,7 @@ impl State {
         .await
         .context("count thread tokens")?;
         for group in groups {
-            let role: String = group.try_get("role")?;
+            let role: String = group.try_get("author")?;
             let content = read_tokens(&group, "content_tokens")?;
             let tool_calls = read_tokens(&group, "tool_calls_tokens")?;
             let reasoning = read_tokens(&group, "reasoning_tokens")?;
