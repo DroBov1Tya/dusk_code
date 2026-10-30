@@ -7,6 +7,7 @@
 
 mod compact;
 mod context;
+mod goal;
 mod model;
 mod resume;
 mod settings;
@@ -51,6 +52,8 @@ pub enum Command {
     Update { channel: Option<String> },
     /// Shows the reasoning effort, or sets it: low, medium, high or default.
     Effort { level: Option<String> },
+    /// Sets the standing goal, or shows, pauses, resumes, clears or completes it.
+    Goal { argument: Option<String> },
 }
 
 /// What a client command answers.
@@ -98,12 +101,19 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "how hard the model reasons: low, medium, high or default",
     ),
     ("/update", "the newest version, and installing it"),
+    (
+        "/goal",
+        "a goal worked on turn after turn until done; pause, resume, clear",
+    ),
 ];
 
 impl Command {
     /// Thread commands go to the thread as a message; the rest go to `answer`.
     pub fn runs_in_thread(&self) -> bool {
-        matches!(self, Self::Compact { .. } | Self::Fork { .. })
+        matches!(
+            self,
+            Self::Compact { .. } | Self::Fork { .. } | Self::Goal { .. }
+        )
     }
 
     pub async fn run_in_thread(self, agent: &Agent, inbox: &mut Inbox) {
@@ -115,6 +125,7 @@ impl Command {
                 // A stop only ends the fork; this thread goes on as it was.
                 let _ = agent.fork(instructions.as_deref(), inbox).await;
             }
+            Self::Goal { argument } => goal::run(agent, argument.as_deref()).await,
             Self::Resume
             | Self::New
             | Self::Model { .. }
@@ -165,6 +176,7 @@ impl Command {
             }
             Self::Compact { .. } => bail!("/compact runs in a thread"),
             Self::Fork { .. } => bail!("/fork runs in a thread"),
+            Self::Goal { .. } => bail!("/goal runs in a thread"),
         }
     }
 }
@@ -194,6 +206,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "context" => Ok(Command::Context { thread_id: None }),
         "effort" => Ok(Command::Effort { level: argument }),
         "update" => Ok(Command::Update { channel: argument }),
+        "goal" => Ok(Command::Goal { argument }),
         "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })

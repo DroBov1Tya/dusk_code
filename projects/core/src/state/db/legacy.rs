@@ -240,7 +240,9 @@ mod tests {
             "ALTER TABLE messages DROP COLUMN artifacts_json;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;",
             // A development build with the column in a migration of its own.
-            "UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
+            "DROP TABLE goals;
+             DELETE FROM _sqlx_migrations WHERE version >= 12;
+             UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
                 execution_time) VALUES (12, 'image artifacts', TRUE, X'00', 0);",
         ] {

@@ -9,8 +9,8 @@ mod db;
 
 pub use agents::Identity;
 pub use chat::{
-    CallPurpose, Compaction, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
-    PendingMessage, Task, TaskItem, Thread, ThreadTokens, TokenCounts, Turn, TurnAnswer,
+    CallPurpose, Compaction, Goal, GoalStatus, LastPrompt, LocalUnsent, Message, MessageRole,
+    ModelCall, PendingMessage, Task, TaskItem, Thread, ThreadTokens, TokenCounts, Turn, TurnAnswer,
     TurnOutcome, TurnStatus, estimate_tokens,
 };
 pub use db::State;

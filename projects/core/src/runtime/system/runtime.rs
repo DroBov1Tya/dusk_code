@@ -383,6 +383,13 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_max_goal_rounds(&self, rounds: u32) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_max_goal_rounds(rounds))?;
+        Ok(())
+    }
+
     /// Switches every thread to `choice` from its next model call, and keeps it in the
     /// config.
     pub fn set_model(&self, choice: Choice) -> Result<()> {

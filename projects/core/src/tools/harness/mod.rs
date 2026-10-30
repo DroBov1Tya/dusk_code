@@ -3,6 +3,7 @@
 
 mod ask_user;
 mod display_image;
+mod goal;
 mod load_skill;
 mod read_history;
 mod remember;
@@ -10,6 +11,7 @@ mod tasks;
 
 pub use ask_user::{AskUser, Question};
 pub use display_image::DisplayImage;
+pub use goal::GoalTool;
 pub use load_skill::LoadSkill;
 pub use read_history::ReadHistory;
 pub use remember::Remember;

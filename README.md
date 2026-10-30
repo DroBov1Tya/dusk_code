@@ -9,6 +9,11 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - Queued messages, interruption, and turn cancellation.
 - Manual and automatic context compaction, with access to earlier thread history.
 - `/fork`: a detailed summary of the thread (`FORK.md` says how) starts a new one.
+- `/goal <text>`: a standing goal. Every request carries it, and a turn that ends
+  without it done starts the next round, up to `limits.max_goal_rounds` (10, set in
+  `/settings` -> agents). The model marks it done, pauses or sets one with the `goal`
+  tool; `/goal pause|resume|clear|done` and the buttons above the box do the same. A
+  stop or a failed turn pauses it.
 - File reading, writing, editing and deletion; shell commands; loading skills from `SKILL.md` files.
 - Background subagents with separate threads and messages to their parent.
 - Modes switched with Tab: MAIN works itself, PLAN only reads and plans, ORCHESTRATOR

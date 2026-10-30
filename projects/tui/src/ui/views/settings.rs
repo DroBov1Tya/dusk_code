@@ -457,6 +457,15 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
         switch: None,
         lead: 0,
     }];
+    rows.push(Row {
+        lines: vec![right(
+            vec![Span::raw("  goal rounds before a pause")],
+            Span::styled(format!("\u{2212} {} +  ", view.max_goal_rounds), bold(SUN)),
+            width,
+        )],
+        switch: None,
+        lead: 0,
+    });
     rows.extend(view.agents.iter().map(|agent| agent_row(agent, width)));
     for problem in &view.problems {
         rows.push(Row {
