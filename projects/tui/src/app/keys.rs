@@ -207,6 +207,11 @@ impl App {
         let shift = key.modifiers.contains(KeyModifiers::SHIFT);
         match key.code {
             KeyCode::Enter if shift => self.input.insert("\n"),
+            // Where Shift+Enter reads as Enter, a backslash before it asks for a new line.
+            KeyCode::Enter if self.input.text[..self.input.cursor].ends_with('\\') => {
+                self.input.backspace();
+                self.input.insert("\n");
+            }
             // A command typed in part runs as the one it can only be.
             KeyCode::Enter => {
                 self.complete_command();
