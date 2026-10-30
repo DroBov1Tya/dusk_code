@@ -112,7 +112,13 @@ fn load(directory: &Path, name: &str, config: &Config) -> Result<String> {
     let skill = graph
         .get(name)
         .filter(|skill| config.skill_enabled(&skill.name))
-        .with_context(|| format!("no skill named {name}"))?;
+        .with_context(|| {
+            format!(
+                "no skill named {name} in {}; only the skills listed in this tool's \
+                 description can be loaded",
+                directory.display()
+            )
+        })?;
     let instructions = skill.instructions()?;
     ensure!(!instructions.is_empty(), "skill {name} has no instructions");
     // Skills name their own scripts and references by paths inside their folder.
