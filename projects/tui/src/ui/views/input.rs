@@ -404,6 +404,7 @@ fn status(app: &App, width: usize) -> Line<'static> {
                 Activity::Writing => (SUN, "writing".to_owned()),
                 Activity::Tool(name) => (TEAL, format!("running {name}")),
                 Activity::Compacting => (VIOLET, "compacting the context".to_owned()),
+                Activity::Forking => (VIOLET, "describing the thread for a fork".to_owned()),
                 Activity::Retrying(attempt) => (EMBER, format!("retrying after attempt {attempt}")),
                 Activity::Idle => (HAZE, String::new()),
             };

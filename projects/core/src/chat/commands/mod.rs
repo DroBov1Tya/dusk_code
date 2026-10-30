@@ -41,6 +41,9 @@ pub enum Command {
     Settings,
     /// What the next request of the thread carries; a client fills in its open thread.
     Context { thread_id: Option<String> },
+    /// Describes the thread in detail and goes on in a new thread from that; the
+    /// argument is extra instructions for the description.
+    Fork { instructions: Option<String> },
     /// Shows the reasoning effort, or sets it: low, medium, high or default.
     Effort { level: Option<String> },
 }
@@ -73,6 +76,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "summarize the conversation to free the context; text after it guides the summary",
     ),
     ("/new", "start a new thread"),
+    (
+        "/fork",
+        "go on in a new thread from a detailed summary of this one",
+    ),
     ("/resume", "open an earlier thread"),
     ("/model", "choose the model; every provider is checked live"),
     ("/settings", "switch agents, tools and skills; edit skills"),
@@ -85,13 +92,17 @@ pub const COMMANDS: &[(&str, &str)] = &[
 impl Command {
     /// Thread commands go to the thread as a message; the rest go to `answer`.
     pub fn runs_in_thread(&self) -> bool {
-        matches!(self, Self::Compact { .. })
+        matches!(self, Self::Compact { .. } | Self::Fork { .. })
     }
 
     pub async fn run_in_thread(self, agent: &Agent, inbox: &mut Inbox) {
         match self {
             Self::Compact { instructions } => {
                 compact::run(agent, instructions.as_deref(), inbox).await;
+            }
+            Self::Fork { instructions } => {
+                // A stop only ends the fork; this thread goes on as it was.
+                let _ = agent.fork(instructions.as_deref(), inbox).await;
             }
             Self::Resume
             | Self::New
@@ -132,6 +143,7 @@ impl Command {
                 Ok(Answer::ModelSwitched(model::switch(runtime, &name).await?))
             }
             Self::Compact { .. } => bail!("/compact runs in a thread"),
+            Self::Fork { .. } => bail!("/fork runs in a thread"),
         }
     }
 }
@@ -150,6 +162,9 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
     let argument = (!argument.is_empty()).then(|| argument.to_owned());
     Some(match name {
         "compact" => Ok(Command::Compact {
+            instructions: argument,
+        }),
+        "fork" => Ok(Command::Fork {
             instructions: argument,
         }),
         "resume" => Ok(Command::Resume),

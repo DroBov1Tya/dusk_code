@@ -67,6 +67,7 @@ impl Launcher {
                 .share(&self.paths.skills_dir())
                 .share(&self.paths.agents_dir()),
             compact_prompt: self.paths.compact_prompt(),
+            fork_prompt: self.paths.fork_prompt(),
             depth,
             mailboxes: Arc::clone(&self.mailboxes),
             ends_when_idle: false,
