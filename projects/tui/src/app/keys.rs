@@ -405,6 +405,19 @@ impl App {
                 _ => {}
             },
             Panel::Help => self.panel = None,
+            // The drawing keeps the row within the lines.
+            Panel::Context { row, .. } => {
+                *row = match key.code {
+                    _ if up => row.saturating_sub(1),
+                    _ if down => *row + 1,
+                    KeyCode::PageUp => row.saturating_sub(10),
+                    KeyCode::PageDown => *row + 10,
+                    _ => {
+                        self.panel = None;
+                        return Action::None;
+                    }
+                };
+            }
             Panel::Threads(list) => match key.code {
                 _ if up || down => {
                     step(&mut list.selected, list.threads.len(), down);

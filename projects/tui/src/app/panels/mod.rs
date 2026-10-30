@@ -4,6 +4,7 @@
 use ratatui::layout::Rect;
 
 use dusk_core::{
+    chat::commands::ContextReport,
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Thread},
 };
@@ -28,6 +29,8 @@ pub enum Panel {
     Agent(AgentWindow),
     Connect(Connection),
     Unsent { selected: usize },
+    /// What the context holds; `row` is the line kept in view while scrolling.
+    Context { report: ContextReport, row: usize },
 }
 
 /// The configured providers as the core found them, and their models to choose from.
