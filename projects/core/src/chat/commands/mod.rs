@@ -27,6 +27,8 @@ pub enum Command {
     Compact { instructions: Option<String> },
     /// Lists the threads to open again.
     Resume,
+    /// Leaves the open thread for a new one, created with its first message.
+    New,
     /// Lists the providers with their models, or switches to `provider/model`.
     Model { name: Option<String> },
 }
@@ -41,6 +43,8 @@ pub enum Answer {
     },
     /// Every thread talks to this model from now on.
     ModelSwitched(Choice),
+    /// The client closes the open thread and shows an empty one.
+    NewThread,
 }
 
 /// Every command, for clients to show: name and what it does.
@@ -49,6 +53,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "/compact",
         "summarize the conversation to free the context; text after it guides the summary",
     ),
+    ("/new", "start a new thread"),
     ("/resume", "open an earlier thread"),
     ("/model", "choose the model; every provider is checked live"),
 ];
@@ -64,13 +69,14 @@ impl Command {
             Self::Compact { instructions } => {
                 compact::run(agent, instructions.as_deref(), inbox).await;
             }
-            Self::Resume | Self::Model { .. } => {}
+            Self::Resume | Self::New | Self::Model { .. } => {}
         }
     }
 
     pub async fn answer(self, runtime: &Runtime) -> Result<Answer> {
         match self {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
+            Self::New => Ok(Answer::NewThread),
             Self::Model { name: None } => Ok(Answer::Providers {
                 current: runtime.model().map(|choice| choice.name()),
                 providers: model::check(runtime).await?,
@@ -100,6 +106,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
             instructions: argument,
         }),
         "resume" => Ok(Command::Resume),
+        "new" => Ok(Command::New),
         "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })

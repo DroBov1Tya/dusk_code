@@ -82,7 +82,7 @@ impl App {
         }
         match key.code {
             KeyCode::Char('t') if ctrl => return Action::Command(Command::Resume),
-            KeyCode::Char('n') if ctrl => return Action::NewThread,
+            KeyCode::Char('n') if ctrl => return Action::Command(Command::New),
             KeyCode::Char('o') if ctrl => {
                 let list = SettingList::load(&self.config.current(), &self.tools, &self.skills_dir);
                 self.panel = Some(Panel::Settings(list));
@@ -379,7 +379,7 @@ impl App {
                 }
                 KeyCode::Char('n') => {
                     self.panel = None;
-                    return Action::NewThread;
+                    return Action::Command(Command::New);
                 }
                 KeyCode::Esc => self.panel = None,
                 _ => {}
