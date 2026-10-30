@@ -9,7 +9,7 @@ pub use keys::EFFORTS;
 mod panels;
 
 use std::{
-    collections::VecDeque,
+    collections::{HashSet, VecDeque},
     sync::Arc,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -21,7 +21,7 @@ use dusk_core::{
     mcp::McpStatus,
     providers::ModelEvent,
     runtime::ThreadEvent,
-    state::{Goal, LocalUnsent, Message, Task, ThreadTokens, TurnStatus},
+    state::{Goal, LocalUnsent, Message, MessageRole, Task, ThreadTokens, TurnStatus},
 };
 use ratatui::layout::Rect;
 
@@ -299,7 +299,9 @@ pub struct App {
     turn_running: bool,
     compacting: bool,
     sent: Vec<String>,
+    sent_ids: HashSet<String>,
     recall: Option<usize>,
+    recall_draft: Option<Input>,
     output_samples: VecDeque<(Instant, usize)>,
 }
 
@@ -389,13 +391,29 @@ impl App {
             turn_running: false,
             compacting: false,
             sent: Vec::new(),
+            sent_ids: HashSet::new(),
             recall: None,
+            recall_draft: None,
             output_samples: VecDeque::new(),
         }
     }
 
     /// Shows another thread: its history, or nothing for a new one.
     pub fn open(&mut self, thread_id: Option<String>, title: Option<String>, history: &[Message]) {
+        if self.thread_id != thread_id {
+            self.input = Input::default();
+        }
+        (self.sent_ids, self.sent) = history
+            .iter()
+            .filter(|message| {
+                message.role == MessageRole::User
+                    && message.from_thread_id.is_none()
+                    && Some(message.thread_id.as_str()) == thread_id.as_deref()
+            })
+            .map(|message| (message.message_id.clone(), message.content.clone()))
+            .unzip();
+        self.recall = None;
+        self.recall_draft = None;
         self.thread_id = thread_id;
         self.title = title;
         self.poll = None;
@@ -482,6 +500,14 @@ impl App {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         match event {
+            ThreadEvent::UserMessage(message) => {
+                // Crash recovery may admit a pending request already in the snapshot.
+                if self.thread_id.as_deref() == Some(message.thread_id.as_str())
+                    && self.sent_ids.insert(message.message_id)
+                {
+                    self.sent.push(message.content);
+                }
+            }
             ThreadEvent::ModelSelected {
                 name,
                 context_window,
@@ -707,6 +733,8 @@ impl App {
             return Action::None;
         }
         let text = self.input.take();
+        self.recall = None;
+        self.recall_draft = None;
         let trimmed = text.trim();
         match trimmed {
             "/connect" => {
@@ -725,8 +753,6 @@ impl App {
             self.flash = Some("Enter connection details in the form".into());
             return Action::None;
         }
-        self.sent.push(text.clone());
-        self.recall = None;
         // The core says what a command is; ones that do not run in the thread come
         // back from it as something to show.
         let command = commands::parse(&text);
@@ -770,11 +796,16 @@ impl App {
             (Some(at), true) => Some(at.saturating_sub(1)),
             (Some(at), false) => (at + 1 < self.sent.len()).then_some(at + 1),
         };
+        if self.recall.is_none() && next.is_some() {
+            self.recall_draft = Some(std::mem::take(&mut self.input));
+        }
         self.recall = next;
         match next {
             Some(at) => self.input.set(self.sent[at].clone()),
             None => {
-                self.input.take();
+                if let Some(draft) = self.recall_draft.take() {
+                    self.input = draft;
+                }
             }
         }
     }

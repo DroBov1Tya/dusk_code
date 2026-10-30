@@ -92,6 +92,8 @@ pub enum ThreadEvent {
     Queued {
         message_id: String,
     },
+    /// A client's request joined the persisted model history, including explicit resends.
+    UserMessage(Message),
     Rejected {
         reason: String,
     },
@@ -415,6 +417,8 @@ impl ThreadRunner {
             });
             if message.from_thread_id.is_some() {
                 self.agent.emit(ThreadEvent::FromAgent(message));
+            } else {
+                self.agent.emit(ThreadEvent::UserMessage(message));
             }
             return Ok(());
         };
