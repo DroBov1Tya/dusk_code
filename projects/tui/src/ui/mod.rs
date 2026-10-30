@@ -20,6 +20,24 @@ use crate::app::App;
 const SPLIT_AT: u16 = 84;
 const SIDEBAR_WIDTH: u16 = 28;
 
+/// Braille dots that turn in the tab title while the agent works, as the tab is all a
+/// user sees of a terminal in the background.
+const TITLE_SPINNER: [&str; 10] = [
+    "\u{280B}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283C}", "\u{2834}", "\u{2826}",
+    "\u{2827}", "\u{2807}", "\u{280F}",
+];
+const TITLE_IDLE: &str = "\u{2733}";
+
+/// The terminal tab's title: a mark that turns while work goes on, then the thread.
+pub fn tab_title(app: &App) -> String {
+    let mark = if app.is_busy() || app.agents_at_work() {
+        TITLE_SPINNER[(app.frame / 2) % TITLE_SPINNER.len()]
+    } else {
+        TITLE_IDLE
+    };
+    format!("{mark} {}", app.title.as_deref().unwrap_or("duskcode"))
+}
+
 pub fn draw(frame: &mut Frame, app: &mut App) {
     let screen = frame.area();
     app.compact_layout = screen.width < SPLIT_AT;

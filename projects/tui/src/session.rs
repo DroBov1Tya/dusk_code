@@ -53,6 +53,7 @@ pub async fn run(
     }
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(FRAME);
+    let mut shown_title = String::new();
     let mut known_model = choice.as_ref().map(|choice| choice.name());
     loop {
         if let Some(choice) = runtime.model() {
@@ -85,6 +86,11 @@ pub async fn run(
             send(runtime, &mut app, &mut open, text, false).await;
         }
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
+        let title = ui::tab_title(&app);
+        if title != shown_title {
+            ui::screen::set_title(&title);
+            shown_title = title;
+        }
         let action = tokio::select! {
             key = keys.next() => match key {
                 Some(event) => app.handle(event?),
