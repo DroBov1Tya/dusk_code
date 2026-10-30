@@ -220,7 +220,10 @@ pub async fn convert_messages(pool: &SqlitePool, migrator: &Migrator) -> Result<
         .execute(&mut *transaction)
         .await
         .context("record the messages migration")?;
-    transaction.commit().await.context("commit message upgrade")?;
+    transaction
+        .commit()
+        .await
+        .context("commit message upgrade")?;
     Ok(())
 }
 

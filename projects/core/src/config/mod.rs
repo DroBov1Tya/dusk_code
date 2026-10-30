@@ -2,6 +2,8 @@
 //! tools and skills are on.
 //! `LiveConfig` keeps the current copy in memory and writes changes back.
 
+pub mod live;
+
 use std::{
     collections::BTreeMap,
     fmt,
@@ -13,7 +15,7 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::{modes, tools::ToolKind, update::Channel};
+use crate::{catalog::modes, release::update::Channel, tools::ToolKind};
 
 /// MCP server names are this long at most.
 const MAX_MCP_NAME: usize = 24;

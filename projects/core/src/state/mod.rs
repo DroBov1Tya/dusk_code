@@ -3,6 +3,7 @@
 //! turns to its token usage and task board; `agents` holds the agent identities.
 
 mod agents;
+pub mod artifacts;
 mod chat;
 mod db;
 

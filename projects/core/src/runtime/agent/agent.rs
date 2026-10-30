@@ -17,8 +17,8 @@ use crate::runtime::{
     },
 };
 use crate::{
+    config::live::LiveConfig,
     config::{Config, Effort},
-    live_config::LiveConfig,
     providers::{
         ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
         is_unsupported_effort,

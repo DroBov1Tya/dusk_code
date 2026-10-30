@@ -22,7 +22,7 @@ use crate::tools::{
 };
 use crate::{
     BoxFuture,
-    artifacts::{ArtifactStore, ImageArtifact, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES},
+    state::artifacts::{ArtifactStore, ImageArtifact, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);

@@ -19,11 +19,11 @@ use tracing::info;
 use crate::tools::{Progress, Tool, ToolContext, ToolKind};
 use crate::{
     BoxFuture,
-    agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
+    catalog::agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
+    runtime::chat::thread_start::{self, display_name, read_prompt, start_agent_thread},
     runtime::{ThreadEvent, system::Launcher},
     state::Identity,
     state::Thread,
-    thread_start::{self, display_name, read_prompt, start_agent_thread},
 };
 
 /// Each agent listed costs tokens in every request.

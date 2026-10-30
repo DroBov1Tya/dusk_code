@@ -8,7 +8,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 
-use crate::{init::create_private_dir, update::VERSION};
+use crate::{init::create_private_dir, release::update::VERSION};
 
 const CATEGORIES: [&str; 4] = ["agents", "skills", "internal", "modes"];
 const REQUIRED: [&str; 6] = [

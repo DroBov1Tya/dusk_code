@@ -101,7 +101,7 @@ fn next_revision() -> u64 {
 }
 
 impl Transcript {
-    pub fn set_artifact_store(&mut self, store: dusk_core::artifacts::ArtifactStore) {
+    pub fn set_artifact_store(&mut self, store: dusk_core::state::artifacts::ArtifactStore) {
         self.images = super::images::Images::new(store);
         self.changed();
     }

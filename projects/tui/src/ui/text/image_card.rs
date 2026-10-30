@@ -1,7 +1,7 @@
 //! Typed root image results as ordinary terminal cells. No terminal graphics escapes
 //! or link detection: half blocks participate in clipping, scrolling and selection.
 
-use dusk_core::artifacts::ImageArtifact;
+use dusk_core::state::artifacts::ImageArtifact;
 use image::{
     Rgba,
     imageops::{self, FilterType},

@@ -1,6 +1,9 @@
 //! First-start initialization. Creates the missing parts of the layout in `paths`
 //! with private permissions and never modifies existing files.
 
+pub mod logs;
+pub mod paths;
+
 use std::{
     fs::{self, DirBuilder, OpenOptions},
     io::{ErrorKind, Write},
@@ -12,9 +15,9 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use tracing::{info, warn};
 
 use crate::{
-    builtin::{self, Synced},
-    modes,
-    paths::Paths,
+    catalog::modes,
+    init::paths::Paths,
+    release::builtin::{self, Synced},
 };
 
 const CONFIG_TEMPLATE: &str = "\

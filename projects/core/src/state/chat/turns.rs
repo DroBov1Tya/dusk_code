@@ -152,7 +152,7 @@ impl State {
         turn_id: &str,
         call_id: &str,
         content: String,
-        artifacts: Vec<crate::artifacts::ImageArtifact>,
+        artifacts: Vec<crate::state::artifacts::ImageArtifact>,
     ) -> Result<Message> {
         let timestamp = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin tool result")?;

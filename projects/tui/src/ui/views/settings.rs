@@ -3,10 +3,10 @@
 //! Skills open beside the list: what their front matter says on top, the raw file below.
 
 use dusk_core::{
+    catalog::skills::{SkillInfo, SkillKind},
     config::{ContextPolicy, ContextPreset},
     mcp::{McpInfo, McpState},
-    skills::{SkillInfo, SkillKind},
-    update::Channel,
+    release::update::Channel,
 };
 use ratatui::{
     Frame,

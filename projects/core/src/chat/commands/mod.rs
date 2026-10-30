@@ -18,7 +18,7 @@ use anyhow::{Result, bail};
 
 use crate::{
     config::Effort,
-    update::{Channel, UpdateInfo},
+    release::update::{Channel, UpdateInfo},
 };
 
 use crate::{

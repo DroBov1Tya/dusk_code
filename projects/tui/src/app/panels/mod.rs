@@ -5,9 +5,9 @@ use ratatui::layout::Rect;
 
 use dusk_core::{
     chat::commands::ContextReport,
+    release::update::UpdateInfo,
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Thread},
-    update::UpdateInfo,
 };
 
 pub mod agents;

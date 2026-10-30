@@ -10,8 +10,8 @@
 use std::path::Path;
 
 use crate::{
+    catalog::graph::{Graph, SKILL_FILE},
     config::Config,
-    graph::{Graph, SKILL_FILE},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -47,7 +47,7 @@ pub struct SkillInfo {
 /// Every skill, the ones that cannot be read included, by name.
 pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
     let graph = Graph::load(directory, SKILL_FILE);
-    let builtin = crate::resources::root()
+    let builtin = crate::release::resources::root()
         .ok()
         .map(|root| root.join("skills"));
     let mut skills: Vec<SkillInfo> = graph

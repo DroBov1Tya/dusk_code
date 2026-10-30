@@ -17,9 +17,9 @@ use crate::tools::{
 };
 use crate::{
     BoxFuture,
+    catalog::graph::{Graph, Node, SKILL_FILE},
     config::Config,
-    graph::{Graph, Node, SKILL_FILE},
-    sync::lock,
+    util::sync::lock,
 };
 
 /// The graph is described to the model several times a step; reading it again this

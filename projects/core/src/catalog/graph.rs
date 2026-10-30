@@ -28,7 +28,7 @@ use anyhow::{Context, Result, anyhow, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{paths::is_plain_folder_name, tools::read_regular};
+use crate::{init::paths::is_plain_folder_name, tools::read_regular};
 
 pub const SKILL_FILE: &str = "SKILL.md";
 pub const AGENT_FILE: &str = "AGENT.md";

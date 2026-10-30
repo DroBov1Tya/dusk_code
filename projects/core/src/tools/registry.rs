@@ -10,9 +10,9 @@ use super::{
     tool::{Progress, Tool, ToolContext, ToolKind},
 };
 use crate::{
-    artifacts::ImageArtifact,
     config::Config,
     providers::{ToolCall, ToolSpec},
+    state::artifacts::ImageArtifact,
 };
 
 /// The model reads every result; a runaway one must not flood its context.

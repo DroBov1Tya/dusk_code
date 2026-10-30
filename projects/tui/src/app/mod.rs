@@ -19,8 +19,8 @@ use std::{
 
 use dusk_core::{
     chat::commands::{self, COMMANDS, Command},
+    config::live::LiveConfig,
     config::{ContextPolicy, Effort},
-    live_config::LiveConfig,
     mcp::McpStatus,
     providers::ModelEvent,
     runtime::ThreadEvent,

@@ -16,7 +16,7 @@ use tracing_subscriber::{
     EnvFilter, Layer, filter::filter_fn, fmt, layer::SubscriberExt, util::SubscriberInitExt,
 };
 
-use crate::paths::Paths;
+use crate::init::paths::Paths;
 
 const MAX_BYTES: u64 = 10 * 1024 * 1024;
 const LEVEL_VARIABLE: &str = "DUSKCODE_LOG";
