@@ -25,7 +25,9 @@ use crate::{
     mcp::McpServers,
     paths::Paths,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
-    tools::{AskAgent, McpTool, MessageParent, ReadHistory, Tasks, ToolRegistry, ToolScope},
+    tools::{
+        AskAgent, McpTool, MessageParent, ReadHistory, Remember, Tasks, ToolRegistry, ToolScope,
+    },
 };
 
 /// Messages from agents a chat takes between two of the user's.
@@ -88,6 +90,7 @@ impl Launcher {
             Arc::clone(&self.state),
             thread_id.to_owned(),
         )));
+        tools.add(Box::new(Remember::new(self.paths.memory_file())));
         if depth < MAX_AGENT_DEPTH {
             let asker = agent.map(|agent| agent.name.clone());
             let ask = AskAgent::new(self.clone(), thread_id.to_owned(), asker);

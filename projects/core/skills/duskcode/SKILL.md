@@ -85,3 +85,6 @@ docs:
 If the user edits `config.yml` by hand: change only `mcp:`. Leave `providers` (API keys),
 `model`, `limits`, `thread` and the `tools`, `skills`, `agents` switches alone; dusk
 rewrites the file and drops comments.
+
+`<config>/MEMORY.md` is what you remember about the user. Change it only with the
+`remember` tool, never by hand; the user switches it off in `/settings` -> tools.
