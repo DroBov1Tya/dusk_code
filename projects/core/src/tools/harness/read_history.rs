@@ -8,7 +8,7 @@ use anyhow::ensure;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-use super::{
+use crate::tools::{
     builtin::parse_arguments,
     tool::{Tool, ToolContext},
 };
