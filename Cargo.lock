@@ -703,7 +703,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dusk_core"
-version = "0.63.0"
+version = "0.63.1"
 dependencies = [
  "anyhow",
  "include_dir",
@@ -724,7 +724,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_tui"
-version = "0.63.0"
+version = "0.63.1"
 dependencies = [
  "anyhow",
  "clap",
