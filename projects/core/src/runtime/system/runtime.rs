@@ -309,6 +309,18 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_memory_enabled(&self, enabled: bool) -> Result<()> {
+        self.config()
+            .update(|config| config.set_memory_enabled(enabled))?;
+        Ok(())
+    }
+
+    pub fn set_update_channel(&self, channel: Channel) -> Result<()> {
+        self.config()
+            .update(|config| config.set_update_channel(channel))?;
+        Ok(())
+    }
+
     pub fn set_skill_enabled(&self, name: &str, enabled: bool) -> Result<()> {
         self.launcher
             .config

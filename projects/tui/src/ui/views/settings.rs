@@ -5,6 +5,7 @@
 use dusk_core::{
     mcp::{McpInfo, McpState},
     skills::{SkillInfo, SkillKind},
+    update::Channel,
 };
 use ratatui::{
     Frame,
@@ -96,7 +97,10 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
 fn hints(view: &SettingsView) -> &'static str {
     match (view.category, &view.editor) {
         (None, _) => " up/down choose  enter open  esc close ",
-        (Some(SettingCategory::Tools), _) => " up/down choose  space/click switch  esc back ",
+        (
+            Some(SettingCategory::Tools | SettingCategory::Personalize | SettingCategory::Updates),
+            _,
+        ) => " up/down choose  space/click switch  esc back ",
         (Some(_), Some(_)) => " Ctrl+S save  Ctrl+R revert  Esc close  click another one ",
         (Some(SettingCategory::Agents), None) => {
             " up/down choose  enter edit  space switch  left/right limit  r reload  esc back "
@@ -185,6 +189,28 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             .collect(),
         Some(SettingCategory::Agents) => agent_rows(view, width),
         Some(SettingCategory::Tools) => tool_rows(view, width),
+        Some(SettingCategory::Personalize) => {
+            let about = format!(
+                "    keeps what you ask it to remember in MEMORY.md, up to {} characters \
+                 (memory.max_chars in config.yml)",
+                view.memory.max_chars
+            );
+            vec![described(
+                switch_row(vec![Span::raw("  memory")], view.memory.enabled, width),
+                &about,
+                width,
+            )]
+        }
+        Some(SettingCategory::Updates) => {
+            let dev = view.update_channel == Channel::Dev;
+            let about = "    on: every tag, pre-releases too; off: full releases only. \
+                         /update and duskcode --update follow it";
+            vec![described(
+                switch_row(vec![Span::raw("  dev channel")], dev, width),
+                about,
+                width,
+            )]
+        }
         Some(SettingCategory::Skills) => {
             let mut rows: Vec<Row> = view
                 .skills
@@ -382,6 +408,13 @@ fn tool_rows(view: &SettingsView, width: usize) -> Vec<Row> {
         rows.push(row);
     }
     rows
+}
+
+/// A row with a dim line under it that says what it does.
+fn described(mut row: Row, about: &str, width: usize) -> Row {
+    row.lines
+        .push(Line::from(Span::styled(wrap::clip(about, width), dim())));
+    row
 }
 
 fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Row {

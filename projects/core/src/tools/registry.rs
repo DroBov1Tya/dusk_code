@@ -61,6 +61,7 @@ impl ToolRegistry {
         let mut kinds: Vec<_> = self
             .tools
             .iter()
+            .filter(|(_, tool)| tool.switchable())
             .map(|(name, tool)| (name.clone(), tool.kind()))
             .collect();
         kinds.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
@@ -68,6 +69,9 @@ impl ToolRegistry {
     }
 
     fn enabled(&self, tool: &dyn Tool, config: &Config) -> bool {
+        if !tool.switchable() {
+            return true;
+        }
         match self.chat {
             true => config.mode_tool_enabled(config.mode(), tool.name(), tool.kind()),
             false => config.tool_enabled(tool.name()),

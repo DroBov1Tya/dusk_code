@@ -67,6 +67,11 @@ pub trait Tool: Send + Sync {
         ToolKind::Harness
     }
 
+    /// A tool with a setting of its own, such as memory, is not among the tool switches.
+    fn switchable(&self) -> bool {
+        true
+    }
+
     /// Written for the model: what the tool does and when to use it. The context lets it
     /// name the real directories.
     fn description(&self, context: &ToolContext<'_>) -> String;

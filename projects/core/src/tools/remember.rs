@@ -1,7 +1,8 @@
 //! `remember`: what the agent knows about its owner across conversations, kept in
 //! MEMORY.md. The memory is shown in the tool's description, so every request carries
-//! it while the tool is on, and switching the tool off hides it as well. Each call
-//! writes the whole memory again, which keeps it a short summary rather than a log.
+//! it while memory is on in the settings; switched off, the tool is gone and the memory
+//! with it. Each call writes the whole memory again, which keeps it a short summary
+//! rather than a log. Its size is `memory.max_chars` in config.yml.
 
 use std::{
     fs::{self, OpenOptions},
@@ -19,9 +20,6 @@ use super::{
 };
 use crate::BoxFuture;
 
-/// Every request carries the memory, so it stays small.
-const MAX_MEMORY_CHARS: usize = 2000;
-
 pub struct Remember {
     file: PathBuf,
 }
@@ -37,14 +35,15 @@ impl Remember {
         Self { file }
     }
 
-    /// The memory as it is on disk; a missing or unreadable file is an empty memory.
-    fn read(&self) -> String {
+    /// The memory as it is on disk, cut to `max_chars`; a missing or unreadable file is
+    /// an empty memory.
+    fn read(&self, max_chars: usize) -> String {
         let text = match fs::read_to_string(&self.file) {
             Ok(text) => text,
             Err(error) if error.kind() == ErrorKind::NotFound => String::new(),
             Err(_) => return "(MEMORY.md cannot be read)".into(),
         };
-        text.trim().chars().take(MAX_MEMORY_CHARS).collect()
+        text.trim().chars().take(max_chars).collect()
     }
 
     /// Written beside the file and moved over it, so a failed write keeps the old one.
@@ -72,8 +71,17 @@ impl Tool for Remember {
         "remember"
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
-        let memory = self.read();
+    fn switchable(&self) -> bool {
+        false
+    }
+
+    fn available(&self, context: &ToolContext<'_>) -> bool {
+        context.config.memory().enabled
+    }
+
+    fn description(&self, context: &ToolContext<'_>) -> String {
+        let max_chars = context.config.memory().max_chars;
+        let memory = self.read(max_chars);
         let memory = if memory.is_empty() {
             "(empty)".to_owned()
         } else {
@@ -85,7 +93,7 @@ impl Tool for Remember {
              something, write the whole memory again with it: the shortest summary, one \
              fact per line, merged with what is there, outdated lines dropped. Never store \
              secrets, credentials, or anything about other people. An empty text forgets \
-             everything. At most {MAX_MEMORY_CHARS} characters.\n\
+             everything. At most {max_chars} characters.\n\
              Current memory:\n{memory}"
         )
     }
@@ -104,14 +112,17 @@ impl Tool for Remember {
         })
     }
 
-    fn call<'a>(&'a self, arguments: Value, _context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         Box::pin(async move {
+            let memory = context.config.memory();
+            ensure!(memory.enabled, "memory is switched off in the settings");
+            let max_chars = memory.max_chars;
             let arguments: RememberArguments = parse_arguments(arguments)?;
             let memory = arguments.memory.trim();
             let chars = memory.chars().count();
             ensure!(
-                chars <= MAX_MEMORY_CHARS,
-                "the memory is {chars} characters, over {MAX_MEMORY_CHARS}; make it shorter"
+                chars <= max_chars,
+                "the memory is {chars} characters, over {max_chars}; make it shorter"
             );
             self.write(memory)?;
             Ok(if memory.is_empty() {
@@ -151,7 +162,7 @@ mod tests {
             tool.description(&context)
                 .ends_with("- prefers Russian\n- uses tmux")
         );
-        let long = "x".repeat(MAX_MEMORY_CHARS + 1);
+        let long = "x".repeat(config.memory().max_chars + 1);
         assert!(tool.call(json!({"memory": long}), context).await.is_err());
         #[cfg(unix)]
         {

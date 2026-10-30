@@ -12,6 +12,7 @@ use dusk_core::{
     config::{ApiKey, ProviderConfig, ProviderKind},
     providers::{Model, validate_provider},
     runtime::{Runtime, ThreadEvent, ThreadHandle},
+    update::Channel,
 };
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
@@ -210,6 +211,11 @@ pub async fn run(
                     SwitchKind::Tool => runtime.set_tool_enabled(&name, on),
                     SwitchKind::Skill => runtime.set_skill_enabled(&name, on),
                     SwitchKind::Mcp => runtime.set_mcp_enabled(&name, on),
+                    SwitchKind::Memory => runtime.set_memory_enabled(on),
+                    SwitchKind::DevChannel => runtime.set_update_channel(match on {
+                        true => Channel::Dev,
+                        false => Channel::Stable,
+                    }),
                 };
                 match saved {
                     Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,

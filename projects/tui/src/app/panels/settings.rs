@@ -8,10 +8,12 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use dusk_core::{
     agents::{AgentNode, AgentTree},
     chat::commands::{Command, Settings, ToolInfo},
+    config::Memory,
     graph::NodeText,
     graph::Problem,
     mcp::{McpInfo, McpState},
     skills::SkillInfo,
+    update::Channel,
 };
 
 use super::{Panel, step};
@@ -23,10 +25,20 @@ pub enum SettingCategory {
     Tools,
     Skills,
     Mcp,
+    /// What the agent keeps about the user.
+    Personalize,
+    Updates,
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 4] = [Self::Agents, Self::Skills, Self::Mcp, Self::Tools];
+    pub const ALL: [Self; 6] = [
+        Self::Agents,
+        Self::Skills,
+        Self::Mcp,
+        Self::Tools,
+        Self::Personalize,
+        Self::Updates,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -34,6 +46,8 @@ impl SettingCategory {
             Self::Tools => "tools",
             Self::Skills => "skills",
             Self::Mcp => "mcp",
+            Self::Personalize => "personalize",
+            Self::Updates => "updates",
         }
     }
 }
@@ -44,6 +58,9 @@ pub enum SwitchKind {
     Tool,
     Skill,
     Mcp,
+    Memory,
+    /// On is the dev channel, off the stable one.
+    DevChannel,
 }
 
 /// One row of the agent tree, with what is needed to draw the traces to it.
@@ -65,6 +82,8 @@ pub struct AgentRow {
 
 pub struct SettingsView {
     pub max_agents_at_work: usize,
+    pub memory: Memory,
+    pub update_channel: Channel,
     /// The mode whose tools are shown.
     pub mode: String,
     pub tools: Vec<ToolInfo>,
@@ -151,6 +170,8 @@ impl SettingsView {
         Self {
             max_agents_at_work: settings.max_agents_at_work,
             mode: settings.mode,
+            memory: settings.memory,
+            update_channel: settings.update_channel,
             tools: settings.tools,
             skills: settings.skills,
             mcp: settings.mcp,
@@ -179,6 +200,7 @@ impl SettingsView {
             None => SettingCategory::ALL.len(),
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
+            Some(SettingCategory::Personalize | SettingCategory::Updates) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp.len(),
         }
@@ -215,6 +237,13 @@ impl SettingsView {
                 let server = self.mcp.get(row)?;
                 let on = server.state != McpState::Off;
                 (SwitchKind::Mcp, server.name.clone(), on)
+            }
+            SettingCategory::Personalize => {
+                (SwitchKind::Memory, "memory".into(), self.memory.enabled)
+            }
+            SettingCategory::Updates => {
+                let dev = self.update_channel == Channel::Dev;
+                (SwitchKind::DevChannel, "dev".into(), dev)
             }
         };
         Some(Action::Switch {
@@ -522,7 +551,7 @@ fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> boo
     match category {
         SettingCategory::Agents => view.agent_file(row).is_some(),
         SettingCategory::Skills | SettingCategory::Mcp => true,
-        SettingCategory::Tools => false,
+        SettingCategory::Tools | SettingCategory::Personalize | SettingCategory::Updates => false,
     }
 }
 
