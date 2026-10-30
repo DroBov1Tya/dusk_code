@@ -4,20 +4,16 @@
 //! failed until the next start, and says why.
 
 mod client;
-mod http;
-mod stdio;
 
 use std::{
     sync::{Arc, RwLock},
     time::Duration,
 };
 
-use serde_json::Value;
 use tokio::sync::watch;
 use tracing::{info, warn};
 
-pub use client::{McpClient, RemoteTool};
-pub use http::{check_headers, check_url};
+pub use client::{McpClient, RemoteTool, check_headers, check_url};
 
 use crate::config::Config;
 
@@ -132,22 +128,6 @@ async fn connect(name: &str, config: &crate::config::McpServerConfig) -> anyhow:
         client,
         tools,
     })
-}
-
-/// The ID of a message that answers a request: it has an ID and no method.
-fn answer_id(message: &Value) -> Option<u64> {
-    if message.get("method").is_some() {
-        return None;
-    }
-    message.get("id").and_then(Value::as_u64)
-}
-
-// Only inserts and removes happen under these locks, so a panic cannot leave a map
-// half-changed.
-fn lock<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
 // Writes replace whole values, so a panic cannot leave them half-changed.
