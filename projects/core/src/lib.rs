@@ -1,6 +1,7 @@
 //! dusk_core: all application logic. Front ends (CLI, TUI, GUI) are thin clients over it.
 
 pub mod agents;
+pub mod builtin;
 pub mod chat;
 pub mod config;
 pub mod graph;
@@ -17,6 +18,7 @@ pub mod state;
 pub mod sync;
 pub mod thread_start;
 pub mod tools;
+pub mod update;
 
 use std::{future::Future, pin::Pin};
 

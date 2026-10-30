@@ -54,6 +54,18 @@ pub async fn run(
     if let Some(thread_id) = thread {
         open = Some(resume(runtime, &mut app, &thread_id).await?);
     }
+    // Shipped prompts and skills the user changed stay theirs; the new ones wait beside.
+    let kept = runtime.kept_builtin();
+    if !kept.is_empty() {
+        app.transcript.notice(
+            format!(
+                "dusk ships newer versions of files you changed: {}; yours are kept, the new \
+                 ones are beside them as .new",
+                kept.join(", ")
+            ),
+            Tone::Info,
+        );
+    }
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(FRAME);
     let mut git_clock = tokio::time::interval(GIT_PERIOD);
@@ -302,6 +314,15 @@ pub async fn run(
             }
             Action::Command(command) => {
                 // Checking providers takes a moment; the window says so meanwhile.
+                if let Command::Update { .. } = command {
+                    let note = Some("asking GitHub for the newest version".into());
+                    app.panel = Some(Panel::Update {
+                        info: None,
+                        note,
+                        button: None,
+                    });
+                    terminal.draw(|frame| ui::draw(frame, &mut app))?;
+                }
                 if command == (Command::Model { name: None }) {
                     app.panel = Some(Panel::Models(ModelList::checking(
                         runtime.model().map(|choice| choice.name()),
@@ -311,6 +332,15 @@ pub async fn run(
                 answer(runtime, &mut app, &mut open, command).await;
             }
 
+            Action::InstallUpdate(tag) => {
+                set_update_note(&mut app, format!("downloading {tag}"));
+                terminal.draw(|frame| ui::draw(frame, &mut app))?;
+                let note = match runtime.install_update(&tag).await {
+                    Ok(_) => format!("{tag} installed; start duskcode again to use it"),
+                    Err(error) => format!("not updated: {error:#}"),
+                };
+                set_update_note(&mut app, note);
+            }
             Action::NextMode => match runtime.next_mode() {
                 Ok(mode) => app.mode = mode,
                 Err(error) => app.error(format!("cannot switch the mode: {error:#}")),
@@ -424,6 +454,13 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
                     selected: selected.unwrap_or(0),
                 });
             }
+        }
+        Ok(Answer::Update(info)) => {
+            app.panel = Some(Panel::Update {
+                info: Some(info),
+                note: None,
+                button: None,
+            });
         }
         Ok(Answer::Context(report)) => {
             app.panel = Some(Panel::Context { report, row: 0 });
@@ -565,6 +602,12 @@ async fn close(open: Option<OpenThread>) {
     drop(input);
     let drained = async { while output.next_event().await.is_some() {} };
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, drained).await;
+}
+
+fn set_update_note(app: &mut App, text: String) {
+    if let Some(Panel::Update { note, .. }) = &mut app.panel {
+        *note = Some(text);
+    }
 }
 
 /// Shows `editor` in the settings. After a save the file was read again and may differ,

@@ -51,6 +51,22 @@ impl App {
                 self.editor_mouse(mouse);
                 Action::None
             }
+            Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Update { .. })) => {
+                let pressed = mouse.kind == MouseEventKind::Down(MouseButton::Left);
+                match &self.panel {
+                    Some(Panel::Update {
+                        info: Some(info),
+                        button: Some((row, left, right)),
+                        ..
+                    }) if pressed
+                        && mouse.row == *row
+                        && (*left..*right).contains(&mouse.column) =>
+                    {
+                        Action::InstallUpdate(info.latest.clone())
+                    }
+                    _ => Action::None,
+                }
+            }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Connect(_))) => {
                 if mouse.kind == MouseEventKind::Down(MouseButton::Left)
                     && let Some(Panel::Connect(form)) = &mut self.panel
@@ -380,6 +396,26 @@ impl App {
                     KeyCode::Right => form.fields[form.selected].right(),
                     KeyCode::Home => form.fields[form.selected].home(),
                     KeyCode::End => form.fields[form.selected].end(),
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Panel::Update { info, .. } => {
+                match key.code {
+                    KeyCode::Enter => {
+                        if let Some(info) = info.as_ref().filter(|info| info.newer) {
+                            return Action::InstallUpdate(info.latest.clone());
+                        }
+                    }
+                    KeyCode::Tab | KeyCode::Char('c') => {
+                        if let Some(info) = info {
+                            let channel = info.channel.other().name().to_owned();
+                            return Action::Command(Command::Update {
+                                channel: Some(channel),
+                            });
+                        }
+                    }
+                    KeyCode::Esc => self.panel = None,
                     _ => {}
                 }
                 return Action::None;

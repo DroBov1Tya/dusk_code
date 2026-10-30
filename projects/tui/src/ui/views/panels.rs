@@ -78,6 +78,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     }
     match app.panel {
         Some(Panel::Paste(_)) => return draw_paste(frame, screen, app),
+        Some(Panel::Update { .. }) => return draw_update(frame, screen, app),
         Some(Panel::Agent(_)) => return agent_window::draw(frame, screen, app),
         Some(Panel::Settings(_)) => return settings::draw(frame, screen, app),
         _ => {}
@@ -145,7 +146,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 Some(row),
             )
         }
-        Panel::Paste(_) | Panel::Agent(_) => return,
+        Panel::Paste(_) | Panel::Agent(_) | Panel::Update { .. } => return,
     };
     let width = screen.width.saturating_sub(4).min(76);
     let height = (lines.len() as u16 + 2)
@@ -291,6 +292,90 @@ const PREVIEW_MIN_WIDTH: u16 = 70;
 
 /// Threads take most of the screen: the list on the left and the selected thread at a
 /// glance on the right, how it began and how it stands, never its whole history.
+const UPDATE_BUTTON: &str = " update ";
+
+/// The running version, the newest on the channel, and a button to install it.
+fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
+    let Some(Panel::Update { info, note, button }) = &mut app.panel else {
+        return;
+    };
+    *button = None;
+    let row = |label: &str, value: Span<'static>| {
+        Line::from(vec![Span::styled(format!(" {label:<10}"), dim()), value])
+    };
+    let mut lines = Vec::new();
+    let mut button_line = None;
+    if let Some(info) = info {
+        let latest = match info.prerelease {
+            true => format!("{} (pre-release)", info.latest),
+            false => info.latest.clone(),
+        };
+        let behind = match (info.newer, info.commits_behind) {
+            (false, _) => "nothing; this is as new or newer".to_owned(),
+            (true, Some(commits)) => format!("{commits} commits"),
+            (true, None) => "unknown".to_owned(),
+        };
+        let channel = |name: &str| {
+            let style = match name == info.channel.name() {
+                true => bold(SUN).bg(GLOW),
+                false => dim(),
+            };
+            Span::styled(format!(" {name} "), style)
+        };
+        lines.push(row("running", Span::raw(info.current.clone())));
+        lines.push(row("newest", Span::styled(latest, bold(TEAL))));
+        lines.push(row("behind", Span::raw(behind)));
+        lines.push(Line::from(vec![
+            Span::styled(format!(" {:<10}", "channel"), dim()),
+            channel("stable"),
+            Span::raw(" "),
+            channel("dev"),
+        ]));
+        lines.push(Line::default());
+        if info.newer {
+            button_line = Some(lines.len());
+            lines.push(Line::from(vec![
+                Span::raw(" "),
+                Span::styled(UPDATE_BUTTON, bold(NIGHT).bg(TEAL)),
+                Span::styled(format!("  to {}", info.latest), dim()),
+            ]));
+        } else {
+            lines.push(Line::from(Span::styled(
+                " up to date on this channel",
+                dim(),
+            )));
+        }
+    }
+    if let Some(note) = note {
+        lines.push(Line::from(Span::styled(format!(" {note}"), fg(SUN))));
+    }
+    let width = screen.width.saturating_sub(4).min(70);
+    let height = (lines.len() as u16 + 2).min(screen.height);
+    let area = Rect {
+        x: screen.x + (screen.width - width) / 2,
+        y: screen.y + (screen.height - height) / 3,
+        width,
+        height,
+    };
+    if let Some(at) = button_line {
+        let left = area.x + 2;
+        *button = Some((
+            area.y + 1 + at as u16,
+            left,
+            left + UPDATE_BUTTON.width() as u16,
+        ));
+    }
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(fg(NIGHT))
+        .title(Line::from(Span::styled(" update ", bold(VIOLET))))
+        .title_bottom(
+            Line::from(Span::styled(" enter update  c channel  esc close ", dim())).right_aligned(),
+        );
+    frame.render_widget(Clear, area);
+    frame.render_widget(Paragraph::new(lines).block(block), area);
+}
+
 fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
     let area = window(screen, 150);
     let block = Block::bordered()

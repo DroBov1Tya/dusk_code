@@ -79,6 +79,8 @@ pub enum Action {
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),
     OpenThread(String),
+    /// Download a release and put it in place of the running binary.
+    InstallUpdate(String),
     /// Move the chat to its next mode.
     NextMode,
     /// Stop one subagent and the agents it asked.
