@@ -132,6 +132,13 @@ impl Runtime {
         self.launcher.model.current()
     }
 
+    /// Whether the start is still looking for a model in the background.
+    pub fn discovering_model(&self) -> bool {
+        self.model_discovery
+            .as_ref()
+            .is_some_and(|task| !task.is_finished())
+    }
+
     /// Adds or replaces a provider in the private YAML config. A model can be chosen
     /// separately through `/model`; saving this setting makes no network request.
     pub fn connect_provider(
