@@ -15,6 +15,9 @@ use super::{
     panels::step,
 };
 
+/// What /effort offers, as the core names them.
+pub const EFFORTS: [&str; 4] = ["default", "low", "medium", "high"];
+
 /// How long a first Ctrl+C waits for the second.
 const QUIT_WINDOW: Duration = Duration::from_secs(5);
 
@@ -376,6 +379,19 @@ impl App {
                     KeyCode::Right => form.fields[form.selected].right(),
                     KeyCode::Home => form.fields[form.selected].home(),
                     KeyCode::End => form.fields[form.selected].end(),
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Panel::Effort { selected } => {
+                match key.code {
+                    _ if up || down => step(selected, EFFORTS.len(), down),
+                    KeyCode::Enter => {
+                        let level = EFFORTS[*selected].to_owned();
+                        self.panel = None;
+                        return Action::Command(Command::Effort { level: Some(level) });
+                    }
+                    KeyCode::Esc => self.panel = None,
                     _ => {}
                 }
                 return Action::None;

@@ -81,6 +81,7 @@ impl Agent {
             messages: &messages,
             tools: &[],
             max_output_tokens: self.config.current().limits().max_output_tokens,
+            effort: self.config.current().effort(),
         };
         let (output, generated) = match self.call_model(&choice, request, inbox).await {
             Ok(called) => called,

@@ -65,6 +65,8 @@ impl Agent {
             messages: &[ChatMessage::User(prompt)],
             tools: &[],
             max_output_tokens: max_output.min(TITLE_OUTPUT_TOKENS),
+            // A title needs no thought.
+            effort: None,
         };
         // Not shown to the client: the title arrives as one event.
         let mut output = ModelOutput::default();

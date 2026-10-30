@@ -45,9 +45,45 @@ pub struct Config {
     /// provider when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    /// How hard the model reasons; the provider's default when left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    effort: Option<Effort>,
     /// MCP servers by name, started with the core.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     mcp: BTreeMap<String, McpServerConfig>,
+}
+
+/// Reasoning effort, sent as `reasoning_effort`; servers that do not reason ignore it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Effort {
+    Low,
+    Medium,
+    High,
+}
+
+impl Effort {
+    pub const ALL: [Self; 3] = [Self::Low, Self::Medium, Self::High];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Low => "low",
+            Self::Medium => "medium",
+            Self::High => "high",
+        }
+    }
+
+    /// `default` stands for none: the provider decides.
+    pub fn parse(text: &str) -> Result<Option<Self>> {
+        if text == "default" {
+            return Ok(None);
+        }
+        Self::ALL
+            .into_iter()
+            .find(|effort| effort.name() == text)
+            .map(Some)
+            .with_context(|| format!("unknown effort {text}; low, medium, high or default"))
+    }
 }
 
 /// An MCP server: a `command` the core starts, or a `url` it reaches.
@@ -268,6 +304,14 @@ impl Config {
 
     pub fn set_model(&mut self, name: String) {
         self.model = Some(name);
+    }
+
+    pub fn effort(&self) -> Option<Effort> {
+        self.effort
+    }
+
+    pub fn set_effort(&mut self, effort: Option<Effort>) {
+        self.effort = effort;
     }
 
     pub fn set_provider(&mut self, name: String, provider: ProviderConfig) {

@@ -16,6 +16,8 @@ pub use settings::{Settings, ToolInfo};
 
 use anyhow::{Result, bail};
 
+use crate::config::Effort;
+
 use crate::{
     runtime::{
         Runtime,
@@ -39,6 +41,8 @@ pub enum Command {
     Settings,
     /// What the next request of the thread carries; a client fills in its open thread.
     Context { thread_id: Option<String> },
+    /// Shows the reasoning effort, or sets it: low, medium, high or default.
+    Effort { level: Option<String> },
 }
 
 /// What a client command answers.
@@ -55,6 +59,11 @@ pub enum Answer {
     NewThread,
     Settings(Settings),
     Context(ContextReport),
+    /// The effort now; `changed` when the command set it.
+    Effort {
+        current: Option<Effort>,
+        changed: bool,
+    },
 }
 
 /// Every command, for clients to show: name and what it does.
@@ -88,7 +97,8 @@ impl Command {
             | Self::New
             | Self::Model { .. }
             | Self::Settings
-            | Self::Context { .. } => {}
+            | Self::Context { .. }
+            | Self::Effort { .. } => {}
         }
     }
 
@@ -97,6 +107,20 @@ impl Command {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
             Self::New => Ok(Answer::NewThread),
             Self::Settings => Ok(Answer::Settings(settings::run(runtime).await?)),
+            Self::Effort { level: None } => Ok(Answer::Effort {
+                current: runtime.config().current().effort(),
+                changed: false,
+            }),
+            Self::Effort { level: Some(level) } => {
+                let effort = Effort::parse(&level)?;
+                runtime
+                    .config()
+                    .update(|config| config.set_effort(effort))?;
+                Ok(Answer::Effort {
+                    current: effort,
+                    changed: true,
+                })
+            }
             Self::Context { thread_id } => Ok(Answer::Context(
                 runtime.context(thread_id.as_deref()).await?,
             )),
@@ -132,6 +156,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "new" => Ok(Command::New),
         "settings" => Ok(Command::Settings),
         "context" => Ok(Command::Context { thread_id: None }),
+        "effort" => Ok(Command::Effort { level: argument }),
         "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })

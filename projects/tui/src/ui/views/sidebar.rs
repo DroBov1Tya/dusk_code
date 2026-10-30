@@ -112,7 +112,7 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
         Line::from(vec![
             Span::styled(" model ", fg(SIDEBAR_MUTED)),
             Span::styled(
-                wrap::clip(&app.model, inner_width.saturating_sub(7)),
+                wrap::clip(&model_label(app), inner_width.saturating_sub(7)),
                 bold(VIOLET),
             ),
         ]),
@@ -398,5 +398,13 @@ pub fn format_duration(ms: u64) -> String {
         format!("{}:{:02}:{:02}", minutes / 60, minutes % 60, seconds % 60)
     } else {
         format!("{minutes:02}:{:02}", seconds % 60)
+    }
+}
+
+/// The model, and its effort when one is set.
+fn model_label(app: &App) -> String {
+    match app.effort {
+        Some(effort) => format!("{} \u{00B7} {}", app.model, effort.name()),
+        None => app.model.clone(),
     }
 }

@@ -3,6 +3,7 @@
 use serde_json::Value;
 
 use super::model_output::ToolCall;
+use crate::config::Effort;
 
 /// One message as the model sees it: role and text, without core metadata.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,4 +37,5 @@ pub struct ChatRequest<'a> {
     pub tools: &'a [ToolSpec],
     /// The provider stops the model after this many tokens.
     pub max_output_tokens: u64,
+    pub effort: Option<Effort>,
 }

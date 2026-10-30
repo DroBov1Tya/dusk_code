@@ -31,6 +31,10 @@ pub enum Panel {
     Unsent {
         selected: usize,
     },
+    /// The reasoning efforts to choose from: default first.
+    Effort {
+        selected: usize,
+    },
     /// What the context holds; `row` is the line kept in view while scrolling.
     Context {
         report: ContextReport,
