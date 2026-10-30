@@ -102,7 +102,7 @@ pub async fn run(
                         runtime.model().map(|choice| choice.name()),
                     )));
                     terminal.draw(|frame| ui::draw(frame, &mut app))?;
-                    answer(runtime, &mut app, Command::Model { name: None }).await;
+                    answer(runtime, &mut app, &mut open, Command::Model { name: None }).await;
                     app.flash = Some(
                         "Provider saved; choose a model, then /resend for local messages".into(),
                     );
@@ -162,7 +162,7 @@ pub async fn run(
                     )));
                     terminal.draw(|frame| ui::draw(frame, &mut app))?;
                 }
-                answer(runtime, &mut app, command).await;
+                answer(runtime, &mut app, &mut open, command).await;
             }
 
             Action::OpenThread(thread_id) if app.thread_id.as_deref() == Some(&thread_id) => {}
@@ -175,10 +175,6 @@ pub async fn run(
                         app.error(format!("cannot open the thread: {error:#}"));
                     }
                 }
-            }
-            Action::NewThread => {
-                close(open.take()).await;
-                app.open(None, None, &[]);
             }
             Action::Preview(thread_id) => preview(runtime, &mut app, thread_id).await,
             Action::OpenAgent(thread_id) => match runtime.thread_messages(&thread_id).await {
@@ -231,7 +227,7 @@ fn connect(runtime: &Runtime, base_url: String, api_key: Option<String>) -> Resu
 }
 
 /// Shows what the core answered to a command that does not run in the thread.
-async fn answer(runtime: &Runtime, app: &mut App, command: Command) {
+async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>, command: Command) {
     match command.answer(runtime).await {
         Ok(Answer::Threads(threads)) => {
             let current = app.thread_id.as_deref();
@@ -258,6 +254,11 @@ async fn answer(runtime: &Runtime, app: &mut App, command: Command) {
             app.model = choice.name();
             app.provider_available = true;
             app.flash = Some(format!("model {}", choice.name()));
+        }
+        Ok(Answer::NewThread) => {
+            close(open.take()).await;
+            app.panel = None;
+            app.open(None, None, &[]);
         }
         Err(error) => {
             app.panel = None;
