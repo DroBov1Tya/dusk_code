@@ -159,8 +159,8 @@ pub async fn install(tag: &str) -> Result<PathBuf> {
         .and_then(fs::canonicalize)
         .context("cannot find the running binary")?;
     let directory = binary.parent().context("the binary has no folder")?;
-    let work = directory.join(format!(".duskcode-update-{}", std::process::id()));
-    let installed = unpack_into(&archive, &work, &name, &binary);
+    let work = directory.join(format!(".duskcode-update-{}", uuid::Uuid::now_v7()));
+    let installed = unpack_into(&archive, &work, &name, &binary, tag.trim_start_matches('v'));
     // The work folder holds only what this update wrote.
     let _ = fs::remove_dir_all(&work);
     installed?;
@@ -169,7 +169,13 @@ pub async fn install(tag: &str) -> Result<PathBuf> {
 
 /// Unpacks the archive in `work` and moves its binary over `binary`, in the same folder
 /// so the move is one rename.
-fn unpack_into(archive: &[u8], work: &Path, name: &str, binary: &Path) -> Result<()> {
+fn unpack_into(
+    archive: &[u8],
+    work: &Path,
+    name: &str,
+    binary: &Path,
+    version: &str,
+) -> Result<()> {
     fs::create_dir(work).context("cannot write next to the binary")?;
     let file = work.join("archive.tar.gz");
     fs::write(&file, archive).context("cannot write the download")?;
@@ -189,6 +195,9 @@ fn unpack_into(archive: &[u8], work: &Path, name: &str, binary: &Path) -> Result
         fs::set_permissions(&new, fs::Permissions::from_mode(0o755))
             .context("cannot make the new binary runnable")?;
     }
+    // If staging fails, the running binary and all existing snapshots stay intact.
+    // A later binary-rename failure leaves only a harmless unused snapshot.
+    crate::resources::install_snapshot(&work.join(name).join("resources"), version)?;
     fs::rename(&new, binary).context("cannot replace the binary")
 }
 

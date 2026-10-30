@@ -1,0 +1,3 @@
+Your memory of the user, kept across conversations. When the user states a lasting preference or a fact about how they work, or asks you to remember something, write the whole memory again with it: the shortest summary, one fact per line, merged with what is there, outdated lines dropped. Never store secrets, credentials, or anything about other people. An empty text forgets everything. At most {max_chars} characters.
+Current memory:
+{memory}

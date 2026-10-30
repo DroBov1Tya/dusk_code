@@ -38,27 +38,6 @@ const ORCHESTRATOR_TOOLS: [&str; 5] = [
     "ask_user",
 ];
 
-pub const MAIN_TEMPLATE: &str = "\
-You are the main agent of dusk_code, working with the user in a chat.
-Answer directly and concisely, in the language the user writes in.
-";
-
-pub const PLAN_TEMPLATE: &str = "\
-You are in plan mode. Do not change anything: no edits, no commands, no agents. Read the
-files and the history you need, ask the user when a decision is theirs, and write the
-plan as tasks with the tasks tool: small, verifiable steps in order, each with how it
-is checked. End with the plan and the open questions; the user switches the mode to
-carry it out. Answer in the language the user writes in.
-";
-
-pub const ORCHESTRATOR_TEMPLATE: &str = "\
-You are the orchestrator. You do no work yourself and assume nothing about the code:
-every task goes to an agent. Split the user's request into tasks, give each to the
-agent whose description fits it best, and to the general agent when none does. Brief
-each agent fully, since it knows only what you write. Check what comes back, keep the
-tasks board current, and report to the user in the language they write in.
-";
-
 /// The file of a mode's prompt.
 pub fn file(directory: &Path, mode: &str) -> PathBuf {
     directory.join(format!("{mode}.md"))
@@ -98,16 +77,14 @@ pub fn prompt(directory: &Path, mode: &str) -> Result<Option<String>> {
     if let Some(prompt) = read_prompt(&file(directory, mode))? {
         return Ok(Some(prompt));
     }
-    Ok(template(mode).map(str::to_owned))
+    template(mode)
 }
 
-pub fn template(mode: &str) -> Option<&'static str> {
-    match mode {
-        MAIN => Some(MAIN_TEMPLATE),
-        PLAN => Some(PLAN_TEMPLATE),
-        ORCHESTRATOR => Some(ORCHESTRATOR_TEMPLATE),
-        _ => None,
+pub fn template(mode: &str) -> Result<Option<String>> {
+    if !BUILTIN.contains(&mode) {
+        return Ok(None);
     }
+    crate::resources::text(&format!("modes/{mode}.md")).map(Some)
 }
 
 /// Whether a tool is on in a mode before the user switches it. `None` follows MAIN's
@@ -137,7 +114,7 @@ mod tests {
         assert_eq!(next(&directory, "gone"), MAIN);
         assert_eq!(
             prompt(&directory, PLAN).unwrap().as_deref(),
-            Some(PLAN_TEMPLATE)
+            template(PLAN).unwrap().as_deref()
         );
         assert_eq!(
             default_tool(PLAN, "run_command", ToolKind::Console),

@@ -36,15 +36,19 @@ macOS on Apple silicon, Linux on x86_64 and arm64:
 curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh
 ```
 
-The script checks the release checksum, puts the binary in `~/.local/share/duskcode/bin`
-and links `duskcode` from `/usr/local/bin`, or `~/.local/bin` when that is not writable.
+The script checks the release checksum, puts the binary in `$XDG_DATA_HOME/duskcode/bin`
+(default `~/.local/share/duskcode/bin`), and links `duskcode` from `/usr/local/bin`, or `~/.local/bin` when that is not writable.
 Releases are the round versions (0.50.0, 0.60.0); every tag between them is a
 pre-release, installed by name with `... | DUSKCODE_VERSION=v0.53.0 sh`.
 `/update` or `duskcode --update` installs the newest release in place (or the newest
-pre-release on the dev channel, set in `/settings` -> updates). Prompts and skills dusk ships follow the binary at the next start; a file you
-changed is kept, and the new version is put beside it as `<file>.new`.
+pre-release on the dev channel, set in `/settings` -> updates).
+
+Shipped files follow the binary at the next start; your edits are kept, with the new
+version beside them as `<file>.new`. Upgrading from a binary-only updater requires
+rerunning the installer once to install the matching resources.
+
 Run `duskcode` in the folder to work in. `duskcode remove` asks once, then deletes the
-binary, its link and `~/.config/duskcode`.
+binary, its link, installed resources and `~/.config/duskcode`.
 
 ## Logs
 
@@ -58,4 +62,4 @@ outputs and secrets are not logged.
 MIT, see [LICENSE](LICENSE).
 
 The built-in skills are written by Anthropic, OpenAI and Nous Research (Hermes Agent) and keep
-their own licenses; see [projects/core/skills/NOTICE.md](projects/core/skills/NOTICE.md).
+their own licenses; see [resources/skills/NOTICE.md](resources/skills/NOTICE.md).

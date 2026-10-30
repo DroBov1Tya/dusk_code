@@ -12,6 +12,7 @@ pub mod mcp;
 pub mod modes;
 pub mod paths;
 pub mod providers;
+pub mod resources;
 pub mod runtime;
 pub mod skills;
 pub mod state;

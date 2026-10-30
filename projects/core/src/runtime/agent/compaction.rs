@@ -11,7 +11,6 @@ use tracing::warn;
 use super::{Agent, Inbox, Stop};
 use crate::runtime::{chat::Conversation, system::ThreadEvent};
 use crate::{
-    init::{COMPACT_PROMPT_TEMPLATE, FORK_PROMPT_TEMPLATE},
     modes,
     providers::{ChatMessage, ChatRequest},
     state::{CallPurpose, Compaction, ModelCall, Turn},
@@ -74,7 +73,7 @@ impl Agent {
         inbox: &mut Inbox,
     ) -> Result<Result<Compaction, Stop>> {
         let prompt =
-            self.instructions(&self.compact_prompt, COMPACT_PROMPT_TEMPLATE, instructions)?;
+            self.instructions(&self.compact_prompt, "internal/COMPACT.md", instructions)?;
         let (summary, through) = match self.write_summary(prompt, turn, inbox).await? {
             Ok(written) => written,
             Err(stop) => return Ok(Err(stop)),
@@ -99,8 +98,7 @@ impl Agent {
     /// thread is left as it was. A failure is reported to the client.
     pub async fn fork(&self, instructions: Option<&str>, inbox: &mut Inbox) -> Option<Stop> {
         let written = async {
-            let prompt =
-                self.instructions(&self.fork_prompt, FORK_PROMPT_TEMPLATE, instructions)?;
+            let prompt = self.instructions(&self.fork_prompt, "internal/FORK.md", instructions)?;
             self.write_summary(prompt, None, inbox).await
         };
         match written.await {
@@ -165,11 +163,14 @@ impl Agent {
         Ok(Ok((summary.to_owned(), through)))
     }
 
-    /// The prompt file, or the built-in text when it is missing or blank. `extra` is
+    /// The editable prompt, or its local resource when it is missing or blank. `extra` is
     /// what the user wrote after the command.
     fn instructions(&self, file: &Path, builtin: &str, extra: Option<&str>) -> Result<String> {
         let prompt = read_prompt(file)?;
-        let mut instructions = prompt.unwrap_or_else(|| builtin.to_owned());
+        let mut instructions = match prompt {
+            Some(prompt) => prompt,
+            None => crate::resources::text(builtin)?,
+        };
         if let Some(extra) = extra {
             instructions.push_str(&format!("\nAlso follow these instructions: {extra}\n"));
         }
