@@ -13,7 +13,9 @@ use windows::panels;
 
 use ratatui::{
     Frame,
+    buffer::CellDiffOption,
     layout::{Constraint, Layout, Rect},
+    style::Color,
 };
 
 use crate::app::App;
@@ -124,11 +126,24 @@ fn pictures(frame: &mut Frame, app: &App) {
     if covered {
         return;
     }
+    let image_fg = if frame.count() % 2 == 0 {
+        Color::Reset
+    } else {
+        Color::Black
+    };
     for shown in &app.previews {
         let artifact = &shown.artifact;
         app.pictures
             .draw(frame, shown.area, shown.card, shown.skip, artifact, || {
                 app.transcript.images.original(artifact)
             });
+        // Reissue the iTerm payload on each frame: equal ForcedWidth cells are skipped.
+        // Its foreground does not colour the image; keep its width and covered cells.
+        if let Some(cell) = frame.buffer_mut().cell_mut(shown.area)
+            && matches!(cell.diff_option, CellDiffOption::ForcedWidth(width) if width.get() == 1)
+            && cell.symbol().contains("\x1b]1337;File=")
+        {
+            cell.set_fg(image_fg);
+        }
     }
 }
