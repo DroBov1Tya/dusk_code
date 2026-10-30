@@ -124,9 +124,11 @@ fn pictures(frame: &mut Frame, app: &App) {
     if covered {
         return;
     }
-    for (area, artifact) in &app.previews {
-        app.pictures.draw(frame, *area, artifact, || {
-            app.transcript.images.original(artifact)
-        });
+    for shown in &app.previews {
+        let artifact = &shown.artifact;
+        app.pictures
+            .draw(frame, shown.area, shown.card, shown.skip, artifact, || {
+                app.transcript.images.original(artifact)
+            });
     }
 }

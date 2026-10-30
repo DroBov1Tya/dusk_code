@@ -1,7 +1,10 @@
 //! What the screen shows of a thread: a list of entries built from the stored history and
 //! then from live events. Thinking, tool calls and summaries fold into one line.
 
-use ratatui::text::Line;
+use ratatui::{
+    layout::{Rect, Size},
+    text::Line,
+};
 use std::{
     collections::HashSet,
     sync::atomic::{AtomicU64, Ordering},
@@ -93,6 +96,15 @@ pub struct Layout {
     /// The line each entry starts on.
     pub starts: Vec<usize>,
     pub images: Vec<ImageSpot>,
+}
+
+/// The rows of an image preview on screen: where they are, the card's whole size in
+/// cells, and how many of its rows are scrolled off above.
+pub struct ShownPreview {
+    pub area: Rect,
+    pub card: Size,
+    pub skip: u16,
+    pub artifact: ImageArtifact,
 }
 
 /// An image preview in the lines: its first line, its column and size in cells.

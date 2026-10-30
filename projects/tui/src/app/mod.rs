@@ -35,7 +35,7 @@ pub use panels::{
 pub use thread::goal::{GoalButton, GoalHit};
 pub use thread::poll::{Poll, PollHit, PollTarget};
 pub use thread::queue::{QueueButton, QueueHit};
-pub use thread::transcript::{Entry, ImageSpot, Layout, Tone, Transcript};
+pub use thread::transcript::{Entry, ImageSpot, Layout, ShownPreview, Tone, Transcript};
 
 /// What the session does for the app.
 pub enum Action {
@@ -275,9 +275,9 @@ pub struct App {
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
-    /// Image previews wholly on screen in the last frame, and the pictures drawn over
-    /// them where the terminal can.
-    pub previews: Vec<(Rect, dusk_core::state::artifacts::ImageArtifact)>,
+    /// Image previews on screen in the last frame, and the pictures drawn over them
+    /// where the terminal can.
+    pub previews: Vec<ShownPreview>,
     pub pictures: crate::host::graphics::Pictures,
     /// What the folder of a path being typed holds.
     pub paths: Option<PathPopup>,
