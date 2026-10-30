@@ -7,8 +7,8 @@ use anyhow::Result;
 
 use crate::{
     providers::{ChatMessage, ToolSpec},
+    runtime::chat::thread_start::{FORK_INTRO, NO_PROMPT, display_name},
     state::{Compaction, LastPrompt, Message, MessageRole, State, estimate_tokens},
-    thread_start::{FORK_INTRO, NO_PROMPT, display_name},
 };
 
 /// Introduces a compaction summary to the model.

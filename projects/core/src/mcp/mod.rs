@@ -18,7 +18,7 @@ pub use client::{McpClient, RemoteTool, check_headers, check_url};
 
 use crate::{
     config::{Config, McpServerConfig},
-    sync::{read, write},
+    util::sync::{read, write},
 };
 
 /// How a server stands, for clients to show.

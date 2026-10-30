@@ -11,10 +11,10 @@ use tracing::warn;
 use super::{Agent, Inbox, Stop};
 use crate::runtime::{chat::Conversation, system::ThreadEvent};
 use crate::{
-    modes,
+    catalog::modes,
     providers::{ChatMessage, ChatRequest},
+    runtime::chat::thread_start::{NO_PROMPT, read_prompt},
     state::{CallPurpose, Compaction, ModelCall, Turn},
-    thread_start::{NO_PROMPT, read_prompt},
 };
 
 /// Compacting starts once the context passes this share of the input limit. The rest is
@@ -170,7 +170,7 @@ impl Agent {
         let prompt = read_prompt(file)?;
         let mut instructions = match prompt {
             Some(prompt) => prompt,
-            None => crate::resources::text(builtin)?,
+            None => crate::release::resources::text(builtin)?,
         };
         if let Some(extra) = extra {
             instructions.push_str(&format!("\nAlso follow these instructions: {extra}\n"));

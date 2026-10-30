@@ -12,9 +12,9 @@ use anyhow::{Result, bail};
 use uuid::Uuid;
 
 use crate::{
+    catalog::modes,
     init::create_private_dir,
-    modes,
-    paths::Paths,
+    init::paths::Paths,
     state::{State, Thread},
 };
 

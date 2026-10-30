@@ -15,11 +15,11 @@ use anyhow::{Context, Result, ensure};
 use tracing::warn;
 
 use crate::{
+    catalog::graph::{AGENT_FILE, Graph, Problem, read_text, split_front_matter},
     config::Config,
-    graph::{AGENT_FILE, Graph, Problem, read_text, split_front_matter},
+    runtime::chat::thread_start::fnv1a,
     state::{Identity, State},
-    sync::{read, write},
-    thread_start::fnv1a,
+    util::sync::{read, write},
 };
 
 /// The built-in agent, asked when none is named. An `agents/general` folder replaces it.

@@ -4,8 +4,8 @@
 use anyhow::Result;
 
 use crate::{
-    agents::AgentTree, config::Memory, mcp::McpInfo, runtime::Runtime, skills::SkillInfo,
-    tools::ToolKind, update::Channel,
+    catalog::agents::AgentTree, catalog::skills::SkillInfo, config::Memory, mcp::McpInfo,
+    release::update::Channel, runtime::Runtime, tools::ToolKind,
 };
 
 pub struct Settings {

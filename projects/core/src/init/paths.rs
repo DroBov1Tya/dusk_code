@@ -56,7 +56,7 @@ impl Paths {
 
     /// MAIN mode's prompt, which the general agent works with too.
     pub fn main_prompt(&self) -> PathBuf {
-        crate::modes::file(&self.modes_dir(), crate::modes::MAIN)
+        crate::catalog::modes::file(&self.modes_dir(), crate::catalog::modes::MAIN)
     }
 
     pub fn legacy_main_prompt(&self) -> PathBuf {

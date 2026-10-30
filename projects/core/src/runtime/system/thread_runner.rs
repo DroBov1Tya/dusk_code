@@ -20,7 +20,7 @@ use super::{ThreadLock, model_choice::ModelChoice};
 use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
 use crate::{
     chat::commands,
-    live_config::LiveConfig,
+    config::live::LiveConfig,
     providers::{ModelEvent, ToolCall},
     state::{
         Compaction, LocalUnsent, Message, PendingMessage, State, Task, ThreadTokens, Turn,

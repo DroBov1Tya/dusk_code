@@ -11,7 +11,9 @@ use std::{
 
 use anyhow::Result;
 
-use crate::{paths::is_plain_folder_name, thread_start::read_prompt, tools::ToolKind};
+use crate::{
+    init::paths::is_plain_folder_name, runtime::chat::thread_start::read_prompt, tools::ToolKind,
+};
 
 pub const MAIN: &str = "MAIN";
 pub const PLAN: &str = "PLAN";
@@ -84,7 +86,7 @@ pub fn template(mode: &str) -> Result<Option<String>> {
     if !BUILTIN.contains(&mode) {
         return Ok(None);
     }
-    crate::resources::text(&format!("modes/{mode}.md")).map(Some)
+    crate::release::resources::text(&format!("modes/{mode}.md")).map(Some)
 }
 
 /// Whether a tool is on in a mode before the user switches it. `None` follows MAIN's

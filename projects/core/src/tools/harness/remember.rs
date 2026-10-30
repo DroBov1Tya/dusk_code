@@ -93,8 +93,12 @@ impl Tool for Remember {
             .map(|root| root.join("internal/MEMORY.md"));
         let template = prompt
             .as_deref()
-            .and_then(|path| crate::thread_start::read_prompt(path).ok().flatten())
-            .or_else(|| crate::resources::text("internal/MEMORY.md").ok());
+            .and_then(|path| {
+                crate::runtime::chat::thread_start::read_prompt(path)
+                    .ok()
+                    .flatten()
+            })
+            .or_else(|| crate::release::resources::text("internal/MEMORY.md").ok());
         let Some(template) = template else {
             return "Memory instructions are unavailable; restore the versioned resources.".into();
         };

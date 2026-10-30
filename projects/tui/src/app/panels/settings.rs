@@ -6,14 +6,14 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{
-    agents::{AgentNode, AgentTree},
+    catalog::agents::{AgentNode, AgentTree},
+    catalog::graph::NodeText,
+    catalog::graph::Problem,
+    catalog::skills::SkillInfo,
     chat::commands::{Command, Settings, ToolInfo},
     config::{ContextPolicy, ContextPreset, Effort, Memory},
-    graph::NodeText,
-    graph::Problem,
     mcp::{McpInfo, McpState},
-    skills::SkillInfo,
-    update::Channel,
+    release::update::Channel,
 };
 
 use super::{Panel, step};

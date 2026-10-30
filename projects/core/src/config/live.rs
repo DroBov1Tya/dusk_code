@@ -16,7 +16,7 @@ use tracing::warn;
 
 use crate::{
     config::Config,
-    sync::{lock, read, write},
+    util::sync::{lock, read, write},
 };
 
 pub struct LiveConfig {

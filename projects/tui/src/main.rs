@@ -11,7 +11,7 @@ mod ui;
 
 use anyhow::Result;
 use args::Args;
-use dusk_core::{logs, paths::Paths, runtime::Runtime, update};
+use dusk_core::{init::logs, init::paths::Paths, release::update, runtime::Runtime};
 use tracing::{error, info};
 
 #[tokio::main]
@@ -21,7 +21,7 @@ async fn main() -> Result<()> {
         Args::Run { state_db, thread } => (state_db, thread),
         Args::Remove => return remove::run(&paths),
         Args::InstallResources { directory } => {
-            dusk_core::resources::install_snapshot(&directory, update::VERSION)?;
+            dusk_core::release::resources::install_snapshot(&directory, update::VERSION)?;
             return Ok(());
         }
         Args::Update => {

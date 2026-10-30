@@ -5,7 +5,7 @@ use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 use uuid::Uuid;
 
 use super::{State, timestamp_ms};
-use crate::{artifacts::ImageArtifact, providers::ToolCall};
+use crate::{providers::ToolCall, state::artifacts::ImageArtifact};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {

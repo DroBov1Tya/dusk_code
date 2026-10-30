@@ -17,7 +17,7 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
-use crate::{config::Config, paths::Paths};
+use crate::{config::Config, init::paths::Paths};
 
 const REPOSITORY: &str = "DroBov1Tya/dusk_code";
 const API: &str = "https://api.github.com/repos";
@@ -197,7 +197,7 @@ fn unpack_into(
     }
     // If staging fails, the running binary and all existing snapshots stay intact.
     // A later binary-rename failure leaves only a harmless unused snapshot.
-    crate::resources::install_snapshot(&work.join(name).join("resources"), version)?;
+    crate::release::resources::install_snapshot(&work.join(name).join("resources"), version)?;
     fs::rename(&new, binary).context("cannot replace the binary")
 }
 

@@ -10,8 +10,8 @@ use std::{
 
 use crate::{
     config::Config,
-    live_config::LiveConfig,
-    paths::Paths,
+    config::live::LiveConfig,
+    init::paths::Paths,
     state::State,
     tools::{ToolContext, ToolScope},
 };

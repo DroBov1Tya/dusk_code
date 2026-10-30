@@ -1,26 +1,25 @@
 //! dusk_core: all application logic. Front ends (CLI, TUI, GUI) are thin clients over it.
+//!
+//! The tree follows the subsystems, as a kernel does:
+//! - `init`: paths, logs and the first start of the config folder;
+//! - `config`: the settings file and its live copy;
+//! - `catalog`: what the user edits as files: skills, agents and mode prompts;
+//! - `release`: shipped resources, their sync into the config, and updates;
+//! - `providers`, `mcp`, `tools`: what the agents talk to and act with;
+//! - `runtime`, `chat`, `state`: running threads, client commands and the records;
+//! - `util`: small helpers with no domain.
 
-pub mod agents;
-pub mod artifacts;
-pub mod builtin;
+pub mod catalog;
 pub mod chat;
 pub mod config;
-pub mod graph;
 pub mod init;
-pub mod live_config;
-pub mod logs;
 pub mod mcp;
-pub mod modes;
-pub mod paths;
 pub mod providers;
-pub mod resources;
+pub mod release;
 pub mod runtime;
-pub mod skills;
 pub mod state;
-pub mod sync;
-pub mod thread_start;
 pub mod tools;
-pub mod update;
+pub mod util;
 
 use std::{future::Future, pin::Pin};
 

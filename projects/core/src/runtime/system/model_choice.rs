@@ -13,7 +13,7 @@ use tokio::task::JoinSet;
 use crate::{
     config::Config,
     providers::{Model, ModelProvider, ProviderRegistry},
-    sync::{read, write},
+    util::sync::{read, write},
 };
 
 /// A provider that does not list its models within this time counts as down.

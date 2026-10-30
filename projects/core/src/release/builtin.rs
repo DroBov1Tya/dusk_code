@@ -15,7 +15,7 @@ use std::{
 use anyhow::{Context, Result};
 use sha2::{Digest, Sha256};
 
-use crate::{init::create_private_dir, paths::Paths, resources};
+use crate::{init::create_private_dir, init::paths::Paths, release::resources};
 
 const LOCK_FILE: &str = "builtin.lock";
 const NEW_SUFFIX: &str = ".new";
@@ -146,7 +146,7 @@ fn hash(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{config::Config, skills, testing::temp_paths};
+    use crate::{catalog::skills, config::Config, testing::temp_paths};
 
     #[test]
     fn shipped_files_follow_the_build_unless_the_user_changed_them() {
@@ -177,14 +177,18 @@ mod tests {
         assert_eq!(synced.updated, ["modes/PLAN.md"]);
         assert_eq!(
             fs::read_to_string(&plan).unwrap(),
-            crate::modes::template(crate::modes::PLAN).unwrap().unwrap()
+            crate::catalog::modes::template(crate::catalog::modes::PLAN)
+                .unwrap()
+                .unwrap()
         );
         assert_eq!(synced.kept, ["modes/MAIN.md"]);
         assert_eq!(fs::read_to_string(&main).unwrap(), "my main");
         let beside = paths.modes_dir().join("MAIN.md.new");
         assert_eq!(
             fs::read_to_string(beside).unwrap(),
-            crate::modes::template(crate::modes::MAIN).unwrap().unwrap()
+            crate::catalog::modes::template(crate::catalog::modes::MAIN)
+                .unwrap()
+                .unwrap()
         );
         assert!(sync(&paths).unwrap().kept.is_empty(), "told once");
 

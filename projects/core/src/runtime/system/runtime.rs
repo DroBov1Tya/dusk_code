@@ -18,23 +18,23 @@ use super::{
 };
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
-    agents::{AgentTree, Agents},
+    catalog::agents::{AgentTree, Agents},
+    catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
+    catalog::modes,
+    catalog::skills::{self, SkillInfo},
     chat::commands::{ContextReport, context_report},
+    config::live::LiveConfig,
     config::{ApiKey, ContextPolicy, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
-    graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
+    init::paths::Paths,
     init::{self, create_private_dir},
-    live_config::LiveConfig,
     mcp::{McpInfo, McpServers, McpStatus},
-    modes,
-    paths::Paths,
     providers::Provider,
-    skills::{self, SkillInfo},
+    release::update::{self, Channel, UpdateInfo},
+    runtime::chat::thread_start::{FORK_INTRO, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread},
-    sync::lock,
-    thread_start::{FORK_INTRO, start_thread},
     tools::{ToolKind, ToolScope},
-    update::{self, Channel, UpdateInfo},
+    util::sync::lock,
 };
 
 /// Hand edits to config.yml are picked up within this time.

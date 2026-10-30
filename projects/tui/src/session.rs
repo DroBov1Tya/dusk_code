@@ -11,8 +11,8 @@ use dusk_core::{
     config::Effort,
     config::{ApiKey, ProviderConfig, ProviderKind},
     providers::validate_provider,
+    release::update::Channel,
     runtime::{Runtime, ThreadEvent, ThreadHandle},
-    update::Channel,
 };
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
@@ -49,7 +49,7 @@ pub async fn run(
     let limit = runtime.input_limit();
     let mut app = App::new(choice.as_ref().map(|choice| choice.name()), limit, config);
     app.transcript
-        .set_artifact_store(dusk_core::artifacts::ArtifactStore::new(
+        .set_artifact_store(dusk_core::state::artifacts::ArtifactStore::new(
             runtime.paths().artifacts_dir(),
         ));
     let mut open = None;

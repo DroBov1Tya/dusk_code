@@ -20,11 +20,11 @@ use super::{
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     BoxFuture,
-    agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
-    artifacts::ArtifactStore,
-    live_config::LiveConfig,
+    catalog::agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
+    config::live::LiveConfig,
+    init::paths::Paths,
     mcp::McpServers,
-    paths::Paths,
+    state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
         AskAgent, AskUser, DisplayImage, McpTool, MessageParent, ReadHistory, Remember, Tasks,
