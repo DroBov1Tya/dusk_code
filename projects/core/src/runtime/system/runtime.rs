@@ -32,14 +32,10 @@ use crate::{
     skills::{self, SkillInfo},
     state::{LocalUnsent, Message, State, Task, Thread},
     sync::lock,
-    thread_start::start_thread,
+    thread_start::{FORK_INTRO, start_thread},
     tools::{ToolKind, ToolScope},
     update::{self, Channel, UpdateInfo},
 };
-
-/// Introduces a /fork summary to the model in the new thread.
-const FORK_INTRO: &str = "This thread goes on from an earlier one, described below. Its \
-messages are not here; work from this description.\n\n";
 
 /// Hand edits to config.yml are picked up within this time.
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);

@@ -27,12 +27,15 @@ pub struct StartedThread {
     pub workspace: PathBuf,
 }
 
-/// Stands in a chat's first message when its mode has no prompt.
-const NO_PROMPT: &str = "(no prompt)";
+/// Stands for a chat's prompt when its mode has none; never sent to the model.
+pub const NO_PROMPT: &str = "(no prompt)";
+/// Introduces a /fork summary to the model in the new thread; it also tells a summary
+/// from a prompt among the system messages.
+pub const FORK_INTRO: &str = "This thread goes on from an earlier one, described below. Its \
+messages are not here; work from this description.\n\n";
 
 /// The folder is created first, so a failed write leaves an empty folder rather than a
-/// thread without one. A chat's first message is the prompt of the mode it starts in,
-/// kept for the record; each request puts the prompt of the current mode in its place.
+/// thread without one. A chat's first message is the prompt of the mode it starts in.
 pub async fn start_thread(
     state: &State,
     paths: &Paths,

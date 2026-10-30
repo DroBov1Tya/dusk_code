@@ -8,7 +8,7 @@ use anyhow::Result;
 use crate::{
     providers::{ChatMessage, ToolSpec},
     state::{Compaction, LastPrompt, Message, MessageRole, State, estimate_tokens},
-    thread_start::display_name,
+    thread_start::{FORK_INTRO, NO_PROMPT, display_name},
 };
 
 /// Introduces a compaction summary to the model.
@@ -26,9 +26,6 @@ pub struct Conversation {
     /// Who wrote the messages other agents sent, by thread: an agent's name, or the chat
     /// that asked.
     pub senders: HashMap<String, String>,
-    /// For a chat, the prompt of its current mode, which takes the place of its first
-    /// message; `Some(None)` leaves the place empty. `None` keeps the message.
-    pub prompt: Option<Option<String>>,
 }
 
 impl Conversation {
@@ -62,17 +59,25 @@ impl Conversation {
             last_prompt: state.last_prompt(thread_id, compaction_id).await?,
             compaction,
             senders,
-            prompt: None,
         })
     }
 
-    /// What a message says to the model: a chat's first message is its mode's prompt.
-    pub fn content(&self, message: &Message) -> Option<String> {
-        let slot = message.sequence == 1 && message.role == MessageRole::System;
-        match &self.prompt {
-            Some(prompt) if slot => prompt.clone(),
-            _ => Some(message.content.clone()),
-        }
+    /// The system messages as the model gets them, up to `through`: the newest prompt
+    /// first, then each fork summary. A thread starts with its prompt and a compaction
+    /// of a chat adds the prompt of the mode it is in then, so the context changes only
+    /// at those points and a provider's cache of it holds in between.
+    pub fn system_texts(&self, through: u64) -> Vec<String> {
+        let (forks, prompts): (Vec<&Message>, Vec<&Message>) = self
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::System && message.sequence <= through)
+            .partition(|message| message.content.starts_with(FORK_INTRO));
+        let prompt = prompts
+            .last()
+            .map(|message| message.content.clone())
+            .filter(|prompt| prompt != NO_PROMPT);
+        let forks = forks.into_iter().map(|message| message.content.clone());
+        prompt.into_iter().chain(forks).collect()
     }
 
     pub fn has_queued(&self) -> bool {
@@ -86,22 +91,19 @@ impl Conversation {
 
     /// The request a compaction summarizes: everything up to `through`.
     pub fn chat_messages_through(&self, through: u64) -> Vec<ChatMessage> {
-        let (system, rest): (Vec<_>, Vec<_>) = self
+        let rest = self
             .messages
             .iter()
-            .filter(|message| message.sequence <= through)
-            .partition(|message| message.role == MessageRole::System);
+            .filter(|message| message.sequence <= through && message.role != MessageRole::System);
         let summary = self
             .compaction
             .as_ref()
             .map(|compaction| ChatMessage::User(format!("{SUMMARY_INTRO}{}", compaction.summary)));
-        let system = system
+        let system = self
+            .system_texts(through)
             .into_iter()
-            .filter_map(|message| self.content(message))
             .map(ChatMessage::System);
-        let rest = rest
-            .into_iter()
-            .filter_map(|message| chat_message(message, &self.senders));
+        let rest = rest.filter_map(|message| chat_message(message, &self.senders));
         system.chain(summary).chain(rest).collect()
     }
 
@@ -228,7 +230,6 @@ mod tests {
             answered_through: 5,
             last_prompt: None,
             senders: HashMap::new(),
-            prompt: None,
         };
 
         let messages = conversation.chat_messages();
@@ -244,30 +245,27 @@ mod tests {
     }
 
     #[test]
-    fn a_chat_mode_prompt_takes_the_place_of_the_first_message_only() {
-        let mut conversation = Conversation {
+    fn the_newest_prompt_leads_and_fork_summaries_stay() {
+        let fork = format!("{FORK_INTRO}what came before");
+        let conversation = Conversation {
             messages: vec![
-                message(1, MessageRole::System, "old prompt"),
-                message(2, MessageRole::System, "fork summary"),
+                message(1, MessageRole::System, "main prompt"),
+                message(2, MessageRole::System, &fork),
+                message(3, MessageRole::User, "hi"),
+                message(4, MessageRole::System, "plan prompt"),
             ],
             compaction: None,
-            answered_through: 0,
+            answered_through: 3,
             last_prompt: None,
             senders: HashMap::new(),
-            prompt: Some(Some("plan prompt".into())),
         };
-        let system = |conversation: &Conversation| conversation.chat_messages();
         assert_eq!(
-            system(&conversation),
-            [
-                ChatMessage::System("plan prompt".into()),
-                ChatMessage::System("fork summary".into())
-            ]
+            conversation.system_texts(u64::MAX),
+            ["plan prompt".to_owned(), fork.clone()]
         );
-        conversation.prompt = Some(None);
         assert_eq!(
-            system(&conversation),
-            [ChatMessage::System("fork summary".into())]
+            conversation.system_texts(3),
+            ["main prompt".to_owned(), fork]
         );
     }
 }

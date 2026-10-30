@@ -38,11 +38,7 @@ pub async fn report(
 ) -> Result<ContextReport> {
     let mut sections = Vec::new();
     let conversation = match thread_id {
-        Some(thread_id) => {
-            let mut conversation = Conversation::load(state, thread_id).await?;
-            conversation.prompt = Some(prompt.clone());
-            Some(conversation)
-        }
+        Some(thread_id) => Some(Conversation::load(state, thread_id).await?),
         None => None,
     };
     match &conversation {
@@ -70,7 +66,11 @@ pub async fn report(
 }
 
 fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
-    let mut system = Vec::new();
+    let system = conversation
+        .system_texts(u64::MAX)
+        .into_iter()
+        .map(|text| (first_line(&text), estimate_tokens(&text)))
+        .collect();
     let mut messages: BTreeMap<&str, (usize, u64)> = BTreeMap::new();
     let mut results: BTreeMap<String, (usize, u64)> = BTreeMap::new();
     let mut tool_names = BTreeMap::new();
@@ -80,12 +80,7 @@ fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
             tool_names.insert(call.id.clone(), call.name.clone());
         }
         let kind = match message.role {
-            MessageRole::System => {
-                if let Some(content) = conversation.content(message) {
-                    system.push((first_line(&content), estimate_tokens(&content)));
-                }
-                continue;
-            }
+            MessageRole::System => continue,
             MessageRole::Tool => {
                 let name = message
                     .tool_call_id

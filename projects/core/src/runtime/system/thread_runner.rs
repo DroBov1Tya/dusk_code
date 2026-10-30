@@ -780,7 +780,12 @@ mod tests {
         assert!(compaction.is_some(), "compacted on its own");
         assert_eq!(status, Some(TurnStatus::Completed));
         let requests = provider.requests.lock().unwrap();
-        assert_eq!(requests[2].len(), 1, "only the summary is left");
+        assert_eq!(
+            requests[2].len(),
+            2,
+            "the mode's prompt and the summary are left"
+        );
+        assert!(matches!(requests[2][0], ChatMessage::System(_)));
     }
 
     /// Like a subagent writing back while the asking turn runs a tool.

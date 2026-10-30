@@ -9,12 +9,13 @@ use anyhow::{Context, Result, bail};
 use tracing::warn;
 
 use super::{Agent, Inbox, Stop};
-use crate::runtime::system::ThreadEvent;
+use crate::runtime::{chat::Conversation, system::ThreadEvent};
 use crate::{
     init::{COMPACT_PROMPT_TEMPLATE, FORK_PROMPT_TEMPLATE},
+    modes,
     providers::{ChatMessage, ChatRequest},
     state::{CallPurpose, Compaction, ModelCall, Turn},
-    thread_start::read_prompt,
+    thread_start::{NO_PROMPT, read_prompt},
 };
 
 /// Compacting starts once the context passes this share of the input limit. The rest is
@@ -26,7 +27,7 @@ impl Agent {
     /// to work on: a queued message, or the running `turn`.
     pub async fn compact_if_needed(&self, turn: Option<&Turn>, inbox: &mut Inbox) -> Option<Stop> {
         let limit = self.input_limit();
-        let conversation = match self.conversation().await {
+        let conversation = match Conversation::load(&self.state, &self.thread_id).await {
             Ok(conversation) => conversation,
             Err(error) => {
                 warn!("cannot check the context size: {error:#}");
@@ -81,7 +82,17 @@ impl Agent {
         let compaction = self
             .state
             .add_compaction(&self.thread_id, through, &summary);
-        Ok(Ok(compaction.await?))
+        let compaction = compaction.await?;
+        // The context starts over here, so a chat takes up the prompt of its mode now.
+        if self.depth == 0 {
+            let mode = self.config.current().mode().to_owned();
+            let prompt = modes::prompt(&self.modes_dir, &mode)?;
+            let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
+            self.state
+                .add_system_message(&self.thread_id, prompt)
+                .await?;
+        }
+        Ok(Ok(compaction))
     }
 
     /// `/fork`: describes the thread in detail for a new thread to start from. This
@@ -114,7 +125,7 @@ impl Agent {
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Result<Result<(String, u64), Stop>> {
-        let conversation = self.conversation().await?;
+        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         let Some(through) = conversation.compactable_through() else {
             bail!("nothing to summarize since the last summary");
         };

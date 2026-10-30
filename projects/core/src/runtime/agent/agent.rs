@@ -19,7 +19,6 @@ use crate::runtime::{
 use crate::{
     config::Config,
     live_config::LiveConfig,
-    modes,
     providers::{ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient},
     state::{CallPurpose, MessageRole, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
     tools::{Progress, ToolRegistry, ToolScope},
@@ -68,7 +67,7 @@ impl Agent {
         if self.model.current().is_none() {
             return Ok(None);
         }
-        let conversation = self.conversation().await?;
+        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         let specs = self.tools.specs(&self.scope, &self.config.current());
         if !conversation.has_queued() || self.context_too_large(&conversation, &specs).is_some() {
             return Ok(None);
@@ -156,7 +155,7 @@ impl Agent {
         let specs = self.tools.specs(&self.scope, &self.config.current());
         let counted = async {
             let mut tokens = self.state.thread_tokens(&self.thread_id).await?;
-            let conversation = self.conversation().await?;
+            let conversation = Conversation::load(&self.state, &self.thread_id).await?;
             tokens.current.tool_specs = spec_tokens(&specs);
             tokens.context = conversation.tokens(&specs);
             anyhow::Ok(tokens)
@@ -170,17 +169,6 @@ impl Agent {
         }
     }
 
-    /// The thread as the next request shows it: a chat starts with the prompt of the
-    /// mode it is in now.
-    pub async fn conversation(&self) -> Result<Conversation> {
-        let mut conversation = Conversation::load(&self.state, &self.thread_id).await?;
-        if self.depth == 0 {
-            let mode = self.config.current().mode().to_owned();
-            conversation.prompt = Some(modes::prompt(&self.modes_dir, &mode)?);
-        }
-        Ok(conversation)
-    }
-
     pub fn emit(&self, event: ThreadEvent) {
         // A client that stopped listening does not stop the thread.
         let _ = self.events.send(event);
@@ -188,7 +176,7 @@ impl Agent {
 
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     async fn step(&self, turn: &Turn, inbox: &mut Inbox) -> Result<StepEnd> {
-        let conversation = self.conversation().await?;
+        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         // Messages that joined between steps are answered by this turn, not a next one.
         let newest_user = conversation
             .messages
