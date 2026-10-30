@@ -10,6 +10,7 @@ use super::{
     tool::{Progress, Tool, ToolContext, ToolKind},
 };
 use crate::{
+    artifacts::ImageArtifact,
     config::Config,
     providers::{ToolCall, ToolSpec},
 };
@@ -22,6 +23,8 @@ pub struct ToolRegistry {
     tools: BTreeMap<String, Box<dyn Tool>>,
     /// A chat's tools follow the switches of the chat's mode; an agent's follow MAIN's.
     pub chat: bool,
+    /// Set only from trusted launcher depth, never from model/config identity.
+    root: bool,
 }
 
 /// What the model gets back from a call.
@@ -29,6 +32,17 @@ pub struct ToolRegistry {
 pub struct ToolResult {
     pub content: String,
     pub is_error: bool,
+    pub artifacts: Vec<ImageArtifact>,
+}
+
+impl ToolResult {
+    pub fn text(content: String) -> Self {
+        Self {
+            content,
+            is_error: false,
+            artifacts: Vec::new(),
+        }
+    }
 }
 
 impl ToolRegistry {
@@ -43,7 +57,16 @@ impl ToolRegistry {
 
     /// A later tool with the same name replaces the earlier one.
     pub fn add(&mut self, tool: Box<dyn Tool>) {
+        // This name belongs to the core tool, including when an MCP server attempts
+        // to expose a colliding name in a child thread.
+        if tool.name() == "display_image" && !tool.root_only() {
+            return;
+        }
         self.tools.insert(tool.name().to_owned(), tool);
+    }
+
+    pub(crate) fn set_depth(&mut self, depth: usize) {
+        self.root = depth == 0;
     }
 
     /// Drops every tool not named in `names`.
@@ -69,6 +92,9 @@ impl ToolRegistry {
     }
 
     fn enabled(&self, tool: &dyn Tool, config: &Config) -> bool {
+        if tool.root_only() && !self.root {
+            return false;
+        }
         if !tool.switchable() {
             return true;
         }
@@ -126,15 +152,16 @@ impl ToolRegistry {
             progress: Some(progress),
         };
         let started = Instant::now();
-        let result = tool.call(arguments, context).await;
+        if !tool.available(&context) {
+            return error_result(format!("tool {} is unavailable", call.name));
+        }
+        let result = tool.call_result(arguments, context).await;
         let took = started.elapsed().as_millis();
         match result {
-            Ok(content) => {
+            Ok(mut result) => {
                 info!("tool {} done in {took} ms", call.name);
-                ToolResult {
-                    content: bounded(content),
-                    is_error: false,
-                }
+                result.content = bounded(result.content);
+                result
             }
             Err(error) => {
                 // Name and time only: arguments, output and errors may quote files.
@@ -149,6 +176,7 @@ fn error_result(message: String) -> ToolResult {
     ToolResult {
         content: bounded(format!("error: {message}")),
         is_error: true,
+        artifacts: Vec::new(),
     }
 }
 

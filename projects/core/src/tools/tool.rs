@@ -63,6 +63,11 @@ pub trait Tool: Send + Sync {
     /// Unique across the registry; what the model calls.
     fn name(&self) -> &str;
 
+    /// Trusted launcher depth decides whether this tool may be offered or executed.
+    fn root_only(&self) -> bool {
+        false
+    }
+
     fn kind(&self) -> ToolKind {
         ToolKind::Harness
     }
@@ -86,4 +91,17 @@ pub trait Tool: Send + Sync {
 
     /// An error is shown to the model as the result, so it can correct itself.
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String>;
+
+    /// Typed attachments stay outside the text the provider receives. Existing tools
+    /// need only implement the text call above.
+    fn call_result<'a>(
+        &'a self,
+        arguments: Value,
+        context: ToolContext<'a>,
+    ) -> BoxFuture<'a, super::registry::ToolResult> {
+        Box::pin(async move {
+            let content = self.call(arguments, context).await?;
+            Ok(super::registry::ToolResult::text(content))
+        })
+    }
 }

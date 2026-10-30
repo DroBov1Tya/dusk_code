@@ -23,6 +23,9 @@ CREATE TABLE messages (
     -- For a user message another agent sent, such as a subagent writing to the thread
     -- that asked it: the thread it came from.
     from_thread_id TEXT REFERENCES threads(id) CHECK (from_thread_id IS NULL OR role = 'user'),
+    -- Image cards a tool message shows, as a JSON array; never sent to the model.
+    artifacts_json TEXT CHECK (artifacts_json IS NULL OR (role = 'tool'
+        AND json_valid(artifacts_json) AND json_type(artifacts_json) = 'array')),
     UNIQUE (thread_id, sequence),
     CHECK (length(trim(content)) > 0 OR tool_calls_json IS NOT NULL)
 );

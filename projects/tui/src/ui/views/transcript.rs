@@ -293,7 +293,24 @@ fn append_entry(
         let text = transcript.text(index).unwrap_or_default();
         vec![hidden_line(entry, &text)]
     } else {
-        entry_lines(entry, text_width, live, ends_turn(entries, index))
+        let mut lines = entry_lines(entry, text_width, live, ends_turn(entries, index));
+        if transcript.images.enabled()
+            && let Entry::Tool {
+                call,
+                result: Some(result),
+                ..
+            } = entry
+            && call.name == "display_image"
+            && !result.is_error
+        {
+            for artifact in &result.artifacts {
+                lines.extend(indent(
+                    super::super::text::image_card::render(transcript, artifact, text_width),
+                    "   ",
+                ));
+            }
+        }
+        lines
     };
     if browsed == Some(index)
         && let Some(header) = drawn.first_mut()

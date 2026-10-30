@@ -48,6 +48,10 @@ pub async fn run(
     let choice = runtime.model();
     let limit = runtime.input_limit();
     let mut app = App::new(choice.as_ref().map(|choice| choice.name()), limit, config);
+    app.transcript
+        .set_artifact_store(dusk_core::artifacts::ArtifactStore::new(
+            runtime.paths().artifacts_dir(),
+        ));
     let mut open = None;
     if let Some(thread_id) = thread {
         open = Some(resume(runtime, &mut app, &thread_id).await?);

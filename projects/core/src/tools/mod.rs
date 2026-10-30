@@ -16,7 +16,7 @@ mod tool;
 
 pub use agents::{AskAgent, MessageParent};
 pub use builtin::read_regular;
-pub use harness::{AskUser, Question, ReadHistory, Remember, Tasks};
+pub use harness::{AskUser, DisplayImage, Question, ReadHistory, Remember, Tasks};
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::ToolScope;

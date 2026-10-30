@@ -342,6 +342,7 @@ impl Agent {
     ) -> Result<Option<Stop>> {
         let mut stop = None;
         for call in calls {
+            let mut artifacts = Vec::new();
             let content = match stop {
                 Some(_) => "not run: the user interrupted the turn".to_owned(),
                 None => {
@@ -354,6 +355,7 @@ impl Agent {
                     match inbox.race(called).await {
                         Ok(result) => {
                             let content = result.content.clone();
+                            artifacts = result.artifacts.clone();
                             self.emit(ThreadEvent::ToolFinished {
                                 call_id: call.id.clone(),
                                 result,
@@ -367,9 +369,12 @@ impl Agent {
                     }
                 }
             };
-            let stored = self
-                .state
-                .record_tool_result(&turn.turn_id, &call.id, content);
+            let stored = self.state.record_tool_result_with_artifacts(
+                &turn.turn_id,
+                &call.id,
+                content,
+                artifacts,
+            );
             stored.await.context("cannot store the tool result")?;
         }
         Ok(stop)
