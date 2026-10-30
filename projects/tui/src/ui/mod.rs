@@ -23,8 +23,8 @@ const SIDEBAR_WIDTH: u16 = 28;
 /// Braille dots that turn in the tab title while the agent works, as the tab is all a
 /// user sees of a terminal in the background.
 const TITLE_SPINNER: [&str; 10] = [
-    "\u{280B}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283C}", "\u{2834}", "\u{2826}",
-    "\u{2827}", "\u{2807}", "\u{280F}",
+    "\u{280B}", "\u{2819}", "\u{2839}", "\u{2838}", "\u{283C}", "\u{2834}", "\u{2826}", "\u{2827}",
+    "\u{2807}", "\u{280F}",
 ];
 const TITLE_IDLE: &str = "\u{2733}";
 

@@ -3,26 +3,35 @@
 
 use anyhow::Result;
 
-use crate::{agents::AgentTree, mcp::McpInfo, runtime::Runtime, skills::SkillInfo};
+use crate::{
+    agents::AgentTree, mcp::McpInfo, runtime::Runtime, skills::SkillInfo, tools::ToolKind,
+};
 
 pub struct Settings {
     pub max_agents_at_work: usize,
-    /// Every tool by name, with its switch.
-    pub tools: Vec<(String, bool)>,
+    /// Every tool by kind and then by name.
+    pub tools: Vec<ToolInfo>,
     pub skills: Vec<SkillInfo>,
     pub agents: AgentTree,
     pub mcp: Vec<McpInfo>,
+}
+
+pub struct ToolInfo {
+    pub name: String,
+    pub kind: ToolKind,
+    pub enabled: bool,
 }
 
 pub async fn run(runtime: &Runtime) -> Result<Settings> {
     runtime.read_agents().await?;
     let config = runtime.config().current();
     let tools = runtime
-        .tool_names()
+        .tool_kinds()
         .into_iter()
-        .map(|name| {
-            let on = config.tool_enabled(&name);
-            (name, on)
+        .map(|(name, kind)| ToolInfo {
+            enabled: config.tool_enabled(&name),
+            name,
+            kind,
         })
         .collect();
     Ok(Settings {

@@ -640,7 +640,10 @@ impl App {
         let row = if y < first.row {
             first
         } else {
-            self.input_rows.iter().find(|row| row.row == y).unwrap_or(last)
+            self.input_rows
+                .iter()
+                .find(|row| row.row == y)
+                .unwrap_or(last)
         };
         let before = row.cells.iter().rev().find(|&&(left, _)| left <= x);
         let offset = match before {

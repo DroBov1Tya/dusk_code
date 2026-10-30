@@ -26,12 +26,18 @@ use crate::app::{
 };
 
 const KEYS: [(&str, &str); 29] = [
-    ("Enter", "send; while the agent works it waits above the box"),
+    (
+        "Enter",
+        "send; while the agent works it waits above the box",
+    ),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent; queued messages return to the box"),
     ("Shift+Enter", "new line; Ctrl+J or \\ then Enter too"),
     ("Ctrl+E, click", "edit a pasted text in its own window"),
-    ("Shift+arrows", "select typed text; Ctrl+A all, drag works too"),
+    (
+        "Shift+arrows",
+        "select typed text; Ctrl+A all, drag works too",
+    ),
     ("Ctrl+C/X", "copy or cut the selected typed text"),
     ("Up / Down", "earlier messages you sent"),
     ("Tab", "walk thinking, tools and summaries"),
@@ -101,9 +107,12 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             )
         }
         Panel::Help => ("keys", "any key closes", help(), None),
-        Panel::Context { report, .. } => {
-            ("context", "up/down scroll  any other key closes", context(report), None)
-        }
+        Panel::Context { report, .. } => (
+            "context",
+            "up/down scroll  any other key closes",
+            context(report),
+            None,
+        ),
         Panel::Models(list) => {
             let (lines, row) = models(list);
             (

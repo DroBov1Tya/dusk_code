@@ -111,7 +111,10 @@ fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
         .map(|(kind, counted)| (kind.to_owned(), counted))
         .collect();
     sections.push(section("messages", counted(messages)));
-    sections.push(section("tool results", counted(results.into_iter().collect())));
+    sections.push(section(
+        "tool results",
+        counted(results.into_iter().collect()),
+    ));
     sections
 }
 
@@ -126,7 +129,20 @@ fn section(name: &'static str, mut items: Vec<(String, u64)>) -> ContextSection 
 
 /// A system message by its first words, as a label.
 fn first_line(text: &str) -> String {
-    let line = text.lines().find(|line| !line.trim().is_empty()).unwrap_or("");
-    let label: String = line.trim().trim_start_matches('#').trim().chars().take(48).collect();
-    if label.is_empty() { "system message".into() } else { label }
+    let line = text
+        .lines()
+        .find(|line| !line.trim().is_empty())
+        .unwrap_or("");
+    let label: String = line
+        .trim()
+        .trim_start_matches('#')
+        .trim()
+        .chars()
+        .take(48)
+        .collect();
+    if label.is_empty() {
+        "system message".into()
+    } else {
+        label
+    }
 }

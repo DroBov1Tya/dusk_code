@@ -7,7 +7,7 @@ use tracing::info;
 
 use super::{
     scope::ToolScope,
-    tool::{Progress, Tool, ToolContext},
+    tool::{Progress, Tool, ToolContext, ToolKind},
 };
 use crate::{
     config::Config,
@@ -52,6 +52,17 @@ impl ToolRegistry {
 
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.tools.keys().map(String::as_str)
+    }
+
+    /// Every tool with its kind, by kind and then by name.
+    pub fn kinds(&self) -> Vec<(String, ToolKind)> {
+        let mut kinds: Vec<_> = self
+            .tools
+            .iter()
+            .map(|(name, tool)| (name.clone(), tool.kind()))
+            .collect();
+        kinds.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
+        kinds
     }
 
     /// The tools the config has on, as the model sees them.

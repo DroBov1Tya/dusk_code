@@ -19,4 +19,4 @@ pub use registry::{ToolRegistry, ToolResult};
 pub use scope::ToolScope;
 pub use subagents::{AskAgent, MessageParent};
 pub use tasks::Tasks;
-pub use tool::{Progress, Tool, ToolContext};
+pub use tool::{Progress, Tool, ToolContext, ToolKind};

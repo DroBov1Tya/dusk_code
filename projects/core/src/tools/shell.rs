@@ -14,7 +14,7 @@ use tokio::{
 use super::{
     builtin::parse_arguments,
     scope::ToolScope,
-    tool::{Tool, ToolContext},
+    tool::{Tool, ToolContext, ToolKind},
 };
 use crate::BoxFuture;
 
@@ -34,6 +34,10 @@ struct RunCommandArguments {
 impl Tool for RunCommand {
     fn name(&self) -> &'static str {
         "run_command"
+    }
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Console
     }
 
     fn description(&self, context: &ToolContext<'_>) -> String {

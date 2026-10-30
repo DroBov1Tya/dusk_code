@@ -36,9 +36,36 @@ impl Progress<'_> {
     }
 }
 
+/// What a tool works on, for clients to group tools by; in the order they are shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum ToolKind {
+    Files,
+    Console,
+    Agents,
+    /// The thread itself: its history, tasks and skills.
+    Harness,
+    Mcp,
+}
+
+impl ToolKind {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Files => "files",
+            Self::Console => "console",
+            Self::Agents => "agents",
+            Self::Harness => "harness",
+            Self::Mcp => "mcp",
+        }
+    }
+}
+
 pub trait Tool: Send + Sync {
     /// Unique across the registry; what the model calls.
     fn name(&self) -> &str;
+
+    fn kind(&self) -> ToolKind {
+        ToolKind::Harness
+    }
 
     /// Written for the model: what the tool does and when to use it. The context lets it
     /// name the real directories.
