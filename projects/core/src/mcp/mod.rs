@@ -15,7 +15,10 @@ use tracing::{info, warn};
 
 pub use client::{McpClient, RemoteTool, check_headers, check_url};
 
-use crate::config::Config;
+use crate::{
+    config::Config,
+    sync::{read, write},
+};
 
 /// How a server stands, for clients to show.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -128,14 +131,4 @@ async fn connect(name: &str, config: &crate::config::McpServerConfig) -> anyhow:
         client,
         tools,
     })
-}
-
-// Writes replace whole values, so a panic cannot leave them half-changed.
-fn read<T>(lock: &RwLock<T>) -> std::sync::RwLockReadGuard<'_, T> {
-    lock.read().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-fn write<T>(lock: &RwLock<T>) -> std::sync::RwLockWriteGuard<'_, T> {
-    lock.write()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
 }

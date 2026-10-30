@@ -26,6 +26,9 @@ use crate::{
     thread_start::{self, display_name, read_prompt, start_agent_thread},
 };
 
+/// Each agent listed costs tokens in every request.
+const MAX_LISTED: usize = 40;
+const MAX_LISTED_CHARS: usize = 300;
 /// Agent threads one thread may open; asking an earlier one again is not limited.
 const MAX_AGENTS_PER_THREAD: usize = 16;
 /// Agent threads in one chat's whole tree: the per-thread cap alone allows thousands
@@ -66,9 +69,17 @@ impl AskAgent {
             .reachable(self.asker.as_deref(), &config)
     }
 
+    /// The general agent has every tool, so an agent limited to some tools may not ask
+    /// it: that would give it the rest.
     fn builtin_general(&self) -> bool {
         let config = self.launcher.config.current();
-        self.launcher.agents.builtin_general(&config)
+        let limited = self.asker.as_deref().is_some_and(|asker| {
+            self.launcher
+                .agents
+                .get(asker)
+                .is_some_and(|identity| identity.tools.is_some())
+        });
+        !limited && self.launcher.agents.builtin_general(&config)
     }
 
     async fn ask(
@@ -164,11 +175,25 @@ impl Tool for AskAgent {
     }
 
     fn description(&self, _context: &ToolContext<'_>) -> String {
-        let mut agents: Vec<String> = self
-            .reachable()
+        let reachable = self.reachable();
+        let mut agents: Vec<String> = reachable
             .iter()
-            .map(|identity| format!("- {}: {}", identity.name, identity.description))
+            .take(MAX_LISTED)
+            .map(|identity| {
+                let description: String = identity
+                    .description
+                    .chars()
+                    .take(MAX_LISTED_CHARS)
+                    .collect();
+                format!("- {}: {description}", identity.name)
+            })
             .collect();
+        if reachable.len() > MAX_LISTED {
+            agents.push(format!(
+                "({} more not listed)",
+                reachable.len() - MAX_LISTED
+            ));
+        }
         if self.builtin_general() {
             agents.insert(0, format!("- {GENERAL_AGENT}: {GENERAL_DESCRIPTION}"));
         }

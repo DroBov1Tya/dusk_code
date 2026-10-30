@@ -3,7 +3,7 @@
 //! kept in the config as `model: provider/model`, so it outlives a restart.
 
 use std::{
-    sync::{Arc, PoisonError, RwLock},
+    sync::{Arc, RwLock},
     time::Duration,
 };
 
@@ -13,6 +13,7 @@ use tokio::task::JoinSet;
 use crate::{
     config::Config,
     providers::{Model, ModelProvider, ProviderRegistry},
+    sync::{read, write},
 };
 
 /// A provider that does not list its models within this time counts as down.
@@ -68,22 +69,17 @@ impl ModelChoice {
     }
 
     pub fn current(&self) -> Option<Choice> {
-        // A choice is replaced whole, so a panic elsewhere cannot leave it half-written.
-        self.current
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .choice
-            .clone()
+        read(&self.current).choice.clone()
     }
 
     pub fn set(&self, choice: Choice) {
-        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        let mut current = write(&self.current);
         current.choice = Some(choice);
         current.revision = Arc::new(());
     }
 
     pub fn set_if_empty(&self, choice: Choice) -> bool {
-        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        let mut current = write(&self.current);
         if current.choice.is_some() {
             return false;
         }
@@ -93,17 +89,11 @@ impl ModelChoice {
     }
 
     pub fn revision(&self) -> Arc<()> {
-        Arc::clone(
-            &self
-                .current
-                .read()
-                .unwrap_or_else(PoisonError::into_inner)
-                .revision,
-        )
+        Arc::clone(&read(&self.current).revision)
     }
 
     pub fn set_if_empty_at_revision(&self, choice: Choice, revision: &Arc<()>) -> bool {
-        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        let mut current = write(&self.current);
         if current.choice.is_some() || !Arc::ptr_eq(&current.revision, revision) {
             return false;
         }
@@ -113,7 +103,7 @@ impl ModelChoice {
     }
 
     pub fn replace_provider(&self, name: &str, provider: Arc<dyn ModelProvider>) {
-        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        let mut current = write(&self.current);
         // Even an offline selection must reject discovery started before reconnect.
         current.revision = Arc::new(());
         if let Some(choice) = current
@@ -127,7 +117,7 @@ impl ModelChoice {
 
     /// A catalogue response applies only to the selection and adapter it checked.
     pub fn refresh_model(&self, expected: &Choice, model: Model) -> Option<Choice> {
-        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        let mut current = write(&self.current);
         let choice = current.choice.as_mut()?;
         if choice.provider_name != expected.provider_name
             || choice.model.id != expected.model.id

@@ -593,7 +593,7 @@ impl App {
         let (start, end) = selection.ordered();
         let mut lines = Vec::new();
         for line in start.0..=end.0 {
-            let Some(text) = self.drawn_text.get(line) else {
+            let Some(text) = self.drawn_text(line) else {
                 break;
             };
             let from = if line == start.0 { start.1 - left } else { 0 };

@@ -12,6 +12,7 @@ pub mod providers;
 pub mod runtime;
 pub mod skills;
 pub mod state;
+pub mod sync;
 pub mod thread_start;
 pub mod tools;
 

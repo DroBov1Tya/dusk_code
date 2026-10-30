@@ -4,7 +4,7 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, PoisonError},
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -27,6 +27,7 @@ use crate::{
     providers::Provider,
     skills::{self, SkillInfo, SkillText},
     state::{LocalUnsent, Message, State, Task, Thread},
+    sync::lock,
     thread_start::start_thread,
 };
 
@@ -295,13 +296,6 @@ impl Runtime {
         self.launcher.state.local_unsent(thread_id).await
     }
 
-    pub async fn add_local_unsent(&self, thread_id: &str, content: &str) -> Result<LocalUnsent> {
-        self.launcher
-            .state
-            .add_local_unsent(thread_id, content)
-            .await
-    }
-
     /// Explicitly queue one local message. Never called during startup or recovery.
     pub async fn resend_local_unsent(&self, thread_id: &str, id: &str) -> Result<()> {
         ensure!(self.model().is_some(), "provider is unavailable");
@@ -363,17 +357,16 @@ impl Runtime {
     ) -> Result<ThreadHandle> {
         // A chat opened right after the start still gets the tools of MCP servers.
         self.launcher.mcp.wait(MCP_START_WAIT).await;
+        let mailboxes = Arc::clone(&self.launcher.mailboxes);
+        let mut live = mailboxes.lock().await;
+        ensure!(
+            !live.contains_key(&thread_id),
+            "thread {thread_id} is already open"
+        );
         let setup = self.launcher.setup(&thread_id, cwd, workspace, None, 0)?;
         let (runner, input, output) = ThreadRunner::new(setup);
-        let mailboxes = Arc::clone(&self.launcher.mailboxes);
-        {
-            let mut live = mailboxes.lock().await;
-            ensure!(
-                !live.contains_key(&thread_id),
-                "thread {thread_id} is already open"
-            );
-            live.insert(thread_id.clone(), runner.mailbox(&input));
-        }
+        live.insert(thread_id.clone(), runner.mailbox(&input));
+        drop(live);
         let id = thread_id.clone();
         self.lock_threads().spawn(async move {
             runner.run().await;
@@ -418,10 +411,4 @@ impl Runtime {
     fn lock_threads(&self) -> MutexGuard<'_, JoinSet<()>> {
         lock(&self.threads)
     }
-}
-
-// Inserting into and taking from these cannot leave them half-changed, so a panic
-// elsewhere does not make them unusable.
-fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

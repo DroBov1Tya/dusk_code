@@ -23,7 +23,7 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Button, ButtonHit, Entry, Focus, TEXT_COLUMN, Tone, Transcript, TranscriptHit,
+    App, Button, ButtonHit, Entry, Focus, Layout, TEXT_COLUMN, Tone, Transcript, TranscriptHit,
     compact_number,
     paste::{self, Part},
 };
@@ -42,10 +42,36 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
     let width = area.width as usize;
-    let (lines, starts) = layout(app, width);
+    let browsed = match app.focus {
+        Focus::Browse(index) => Some(index),
+        Focus::Input => None,
+    };
+    let last = app.transcript.entries.len() - 1;
+    refresh_layout(app, width, browsed.filter(|&index| index < last));
+    let Some(layout) = &app.layout else {
+        return;
+    };
+    // Only the last entry can be in the middle of being written; it is drawn every frame.
+    let earlier = layout.lines.len();
+    let mut tail = Vec::new();
+    let mut tail_starts = Vec::new();
+    let live = app.is_busy().then_some(&*app);
+    let last_browsed = browsed.filter(|&index| index == last);
+    append_entry(
+        &app.transcript,
+        last,
+        width,
+        live,
+        last_browsed,
+        &mut tail,
+        &mut tail_starts,
+    );
+    tail.push(Line::default());
+    let mut starts = layout.starts.clone();
+    starts.extend(tail_starts.iter().map(|start| start + earlier));
     let height = area.height as usize;
     // The trailing blank line breathes only when it fits; it is not scrollable content.
-    let total = lines.len().saturating_sub(1);
+    let total = (earlier + tail.len()).saturating_sub(1);
     app.max_scroll = if height == 0 {
         0
     } else {
@@ -74,14 +100,25 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
             });
         }
     }
+    let visible: Vec<Line> = (top..(top + height).min(earlier + tail.len()))
+        .map(|line| {
+            match app
+                .layout
+                .as_ref()
+                .and_then(|layout| layout.lines.get(line))
+            {
+                Some(line) => line.clone(),
+                None => tail[line - earlier].clone(),
+            }
+        })
+        .collect();
     app.drawn_top = top;
-    app.drawn_text = lines.iter().map(plain_text).collect();
+    app.tail_text = tail.iter().map(plain_text).collect();
     app.entry_lines = starts
         .iter()
         .zip(starts.iter().skip(1).chain([&total]))
         .map(|(&from, &to)| (from, to))
         .collect();
-    let visible: Vec<Line> = lines.into_iter().skip(top).take(height).collect();
     frame.render_widget(Paragraph::new(visible), area);
     highlight(frame, area, app);
     buttons(frame, area, app);
@@ -106,7 +143,7 @@ fn highlight(frame: &mut Frame, area: Rect, app: &App) {
         if line < start.0 || line > end.0 {
             continue;
         }
-        let drawn = app.drawn_text.get(line).map_or(0, |text| text.width()) as u16;
+        let drawn = app.drawn_text(line).map_or(0, |text| text.width()) as u16;
         let from = if line == start.0 { start.1 } else { area.x }.max(text_left);
         let to = if line == end.0 {
             end.1 + 1
@@ -175,14 +212,37 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
     }
 }
 
-/// Every entry as lines, and the line each entry starts on.
-fn layout(app: &App, width: usize) -> (Vec<Line<'static>>, Vec<usize>) {
-    let browsed = match app.focus {
-        Focus::Browse(index) => Some(index),
-        Focus::Input => None,
-    };
-    let live = app.is_busy().then_some(app);
-    thread_lines(&app.transcript, width, live, browsed)
+/// Lays out every entry but the last again, when the transcript, the width or the browsed
+/// entry changed since the last frame.
+fn refresh_layout(app: &mut App, width: usize, browsed: Option<usize>) {
+    let revision = app.transcript.revision();
+    let current = app.layout.as_ref().is_some_and(|layout| {
+        layout.width == width && layout.revision == revision && layout.browsed == browsed
+    });
+    if current {
+        return;
+    }
+    let mut lines = Vec::new();
+    let mut starts = Vec::new();
+    for index in 0..app.transcript.entries.len().saturating_sub(1) {
+        append_entry(
+            &app.transcript,
+            index,
+            width,
+            None,
+            browsed,
+            &mut lines,
+            &mut starts,
+        );
+    }
+    app.layout = Some(Layout {
+        width,
+        revision,
+        browsed,
+        text: lines.iter().map(plain_text).collect(),
+        lines,
+        starts,
+    });
 }
 
 /// Every entry of a thread as lines, and the line each entry starts on. With `live`,
@@ -193,33 +253,54 @@ pub fn thread_lines(
     live: Option<&App>,
     browsed: Option<usize>,
 ) -> (Vec<Line<'static>>, Vec<usize>) {
-    let text_width = width.saturating_sub(4).max(10);
     let mut lines = Vec::new();
     let mut starts = Vec::new();
-    let entries = &transcript.entries;
-    let streaming = live.map(|_| entries.len().saturating_sub(1));
-    for (index, entry) in entries.iter().enumerate() {
-        let folded_run = index > 0 && is_meta(&entries[index - 1]) && is_meta(entry);
-        if index > 0 && !folded_run {
-            lines.push(Line::default());
-        }
-        starts.push(lines.len());
-        let writing = live.filter(|_| streaming == Some(index));
-        let mut drawn = if transcript.is_hidden(index) {
-            let text = transcript.text(index).unwrap_or_default();
-            vec![hidden_line(entry, &text)]
-        } else {
-            entry_lines(entry, text_width, writing, ends_turn(entries, index))
-        };
-        if browsed == Some(index)
-            && let Some(header) = drawn.first_mut()
-        {
-            *header = std::mem::take(header).style(Style::new().bg(GLOW));
-        }
-        lines.extend(drawn);
+    for index in 0..transcript.entries.len() {
+        let writing = live.filter(|_| index + 1 == transcript.entries.len());
+        append_entry(
+            transcript,
+            index,
+            width,
+            writing,
+            browsed,
+            &mut lines,
+            &mut starts,
+        );
     }
     lines.push(Line::default());
     (lines, starts)
+}
+
+/// Adds the entry at `index`, after a blank line unless it continues a folded run.
+fn append_entry(
+    transcript: &Transcript,
+    index: usize,
+    width: usize,
+    live: Option<&App>,
+    browsed: Option<usize>,
+    lines: &mut Vec<Line<'static>>,
+    starts: &mut Vec<usize>,
+) {
+    let text_width = width.saturating_sub(4).max(10);
+    let entries = &transcript.entries;
+    let entry = &entries[index];
+    let folded_run = index > 0 && is_meta(&entries[index - 1]) && is_meta(entry);
+    if index > 0 && !folded_run {
+        lines.push(Line::default());
+    }
+    starts.push(lines.len());
+    let mut drawn = if transcript.is_hidden(index) {
+        let text = transcript.text(index).unwrap_or_default();
+        vec![hidden_line(entry, &text)]
+    } else {
+        entry_lines(entry, text_width, live, ends_turn(entries, index))
+    };
+    if browsed == Some(index)
+        && let Some(header) = drawn.first_mut()
+    {
+        *header = std::mem::take(header).style(Style::new().bg(GLOW));
+    }
+    lines.extend(drawn);
 }
 
 /// What a hidden entry leaves: what it was and how long, to show it again.

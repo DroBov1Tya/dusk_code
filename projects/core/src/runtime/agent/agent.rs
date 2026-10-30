@@ -81,11 +81,22 @@ impl Agent {
             TurnOutcome::Failed(format!("the model made more than {MAX_STEPS} tool steps"));
         let mut stop = None;
         for _ in 0..MAX_STEPS {
-            match self.step(turn, inbox).await? {
+            // A failed step ends the turn as failed; the thread itself goes on.
+            let end = match self.step(turn, inbox).await {
+                Ok(end) => end,
+                Err(error) => {
+                    outcome = TurnOutcome::Failed(format!("{error:#}"));
+                    break;
+                }
+            };
+            match end {
                 // Tool results are what fills the context, so it is checked after each.
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
                     None => {
-                        self.take_agent_messages().await?;
+                        if let Err(error) = self.take_agent_messages().await {
+                            outcome = TurnOutcome::Failed(format!("{error:#}"));
+                            break;
+                        }
                         continue;
                     }
                     Some(reason) => {

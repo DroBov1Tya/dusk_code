@@ -1,7 +1,11 @@
 //! What the screen shows of a thread: a list of entries built from the stored history and
 //! then from live events. Thinking, tool calls and summaries fold into one line.
 
-use std::collections::HashSet;
+use ratatui::text::Line;
+use std::{
+    collections::HashSet,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 use super::paste;
 use dusk_core::{
@@ -70,9 +74,60 @@ pub struct Transcript {
     pub entries: Vec<Entry>,
     /// Entries the user hid; each shows as one line until shown again.
     pub hidden: HashSet<usize>,
+    /// Changes when anything but the text of the last entry changes, so the lines of the
+    /// earlier entries can be kept between frames. Unique across transcripts.
+    revision: u64,
+}
+
+/// The drawn lines of every entry but the last, kept until the transcript, the width
+/// or the browsed entry changes, so a frame renders only the entry still being written.
+pub struct Layout {
+    pub width: usize,
+    pub revision: u64,
+    pub browsed: Option<usize>,
+    pub lines: Vec<Line<'static>>,
+    /// Each line as plain text, for copying a selection.
+    pub text: Vec<String>,
+    /// The line each entry starts on.
+    pub starts: Vec<usize>,
+}
+
+/// Revisions come from one counter, so a new transcript never matches an old one.
+fn next_revision() -> u64 {
+    static REVISIONS: AtomicU64 = AtomicU64::new(1);
+    REVISIONS.fetch_add(1, Ordering::Relaxed)
 }
 
 impl Transcript {
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    fn changed(&mut self) {
+        self.revision = next_revision();
+    }
+
+    /// For a change the methods here do not cover; the lines are laid out again.
+    pub fn entries_mut(&mut self) -> &mut Vec<Entry> {
+        self.changed();
+        &mut self.entries
+    }
+
+    /// Drops an entry; the hidden ones after it move up with it.
+    pub fn remove(&mut self, index: usize) {
+        if index >= self.entries.len() {
+            return;
+        }
+        self.entries.remove(index);
+        self.hidden = self
+            .hidden
+            .iter()
+            .filter(|&&hidden| hidden != index)
+            .map(|&hidden| if hidden > index { hidden - 1 } else { hidden })
+            .collect();
+        self.changed();
+    }
+
     /// The stored messages as entries; system messages are not shown.
     pub fn from_history(messages: &[Message]) -> Self {
         let mut transcript = Self::default();
@@ -116,6 +171,7 @@ impl Transcript {
 
     pub fn push(&mut self, entry: Entry) {
         self.entries.push(entry);
+        self.changed();
     }
 
     pub fn notice(&mut self, text: impl Into<String>, tone: Tone) {
@@ -172,6 +228,7 @@ impl Transcript {
         if let Some(result) = running {
             *result = Some(finished);
         }
+        self.changed();
     }
 
     /// A turn that ended while tools ran stopped them; the core stores the same.
@@ -188,6 +245,7 @@ impl Transcript {
                 });
             }
         }
+        self.changed();
     }
 
     /// What the copy button of an entry copies: its whole text, folded or not.
@@ -206,6 +264,7 @@ impl Transcript {
 
     pub fn hide(&mut self, index: usize) {
         self.hidden.insert(index);
+        self.changed();
     }
 
     pub fn is_hidden(&self, index: usize) -> bool {
@@ -232,6 +291,7 @@ impl Transcript {
     }
 
     pub fn toggle(&mut self, index: usize) {
+        self.changed();
         if self.hidden.remove(&index) {
             return;
         }
@@ -258,6 +318,7 @@ impl Transcript {
                 *open = !any_open;
             }
         }
+        self.changed();
     }
 
     /// The nearest foldable entry before or after `from`.

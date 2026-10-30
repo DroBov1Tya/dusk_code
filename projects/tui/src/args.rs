@@ -2,16 +2,19 @@ use std::path::PathBuf;
 
 use clap::{Arg, Command, value_parser};
 
-pub struct Args {
-    pub state_db: Option<PathBuf>,
-    /// Open this thread instead of a new one.
-    pub thread: Option<String>,
+pub enum Args {
+    Run {
+        state_db: Option<PathBuf>,
+        /// Open this thread instead of a new one.
+        thread: Option<String>,
+    },
+    Remove,
 }
 
 pub fn parse_args() -> Args {
-    let matches = Command::new("dusk")
+    let matches = Command::new("duskcode")
         .version(env!("CARGO_PKG_VERSION"))
-        .about("Full-screen terminal client for dusk_code")
+        .about("Terminal agent for coding, run in the current directory")
         .arg(
             Arg::new("state-db")
                 .long("state-db")
@@ -25,8 +28,15 @@ pub fn parse_args() -> Args {
                 .value_name("ID")
                 .help("Open a thread instead of starting a new one"),
         )
+        .subcommand(
+            Command::new("remove")
+                .about("Remove duskcode, its links and ~/.config/duskcode after one question"),
+        )
         .get_matches();
-    Args {
+    if matches.subcommand_matches("remove").is_some() {
+        return Args::Remove;
+    }
+    Args::Run {
         state_db: matches.get_one::<PathBuf>("state-db").cloned(),
         thread: matches.get_one::<String>("thread").cloned(),
     }

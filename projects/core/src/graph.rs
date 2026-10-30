@@ -34,6 +34,15 @@ const MAX_DESCRIPTION_CHARS: usize = 1024;
 const MAX_DEPTH: usize = 8;
 const MAX_NODES: usize = 1000;
 const FENCE: &str = "---";
+/// Folders that hold dependencies or build output, never nodes, and can be huge.
+const SKIPPED: [&str; 6] = [
+    "node_modules",
+    "target",
+    "venv",
+    "__pycache__",
+    "dist",
+    "build",
+];
 
 /// Every node found under one directory, with what is wrong with the rest.
 #[derive(Debug, Default)]
@@ -171,7 +180,7 @@ fn subfolders(folder: &Path) -> impl Iterator<Item = String> {
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| is_plain_folder_name(name))
+        .filter(|name| is_plain_folder_name(name) && !SKIPPED.contains(&name.as_str()))
         .collect();
     names.sort_by(|a, b| b.cmp(a));
     names.into_iter()
@@ -194,7 +203,7 @@ pub fn check_node(text: &str, name: &str) -> Result<()> {
 fn parse_node(text: &str, name: &str, file: PathBuf) -> Result<Node> {
     let (front, _) = split_front_matter(text)?;
     let front: FrontMatter =
-        serde_yaml::from_str(front).map_err(|_| anyhow!("front matter is not valid YAML"))?;
+        serde_saphyr::from_str(front).map_err(|_| anyhow!("front matter is not valid YAML"))?;
     if let Some(declared) = &front.name {
         let folder_name = name.rsplit('/').next().unwrap_or(name);
         ensure!(

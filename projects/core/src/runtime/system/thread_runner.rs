@@ -64,7 +64,8 @@ pub struct ThreadInput {
     state: Arc<State>,
     config: Arc<LiveConfig>,
     model: Arc<ModelChoice>,
-    events: mpsc::UnboundedSender<ThreadEvent>,
+    /// Weak, so the client's output ends when the runner does and the client can tell.
+    events: mpsc::WeakUnboundedSender<ThreadEvent>,
     thread_id: String,
     inputs: mpsc::UnboundedSender<Input>,
 }
@@ -170,7 +171,7 @@ impl ThreadRunner {
             state: Arc::clone(&setup.state),
             config: Arc::clone(&setup.config),
             model: Arc::clone(&setup.model),
-            events: events.clone(),
+            events: events.downgrade(),
             thread_id: setup.thread_id.clone(),
             inputs: input_sender,
         };
@@ -210,14 +211,16 @@ impl ThreadRunner {
 
     /// Runs until every `ThreadInput` is dropped and the queue is done, or for a
     /// subagent until it is idle. An error ends the thread and is reported to the client
-    /// as `Failed`.
-    pub async fn run(mut self) {
-        if let Err(error) = self.serve().await {
+    /// as `Failed`. Returns whether it ended without one.
+    pub async fn run(mut self) -> bool {
+        let served = self.serve().await;
+        if let Err(error) = &served {
             self.agent.emit(ThreadEvent::Failed(format!("{error:#}")));
         }
         if self.ends_when_idle && !self.left {
             self.mailboxes.remove(&self.agent.thread_id).await;
         }
+        served.is_ok()
     }
 
     async fn serve(&mut self) -> Result<()> {
@@ -328,11 +331,16 @@ impl ThreadRunner {
 
     /// Stopping a thread stops every agent below it, including those under an agent that
     /// is idle meanwhile, so none of them reports back and wakes the thread again.
+    /// Stops every agent below: those at work, and those waiting for a free slot, whose
+    /// waiting messages are dropped.
     async fn cancel_agents(&self) -> Result<()> {
         let below = self.agent.state.descendant_threads(&self.agent.thread_id);
         for thread_id in below.await? {
-            if let Some(mailbox) = self.mailboxes.get(&thread_id).await {
-                mailbox.send(Input::Cancel);
+            match self.mailboxes.get(&thread_id).await {
+                Some(mailbox) => {
+                    mailbox.send(Input::Cancel);
+                }
+                None => self.agent.state.drop_pending(&thread_id).await?,
             }
         }
         Ok(())
@@ -352,12 +360,7 @@ impl ThreadRunner {
     }
 
     async fn has_pending(&self) -> Result<bool> {
-        let pending = self
-            .agent
-            .state
-            .pending_messages(&self.agent.thread_id)
-            .await?;
-        Ok(!pending.is_empty())
+        self.agent.state.has_pending(&self.agent.thread_id).await
     }
 }
 
@@ -390,8 +393,10 @@ impl ThreadInput {
         );
         if self.model.current().is_none() {
             let message = self.state.add_local_unsent(&self.thread_id, &text).await?;
-            let _ = self.events.send(ThreadEvent::LocalUnsent(message));
-            let _ = self.events.send(ThreadEvent::ProviderUnavailable);
+            if let Some(events) = self.events.upgrade() {
+                let _ = events.send(ThreadEvent::LocalUnsent(message));
+                let _ = events.send(ThreadEvent::ProviderUnavailable);
+            }
             return Ok(());
         }
         self.state.add_pending(&self.thread_id, &text).await?;
@@ -405,6 +410,11 @@ impl ThreadOutput {
     /// `None` once the thread has ended.
     pub async fn next_event(&mut self) -> Option<ThreadEvent> {
         self.events.recv().await
+    }
+
+    /// An event that has already arrived, without waiting.
+    pub fn ready_event(&mut self) -> Option<ThreadEvent> {
+        self.events.try_recv().ok()
     }
 }
 
@@ -630,7 +640,7 @@ mod tests {
             (first.status, second.status)
         };
 
-        let ((), statuses) = tokio::join!(runner.run(), client);
+        let (_, statuses) = tokio::join!(runner.run(), client);
         assert_eq!(statuses, (TurnStatus::Interrupted, TurnStatus::Completed));
         assert_eq!(
             transcript(&state).await,
@@ -663,7 +673,7 @@ mod tests {
             turn.status
         };
 
-        let ((), status) = tokio::join!(runner.run(), client);
+        let (_, status) = tokio::join!(runner.run(), client);
         assert_eq!(status, TurnStatus::Interrupted);
         assert_eq!(transcript(&state).await.len(), 1, "nothing was written");
     }

@@ -104,13 +104,16 @@ pub fn display_name(thread: &Thread) -> String {
         .unwrap_or_else(|| agent_name(&thread.id))
 }
 
-/// FNV-1a: stable across runs and builds, unlike the standard hasher.
 pub fn name_seed(thread_id: &str) -> u64 {
-    thread_id
-        .bytes()
-        .fold(0xcbf29ce484222325_u64, |hash, byte| {
-            (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
-        })
+    fnv1a(thread_id.as_bytes())
+}
+
+/// FNV-1a: stable across runs and builds, unlike the standard hasher. Not a defence
+/// against anyone.
+pub fn fnv1a(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    })
 }
 
 /// Reads a prompt file such as MAIN.md; a missing or blank file means no prompt.
