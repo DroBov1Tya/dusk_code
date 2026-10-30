@@ -176,6 +176,9 @@ impl App {
             }
             _ => {}
         }
+        if self.poll.as_ref().is_some_and(|poll| poll.active) {
+            return self.poll_key(key);
+        }
         match self.focus {
             Focus::Input => self.input_key(key),
             Focus::Browse(selected) => self.browse_key(key, selected),
@@ -256,6 +259,11 @@ impl App {
                 }
             }
             KeyCode::Tab if self.complete_command() => {}
+            KeyCode::Tab if self.poll.is_some() => {
+                if let Some(poll) = &mut self.poll {
+                    poll.active = true;
+                }
+            }
             KeyCode::Tab => {
                 if let Some(last) = self.transcript.last_foldable() {
                     self.focus = Focus::Browse(last);
@@ -512,6 +520,9 @@ impl App {
                 if self.input_area.is_some_and(|area| inside(area, x, y)) {
                     self.selection = None;
                     self.focus = Focus::Input;
+                    if let Some(poll) = &mut self.poll {
+                        poll.active = false;
+                    }
                     self.input_dragging = true;
                     if let Some(offset) = self.input_offset_at(x, y) {
                         self.input.place(offset);
@@ -544,6 +555,15 @@ impl App {
     }
 
     fn press_button(&mut self, x: u16, y: u16) -> Option<Action> {
+        let polled = self.poll.as_ref().and_then(|poll| {
+            poll.hits
+                .iter()
+                .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
+                .map(|hit| hit.target)
+        });
+        if let Some(target) = polled {
+            return Some(self.press_poll(target));
+        }
         let queued = self
             .queue_hits
             .iter()

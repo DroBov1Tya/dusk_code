@@ -26,7 +26,8 @@ use crate::{
     paths::Paths,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AskAgent, McpTool, MessageParent, ReadHistory, Remember, Tasks, ToolRegistry, ToolScope,
+        AskAgent, AskUser, McpTool, MessageParent, ReadHistory, Remember, Tasks, ToolRegistry,
+        ToolScope,
     },
 };
 
@@ -98,6 +99,10 @@ impl Launcher {
         }
         if let Some(allowed) = agent.and_then(|agent| agent.tools.as_ref()) {
             tools.keep(allowed);
+        }
+        // Only a chat has the user to ask.
+        if depth == 0 {
+            tools.add(Box::new(AskUser));
         }
         if depth > 0 {
             tools.add(Box::new(MessageParent::new(

@@ -26,7 +26,7 @@ use crate::{
         Compaction, LocalUnsent, Message, PendingMessage, State, Task, ThreadTokens, Turn,
         estimate_tokens,
     },
-    tools::{ToolRegistry, ToolResult, ToolScope},
+    tools::{Question, ToolRegistry, ToolResult, ToolScope},
 };
 
 /// Runs one thread; `Runtime` gives each active thread its own task with one of these.
@@ -155,6 +155,8 @@ pub enum ThreadEvent {
     },
     /// The thread's task board changed: every task with its steps.
     Tasks(Vec<Task>),
+    /// The agent asks the user to choose; the answer comes as the user's next message.
+    Question(Question),
     /// Another agent wrote to this thread; the message has joined it.
     FromAgent(Message),
     /// Nothing is running and nothing will start until the next message.

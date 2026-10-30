@@ -16,6 +16,8 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   verified practice.
 - MCP servers over stdio or HTTP, added and switched in `/settings`.
 - Raw log files for the core and the terminal client.
+- Questions with options the agent asks above the message box (`ask_user`); the answer
+  goes back as `QUESTION: ... ANSWER: ...`, and a message typed instead declines it.
 - Memory of the user's lasting preferences in `~/.config/duskcode/MEMORY.md`, kept
   short by the `remember` tool and switched off with it in `/settings`.
 
