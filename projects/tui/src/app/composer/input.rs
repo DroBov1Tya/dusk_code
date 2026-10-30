@@ -10,6 +10,8 @@ pub struct Input {
     pub cursor: usize,
     /// What each chip in `text` stands for, by its index.
     pub pastes: Vec<String>,
+    /// The other end of a selection, with the cursor as this end.
+    pub anchor: Option<usize>,
 }
 
 impl Input {
@@ -20,6 +22,7 @@ impl Input {
     /// The message to send, each chip replaced by its paste in tags.
     pub fn take(&mut self) -> String {
         self.cursor = 0;
+        self.anchor = None;
         let text = std::mem::take(&mut self.text);
         let pastes = std::mem::take(&mut self.pastes);
         text.chars()
@@ -36,6 +39,7 @@ impl Input {
     pub fn set(&mut self, message: String) {
         self.text.clear();
         self.pastes.clear();
+        self.anchor = None;
         for part in paste::split(&message) {
             match part {
                 Part::Text(text) => self.text.push_str(text),
@@ -47,6 +51,7 @@ impl Input {
 
     /// Long text becomes a chip; short text is typed in.
     pub fn paste(&mut self, text: &str) {
+        self.delete_selection();
         if text.chars().count() <= PASTE_THRESHOLD {
             return self.insert(text);
         }
@@ -94,12 +99,72 @@ impl Input {
         }
     }
 
+    /// The selected byte range, start first, when it is not empty.
+    pub fn selection(&self) -> Option<(usize, usize)> {
+        let anchor = self.anchor.filter(|&anchor| anchor != self.cursor)?;
+        Some((anchor.min(self.cursor), anchor.max(self.cursor)))
+    }
+
+    /// The selected text, each chip as the text it stands for.
+    pub fn selected(&self) -> Option<String> {
+        let (from, to) = self.selection()?;
+        let text = self.text[from..to]
+            .chars()
+            .map(
+                |c| match paste::chip_index(c).and_then(|index| self.pastes.get(index)) {
+                    Some(pasted) => pasted.clone(),
+                    None => c.to_string(),
+                },
+            )
+            .collect();
+        Some(text)
+    }
+
+    /// Takes the selected text out; false when nothing was selected.
+    pub fn delete_selection(&mut self) -> bool {
+        let selection = self.selection();
+        self.anchor = None;
+        let Some((from, to)) = selection else {
+            return false;
+        };
+        self.text.drain(from..to);
+        self.cursor = from;
+        true
+    }
+
+    /// Before a move: a held Shift starts or grows a selection, otherwise it ends.
+    pub fn mark(&mut self, extend: bool) {
+        self.anchor = match (extend, self.anchor) {
+            (true, Some(anchor)) => Some(anchor),
+            (true, None) => Some(self.cursor),
+            (false, _) => None,
+        };
+    }
+
+    pub fn select_all(&mut self) {
+        self.anchor = Some(0);
+        self.cursor = self.text.len();
+    }
+
+    /// Puts the cursor on a byte offset, clamped to a character boundary.
+    pub fn place(&mut self, offset: usize) {
+        let mut offset = offset.min(self.text.len());
+        while !self.text.is_char_boundary(offset) {
+            offset -= 1;
+        }
+        self.cursor = offset;
+    }
+
     pub fn insert(&mut self, text: &str) {
+        self.delete_selection();
         self.text.insert_str(self.cursor, text);
         self.cursor += text.len();
     }
 
     pub fn backspace(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
         if let Some(previous) = self.previous_boundary() {
             self.text.drain(previous..self.cursor);
             self.cursor = previous;
@@ -107,6 +172,9 @@ impl Input {
     }
 
     pub fn delete(&mut self) {
+        if self.delete_selection() {
+            return;
+        }
         if let Some(next) = self.next_boundary() {
             self.text.drain(self.cursor..next);
         }

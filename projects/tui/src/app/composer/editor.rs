@@ -44,6 +44,7 @@ impl PasteEditor {
                 text: text.clone(),
                 cursor: 0,
                 pastes: Vec::new(),
+                anchor: None,
             },
             original: text,
             confirming: false,

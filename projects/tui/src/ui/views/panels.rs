@@ -25,12 +25,14 @@ use crate::app::{
     App, Connection, EditorButton, EditorHit, ModelList, Panel, ThreadList, compact_number, paste,
 };
 
-const KEYS: [(&str, &str); 26] = [
+const KEYS: [(&str, &str); 28] = [
     ("Enter", "send; it waits if the agent is busy"),
     ("Alt+Enter", "send now, interrupting the agent"),
     ("Esc", "stop the agent"),
     ("Ctrl+J", "new line"),
     ("Ctrl+E, click", "edit a pasted text in its own window"),
+    ("Shift+arrows", "select typed text; Ctrl+A all, drag works too"),
+    ("Ctrl+C / Ctrl+X", "copy or cut the selected typed text"),
     ("Up / Down", "earlier messages you sent"),
     ("Tab", "walk thinking, tools and summaries"),
     ("Enter / Space", "fold or unfold the selected one"),
@@ -57,7 +59,7 @@ const KEYS: [(&str, &str); 26] = [
     ),
     ("F2", "show or hide the statistics sidebar"),
     ("/compact", "summarize the context to free it"),
-    ("Ctrl+C", "clear the box; twice within 5 s quits"),
+    ("Ctrl+C", "clear the box, or copy a selection; twice quits"),
 ];
 
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
