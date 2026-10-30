@@ -18,7 +18,7 @@ use std::{
 
 use dusk_core::{
     chat::commands::{self, COMMANDS, Command},
-    config::Effort,
+    config::{ContextPolicy, Effort},
     live_config::LiveConfig,
     mcp::McpStatus,
     providers::ModelEvent,
@@ -49,6 +49,7 @@ pub enum Action {
         api_key: Option<String>,
     },
     SetAgentLimit(usize),
+    SetContextPolicy(ContextPolicy),
     /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {
         kind: SwitchKind,

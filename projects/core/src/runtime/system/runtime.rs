@@ -20,7 +20,7 @@ use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     agents::{AgentTree, Agents},
     chat::commands::{ContextReport, context_report},
-    config::{ApiKey, ProviderConfig, ProviderKind},
+    config::{ApiKey, ContextPolicy, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
     graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
     init::{self, create_private_dir},
@@ -177,6 +177,37 @@ impl Runtime {
         self.launcher.model.current()
     }
 
+    /// The selected model's saved policy; None while no model is selected.
+    pub fn context_policy(&self) -> Option<ContextPolicy> {
+        let choice = self.model()?;
+        Some(
+            self.config()
+                .current()
+                .context_policy(&choice.provider_name, &choice.model.id),
+        )
+    }
+
+    /// Saves a model-specific policy without contacting the provider. Returns its
+    /// effective input limit, including the known model window when available.
+    pub fn set_context_policy(&self, policy: ContextPolicy) -> Result<u64> {
+        policy.validate()?;
+        let choice = self
+            .model()
+            .context("select a model before changing its context")?;
+        let config = self.config().update(|config| {
+            config.set_context_policy(&choice.provider_name, &choice.model.id, policy);
+        })?;
+        Ok(choice.input_limit(&config))
+    }
+
+    pub fn input_limit(&self) -> u64 {
+        let config = self.config().current();
+        self.model()
+            .map_or(config.limits().max_input_tokens, |choice| {
+                choice.input_limit(&config)
+            })
+    }
+
     /// Whether the start is still looking for a model in the background.
     pub fn discovering_model(&self) -> bool {
         self.model_discovery
@@ -266,11 +297,11 @@ impl Runtime {
             .specs(&scope, &config);
         let mode = config.mode().to_owned();
         let prompt = modes::prompt(&launcher.paths.modes_dir(), &mode)?;
-        let configured = config.limits().max_input_tokens;
         let limit = self
             .model()
-            .and_then(|choice| choice.model.context_window)
-            .map_or(configured, |window| window.min(configured));
+            .map_or(config.limits().max_input_tokens, |choice| {
+                choice.input_limit(&config)
+            });
         context_report(&launcher.state, thread_id, &mode, prompt, &specs, limit).await
     }
 

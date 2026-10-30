@@ -19,7 +19,16 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("dusk", bold(VIOLET)),
         Span::styled(format!("  {DOT}  "), fg(NIGHT)),
     ];
-    let room = (area.width as usize)
+    let effort = format!(
+        " effort {} ",
+        app.effort.map_or("default", |effort| effort.name())
+    );
+    let effort_width = effort.width().min(area.width as usize);
+    let title_area = Rect {
+        width: area.width.saturating_sub(effort_width as u16),
+        ..area
+    };
+    let room = (title_area.width as usize)
         .saturating_sub(brand.iter().map(|span| span.content.as_ref().width()).sum());
     let title = match &app.title {
         Some(title) => Span::styled(wrap::clip(title, room), ratatui::style::Style::new()),
@@ -27,5 +36,13 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     };
     let mut spans = brand;
     spans.push(title);
-    frame.render_widget(Paragraph::new(Line::from(spans)), area);
+    frame.render_widget(Paragraph::new(Line::from(spans)), title_area);
+    frame.render_widget(
+        Paragraph::new(Span::styled(effort, bold(SUN))).right_aligned(),
+        Rect {
+            x: area.right().saturating_sub(effort_width as u16),
+            width: effort_width as u16,
+            ..area
+        },
+    );
 }

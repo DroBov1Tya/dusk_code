@@ -8,7 +8,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use dusk_core::{
     agents::{AgentNode, AgentTree},
     chat::commands::{Command, Settings, ToolInfo},
-    config::Memory,
+    config::{ContextPolicy, ContextPreset, Effort, Memory},
     graph::NodeText,
     graph::Problem,
     mcp::{McpInfo, McpState},
@@ -21,6 +21,7 @@ use crate::app::{Action, App, Input};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SettingCategory {
+    Models,
     Agents,
     Tools,
     Skills,
@@ -31,7 +32,8 @@ pub enum SettingCategory {
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
+        Self::Models,
         Self::Agents,
         Self::Skills,
         Self::Mcp,
@@ -42,6 +44,7 @@ impl SettingCategory {
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::Models => "models",
             Self::Agents => "agents",
             Self::Tools => "tools",
             Self::Skills => "skills",
@@ -81,6 +84,12 @@ pub struct AgentRow {
 }
 
 pub struct SettingsView {
+    pub selected_model: Option<String>,
+    pub context_policy: Option<ContextPolicy>,
+    pub effective_limit: u64,
+    pub effort: Option<Effort>,
+    pub manual_context: Option<Input>,
+    pub model_error: Option<String>,
     pub max_agents_at_work: usize,
     pub memory: Memory,
     pub update_channel: Channel,
@@ -168,6 +177,12 @@ impl SettingsView {
         flatten(&settings.agents.root, 0, &[], true, true, &mut agents);
         let AgentTree { problems, .. } = settings.agents;
         Self {
+            selected_model: None,
+            context_policy: None,
+            effective_limit: 0,
+            effort: None,
+            manual_context: None,
+            model_error: None,
             max_agents_at_work: settings.max_agents_at_work,
             mode: settings.mode,
             memory: settings.memory,
@@ -188,6 +203,12 @@ impl SettingsView {
     /// Fresh settings in place of these, keeping where the user is.
     pub fn refresh(&mut self, settings: Settings) {
         let mut next = Self::new(settings);
+        next.selected_model = self.selected_model.clone();
+        next.context_policy = self.context_policy;
+        next.effective_limit = self.effective_limit;
+        next.effort = self.effort;
+        next.manual_context = self.manual_context.take();
+        next.model_error = self.model_error.take();
         next.category = self.category;
         next.selected = self.selected.min(next.len().saturating_sub(1));
         next.editor = self.editor.take();
@@ -198,12 +219,41 @@ impl SettingsView {
     pub fn len(&self) -> usize {
         match self.category {
             None => SettingCategory::ALL.len(),
+            Some(SettingCategory::Models) => 7,
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize | SettingCategory::Updates) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp.len(),
         }
+    }
+
+    fn model_action(&self, row: usize) -> Option<Action> {
+        self.selected_model.as_ref()?;
+        match row {
+            0 => Some(Action::SetContextPolicy(ContextPolicy::Auto)),
+            1..=4 => Some(Action::SetContextPolicy(ContextPolicy::Fixed(
+                ContextPreset::ALL[row - 1],
+            ))),
+            6 => Some(Action::Command(Command::Effort { level: None })),
+            _ => None,
+        }
+    }
+
+    fn edit_manual_context(&mut self) {
+        if self.selected_model.is_none() {
+            self.model_error = Some("choose a model with /model first".into());
+            return;
+        }
+        let tokens = match self.context_policy {
+            Some(ContextPolicy::Manual(tokens)) => tokens,
+            _ => self.effective_limit,
+        };
+        let mut input = Input::default();
+        input.set(tokens.to_string());
+        input.select_all();
+        self.manual_context = Some(input);
+        self.model_error = None;
     }
 
     /// The agent on a row of the agents list; the limit row and the chat have none.
@@ -221,6 +271,7 @@ impl SettingsView {
     /// What switching `row` asks of the core.
     fn switch(&self, row: usize) -> Option<Action> {
         let (kind, name, on) = match self.category? {
+            SettingCategory::Models => return self.model_action(row),
             SettingCategory::Agents => {
                 let agent = self.agent(row)?;
                 (SwitchKind::Agent, agent.name.clone(), agent.enabled)
@@ -364,6 +415,47 @@ impl App {
             return Action::None;
         };
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if let Some(input) = &mut view.manual_context {
+            match key.code {
+                KeyCode::Esc => {
+                    view.manual_context = None;
+                    view.model_error = None;
+                }
+                KeyCode::Enter => match input.text.parse::<u64>().ok().filter(|tokens| *tokens > 0)
+                {
+                    Some(tokens) => return Action::SetContextPolicy(ContextPolicy::Manual(tokens)),
+                    None => {
+                        view.model_error =
+                            Some("enter a token count above zero (digits only)".into())
+                    }
+                },
+                KeyCode::Char('a') if ctrl => input.select_all(),
+                KeyCode::Char(c) if c.is_ascii_digit() && !ctrl => {
+                    input.insert(c.encode_utf8(&mut [0; 4]));
+                    view.model_error = None;
+                }
+                KeyCode::Backspace => input.backspace(),
+                KeyCode::Delete => input.delete(),
+                KeyCode::Left => {
+                    input.mark(false);
+                    input.left();
+                }
+                KeyCode::Right => {
+                    input.mark(false);
+                    input.right();
+                }
+                KeyCode::Home => {
+                    input.mark(false);
+                    input.home();
+                }
+                KeyCode::End => {
+                    input.mark(false);
+                    input.end();
+                }
+                _ => {}
+            }
+            return Action::None;
+        }
         if let Some(editor) = &mut view.editor {
             let text = &mut editor.text;
             match key.code {
@@ -398,6 +490,14 @@ impl App {
             _ if up || down => {
                 let count = view.len();
                 step(&mut view.selected, count, down);
+            }
+            (Some(SettingCategory::Models), KeyCode::Enter | KeyCode::Char(' '))
+                if view.selected == 5 =>
+            {
+                view.edit_manual_context()
+            }
+            (Some(SettingCategory::Models), KeyCode::Enter | KeyCode::Char(' ')) => {
+                return view.model_action(view.selected).unwrap_or(Action::None);
             }
             (None, KeyCode::Esc) => self.panel = None,
             (None, KeyCode::Enter | KeyCode::Right) => {
@@ -465,6 +565,17 @@ impl App {
 
     pub fn settings_paste(&mut self, pasted: &str) {
         if let Some(Panel::Settings(view)) = &mut self.panel
+            && let Some(input) = &mut view.manual_context
+        {
+            if pasted.chars().all(|c| c.is_ascii_digit()) {
+                input.insert(pasted);
+                view.model_error = None;
+            } else {
+                view.model_error = Some("enter digits only".into());
+            }
+            return;
+        }
+        if let Some(Panel::Settings(view)) = &mut self.panel
             && let Some(editor) = &mut view.editor
         {
             editor.text.insert(pasted);
@@ -478,6 +589,9 @@ impl App {
         let (x, y) = (mouse.column, mouse.row);
         match mouse.kind {
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
+                if view.manual_context.is_some() {
+                    return Action::None;
+                }
                 let down = mouse.kind == MouseEventKind::ScrollDown;
                 match &mut view.editor {
                     Some(editor) => move_rows(&mut editor.text, WHEEL, down),
@@ -520,6 +634,15 @@ fn click_row(view: &mut SettingsView, row: usize) -> Action {
             view.selected = 0;
             view.top = 0;
         }
+        Some(SettingCategory::Models) => {
+            view.selected = row;
+            view.manual_context = None;
+            if row == 5 {
+                view.edit_manual_context();
+            } else {
+                return view.model_action(row).unwrap_or(Action::None);
+            }
+        }
         Some(category) if opens_file(view, category, row) => {
             view.selected = row;
             let unsaved = view.editor.as_ref().is_some_and(FileEditor::changed);
@@ -551,7 +674,10 @@ fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> boo
     match category {
         SettingCategory::Agents => view.agent_file(row).is_some(),
         SettingCategory::Skills | SettingCategory::Mcp => true,
-        SettingCategory::Tools | SettingCategory::Personalize | SettingCategory::Updates => false,
+        SettingCategory::Models
+        | SettingCategory::Tools
+        | SettingCategory::Personalize
+        | SettingCategory::Updates => false,
     }
 }
 

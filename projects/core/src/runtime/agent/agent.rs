@@ -4,7 +4,7 @@
 
 use std::{path::PathBuf, sync::Arc, time::Duration};
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
@@ -17,9 +17,12 @@ use crate::runtime::{
     },
 };
 use crate::{
-    config::Config,
+    config::{Config, Effort},
     live_config::LiveConfig,
-    providers::{ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient},
+    providers::{
+        ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
+        is_unsupported_effort,
+    },
     state::{CallPurpose, MessageRole, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
     tools::{Progress, ToolRegistry, ToolScope},
 };
@@ -204,7 +207,7 @@ impl Agent {
             max_output_tokens: config.limits().max_output_tokens,
             effort: config.effort(),
         };
-        let (output, generated) = match self.call_model(&choice, request, inbox).await {
+        let (output, generated) = match self.call_model(&choice, request, &config, inbox).await {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
         };
@@ -276,6 +279,7 @@ impl Agent {
         &self,
         choice: &Choice,
         request: ChatRequest<'_>,
+        requested_config: &Config,
         inbox: &mut Inbox,
     ) -> Result<(ModelOutput, Result<Result<Vec<ToolCall>>, Stop>), Stop> {
         let mut attempt = 1;
@@ -285,7 +289,28 @@ impl Agent {
             let streamed = generation::generate(&*choice.provider, request, &mut output, |event| {
                 let _ = events.send(ThreadEvent::Model(event.clone()));
             });
-            let generated = inbox.race(streamed).await;
+            let mut generated = inbox.race(streamed).await;
+            if request.effort == Some(Effort::Off)
+                && let Ok(Err(error)) = &mut generated
+                && is_unsupported_effort(error)
+            {
+                let mut restored = false;
+                let saved = self.config.update(|config| {
+                    restored = config.restore_unsupported_effort(requested_config);
+                });
+                let detail = match saved {
+                    Ok(config) if restored => format!(
+                        "previous reasoning effort restored to {}",
+                        config.effort().map_or("default", Effort::name)
+                    ),
+                    Ok(_) => "reasoning effort changed meanwhile; current setting kept".to_owned(),
+                    Err(save_error) => {
+                        format!("cannot restore previous reasoning effort: {save_error:#}")
+                    }
+                };
+                let rejected = std::mem::replace(error, anyhow!("reasoning effort rejected"));
+                *error = rejected.context(detail);
+            }
             let error = match &generated {
                 Ok(Err(error))
                     if attempt < MAX_ATTEMPTS && output.is_empty() && is_transient(error) =>
@@ -350,13 +375,14 @@ impl Agent {
         Ok(stop)
     }
 
-    /// The largest request: the configured input limit, or the model window when smaller.
+    /// The largest request under the selected model policy and its known window.
     pub fn input_limit(&self) -> u64 {
-        let configured = self.config.current().limits().max_input_tokens;
+        let config = self.config.current();
         self.model
             .current()
-            .and_then(|choice| choice.model.context_window)
-            .map_or(configured, |window| window.min(configured))
+            .map_or(config.limits().max_input_tokens, |choice| {
+                choice.input_limit(&config)
+            })
     }
 
     /// Reports a context past the input limit to the client and returns why.

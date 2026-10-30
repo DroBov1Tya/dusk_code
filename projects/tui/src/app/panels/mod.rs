@@ -23,7 +23,7 @@ use super::{Input, PasteEditor};
 
 pub enum Panel {
     Threads(ThreadList),
-    Settings(SettingsView),
+    Settings(Box<SettingsView>),
     Help,
     Paste(PasteEditor),
     Models(ModelList),

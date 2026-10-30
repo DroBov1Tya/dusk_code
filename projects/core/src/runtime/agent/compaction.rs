@@ -130,14 +130,15 @@ impl Agent {
         let mut messages = conversation.chat_messages_through(through);
         messages.push(ChatMessage::User(prompt));
         let choice = self.model.current().context("provider is unavailable")?;
+        let config = self.config.current();
         let request = ChatRequest {
             model: &choice.model.id,
             messages: &messages,
             tools: &[],
-            max_output_tokens: self.config.current().limits().max_output_tokens,
-            effort: self.config.current().effort(),
+            max_output_tokens: config.limits().max_output_tokens,
+            effort: config.effort(),
         };
-        let (output, generated) = match self.call_model(&choice, request, inbox).await {
+        let (output, generated) = match self.call_model(&choice, request, &config, inbox).await {
             Ok(called) => called,
             Err(stop) => return Ok(Err(stop)),
         };

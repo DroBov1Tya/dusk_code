@@ -31,6 +31,26 @@ pub struct Model {
 #[derive(Debug)]
 pub struct Transient(pub String);
 
+/// The provider explicitly rejected `reasoning_effort: none`. This is permanent for
+/// this request and must never trigger a resend with a different effort.
+#[derive(Debug)]
+pub struct UnsupportedEffort;
+
+impl fmt::Display for UnsupportedEffort {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .write_str("provider does not support reasoning effort off; request was not resent")
+    }
+}
+
+impl std::error::Error for UnsupportedEffort {}
+
+pub fn is_unsupported_effort(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.downcast_ref::<UnsupportedEffort>().is_some())
+}
+
 /// What the agent needs from a model provider. Tests put a scripted model behind it.
 pub trait ModelProvider: Send + Sync {
     /// Returns the catalogue sorted by model ID.

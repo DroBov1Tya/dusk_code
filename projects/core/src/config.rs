@@ -62,6 +62,15 @@ pub struct Config {
     /// How hard the model reasons; the provider's default when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     effort: Option<Effort>,
+    /// Effort before Off was selected, so an explicit rejection can restore it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    previous_effort: Option<Effort>,
+    /// Fences a rejection from a request started before a later settings change.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    effort_revision: u64,
+    /// Input policies keyed by the stable `provider/model` name.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    model_contexts: BTreeMap<String, ContextPolicy>,
     /// MCP servers by name, started with the core.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     mcp: BTreeMap<String, McpServerConfig>,
@@ -97,27 +106,37 @@ fn default_memory_chars() -> usize {
     2000
 }
 
-/// Reasoning effort, sent as `reasoning_effort`; servers that do not reason ignore it.
+/// Reasoning effort. Off is explicit; the provider default omits `reasoning_effort`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Effort {
+    Off,
     Low,
     Medium,
     High,
 }
 
 impl Effort {
-    pub const ALL: [Self; 3] = [Self::Low, Self::Medium, Self::High];
+    pub const ALL: [Self; 4] = [Self::Off, Self::Low, Self::Medium, Self::High];
 
     pub fn name(self) -> &'static str {
         match self {
+            Self::Off => "off",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
         }
     }
 
-    /// `default` stands for none: the provider decides.
+    /// OpenAI-compatible APIs call explicit Off `none`.
+    pub fn wire_name(self) -> &'static str {
+        match self {
+            Self::Off => "none",
+            other => other.name(),
+        }
+    }
+
+    /// `default` omits the parameter: the provider decides.
     pub fn parse(text: &str) -> Result<Option<Self>> {
         if text == "default" {
             return Ok(None);
@@ -126,7 +145,73 @@ impl Effort {
             .into_iter()
             .find(|effort| effort.name() == text)
             .map(Some)
-            .with_context(|| format!("unknown effort {text}; low, medium, high or default"))
+            .with_context(|| format!("unknown effort {text}; off, low, medium, high or default"))
+    }
+}
+
+/// A model's input budget. Fixed and Manual replace the global input cap, while a
+/// known model window remains a hard ceiling. Auto retains the global cap.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ContextPolicy {
+    #[default]
+    Auto,
+    Fixed(ContextPreset),
+    Manual(u64),
+}
+
+/// Decimal token counts, matching model catalogue context windows.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ContextPreset {
+    #[serde(rename = "128k")]
+    K128,
+    #[serde(rename = "256k")]
+    K256,
+    #[serde(rename = "512k")]
+    K512,
+    #[serde(rename = "1m")]
+    M1,
+}
+
+impl ContextPreset {
+    pub const ALL: [Self; 4] = [Self::K128, Self::K256, Self::K512, Self::M1];
+
+    pub fn tokens(self) -> u64 {
+        match self {
+            Self::K128 => 128_000,
+            Self::K256 => 256_000,
+            Self::K512 => 512_000,
+            Self::M1 => 1_000_000,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::K128 => "128k",
+            Self::K256 => "256k",
+            Self::K512 => "512k",
+            Self::M1 => "1M",
+        }
+    }
+}
+
+impl ContextPolicy {
+    pub fn validate(self) -> Result<()> {
+        ensure!(
+            !matches!(self, Self::Manual(0)),
+            "manual context must be above zero"
+        );
+        Ok(())
+    }
+
+    /// The single resolver used by request guards, context reports and compaction.
+    pub fn input_limit(self, global: u64, model_window: Option<u64>) -> u64 {
+        let selected = match self {
+            Self::Auto => global,
+            Self::Fixed(preset) => preset.tokens(),
+            Self::Manual(tokens) => tokens,
+        };
+        model_window.map_or(selected, |window| window.min(selected))
     }
 }
 
@@ -399,7 +484,49 @@ impl Config {
     }
 
     pub fn set_effort(&mut self, effort: Option<Effort>) {
+        if self.effort == effort {
+            return;
+        }
+        self.previous_effort = if effort == Some(Effort::Off) {
+            self.effort
+        } else {
+            None
+        };
         self.effort = effort;
+        self.effort_revision = self.effort_revision.wrapping_add(1);
+    }
+
+    /// A delayed rejection must not overwrite an effort selected after its request.
+    pub(crate) fn restore_unsupported_effort(&mut self, requested: &Config) -> bool {
+        if requested.effort != Some(Effort::Off)
+            || self.effort != Some(Effort::Off)
+            || self.effort_revision != requested.effort_revision
+        {
+            return false;
+        }
+        self.set_effort(self.previous_effort);
+        true
+    }
+
+    pub fn context_policy(&self, provider: &str, model: &str) -> ContextPolicy {
+        self.model_contexts
+            .get(&format!("{provider}/{model}"))
+            .copied()
+            .unwrap_or_default()
+    }
+
+    pub fn set_context_policy(&mut self, provider: &str, model: &str, policy: ContextPolicy) {
+        let name = format!("{provider}/{model}");
+        if policy == ContextPolicy::Auto {
+            self.model_contexts.remove(&name);
+        } else {
+            self.model_contexts.insert(name, policy);
+        }
+    }
+
+    pub fn input_limit(&self, provider: &str, model: &str, window: Option<u64>) -> u64 {
+        self.context_policy(provider, model)
+            .input_limit(self.limits.max_input_tokens, window)
     }
 
     pub fn set_provider(&mut self, name: String, provider: ProviderConfig) {
@@ -448,6 +575,20 @@ impl Config {
             self.limits.max_agents_at_work > 0,
             "max_agents_at_work must be above zero"
         );
+        ensure!(
+            self.previous_effort != Some(Effort::Off),
+            "previous effort cannot be off"
+        );
+        for (name, policy) in &self.model_contexts {
+            let valid = name.split_once('/').is_some_and(|(provider, model)| {
+                !provider.trim().is_empty() && !model.trim().is_empty()
+            });
+            ensure!(
+                valid && !name.chars().any(char::is_control),
+                "invalid model context key"
+            );
+            policy.validate()?;
+        }
         for (name, provider) in &self.providers {
             ensure!(!name.trim().is_empty(), "provider name must not be empty");
             ensure!(
@@ -581,6 +722,10 @@ fn yes() -> bool {
 
 fn is_true(value: &bool) -> bool {
     *value
+}
+
+fn is_zero(value: &u64) -> bool {
+    *value == 0
 }
 
 fn is_false(value: &bool) -> bool {
