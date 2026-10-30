@@ -47,16 +47,34 @@ pub struct Config {
     mcp: BTreeMap<String, McpServerConfig>,
 }
 
-/// An MCP server the core starts as a child process and talks to over stdio. `env` may
-/// hold secrets, so it is never logged.
+/// An MCP server: a `command` the core starts, or a `url` it reaches.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum McpServerConfig {
+    Stdio(StdioServerConfig),
+    Http(HttpServerConfig),
+}
+
+/// A server the core starts as a child process and talks to over stdio. `env` may hold
+/// secrets, so it is never logged.
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub struct McpServerConfig {
+pub struct StdioServerConfig {
     pub command: String,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+}
+
+/// A remote server over Streamable HTTP. `headers` go with every request and may hold
+/// secrets, such as an authorization, so they are never logged.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HttpServerConfig {
+    pub url: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -244,10 +262,18 @@ impl Config {
                         .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
                 "MCP server name {name:?} must be up to {MAX_MCP_NAME} of a-z, 0-9 and -"
             );
-            ensure!(
-                !server.command.trim().is_empty(),
-                "MCP server {name} has no command"
-            );
+            match server {
+                McpServerConfig::Stdio(server) => ensure!(
+                    !server.command.trim().is_empty(),
+                    "MCP server {name} has no command"
+                ),
+                McpServerConfig::Http(server) => {
+                    crate::mcp::check_url(&server.url)
+                        .with_context(|| format!("MCP server {name}"))?;
+                    crate::mcp::check_headers(server)
+                        .with_context(|| format!("MCP server {name}"))?;
+                }
+            }
         }
         Ok(())
     }
@@ -358,6 +384,22 @@ mod tests {
         assert!(parse(&format!("{PROVIDERS}session:\n  record: everything\n")).is_err());
         assert!(parse(&format!("{PROVIDERS}tool: {{}}\n")).is_err());
         assert!(parse("providers: {}\n").is_ok(), "offline config");
+    }
+
+    #[test]
+    fn mcp_servers_are_one_kind_and_reached_safely() {
+        let server = |body: &str| parse(&format!("mcp:\n  docs:\n{body}"));
+        assert!(server("    command: docs-server\n").is_ok());
+        assert!(server("    url: 'https://mcp.example.com/mcp'\n").is_ok());
+        assert!(server("    url: 'http://127.0.0.1:9000/mcp'\n").is_ok());
+        for wrong in [
+            "    command: docs-server\n    url: 'https://mcp.example.com/mcp'\n",
+            "    url: 'http://mcp.example.com/mcp'\n",
+            "    url: 'https://user:pass@mcp.example.com/mcp'\n",
+            "    url: 'https://mcp.example.com/mcp'\n    headers:\n      'bad name': x\n",
+        ] {
+            assert!(server(wrong).is_err(), "{wrong}");
+        }
     }
 
     #[test]

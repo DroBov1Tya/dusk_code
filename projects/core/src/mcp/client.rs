@@ -1,46 +1,32 @@
-//! One MCP server over stdio: the core starts it as a child process and they exchange
-//! JSON-RPC messages, one per line. The child's stderr is dropped, since the client may
-//! be drawing on the terminal.
+//! The MCP protocol as the core speaks it, over either transport: agree on a version,
+//! list the tools, call one.
 
 use std::{
-    collections::HashMap,
-    process::Stdio,
-    sync::{
-        Arc, Mutex,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
     time::Duration,
 };
 
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::{
-    io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader},
-    process::{Child, ChildStdin, ChildStdout, Command},
-    sync::{Mutex as AsyncMutex, oneshot},
-};
-use tracing::warn;
 
+use super::{http::HttpTransport, stdio::StdioTransport};
 use crate::config::McpServerConfig;
 
 const PROTOCOL_VERSION: &str = "2025-06-18";
-/// A server that sends a longer line is broken or hostile; it is stopped.
-const MAX_LINE_BYTES: u64 = 8 * 1024 * 1024;
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 const CALL_TIMEOUT: Duration = Duration::from_secs(300);
 /// Pages of tools a server may list, so a server cannot keep the start going forever.
 const MAX_TOOL_PAGES: usize = 20;
 
-/// Answers waiting for their request's ID.
-type Waiting = Arc<Mutex<HashMap<u64, oneshot::Sender<Result<Value>>>>>;
+enum Transport {
+    Stdio(StdioTransport),
+    Http(HttpTransport),
+}
 
 pub struct McpClient {
-    stdin: AsyncMutex<ChildStdin>,
-    waiting: Waiting,
+    transport: Transport,
     next_id: AtomicU64,
-    /// Killed when the client is dropped.
-    _child: Child,
 }
 
 /// A tool as the server describes it.
@@ -54,27 +40,16 @@ pub struct RemoteTool {
 }
 
 impl McpClient {
-    /// Starts the server and agrees on the protocol with it.
+    /// Starts or reaches the server and agrees on the protocol with it.
     pub async fn start(config: &McpServerConfig) -> Result<Self> {
-        let mut child = Command::new(&config.command)
-            .args(&config.args)
-            .envs(&config.env)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .kill_on_drop(true)
-            .spawn()
-            .with_context(|| format!("cannot start {}", config.command))?;
-        let stdin = child.stdin.take().context("no stdin")?;
-        let stdout = child.stdout.take().context("no stdout")?;
-        let waiting = Waiting::default();
-        let client = Self {
-            stdin: AsyncMutex::new(stdin),
-            waiting: Arc::clone(&waiting),
-            next_id: AtomicU64::new(1),
-            _child: child,
+        let transport = match config {
+            McpServerConfig::Stdio(config) => Transport::Stdio(StdioTransport::start(config)?),
+            McpServerConfig::Http(config) => Transport::Http(HttpTransport::new(config)?),
         };
-        tokio::spawn(read_messages(stdout, waiting));
+        let client = Self {
+            transport,
+            next_id: AtomicU64::new(1),
+        };
         let params = json!({
             "protocolVersion": PROTOCOL_VERSION,
             "capabilities": {},
@@ -84,9 +59,11 @@ impl McpClient {
             .request("initialize", params, START_TIMEOUT)
             .await
             .context("initialize")?;
-        client
-            .send(json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }))
-            .await?;
+        let initialized = json!({ "jsonrpc": "2.0", "method": "notifications/initialized" });
+        match &client.transport {
+            Transport::Stdio(stdio) => stdio.send(&initialized).await?,
+            Transport::Http(http) => http.send(&initialized).await?,
+        }
         Ok(client)
     }
 
@@ -127,74 +104,24 @@ impl McpClient {
 
     async fn request(&self, method: &str, params: Value, timeout: Duration) -> Result<Value> {
         let id = self.next_id.fetch_add(1, Ordering::Relaxed);
-        let (answer, answered) = oneshot::channel();
-        lock(&self.waiting).insert(id, answer);
         let message = json!({ "jsonrpc": "2.0", "id": id, "method": method, "params": params });
-        if let Err(error) = self.send(message).await {
-            lock(&self.waiting).remove(&id);
-            return Err(error);
-        }
-        match tokio::time::timeout(timeout, answered).await {
-            Ok(Ok(answer)) => answer,
-            Ok(Err(_)) => bail!("the server stopped"),
-            Err(_) => {
-                lock(&self.waiting).remove(&id);
-                bail!(
-                    "the server did not answer {method} in {}s",
-                    timeout.as_secs()
-                )
+        let exchange = async {
+            match &self.transport {
+                Transport::Stdio(stdio) => stdio.request(id, &message).await,
+                Transport::Http(http) => http.request(id, &message).await,
             }
+        };
+        match tokio::time::timeout(timeout, exchange).await {
+            Ok(answer) => result_of(answer?),
+            Err(_) => bail!(
+                "the server did not answer {method} in {}s",
+                timeout.as_secs()
+            ),
         }
-    }
-
-    async fn send(&self, message: Value) -> Result<()> {
-        let mut line = serde_json::to_vec(&message)?;
-        line.push(b'\n');
-        let mut stdin = self.stdin.lock().await;
-        stdin.write_all(&line).await.context("the server stopped")?;
-        stdin.flush().await.context("the server stopped")
     }
 }
 
-/// Hands every answer to its request until the server closes its output or misbehaves;
-/// then every request still waiting fails.
-async fn read_messages(stdout: ChildStdout, waiting: Waiting) {
-    let mut reader = BufReader::new(stdout);
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        let read = (&mut reader)
-            .take(MAX_LINE_BYTES)
-            .read_until(b'\n', &mut line)
-            .await;
-        match read {
-            Ok(0) | Err(_) => break,
-            Ok(_) if line.len() as u64 >= MAX_LINE_BYTES && !line.ends_with(b"\n") => {
-                warn!("MCP server sent a line over {MAX_LINE_BYTES} bytes; stopped reading");
-                break;
-            }
-            Ok(_) => {}
-        }
-        // Servers may log or send notifications and requests of their own; only answers
-        // to our requests matter here.
-        let Ok(message) = serde_json::from_slice::<Value>(&line) else {
-            continue;
-        };
-        let Some(id) = message.get("id").and_then(Value::as_u64) else {
-            continue;
-        };
-        if message.get("method").is_some() {
-            continue;
-        }
-        let Some(answer) = lock(&waiting).remove(&id) else {
-            continue;
-        };
-        let _ = answer.send(answer_of(message));
-    }
-    lock(&waiting).clear();
-}
-
-fn answer_of(message: Value) -> Result<Value> {
+fn result_of(message: Value) -> Result<Value> {
     if let Some(error) = message.get("error") {
         let text = error
             .get("message")
@@ -239,14 +166,6 @@ fn empty_schema() -> Value {
     json!({ "type": "object", "properties": {} })
 }
 
-// Only inserts and removes happen under these locks, so a panic cannot leave a map
-// half-changed.
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -259,6 +178,6 @@ mod tests {
         ]});
         assert_eq!(result_text(&result), "two files\n[image content]");
         let error = json!({ "id": 1, "error": { "code": -32601, "message": "no such method" } });
-        assert!(answer_of(error).is_err());
+        assert!(result_of(error).is_err());
     }
 }

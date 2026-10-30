@@ -7,11 +7,14 @@ mod openai;
 mod provider;
 mod sse;
 
+pub use sse::SseDecoder;
+
 pub use chat::{ChatMessage, ChatRequest, ToolSpec};
 pub use model_output::{
     ChatStream, FinishReason, ModelEvent, ModelOutput, OutputLimit, ToolCall, Usage,
     is_output_limit,
 };
+pub use openai::is_loopback;
 pub use provider::{
     Model, ModelProvider, Provider, ProviderRegistry, Transient, is_transient, validate_provider,
 };

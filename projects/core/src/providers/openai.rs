@@ -179,7 +179,7 @@ impl From<&ToolSpec> for WireTool {
 
 /// Plain HTTP is allowed only to a server on this machine, such as a local model, named
 /// by its address: a name could be made to resolve elsewhere.
-fn is_loopback(url: &Url) -> bool {
+pub fn is_loopback(url: &Url) -> bool {
     let address = url
         .host_str()
         .map(|host| host.trim_start_matches('[').trim_end_matches(']'))
