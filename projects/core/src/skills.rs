@@ -51,6 +51,7 @@ pub struct SkillInfo {
     pub kind: SkillKind,
     /// The company or project it comes from, as its front matter says.
     pub source: Option<String>,
+    pub tags: Vec<String>,
     pub enabled: bool,
     /// Why the skill cannot be used as it is; it can still be opened and fixed.
     pub problem: Option<String>,
@@ -76,6 +77,7 @@ pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
             description: node.description.clone(),
             kind: kind(&node.name, node.source.is_some()),
             source: node.source.clone(),
+            tags: node.tags.clone(),
             enabled: config.skill_enabled(&node.name),
             problem: None,
         })
@@ -87,6 +89,7 @@ pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
                 description: String::new(),
                 kind: kind(&problem.node, false),
                 source: None,
+                tags: Vec::new(),
                 enabled: config.skill_enabled(&problem.node),
                 problem: Some(problem.reason.clone()),
             });

@@ -1,5 +1,6 @@
 //! The settings window, as the core describes it: the agent tree with a switch on each
-//! agent, the tools, and the skills, which open beside the list to be read and edited.
+//! agent, the tools, and the skills and MCP servers, which open beside the list to be
+//! read and edited.
 //! The window keeps only what is on screen; every change goes to the core, which answers
 //! with the settings again.
 
@@ -8,6 +9,7 @@ use dusk_core::{
     agents::{AgentNode, AgentTree},
     chat::commands::{Command, Settings},
     graph::Problem,
+    mcp::{McpInfo, McpState},
     skills::{SkillInfo, SkillText},
 };
 
@@ -19,16 +21,18 @@ pub enum SettingCategory {
     Agents,
     Tools,
     Skills,
+    Mcp,
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 3] = [Self::Agents, Self::Tools, Self::Skills];
+    pub const ALL: [Self; 4] = [Self::Agents, Self::Skills, Self::Mcp, Self::Tools];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Agents => "agents",
             Self::Tools => "tools",
             Self::Skills => "skills",
+            Self::Mcp => "mcp",
         }
     }
 }
@@ -38,6 +42,7 @@ pub enum SwitchKind {
     Agent,
     Tool,
     Skill,
+    Mcp,
 }
 
 /// One row of the agent tree, with what is needed to draw the traces to it.
@@ -46,6 +51,8 @@ pub struct AgentRow {
     pub description: String,
     pub version: Option<i64>,
     pub enabled: bool,
+    /// The agents it may ask.
+    pub links: Vec<String>,
     /// On, and every agent above it too: only then can it be asked.
     pub active: bool,
     pub depth: usize,
@@ -59,22 +66,23 @@ pub struct SettingsView {
     pub max_agents_at_work: usize,
     pub tools: Vec<(String, bool)>,
     pub skills: Vec<SkillInfo>,
+    pub mcp: Vec<McpInfo>,
     /// The chat first, then every agent under it.
     pub agents: Vec<AgentRow>,
     pub problems: Vec<Problem>,
     /// `None` is the category menu.
     pub category: Option<SettingCategory>,
     pub selected: usize,
-    /// The skill open beside the list.
-    pub skill: Option<SkillEditor>,
+    /// The skill or MCP server open beside the list.
+    pub editor: Option<FileEditor>,
     /// What can be clicked on the last drawn frame.
     pub hits: Vec<SettingsHit>,
     /// The first list row shown.
     pub top: usize,
 }
 
-pub struct SkillEditor {
-    pub name: String,
+pub struct FileEditor {
+    pub target: EditTarget,
     pub metadata: Vec<(String, String)>,
     pub text: Input,
     original: String,
@@ -83,8 +91,27 @@ pub struct SkillEditor {
     pub error: Option<String>,
 }
 
+#[derive(Clone, PartialEq, Eq)]
+pub enum EditTarget {
+    Skill(String),
+    /// `None` for a server not saved yet.
+    Mcp(Option<String>),
+}
+
+/// What a new MCP server starts as.
+const MCP_TEMPLATE: &str = "\
+# A local server the core starts. For a remote one, write
+#   url: https://host/mcp
+#   headers: {Authorization: Bearer ...}
+# in place of command, args and env.
+name:
+  command: npx
+  args: [-y, some-mcp-server]
+  env: {}
+";
+
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub enum SkillButton {
+pub enum FileButton {
     Save,
     Revert,
     Close,
@@ -96,7 +123,7 @@ pub enum HitTarget {
     Row(usize),
     /// The switch on a row.
     Switch(usize),
-    Button(SkillButton),
+    Button(FileButton),
 }
 
 pub struct SettingsHit {
@@ -120,11 +147,12 @@ impl SettingsView {
             max_agents_at_work: settings.max_agents_at_work,
             tools: settings.tools,
             skills: settings.skills,
+            mcp: settings.mcp,
             agents,
             problems,
             category: None,
             selected: 0,
-            skill: None,
+            editor: None,
             hits: Vec::new(),
             top: 0,
         }
@@ -135,7 +163,7 @@ impl SettingsView {
         let mut next = Self::new(settings);
         next.category = self.category;
         next.selected = self.selected.min(next.len().saturating_sub(1));
-        next.skill = self.skill.take();
+        next.editor = self.editor.take();
         next.top = self.top;
         *self = next;
     }
@@ -146,6 +174,7 @@ impl SettingsView {
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Skills) => self.skills.len(),
+            Some(SettingCategory::Mcp) => self.mcp.len(),
         }
     }
 
@@ -170,6 +199,11 @@ impl SettingsView {
                 let skill = self.skills.get(row)?;
                 (SwitchKind::Skill, skill.name.clone(), skill.enabled)
             }
+            SettingCategory::Mcp => {
+                let server = self.mcp.get(row)?;
+                let on = server.state != McpState::Off;
+                (SwitchKind::Mcp, server.name.clone(), on)
+            }
         };
         Some(Action::Switch {
             kind,
@@ -179,25 +213,72 @@ impl SettingsView {
     }
 }
 
-impl SkillEditor {
-    pub fn new(skill: SkillText) -> Self {
+impl FileEditor {
+    pub fn skill(skill: SkillText) -> Self {
+        Self::new(EditTarget::Skill(skill.name), skill.metadata, skill.text)
+    }
+
+    /// An MCP server's YAML, or the template for a new one, with how it stands.
+    pub fn mcp(server: Option<&McpInfo>, text: Option<String>) -> Self {
+        let target = EditTarget::Mcp(server.map(|server| server.name.clone()));
+        let text = text.unwrap_or_else(|| MCP_TEMPLATE.to_owned());
+        Self::new(target, mcp_fields(server), text)
+    }
+
+    /// Shows how the open MCP server stands now; nothing for anything else.
+    pub fn update_mcp(&mut self, servers: &[McpInfo]) {
+        if let EditTarget::Mcp(Some(name)) = &self.target {
+            let server = servers.iter().find(|server| server.name == *name);
+            self.metadata = mcp_fields(server);
+        }
+    }
+
+    fn new(target: EditTarget, metadata: Vec<(String, String)>, text: String) -> Self {
         Self {
-            name: skill.name,
-            metadata: skill.metadata,
+            target,
+            metadata,
             text: Input {
-                text: skill.text.clone(),
+                text: text.clone(),
                 cursor: 0,
                 pastes: Vec::new(),
             },
-            original: skill.text,
+            original: text,
             scroll: 0,
             error: None,
+        }
+    }
+
+    pub fn title(&self) -> &str {
+        match &self.target {
+            EditTarget::Skill(name) | EditTarget::Mcp(Some(name)) => name,
+            EditTarget::Mcp(None) => "new MCP server",
         }
     }
 
     pub fn changed(&self) -> bool {
         self.text.text != self.original
     }
+}
+
+fn mcp_fields(server: Option<&McpInfo>) -> Vec<(String, String)> {
+    let mut fields = Vec::new();
+    if let Some(server) = server {
+        let state = match &server.state {
+            McpState::Off => "off".to_owned(),
+            McpState::Starting => "starting".to_owned(),
+            McpState::Ready(tools) => format!("ready, {} tools", tools.len()),
+            McpState::Failed(error) => format!("failed: {error}"),
+        };
+        fields.push(("state".to_owned(), state));
+        if let McpState::Ready(tools) = &server.state {
+            fields.push(("tools".to_owned(), tools.join(", ")));
+        }
+    }
+    fields.push((
+        "help".to_owned(),
+        "save starts it again; saving empty text removes it".to_owned(),
+    ));
+    fields
 }
 
 /// The tree as rows, depth first, each knowing the traces of the levels above it.
@@ -215,6 +296,7 @@ fn flatten(
         description: node.description.clone(),
         version: node.version,
         enabled: node.enabled,
+        links: node.links.clone(),
         active,
         depth,
         rails: rails.to_vec(),
@@ -236,12 +318,12 @@ impl App {
             return Action::None;
         };
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
-        if let Some(editor) = &mut view.skill {
+        if let Some(editor) = &mut view.editor {
             let text = &mut editor.text;
             match key.code {
-                KeyCode::Char('s') if ctrl => return press(view, SkillButton::Save),
-                KeyCode::Char('r') if ctrl => return press(view, SkillButton::Revert),
-                KeyCode::Esc => return press(view, SkillButton::Close),
+                KeyCode::Char('s') if ctrl => return press(view, FileButton::Save),
+                KeyCode::Char('r') if ctrl => return press(view, FileButton::Revert),
+                KeyCode::Esc => return press(view, FileButton::Close),
                 KeyCode::Char(c) if !ctrl => text.insert(c.encode_utf8(&mut [0; 4])),
                 KeyCode::Enter => text.insert("\n"),
                 KeyCode::Tab => text.insert("  "),
@@ -306,6 +388,17 @@ impl App {
                     return Action::OpenSkill(skill.name.clone());
                 }
             }
+            (Some(SettingCategory::Mcp), KeyCode::Enter) => {
+                if let Some(server) = view.mcp.get(view.selected) {
+                    return Action::OpenMcp(Some(server.name.clone()));
+                }
+            }
+            (Some(SettingCategory::Mcp), KeyCode::Char('n')) => return Action::OpenMcp(None),
+            (Some(SettingCategory::Mcp), KeyCode::Char('c')) => {
+                if let Some(server) = view.mcp.get(view.selected) {
+                    return Action::RestartMcp(server.name.clone());
+                }
+            }
             (Some(_), KeyCode::Char(' ') | KeyCode::Enter) => {
                 if let Some(action) = view.switch(view.selected) {
                     return action;
@@ -319,7 +412,7 @@ impl App {
 
     pub fn settings_paste(&mut self, pasted: &str) {
         if let Some(Panel::Settings(view)) = &mut self.panel
-            && let Some(editor) = &mut view.skill
+            && let Some(editor) = &mut view.editor
         {
             editor.text.insert(pasted);
         }
@@ -333,7 +426,7 @@ impl App {
         match mouse.kind {
             MouseEventKind::ScrollUp | MouseEventKind::ScrollDown => {
                 let down = mouse.kind == MouseEventKind::ScrollDown;
-                match &mut view.skill {
+                match &mut view.editor {
                     Some(editor) => move_rows(&mut editor.text, WHEEL, down),
                     None => {
                         let count = view.len();
@@ -374,13 +467,17 @@ fn click_row(view: &mut SettingsView, row: usize) -> Action {
             view.selected = 0;
             view.top = 0;
         }
-        Some(SettingCategory::Skills) => {
+        Some(category @ (SettingCategory::Skills | SettingCategory::Mcp)) => {
             view.selected = row;
-            let unsaved = view.skill.as_ref().is_some_and(SkillEditor::changed);
-            if let Some(editor) = view.skill.as_mut().filter(|_| unsaved) {
-                editor.error = Some("save or revert this skill first".into());
-            } else if let Some(skill) = view.skills.get(row) {
+            let unsaved = view.editor.as_ref().is_some_and(FileEditor::changed);
+            if let Some(editor) = view.editor.as_mut().filter(|_| unsaved) {
+                editor.error = Some("save or revert this one first".into());
+            } else if category == SettingCategory::Skills
+                && let Some(skill) = view.skills.get(row)
+            {
                 return Action::OpenSkill(skill.name.clone());
+            } else if let Some(server) = view.mcp.get(row) {
+                return Action::OpenMcp(Some(server.name.clone()));
             }
         }
         Some(_) if view.selected == row => return view.switch(row).unwrap_or(Action::None),
@@ -389,23 +486,29 @@ fn click_row(view: &mut SettingsView, row: usize) -> Action {
     Action::None
 }
 
-fn press(view: &mut SettingsView, button: SkillButton) -> Action {
-    let Some(editor) = &mut view.skill else {
+fn press(view: &mut SettingsView, button: FileButton) -> Action {
+    let Some(editor) = &mut view.editor else {
         return Action::None;
     };
-    match button {
-        SkillButton::Save => Action::SaveSkill {
-            name: editor.name.clone(),
-            text: editor.text.text.clone(),
+    let text = editor.text.text.clone();
+    match (button, &editor.target) {
+        (FileButton::Save, EditTarget::Skill(name)) => Action::SaveSkill {
+            name: name.clone(),
+            text,
+        },
+        (FileButton::Save, EditTarget::Mcp(old)) => Action::SaveMcp {
+            old: old.clone(),
+            text,
         },
         // Reading the file again drops every change.
-        SkillButton::Revert => Action::OpenSkill(editor.name.clone()),
-        SkillButton::Close if editor.changed() => {
+        (FileButton::Revert, EditTarget::Skill(name)) => Action::OpenSkill(name.clone()),
+        (FileButton::Revert, EditTarget::Mcp(name)) => Action::OpenMcp(name.clone()),
+        (FileButton::Close, _) if editor.changed() => {
             editor.error = Some("unsaved: save with Ctrl+S or revert with Ctrl+R".into());
             Action::None
         }
-        SkillButton::Close => {
-            view.skill = None;
+        (FileButton::Close, _) => {
+            view.editor = None;
             Action::None
         }
     }

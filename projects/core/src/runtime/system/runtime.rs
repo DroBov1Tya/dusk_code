@@ -20,9 +20,10 @@ use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     agents::{AgentTree, Agents},
     config::{ApiKey, ProviderConfig, ProviderKind},
+    config::{mcp_server_yaml, parse_mcp_server},
     init::{self, create_private_dir},
     live_config::LiveConfig,
-    mcp::{McpServers, McpStatus},
+    mcp::{McpInfo, McpServers, McpStatus},
     paths::Paths,
     providers::Provider,
     skills::{self, SkillInfo, SkillText},
@@ -274,6 +275,70 @@ impl Runtime {
     /// How each MCP server in the config stands.
     pub fn mcp_statuses(&self) -> Vec<McpStatus> {
         self.launcher.mcp.statuses()
+    }
+
+    /// Every MCP server in the config, with how it stands.
+    pub fn mcp_servers(&self) -> Vec<McpInfo> {
+        self.launcher.mcp.infos(&self.launcher.config.current())
+    }
+
+    /// One MCP server as YAML to edit, `name:` and its fields.
+    pub fn mcp_server_text(&self, name: &str) -> Result<String> {
+        let config = self.launcher.config.current();
+        let server = config
+            .mcp()
+            .get(name)
+            .with_context(|| format!("no MCP server {name}"))?;
+        mcp_server_yaml(name, server)
+    }
+
+    /// Saves one MCP server from its YAML in place of `old`, and starts it again. Empty
+    /// text removes `old`. Returns the name saved.
+    pub fn save_mcp_server(&self, old: Option<&str>, text: &str) -> Result<Option<String>> {
+        if text.trim().is_empty() {
+            let old = old.context("write the server's YAML")?;
+            self.launcher
+                .config
+                .update(|config| config.set_mcp_server(old, None))?;
+            self.launcher.mcp.restart(old, None);
+            return Ok(None);
+        }
+        let (name, server) = parse_mcp_server(text)?;
+        let config = self.launcher.config.current();
+        ensure!(
+            old == Some(name.as_str()) || !config.mcp().contains_key(&name),
+            "MCP server {name} already exists"
+        );
+        self.launcher.config.update(|config| {
+            if let Some(old) = old {
+                config.set_mcp_server(old, None);
+            }
+            config.set_mcp_server(&name, Some(server.clone()));
+        })?;
+        if let Some(old) = old.filter(|old| *old != name) {
+            self.launcher.mcp.restart(old, None);
+        }
+        self.launcher.mcp.restart(&name, Some(server));
+        Ok(Some(name))
+    }
+
+    pub fn set_mcp_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        let config = self
+            .launcher
+            .config
+            .update(|config| config.set_mcp_enabled(name, enabled))?;
+        self.launcher
+            .mcp
+            .restart(name, config.mcp().get(name).cloned());
+        Ok(())
+    }
+
+    /// Starts an MCP server again, as the config has it now.
+    pub fn restart_mcp(&self, name: &str) {
+        let config = self.launcher.config.current();
+        self.launcher
+            .mcp
+            .restart(name, config.mcp().get(name).cloned());
     }
 
     /// Whether an MCP server is still starting.

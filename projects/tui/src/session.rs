@@ -17,8 +17,8 @@ use ratatui::DefaultTerminal;
 
 use crate::{
     app::{
-        Action, AgentWindow, App, ModelList, Panel, Preview, SettingsView, SkillEditor, SwitchKind,
-        ThreadList, Transcript,
+        Action, AgentWindow, App, FileEditor, ModelList, Panel, Preview, SettingCategory,
+        SettingsView, SwitchKind, ThreadList, Transcript,
     },
     clipboard, ui,
 };
@@ -66,7 +66,18 @@ pub async fn run(
             app.model = name;
             app.limit = input_limit(runtime, &choice.model);
         }
+        // Read before the statuses: a server that settles in between still gets a frame.
+        let mcp_starting = runtime.mcp_starting();
         app.mcp = runtime.mcp_statuses();
+        // Servers start in the background; the settings show them as they settle.
+        if let Some(Panel::Settings(view)) = &mut app.panel
+            && view.category == Some(SettingCategory::Mcp)
+        {
+            view.mcp = runtime.mcp_servers();
+            if let Some(editor) = &mut view.editor {
+                editor.update_mcp(&view.mcp);
+            }
+        }
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let action = tokio::select! {
             key = keys.next() => match key {
@@ -100,7 +111,7 @@ pub async fn run(
                 || app.agents_at_work()
                 || app.task_timers_run()
                 || runtime.discovering_model()
-                || runtime.mcp_starting() => {
+                || mcp_starting => {
                 app.tick();
                 Action::None
             }
@@ -144,6 +155,7 @@ pub async fn run(
                     SwitchKind::Agent => runtime.set_agent_enabled(&name, on),
                     SwitchKind::Tool => runtime.set_tool_enabled(&name, on),
                     SwitchKind::Skill => runtime.set_skill_enabled(&name, on),
+                    SwitchKind::Mcp => runtime.set_mcp_enabled(&name, on),
                 };
                 match saved {
                     Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,
@@ -151,39 +163,56 @@ pub async fn run(
                 }
             }
             Action::OpenSkill(name) => match runtime.skill(&name) {
-                Ok(skill) => {
-                    if let Some(Panel::Settings(view)) = &mut app.panel {
-                        view.skill = Some(SkillEditor::new(skill));
-                    }
-                }
+                Ok(skill) => open_editor(&mut app, FileEditor::skill(skill), false),
                 Err(error) => app.flash = Some(format!("cannot open the skill: {error:#}")),
             },
             Action::SaveSkill { name, text } => match runtime.save_skill(&name, &text) {
                 Ok(skill) => {
-                    if let Some(Panel::Settings(view)) = &mut app.panel
-                        && let Some(editor) = &mut view.skill
-                    {
-                        let (cursor, scroll) = (editor.text.cursor, editor.scroll);
-                        *editor = SkillEditor::new(skill);
-                        // The file was read again and may differ: stay on a char boundary.
-                        let mut cursor = cursor.min(editor.text.text.len());
-                        while !editor.text.text.is_char_boundary(cursor) {
-                            cursor -= 1;
-                        }
-                        editor.text.cursor = cursor;
-                        editor.scroll = scroll;
-                    }
+                    open_editor(&mut app, FileEditor::skill(skill), true);
                     app.flash = Some(format!("skill {name} saved"));
                     answer(runtime, &mut app, &mut open, Command::Settings).await;
                 }
-                Err(error) => {
-                    if let Some(Panel::Settings(view)) = &mut app.panel
-                        && let Some(editor) = &mut view.skill
-                    {
-                        editor.error = Some(format!("not saved: {error:#}"));
-                    }
-                }
+                Err(error) => editor_error(&mut app, format!("not saved: {error:#}")),
             },
+            Action::OpenMcp(name) => {
+                let text = name.as_deref().map(|name| runtime.mcp_server_text(name));
+                match text.transpose() {
+                    Ok(text) => {
+                        let servers = runtime.mcp_servers();
+                        let server = servers
+                            .iter()
+                            .find(|server| Some(&server.name) == name.as_ref());
+                        open_editor(&mut app, FileEditor::mcp(server, text), false);
+                    }
+                    Err(error) => app.flash = Some(format!("cannot open the server: {error:#}")),
+                }
+            }
+            Action::SaveMcp { old, text } => match runtime.save_mcp_server(old.as_deref(), &text) {
+                Ok(saved) => {
+                    let servers = runtime.mcp_servers();
+                    match &saved {
+                        Some(name) => {
+                            let server = servers.iter().find(|server| server.name == *name);
+                            let text = runtime.mcp_server_text(name).ok();
+                            open_editor(&mut app, FileEditor::mcp(server, text), true);
+                            app.flash = Some(format!("MCP server {name} saved, starting"));
+                        }
+                        None => {
+                            if let Some(Panel::Settings(view)) = &mut app.panel {
+                                view.editor = None;
+                            }
+                            app.flash = Some("MCP server removed".into());
+                        }
+                    }
+                    answer(runtime, &mut app, &mut open, Command::Settings).await;
+                }
+                Err(error) => editor_error(&mut app, format!("not saved: {error:#}")),
+            },
+            Action::RestartMcp(name) => {
+                runtime.restart_mcp(&name);
+                app.flash = Some(format!("MCP server {name} starting again"));
+                answer(runtime, &mut app, &mut open, Command::Settings).await;
+            }
             Action::Resend(id) => {
                 if runtime.model().is_none() {
                     app.flash =
@@ -455,4 +484,29 @@ async fn close(open: Option<OpenThread>) {
     drop(input);
     let drained = async { while output.next_event().await.is_some() {} };
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, drained).await;
+}
+
+/// Shows `editor` in the settings. After a save the file was read again and may differ,
+/// so the cursor and scroll are kept, on a char boundary.
+fn open_editor(app: &mut App, mut editor: FileEditor, keep_place: bool) {
+    let Some(Panel::Settings(view)) = &mut app.panel else {
+        return;
+    };
+    if keep_place && let Some(old) = &view.editor {
+        let mut cursor = old.text.cursor.min(editor.text.text.len());
+        while !editor.text.text.is_char_boundary(cursor) {
+            cursor -= 1;
+        }
+        editor.text.cursor = cursor;
+        editor.scroll = old.scroll;
+    }
+    view.editor = Some(editor);
+}
+
+fn editor_error(app: &mut App, error: String) {
+    if let Some(Panel::Settings(view)) = &mut app.panel
+        && let Some(editor) = &mut view.editor
+    {
+        editor.error = Some(error);
+    }
 }

@@ -64,6 +64,8 @@ pub enum McpServerConfig {
 #[serde(deny_unknown_fields)]
 pub struct StdioServerConfig {
     pub command: String,
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub enabled: bool,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -76,8 +78,58 @@ pub struct StdioServerConfig {
 #[serde(deny_unknown_fields)]
 pub struct HttpServerConfig {
     pub url: String,
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub enabled: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
+}
+
+impl McpServerConfig {
+    pub fn enabled(&self) -> bool {
+        match self {
+            Self::Stdio(server) => server.enabled,
+            Self::Http(server) => server.enabled,
+        }
+    }
+
+    pub fn set_enabled(&mut self, enabled: bool) {
+        match self {
+            Self::Stdio(server) => server.enabled = enabled,
+            Self::Http(server) => server.enabled = enabled,
+        }
+    }
+
+    /// The command line or the URL, for a client to show.
+    pub fn target(&self) -> String {
+        match self {
+            Self::Stdio(server) => std::iter::once(server.command.as_str())
+                .chain(server.args.iter().map(String::as_str))
+                .collect::<Vec<_>>()
+                .join(" "),
+            Self::Http(server) => server.url.clone(),
+        }
+    }
+}
+
+/// One MCP server as YAML, `name:` with its fields below, for editing by hand.
+pub fn mcp_server_yaml(name: &str, server: &McpServerConfig) -> Result<String> {
+    let one = BTreeMap::from([(name, server)]);
+    serde_saphyr::to_string(&one).context("cannot encode the MCP server")
+}
+
+/// One MCP server from the YAML `mcp_server_yaml` writes. It is checked with the rest
+/// of the config when it is saved.
+pub fn parse_mcp_server(text: &str) -> Result<(String, McpServerConfig)> {
+    // YAML errors can quote values, and headers or env may hold secrets.
+    let servers: BTreeMap<String, McpServerConfig> =
+        serde_saphyr::from_str(text).map_err(|_| {
+            anyhow!("expected `name:` and below it `command:` or `url:` with their fields")
+        })?;
+    let mut servers = servers.into_iter();
+    match (servers.next(), servers.next()) {
+        (Some(server), None) => Ok(server),
+        _ => Err(anyhow!("write exactly one server")),
+    }
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -178,6 +230,20 @@ impl Config {
 
     pub fn mcp(&self) -> &BTreeMap<String, McpServerConfig> {
         &self.mcp
+    }
+
+    /// Adds, replaces or, with `None`, removes an MCP server.
+    pub fn set_mcp_server(&mut self, name: &str, server: Option<McpServerConfig>) {
+        match server {
+            Some(server) => self.mcp.insert(name.to_owned(), server),
+            None => self.mcp.remove(name),
+        };
+    }
+
+    pub fn set_mcp_enabled(&mut self, name: &str, enabled: bool) {
+        if let Some(server) = self.mcp.get_mut(name) {
+            server.set_enabled(enabled);
+        }
     }
 
     pub fn thread(&self) -> &ThreadConfig {
@@ -377,6 +443,14 @@ fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
     Ok(())
 }
 
+fn yes() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
+}
+
 fn is_false(value: &bool) -> bool {
     !value
 }
@@ -396,6 +470,19 @@ mod tests {
         assert!(parse(&format!("{PROVIDERS}session:\n  record: everything\n")).is_err());
         assert!(parse(&format!("{PROVIDERS}tool: {{}}\n")).is_err());
         assert!(parse("providers: {}\n").is_ok(), "offline config");
+    }
+
+    #[test]
+    fn an_mcp_server_is_edited_as_its_own_yaml() {
+        let (name, mut server) =
+            parse_mcp_server("docs:\n  command: docs-server\n  args: [--stdio]\n").unwrap();
+        assert_eq!((name.as_str(), server.enabled()), ("docs", true));
+        server.set_enabled(false);
+        let text = mcp_server_yaml(&name, &server).unwrap();
+        let (_, again) = parse_mcp_server(&text).unwrap();
+        assert!(!again.enabled() && again.target() == "docs-server --stdio");
+        assert!(parse_mcp_server("a:\n  command: x\nb:\n  command: y\n").is_err());
+        assert!(parse_mcp_server("docs:\n  command: x\n  extra: 1\n").is_err());
     }
 
     #[test]

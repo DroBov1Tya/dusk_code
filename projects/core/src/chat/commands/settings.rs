@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 
-use crate::{agents::AgentTree, runtime::Runtime, skills::SkillInfo};
+use crate::{agents::AgentTree, mcp::McpInfo, runtime::Runtime, skills::SkillInfo};
 
 pub struct Settings {
     pub max_agents_at_work: usize,
@@ -11,6 +11,7 @@ pub struct Settings {
     pub tools: Vec<(String, bool)>,
     pub skills: Vec<SkillInfo>,
     pub agents: AgentTree,
+    pub mcp: Vec<McpInfo>,
 }
 
 pub async fn run(runtime: &Runtime) -> Result<Settings> {
@@ -29,5 +30,6 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         tools,
         skills: runtime.skills(),
         agents: runtime.agent_tree(),
+        mcp: runtime.mcp_servers(),
     })
 }

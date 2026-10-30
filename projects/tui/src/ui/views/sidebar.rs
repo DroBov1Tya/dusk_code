@@ -336,6 +336,7 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     for server in &app.mcp {
         let (mark, color, state) = match &server.state {
+            McpState::Off => (OFF, SIDEBAR_MUTED, "off".to_owned()),
             McpState::Starting => (OFF, SUN, "starting".to_owned()),
             McpState::Ready(tools) => {
                 let plural = if tools.len() == 1 { "" } else { "s" };

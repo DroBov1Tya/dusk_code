@@ -2,7 +2,10 @@
 //! agent a pad on the trace from the one that may ask it, lit while it can be asked.
 //! Skills open beside the list: what their front matter says on top, the raw file below.
 
-use dusk_core::skills::SkillKind;
+use dusk_core::{
+    mcp::{McpInfo, McpState},
+    skills::{SkillInfo, SkillKind},
+};
 use ratatui::{
     Frame,
     layout::{Position, Rect},
@@ -19,8 +22,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    AgentRow, App, HitTarget, Panel, SettingCategory, SettingsHit, SettingsView, SkillButton,
-    SkillEditor,
+    AgentRow, App, FileButton, FileEditor, HitTarget, Panel, SettingCategory, SettingsHit,
+    SettingsView,
 };
 
 const ROOT: &str = "\u{25C9}";
@@ -30,9 +33,10 @@ const LAST_BRANCH: &str = "\u{2517}\u{2501}\u{2501}";
 /// Rows the front matter box may take at most.
 const METADATA_ROWS: u16 = 8;
 
-/// A list row: what it shows, and where its switch is, as columns from the row's start.
+/// A list item: its lines, and where its switch is on the first, as columns from the
+/// row's start.
 struct Row {
-    line: Line<'static>,
+    lines: Vec<Line<'static>>,
     switch: Option<(u16, u16)>,
 }
 
@@ -57,7 +61,11 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     if inner.width < 10 || inner.height < 3 {
         return;
     }
-    if view.skill.is_none() || view.category != Some(SettingCategory::Skills) {
+    let editable = matches!(
+        view.category,
+        Some(SettingCategory::Skills | SettingCategory::Mcp)
+    );
+    if view.editor.is_none() || !editable {
         return list(frame, inner, view);
     }
     let list_width = (inner.width * 3 / 10).max(24).min(inner.width / 2);
@@ -83,61 +91,75 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
 }
 
 fn hints(view: &SettingsView) -> &'static str {
-    match (view.category, &view.skill) {
+    match (view.category, &view.editor) {
         (None, _) => " up/down choose  enter open  esc close ",
         (Some(SettingCategory::Agents), _) => {
             " up/down choose  space/click switch  left/right limit  r reload  esc back "
         }
-        (Some(SettingCategory::Skills), Some(_)) => {
+        (Some(SettingCategory::Skills | SettingCategory::Mcp), Some(_)) => {
             " Ctrl+S save  Ctrl+R revert  Esc close  click another skill "
         }
         (Some(SettingCategory::Skills), None) => {
             " up/down choose  enter open  space switch  r reload  esc back "
         }
+        (Some(SettingCategory::Mcp), None) => {
+            " up/down choose  enter edit  n new  c reconnect  space switch  esc back "
+        }
         (Some(SettingCategory::Tools), _) => " up/down choose  space/click switch  esc back ",
     }
 }
 
-/// The rows of the list, scrolled so the selected one shows, with their hits.
+/// The items of the list, scrolled so the selected one shows whole, with their hits.
 fn list(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
-    let width = area.width as usize;
-    let mut rows = rows(view, width);
+    let rows = rows(view, area.width as usize);
     let height = area.height as usize;
-    if view.selected < view.top {
-        view.top = view.selected;
-    } else if view.selected >= view.top + height {
-        view.top = view.selected + 1 - height;
+    let shown = |from: usize, to: usize| -> usize {
+        rows[from..=to.min(rows.len().saturating_sub(1))]
+            .iter()
+            .map(|row| row.lines.len())
+            .sum()
+    };
+    view.top = view.top.min(view.selected);
+    while view.top < view.selected && shown(view.top, view.selected) > height {
+        view.top += 1;
     }
     let mut lines = Vec::new();
-    for (index, row) in rows.drain(..).enumerate().skip(view.top).take(height) {
-        let y = area.y + (index - view.top) as u16;
-        let selectable = index < view.len();
-        if selectable {
-            view.hits.push(SettingsHit {
-                row: y,
-                left: area.x,
-                right: area.right(),
-                target: HitTarget::Row(index),
-            });
+    for (index, row) in rows.into_iter().enumerate().skip(view.top) {
+        if lines.len() >= height {
+            break;
         }
+        let selectable = index < view.len();
+        let first = area.y + lines.len() as u16;
         if let Some((from, to)) = row.switch {
             // First, so a click on the switch wins over the row under it.
             view.hits.insert(
                 0,
                 SettingsHit {
-                    row: y,
+                    row: first,
                     left: area.x + from,
                     right: area.x + to,
                     target: HitTarget::Switch(index),
                 },
             );
         }
-        let line = if selectable && index == view.selected {
-            row.line.style(Style::new().bg(GLOW))
-        } else {
-            row.line
-        };
-        lines.push(line);
+        for line in row.lines {
+            if lines.len() >= height {
+                break;
+            }
+            if selectable {
+                view.hits.push(SettingsHit {
+                    row: area.y + lines.len() as u16,
+                    left: area.x,
+                    right: area.right(),
+                    target: HitTarget::Row(index),
+                });
+            }
+            lines.push(if selectable && index == view.selected {
+                line.style(Style::new().bg(GLOW))
+            } else {
+                line
+            });
+        }
     }
     frame.render_widget(Paragraph::new(lines), area);
 }
@@ -147,11 +169,11 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
         None => SettingCategory::ALL
             .iter()
             .map(|category| Row {
-                line: right(
+                lines: vec![right(
                     vec![Span::raw(format!("  {}", category.name()))],
                     Span::styled("open > ", dim()),
                     width,
-                ),
+                )],
                 switch: None,
             })
             .collect(),
@@ -165,32 +187,86 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             let mut rows: Vec<Row> = view
                 .skills
                 .iter()
-                .map(|skill| {
-                    let mut left = vec![Span::styled(
-                        format!("  {}", skill.name),
-                        if skill.enabled { Style::new() } else { dim() },
-                    )];
-                    let origin = match &skill.source {
-                        Some(source) => format!("  {} {DOT} {source}", skill.kind.name()),
-                        None => format!("  {}", skill.kind.name()),
-                    };
-                    left.push(Span::styled(origin, fg(kind_color(skill.kind))));
-                    if view.skill.is_none() {
-                        let (text, style) = match &skill.problem {
-                            Some(problem) => (format!("  {FAILED} {problem}"), fg(EMBER)),
-                            None => (format!("  {}", skill.description), dim()),
-                        };
-                        left.push(Span::styled(text, style));
-                    }
-                    switch_row(left, skill.enabled, width)
-                })
+                .map(|skill| skill_row(skill, view.editor.is_none(), width))
                 .collect();
             if rows.is_empty() {
                 rows.push(note("  no skills: add folders with a SKILL.md to skills/"));
             }
             rows
         }
+        Some(SettingCategory::Mcp) => {
+            let mut rows: Vec<Row> = view
+                .mcp
+                .iter()
+                .map(|server| mcp_row(server, width))
+                .collect();
+            if rows.is_empty() {
+                rows.push(note("  no MCP servers: press n to add one"));
+            }
+            rows
+        }
     }
+}
+
+/// The name, where it runs and how it stands, with the switch; then its command line or
+/// URL, or why it failed.
+fn mcp_row(server: &McpInfo, width: usize) -> Row {
+    let on = server.state != McpState::Off;
+    let (state, color) = match &server.state {
+        McpState::Off => ("off".to_owned(), NIGHT),
+        McpState::Starting => ("starting".to_owned(), SUN),
+        McpState::Ready(tools) => (format!("{} tools", tools.len()), TEAL),
+        McpState::Failed(_) => ("failed".to_owned(), EMBER),
+    };
+    let place = if server.remote { "remote" } else { "local" };
+    let first = vec![
+        Span::styled(
+            format!("  {}", server.name),
+            if on { bold(TEAL) } else { dim() },
+        ),
+        Span::raw(" "),
+        Span::styled(format!(" {place} "), fg(VIOLET).bg(GLOW)),
+        Span::raw(" "),
+        Span::styled(format!(" {state} "), fg(color).bg(GLOW)),
+    ];
+    let mut row = switch_row(first, on, width);
+    let (text, style) = match &server.state {
+        McpState::Failed(error) => (format!("{FAILED} {error}"), fg(EMBER)),
+        _ => (server.target.clone(), dim()),
+    };
+    row.lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(wrap::clip(&text, width.saturating_sub(5)), style),
+    ]));
+    row
+}
+
+/// The name and tags with the switch, then the description, or why it cannot be used.
+fn skill_row(skill: &SkillInfo, wide: bool, width: usize) -> Row {
+    let mut first = vec![Span::styled(
+        format!("  {}", skill.name),
+        if skill.enabled { bold(TEAL) } else { dim() },
+    )];
+    let mut tags = vec![(skill.kind.name().to_owned(), kind_color(skill.kind))];
+    tags.extend(skill.source.iter().map(|source| (source.clone(), SUN)));
+    if wide {
+        tags.extend(skill.tags.iter().map(|tag| (tag.clone(), VIOLET)));
+    }
+    for (tag, color) in tags {
+        first.push(Span::raw(" "));
+        first.push(Span::styled(format!(" {tag} "), fg(color).bg(GLOW)));
+    }
+    let mut row = switch_row(first, skill.enabled, width);
+    let (text, style) = match &skill.problem {
+        Some(problem) => (format!("{FAILED} {problem}"), fg(EMBER)),
+        None => (skill.description.clone(), dim()),
+    };
+    let room = width.saturating_sub(5);
+    row.lines.push(Line::from(vec![
+        Span::raw("    "),
+        Span::styled(wrap::clip(&text, room), style),
+    ]));
+    row
 }
 
 fn kind_color(kind: SkillKind) -> ratatui::style::Color {
@@ -204,23 +280,23 @@ fn kind_color(kind: SkillKind) -> ratatui::style::Color {
 /// The limit first, then the tree, then what is wrong with the agents folder.
 fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let mut rows = vec![Row {
-        line: right(
+        lines: vec![right(
             vec![Span::raw("  concurrent agents")],
             Span::styled(
                 format!("\u{2212} {} +  ", view.max_agents_at_work),
                 bold(SUN),
             ),
             width,
-        ),
+        )],
         switch: None,
     }];
     rows.extend(view.agents.iter().map(|agent| agent_row(agent, width)));
     for problem in &view.problems {
         rows.push(Row {
-            line: Line::from(Span::styled(
+            lines: vec![Line::from(Span::styled(
                 format!("  {FAILED} {}: {}", problem.node, problem.reason),
                 fg(EMBER),
-            )),
+            ))],
             switch: None,
         });
     }
@@ -235,11 +311,11 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
 fn agent_row(agent: &AgentRow, width: usize) -> Row {
     if agent.depth == 0 {
         return Row {
-            line: Line::from(vec![
+            lines: vec![Line::from(vec![
                 Span::styled(format!("  {ROOT} "), bold(TEAL)),
                 Span::styled(agent.name.clone(), bold(TEAL)),
                 Span::styled(format!("  {}", agent.description), dim()),
-            ]),
+            ])],
             switch: None,
         };
     }
@@ -263,6 +339,12 @@ fn agent_row(agent: &AgentRow, width: usize) -> Row {
     if let Some(version) = agent.version {
         left.push(Span::styled(format!(" v{version}"), fg(VIOLET)));
     }
+    if !agent.links.is_empty() {
+        left.push(Span::styled(
+            format!("  asks {}", agent.links.join(", ")),
+            fg(SUN),
+        ));
+    }
     left.push(Span::styled(format!("  {}", agent.description), dim()));
     switch_row(left, agent.enabled, width)
 }
@@ -282,14 +364,14 @@ fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Row {
     let line = right(clip_spans(left, room), switch, width.saturating_sub(1));
     let to = width.saturating_sub(1) as u16;
     Row {
-        line,
+        lines: vec![line],
         switch: Some((to.saturating_sub(label.len() as u16), to)),
     }
 }
 
 fn note(text: &str) -> Row {
     Row {
-        line: Line::from(Span::styled(text.to_owned(), dim())),
+        lines: vec![Line::from(Span::styled(text.to_owned(), dim()))],
         switch: None,
     }
 }
@@ -320,7 +402,7 @@ fn clip_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
 
 /// The open skill: its front matter as fields, then the file to edit, then the buttons.
 fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
-    let Some(editor) = &mut view.skill else {
+    let Some(editor) = &mut view.editor else {
         return;
     };
     let width = area.width.saturating_sub(2) as usize;
@@ -328,7 +410,7 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     let top = (fields.len() as u16 + 2)
         .min(METADATA_ROWS)
         .min(area.height / 2);
-    let mut title = vec![Span::styled(format!(" {} ", editor.name), bold(TEAL))];
+    let mut title = vec![Span::styled(format!(" {} ", editor.title()), bold(TEAL))];
     if editor.changed() {
         title.push(Span::styled("changed ", fg(SUN)));
     }
@@ -374,9 +456,9 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
         frame.render_widget(Paragraph::new(line), Rect::new(area.x, bar, area.width, 1));
     }
     let buttons = [
-        (SkillButton::Save, " save ", TEAL),
-        (SkillButton::Revert, " revert ", SUN),
-        (SkillButton::Close, " close ", ROSE),
+        (FileButton::Save, " save ", TEAL),
+        (FileButton::Revert, " revert ", SUN),
+        (FileButton::Close, " close ", ROSE),
     ];
     let mut right = area.right();
     for &(button, label, color) in buttons.iter().rev() {
@@ -400,7 +482,7 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
 }
 
 /// The description in full, then every other plain field on a line of its own.
-fn metadata(editor: &SkillEditor, width: usize) -> Vec<Line<'static>> {
+fn metadata(editor: &FileEditor, width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     if let Some((_, description)) = editor.metadata.iter().find(|(key, _)| key == "description") {
         lines.extend(
