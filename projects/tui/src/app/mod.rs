@@ -29,7 +29,7 @@ pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 use panels::agents;
 pub use panels::{
-    AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, ModelList, Panel,
+    AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, McpRow, ModelList, Panel,
     Preview, SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
 pub use thread::goal::{GoalButton, GoalHit};

@@ -9,7 +9,7 @@ mod builtin;
 mod console;
 mod files;
 mod harness;
-mod mcp;
+pub mod mcp;
 mod registry;
 mod scope;
 mod tool;

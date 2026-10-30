@@ -18,6 +18,7 @@ pub use client::{McpClient, RemoteTool, check_headers, check_url};
 
 use crate::{
     config::{Config, McpServerConfig},
+    tools::{ToolKind, mcp::McpTool},
     util::sync::{read, write},
 };
 
@@ -46,6 +47,17 @@ pub struct McpInfo {
     pub target: String,
     pub remote: bool,
     pub state: McpState,
+    /// The tools of a ready server, by the name the model calls; empty otherwise.
+    pub tools: Vec<McpToolInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct McpToolInfo {
+    /// `server__tool`, the name its switch goes by.
+    pub name: String,
+    pub description: String,
+    /// On in the chat's mode.
+    pub enabled: bool,
 }
 
 /// A server that started, with its tools.
@@ -162,6 +174,26 @@ impl McpServers {
                     .iter()
                     .find(|status| status.name == *name)
                     .map_or(McpState::Off, |status| status.state.clone()),
+                tools: self.tool_infos(name, config),
+            })
+            .collect()
+    }
+
+    fn tool_infos(&self, name: &str, config: &Config) -> Vec<McpToolInfo> {
+        let ready = read(&self.ready);
+        let Some(server) = ready.iter().find(|server| server.name == name) else {
+            return Vec::new();
+        };
+        server
+            .tools
+            .iter()
+            .filter_map(|tool| {
+                let name = McpTool::model_name(&server.name, &tool.name)?;
+                Some(McpToolInfo {
+                    enabled: config.mode_tool_enabled(config.mode(), &name, ToolKind::Mcp),
+                    name,
+                    description: tool.description.clone(),
+                })
             })
             .collect()
     }

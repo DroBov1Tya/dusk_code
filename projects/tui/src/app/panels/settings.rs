@@ -4,7 +4,7 @@
 //! The window keeps only what is on screen; every change goes to the core, which answers
 //! with the settings again.
 
-use std::time::Instant;
+use std::{collections::BTreeSet, time::Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{
@@ -14,13 +14,20 @@ use dusk_core::{
     catalog::skills::SkillInfo,
     chat::commands::{Command, Settings, ToolInfo},
     config::{ContextPolicy, ContextPreset, Effort, Memory},
-    mcp::{McpInfo, McpState},
+    mcp::{McpInfo, McpState, McpToolInfo},
     release::update::Channel,
     runtime::SystemReport,
 };
 
 use super::{Panel, step};
 use crate::app::{Action, App, Input};
+
+/// A row of the MCP list: a server, or one of its tools under it.
+#[derive(Clone, Copy)]
+pub enum McpRow<'a> {
+    Server(&'a McpInfo),
+    Tool(&'a McpInfo, &'a McpToolInfo),
+}
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SettingCategory {
@@ -105,6 +112,8 @@ pub struct SettingsView {
     pub tools: Vec<ToolInfo>,
     pub skills: Vec<SkillInfo>,
     pub mcp: Vec<McpInfo>,
+    /// The MCP servers whose tools are listed under them.
+    pub mcp_open: BTreeSet<String>,
     /// The chat first, then every agent under it.
     pub agents: Vec<AgentRow>,
     pub problems: Vec<Problem>,
@@ -204,6 +213,7 @@ impl SettingsView {
             tools: settings.tools,
             skills: settings.skills,
             mcp: settings.mcp,
+            mcp_open: BTreeSet::new(),
             agents,
             problems,
             category: None,
@@ -227,6 +237,7 @@ impl SettingsView {
         next.selected = self.selected.min(next.len().saturating_sub(1));
         next.editor = self.editor.take();
         next.system = self.system.take();
+        next.mcp_open = std::mem::take(&mut self.mcp_open);
         next.top = self.top;
         *self = next;
     }
@@ -241,8 +252,42 @@ impl SettingsView {
             Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
-            Some(SettingCategory::Mcp) => self.mcp.len(),
+            Some(SettingCategory::Mcp) => self.mcp_rows().len(),
         }
+    }
+
+    /// The MCP list as shown: each server, then its tools when they are open.
+    pub fn mcp_rows(&self) -> Vec<McpRow<'_>> {
+        let mut rows = Vec::new();
+        for server in &self.mcp {
+            rows.push(McpRow::Server(server));
+            if self.mcp_open.contains(&server.name) {
+                rows.extend(server.tools.iter().map(|tool| McpRow::Tool(server, tool)));
+            }
+        }
+        rows
+    }
+
+    fn mcp_server(&self, row: usize) -> Option<&McpInfo> {
+        match self.mcp_rows().get(row)? {
+            McpRow::Server(server) | McpRow::Tool(server, _) => Some(server),
+        }
+    }
+
+    /// Lists the tools of the server on `row`, or hides them and selects the server.
+    fn toggle_mcp_tools(&mut self, row: usize) {
+        let Some(name) = self.mcp_server(row).map(|server| server.name.clone()) else {
+            return;
+        };
+        if !self.mcp_open.remove(&name) {
+            self.mcp_open.insert(name);
+            return;
+        }
+        self.selected = self
+            .mcp_rows()
+            .iter()
+            .position(|row| matches!(row, McpRow::Server(server) if server.name == name))
+            .unwrap_or(0);
     }
 
     fn model_action(&self, row: usize) -> Option<Action> {
@@ -301,11 +346,13 @@ impl SettingsView {
                 let skill = self.skills.get(row)?;
                 (SwitchKind::Skill, skill.name.clone(), skill.enabled)
             }
-            SettingCategory::Mcp => {
-                let server = self.mcp.get(row)?;
-                let on = server.state != McpState::Off;
-                (SwitchKind::Mcp, server.name.clone(), on)
-            }
+            SettingCategory::Mcp => match *self.mcp_rows().get(row)? {
+                McpRow::Server(server) => {
+                    let on = server.state != McpState::Off;
+                    (SwitchKind::Mcp, server.name.clone(), on)
+                }
+                McpRow::Tool(_, tool) => (SwitchKind::Tool, tool.name.clone(), tool.enabled),
+            },
             SettingCategory::Personalize if row > 0 => return None,
             SettingCategory::Personalize => {
                 (SwitchKind::Memory, "memory".into(), self.memory.enabled)
@@ -585,13 +632,22 @@ impl App {
                 }
             }
             (Some(SettingCategory::Mcp), KeyCode::Enter) => {
-                if let Some(server) = view.mcp.get(view.selected) {
-                    return Action::OpenMcp(Some(server.name.clone()));
+                match view.mcp_rows().get(view.selected) {
+                    Some(McpRow::Server(server)) => {
+                        return Action::OpenMcp(Some(server.name.clone()));
+                    }
+                    Some(McpRow::Tool(..)) => {
+                        return view.switch(view.selected).unwrap_or(Action::None);
+                    }
+                    None => {}
                 }
+            }
+            (Some(SettingCategory::Mcp), KeyCode::Char('t')) => {
+                view.toggle_mcp_tools(view.selected)
             }
             (Some(SettingCategory::Mcp), KeyCode::Char('n')) => return Action::OpenMcp(None),
             (Some(SettingCategory::Mcp), KeyCode::Char('c')) => {
-                if let Some(server) = view.mcp.get(view.selected) {
+                if let Some(server) = view.mcp_server(view.selected) {
                     return Action::RestartMcp(server.name.clone());
                 }
             }
@@ -702,8 +758,7 @@ fn click_row(view: &mut SettingsView, row: usize) -> Action {
                     .get(row)
                     .map(|skill| Action::OpenSkill(skill.name.clone())),
                 _ => view
-                    .mcp
-                    .get(row)
+                    .mcp_server(row)
                     .map(|server| Action::OpenMcp(Some(server.name.clone()))),
             }
             .unwrap_or(Action::None);
@@ -718,7 +773,8 @@ fn click_row(view: &mut SettingsView, row: usize) -> Action {
 fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> bool {
     match category {
         SettingCategory::Agents => view.agent_file(row).is_some(),
-        SettingCategory::Skills | SettingCategory::Mcp => true,
+        SettingCategory::Skills => true,
+        SettingCategory::Mcp => matches!(view.mcp_rows().get(row), Some(McpRow::Server(_))),
         SettingCategory::Models
         | SettingCategory::Tools
         | SettingCategory::Personalize

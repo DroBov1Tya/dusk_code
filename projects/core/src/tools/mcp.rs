@@ -28,16 +28,21 @@ impl McpTool {
             .tools
             .iter()
             .filter_map(|tool| {
-                let name = format!("{}__{}", server.name, tool_name(&tool.name));
-                (name.len() <= MAX_NAME).then(|| Self {
+                Some(Self {
                     server: Arc::clone(server),
-                    name,
+                    name: Self::model_name(&server.name, &tool.name)?,
                     remote: tool.name.clone(),
                     description: tool.description.clone(),
                     schema: tool.input_schema.clone(),
                 })
             })
             .collect()
+    }
+
+    /// The name the model calls a server's tool by; `None` when it would be too long.
+    pub fn model_name(server: &str, remote: &str) -> Option<String> {
+        let name = format!("{server}__{}", tool_name(remote));
+        (name.len() <= MAX_NAME).then_some(name)
     }
 }
 
