@@ -319,21 +319,21 @@ fn fill(text: &str, width: usize) -> String {
 fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     let width = area.width.saturating_sub(8 + 2 * PAD) as usize;
-    let now = now_ms();
     for (index, agent) in app.subagents.iter().enumerate() {
         let seed = identity(&agent.thread_id);
         let loader = Loader::new(seed);
         let color = loader.color();
-        let running = agent.finished_at.is_none();
+        let running = agent.is_working();
         let [top, middle, bottom] = loader.rows(running.then_some(app.frame));
         let name = agent_name(&agent.thread_id);
-        let elapsed = agent
-            .finished_at
-            .unwrap_or(now)
-            .saturating_sub(agent.started_at)
-            .max(0) as u64;
-        let age = format_duration(elapsed);
-        let state = if running { "" } else { "done" };
+        let age = format_duration(agent.elapsed_ms());
+        let state = if agent.unavailable_at.is_some() {
+            "unavailable"
+        } else if running {
+            ""
+        } else {
+            "done"
+        };
         // The random name stands out; the agent it works as and the task stay quiet.
         lines.push(Line::from(
             [
@@ -351,11 +351,12 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
                 middle,
                 vec![
                     Span::raw(" "),
-                    // Room left by the loader, the time and "done".
+                    // Room left by the loader, the time and the status.
                     Span::styled(
                         wrap::clip(
                             &name,
-                            (area.width as usize).saturating_sub(17 + 2 * PAD as usize),
+                            (area.width as usize)
+                                .saturating_sub(13 + state.len() + 2 * PAD as usize),
                         ),
                         bold(color),
                     ),

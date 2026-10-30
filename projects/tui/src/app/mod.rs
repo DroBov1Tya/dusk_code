@@ -669,13 +669,17 @@ impl App {
         }
     }
 
-    /// The thread stopped: nothing runs any more, whatever the last event said.
+    /// The thread stopped: clear activity and mark unobserved subagent work unavailable.
     pub fn stop_work(&mut self) {
         self.activity = Activity::Idle;
         self.turn_running = false;
         self.compacting = false;
         self.turn_started_at = None;
         self.transcript.stop_running_tools();
+        let unavailable_at = now_ms();
+        for agent in self.subagents.iter_mut().filter(|agent| agent.is_working()) {
+            agent.unavailable_at = Some(unavailable_at);
+        }
     }
 
     pub fn show_local_unsent(&mut self, message: LocalUnsent) {

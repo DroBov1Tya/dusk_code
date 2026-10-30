@@ -29,6 +29,8 @@ pub struct SubagentView {
     pub parent: Option<String>,
     pub started_at: i64,
     pub finished_at: Option<i64>,
+    /// When its event stream was lost, without an observed completion.
+    pub unavailable_at: Option<i64>,
     pub tokens: ThreadTokens,
     /// Its largest request.
     pub limit: u64,
@@ -54,16 +56,23 @@ pub struct AgentWindow {
 }
 
 impl SubagentView {
+    pub fn is_working(&self) -> bool {
+        self.finished_at.is_none() && self.unavailable_at.is_none()
+    }
+
     pub fn tokens_per_second(&self) -> Option<f64> {
-        if self.finished_at.is_some() {
+        if !self.is_working() {
             return None;
         }
         rate(&self.output)
     }
 
-    /// How long it has worked, or worked in all once finished.
+    /// How long work was observed, frozen on completion or loss of the stream.
     pub fn elapsed_ms(&self) -> u64 {
-        let end = self.finished_at.unwrap_or_else(now_ms);
+        let end = self
+            .finished_at
+            .or(self.unavailable_at)
+            .unwrap_or_else(now_ms);
         end.saturating_sub(self.started_at).max(0) as u64
     }
 
@@ -203,6 +212,7 @@ impl App {
             parent,
             started_at: now_ms(),
             finished_at: None,
+            unavailable_at: None,
             tokens,
             limit,
             output: VecDeque::new(),
@@ -222,9 +232,7 @@ impl App {
     }
 
     pub fn agents_at_work(&self) -> bool {
-        self.subagents
-            .iter()
-            .any(|agent| agent.finished_at.is_none())
+        self.subagents.iter().any(SubagentView::is_working)
     }
 
     pub fn agent_window_key(&mut self, key: KeyEvent) -> Action {

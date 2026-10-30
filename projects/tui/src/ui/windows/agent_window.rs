@@ -72,7 +72,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         return;
     }
     let width = inner.width as usize;
-    let running = card.is_some_and(|card| card.finished_at.is_none());
+    let running = card.is_some_and(|card| card.is_working());
     agent_window.stop = None;
     if running && area.width > STOP.len() as u16 + 4 {
         let left = area.right() - STOP.len() as u16 - 2;
@@ -129,9 +129,12 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
         ];
     };
     let elapsed = format_duration(card.elapsed_ms());
-    let state = match card.finished_at {
-        None => Span::styled(format!("working {elapsed}"), bold(SUN)),
-        Some(_) => Span::styled(format!("done in {elapsed}"), fg(TEAL)),
+    let state = if card.unavailable_at.is_some() {
+        Span::styled(format!("unavailable after {elapsed}"), fg(EMBER))
+    } else if card.is_working() {
+        Span::styled(format!("working {elapsed}"), bold(SUN))
+    } else {
+        Span::styled(format!("done in {elapsed}"), fg(TEAL))
     };
     let parent = match &card.parent {
         Some(parent) if Some(parent) == app.thread_id.as_ref() => {
