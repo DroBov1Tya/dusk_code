@@ -1,9 +1,9 @@
 //! The files dusk ships into the config folder: the prompts of the modes, COMPACT.md,
-//! FORK.md and the built-in skills. At every start each is brought to the version of
-//! this build, without losing what the user wrote: `builtin.lock` records the hash of
-//! each file as dusk last wrote it. A file still as written is replaced; a file the
-//! user changed, or one from before the record, is kept, and the new version is put
-//! beside it as `<file>.new`.
+//! FORK.md, built-in skills and specialist agents. At every start each is brought to
+//! the version of this build, without losing what the user wrote: `builtin.lock`
+//! records the hash of each file as dusk last wrote it. A file still as written is
+//! replaced; a file the user changed, or one from before the record, is kept, and
+//! the new version is put beside it as `<file>.new`.
 
 use std::{
     collections::BTreeMap,
@@ -13,15 +13,9 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use include_dir::{Dir, DirEntry};
 use sha2::{Digest, Sha256};
 
-use crate::{
-    init::{COMPACT_PROMPT_TEMPLATE, FORK_PROMPT_TEMPLATE, create_private_dir},
-    modes,
-    paths::Paths,
-    skills::BUILTIN,
-};
+use crate::{init::create_private_dir, paths::Paths, resources};
 
 const LOCK_FILE: &str = "builtin.lock";
 const NEW_SUFFIX: &str = ".new";
@@ -41,8 +35,9 @@ pub fn sync(paths: &Paths) -> Result<Synced> {
     let lock_path = root.join(LOCK_FILE);
     let mut lock = read_lock(&lock_path);
     let mut synced = Synced::default();
-    for (path, contents) in shipped() {
+    for (path, contents) in shipped()? {
         let target = root.join(&path);
+        safe_parent(root, &target)?;
         let shipped_hash = hash(&contents);
         let on_disk = match fs::symlink_metadata(&target) {
             // A link was put there by hand; dusk does not write through it.
@@ -79,35 +74,35 @@ pub fn sync(paths: &Paths) -> Result<Synced> {
 }
 
 /// Every shipped file by its path in the config folder, with its contents.
-fn shipped() -> Vec<(String, Vec<u8>)> {
-    let mut files = vec![
-        (
-            "COMPACT.md".to_owned(),
-            COMPACT_PROMPT_TEMPLATE.as_bytes().to_vec(),
-        ),
-        (
-            "FORK.md".to_owned(),
-            FORK_PROMPT_TEMPLATE.as_bytes().to_vec(),
-        ),
-    ];
-    for mode in [modes::MAIN, modes::PLAN, modes::ORCHESTRATOR] {
-        let template = modes::template(mode).unwrap_or_default();
-        files.push((format!("modes/{mode}.md"), template.as_bytes().to_vec()));
-    }
-    skill_files(&BUILTIN, &mut files);
-    files
-}
-
-fn skill_files(dir: &Dir, files: &mut Vec<(String, Vec<u8>)>) {
-    for entry in dir.entries() {
-        match entry {
-            DirEntry::Dir(dir) => skill_files(dir, files),
-            DirEntry::File(file) => {
-                let path = format!("skills/{}", file.path().display());
-                files.push((path, file.contents().to_vec()));
-            }
+fn shipped() -> Result<Vec<(String, Vec<u8>)>> {
+    let root = resources::root()?;
+    let mut files = Vec::new();
+    for category in ["agents", "skills", "internal", "modes"] {
+        for relative in resources::files(&root.join(category))? {
+            let source = root.join(category).join(&relative);
+            let path = match (category, relative.to_str()) {
+                // Keep the existing editable paths and their hash-lock records.
+                ("internal", Some("COMPACT.md" | "FORK.md")) => relative.clone(),
+                _ => Path::new(category).join(&relative),
+            };
+            files.push((path.to_string_lossy().into_owned(), fs::read(source)?));
         }
     }
+    Ok(files)
+}
+
+fn safe_parent(root: &Path, target: &Path) -> Result<()> {
+    let parent = target.parent().context("shipped file has no parent")?;
+    let relative = parent
+        .strip_prefix(root)
+        .context("shipped file is outside config")?;
+    create_private_dir(root)?;
+    let mut directory = root.to_owned();
+    for component in relative.components() {
+        directory.push(component);
+        create_private_dir(&directory)?;
+    }
+    Ok(())
 }
 
 fn read_lock(path: &Path) -> BTreeMap<String, String> {
@@ -124,9 +119,9 @@ fn write(target: &Path, contents: &[u8]) -> Result<()> {
         create_private_dir(parent)?;
     }
     let script = contents.starts_with(b"#!");
-    let temporary = PathBuf::from(format!("{}.writing", target.display()));
+    let temporary = target.with_file_name(format!(".duskcode-writing-{}", uuid::Uuid::now_v7()));
     let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
+    options.write(true).create_new(true);
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -180,11 +175,17 @@ mod tests {
 
         let synced = sync(&paths).unwrap();
         assert_eq!(synced.updated, ["modes/PLAN.md"]);
-        assert_eq!(fs::read_to_string(&plan).unwrap(), modes::PLAN_TEMPLATE);
+        assert_eq!(
+            fs::read_to_string(&plan).unwrap(),
+            crate::modes::template(crate::modes::PLAN).unwrap().unwrap()
+        );
         assert_eq!(synced.kept, ["modes/MAIN.md"]);
         assert_eq!(fs::read_to_string(&main).unwrap(), "my main");
         let beside = paths.modes_dir().join("MAIN.md.new");
-        assert_eq!(fs::read_to_string(beside).unwrap(), modes::MAIN_TEMPLATE);
+        assert_eq!(
+            fs::read_to_string(beside).unwrap(),
+            crate::modes::template(crate::modes::MAIN).unwrap().unwrap()
+        );
         assert!(sync(&paths).unwrap().kept.is_empty(), "told once");
 
         let listed = skills::list(&paths.skills_dir(), &Config::parse(b"{}").unwrap());

@@ -65,7 +65,14 @@ jobs:
           name=duskcode-${{ matrix.target }}
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/duskcode" LICENSE README.md "dist/$name/"
-          cp projects/core/skills/NOTICE.md "dist/$name/SKILLS-NOTICE.md"
+          cp resources/skills/NOTICE.md "dist/$name/SKILLS-NOTICE.md"
+          cp -R resources "dist/$name/resources"
+          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "dusk_core"))')
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "release tag does not match Cargo package version" >&2
+            exit 1
+          fi
+          printf '%s\n' "$version" > "dist/$name/resources/VERSION"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256"
           "./$name/duskcode" --version

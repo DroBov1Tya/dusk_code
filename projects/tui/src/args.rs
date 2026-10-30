@@ -11,6 +11,10 @@ pub enum Args {
     Remove,
     /// Install the newest version on the configured channel, without the screen.
     Update,
+    /// Internal installer entry point; does not initialize config or start the UI.
+    InstallResources {
+        directory: PathBuf,
+    },
 }
 
 pub fn parse_args() -> Args {
@@ -36,11 +40,22 @@ pub fn parse_args() -> Args {
                 .action(clap::ArgAction::SetTrue)
                 .help("Install the newest release, or pre-release on the dev channel, and exit"),
         )
-        .subcommand(
-            Command::new("remove")
-                .about("Remove duskcode, its links and ~/.config/duskcode after one question"),
+        .arg(
+            Arg::new("install-resources")
+                .long("install-resources")
+                .value_name("PATH")
+                .value_parser(value_parser!(PathBuf))
+                .hide(true),
         )
+        .subcommand(Command::new("remove").about(
+            "Remove duskcode, its resources, links and ~/.config/duskcode after one question",
+        ))
         .get_matches();
+    if let Some(directory) = matches.get_one::<PathBuf>("install-resources") {
+        return Args::InstallResources {
+            directory: directory.clone(),
+        };
+    }
     if matches.subcommand_matches("remove").is_some() {
         return Args::Remove;
     }

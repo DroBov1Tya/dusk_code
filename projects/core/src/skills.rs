@@ -2,22 +2,17 @@
 //! switch, and its text to read and edit. Skills are read from disk each time, so a
 //! skill added or edited by hand applies at once and nothing is kept elsewhere.
 //!
-//! A skill is one of three kinds. Built-in skills ship inside dusk and are written to
+//! A skill is one of three kinds. Built-in skills ship beside dusk and are written to
 //! `skills/` when missing; each credits its authors in its front matter and keeps their
 //! license beside it. A skill whose front matter names a `source` came from elsewhere.
 //! Every other skill is the user's own.
 
 use std::path::Path;
 
-use include_dir::{Dir, include_dir};
-
 use crate::{
     config::Config,
     graph::{Graph, SKILL_FILE},
 };
-
-/// The skills dusk ships, with their licenses and `NOTICE.md`.
-pub static BUILTIN: Dir = include_dir!("$CARGO_MANIFEST_DIR/skills");
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SkillKind {
@@ -52,12 +47,15 @@ pub struct SkillInfo {
 /// Every skill, the ones that cannot be read included, by name.
 pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
     let graph = Graph::load(directory, SKILL_FILE);
+    let builtin = crate::resources::root()
+        .ok()
+        .map(|root| root.join("skills"));
     let mut skills: Vec<SkillInfo> = graph
         .nodes()
         .map(|node| SkillInfo {
             name: node.name.clone(),
             description: node.description.clone(),
-            kind: kind(&node.name, node.source.is_some()),
+            kind: kind(&node.name, node.source.is_some(), builtin.as_deref()),
             source: node.source.clone(),
             tags: node.tags.clone(),
             enabled: config.skill_enabled(&node.name),
@@ -69,7 +67,7 @@ pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
             skills.push(SkillInfo {
                 name: problem.node.clone(),
                 description: String::new(),
-                kind: kind(&problem.node, false),
+                kind: kind(&problem.node, false, builtin.as_deref()),
                 source: None,
                 tags: Vec::new(),
                 enabled: config.skill_enabled(&problem.node),
@@ -81,8 +79,8 @@ pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
     skills
 }
 
-fn kind(name: &str, has_source: bool) -> SkillKind {
-    if BUILTIN.get_dir(name).is_some() {
+fn kind(name: &str, has_source: bool, builtin: Option<&Path>) -> SkillKind {
+    if builtin.is_some_and(|root| root.join(name).join("SKILL.md").is_file()) {
         SkillKind::Builtin
     } else if has_source {
         SkillKind::Other

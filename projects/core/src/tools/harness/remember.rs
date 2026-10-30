@@ -87,15 +87,21 @@ impl Tool for Remember {
         } else {
             memory
         };
-        format!(
-            "Your memory of the user, kept across conversations. When the user states a \
-             lasting preference or a fact about how they work, or asks you to remember \
-             something, write the whole memory again with it: the shortest summary, one \
-             fact per line, merged with what is there, outdated lines dropped. Never store \
-             secrets, credentials, or anything about other people. An empty text forgets \
-             everything. At most {max_chars} characters.\n\
-             Current memory:\n{memory}"
-        )
+        let prompt = self
+            .file
+            .parent()
+            .map(|root| root.join("internal/MEMORY.md"));
+        let template = prompt
+            .as_deref()
+            .and_then(|path| crate::thread_start::read_prompt(path).ok().flatten())
+            .or_else(|| crate::resources::text("internal/MEMORY.md").ok());
+        let Some(template) = template else {
+            return "Memory instructions are unavailable; restore the versioned resources.".into();
+        };
+        // Substitute once so user memory containing placeholders remains literal.
+        template
+            .replace("{max_chars}", &max_chars.to_string())
+            .replace("{memory}", &memory)
     }
 
     fn parameters(&self) -> Value {

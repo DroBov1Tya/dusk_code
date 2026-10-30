@@ -8,18 +8,16 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use dusk_core::paths::Paths;
+use dusk_core::{paths::Paths, resources};
 
 const BINARY: &str = "duskcode";
-/// Where the install script puts the binary, under HOME.
-const INSTALL_DIR: &str = ".local/share/duskcode";
 
 pub fn run(paths: &Paths) -> Result<()> {
     let home = PathBuf::from(env::var_os("HOME").context("HOME is not set")?);
     let exe = env::current_exe().context("cannot find this binary")?;
     let exe = fs::canonicalize(&exe).unwrap_or(exe);
     let links = links_to(&exe, &home);
-    let install_dir = home.join(INSTALL_DIR);
+    let install_dir = resources::data_root()?;
     let config = paths.config_root();
     ensure!(
         config.ends_with("duskcode"),
@@ -32,8 +30,16 @@ pub fn run(paths: &Paths) -> Result<()> {
     for link in &links {
         println!("  {} (link)", link.display());
     }
-    if install_dir.exists() && !exe.starts_with(&install_dir) {
-        println!("  {}", install_dir.display());
+    if fs::symlink_metadata(&install_dir).is_ok() {
+        ensure!(
+            fs::symlink_metadata(&install_dir)?.is_dir(),
+            "install directory must not be a symlink"
+        );
+        println!("  {} (application data)", install_dir.display());
+        println!(
+            "    {} (all versioned resources)",
+            install_dir.join("resources").display()
+        );
     }
     println!(
         "  {} (config, API keys, history, skills, agents)",

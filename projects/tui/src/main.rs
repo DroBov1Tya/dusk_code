@@ -20,6 +20,10 @@ async fn main() -> Result<()> {
     let (state_db, thread) = match args::parse_args() {
         Args::Run { state_db, thread } => (state_db, thread),
         Args::Remove => return remove::run(&paths),
+        Args::InstallResources { directory } => {
+            dusk_core::resources::install_snapshot(&directory, update::VERSION)?;
+            return Ok(());
+        }
         Args::Update => {
             println!("{}", update::update_now(&paths).await?);
             return Ok(());

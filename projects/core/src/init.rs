@@ -52,47 +52,6 @@ limits:
 # comment is kept then.
 ";
 
-/// Also used when COMPACT.md is missing or blank.
-pub const COMPACT_PROMPT_TEMPLATE: &str = "\
-Summarize the conversation above so that the work can go on from the summary alone:
-the earlier messages are about to leave your context. Keep facts, decisions, exact
-names, paths, commands, errors and numbers; drop small talk. Write in the language of
-the conversation. Do not call tools. This request is not part of the conversation:
-do not list it as a task.
-
-Use exactly these sections:
-
-1. Requested tasks: everything the user asked for, in order.
-2. Completed tasks: what is done and how it was checked.
-3. Open tasks: what is not done yet, with known problems.
-4. Current task: what was in progress at the end, and the next step.
-5. Paths and files: every file, directory, URL and command that matters, one line each
-   on why.
-6. Summary: everything else worth keeping, in a few sentences.
-";
-
-/// Also used when FORK.md is missing or blank.
-pub const FORK_PROMPT_TEMPLATE: &str = "\
-The conversation above moves to a new thread that starts from what you write now and
-nothing else. Describe the session in full detail, so the work goes on there without
-asking anything again. Keep every fact, decision and its reason, exact names, paths,
-commands, errors, numbers and the user's preferences. Write in the language of the
-conversation. Do not call tools. This request is not part of the conversation.
-
-Use exactly these sections:
-
-1. Goal: what the user wants in the end, and how success is checked.
-2. Requested tasks: everything the user asked for, in order, with their words where
-   they matter.
-3. Decisions: what was chosen, what was rejected, and why.
-4. Completed work: what is done, where, and how it was verified.
-5. Open work: what is left, in order, with known problems and risks.
-6. Current state: what was in progress at the end, and the exact next step.
-7. Files and commands: every file, directory, URL and command that matters, one line
-   each on why.
-8. Context: conventions, constraints and anything else the next thread must know.
-";
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Initialization {
     /// True on first start: the config is a template without providers.
@@ -141,7 +100,16 @@ fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
     let Ok(text) = fs::read_to_string(&legacy) else {
         return Ok(());
     };
-    let mode = if text.trim() == modes::MAIN_TEMPLATE.trim() {
+    let template = match modes::template(modes::MAIN) {
+        Ok(Some(template)) => template,
+        _ => {
+            warn!(
+                "cannot classify legacy MAIN.md without its resource template; keeping it in place"
+            );
+            return Ok(());
+        }
+    };
+    let mode = if text.trim() == template.trim() {
         modes::MAIN
     } else {
         modes::ORCHESTRATOR
@@ -248,7 +216,7 @@ mod tests {
             "Coordinate the agents."
         );
         let main = fs::read_to_string(paths.main_prompt()).unwrap();
-        assert_eq!(main, modes::MAIN_TEMPLATE);
+        assert_eq!(main, modes::template(modes::MAIN).unwrap().unwrap());
     }
 
     #[cfg(unix)]
