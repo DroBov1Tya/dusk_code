@@ -3,6 +3,7 @@
 //! anything that needs the core goes back to the session as an `Action`.
 
 mod composer;
+mod images;
 mod keys;
 pub use keys::EFFORTS;
 mod panels;
@@ -374,7 +375,9 @@ impl App {
         self.title = title;
         self.poll = None;
         self.local_unsent.clear();
+        let images = std::mem::take(&mut self.transcript.images);
         self.transcript = Transcript::from_history(history);
+        self.transcript.images = images;
         self.focus = Focus::Input;
         self.activity = Activity::Idle;
         self.tokens = ThreadTokens::default();

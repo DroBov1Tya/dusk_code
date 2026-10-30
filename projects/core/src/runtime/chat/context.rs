@@ -204,6 +204,7 @@ mod tests {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: (role == MessageRole::Tool).then(|| "call".into()),
+            artifacts: Vec::new(),
             from_thread_id: None,
             content_tokens: 5,
             tool_calls_tokens: 0,

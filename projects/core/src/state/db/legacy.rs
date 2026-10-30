@@ -181,3 +181,78 @@ pub async fn convert_tasks(pool: &SqlitePool, migrator: &Migrator) -> Result<()>
     transaction.commit().await.context("commit task upgrade")?;
     Ok(())
 }
+
+/// What the messages migration adds now to a table made before image cards.
+const MESSAGE_ARTIFACTS: &str = "ALTER TABLE messages ADD COLUMN artifacts_json TEXT
+    CHECK (artifacts_json IS NULL OR (role = 'tool'
+        AND json_valid(artifacts_json) AND json_type(artifacts_json) = 'array'));";
+/// A development build added the column in a migration of its own.
+const OLD_ARTIFACTS_MIGRATION: &str = "image artifacts";
+
+/// Databases made before messages carried image cards get the column, and the record
+/// of the messages migration is brought to its text now.
+pub async fn convert_messages(pool: &SqlitePool, migrator: &Migrator) -> Result<()> {
+    let columns: Vec<String> = sqlx::query_scalar("SELECT name FROM pragma_table_info('messages')")
+        .fetch_all(pool)
+        .await
+        .context("read the message columns")?;
+    if columns.is_empty() {
+        return Ok(());
+    }
+    let migration = migrator
+        .iter()
+        .find(|migration| migration.version == 2)
+        .context("no messages migration")?;
+    let mut transaction = pool.begin().await.context("begin message upgrade")?;
+    if !columns.iter().any(|column| column == "artifacts_json") {
+        sqlx::raw_sql(MESSAGE_ARTIFACTS)
+            .execute(&mut *transaction)
+            .await
+            .context("add the image card column")?;
+    }
+    sqlx::query("DELETE FROM _sqlx_migrations WHERE description = ?")
+        .bind(OLD_ARTIFACTS_MIGRATION)
+        .execute(&mut *transaction)
+        .await
+        .context("drop the old image card migration")?;
+    sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 2")
+        .bind(migration.checksum.as_ref())
+        .execute(&mut *transaction)
+        .await
+        .context("record the messages migration")?;
+    transaction.commit().await.context("commit message upgrade")?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::{state::State, testing::temp_dir};
+
+    #[tokio::test]
+    async fn messages_without_image_cards_get_the_column() {
+        let path = temp_dir("legacy-messages").join("state.db");
+        State::open(&path).await.unwrap().close().await;
+        for old in [
+            // Made before image cards.
+            "ALTER TABLE messages DROP COLUMN artifacts_json;
+             UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;",
+            // A development build with the column in a migration of its own.
+            "UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
+             INSERT INTO _sqlx_migrations (version, description, success, checksum,
+                execution_time) VALUES (12, 'image artifacts', TRUE, X'00', 0);",
+        ] {
+            let state = State::open(&path).await.unwrap();
+            sqlx::raw_sql(old).execute(&state.pool).await.unwrap();
+            state.close().await;
+            let state = State::open(&path).await.unwrap();
+            let column: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM pragma_table_info('messages') WHERE name = 'artifacts_json'",
+            )
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+            assert_eq!(column, 1);
+            state.close().await;
+        }
+    }
+}

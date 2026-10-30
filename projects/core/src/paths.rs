@@ -98,6 +98,10 @@ impl Paths {
         self.records_dir().join(STATE_DB)
     }
 
+    pub fn artifacts_dir(&self) -> PathBuf {
+        self.records_dir().join("artifacts")
+    }
+
     pub fn workspace_root(&self) -> &Path {
         &self.workspace_root
     }

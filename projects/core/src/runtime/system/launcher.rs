@@ -21,13 +21,14 @@ use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     BoxFuture,
     agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
+    artifacts::ArtifactStore,
     live_config::LiveConfig,
     mcp::McpServers,
     paths::Paths,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AskAgent, AskUser, McpTool, MessageParent, ReadHistory, Remember, Tasks, ToolRegistry,
-        ToolScope,
+        AskAgent, AskUser, DisplayImage, McpTool, MessageParent, ReadHistory, Remember, Tasks,
+        ToolRegistry, ToolScope,
     },
 };
 
@@ -83,6 +84,7 @@ impl Launcher {
     pub fn tools(&self, thread_id: &str, agent: Option<&Identity>, depth: usize) -> ToolRegistry {
         let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
         tools.chat = depth == 0;
+        tools.set_depth(depth);
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
                 tools.add(Box::new(tool));
@@ -106,6 +108,9 @@ impl Launcher {
         // Only a chat has the user to ask.
         if depth == 0 {
             tools.add(Box::new(AskUser));
+            tools.add(Box::new(DisplayImage::new(ArtifactStore::new(
+                self.paths.artifacts_dir(),
+            ))));
         }
         if depth > 0 {
             tools.add(Box::new(MessageParent::new(

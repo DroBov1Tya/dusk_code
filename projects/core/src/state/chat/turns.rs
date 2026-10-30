@@ -143,6 +143,17 @@ impl State {
         call_id: &str,
         content: String,
     ) -> Result<Message> {
+        self.record_tool_result_with_artifacts(turn_id, call_id, content, Vec::new())
+            .await
+    }
+
+    pub async fn record_tool_result_with_artifacts(
+        &self,
+        turn_id: &str,
+        call_id: &str,
+        content: String,
+        artifacts: Vec<crate::artifacts::ImageArtifact>,
+    ) -> Result<Message> {
         let timestamp = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin tool result")?;
         let turn = read_running_turn(&mut transaction, turn_id).await?;
@@ -151,7 +162,7 @@ impl State {
             open.iter().any(|open| open == call_id),
             "tool call {call_id} is not waiting for a result"
         );
-        let new = NewMessage::tool(call_id.to_owned(), content);
+        let new = NewMessage::tool(call_id.to_owned(), content).with_artifacts(artifacts);
         let message = insert_message(&mut transaction, &turn.thread_id, &new, None, timestamp);
         let message = message.await?;
         transaction.commit().await.context("commit tool result")?;

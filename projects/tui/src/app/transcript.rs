@@ -74,6 +74,8 @@ pub struct Transcript {
     pub entries: Vec<Entry>,
     /// Entries the user hid; each shows as one line until shown again.
     pub hidden: HashSet<usize>,
+    /// Only the root transcript is connected to the local image store.
+    pub images: super::images::Images,
     /// Changes when anything but the text of the last entry changes, so the lines of the
     /// earlier entries can be kept between frames. Unique across transcripts.
     revision: u64,
@@ -99,6 +101,11 @@ fn next_revision() -> u64 {
 }
 
 impl Transcript {
+    pub fn set_artifact_store(&mut self, store: dusk_core::artifacts::ArtifactStore) {
+        self.images = super::images::Images::new(store);
+        self.changed();
+    }
+
     pub fn revision(&self) -> u64 {
         self.revision
     }
@@ -158,6 +165,7 @@ impl Transcript {
                     let result = ToolResult {
                         content: message.content.clone(),
                         is_error: failed,
+                        artifacts: message.artifacts.clone(),
                     };
                     let call_id = message.tool_call_id.clone().unwrap_or_default();
                     transcript.finish_tool(&call_id, result);
@@ -242,6 +250,7 @@ impl Transcript {
                 *result = Some(ToolResult {
                     content: "stopped: the user interrupted the turn".into(),
                     is_error: true,
+                    artifacts: Vec::new(),
                 });
             }
         }

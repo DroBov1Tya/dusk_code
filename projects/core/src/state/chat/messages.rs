@@ -5,7 +5,7 @@ use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 use uuid::Uuid;
 
 use super::{State, timestamp_ms};
-use crate::providers::ToolCall;
+use crate::{artifacts::ImageArtifact, providers::ToolCall};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Message {
@@ -21,6 +21,8 @@ pub struct Message {
     pub tool_calls: Vec<ToolCall>,
     /// Set exactly on tool messages: the call they answer.
     pub tool_call_id: Option<String>,
+    /// Image cards for clients. Never included in model context or URL detection.
+    pub artifacts: Vec<ImageArtifact>,
     /// For a user message another agent sent: the thread it came from.
     pub from_thread_id: Option<String>,
     /// Estimated sizes in model tokens; see `estimate_tokens`.
@@ -48,6 +50,7 @@ pub struct NewMessage {
     reasoning: Option<String>,
     tool_calls: Vec<ToolCall>,
     tool_call_id: Option<String>,
+    artifacts: Vec<ImageArtifact>,
     from_thread_id: Option<String>,
 }
 
@@ -212,6 +215,7 @@ impl NewMessage {
             reasoning,
             tool_calls,
             tool_call_id: None,
+            artifacts: Vec::new(),
             from_thread_id: None,
         }
     }
@@ -223,6 +227,7 @@ impl NewMessage {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: Some(call_id),
+            artifacts: Vec::new(),
             from_thread_id: None,
         }
     }
@@ -234,8 +239,14 @@ impl NewMessage {
             reasoning: None,
             tool_calls: Vec::new(),
             tool_call_id: None,
+            artifacts: Vec::new(),
             from_thread_id: None,
         }
+    }
+
+    pub fn with_artifacts(mut self, artifacts: Vec<ImageArtifact>) -> Self {
+        self.artifacts = artifacts;
+        self
     }
 }
 
@@ -275,12 +286,17 @@ pub async fn insert_message(
     let content_tokens = estimate_tokens(&message.content) + MESSAGE_OVERHEAD;
     let tool_calls_tokens = tool_calls.as_deref().map_or(0, estimate_tokens);
     let reasoning_tokens = message.reasoning.as_deref().map_or(0, estimate_tokens);
+    let artifacts = if message.artifacts.is_empty() {
+        None
+    } else {
+        Some(serde_json::to_string(&message.artifacts).context("encode image artifacts")?)
+    };
     let row = sqlx::query(
         "INSERT INTO messages (message_id, thread_id, sequence, role, content, reasoning,
             tool_calls_json, tool_call_id, request_uid, content_tokens, tool_calls_tokens,
-            reasoning_tokens, created_at, from_thread_id)
+            reasoning_tokens, created_at, from_thread_id, artifacts_json)
          VALUES (?, ?, (SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE thread_id = ?),
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
+            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) RETURNING *",
     )
     .bind(Uuid::now_v7().to_string())
     .bind(thread_id)
@@ -296,6 +312,7 @@ pub async fn insert_message(
     .bind(i64::try_from(reasoning_tokens).context("reasoning is too large")?)
     .bind(timestamp)
     .bind(&message.from_thread_id)
+    .bind(artifacts)
     .fetch_one(&mut **transaction)
     .await
     .context("store message")?;
@@ -330,6 +347,11 @@ pub fn decode_message(row: SqliteRow) -> Result<Message> {
         None => Vec::new(),
     };
     let sequence: i64 = row.try_get("sequence")?;
+    let artifacts: Option<String> = row.try_get("artifacts_json")?;
+    let artifacts = match artifacts {
+        Some(json) => serde_json::from_str(&json).context("decode image artifacts")?,
+        None => Vec::new(),
+    };
     Ok(Message {
         message_id: row.try_get("message_id")?,
         thread_id: row.try_get("thread_id")?,
@@ -339,6 +361,7 @@ pub fn decode_message(row: SqliteRow) -> Result<Message> {
         reasoning: row.try_get("reasoning")?,
         tool_calls,
         tool_call_id: row.try_get("tool_call_id")?,
+        artifacts,
         from_thread_id: row.try_get("from_thread_id")?,
         content_tokens: read_tokens(&row, "content_tokens")?,
         tool_calls_tokens: read_tokens(&row, "tool_calls_tokens")?,
