@@ -374,6 +374,12 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_memory_chars(&self, chars: usize) -> Result<()> {
+        self.config()
+            .update(|config| config.set_memory_chars(chars))?;
+        Ok(())
+    }
+
     pub fn set_update_channel(&self, channel: Channel) -> Result<()> {
         self.config()
             .update(|config| config.set_update_channel(channel))?;

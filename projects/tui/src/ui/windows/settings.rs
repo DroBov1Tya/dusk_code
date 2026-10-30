@@ -202,16 +202,24 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
         Some(SettingCategory::Agents) => agent_rows(view, width),
         Some(SettingCategory::Tools) => tool_rows(view, width),
         Some(SettingCategory::Personalize) => {
-            let about = format!(
-                "    keeps what you ask it to remember in MEMORY.md, up to {} characters \
-                 (memory.max_chars in config.yml)",
-                view.memory.max_chars
-            );
-            vec![described(
-                switch_row(vec![Span::raw("  memory")], view.memory.enabled, width),
-                &about,
-                width,
-            )]
+            let about = "    keeps what you ask it to remember in MEMORY.md; the size is \
+                         memory.max_chars in config.yml";
+            vec![
+                described(
+                    switch_row(vec![Span::raw("  memory")], view.memory.enabled, width),
+                    about,
+                    width,
+                ),
+                Row {
+                    lines: vec![right(
+                        vec![Span::raw("  memory size, characters")],
+                        Span::styled(format!("\u{2212} {} +  ", view.memory.max_chars), bold(SUN)),
+                        width,
+                    )],
+                    switch: None,
+                    lead: 0,
+                },
+            ]
         }
         Some(SettingCategory::System) => system_rows(view, width),
         Some(SettingCategory::Updates) => {

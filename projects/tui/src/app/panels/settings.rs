@@ -177,6 +177,9 @@ pub struct SettingsHit {
 
 /// The agent limit takes the first row of the agents list.
 const LIMIT_ROWS: usize = 2;
+/// The memory's size moves in steps this large, within these bounds.
+const MEMORY_STEP: usize = 500;
+const MEMORY_CHARS: std::ops::RangeInclusive<usize> = 500..=20_000;
 const PAGE: usize = 20;
 const WHEEL: usize = 3;
 
@@ -234,7 +237,8 @@ impl SettingsView {
             Some(SettingCategory::Models) => 7,
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
-            Some(SettingCategory::Personalize | SettingCategory::Updates) => 1,
+            Some(SettingCategory::Personalize) => 2,
+            Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp.len(),
@@ -302,6 +306,7 @@ impl SettingsView {
                 let on = server.state != McpState::Off;
                 (SwitchKind::Mcp, server.name.clone(), on)
             }
+            SettingCategory::Personalize if row > 0 => return None,
             SettingCategory::Personalize => {
                 (SwitchKind::Memory, "memory".into(), self.memory.enabled)
             }
@@ -521,9 +526,9 @@ impl App {
                 view.top = 0;
             }
             (Some(category), KeyCode::Esc | KeyCode::Left | KeyCode::Backspace)
-                if !(category == SettingCategory::Agents
-                    && view.selected < LIMIT_ROWS
-                    && key.code == KeyCode::Left) =>
+                if !(key.code == KeyCode::Left
+                    && (category == SettingCategory::Agents && view.selected < LIMIT_ROWS
+                        || category == SettingCategory::Personalize && view.selected == 1)) =>
             {
                 view.selected = SettingCategory::ALL
                     .iter()
@@ -551,6 +556,21 @@ impl App {
                     view.max_agents_at_work.saturating_sub(1).max(1)
                 };
                 return Action::SetAgentLimit(limit);
+            }
+            (
+                Some(SettingCategory::Personalize),
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+'),
+            ) if view.selected == 1 => {
+                let chars = view.memory.max_chars - view.memory.max_chars % MEMORY_STEP;
+                let chars = if matches!(key.code, KeyCode::Right | KeyCode::Char('+')) {
+                    chars + MEMORY_STEP
+                } else if chars == view.memory.max_chars {
+                    chars.saturating_sub(MEMORY_STEP)
+                } else {
+                    chars
+                };
+                let chars = chars.clamp(*MEMORY_CHARS.start(), *MEMORY_CHARS.end());
+                return Action::SetMemoryChars(chars);
             }
             (Some(SettingCategory::Agents), KeyCode::Enter)
                 if view.agent_file(view.selected).is_some() =>

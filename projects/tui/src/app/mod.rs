@@ -50,6 +50,7 @@ pub enum Action {
     },
     SetAgentLimit(usize),
     SetGoalRounds(u32),
+    SetMemoryChars(usize),
     SetContextPolicy(ContextPolicy),
     /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {
