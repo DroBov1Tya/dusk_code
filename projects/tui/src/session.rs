@@ -16,7 +16,10 @@ use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
 use crate::{
-    app::{Action, AgentWindow, App, ModelList, Panel, Preview, ThreadList, Transcript},
+    app::{
+        Action, AgentWindow, App, ModelList, Panel, Preview, SettingsView, SkillEditor, SwitchKind,
+        ThreadList, Transcript,
+    },
     clipboard, ui,
 };
 
@@ -42,14 +45,7 @@ pub async fn run(
         runtime.config().current().limits().max_input_tokens,
         |choice| input_limit(runtime, &choice.model),
     );
-    let skills_dir = runtime.paths().skills_dir();
-    let mut app = App::new(
-        choice.as_ref().map(|choice| choice.name()),
-        limit,
-        config,
-        runtime.tool_names(),
-        skills_dir,
-    );
+    let mut app = App::new(choice.as_ref().map(|choice| choice.name()), limit, config);
     let mut open = None;
     if let Some(thread_id) = thread {
         open = Some(resume(runtime, &mut app, &thread_id).await?);
@@ -129,6 +125,46 @@ pub async fn run(
                     app.flash = Some(format!("Concurrent agents: {limit}"));
                 }
                 Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
+            },
+            Action::Switch { kind, name, on } => {
+                let saved = match kind {
+                    SwitchKind::Agent => runtime.set_agent_enabled(&name, on),
+                    SwitchKind::Tool => runtime.set_tool_enabled(&name, on),
+                    SwitchKind::Skill => runtime.set_skill_enabled(&name, on),
+                };
+                match saved {
+                    Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,
+                    Err(error) => app.error(format!("cannot save the setting: {error:#}")),
+                }
+            }
+            Action::OpenSkill(name) => match runtime.skill(&name) {
+                Ok(skill) => {
+                    if let Some(Panel::Settings(view)) = &mut app.panel {
+                        view.skill = Some(SkillEditor::new(skill));
+                    }
+                }
+                Err(error) => app.flash = Some(format!("cannot open the skill: {error:#}")),
+            },
+            Action::SaveSkill { name, text } => match runtime.save_skill(&name, &text) {
+                Ok(skill) => {
+                    if let Some(Panel::Settings(view)) = &mut app.panel
+                        && let Some(editor) = &mut view.skill
+                    {
+                        let (cursor, scroll) = (editor.text.cursor, editor.scroll);
+                        *editor = SkillEditor::new(skill);
+                        editor.text.cursor = cursor.min(editor.text.text.len());
+                        editor.scroll = scroll;
+                    }
+                    app.flash = Some(format!("skill {name} saved"));
+                    answer(runtime, &mut app, &mut open, Command::Settings).await;
+                }
+                Err(error) => {
+                    if let Some(Panel::Settings(view)) = &mut app.panel
+                        && let Some(editor) = &mut view.skill
+                    {
+                        editor.error = Some(format!("not saved: {error:#}"));
+                    }
+                }
             },
             Action::Resend(id) => {
                 if runtime.model().is_none() {
@@ -260,6 +296,10 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             app.provider_available = true;
             app.flash = Some(format!("model {}", choice.name()));
         }
+        Ok(Answer::Settings(settings)) => match &mut app.panel {
+            Some(Panel::Settings(view)) => view.refresh(settings),
+            _ => app.panel = Some(Panel::Settings(SettingsView::new(settings))),
+        },
         Ok(Answer::NewThread) => {
             close(open.take()).await;
             app.panel = None;

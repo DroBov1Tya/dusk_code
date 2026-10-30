@@ -9,7 +9,6 @@ mod transcript;
 
 use std::{
     collections::VecDeque,
-    path::PathBuf,
     sync::Arc,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
@@ -27,8 +26,8 @@ use ratatui::layout::Rect;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 use panels::agents;
 pub use panels::{
-    AgentWindow, Connection, ModelList, Panel, Preview, SettingCategory, SettingKind, SettingList,
-    SubagentView, ThreadList,
+    AgentRow, AgentWindow, Connection, HitTarget, ModelList, Panel, Preview, SettingCategory,
+    SettingsHit, SettingsView, SkillButton, SkillEditor, SubagentView, SwitchKind, ThreadList,
 };
 pub use transcript::{Entry, Tone, Transcript};
 
@@ -44,6 +43,18 @@ pub enum Action {
         api_key: Option<String>,
     },
     SetAgentLimit(usize),
+    /// Turn an agent, a tool or a skill on or off.
+    Switch {
+        kind: SwitchKind,
+        name: String,
+        on: bool,
+    },
+    /// Read a skill from disk into the settings, dropping unsaved edits.
+    OpenSkill(String),
+    SaveSkill {
+        name: String,
+        text: String,
+    },
     Resend(String),
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),
@@ -62,7 +73,6 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "/connect",
             "add a provider with its URL and optional API key",
         ),
-        ("/settings", "configure concurrent agents, tools and skills"),
         (
             "/resend",
             "view local unsent messages and explicitly send one",
@@ -209,8 +219,6 @@ pub struct App {
     pub turn_started_at: Option<i64>,
     pub last_turn_duration_ms: Option<u64>,
     pub config: Arc<LiveConfig>,
-    pub tools: Vec<String>,
-    pub skills_dir: PathBuf,
     turn_running: bool,
     compacting: bool,
     sent: Vec<String>,
@@ -219,13 +227,7 @@ pub struct App {
 }
 
 impl App {
-    pub fn new(
-        model: Option<String>,
-        limit: u64,
-        config: Arc<LiveConfig>,
-        tools: Vec<String>,
-        skills_dir: PathBuf,
-    ) -> Self {
+    pub fn new(model: Option<String>, limit: u64, config: Arc<LiveConfig>) -> Self {
         Self {
             provider_available: model.is_some(),
             model: model.unwrap_or_else(|| "no model".into()),
@@ -275,8 +277,6 @@ impl App {
             turn_started_at: None,
             last_turn_duration_ms: None,
             config,
-            tools,
-            skills_dir,
             turn_running: false,
             compacting: false,
             sent: Vec::new(),
@@ -600,14 +600,6 @@ impl App {
         match trimmed {
             "/connect" => {
                 self.panel = Some(Panel::Connect(Connection::default()));
-                return Action::None;
-            }
-            "/settings" => {
-                self.panel = Some(Panel::Settings(SettingList::load(
-                    &self.config.current(),
-                    &self.tools,
-                    &self.skills_dir,
-                )));
                 return Action::None;
             }
             "/resend" => {

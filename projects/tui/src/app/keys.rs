@@ -11,8 +11,8 @@ use ratatui::layout::Rect;
 use unicode_width::UnicodeWidthChar;
 
 use super::{
-    Action, App, Button, Command, Entry, Focus, Panel, Selection, SettingCategory, SettingKind,
-    SettingList, TEXT_COLUMN, commands, panels::step,
+    Action, App, Button, Command, Entry, Focus, Panel, Selection, TEXT_COLUMN, commands,
+    panels::step,
 };
 
 /// How long a first Ctrl+C waits for the second.
@@ -36,6 +36,13 @@ impl App {
             }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Agent(_))) => {
                 self.agent_window_mouse(mouse);
+                Action::None
+            }
+            Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Settings(_))) => {
+                self.settings_mouse(mouse)
+            }
+            Event::Paste(text) if matches!(self.panel, Some(Panel::Settings(_))) => {
+                self.settings_paste(&text.replace("\r\n", "\n").replace('\r', "\n"));
                 Action::None
             }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Paste(_))) => {
@@ -83,11 +90,7 @@ impl App {
         match key.code {
             KeyCode::Char('t') if ctrl => return Action::Command(Command::Resume),
             KeyCode::Char('n') if ctrl => return Action::Command(Command::New),
-            KeyCode::Char('o') if ctrl => {
-                let list = SettingList::load(&self.config.current(), &self.tools, &self.skills_dir);
-                self.panel = Some(Panel::Settings(list));
-                return Action::None;
-            }
+            KeyCode::Char('o') if ctrl => return Action::Command(Command::Settings),
             KeyCode::Char('r') if ctrl => {
                 self.transcript.toggle_reasoning();
                 return Action::None;
@@ -273,6 +276,9 @@ impl App {
     }
 
     fn panel_key(&mut self, key: KeyEvent) -> Action {
+        if matches!(self.panel, Some(Panel::Settings(_))) {
+            return self.settings_key(key);
+        }
         let Some(panel) = &mut self.panel else {
             return Action::None;
         };
@@ -384,61 +390,7 @@ impl App {
                 KeyCode::Esc => self.panel = None,
                 _ => {}
             },
-            Panel::Settings(list) => match key.code {
-                _ if up || down => {
-                    let count = list.len();
-                    step(&mut list.selected, count, down);
-                }
-                KeyCode::Enter | KeyCode::Right if list.category.is_none() => list.open(),
-                KeyCode::Esc if list.category.is_none() => self.panel = None,
-                KeyCode::Esc | KeyCode::Backspace => list.back(),
-                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+')
-                    if list.category == Some(SettingCategory::Agents) =>
-                {
-                    let more = matches!(key.code, KeyCode::Right | KeyCode::Char('+'));
-                    let limit = if more {
-                        list.max_agents_at_work.saturating_add(1)
-                    } else {
-                        list.max_agents_at_work.saturating_sub(1).max(1)
-                    };
-                    return Action::SetAgentLimit(limit);
-                }
-                KeyCode::Left => list.back(),
-                KeyCode::Char(' ') | KeyCode::Enter => {
-                    let Some(kind) = list.category.and_then(SettingCategory::kind) else {
-                        return Action::None;
-                    };
-                    let Some(item) = list
-                        .items
-                        .iter_mut()
-                        .filter(|item| item.kind == kind)
-                        .nth(list.selected)
-                    else {
-                        return Action::None;
-                    };
-                    let (kind, name, on) = (item.kind, item.name.clone(), !item.on);
-                    let saved = self.config.update(|config| match kind {
-                        SettingKind::Tool => config.set_tool_enabled(&name, on),
-                        SettingKind::Skill => config.set_skill_enabled(&name, on),
-                    });
-                    match saved {
-                        Ok(_) => item.on = on,
-                        Err(error) => self.error(format!("cannot save the setting: {error:#}")),
-                    }
-                }
-                KeyCode::Char('r') if list.category.is_some() => {
-                    let (category, selected) = (list.category, list.selected);
-                    if let Err(error) = self.config.reload() {
-                        self.error(format!("cannot reload the config: {error:#}"));
-                    }
-                    let mut list =
-                        SettingList::load(&self.config.current(), &self.tools, &self.skills_dir);
-                    list.category = category;
-                    list.selected = selected.min(list.len().saturating_sub(1));
-                    self.panel = Some(Panel::Settings(list));
-                }
-                _ => {}
-            },
+            Panel::Settings(_) => {}
         }
         Action::None
     }

@@ -20,12 +20,14 @@ use super::{
     thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner},
 };
 use crate::{
+    agents::{AgentTree, Agents},
     config::{ApiKey, ProviderConfig, ProviderKind},
     init::{self, create_private_dir},
     live_config::LiveConfig,
     mcp::{McpServers, McpStatus},
     paths::Paths,
     providers::Provider,
+    skills::{self, SkillInfo, SkillText},
     state::{LocalUnsent, Message, State, Task, Thread},
     thread_start::start_thread,
 };
@@ -40,6 +42,7 @@ const MCP_START_WAIT: Duration = Duration::from_secs(10);
 pub struct Runtime {
     launcher: Launcher,
     config_check: JoinHandle<()>,
+    agents_check: JoinHandle<()>,
     model_discovery: Option<JoinHandle<()>>,
     threads: Mutex<JoinSet<()>>,
 }
@@ -73,13 +76,20 @@ impl Runtime {
             info!("no model selected; local history is available");
         }
         let config_check = tokio::spawn(Arc::clone(&config).watch(CONFIG_CHECK_PERIOD));
+        let state = Arc::new(state);
+        let agents = Agents::new(paths.agents_dir(), Arc::clone(&state));
+        if let Err(error) = agents.scan().await {
+            warn!("cannot read the agents: {error:#}");
+        }
+        let agents_check = tokio::spawn(Arc::clone(&agents).watch(CONFIG_CHECK_PERIOD));
         let launcher = Launcher {
-            state: Arc::new(state),
+            state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
             config: Arc::clone(&config),
             paths,
             mailboxes: Arc::new(Mailboxes::default()),
             mcp: McpServers::start(&config.current()),
+            agents,
         };
         let model_discovery = if !config.current().providers().is_empty() {
             let config = Arc::clone(&config);
@@ -122,6 +132,7 @@ impl Runtime {
         Ok(Self {
             launcher,
             config_check,
+            agents_check,
             model_discovery,
             threads: Mutex::new(JoinSet::new()),
         })
@@ -168,6 +179,54 @@ impl Runtime {
             .update(|config| config.set_provider(name.clone(), provider))?;
         self.launcher.model.replace_provider(&name, adapter);
         Ok(())
+    }
+
+    /// Reads the agents folder now instead of at the next minute.
+    pub async fn read_agents(&self) -> Result<()> {
+        self.launcher.agents.scan().await
+    }
+
+    /// The chat and the agents it can reach, as deep as they may ask each other.
+    pub fn agent_tree(&self) -> AgentTree {
+        self.launcher.agents.tree(&self.launcher.config.current())
+    }
+
+    pub fn set_agent_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_agent_enabled(name, enabled))?;
+        Ok(())
+    }
+
+    pub fn set_tool_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_tool_enabled(name, enabled))?;
+        Ok(())
+    }
+
+    pub fn set_skill_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_skill_enabled(name, enabled))?;
+        Ok(())
+    }
+
+    pub fn skills(&self) -> Vec<SkillInfo> {
+        skills::list(
+            &self.launcher.paths.skills_dir(),
+            &self.launcher.config.current(),
+        )
+    }
+
+    /// A skill's file as it is on disk; reading it again throws edits away.
+    pub fn skill(&self, name: &str) -> Result<SkillText> {
+        skills::read(&self.launcher.paths.skills_dir(), name)
+    }
+
+    /// Saves a skill's file once the text reads as a skill.
+    pub fn save_skill(&self, name: &str, text: &str) -> Result<SkillText> {
+        skills::save(&self.launcher.paths.skills_dir(), name, text)
     }
 
     pub fn set_max_agents_at_work(&self, limit: usize) -> Result<()> {
@@ -351,6 +410,7 @@ impl Runtime {
             tokio::time::sleep(Duration::from_millis(50)).await;
         }
         self.config_check.abort();
+        self.agents_check.abort();
         if let Some(discovery) = self.model_discovery {
             discovery.abort();
         }

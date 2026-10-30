@@ -14,16 +14,15 @@ use unicode_width::UnicodeWidthStr;
 use dusk_core::state::MessageRole;
 
 use super::{
-    agent_window, input, markdown,
+    agent_window, input, markdown, settings,
     theme::{
-        ALIVE, DOT, DOWN, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, OFF, ON, ROSE, SUN, SUN_GLYPH,
-        TEAL, USER_BAR, VIOLET, bold, dim, fg, thought,
+        ALIVE, DOT, DOWN, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, ROSE, SUN, SUN_GLYPH, TEAL,
+        USER_BAR, VIOLET, bold, dim, fg, thought,
     },
     wrap,
 };
 use crate::app::{
-    App, Connection, EditorButton, EditorHit, ModelList, Panel, SettingCategory, SettingList,
-    ThreadList, compact_number, paste,
+    App, Connection, EditorButton, EditorHit, ModelList, Panel, ThreadList, compact_number, paste,
 };
 
 const KEYS: [(&str, &str); 26] = [
@@ -69,6 +68,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     match app.panel {
         Some(Panel::Paste(_)) => return draw_paste(frame, screen, app),
         Some(Panel::Agent(_)) => return agent_window::draw(frame, screen, app),
+        Some(Panel::Settings(_)) => return settings::draw(frame, screen, app),
         _ => {}
     }
     let Some(panel) = &app.panel else {
@@ -77,25 +77,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let mut connection_rows = Vec::new();
     let (title, hints, lines, selected) = match panel {
         Panel::Threads(list) => return draw_threads(frame, screen, app, list),
-        Panel::Settings(list) => {
-            let (lines, row) = settings(list);
-            let (title, hints) = match list.category {
-                None => ("settings", "up/down choose  enter open  esc close"),
-                Some(SettingCategory::Agents) => (
-                    "settings / agents",
-                    "left/right -/+ change  r reload  esc back",
-                ),
-                Some(SettingCategory::Tools) => (
-                    "settings / tools",
-                    "up/down choose  space/enter switch  esc/left back",
-                ),
-                Some(SettingCategory::Skills) => (
-                    "settings / skills",
-                    "up/down choose  space/enter switch  esc/left back",
-                ),
-            };
-            (title, hints, lines, Some(row))
-        }
+        Panel::Settings(_) => return,
         Panel::Connect(form) => {
             let (lines, selected, rows) = connection(form, screen.width.saturating_sub(8) as usize);
             connection_rows = rows;
@@ -476,63 +458,6 @@ fn models(list: &ModelList) -> (Vec<Line<'static>>, usize) {
         )));
     }
     (lines, selected_line)
-}
-
-/// The category menu only navigates; values appear within their own submenu.
-fn settings(list: &SettingList) -> (Vec<Line<'static>>, usize) {
-    let Some(category) = list.category else {
-        let lines = SettingCategory::ALL
-            .iter()
-            .enumerate()
-            .map(|(index, category)| {
-                selectable(
-                    vec![Span::raw(format!("  {}", category.name()))],
-                    Span::styled("open > ", dim()),
-                    index == list.selected,
-                )
-            })
-            .collect();
-        return (lines, list.selected);
-    };
-    if category == SettingCategory::Agents {
-        return (
-            vec![selectable(
-                vec![Span::raw("  concurrent agent limit")],
-                Span::styled(
-                    format!("{}  \u{2212} / +", list.max_agents_at_work),
-                    bold(SUN),
-                ),
-                true,
-            )],
-            0,
-        );
-    }
-    let mut lines = Vec::new();
-    for (index, item) in list
-        .items
-        .iter()
-        .filter(|item| Some(item.kind) == category.kind())
-        .enumerate()
-    {
-        let switch = if item.on {
-            Span::styled(format!("  {ON} "), fg(SUN))
-        } else {
-            Span::styled(format!("  {OFF} "), fg(NIGHT))
-        };
-        let name_style = if item.on { Style::new() } else { dim() };
-        lines.push(selectable(
-            vec![switch, Span::styled(item.name.clone(), name_style)],
-            Span::styled(item.about.clone(), dim()),
-            index == list.selected,
-        ));
-    }
-    if lines.is_empty() {
-        lines.push(Line::from(Span::styled(
-            format!(" no {} available", category.name()),
-            thought(),
-        )));
-    }
-    (lines, list.selected)
 }
 
 /// Connection details stay in this form and are never echoed into the transcript.

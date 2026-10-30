@@ -8,6 +8,9 @@
 mod compact;
 mod model;
 mod resume;
+mod settings;
+
+pub use settings::Settings;
 
 use anyhow::{Result, bail};
 
@@ -31,6 +34,8 @@ pub enum Command {
     New,
     /// Lists the providers with their models, or switches to `provider/model`.
     Model { name: Option<String> },
+    /// What a client offers to switch: tools, skills, agents and limits.
+    Settings,
 }
 
 /// What a client command answers.
@@ -45,6 +50,7 @@ pub enum Answer {
     ModelSwitched(Choice),
     /// The client closes the open thread and shows an empty one.
     NewThread,
+    Settings(Settings),
 }
 
 /// Every command, for clients to show: name and what it does.
@@ -56,6 +62,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ("/new", "start a new thread"),
     ("/resume", "open an earlier thread"),
     ("/model", "choose the model; every provider is checked live"),
+    ("/settings", "switch agents, tools and skills; edit skills"),
 ];
 
 impl Command {
@@ -69,7 +76,7 @@ impl Command {
             Self::Compact { instructions } => {
                 compact::run(agent, instructions.as_deref(), inbox).await;
             }
-            Self::Resume | Self::New | Self::Model { .. } => {}
+            Self::Resume | Self::New | Self::Model { .. } | Self::Settings => {}
         }
     }
 
@@ -77,6 +84,7 @@ impl Command {
         match self {
             Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
             Self::New => Ok(Answer::NewThread),
+            Self::Settings => Ok(Answer::Settings(settings::run(runtime).await?)),
             Self::Model { name: None } => Ok(Answer::Providers {
                 current: runtime.model().map(|choice| choice.name()),
                 providers: model::check(runtime).await?,
@@ -107,6 +115,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         }),
         "resume" => Ok(Command::Resume),
         "new" => Ok(Command::New),
+        "settings" => Ok(Command::Settings),
         "model" => Ok(Command::Model { name: argument }),
         _ => unknown(name),
     })
