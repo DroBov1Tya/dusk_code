@@ -570,6 +570,13 @@ impl App {
                 if let Some(thread_id) = self.card_at(x, y) {
                     return Action::OpenAgent(thread_id);
                 }
+                // Folded, the whole section unfolds; unfolded, its top border folds it.
+                if let Some(area) = self.mcp_area.filter(|area| inside(*area, x, y))
+                    && (!self.connectors_open || y == area.y)
+                {
+                    self.connectors_open = !self.connectors_open;
+                    return Action::None;
+                }
                 if self.input_area.is_some_and(|area| inside(area, x, y)) {
                     self.selection = None;
                     self.focus = Focus::Input;

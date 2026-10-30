@@ -84,9 +84,10 @@ pub async fn run(
             }
             app.model = name;
             app.limit = input_limit(runtime, &choice.model);
-            app.effort = runtime.config().current().effort();
-            app.mode = runtime.config().current().mode().to_owned();
         }
+        let config = runtime.config().current();
+        app.effort = config.effort();
+        app.mode = config.mode().to_owned();
         // Read before the statuses: a server that settles in between still gets a frame.
         let mcp_starting = runtime.mcp_starting();
         app.mcp = runtime.mcp_statuses();
