@@ -77,6 +77,18 @@ impl App {
             return Action::None;
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        let typing = self.panel.is_none() && self.focus == Focus::Input;
+        if typing && key.code == KeyCode::Esc && self.input.anchor.take().is_some() {
+            return Action::None;
+        }
+        // With text selected in the box, Ctrl+C copies it instead of clearing the box.
+        if typing
+            && ctrl
+            && key.code == KeyCode::Char('c')
+            && let Some(text) = self.input.selected()
+        {
+            return Action::Copy(text);
+        }
         if ctrl && key.code == KeyCode::Char('c') {
             return self.interrupt_key();
         }
@@ -209,15 +221,36 @@ impl App {
                     self.open_paste(index);
                 }
             }
+            KeyCode::Char('a') if ctrl => self.input.select_all(),
+            KeyCode::Char('x') if ctrl => {
+                if let Some(text) = self.input.selected() {
+                    self.input.delete_selection();
+                    return Action::Copy(text);
+                }
+            }
             KeyCode::Char(c) if !ctrl && !alt => self.input.insert(c.encode_utf8(&mut [0; 4])),
             KeyCode::Backspace => self.input.backspace(),
             KeyCode::Delete => self.input.delete(),
-            KeyCode::Left => self.input.left(),
-            KeyCode::Right => self.input.right(),
-            KeyCode::Home => self.input.home(),
-            KeyCode::End => self.input.end(),
-            KeyCode::Up if !self.input.vertical(false) => self.recall(true),
-            KeyCode::Down if !self.input.vertical(true) => self.recall(false),
+            KeyCode::Left | KeyCode::Right | KeyCode::Home | KeyCode::End => {
+                self.input.mark(shift);
+                match key.code {
+                    KeyCode::Left => self.input.left(),
+                    KeyCode::Right => self.input.right(),
+                    KeyCode::Home => self.input.home(),
+                    _ => self.input.end(),
+                }
+            }
+            KeyCode::Up | KeyCode::Down if shift => {
+                self.input.mark(true);
+                self.input.vertical(key.code == KeyCode::Down);
+            }
+            KeyCode::Up | KeyCode::Down => {
+                self.input.mark(false);
+                let down = key.code == KeyCode::Down;
+                if !self.input.vertical(down) {
+                    self.recall(!down);
+                }
+            }
             KeyCode::Tab if self.complete_command() => {}
             KeyCode::Tab => {
                 if let Some(last) = self.transcript.last_foldable() {
@@ -456,10 +489,32 @@ impl App {
                 if let Some(thread_id) = self.card_at(x, y) {
                     return Action::OpenAgent(thread_id);
                 }
+                if self.input_area.is_some_and(|area| inside(area, x, y)) {
+                    self.selection = None;
+                    self.focus = Focus::Input;
+                    self.input_dragging = true;
+                    if let Some(offset) = self.input_offset_at(x, y) {
+                        self.input.place(offset);
+                    }
+                    self.input.anchor = Some(self.input.cursor);
+                    return Action::None;
+                }
                 self.selection = self.line_at(x, y).map(|at| Selection {
                     anchor: at,
                     cursor: at,
                 });
+            }
+            MouseEventKind::Drag(MouseButton::Left) if self.input_dragging => {
+                if let Some(offset) = self.input_offset_at(x, y) {
+                    self.input.place(offset);
+                }
+            }
+            MouseEventKind::Up(MouseButton::Left) if self.input_dragging => {
+                self.input_dragging = false;
+                match self.input.selected() {
+                    Some(text) => return Action::Copy(text),
+                    None => self.input.anchor = None,
+                }
             }
             MouseEventKind::Drag(MouseButton::Left) => self.drag(x, y),
             MouseEventKind::Up(MouseButton::Left) => return self.release(x, y),
@@ -546,6 +601,25 @@ impl App {
             self.transcript.toggle(index);
             self.focus = Focus::Browse(index);
         }
+    }
+
+    /// The byte offset in the box under the mouse; above or below the shown rows it
+    /// goes to the first or last one.
+    fn input_offset_at(&self, x: u16, y: u16) -> Option<usize> {
+        let first = self.input_rows.first()?;
+        let last = self.input_rows.last()?;
+        let row = if y < first.row {
+            first
+        } else {
+            self.input_rows.iter().find(|row| row.row == y).unwrap_or(last)
+        };
+        let before = row.cells.iter().rev().find(|&&(left, _)| left <= x);
+        let offset = match before {
+            _ if x >= row.right => row.end,
+            Some(&(_, offset)) => offset,
+            None => row.cells.first().map_or(row.end, |&(_, offset)| offset),
+        };
+        Some(offset)
     }
 
     fn task_at(&self, x: u16, y: u16) -> Option<String> {

@@ -13,13 +13,13 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        EMBER, GLOW, HAZE, HORIZON_DARK, INPUT_BG, NIGHT, ROSE, SUN, TEAL, VIOLET, bold, dim, fg,
+        EMBER, GLOW, HAZE, HORIZON_DARK, INPUT_BG, NIGHT, ROSE, SELECTED, SUN, TEAL, VIOLET, bold, dim, fg,
         thought,
     },
     transcript::spinner,
     wrap,
 };
-use crate::app::{Activity, App, ChipHit, Focus, Input, commands, paste};
+use crate::app::{Activity, App, ChipHit, Focus, Input, InputRow, commands, paste};
 
 const MIN_ROWS: usize = 3;
 const MAX_ROWS: usize = 10;
@@ -48,6 +48,8 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         ..box_area
     };
     app.input_chips.clear();
+    app.input_rows.clear();
+    app.input_area = Some(box_area);
     let width = text_width(area.width);
     let prompt = Span::styled(PROMPT, bold(ROSE));
     if app.input.text.is_empty() {
@@ -69,6 +71,16 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     for (row, shown) in rows.into_iter().enumerate().skip(skip) {
         let y = text_area.y + (row - skip) as u16;
+        app.input_rows.push(InputRow {
+            row: y,
+            right: left + shown.width as u16,
+            cells: shown
+                .cells
+                .iter()
+                .map(|&(column, offset)| (left + column as u16, offset))
+                .collect(),
+            end: shown.end,
+        });
         for &(from, to, index) in &shown.chips {
             app.input_chips.push(ChipHit {
                 row: y,
@@ -202,33 +214,54 @@ fn text_width(width: u16) -> usize {
     (width as usize).saturating_sub(PROMPT.width() + 1).max(1)
 }
 
-/// A row of the box: its spans, and where its chips are as (from, to, paste index).
+/// A row of the box: its spans, where its chips are as (from, to, paste index), and where
+/// each character starts as (column, byte offset), up to the offset that ends the row.
 #[derive(Default)]
 pub struct Row {
     pub spans: Vec<Span<'static>>,
     chips: Vec<(usize, usize, usize)>,
+    cells: Vec<(usize, usize)>,
+    end: usize,
     plain: String,
+    plain_selected: bool,
     width: usize,
 }
 
 impl Row {
     fn flush(&mut self) {
         if !self.plain.is_empty() {
-            self.spans.push(Span::raw(std::mem::take(&mut self.plain)));
+            let text = std::mem::take(&mut self.plain);
+            self.spans.push(match self.plain_selected {
+                true => Span::styled(text, Style::new().bg(SELECTED)),
+                false => Span::raw(text),
+            });
         }
+    }
+
+    fn push_plain(&mut self, c: char, selected: bool) {
+        if selected != self.plain_selected {
+            self.flush();
+            self.plain_selected = selected;
+        }
+        self.plain.push(c);
     }
 }
 
-/// The text broken into rows of `width` columns, chips drawn as their labels, and the
-/// cursor as (column, row).
+/// The text broken into rows of `width` columns, chips drawn as their labels, the
+/// selection marked, and the cursor as (column, row).
 pub fn layout(input: &Input, width: usize) -> (Vec<Row>, (usize, usize)) {
+    let selection = input.selection();
     let mut rows = vec![Row::default()];
     let mut at = (0, 0);
     for (offset, c) in input.text.char_indices() {
         if offset == input.cursor {
             at = (rows.last().map_or(0, |row| row.width), rows.len() - 1);
         }
+        let selected = selection.is_some_and(|(from, to)| offset >= from && offset < to);
         if c == '\n' {
+            if let Some(row) = rows.last_mut() {
+                row.end = offset;
+            }
             rows.push(Row::default());
             continue;
         }
@@ -247,23 +280,31 @@ pub fn layout(input: &Input, width: usize) -> (Vec<Row>, (usize, usize)) {
             .last()
             .is_some_and(|row| row.width + char_width > width)
         {
+            if let Some(row) = rows.last_mut() {
+                row.end = offset;
+            }
             rows.push(Row::default());
         }
         let Some(row) = rows.last_mut() else {
             continue;
         };
+        row.cells.push((row.width, offset));
         match chip {
             Some((index, label)) => {
                 row.flush();
                 row.chips.push((row.width, row.width + char_width, index));
-                row.spans.push(Span::styled(label, fg(TEAL).bg(GLOW)));
+                let style = fg(TEAL).bg(if selected { SELECTED } else { GLOW });
+                row.spans.push(Span::styled(label, style));
             }
-            None => row.plain.push(c),
+            None => row.push_plain(c, selected),
         }
         row.width += char_width;
     }
     if input.cursor >= input.text.len() {
         at = (rows.last().map_or(0, |row| row.width), rows.len() - 1);
+    }
+    if let Some(row) = rows.last_mut() {
+        row.end = input.text.len();
     }
     for row in &mut rows {
         row.flush();

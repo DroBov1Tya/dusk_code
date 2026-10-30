@@ -241,6 +241,7 @@ impl FileEditor {
                 text: text.clone(),
                 cursor: 0,
                 pastes: Vec::new(),
+                anchor: None,
             },
             original: text,
             scroll: 0,

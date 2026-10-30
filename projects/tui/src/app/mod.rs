@@ -132,6 +132,15 @@ pub struct ChipHit {
     pub index: usize,
 }
 
+/// A row of the message box on the last drawn frame: where each character starts on
+/// screen with its byte offset, and the offset a click past the right end goes to.
+pub struct InputRow {
+    pub row: u16,
+    pub right: u16,
+    pub cells: Vec<(u16, usize)>,
+    pub end: usize,
+}
+
 /// Text marked with the mouse, as (transcript line, screen column) at both ends.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct Selection {
@@ -204,6 +213,10 @@ pub struct App {
     pub transcript_hits: Vec<TranscriptHit>,
     pub button_hits: Vec<ButtonHit>,
     pub input_chips: Vec<ChipHit>,
+    pub input_rows: Vec<InputRow>,
+    pub input_area: Option<Rect>,
+    /// A drag that started in the message box selects there.
+    pub input_dragging: bool,
     pub editor_hits: Vec<EditorHit>,
     /// The entry under the mouse, which shows its buttons.
     pub hover: Option<usize>,
@@ -284,6 +297,9 @@ impl App {
             transcript_hits: Vec::new(),
             button_hits: Vec::new(),
             input_chips: Vec::new(),
+            input_rows: Vec::new(),
+            input_area: None,
+            input_dragging: false,
             editor_hits: Vec::new(),
             hover: None,
             selection: None,
