@@ -31,7 +31,7 @@ use crate::{
     mcp::{McpInfo, McpServers, McpStatus},
     providers::Provider,
     release::{
-        update::{self, Channel, UpdateInfo},
+        update::{self, Channel, InstallProgress, UpdateInfo},
         watch::UpdateWatch,
     },
     runtime::chat::thread_start::{FORK_INTRO, start_thread},
@@ -192,6 +192,17 @@ impl Runtime {
     /// Puts release `tag` in place of the running binary; it applies at the next start.
     pub async fn install_update(&self, tag: &str) -> Result<PathBuf> {
         let binary = update::install(tag).await?;
+        info!("updated to {tag} at {}", binary.display());
+        Ok(binary)
+    }
+
+    /// Installs a release while publishing the latest stage and downloaded bytes.
+    pub async fn install_update_with_progress(
+        &self,
+        tag: &str,
+        progress: tokio::sync::watch::Sender<InstallProgress>,
+    ) -> Result<PathBuf> {
+        let binary = update::install_with_progress(tag, progress).await?;
         info!("updated to {tag} at {}", binary.display());
         Ok(binary)
     }
