@@ -9,6 +9,8 @@ pub enum Args {
         thread: Option<String>,
     },
     Remove,
+    /// Install the newest version on the configured channel, without the screen.
+    Update,
 }
 
 pub fn parse_args() -> Args {
@@ -28,6 +30,12 @@ pub fn parse_args() -> Args {
                 .value_name("ID")
                 .help("Open a thread instead of starting a new one"),
         )
+        .arg(
+            Arg::new("update")
+                .long("update")
+                .action(clap::ArgAction::SetTrue)
+                .help("Install the newest release, or pre-release on the dev channel, and exit"),
+        )
         .subcommand(
             Command::new("remove")
                 .about("Remove duskcode, its links and ~/.config/duskcode after one question"),
@@ -35,6 +43,9 @@ pub fn parse_args() -> Args {
         .get_matches();
     if matches.subcommand_matches("remove").is_some() {
         return Args::Remove;
+    }
+    if matches.get_flag("update") {
+        return Args::Update;
     }
     Args::Run {
         state_db: matches.get_one::<PathBuf>("state-db").cloned(),

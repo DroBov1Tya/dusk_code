@@ -11,14 +11,19 @@ mod ui;
 
 use anyhow::Result;
 use args::Args;
-use dusk_core::{logs, paths::Paths, runtime::Runtime};
+use dusk_core::{logs, paths::Paths, runtime::Runtime, update};
 use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     let paths = Paths::from_home()?;
-    let Args::Run { state_db, thread } = args::parse_args() else {
-        return remove::run(&paths);
+    let (state_db, thread) = match args::parse_args() {
+        Args::Run { state_db, thread } => (state_db, thread),
+        Args::Remove => return remove::run(&paths),
+        Args::Update => {
+            println!("{}", update::update_now(&paths).await?);
+            return Ok(());
+        }
     };
     if let Err(error) = logs::init(&paths, env!("CARGO_CRATE_NAME"), "tui") {
         eprintln!("duskcode: no log files: {error:#}");

@@ -25,7 +25,8 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - Questions with options the agent asks above the message box (`ask_user`); the answer
   goes back as `QUESTION: ... ANSWER: ...`, and a message typed instead declines it.
 - Memory of the user's lasting preferences in `~/.config/duskcode/MEMORY.md`, kept
-  short by the `remember` tool and switched off with it in `/settings`.
+  short by the `remember` tool; switched in `/settings` -> personalize, sized by
+  `memory.max_chars` in config.yml.
 
 ## Install
 
@@ -39,8 +40,8 @@ The script checks the release checksum, puts the binary in `~/.local/share/duskc
 and links `duskcode` from `/usr/local/bin`, or `~/.local/bin` when that is not writable.
 Releases are the round versions (0.50.0, 0.60.0); every tag between them is a
 pre-release, installed by name with `... | DUSKCODE_VERSION=v0.53.0 sh`.
-`/update` installs the newest release in place (or the newest pre-release on the dev
-channel). Prompts and skills dusk ships follow the binary at the next start; a file you
+`/update` or `duskcode --update` installs the newest release in place (or the newest
+pre-release on the dev channel, set in `/settings` -> updates). Prompts and skills dusk ships follow the binary at the next start; a file you
 changed is kept, and the new version is put beside it as `<file>.new`.
 Run `duskcode` in the folder to work in. `duskcode remove` asks once, then deletes the
 binary, its link and `~/.config/duskcode`.

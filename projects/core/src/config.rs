@@ -53,6 +53,9 @@ pub struct Config {
     /// Tool switches of the modes other than MAIN, which uses `tools`.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     modes: BTreeMap<String, BTreeMap<String, bool>>,
+    /// What the agent remembers about the user, in MEMORY.md.
+    #[serde(default, skip_serializing_if = "Memory::is_default")]
+    memory: Memory,
     /// Which releases /update offers; stable when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     update_channel: Option<Channel>,
@@ -62,6 +65,36 @@ pub struct Config {
     /// MCP servers by name, started with the core.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     mcp: BTreeMap<String, McpServerConfig>,
+}
+
+/// The memory of the user: whether the agent keeps it, and its size. Every request
+/// carries it, so it is kept small.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Memory {
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    #[serde(default = "default_memory_chars")]
+    pub max_chars: usize,
+}
+
+impl Default for Memory {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_chars: default_memory_chars(),
+        }
+    }
+}
+
+impl Memory {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn default_memory_chars() -> usize {
+    2000
 }
 
 /// Reasoning effort, sent as `reasoning_effort`; servers that do not reason ignore it.
@@ -343,6 +376,14 @@ impl Config {
 
     pub fn set_model(&mut self, name: String) {
         self.model = Some(name);
+    }
+
+    pub fn memory(&self) -> Memory {
+        self.memory
+    }
+
+    pub fn set_memory_enabled(&mut self, enabled: bool) {
+        self.memory.enabled = enabled;
     }
 
     pub fn update_channel(&self) -> Channel {

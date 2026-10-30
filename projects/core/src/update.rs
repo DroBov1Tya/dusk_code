@@ -17,6 +17,8 @@ use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use crate::{config::Config, paths::Paths};
+
 const REPOSITORY: &str = "DroBov1Tya/dusk_code";
 const API: &str = "https://api.github.com/repos";
 const DOWNLOADS: &str = "https://github.com";
@@ -105,6 +107,31 @@ pub async fn check(channel: Channel) -> Result<UpdateInfo> {
         prerelease: release.prerelease,
         commits_behind,
     })
+}
+
+/// `duskcode --update`: installs the newest version on the channel in config.yml, if it
+/// is newer. Returns what happened, for the terminal.
+pub async fn update_now(paths: &Paths) -> Result<String> {
+    let channel = match fs::read(paths.config_file()) {
+        Ok(bytes) => Config::parse(&bytes)?.update_channel(),
+        Err(_) => Channel::default(),
+    };
+    let info = check(channel).await?;
+    if !info.newer {
+        return Ok(format!(
+            "{} is up to date on the {} channel (newest {})",
+            info.current,
+            channel.name(),
+            info.latest
+        ));
+    }
+    let binary = install(&info.latest).await?;
+    Ok(format!(
+        "updated {} to {} in {}",
+        info.current,
+        info.latest,
+        binary.display()
+    ))
 }
 
 /// Downloads `tag` for this target and puts it in place of the running binary. Returns

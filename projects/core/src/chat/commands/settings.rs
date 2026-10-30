@@ -4,11 +4,14 @@
 use anyhow::Result;
 
 use crate::{
-    agents::AgentTree, mcp::McpInfo, runtime::Runtime, skills::SkillInfo, tools::ToolKind,
+    agents::AgentTree, config::Memory, mcp::McpInfo, runtime::Runtime, skills::SkillInfo,
+    tools::ToolKind, update::Channel,
 };
 
 pub struct Settings {
     pub max_agents_at_work: usize,
+    pub memory: Memory,
+    pub update_channel: Channel,
     /// The chat's mode, whose switches `tools` shows.
     pub mode: String,
     /// Every tool by kind and then by name.
@@ -39,6 +42,8 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
     Ok(Settings {
         max_agents_at_work: config.limits().max_agents_at_work,
         mode: config.mode().to_owned(),
+        memory: config.memory(),
+        update_channel: config.update_channel(),
         tools,
         skills: runtime.skills(),
         agents: runtime.agent_tree(),
