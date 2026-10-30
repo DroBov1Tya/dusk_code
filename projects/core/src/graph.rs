@@ -20,11 +20,13 @@
 use std::{
     collections::BTreeMap,
     fs,
+    io::Write,
     path::{Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::Deserialize;
+use serde_json::Value;
 
 use crate::{paths::is_plain_folder_name, tools::read_regular};
 
@@ -251,6 +253,80 @@ fn yes() -> bool {
     true
 }
 
+/// A skill's or an agent's file as a client edits it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NodeText {
+    pub name: String,
+    /// The front matter fields with plain values, by name, such as `description` and
+    /// `license`.
+    pub metadata: Vec<(String, String)>,
+    /// The whole file, front matter included.
+    pub text: String,
+}
+
+/// The node's file, `file` in the folder `name` under `directory`, as it is on disk now.
+pub fn read_node_text(directory: &Path, file: &str, name: &str) -> Result<NodeText> {
+    let text = read_text(&node_file(directory, file, name)?)?;
+    Ok(NodeText {
+        name: name.to_owned(),
+        metadata: metadata(&text),
+        text,
+    })
+}
+
+/// Replaces the node's file with `text` once it reads as a node. The file is written
+/// beside the old one and moved over it, so a failed write leaves the old one whole.
+pub fn save_node_text(directory: &Path, file: &str, name: &str, text: &str) -> Result<NodeText> {
+    let path = node_file(directory, file, name)?;
+    ensure!(path.is_file(), "{name} does not exist");
+    check_node(text, name)?;
+    let temporary = path.with_extension("md.saving");
+    let mut out = fs::File::create(&temporary).context("cannot write the file")?;
+    out.write_all(text.as_bytes())
+        .and_then(|()| out.sync_all())
+        .context("cannot write the file")?;
+    fs::rename(&temporary, &path).context("cannot replace the file")?;
+    read_node_text(directory, file, name)
+}
+
+/// The node's file by name; the name is folder names joined by `/`, never a way out of
+/// the directory.
+fn node_file(directory: &Path, file: &str, name: &str) -> Result<PathBuf> {
+    ensure!(
+        !name.is_empty() && name.split('/').all(is_plain_folder_name),
+        "invalid name {name:?}"
+    );
+    Ok(directory.join(name).join(file))
+}
+
+fn metadata(text: &str) -> Vec<(String, String)> {
+    let Ok((front, _)) = split_front_matter(text) else {
+        return Vec::new();
+    };
+    let Ok(Value::Object(fields)) = serde_saphyr::from_str::<Value>(front) else {
+        return Vec::new();
+    };
+    fields
+        .into_iter()
+        .filter_map(|(key, value)| Some((key, plain(&value)?)))
+        .collect()
+}
+
+/// A scalar as text, a list of scalars joined; anything deeper is left out.
+fn plain(value: &Value) -> Option<String> {
+    match value {
+        Value::String(text) => Some(text.split_whitespace().collect::<Vec<_>>().join(" ")),
+        Value::Bool(flag) => Some(flag.to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        Value::Array(items) => items
+            .iter()
+            .map(plain)
+            .collect::<Option<Vec<_>>>()
+            .map(|items| items.join(", ")),
+        _ => None,
+    }
+}
+
 /// The file must be a regular file; a symlink is not followed.
 pub fn read_text(file: &Path) -> Result<String> {
     let bytes = read_regular(file, MAX_NODE_BYTES).context("cannot read the file")?;
@@ -274,4 +350,31 @@ pub fn split_front_matter(text: &str) -> Result<(&str, &str)> {
         offset += line.len();
     }
     Err(anyhow!("front matter has no closing --- line"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::temp_dir;
+
+    #[test]
+    fn a_node_is_saved_only_when_it_reads_as_one() {
+        let directory = temp_dir("graph_save");
+        fs::create_dir_all(directory.join("notes")).unwrap();
+        let good = "---\nname: notes\ndescription: Taking notes\nlicense: MIT\n---\nWrite.\n";
+        fs::write(directory.join("notes").join(SKILL_FILE), good).unwrap();
+
+        let node = read_node_text(&directory, SKILL_FILE, "notes").unwrap();
+        assert!(node.metadata.contains(&("license".into(), "MIT".into())));
+        assert!(save_node_text(&directory, SKILL_FILE, "notes", "no front matter").is_err());
+        assert_eq!(
+            read_node_text(&directory, SKILL_FILE, "notes").unwrap().text,
+            good,
+            "a refused save keeps it"
+        );
+        assert!(read_node_text(&directory, SKILL_FILE, "../notes").is_err());
+        let edited = good.replace("Write.", "Write more.");
+        let saved = save_node_text(&directory, SKILL_FILE, "notes", &edited).unwrap();
+        assert_eq!(saved.text, edited);
+    }
 }

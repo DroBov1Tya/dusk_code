@@ -55,6 +55,12 @@ pub enum Action {
         name: String,
         text: String,
     },
+    /// Read an agent's AGENT.md into the settings, dropping unsaved edits.
+    OpenAgentFile(String),
+    SaveAgentFile {
+        name: String,
+        text: String,
+    },
     /// Read an MCP server's YAML into the settings; `None` starts a new one.
     OpenMcp(Option<String>),
     /// Save an MCP server in place of `old`; empty text removes it.

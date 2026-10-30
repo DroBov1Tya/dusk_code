@@ -21,12 +21,13 @@ use crate::{
     agents::{AgentTree, Agents},
     config::{ApiKey, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
+    graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
     init::{self, create_private_dir},
     live_config::LiveConfig,
     mcp::{McpInfo, McpServers, McpStatus},
     paths::Paths,
     providers::Provider,
-    skills::{self, SkillInfo, SkillText},
+    skills::{self, SkillInfo},
     state::{LocalUnsent, Message, State, Task, Thread},
     sync::lock,
     thread_start::start_thread,
@@ -198,6 +199,19 @@ impl Runtime {
         Ok(())
     }
 
+    /// An agent's AGENT.md as it is on disk; reading it again throws edits away.
+    pub fn agent(&self, name: &str) -> Result<NodeText> {
+        read_node_text(&self.launcher.paths.agents_dir(), AGENT_FILE, name)
+    }
+
+    /// Saves an agent's AGENT.md once the text reads as an agent, and reads the agents
+    /// again so the new version applies now.
+    pub async fn save_agent(&self, name: &str, text: &str) -> Result<NodeText> {
+        let saved = save_node_text(&self.launcher.paths.agents_dir(), AGENT_FILE, name, text)?;
+        self.read_agents().await?;
+        Ok(saved)
+    }
+
     pub fn set_tool_enabled(&self, name: &str, enabled: bool) -> Result<()> {
         self.launcher
             .config
@@ -220,13 +234,13 @@ impl Runtime {
     }
 
     /// A skill's file as it is on disk; reading it again throws edits away.
-    pub fn skill(&self, name: &str) -> Result<SkillText> {
-        skills::read(&self.launcher.paths.skills_dir(), name)
+    pub fn skill(&self, name: &str) -> Result<NodeText> {
+        read_node_text(&self.launcher.paths.skills_dir(), SKILL_FILE, name)
     }
 
     /// Saves a skill's file once the text reads as a skill.
-    pub fn save_skill(&self, name: &str, text: &str) -> Result<SkillText> {
-        skills::save(&self.launcher.paths.skills_dir(), name, text)
+    pub fn save_skill(&self, name: &str, text: &str) -> Result<NodeText> {
+        save_node_text(&self.launcher.paths.skills_dir(), SKILL_FILE, name, text)
     }
 
     pub fn set_max_agents_at_work(&self, limit: usize) -> Result<()> {

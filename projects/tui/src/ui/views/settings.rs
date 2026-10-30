@@ -63,7 +63,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     }
     let editable = matches!(
         view.category,
-        Some(SettingCategory::Skills | SettingCategory::Mcp)
+        Some(SettingCategory::Agents | SettingCategory::Skills | SettingCategory::Mcp)
     );
     if view.editor.is_none() || !editable {
         return list(frame, inner, view);
@@ -93,11 +93,10 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
 fn hints(view: &SettingsView) -> &'static str {
     match (view.category, &view.editor) {
         (None, _) => " up/down choose  enter open  esc close ",
-        (Some(SettingCategory::Agents), _) => {
-            " up/down choose  space/click switch  left/right limit  r reload  esc back "
-        }
-        (Some(SettingCategory::Skills | SettingCategory::Mcp), Some(_)) => {
-            " Ctrl+S save  Ctrl+R revert  Esc close  click another skill "
+        (Some(SettingCategory::Tools), _) => " up/down choose  space/click switch  esc back ",
+        (Some(_), Some(_)) => " Ctrl+S save  Ctrl+R revert  Esc close  click another one ",
+        (Some(SettingCategory::Agents), None) => {
+            " up/down choose  enter edit  space switch  left/right limit  r reload  esc back "
         }
         (Some(SettingCategory::Skills), None) => {
             " up/down choose  enter open  space switch  r reload  esc back "
@@ -105,7 +104,6 @@ fn hints(view: &SettingsView) -> &'static str {
         (Some(SettingCategory::Mcp), None) => {
             " up/down choose  enter edit  n new  c reconnect  space switch  esc back "
         }
-        (Some(SettingCategory::Tools), _) => " up/down choose  space/click switch  esc back ",
     }
 }
 
