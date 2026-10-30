@@ -26,6 +26,9 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   per model: Auto, 128k to 1M, or a token count, capped by the model window.
 - `display_image`: the chat shows a public HTTPS PNG or JPEG as an image card, kept
   with a thumbnail beside the records; plain URLs in messages are never fetched.
+  Terminals that speak the kitty, iTerm2 or sixel protocol get the picture itself,
+  others a half-block preview; `DUSKCODE_GRAPHICS=kitty|iterm2|sixel|off` overrides
+  the detection. Inside tmux pictures need `allow-passthrough`.
 - Markdown tables in answers render with aligned columns, stacked when narrow.
 - Background subagents with separate threads and messages to their parent.
 - Modes switched with Tab: MAIN works itself, PLAN only reads and plans, ORCHESTRATOR

@@ -23,11 +23,13 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Button, ButtonHit, Entry, Focus, Layout, TEXT_COLUMN, Tone, Transcript, TranscriptHit,
-    compact_number,
+    App, Button, ButtonHit, Entry, Focus, ImageSpot, Layout, TEXT_COLUMN, Tone, Transcript,
+    TranscriptHit, compact_number,
     paste::{self, Part},
 };
 
+/// Image cards sit this far in, under their tool call.
+const CARD_INDENT: &str = "   ";
 /// Lines of a tool result shown when it is open.
 const MAX_RESULT_LINES: usize = 40;
 
@@ -35,6 +37,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     app.viewport = area.height as usize;
     app.transcript_area = Some(area);
     app.transcript_hits.clear();
+    app.previews.clear();
     if app.transcript.entries.is_empty() {
         app.scroll = 0;
         app.max_scroll = 0;
@@ -53,19 +56,15 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     };
     // Only the last entry can be in the middle of being written; it is drawn every frame.
     let earlier = layout.lines.len();
-    let mut tail = Vec::new();
-    let mut tail_starts = Vec::new();
+    let mut tail = Placed::default();
     let live = app.is_busy().then_some(&*app);
     let last_browsed = browsed.filter(|&index| index == last);
-    append_entry(
-        &app.transcript,
-        last,
-        width,
-        live,
-        last_browsed,
-        &mut tail,
-        &mut tail_starts,
-    );
+    append_entry(&app.transcript, last, width, live, last_browsed, &mut tail);
+    let Placed {
+        lines: mut tail,
+        starts: tail_starts,
+        images: tail_images,
+    } = tail;
     tail.push(Line::default());
     let mut starts = layout.starts.clone();
     starts.extend(tail_starts.iter().map(|start| start + earlier));
@@ -110,6 +109,29 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
                 Some(line) => line.clone(),
                 None => tail[line - earlier].clone(),
             }
+        })
+        .collect();
+    // A picture goes only where its whole preview shows; a cut one stays in half blocks.
+    let earlier_images = app
+        .layout
+        .as_ref()
+        .map(|layout| layout.images.clone())
+        .unwrap_or_default();
+    app.previews = earlier_images
+        .into_iter()
+        .chain(tail_images.into_iter().map(|spot| ImageSpot {
+            line: spot.line + earlier,
+            ..spot
+        }))
+        .filter(|spot| spot.line >= top && spot.line + spot.height as usize <= top + height)
+        .map(|spot| {
+            let area = Rect {
+                x: area.x + spot.column,
+                y: area.y + (spot.line - top) as u16,
+                width: spot.width.min(area.width.saturating_sub(spot.column)),
+                height: spot.height,
+            };
+            (area, spot.artifact)
         })
         .collect();
     app.drawn_top = top;
@@ -222,19 +244,15 @@ fn refresh_layout(app: &mut App, width: usize, browsed: Option<usize>) {
     if current {
         return;
     }
-    let mut lines = Vec::new();
-    let mut starts = Vec::new();
+    let mut placed = Placed::default();
     for index in 0..app.transcript.entries.len().saturating_sub(1) {
-        append_entry(
-            &app.transcript,
-            index,
-            width,
-            None,
-            browsed,
-            &mut lines,
-            &mut starts,
-        );
+        append_entry(&app.transcript, index, width, None, browsed, &mut placed);
     }
+    let Placed {
+        lines,
+        starts,
+        images,
+    } = placed;
     app.layout = Some(Layout {
         width,
         revision,
@@ -242,6 +260,7 @@ fn refresh_layout(app: &mut App, width: usize, browsed: Option<usize>) {
         text: lines.iter().map(plain_text).collect(),
         lines,
         starts,
+        images,
     });
 }
 
@@ -253,22 +272,22 @@ pub fn thread_lines(
     live: Option<&App>,
     browsed: Option<usize>,
 ) -> (Vec<Line<'static>>, Vec<usize>) {
-    let mut lines = Vec::new();
-    let mut starts = Vec::new();
+    // Agent windows keep the half blocks; their pictures are not placed.
+    let mut placed = Placed::default();
     for index in 0..transcript.entries.len() {
         let writing = live.filter(|_| index + 1 == transcript.entries.len());
-        append_entry(
-            transcript,
-            index,
-            width,
-            writing,
-            browsed,
-            &mut lines,
-            &mut starts,
-        );
+        append_entry(transcript, index, width, writing, browsed, &mut placed);
     }
-    lines.push(Line::default());
-    (lines, starts)
+    placed.lines.push(Line::default());
+    (placed.lines, placed.starts)
+}
+
+/// Entries laid out: their lines, the line each starts on, and their image previews.
+#[derive(Default)]
+struct Placed {
+    lines: Vec<Line<'static>>,
+    starts: Vec<usize>,
+    images: Vec<ImageSpot>,
 }
 
 /// Adds the entry at `index`, after a blank line unless it continues a folded run.
@@ -278,17 +297,17 @@ fn append_entry(
     width: usize,
     live: Option<&App>,
     browsed: Option<usize>,
-    lines: &mut Vec<Line<'static>>,
-    starts: &mut Vec<usize>,
+    placed: &mut Placed,
 ) {
     let text_width = width.saturating_sub(4).max(10);
     let entries = &transcript.entries;
     let entry = &entries[index];
     let folded_run = index > 0 && is_meta(&entries[index - 1]) && is_meta(entry);
     if index > 0 && !folded_run {
-        lines.push(Line::default());
+        placed.lines.push(Line::default());
     }
-    starts.push(lines.len());
+    placed.starts.push(placed.lines.len());
+    let mut previews = Vec::new();
     let mut drawn = if transcript.is_hidden(index) {
         let text = transcript.text(index).unwrap_or_default();
         vec![hidden_line(entry, &text)]
@@ -304,10 +323,12 @@ fn append_entry(
             && !result.is_error
         {
             for artifact in &result.artifacts {
-                lines.extend(indent(
-                    super::super::text::image_card::render(transcript, artifact, text_width),
-                    "   ",
-                ));
+                let (card, preview) =
+                    super::super::text::image_card::render(transcript, artifact, text_width);
+                if let Some(preview) = preview {
+                    previews.push((lines.len() + preview.row, preview, artifact.clone()));
+                }
+                lines.extend(indent(card, CARD_INDENT));
             }
         }
         lines
@@ -317,7 +338,19 @@ fn append_entry(
     {
         *header = std::mem::take(header).style(Style::new().bg(GLOW));
     }
-    lines.extend(drawn);
+    let first = placed.lines.len();
+    placed.images.extend(
+        previews
+            .into_iter()
+            .map(|(row, preview, artifact)| ImageSpot {
+                line: first + row,
+                column: CARD_INDENT.len() as u16,
+                width: preview.width,
+                height: preview.height,
+                artifact,
+            }),
+    );
+    placed.lines.extend(drawn);
 }
 
 /// What a hidden entry leaves: what it was and how long, to show it again.

@@ -20,6 +20,8 @@ use ratatui::DefaultTerminal;
 
 pub fn enter() -> Result<DefaultTerminal> {
     let terminal = ratatui::init();
+    // Asked before anything reads stdin; the query restores the raw mode it found.
+    super::graphics::detect();
     execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
     if supports_keyboard_enhancement().unwrap_or(false) {
         execute!(

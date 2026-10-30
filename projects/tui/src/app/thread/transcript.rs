@@ -10,7 +10,7 @@ use std::{
 use super::paste;
 use dusk_core::{
     providers::ToolCall,
-    state::{Message, MessageRole},
+    state::{Message, MessageRole, artifacts::ImageArtifact},
     tools::ToolResult,
 };
 
@@ -92,6 +92,17 @@ pub struct Layout {
     pub text: Vec<String>,
     /// The line each entry starts on.
     pub starts: Vec<usize>,
+    pub images: Vec<ImageSpot>,
+}
+
+/// An image preview in the lines: its first line, its column and size in cells.
+#[derive(Clone)]
+pub struct ImageSpot {
+    pub line: usize,
+    pub column: u16,
+    pub width: u16,
+    pub height: u16,
+    pub artifact: ImageArtifact,
 }
 
 /// Revisions come from one counter, so a new transcript never matches an old one.
