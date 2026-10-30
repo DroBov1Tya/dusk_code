@@ -11,7 +11,7 @@ use crossterm::{
         KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
-    terminal::supports_keyboard_enhancement,
+    terminal::{SetTitle, supports_keyboard_enhancement},
 };
 use ratatui::DefaultTerminal;
 
@@ -36,4 +36,12 @@ pub fn leave() {
         DisableBracketedPaste
     );
     ratatui::restore();
+}
+
+/// Names the terminal tab. The text may come from the model, so control characters are
+/// dropped and cannot reach the terminal as sequences.
+pub fn set_title(text: &str) {
+    let clean: String = text.chars().filter(|c| !c.is_control()).collect();
+    // A title that cannot be set leaves the tab as it was.
+    let _ = execute!(stdout(), SetTitle(clean));
 }
