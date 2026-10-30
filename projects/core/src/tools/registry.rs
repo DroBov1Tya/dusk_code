@@ -1,8 +1,9 @@
 //! The tools a thread offers, by name: built-in ones and those of MCP servers.
 
-use std::{collections::BTreeMap, path::Path};
+use std::{collections::BTreeMap, path::Path, time::Instant};
 
 use serde_json::Value;
+use tracing::info;
 
 use super::{
     scope::ToolScope,
@@ -100,12 +101,22 @@ impl ToolRegistry {
             config,
             progress: Some(progress),
         };
-        match tool.call(arguments, context).await {
-            Ok(content) => ToolResult {
-                content: bounded(content),
-                is_error: false,
-            },
-            Err(error) => error_result(format!("{error:#}")),
+        let started = Instant::now();
+        let result = tool.call(arguments, context).await;
+        let took = started.elapsed().as_millis();
+        match result {
+            Ok(content) => {
+                info!("tool {} done in {took} ms", call.name);
+                ToolResult {
+                    content: bounded(content),
+                    is_error: false,
+                }
+            }
+            Err(error) => {
+                // Name and time only: arguments, output and errors may quote files.
+                info!("tool {} failed in {took} ms", call.name);
+                error_result(format!("{error:#}"))
+            }
         }
     }
 }

@@ -6,7 +6,7 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result};
 use tokio::sync::mpsc;
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::{Inbox, Stop, generation};
 use crate::runtime::{
@@ -70,6 +70,7 @@ impl Agent {
         }
         let turn = self.state.start_turn(&self.thread_id).await?;
         if let Some(turn) = &turn {
+            info!("thread {} turn {} starts", self.thread_id, turn.turn_id);
             self.emit(ThreadEvent::TurnStarted(turn.clone()));
         }
         Ok(turn)
@@ -113,6 +114,17 @@ impl Agent {
             break;
         }
         let turn = self.state.finish_turn(&turn.turn_id, outcome).await?;
+        let took = turn.finished_at.unwrap_or(turn.started_at) - turn.started_at;
+        match &turn.error_message {
+            Some(error) => warn!(
+                "thread {} turn {} {:?} after {took} ms: {error}",
+                self.thread_id, turn.turn_id, turn.status
+            ),
+            None => info!(
+                "thread {} turn {} {:?} after {took} ms",
+                self.thread_id, turn.turn_id, turn.status
+            ),
+        }
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;
         Ok(stop)
@@ -277,6 +289,10 @@ impl Agent {
                 }
                 _ => return Ok((output, generated)),
             };
+            warn!(
+                "thread {} model call failed, retry {attempt}: {error}",
+                self.thread_id
+            );
             self.emit(ThreadEvent::Retrying { attempt, error });
             let pause = FIRST_RETRY_DELAY * 2u32.pow(attempt - 1);
             inbox.race(tokio::time::sleep(pause)).await?;

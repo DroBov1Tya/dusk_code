@@ -385,6 +385,8 @@ impl App {
     }
 
     pub fn error(&mut self, text: impl Into<String>) {
+        let text = text.into();
+        tracing::warn!("{text}");
         self.transcript.notice(text, Tone::Error);
     }
 
