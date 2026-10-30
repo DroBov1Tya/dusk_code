@@ -6,6 +6,7 @@ pub mod config;
 pub mod graph;
 pub mod init;
 pub mod live_config;
+pub mod mcp;
 pub mod paths;
 pub mod providers;
 pub mod runtime;

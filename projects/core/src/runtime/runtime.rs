@@ -23,6 +23,7 @@ use crate::{
     config::{ApiKey, ProviderConfig, ProviderKind},
     init::{self, create_private_dir},
     live_config::LiveConfig,
+    mcp::{McpServers, McpStatus},
     paths::Paths,
     providers::Provider,
     state::{LocalUnsent, Message, State, Task, Thread},
@@ -33,6 +34,8 @@ use crate::{
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);
 /// How long shutdown waits for stopped subagents to end.
 const AGENTS_STOP_WAIT: Duration = Duration::from_secs(5);
+/// How long the first chat waits for MCP servers still starting.
+const MCP_START_WAIT: Duration = Duration::from_secs(10);
 
 pub struct Runtime {
     launcher: Launcher,
@@ -76,6 +79,7 @@ impl Runtime {
             config: Arc::clone(&config),
             paths,
             mailboxes: Arc::new(Mailboxes::default()),
+            mcp: McpServers::start(&config.current()),
         };
         let model_discovery = if !config.current().providers().is_empty() {
             let config = Arc::clone(&config);
@@ -200,9 +204,23 @@ impl Runtime {
     }
 
     /// The tools a chat gets, by name.
-    pub fn tool_names(&self) -> Vec<&'static str> {
+    pub fn tool_names(&self) -> Vec<String> {
         // Names do not depend on the thread.
-        self.launcher.tools("", None, 0).names().collect()
+        self.launcher
+            .tools("", None, 0)
+            .names()
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// How each MCP server in the config stands.
+    pub fn mcp_statuses(&self) -> Vec<McpStatus> {
+        self.launcher.mcp.statuses()
+    }
+
+    /// Whether an MCP server is still starting.
+    pub fn mcp_starting(&self) -> bool {
+        self.launcher.mcp.starting()
     }
 
     /// Every thread, the most recently active first, for a client to offer.
@@ -286,6 +304,8 @@ impl Runtime {
         workspace: &Path,
         cwd: &Path,
     ) -> Result<ThreadHandle> {
+        // A chat opened right after the start still gets the tools of MCP servers.
+        self.launcher.mcp.wait(MCP_START_WAIT).await;
         let setup = self.launcher.setup(&thread_id, cwd, workspace, None, 0)?;
         let (runner, input, output) = ThreadRunner::new(setup);
         let mailboxes = Arc::clone(&self.launcher.mailboxes);

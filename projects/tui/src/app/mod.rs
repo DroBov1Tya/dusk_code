@@ -17,6 +17,7 @@ use std::{
 use dusk_core::{
     chat::commands::{self, COMMANDS, Command},
     live_config::LiveConfig,
+    mcp::McpStatus,
     providers::ModelEvent,
     runtime::ThreadEvent,
     state::{LocalUnsent, Message, Task, ThreadTokens, TurnStatus},
@@ -203,11 +204,12 @@ pub struct App {
     pub subagents: Vec<SubagentView>,
     /// The agent's task board in the open thread.
     pub tasks: Vec<Task>,
-    pub active_mcp: Vec<String>,
+    /// The MCP servers of the config, as the core last reported them.
+    pub mcp: Vec<McpStatus>,
     pub turn_started_at: Option<i64>,
     pub last_turn_duration_ms: Option<u64>,
     pub config: Arc<LiveConfig>,
-    pub tools: Vec<&'static str>,
+    pub tools: Vec<String>,
     pub skills_dir: PathBuf,
     turn_running: bool,
     compacting: bool,
@@ -221,7 +223,7 @@ impl App {
         model: Option<String>,
         limit: u64,
         config: Arc<LiveConfig>,
-        tools: Vec<&'static str>,
+        tools: Vec<String>,
         skills_dir: PathBuf,
     ) -> Self {
         Self {
@@ -269,7 +271,7 @@ impl App {
             command_popup: None,
             subagents: Vec::new(),
             tasks: Vec::new(),
-            active_mcp: Vec::new(),
+            mcp: Vec::new(),
             turn_started_at: None,
             last_turn_duration_ms: None,
             config,
@@ -312,7 +314,6 @@ impl App {
         self.mcp_max_scroll = 0;
         self.subagents.clear();
         self.tasks.clear();
-        self.active_mcp.clear();
         self.turn_started_at = None;
         self.last_turn_duration_ms = None;
         self.output_samples.clear();

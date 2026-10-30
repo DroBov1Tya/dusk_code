@@ -1,5 +1,5 @@
-//! The settings in `config.yml`: providers, what threads record and which tools and
-//! skills are on.
+//! The settings in `config.yml`: providers, MCP servers, what threads record and which
+//! tools and skills are on.
 //! `LiveConfig` keeps the current copy in memory and writes changes back.
 
 use std::{
@@ -12,6 +12,9 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
+
+/// MCP server names are this long at most.
+const MAX_MCP_NAME: usize = 24;
 
 /// Written above the settings whenever the core saves the file.
 const HEADER: &str = "\
@@ -39,6 +42,21 @@ pub struct Config {
     /// provider when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     model: Option<String>,
+    /// MCP servers by name, started with the core.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    mcp: BTreeMap<String, McpServerConfig>,
+}
+
+/// An MCP server the core starts as a child process and talks to over stdio. `env` may
+/// hold secrets, so it is never logged.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct McpServerConfig {
+    pub command: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub args: Vec<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub env: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
@@ -137,6 +155,10 @@ impl Config {
         &self.providers
     }
 
+    pub fn mcp(&self) -> &BTreeMap<String, McpServerConfig> {
+        &self.mcp
+    }
+
     pub fn thread(&self) -> &ThreadConfig {
         &self.thread
     }
@@ -212,6 +234,21 @@ impl Config {
                 "provider API key is invalid"
             );
         }
+        for (name, server) in &self.mcp {
+            // The name becomes part of tool names, which models accept only in this shape.
+            ensure!(
+                !name.is_empty()
+                    && name.len() <= MAX_MCP_NAME
+                    && name
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'),
+                "MCP server name {name:?} must be up to {MAX_MCP_NAME} of a-z, 0-9 and -"
+            );
+            ensure!(
+                !server.command.trim().is_empty(),
+                "MCP server {name} has no command"
+            );
+        }
         Ok(())
     }
 }
@@ -236,6 +273,7 @@ impl fmt::Debug for Config {
             .field("tools", &self.tools)
             .field("skills", &self.skills)
             .field("model", &self.model)
+            .field("mcp", &self.mcp.keys().collect::<Vec<_>>())
             .finish()
     }
 }

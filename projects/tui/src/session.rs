@@ -69,6 +69,7 @@ pub async fn run(
             app.model = name;
             app.limit = input_limit(runtime, &choice.model);
         }
+        app.mcp = runtime.mcp_statuses();
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let action = tokio::select! {
             key = keys.next() => match key {
@@ -89,7 +90,8 @@ pub async fn run(
             _ = clock.tick(), if app.is_busy()
                 || app.agents_at_work()
                 || app.task_timers_run()
-                || runtime.discovering_model() => {
+                || runtime.discovering_model()
+                || runtime.mcp_starting() => {
                 app.tick();
                 Action::None
             }

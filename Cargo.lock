@@ -592,7 +592,7 @@ checksum = "1aaf95b3e5c8f23aa320147307562d361db0ae0d51242340f558153b4eb2439b"
 
 [[package]]
 name = "dusk_core"
-version = "0.41.0"
+version = "0.42.0"
 dependencies = [
  "anyhow",
  "nix 0.31.3",
@@ -609,7 +609,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_tui"
-version = "0.41.0"
+version = "0.42.0"
 dependencies = [
  "anyhow",
  "clap",

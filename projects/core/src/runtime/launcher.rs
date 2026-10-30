@@ -24,11 +24,12 @@ use crate::{
     BoxFuture,
     graph::{AGENT_FILE, Graph, Node},
     live_config::LiveConfig,
+    mcp::McpServers,
     paths::Paths,
     state::{State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, MessageParent, ReadHistory, Tasks, ToolRegistry,
-        ToolScope,
+        AskAgent, GENERAL_AGENT, MAX_AGENT_DEPTH, McpTool, MessageParent, ReadHistory, Tasks,
+        ToolRegistry, ToolScope,
     },
 };
 
@@ -42,6 +43,7 @@ pub struct Launcher {
     pub config: Arc<LiveConfig>,
     pub paths: Paths,
     pub mailboxes: Arc<Mailboxes>,
+    pub mcp: Arc<McpServers>,
 }
 
 impl Launcher {
@@ -70,11 +72,17 @@ impl Launcher {
         })
     }
 
-    /// The built-in tools, the thread's own history, other agents while the depth
-    /// allows, and for an agent a way to write to the thread that asked it. An agent
+    /// The built-in tools, the tools of MCP servers that are ready, the thread's own
+    /// history, other agents while the depth allows, and for an agent a way to write to
+    /// the thread that asked it. An agent
     /// with a `tools` list keeps only those, and that way back.
     pub fn tools(&self, thread_id: &str, agent: Option<&Node>, depth: usize) -> ToolRegistry {
         let mut tools = ToolRegistry::builtin(&self.paths.skills_dir());
+        for server in self.mcp.ready() {
+            for tool in McpTool::all(&server) {
+                tools.add(Box::new(tool));
+            }
+        }
         let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
         tools.add(Box::new(history));
         tools.add(Box::new(Tasks::new(

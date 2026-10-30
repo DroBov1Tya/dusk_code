@@ -38,7 +38,7 @@ impl Progress<'_> {
 
 pub trait Tool: Send + Sync {
     /// Unique across the registry; what the model calls.
-    fn name(&self) -> &'static str;
+    fn name(&self) -> &str;
 
     /// Written for the model: what the tool does and when to use it. The context lets it
     /// name the real directories.
