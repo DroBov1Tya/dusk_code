@@ -6,6 +6,7 @@ const CONFIG_ROOT: &str = ".config/duskcode";
 const CONFIG_FILE: &str = "config.yml";
 const MAIN_PROMPT: &str = "MAIN.md";
 const COMPACT_PROMPT: &str = "COMPACT.md";
+const MEMORY_FILE: &str = "MEMORY.md";
 const SKILLS_DIR: &str = "skills";
 const AGENTS_DIR: &str = "agents";
 /// Holds the database; the name is the one the user chose.
@@ -52,6 +53,11 @@ impl Paths {
     /// How to summarize a thread when its context is compacted.
     pub fn compact_prompt(&self) -> PathBuf {
         self.config_root.join(COMPACT_PROMPT)
+    }
+
+    /// What the agent remembers about its owner, written by the remember tool.
+    pub fn memory_file(&self) -> PathBuf {
+        self.config_root.join(MEMORY_FILE)
     }
 
     pub fn logs_dir(&self) -> PathBuf {
