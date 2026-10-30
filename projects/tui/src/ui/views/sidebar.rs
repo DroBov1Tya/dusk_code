@@ -1,7 +1,10 @@
 //! The left rail. Statistics always have a place; agent and MCP sections appear only when
 //! their event sources have supplied something to show.
 
-use dusk_core::{runtime::AUTO_COMPACT_PERCENT, state::ThreadTokens};
+use dusk_core::{
+    runtime::AUTO_COMPACT_PERCENT,
+    state::{Task, ThreadTokens},
+};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -13,8 +16,8 @@ use ratatui::{
 use super::{
     loader::{Loader, agent_name, identity},
     theme::{
-        DONE, DOT, EMBER, NIGHT, OFF, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL, VIOLET,
-        bold, dusk, fg,
+        DONE, DOT, EMBER, FOLDED, NIGHT, ON, SIDEBAR_BG, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL,
+        UNFOLDED, VIOLET, bold, dusk, fg,
     },
     transcript::one_line,
     wrap,
@@ -40,15 +43,19 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
         app,
     );
     let mut y = area.y + stats_height;
-    if !app.tasks.is_empty() && y < area.bottom() {
-        let lines = task_lines(app, area.width.saturating_sub(4) as usize);
+    if app.tasks.iter().any(|task| !task.done) && y < area.bottom() {
         let remaining = area.bottom() - y;
-        // The board takes what it needs, up to half of what is left.
-        let height = (lines.len() as u16 + 2)
-            .min(remaining.div_ceil(2).max(3))
-            .min(remaining);
-        tasks(frame, Rect { y, height, ..area }, lines);
-        y += height;
+        // The tasks take what they need, up to half of what is left.
+        let room = remaining.div_ceil(2).max(3).min(remaining);
+        y += tasks(
+            frame,
+            Rect {
+                y,
+                height: room,
+                ..area
+            },
+            app,
+        );
     }
     let agents_active = !app.subagents.is_empty();
     let mcp_active = !app.active_mcp.is_empty();
@@ -157,60 +164,87 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
     );
 }
 
-/// The agent's board: each task with how many steps are done, and the steps of the ones
-/// still open.
-fn task_lines(app: &App, width: usize) -> Vec<Line<'static>> {
-    let mut lines = Vec::new();
-    let (open, done): (Vec<_>, Vec<_>) = app.tasks.iter().partition(|task| !task.done);
-    for task in open.into_iter().chain(done) {
-        let finished = task.items.iter().filter(|item| item.done).count();
-        let (mark, color) = if task.done { (DONE, TEAL) } else { (OFF, SUN) };
-        let count = format!(" {finished}/{}", task.items.len());
+/// The tasks still open, each in a small block of its own: what it is and how many steps
+/// are done, and once unfolded its steps with how long each ran. Returns the rows used.
+fn tasks(frame: &mut Frame, area: Rect, app: &mut App) -> u16 {
+    let width = area.width.saturating_sub(2) as usize;
+    let now = now_ms();
+    let mut y = area.y;
+    let mut hits = Vec::new();
+    for task in app.tasks.iter().filter(|task| !task.done) {
+        let unfolded = app.unfolded_tasks.contains(&task.task_id);
+        let lines = task_lines(task, unfolded, width, now);
+        let height = (lines.len() as u16 + 2).min(area.bottom() - y);
+        if height < 3 {
+            break;
+        }
+        let block_area = Rect { y, height, ..area };
+        let block = Block::bordered()
+            .style(Style::new().bg(SIDEBAR_BG))
+            .border_type(BorderType::Rounded)
+            .border_style(fg(if unfolded { SUN } else { NIGHT }));
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+                .block(block),
+            block_area,
+        );
+        hits.push((block_area, task.task_id.clone()));
+        y += height;
+    }
+    app.task_hits = hits;
+    y - area.y
+}
+
+fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'static>> {
+    let finished = task.items.iter().filter(|item| item.done).count();
+    let count = format!(" {finished}/{}", task.items.len());
+    let fold = if unfolded { UNFOLDED } else { FOLDED };
+    let mut lines = vec![Line::from(vec![
+        Span::styled(format!("{fold} "), fg(SUN)),
+        Span::styled(
+            fill(&task.description, width.saturating_sub(count.len() + 2)),
+            bold(SIDEBAR_FG),
+        ),
+        Span::styled(count, fg(SIDEBAR_MUTED)),
+    ])];
+    if !unfolded {
+        return lines;
+    }
+    for item in &task.items {
+        let (mark, color) = match (item.done, item.started_at) {
+            (true, _) => (DONE, TEAL),
+            (false, Some(_)) => (ON, SUN),
+            (false, None) => (DOT, SIDEBAR_MUTED),
+        };
+        // A running step counts up; a done one shows what it took.
+        let time = item
+            .started_at
+            .map(|start| {
+                let end = item.finished_at.unwrap_or(now);
+                format!(
+                    " {}",
+                    format_duration(end.saturating_sub(start).max(0) as u64)
+                )
+            })
+            .unwrap_or_default();
         lines.push(Line::from(vec![
-            Span::styled(format!(" {mark} "), fg(color)),
+            Span::styled(format!("{mark} "), fg(color)),
             Span::styled(
-                wrap::clip(&task.description, width.saturating_sub(count.len() + 3)),
-                if task.done {
-                    fg(SIDEBAR_MUTED)
-                } else {
-                    bold(SIDEBAR_FG)
-                },
+                fill(&item.description, width.saturating_sub(time.len() + 2)),
+                fg(if item.done { SIDEBAR_MUTED } else { SIDEBAR_FG }),
             ),
-            Span::styled(count, fg(SIDEBAR_MUTED)),
+            Span::styled(time, fg(if item.done { SIDEBAR_MUTED } else { SUN })),
         ]));
-        if task.done {
-            continue;
-        }
-        for item in &task.items {
-            let (mark, color) = if item.done {
-                (DONE, TEAL)
-            } else {
-                (DOT, SIDEBAR_MUTED)
-            };
-            lines.push(Line::from(vec![
-                Span::styled(format!("   {mark} "), fg(color)),
-                Span::styled(
-                    wrap::clip(&item.description, width.saturating_sub(5)),
-                    fg(if item.done { SIDEBAR_MUTED } else { SIDEBAR_FG }),
-                ),
-            ]));
-        }
     }
     lines
 }
 
-fn tasks(frame: &mut Frame, area: Rect, lines: Vec<Line<'static>>) {
-    let block = Block::bordered()
-        .style(Style::new().bg(SIDEBAR_BG))
-        .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
-        .title(Line::from(Span::styled(" tasks ", bold(SUN))));
-    frame.render_widget(
-        Paragraph::new(lines)
-            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
-            .block(block),
-        area,
-    );
+/// `text` cut to `width` and padded to it, so what follows lines up on the right.
+fn fill(text: &str, width: usize) -> String {
+    let clipped = wrap::clip(text, width);
+    let pad = width.saturating_sub(clipped.chars().count());
+    format!("{clipped}{}", " ".repeat(pad))
 }
 
 fn agents(frame: &mut Frame, area: Rect, app: &mut App) {

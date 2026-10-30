@@ -48,6 +48,7 @@ impl State {
             .context("open state database")?;
         check(&pool, path).await?;
         legacy::convert(&pool, &MIGRATOR).await?;
+        legacy::convert_tasks(&pool, &MIGRATOR).await?;
         MIGRATOR
             .run(&pool)
             .await

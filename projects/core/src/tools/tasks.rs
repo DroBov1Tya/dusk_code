@@ -1,6 +1,7 @@
 //! `tasks`: the agent's own board for the work of a thread. It writes down the tasks it
-//! set itself with their steps, looks at the board, and marks a step or a whole task
-//! done. The board lives in the database, so it outlives a compaction.
+//! set itself with their steps, looks at the board, rewrites a task or a step, and marks
+//! a step or a whole task done. Steps are timed as they run. The board lives in the
+//! database, so it outlives a compaction.
 
 use std::sync::Arc;
 
@@ -37,9 +38,18 @@ enum TasksArguments {
         items: Vec<String>,
     },
     Show,
+    /// A step begins out of order; otherwise each starts when the one before is done.
+    Start {
+        id: String,
+    },
     /// A step, or a whole task with all its steps.
     Done {
         id: String,
+    },
+    /// New words for a task or a step.
+    Edit {
+        id: String,
+        text: String,
     },
 }
 
@@ -57,8 +67,14 @@ impl Tasks {
             TasksArguments::AddItems { id, items } => {
                 self.state.add_task_items(thread, &id, &items).await?;
             }
+            TasksArguments::Start { id } => {
+                self.state.start_item(thread, &id).await?;
+            }
             TasksArguments::Done { id } => {
                 self.state.complete(thread, &id).await?;
+            }
+            TasksArguments::Edit { id, text } => {
+                self.state.edit_task(thread, &id, &text).await?;
             }
             TasksArguments::Show => {}
         }
@@ -75,10 +91,11 @@ impl Tool for Tasks {
         "Your board for this work: write down the tasks you set yourself, each with its \
          steps, and mark them done as you go. Plan with it before longer work, look at it \
          after a pause or a summary of the conversation, and mark a step done as soon as it \
-         is. Mark a task done when the whole of it is, which marks its steps done too. \
-         Actions: add (task, items), add_items (id, items), show, done (id of a task or a \
-         step). IDs may be given by the last 8 characters the board shows. Every call \
-         returns the board."
+         is: the next step then starts, and the user sees how long each one took. A task is \
+         done when all its steps are; mark it done yourself to close the rest. Actions: \
+         add (task, items), add_items (id, items), show, start (id of a step to begin out \
+         of order), done (id of a task or a step), edit (id, text). IDs may be given by the \
+         last 8 characters the board shows. Every call returns the board."
             .into()
     }
 
@@ -86,7 +103,10 @@ impl Tool for Tasks {
         json!({
             "type": "object",
             "properties": {
-                "action": { "type": "string", "enum": ["add", "add_items", "show", "done"] },
+                "action": {
+                    "type": "string",
+                    "enum": ["add", "add_items", "show", "start", "done", "edit"]
+                },
                 "task": { "type": "string", "description": "For add: the task in a few words." },
                 "items": {
                     "type": "array",
@@ -95,8 +115,10 @@ impl Tool for Tasks {
                 },
                 "id": {
                     "type": "string",
-                    "description": "For add_items: a task. For done: a task or a step."
-                }
+                    "description": "For add_items: a task. For start: a step. For done and \
+                                    edit: a task or a step."
+                },
+                "text": { "type": "string", "description": "For edit: the new words." }
             },
             "required": ["action"],
             "additionalProperties": false
@@ -137,9 +159,17 @@ pub fn board(tasks: &[Task]) -> String {
                 task.items.len()
             ));
             for item in &task.items {
+                let mark = match (item.done, item.started_at) {
+                    (true, _) => "[x]",
+                    (false, Some(_)) => "[>]",
+                    (false, None) => "[ ]",
+                };
+                let took = match (item.started_at, item.finished_at) {
+                    (Some(start), Some(end)) => format!(" took {}s", (end - start).max(0) / 1000),
+                    _ => String::new(),
+                };
                 text.push_str(&format!(
-                    "      {} {} #{}\n",
-                    mark(item.done),
+                    "      {mark} {} #{}{took}\n",
                     item.description,
                     short(&item.item_id)
                 ));

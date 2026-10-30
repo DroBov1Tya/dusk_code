@@ -492,6 +492,15 @@ impl App {
                 if let Some(action) = self.press_button(x, y) {
                     return action;
                 }
+                if let Some(task_id) = self.task_at(x, y) {
+                    match self.unfolded_tasks.iter().position(|id| *id == task_id) {
+                        Some(index) => {
+                            self.unfolded_tasks.remove(index);
+                        }
+                        None => self.unfolded_tasks.push(task_id),
+                    }
+                    return Action::None;
+                }
                 if let Some(thread_id) = self.card_at(x, y) {
                     return Action::OpenAgent(thread_id);
                 }
@@ -585,6 +594,13 @@ impl App {
             self.transcript.toggle(index);
             self.focus = Focus::Browse(index);
         }
+    }
+
+    fn task_at(&self, x: u16, y: u16) -> Option<String> {
+        self.task_hits
+            .iter()
+            .find(|(area, _)| inside(*area, x, y))
+            .map(|(_, task_id)| task_id.clone())
     }
 
     /// The subagent whose card is under the mouse. Cards take three rows and a blank one

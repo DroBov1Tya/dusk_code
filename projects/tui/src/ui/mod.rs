@@ -47,6 +47,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     app.sidebar_area = None;
     app.agent_area = None;
     app.mcp_area = None;
+    app.task_hits.clear();
     app.agent_max_scroll = 0;
     app.mcp_max_scroll = 0;
     if sidebar_visible {
