@@ -58,7 +58,8 @@ enum SessionStatus {
     Idle,
 }
 
-/// iTerm2 Session Status (OSC 21337). Other terminals retain the title fallback.
+/// iTerm2 Session Status (OSC 21337) and native progress (OSC 9;4).
+/// Other terminals retain the title fallback.
 /// The guard clears only fields owned here, including when the event loop exits early.
 pub struct TerminalStatus {
     enabled: bool,
@@ -85,8 +86,12 @@ impl TerminalStatus {
             return;
         }
         let payload = match status {
-            SessionStatus::Working => b"\x1b]21337;status=Working;indicator=#ffb454\x07".as_slice(),
-            SessionStatus::Idle => b"\x1b]21337;status=Idle;indicator=#5ed6c2\x07".as_slice(),
+            SessionStatus::Working => {
+                b"\x1b]21337;status=Working;indicator=#ffb454\x07\x1b]9;4;3\x07".as_slice()
+            }
+            SessionStatus::Idle => {
+                b"\x1b]21337;status=Idle;indicator=#5ed6c2\x07\x1b]9;4;0\x07".as_slice()
+            }
         };
         if write_status(payload) {
             self.shown = Some(status);
@@ -97,7 +102,7 @@ impl TerminalStatus {
 impl Drop for TerminalStatus {
     fn drop(&mut self) {
         if self.enabled && self.shown.is_some() {
-            write_status(b"\x1b]21337;status=;indicator=\x07");
+            write_status(b"\x1b]21337;status=;indicator=\x07\x1b]9;4;0\x07");
         }
     }
 }
