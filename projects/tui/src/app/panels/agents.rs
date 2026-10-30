@@ -11,7 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use dusk_core::{providers::ModelEvent, runtime::ThreadEvent, state::ThreadTokens};
 use ratatui::layout::{Position, Rect};
 
-use crate::app::{App, Entry, Panel, Transcript, TranscriptHit, now_ms};
+use crate::app::{Action, App, Entry, Panel, Transcript, TranscriptHit, now_ms};
 
 /// Output older than this no longer counts toward tokens per second.
 pub const RATE_WINDOW: Duration = Duration::from_secs(3);
@@ -49,6 +49,8 @@ pub struct AgentWindow {
     pub hits: Vec<TranscriptHit>,
     /// The window with its border on the last drawn frame; a click outside closes it.
     pub area: Rect,
+    /// The stop button on the border while the agent works, as (row, left, right).
+    pub stop: Option<(u16, u16, u16)>,
 }
 
 impl SubagentView {
@@ -97,6 +99,7 @@ impl AgentWindow {
             max_scroll: 0,
             hits: Vec::new(),
             area: Rect::default(),
+            stop: None,
         }
     }
 
@@ -224,12 +227,15 @@ impl App {
             .any(|agent| agent.finished_at.is_none())
     }
 
-    pub fn agent_window_key(&mut self, key: KeyEvent) {
+    pub fn agent_window_key(&mut self, key: KeyEvent) -> Action {
         let Some(Panel::Agent(window)) = &mut self.panel else {
-            return;
+            return Action::None;
         };
         match key.code {
             KeyCode::Esc => self.panel = None,
+            KeyCode::Char('s') if window.stop.is_some() => {
+                return Action::StopAgent(window.thread_id.clone());
+            }
             KeyCode::Up => window.scroll_by(1, true),
             KeyCode::Down => window.scroll_by(1, false),
             KeyCode::PageUp => window.scroll_by(PAGE, true),
@@ -240,11 +246,12 @@ impl App {
             }
             _ => {}
         }
+        Action::None
     }
 
-    pub fn agent_window_mouse(&mut self, mouse: MouseEvent) {
+    pub fn agent_window_mouse(&mut self, mouse: MouseEvent) -> Action {
         let Some(Panel::Agent(window)) = &mut self.panel else {
-            return;
+            return Action::None;
         };
         let (x, y) = (mouse.column, mouse.row);
         match mouse.kind {
@@ -254,6 +261,13 @@ impl App {
                 if !window.area.contains(Position::new(x, y)) =>
             {
                 self.panel = None;
+            }
+            MouseEventKind::Down(MouseButton::Left)
+                if window
+                    .stop
+                    .is_some_and(|(row, left, right)| y == row && x >= left && x < right) =>
+            {
+                return Action::StopAgent(window.thread_id.clone());
             }
             MouseEventKind::Down(MouseButton::Left) => {
                 let hit = window
@@ -267,6 +281,7 @@ impl App {
             }
             _ => {}
         }
+        Action::None
     }
 
     fn update_card(&mut self, thread_id: &str, event: &ThreadEvent) {

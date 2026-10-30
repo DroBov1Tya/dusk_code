@@ -13,11 +13,13 @@ use super::sidebar::format_duration;
 use super::{
     loader::{Loader, agent_name, identity},
     panels::window,
-    theme::{DOT, EMBER, GUTTER, NIGHT, SUN, TEAL, bold, dim, dusk, fg, thought},
+    theme::{DOT, EMBER, GLOW, GUTTER, NIGHT, SUN, TEAL, bold, dim, dusk, fg, thought},
     transcript::{one_line, thread_lines},
     wrap,
 };
 use crate::app::{App, Panel, TranscriptHit, compact_number};
+
+const STOP: &str = " \u{25A0} stop ";
 
 /// The numbers above the conversation, and the rule under them.
 const HEADER_ROWS: u16 = 4;
@@ -26,7 +28,14 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let Some(Panel::Agent(agent_window)) = &mut app.panel else {
         return;
     };
-    let area = window(screen, 150);
+    // Room is left around the window, so a click beside it closes it.
+    let area = window(screen, 140);
+    let area = Rect {
+        x: area.x + 2,
+        width: area.width.saturating_sub(4),
+        y: area.y + 1,
+        height: area.height.saturating_sub(2),
+    };
     agent_window.area = area;
     let thread_id = agent_window.thread_id.clone();
     let seed = identity(&thread_id);
@@ -46,7 +55,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         ]))
         .title_bottom(
             Line::from(Span::styled(
-                " wheel or PgUp/PgDn scroll  click opens  Ctrl+R thinking  esc close ",
+                " wheel or PgUp/PgDn scroll  click opens  Ctrl+R thinking  s stop  esc close ",
                 dim(),
             ))
             .right_aligned(),
@@ -59,6 +68,16 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     }
     let width = inner.width as usize;
     let running = card.is_some_and(|card| card.finished_at.is_none());
+    agent_window.stop = None;
+    if running && area.width > STOP.len() as u16 + 4 {
+        let left = area.right() - STOP.len() as u16 - 2;
+        let button = Rect::new(left, area.y, STOP.len() as u16, 1);
+        frame.render_widget(
+            Paragraph::new(Span::styled(STOP, fg(EMBER).bg(GLOW))),
+            button,
+        );
+        agent_window.stop = Some((area.y, left, button.right()));
+    }
     let rows = loader.rows(running.then_some(app.frame));
     let stats = numbers(app, &thread_id, width.saturating_sub(7));
     let header: Vec<Line> = rows

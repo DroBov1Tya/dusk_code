@@ -281,6 +281,10 @@ pub async fn run(
                 answer(runtime, &mut app, &mut open, command).await;
             }
 
+            Action::StopAgent(thread_id) => match runtime.stop_agent(&thread_id).await {
+                Ok(()) => app.flash = Some("stopping the agent".into()),
+                Err(error) => app.error(format!("cannot stop the agent: {error:#}")),
+            },
             Action::OpenThread(thread_id) if app.thread_id.as_deref() == Some(&thread_id) => {}
             Action::OpenThread(thread_id) => {
                 close(open.take()).await;
