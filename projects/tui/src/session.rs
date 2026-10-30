@@ -10,7 +10,7 @@ use dusk_core::{
     chat::commands::{Answer, Command},
     config::Effort,
     config::{ApiKey, ProviderConfig, ProviderKind},
-    providers::{Model, validate_provider},
+    providers::validate_provider,
     runtime::{Runtime, ThreadEvent, ThreadHandle},
     update::Channel,
 };
@@ -46,10 +46,7 @@ pub async fn run(
 ) -> Result<()> {
     let config = runtime.config().clone();
     let choice = runtime.model();
-    let limit = choice.as_ref().map_or(
-        runtime.config().current().limits().max_input_tokens,
-        |choice| input_limit(runtime, &choice.model),
-    );
+    let limit = runtime.input_limit();
     let mut app = App::new(choice.as_ref().map(|choice| choice.name()), limit, config);
     let mut open = None;
     if let Some(thread_id) = thread {
@@ -83,11 +80,17 @@ pub async fn run(
                 known_model = Some(name.clone());
             }
             app.model = name;
-            app.limit = input_limit(runtime, &choice.model);
+            app.limit = runtime.input_limit();
         }
         let config = runtime.config().current();
         app.effort = config.effort();
         app.mode = config.mode().to_owned();
+        if let Some(Panel::Settings(view)) = &mut app.panel {
+            view.selected_model = runtime.model().map(|choice| choice.name());
+            view.context_policy = runtime.context_policy();
+            view.effective_limit = runtime.input_limit();
+            view.effort = app.effort;
+        }
         // Read before the statuses: a server that settles in between still gets a frame.
         let mcp_starting = runtime.mcp_starting();
         app.mcp = runtime.mcp_statuses();
@@ -194,6 +197,25 @@ pub async fn run(
                             "Could not save provider. Check the HTTPS URL and config access."
                                 .into(),
                         );
+                    }
+                }
+            },
+            Action::SetContextPolicy(policy) => match runtime.set_context_policy(policy) {
+                Ok(limit) => {
+                    app.limit = limit;
+                    if let Some(Panel::Settings(view)) = &mut app.panel {
+                        view.context_policy = Some(policy);
+                        view.effective_limit = limit;
+                        view.manual_context = None;
+                        view.model_error = None;
+                    }
+                    app.flash = Some(format!(
+                        "context saved for this model: {limit} tokens effective"
+                    ));
+                }
+                Err(error) => {
+                    if let Some(Panel::Settings(view)) = &mut app.panel {
+                        view.model_error = Some(format!("not saved: {error:#}"));
                     }
                 }
             },
@@ -441,14 +463,14 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
         }
         Ok(Answer::ModelSwitched(choice)) => {
             app.panel = None;
-            app.limit = input_limit(runtime, &choice.model);
+            app.limit = runtime.input_limit();
             app.model = choice.name();
             app.provider_available = true;
             app.flash = Some(format!("model {}", choice.name()));
         }
         Ok(Answer::Settings(settings)) => match &mut app.panel {
             Some(Panel::Settings(view)) => view.refresh(settings),
-            _ => app.panel = Some(Panel::Settings(SettingsView::new(settings))),
+            _ => app.panel = Some(Panel::Settings(Box::new(SettingsView::new(settings)))),
         },
         Ok(Answer::Effort { current, changed }) => {
             app.effort = current;
@@ -482,14 +504,6 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             app.error(format!("{error:#}"));
         }
     }
-}
-
-/// The largest request: the configured input limit, or the model window when smaller.
-fn input_limit(runtime: &Runtime, model: &Model) -> u64 {
-    let configured = runtime.config().current().limits().max_input_tokens;
-    model
-        .context_window
-        .map_or(configured, |window| window.min(configured))
 }
 
 /// Shows a thread in the threads panel, if the panel is still open. A preview that

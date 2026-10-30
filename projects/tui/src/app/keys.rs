@@ -16,7 +16,7 @@ use super::{
 };
 
 /// What /effort offers, as the core names them.
-pub const EFFORTS: [&str; 4] = ["default", "low", "medium", "high"];
+pub const EFFORTS: [&str; 5] = ["default", "off", "low", "medium", "high"];
 
 /// How long a first Ctrl+C waits for the second.
 const QUIT_WINDOW: Duration = Duration::from_secs(5);

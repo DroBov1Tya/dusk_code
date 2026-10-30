@@ -395,7 +395,13 @@ impl ThreadInput {
     async fn deliver(&self, text: String, input: Input) -> Result<()> {
         ensure!(!self.inputs.is_closed(), "thread has ended");
         // A message that alone is past the input limit could never be answered.
-        let limit = self.config.current().limits().max_input_tokens;
+        let config = self.config.current();
+        let limit = self
+            .model
+            .current()
+            .map_or(config.limits().max_input_tokens, |choice| {
+                choice.input_limit(&config)
+            });
         let tokens = estimate_tokens(&text);
         ensure!(
             tokens <= limit,

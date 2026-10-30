@@ -3,6 +3,7 @@
 //! Skills open beside the list: what their front matter says on top, the raw file below.
 
 use dusk_core::{
+    config::{ContextPolicy, ContextPreset},
     mcp::{McpInfo, McpState},
     skills::{SkillInfo, SkillKind},
     update::Channel,
@@ -19,11 +20,14 @@ use unicode_width::UnicodeWidthStr;
 use super::{
     input,
     panels::window,
-    theme::{DOT, EMBER, FAILED, GLOW, NIGHT, OFF, ON, ROSE, SUN, TEAL, VIOLET, bold, dim, fg},
+    theme::{
+        DOT, EMBER, FAILED, GLOW, INPUT_BG, NIGHT, OFF, ON, ROSE, SELECTED, SUN, TEAL, VIOLET,
+        bold, dim, fg,
+    },
     wrap,
 };
 use crate::app::{
-    AgentRow, App, FileButton, FileEditor, HitTarget, Panel, SettingCategory, SettingsHit,
+    AgentRow, App, FileButton, FileEditor, HitTarget, Input, Panel, SettingCategory, SettingsHit,
     SettingsView,
 };
 
@@ -97,6 +101,12 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
 fn hints(view: &SettingsView) -> &'static str {
     match (view.category, &view.editor) {
         (None, _) => " up/down choose  enter open  esc close ",
+        (Some(SettingCategory::Models), _) if view.manual_context.is_some() => {
+            " digits enter token count  Ctrl+A select all  enter save  esc cancel "
+        }
+        (Some(SettingCategory::Models), _) => {
+            " up/down choose  enter/click apply  manual opens token count  esc back "
+        }
         (
             Some(SettingCategory::Tools | SettingCategory::Personalize | SettingCategory::Updates),
             _,
@@ -187,6 +197,7 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 lead: 0,
             })
             .collect(),
+        Some(SettingCategory::Models) => model_rows(view, width),
         Some(SettingCategory::Agents) => agent_rows(view, width),
         Some(SettingCategory::Tools) => tool_rows(view, width),
         Some(SettingCategory::Personalize) => {
@@ -234,6 +245,133 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             rows
         }
     }
+}
+
+/// Context choices are saved for this provider/model pair; effort uses the shared setting.
+fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
+    let policies = [
+        ContextPolicy::Auto,
+        ContextPolicy::Fixed(ContextPreset::K128),
+        ContextPolicy::Fixed(ContextPreset::K256),
+        ContextPolicy::Fixed(ContextPreset::K512),
+        ContextPolicy::Fixed(ContextPreset::M1),
+    ];
+    let names = ["Auto (global input cap)", "128k", "256k", "512k", "1M"];
+    let mut rows: Vec<Row> = policies
+        .into_iter()
+        .zip(names)
+        .map(|(policy, name)| {
+            let active = view.context_policy == Some(policy);
+            Row {
+                lines: vec![Line::from(vec![
+                    Span::styled(
+                        format!("  {} ", if active { ON } else { OFF }),
+                        fg(if active { TEAL } else { NIGHT }),
+                    ),
+                    Span::styled(
+                        format!("context {name}"),
+                        if active { bold(TEAL) } else { Style::new() },
+                    ),
+                ])],
+                switch: None,
+                lead: 0,
+            }
+        })
+        .collect();
+    let manual = match &view.manual_context {
+        Some(_) => "manual tokens:".into(),
+        None => match view.context_policy {
+            Some(ContextPolicy::Manual(tokens)) => format!("manual: {tokens} tokens"),
+            _ => "manual token count...".into(),
+        },
+    };
+    let active = matches!(view.context_policy, Some(ContextPolicy::Manual(_)));
+    let mut manual_lines = vec![Line::from(vec![
+        Span::styled(
+            format!("  {} ", if active { ON } else { OFF }),
+            fg(if active { TEAL } else { NIGHT }),
+        ),
+        Span::styled(
+            format!("context {manual}"),
+            fg(if view.manual_context.is_some() {
+                SUN
+            } else {
+                TEAL
+            }),
+        ),
+    ])];
+    if let Some(input) = &view.manual_context {
+        manual_lines.push(manual_context_line(input, width));
+    }
+    rows.push(Row {
+        lines: manual_lines,
+        switch: None,
+        lead: 0,
+    });
+    rows.push(Row {
+        lines: vec![Line::from(vec![
+            Span::raw("  reasoning effort  "),
+            Span::styled(
+                view.effort.map_or("default", |effort| effort.name()),
+                bold(SUN),
+            ),
+            Span::styled("  open > (shared across models)", dim()),
+        ])],
+        switch: None,
+        lead: 0,
+    });
+    let model = view
+        .selected_model
+        .as_deref()
+        .unwrap_or("no model selected; use /model");
+    let mut heading = vec![
+        Line::from(Span::styled(
+            format!("  {}", wrap::clip(model, width.saturating_sub(2))),
+            bold(VIOLET),
+        )),
+        Line::from(Span::styled(
+            format!(
+                "  effective input limit: {} tokens (model window is the ceiling)",
+                view.effective_limit
+            ),
+            fg(TEAL),
+        )),
+    ];
+    if let Some(error) = &view.model_error {
+        heading.push(Line::from(Span::styled(format!("  {error}"), fg(EMBER))));
+    }
+    heading.push(Line::default());
+    rows[0].lead = heading.len();
+    heading.append(&mut rows[0].lines);
+    rows[0].lines = heading;
+    rows
+}
+
+/// The manual value has its own row so the caret remains visible in narrow windows.
+/// This editor accepts ASCII digits, so byte offsets are also terminal cell offsets.
+fn manual_context_line(input: &Input, width: usize) -> Line<'static> {
+    const INDENT: usize = 4;
+    let available = width.saturating_sub(INDENT).max(1);
+    let start = input.cursor.saturating_sub(available.saturating_sub(1));
+    let selection = input.selection();
+    let mut spans = vec![Span::raw(" ".repeat(INDENT))];
+    for at in start..(start + available).min(input.text.len() + 1) {
+        let cell = input
+            .text
+            .as_bytes()
+            .get(at)
+            .map_or(' ', |byte| *byte as char);
+        let selected = selection.is_some_and(|(from, to)| at >= from && at < to);
+        let style = if at == input.cursor {
+            fg(INPUT_BG).bg(SUN)
+        } else if selected {
+            fg(SUN).bg(SELECTED)
+        } else {
+            fg(SUN)
+        };
+        spans.push(Span::styled(cell.to_string(), style));
+    }
+    Line::from(spans)
 }
 
 /// The name, where it runs and how it stands, with the switch; then its command line or

@@ -43,6 +43,14 @@ pub struct Choice {
 }
 
 impl Choice {
+    pub fn input_limit(&self, config: &Config) -> u64 {
+        config.input_limit(
+            &self.provider_name,
+            &self.model.id,
+            self.model.context_window,
+        )
+    }
+
     /// How the config and clients write it: `provider/model`.
     pub fn name(&self) -> String {
         format!("{}/{}", self.provider_name, self.model.id)

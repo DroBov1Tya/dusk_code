@@ -130,7 +130,13 @@ impl Launcher {
         cwd: &'a Path,
     ) -> BoxFuture<'a, ()> {
         Box::pin(async move {
-            let limit = self.config.current().limits().max_input_tokens;
+            let config = self.config.current();
+            let limit = self
+                .model
+                .current()
+                .map_or(config.limits().max_input_tokens, |choice| {
+                    choice.input_limit(&config)
+                });
             let tokens = estimate_tokens(content);
             ensure!(
                 tokens <= limit,

@@ -18,11 +18,13 @@ use serde_json::Value;
 use super::{
     chat::{ChatMessage, ChatRequest, ToolSpec},
     model_output::{FinishReason, ModelEvent, ToolCall, Usage},
-    provider::{Model, Transient},
+    provider::{Model, Transient, UnsupportedEffort},
     sse::SseDecoder,
 };
 use crate::config::{Effort, ProviderConfig};
 
+const MAX_ERROR_BYTES: usize = 64 * 1024;
+const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_CATALOGUE_BYTES: usize = 4 * 1024 * 1024;
 const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);
 /// Longest silence tolerated between streamed chunks; reasoning models can pause for a while.
@@ -124,7 +126,7 @@ impl CompletionRequest {
             messages: request.messages.iter().map(WireMessage::from).collect(),
             tools: request.tools.iter().map(WireTool::from).collect(),
             max_tokens: request.max_output_tokens,
-            reasoning_effort: request.effort.map(Effort::name),
+            reasoning_effort: request.effort.map(Effort::wire_name),
             stream: true,
             stream_options: StreamOptions {
                 include_usage: true,
@@ -279,6 +281,7 @@ impl OpenAiCompatible {
     }
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
+        let effort_off = request.effort == Some(Effort::Off);
         let request = CompletionRequest::new(request);
         let response = self
             .with_authorization(self.client.post(self.completions_url.clone()))
@@ -296,13 +299,22 @@ impl OpenAiCompatible {
             if is_retryable(status) {
                 bail!(Transient(message));
             }
+            if effort_off && matches!(status.as_u16(), 400 | 422) {
+                // Inspect a bounded JSON error only; echoed provider text never reaches logs.
+                if tokio::time::timeout(ERROR_BODY_TIMEOUT, rejects_effort_off(response))
+                    .await
+                    .unwrap_or(false)
+                {
+                    bail!(UnsupportedEffort);
+                }
+            }
             bail!(message);
         }
         ensure!(
             is_event_stream(&response),
             "provider did not return a stream"
         );
-        Ok(CompletionStream::new(response))
+        Ok(CompletionStream::new(response, effort_off))
     }
 
     fn with_authorization(&self, request: RequestBuilder) -> RequestBuilder {
@@ -311,6 +323,61 @@ impl OpenAiCompatible {
             None => request,
         }
     }
+}
+
+async fn rejects_effort_off(mut response: Response) -> bool {
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_ERROR_BYTES as u64)
+    {
+        return false;
+    }
+    let mut bytes = Vec::new();
+    loop {
+        match response.chunk().await {
+            Ok(Some(chunk)) if chunk.len() <= MAX_ERROR_BYTES - bytes.len() => {
+                bytes.extend_from_slice(&chunk);
+            }
+            Ok(None) => break,
+            _ => return false,
+        }
+    }
+    serde_json::from_slice::<Value>(&bytes)
+        .ok()
+        .and_then(|body| body.get("error").cloned())
+        .is_some_and(|error| error_rejects_effort_off(&error))
+}
+
+/// Only an explicit unsupported parameter/value verdict qualifies. Authentication,
+/// generic invalid requests, network failures and server errors never change settings.
+fn error_rejects_effort_off(error: &Value) -> bool {
+    let parameter = error
+        .get("param")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let message = error
+        .get("message")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    let code = error
+        .get("code")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    let identifies_effort = parameter == "reasoning_effort" || message.contains("reasoning_effort");
+    let explicit = matches!(
+        code,
+        "unsupported_parameter" | "unsupported_value" | "invalid_enum_value"
+    ) || [
+        "not supported",
+        "does not support",
+        "unsupported",
+        "must be one of",
+        "supported values",
+    ]
+    .iter()
+    .any(|phrase| message.contains(phrase));
+    identifies_effort && explicit
 }
 
 fn endpoint(base_url: &Url, segments: &[&str]) -> Result<Url> {
@@ -344,10 +411,13 @@ pub struct CompletionStream {
 }
 
 impl CompletionStream {
-    fn new(response: Response) -> Self {
+    fn new(response: Response, effort_off: bool) -> Self {
         Self {
             response,
-            parser: CompletionParser::default(),
+            parser: CompletionParser {
+                effort_off,
+                ..CompletionParser::default()
+            },
             pending: VecDeque::new(),
             finished: false,
         }
@@ -383,6 +453,7 @@ impl CompletionStream {
 #[derive(Default)]
 struct CompletionParser {
     decoder: SseDecoder,
+    effort_off: bool,
     finish_seen: bool,
     done: bool,
 }
@@ -392,7 +463,7 @@ struct Chunk {
     #[serde(default)]
     choices: Vec<Choice>,
     usage: Option<WireUsage>,
-    error: Option<serde::de::IgnoredAny>,
+    error: Option<Value>,
 }
 
 #[derive(Deserialize)]
@@ -484,7 +555,10 @@ impl CompletionParser {
         // Upstream payloads can echo input; never copy them into errors.
         let chunk: Chunk = serde_json::from_str(data)
             .map_err(|_| anyhow!("invalid provider stream chunk JSON"))?;
-        if chunk.error.is_some() {
+        if let Some(error) = chunk.error {
+            if self.effort_off && error_rejects_effort_off(&error) {
+                bail!(UnsupportedEffort);
+            }
             bail!("provider reported an error during streaming");
         }
         let mut events = Vec::new();

@@ -16,5 +16,6 @@ pub use model_output::{
 };
 pub use openai::is_loopback;
 pub use provider::{
-    Model, ModelProvider, Provider, ProviderRegistry, Transient, is_transient, validate_provider,
+    Model, ModelProvider, Provider, ProviderRegistry, Transient, UnsupportedEffort, is_transient,
+    is_unsupported_effort, validate_provider,
 };
