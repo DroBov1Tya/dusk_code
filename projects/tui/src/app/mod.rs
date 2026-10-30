@@ -75,6 +75,8 @@ pub enum Action {
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),
     OpenThread(String),
+    /// Stop one subagent and the agents it asked.
+    StopAgent(String),
     Copy(String),
     /// Open the window of the subagent working in this thread.
     OpenAgent(String),

@@ -201,6 +201,32 @@ impl Runtime {
         Ok(())
     }
 
+    /// Stops one agent and every agent it asked; agents waiting for a free slot drop
+    /// their waiting messages. The chat and other agents go on.
+    pub async fn stop_agent(&self, thread_id: &str) -> Result<()> {
+        let state = &self.launcher.state;
+        let thread = state
+            .load_thread(thread_id)
+            .await?
+            .with_context(|| format!("thread {thread_id} does not exist"))?;
+        ensure!(
+            thread.parent_thread_id.is_some(),
+            "thread {thread_id} is not an agent's"
+        );
+        let mut threads = state.descendant_threads(thread_id).await?;
+        threads.insert(0, thread_id.to_owned());
+        for thread_id in threads {
+            match self.launcher.mailboxes.get(&thread_id).await {
+                Some(mailbox) => {
+                    mailbox.send(Input::Cancel);
+                }
+                None => state.drop_pending(&thread_id).await?,
+            }
+        }
+        info!("agent thread {thread_id} stopped by the user");
+        Ok(())
+    }
+
     /// What the next request of a chat thread carries; before a thread, MAIN.md and the
     /// tools a chat gets.
     pub async fn context(&self, thread_id: Option<&str>) -> Result<ContextReport> {

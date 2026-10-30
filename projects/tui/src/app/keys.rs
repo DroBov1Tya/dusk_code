@@ -35,8 +35,7 @@ impl App {
                 Action::None
             }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Agent(_))) => {
-                self.agent_window_mouse(mouse);
-                Action::None
+                self.agent_window_mouse(mouse)
             }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Settings(_))) => {
                 self.settings_mouse(mouse)
@@ -388,7 +387,7 @@ impl App {
                 return Action::None;
             }
             Panel::Paste(_) => self.editor_key(key),
-            Panel::Agent(_) => self.agent_window_key(key),
+            Panel::Agent(_) => return self.agent_window_key(key),
             Panel::Models(list) => match key.code {
                 _ if up || down => {
                     let count = list.choices().len();
