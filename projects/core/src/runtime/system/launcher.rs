@@ -59,7 +59,10 @@ impl Launcher {
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
-            scope: ToolScope::new(cwd, workspace)?.protect(self.paths.config_root()),
+            scope: ToolScope::new(cwd, workspace)?
+                .protect(self.paths.config_root())
+                .share(&self.paths.skills_dir())
+                .share(&self.paths.agents_dir()),
             compact_prompt: self.paths.compact_prompt(),
             depth,
             mailboxes: Arc::clone(&self.mailboxes),

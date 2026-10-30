@@ -71,7 +71,8 @@ impl Tool for LoadSkill {
         let entries = enabled(graph.entries(), context.config);
         format!(
             "Load the instructions of a skill when the task matches its description, and \
-             follow them. Skills are not files: load them only with this tool, by name. A \
+             follow them. To use a skill, load it with this tool by name rather than reading \
+             its file. A \
              loaded skill may name further skills; load those with this tool as well.\n\
              Skills:\n{entries}"
         )
