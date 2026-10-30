@@ -9,6 +9,9 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - Queued messages, interruption, and turn cancellation.
 - Manual and automatic context compaction, with access to earlier thread history.
 - `/fork`: a detailed summary of the thread (`FORK.md` says how) starts a new one.
+- Paths typed in a message (`/`, `~/`, `./`, `../` after a space) list their folder above
+  the box; Tab walks the entries. Large folders are read in part (50 000 names, 200
+  matches), so typing more narrows them.
 - `/undo`: pick one of your messages with the arrows; the thread goes back to before
   it (later messages, turns and compactions are removed) and its text returns to the
   box to edit and send again.

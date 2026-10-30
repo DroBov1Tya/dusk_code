@@ -3,6 +3,7 @@
 //! write inline. Providers only move bytes; the meaning of a message is worked out here.
 
 pub mod commands;
+pub mod complete;
 pub mod goal;
 pub mod inline_tags;
 pub mod pasted;
