@@ -8,6 +8,7 @@ use anyhow::Result;
 use crossterm::event::EventStream;
 use dusk_core::{
     chat::commands::{Answer, Command},
+    config::Effort,
     config::{ApiKey, ProviderConfig, ProviderKind},
     providers::{Model, validate_provider},
     runtime::{Runtime, ThreadEvent, ThreadHandle},
@@ -17,7 +18,7 @@ use ratatui::DefaultTerminal;
 
 use crate::{
     app::{
-        Action, AgentWindow, App, FileEditor, ModelList, Panel, Preview, SettingCategory,
+        Action, AgentWindow, App, EFFORTS, FileEditor, ModelList, Panel, Preview, SettingCategory,
         SettingsView, SwitchKind, ThreadList, Transcript,
     },
     clipboard, git, ui,
@@ -70,6 +71,7 @@ pub async fn run(
             }
             app.model = name;
             app.limit = input_limit(runtime, &choice.model);
+            app.effort = runtime.config().current().effort();
         }
         // Read before the statuses: a server that settles in between still gets a frame.
         let mcp_starting = runtime.mcp_starting();
@@ -387,6 +389,18 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             Some(Panel::Settings(view)) => view.refresh(settings),
             _ => app.panel = Some(Panel::Settings(SettingsView::new(settings))),
         },
+        Ok(Answer::Effort { current, changed }) => {
+            app.effort = current;
+            let name = current.map_or("default", Effort::name);
+            if changed {
+                app.flash = Some(format!("effort {name}"));
+            } else {
+                let selected = EFFORTS.iter().position(|effort| *effort == name);
+                app.panel = Some(Panel::Effort {
+                    selected: selected.unwrap_or(0),
+                });
+            }
+        }
         Ok(Answer::Context(report)) => {
             app.panel = Some(Panel::Context { report, row: 0 });
         }

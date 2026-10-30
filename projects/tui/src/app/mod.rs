@@ -4,6 +4,7 @@
 
 mod composer;
 mod keys;
+pub use keys::EFFORTS;
 mod panels;
 mod poll;
 mod queue;
@@ -17,6 +18,7 @@ use std::{
 
 use dusk_core::{
     chat::commands::{self, COMMANDS, Command},
+    config::Effort,
     live_config::LiveConfig,
     mcp::McpStatus,
     providers::ModelEvent,
@@ -185,6 +187,8 @@ pub struct TranscriptHit {
 
 pub struct App {
     pub model: String,
+    /// The reasoning effort; `None` leaves it to the provider.
+    pub effort: Option<Effort>,
     pub provider_available: bool,
     pub local_unsent: Vec<LocalUnsent>,
     pub thread_id: Option<String>,
@@ -285,6 +289,7 @@ impl App {
         Self {
             provider_available: model.is_some(),
             model: model.unwrap_or_else(|| "no model".into()),
+            effort: None,
             local_unsent: Vec::new(),
             thread_id: None,
             title: None,

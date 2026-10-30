@@ -21,7 +21,7 @@ use super::{
     provider::{Model, Transient},
     sse::SseDecoder,
 };
-use crate::config::ProviderConfig;
+use crate::config::{Effort, ProviderConfig};
 
 const MAX_CATALOGUE_BYTES: usize = 4 * 1024 * 1024;
 const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -59,6 +59,8 @@ struct CompletionRequest {
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<WireTool>,
     max_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    reasoning_effort: Option<&'static str>,
     stream: bool,
     stream_options: StreamOptions,
 }
@@ -122,6 +124,7 @@ impl CompletionRequest {
             messages: request.messages.iter().map(WireMessage::from).collect(),
             tools: request.tools.iter().map(WireTool::from).collect(),
             max_tokens: request.max_output_tokens,
+            reasoning_effort: request.effort.map(Effort::name),
             stream: true,
             stream_options: StreamOptions {
                 include_usage: true,

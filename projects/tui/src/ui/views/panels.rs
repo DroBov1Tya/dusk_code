@@ -22,7 +22,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Connection, EditorButton, EditorHit, ModelList, Panel, ThreadList, compact_number, paste,
+    App, Connection, EFFORTS, EditorButton, EditorHit, ModelList, Panel, ThreadList,
+    compact_number, paste,
 };
 
 const KEYS: [(&str, &str); 29] = [
@@ -107,6 +108,27 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             )
         }
         Panel::Help => ("keys", "any key closes", help(), None),
+        Panel::Effort { selected } => {
+            let current = app.effort.map_or("default", |effort| effort.name());
+            let lines = EFFORTS
+                .iter()
+                .enumerate()
+                .map(|(index, effort)| {
+                    let mark = if *effort == current { "current" } else { "" };
+                    selectable(
+                        vec![Span::raw(format!(" {effort}"))],
+                        Span::styled(format!("{mark} "), dim()),
+                        index == *selected,
+                    )
+                })
+                .collect();
+            (
+                "reasoning effort",
+                "enter choose  esc close",
+                lines,
+                Some(*selected),
+            )
+        }
         Panel::Context { report, .. } => (
             "context",
             "up/down scroll  any other key closes",
