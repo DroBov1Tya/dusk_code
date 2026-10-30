@@ -1,16 +1,20 @@
 //! duskcode: a full-screen terminal client for dusk_core. All logic lives in the core; this
 //! crate only shows threads and passes on what the user types.
 
+//!
+//! - `cli`: arguments and the commands that run without the screen;
+//! - `host`: the terminal, the clipboard and git, as the machine offers them;
+//! - `app`: what the screen shows and how keys change it;
+//! - `ui`: drawing it; `session` ties the app to the core.
+
 mod app;
-mod args;
-mod clipboard;
-mod git;
-mod remove;
+mod cli;
+mod host;
 mod session;
 mod ui;
 
 use anyhow::Result;
-use args::Args;
+use cli::args::{self, Args};
 use dusk_core::{init::logs, init::paths::Paths, release::update, runtime::Runtime};
 use tracing::{error, info};
 
@@ -19,7 +23,7 @@ async fn main() -> Result<()> {
     let paths = Paths::from_home()?;
     let (state_db, thread) = match args::parse_args() {
         Args::Run { state_db, thread } => (state_db, thread),
-        Args::Remove => return remove::run(&paths),
+        Args::Remove => return cli::remove::run(&paths),
         Args::InstallResources { directory } => {
             dusk_core::release::resources::install_snapshot(&directory, update::VERSION)?;
             return Ok(());
@@ -36,9 +40,9 @@ async fn main() -> Result<()> {
     info!("duskcode {} starts", env!("CARGO_PKG_VERSION"));
     // Started before the screen is taken, so a first-start message stays readable.
     let runtime = Runtime::start(paths, state_db).await?;
-    let terminal = ui::screen::enter()?;
+    let terminal = host::terminal::enter()?;
     let result = session::run(&runtime, terminal, thread).await;
-    ui::screen::leave();
+    host::terminal::leave();
     runtime.shutdown().await;
     match &result {
         Ok(()) => info!("duskcode exits"),

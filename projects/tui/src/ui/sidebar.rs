@@ -15,13 +15,13 @@ use ratatui::{
 };
 
 use super::{
+    chat::transcript::one_line,
     loader::{Loader, agent_name, identity},
+    text::wrap,
     theme::{
         DONE, DOT, EMBER, FAILED, FOLDED, NIGHT, OFF, ON, SIDEBAR_BG, SIDEBAR_EDGE, SIDEBAR_FG,
         SIDEBAR_MUTED, SUN, TEAL, UNFOLDED, VIOLET, bold, dusk, fg,
     },
-    transcript::one_line,
-    wrap,
 };
 use crate::app::{App, compact_number, now_ms};
 
