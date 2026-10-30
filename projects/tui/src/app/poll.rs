@@ -82,11 +82,10 @@ impl App {
             KeyCode::Up => poll.cursor = poll.cursor.saturating_sub(1),
             KeyCode::Down => poll.cursor = (poll.cursor + 1).min(poll.own_row()),
             KeyCode::Enter => return self.press_poll(PollTarget::Send),
-            KeyCode::Char(' ') if !on_own => {
-                if poll.question.multiple {
-                    poll.checked[poll.cursor] ^= true;
-                }
+            KeyCode::Char(' ') if !on_own && poll.question.multiple => {
+                poll.checked[poll.cursor] ^= true;
             }
+            KeyCode::Char(' ') if !on_own => {}
             KeyCode::Char(c) if on_own && !ctrl => poll.own.insert(c.encode_utf8(&mut [0; 4])),
             KeyCode::Backspace if on_own => poll.own.backspace(),
             KeyCode::Delete if on_own => poll.own.delete(),
