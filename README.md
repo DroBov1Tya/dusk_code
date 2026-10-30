@@ -27,6 +27,8 @@ curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.s
 
 The script checks the release checksum, puts the binary in `~/.local/share/duskcode/bin`
 and links `duskcode` from `/usr/local/bin`, or `~/.local/bin` when that is not writable.
+Releases are the round versions (0.50.0, 0.60.0); every tag between them is a
+pre-release, installed by name with `... | DUSKCODE_VERSION=v0.53.0 sh`.
 Run `duskcode` in the folder to work in. `duskcode remove` asks once, then deletes the
 binary, its link and `~/.config/duskcode`.
 
