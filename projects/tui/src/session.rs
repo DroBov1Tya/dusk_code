@@ -2,7 +2,10 @@
 //! clock go in, the app changes, the screen is drawn again. A new thread is created only
 //! when its first message is sent, so an opened and closed client leaves nothing behind.
 
-use std::{env, time::Duration};
+use std::{
+    env,
+    time::{Duration, Instant},
+};
 
 use anyhow::Result;
 use crossterm::event::EventStream;
@@ -31,6 +34,8 @@ const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 const FRAME: Duration = Duration::from_millis(80);
 /// How often the git line is read again; edits made outside show within it.
 const GIT_PERIOD: Duration = Duration::from_secs(5);
+/// How often the system tab reads its numbers again.
+const SYSTEM_PERIOD: Duration = Duration::from_secs(2);
 const MAX_EVENTS_PER_FRAME: usize = 512;
 
 struct OpenThread {
@@ -71,6 +76,7 @@ pub async fn run(
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(FRAME);
     let mut git_clock = tokio::time::interval(GIT_PERIOD);
+    let mut system_clock = tokio::time::interval(SYSTEM_PERIOD);
     let cwd = env::current_dir()?;
     let mut shown_title = String::new();
     let mut terminal_status = ui::screen::TerminalStatus::new();
@@ -151,6 +157,7 @@ pub async fn run(
         }
         terminal_status.update(app.is_busy() || app.agents_at_work());
         app.refresh_paths();
+        refresh_system(runtime, &mut app).await;
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {
@@ -185,6 +192,7 @@ pub async fn run(
                 Action::None
             }
             // While the core looks for a model, the clock redraws what it finds.
+            _ = system_clock.tick(), if system_open(&app) => Action::None,
             _ = git_clock.tick() => {
                 app.git = git::summary(&cwd).await;
                 Action::None
@@ -551,6 +559,29 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             app.panel = None;
             app.error(format!("{error:#}"));
         }
+    }
+}
+
+fn system_open(app: &App) -> bool {
+    matches!(&app.panel, Some(Panel::Settings(view))
+        if view.category == Some(SettingCategory::System))
+}
+
+/// The system tab reads its numbers when opened and then every `SYSTEM_PERIOD`.
+async fn refresh_system(runtime: &Runtime, app: &mut App) {
+    let Some(Panel::Settings(view)) = &mut app.panel else {
+        return;
+    };
+    let due = view
+        .system
+        .as_ref()
+        .is_none_or(|(_, read)| read.elapsed() >= SYSTEM_PERIOD);
+    if view.category != Some(SettingCategory::System) || !due {
+        return;
+    }
+    match runtime.system_report().await {
+        Ok(report) => view.system = Some((report, Instant::now())),
+        Err(error) => app.error(format!("cannot read the system numbers: {error:#}")),
     }
 }
 

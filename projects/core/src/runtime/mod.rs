@@ -7,4 +7,6 @@ pub mod chat;
 pub mod system;
 
 pub use agent::AUTO_COMPACT_PERCENT;
-pub use system::{Runtime, ThreadEvent, ThreadHandle, ThreadInput, ThreadOutput, model_choice};
+pub use system::{
+    Runtime, SystemReport, ThreadEvent, ThreadHandle, ThreadInput, ThreadOutput, model_choice,
+};

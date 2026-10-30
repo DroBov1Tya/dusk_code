@@ -104,6 +104,7 @@ fn hints(view: &SettingsView) -> &'static str {
         (Some(SettingCategory::Models), _) if view.manual_context.is_some() => {
             " digits enter token count  Ctrl+A select all  enter save  esc cancel "
         }
+        (Some(SettingCategory::System), _) => " read every 2 s while open  esc back ",
         (Some(SettingCategory::Models), _) => {
             " up/down choose  enter/click apply  manual opens token count  esc back "
         }
@@ -212,6 +213,7 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 width,
             )]
         }
+        Some(SettingCategory::System) => system_rows(view, width),
         Some(SettingCategory::Updates) => {
             let dev = view.update_channel == Channel::Dev;
             let about = "    on: every tag, pre-releases too; off: full releases only. \
@@ -582,6 +584,67 @@ fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Row {
         switch: Some((to.saturating_sub(label.len() as u16), to)),
         lead: 0,
     }
+}
+
+/// The process first, then what the records take on disk.
+fn system_rows(view: &SettingsView, width: usize) -> Vec<Row> {
+    let Some((report, _)) = &view.system else {
+        return vec![note("  reading...")];
+    };
+    let value = |left: &str, value: String| Row {
+        lines: vec![right(
+            vec![Span::raw(format!("    {left}"))],
+            Span::styled(format!("{value}  "), bold(SUN)),
+            width,
+        )],
+        switch: None,
+        lead: 0,
+    };
+    let heading = |text: &str| Row {
+        lines: vec![
+            Line::default(),
+            Line::from(Span::styled(format!("  {text}"), bold(VIOLET))),
+        ],
+        switch: None,
+        lead: 0,
+    };
+    let mut rows = vec![heading("application")];
+    match report.process {
+        Some(process) => {
+            rows.push(value("memory in use", bytes(process.resident_bytes)));
+            rows.push(value(
+                "processor",
+                format!("{:.1}% of a core", process.cpu_percent),
+            ));
+        }
+        None => rows.push(note("    ps is not available here")),
+    }
+    let database = report.database_bytes + report.wal_bytes;
+    rows.push(heading("records on disk"));
+    rows.push(value("database", bytes(database)));
+    rows.push(value("  of it, write-ahead log", bytes(report.wal_bytes)));
+    rows.push(value("image cards", bytes(report.artifacts_bytes)));
+    rows.push(value("logs", bytes(report.logs_bytes)));
+    rows.push(value(
+        "threads / messages",
+        format!("{} / {}", report.threads, report.messages),
+    ));
+    rows
+}
+
+/// Bytes in the largest unit that keeps the number at least 1.
+fn bytes(count: u64) -> String {
+    const UNITS: [&str; 4] = ["KB", "MB", "GB", "TB"];
+    if count < 1024 {
+        return format!("{count} B");
+    }
+    let mut value = count as f64 / 1024.0;
+    let mut unit = 0;
+    while value >= 1024.0 && unit + 1 < UNITS.len() {
+        value /= 1024.0;
+        unit += 1;
+    }
+    format!("{value:.1} {}", UNITS[unit])
 }
 
 fn note(text: &str) -> Row {

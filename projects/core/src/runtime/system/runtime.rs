@@ -34,7 +34,10 @@ use crate::{
     runtime::chat::thread_start::{FORK_INTRO, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread, UndoPoint},
     tools::{ToolKind, ToolScope},
-    util::sync::lock,
+    util::{
+        sync::lock,
+        usage::{self, ProcessUsage},
+    },
 };
 
 /// Hand edits to config.yml are picked up within this time.
@@ -52,6 +55,20 @@ pub struct Runtime {
     threads: Mutex<JoinSet<()>>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
     kept_builtin: Vec<String>,
+    state_db: PathBuf,
+}
+
+/// What the application costs the machine right now.
+pub struct SystemReport {
+    pub process: Option<ProcessUsage>,
+    /// The database file, its write-ahead log and shared memory.
+    pub database_bytes: u64,
+    pub wal_bytes: u64,
+    /// Images kept for image cards.
+    pub artifacts_bytes: u64,
+    pub logs_bytes: u64,
+    pub threads: u64,
+    pub messages: u64,
 }
 
 /// A running thread, as its client sees it.
@@ -68,7 +85,8 @@ impl Runtime {
     /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
         let initialized = init::initialize(&paths)?;
-        let state = State::open(state_db.unwrap_or_else(|| paths.state_db())).await?;
+        let state_db = state_db.unwrap_or_else(|| paths.state_db());
+        let state = State::open(&state_db).await?;
         let config = Arc::new(LiveConfig::load(paths.config_file())?);
         let choice = match model_choice::configured(&config.current()) {
             Ok(choice) => choice,
@@ -143,6 +161,7 @@ impl Runtime {
             model_discovery,
             threads: Mutex::new(JoinSet::new()),
             kept_builtin: initialized.builtin.kept,
+            state_db,
         })
     }
 
@@ -381,6 +400,27 @@ impl Runtime {
             .config
             .update(|config| config.set_max_agents_at_work(limit))?;
         Ok(())
+    }
+
+    /// Samples the process and measures the records; meant for a view refreshed every
+    /// few seconds, not for every frame.
+    pub async fn system_report(&self) -> Result<SystemReport> {
+        let (threads, messages) = self.launcher.state.counts().await?;
+        let wal = |suffix: &str| {
+            let mut name = self.state_db.clone().into_os_string();
+            name.push(suffix);
+            usage::disk_bytes(Path::new(&name))
+        };
+        let paths = &self.launcher.paths;
+        Ok(SystemReport {
+            process: usage::process(),
+            database_bytes: usage::disk_bytes(&self.state_db),
+            wal_bytes: wal("-wal") + wal("-shm"),
+            artifacts_bytes: usage::disk_bytes(&paths.artifacts_dir()),
+            logs_bytes: usage::disk_bytes(&paths.logs_dir()),
+            threads,
+            messages,
+        })
     }
 
     pub async fn undo_points(&self, thread_id: &str) -> Result<Vec<UndoPoint>> {

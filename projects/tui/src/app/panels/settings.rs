@@ -4,6 +4,8 @@
 //! The window keeps only what is on screen; every change goes to the core, which answers
 //! with the settings again.
 
+use std::time::Instant;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{
     catalog::agents::{AgentNode, AgentTree},
@@ -14,6 +16,7 @@ use dusk_core::{
     config::{ContextPolicy, ContextPreset, Effort, Memory},
     mcp::{McpInfo, McpState},
     release::update::Channel,
+    runtime::SystemReport,
 };
 
 use super::{Panel, step};
@@ -29,10 +32,11 @@ pub enum SettingCategory {
     /// What the agent keeps about the user.
     Personalize,
     Updates,
+    System,
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Models,
         Self::Agents,
         Self::Skills,
@@ -40,6 +44,7 @@ impl SettingCategory {
         Self::Tools,
         Self::Personalize,
         Self::Updates,
+        Self::System,
     ];
 
     pub fn name(self) -> &'static str {
@@ -51,6 +56,7 @@ impl SettingCategory {
             Self::Mcp => "mcp",
             Self::Personalize => "personalize",
             Self::Updates => "updates",
+            Self::System => "system",
         }
     }
 }
@@ -107,6 +113,8 @@ pub struct SettingsView {
     pub selected: usize,
     /// The skill or MCP server open beside the list.
     pub editor: Option<FileEditor>,
+    /// The system tab's numbers and when they were read; refreshed while it is open.
+    pub system: Option<(SystemReport, Instant)>,
     /// What can be clicked on the last drawn frame.
     pub hits: Vec<SettingsHit>,
     /// The first list row shown.
@@ -178,6 +186,7 @@ impl SettingsView {
         flatten(&settings.agents.root, 0, &[], true, true, &mut agents);
         let AgentTree { problems, .. } = settings.agents;
         Self {
+            system: None,
             selected_model: None,
             context_policy: None,
             effective_limit: 0,
@@ -214,6 +223,7 @@ impl SettingsView {
         next.category = self.category;
         next.selected = self.selected.min(next.len().saturating_sub(1));
         next.editor = self.editor.take();
+        next.system = self.system.take();
         next.top = self.top;
         *self = next;
     }
@@ -225,6 +235,7 @@ impl SettingsView {
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize | SettingCategory::Updates) => 1,
+            Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp.len(),
         }
@@ -298,6 +309,7 @@ impl SettingsView {
                 let dev = self.update_channel == Channel::Dev;
                 (SwitchKind::DevChannel, "dev".into(), dev)
             }
+            SettingCategory::System => return None,
         };
         Some(Action::Switch {
             kind,
@@ -688,7 +700,8 @@ fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> boo
         SettingCategory::Models
         | SettingCategory::Tools
         | SettingCategory::Personalize
-        | SettingCategory::Updates => false,
+        | SettingCategory::Updates
+        | SettingCategory::System => false,
     }
 }
 

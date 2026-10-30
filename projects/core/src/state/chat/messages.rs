@@ -130,6 +130,17 @@ impl State {
     }
 
     /// The whole thread, in order.
+    /// How many threads and messages the records hold.
+    pub async fn counts(&self) -> Result<(u64, u64)> {
+        let (threads, messages): (i64, i64) = sqlx::query_as(
+            "SELECT (SELECT COUNT(*) FROM threads), (SELECT COUNT(*) FROM messages)",
+        )
+        .fetch_one(&self.pool)
+        .await
+        .context("count records")?;
+        Ok((threads.max(0) as u64, messages.max(0) as u64))
+    }
+
     pub async fn list_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         sqlx::query("SELECT * FROM messages WHERE thread_id = ? ORDER BY sequence")
             .bind(thread_id)
