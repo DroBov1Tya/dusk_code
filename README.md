@@ -15,3 +15,6 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 ## License
 
 MIT, see [LICENSE](LICENSE).
+
+The built-in skills are written by Anthropic, OpenAI and Nous Research (Hermes Agent) and keep
+their own licenses; see [projects/core/skills/NOTICE.md](projects/core/skills/NOTICE.md).

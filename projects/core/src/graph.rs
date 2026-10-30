@@ -11,6 +11,7 @@
 //! description: Preparing a release
 //! links: [git/release-notes, git/changelog]
 //! tools: [read_file, run_command]   # agents only: the tools it gets; all when left out
+//! source: Anthropic                 # where a node not written here comes from
 //! ---
 //! Steps the agent follows...
 //! ```
@@ -53,6 +54,8 @@ pub struct Node {
     pub links: Vec<String>,
     /// For an agent, the tools it may use; `None` gives it every tool.
     pub tools: Option<Vec<String>>,
+    /// The company or project the node comes from, for one not written here.
+    pub source: Option<String>,
     file: PathBuf,
 }
 
@@ -73,6 +76,7 @@ struct FrontMatter {
     #[serde(default)]
     links: Vec<String>,
     tools: Option<Vec<String>>,
+    source: Option<String>,
 }
 
 impl Graph {
@@ -214,6 +218,7 @@ fn parse_node(text: &str, name: &str, file: PathBuf) -> Result<Node> {
         entry: front.entry,
         links: front.links,
         tools: front.tools,
+        source: front.source,
         file,
     })
 }

@@ -2,6 +2,7 @@
 //! agent a pad on the trace from the one that may ask it, lit while it can be asked.
 //! Skills open beside the list: what their front matter says on top, the raw file below.
 
+use dusk_core::skills::SkillKind;
 use ratatui::{
     Frame,
     layout::{Position, Rect},
@@ -169,6 +170,11 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
                         format!("  {}", skill.name),
                         if skill.enabled { Style::new() } else { dim() },
                     )];
+                    let origin = match &skill.source {
+                        Some(source) => format!("  {} {DOT} {source}", skill.kind.name()),
+                        None => format!("  {}", skill.kind.name()),
+                    };
+                    left.push(Span::styled(origin, fg(kind_color(skill.kind))));
                     if view.skill.is_none() {
                         let (text, style) = match &skill.problem {
                             Some(problem) => (format!("  {FAILED} {problem}"), fg(EMBER)),
@@ -184,6 +190,14 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             }
             rows
         }
+    }
+}
+
+fn kind_color(kind: SkillKind) -> ratatui::style::Color {
+    match kind {
+        SkillKind::Builtin => VIOLET,
+        SkillKind::Own => TEAL,
+        SkillKind::Other => SUN,
     }
 }
 

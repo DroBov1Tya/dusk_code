@@ -9,7 +9,9 @@ use std::{
 
 use anyhow::{Context, Result, anyhow, bail, ensure};
 
-use crate::paths::Paths;
+use tracing::{info, warn};
+
+use crate::{paths::Paths, skills};
 
 const CONFIG_TEMPLATE: &str = "\
 # dusk_code provider settings. Keep this file private.
@@ -82,6 +84,14 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     create_private_dir(paths.workspace_root())?;
     create_private_dir(&paths.skills_dir())?;
     create_private_dir(&paths.agents_dir())?;
+    // Missing skills only make the agent know less; they never stop the start.
+    match skills::install_builtin(&paths.skills_dir()) {
+        Ok(written) if !written.is_empty() => {
+            info!("built-in skills added: {}", written.join(", "))
+        }
+        Ok(_) => {}
+        Err(error) => warn!("cannot add the built-in skills: {error:#}"),
+    }
     let config_created = ensure_config(&paths.config_file())?;
     create_private_file(&paths.main_prompt(), MAIN_PROMPT_TEMPLATE.as_bytes())?;
     create_private_file(&paths.compact_prompt(), COMPACT_PROMPT_TEMPLATE.as_bytes())?;
