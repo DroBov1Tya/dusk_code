@@ -5,6 +5,7 @@
 mod composer;
 mod keys;
 mod panels;
+mod poll;
 mod queue;
 mod transcript;
 
@@ -30,6 +31,7 @@ pub use panels::{
     AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, ModelList, Panel,
     Preview, SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
+pub use poll::{Poll, PollHit, PollTarget};
 pub use queue::{QueueButton, QueueHit};
 pub use transcript::{Entry, Layout, Tone, Transcript};
 
@@ -231,6 +233,8 @@ pub struct App {
     /// Messages written while the agent works, oldest first.
     pub queued: Vec<String>,
     pub queue_hits: Vec<QueueHit>,
+    /// A question the agent asked, until it is answered or declined.
+    pub poll: Option<Poll>,
     /// The entry under the mouse, which shows its buttons.
     pub hover: Option<usize>,
     pub selection: Option<Selection>,
@@ -316,6 +320,7 @@ impl App {
             editor_hits: Vec::new(),
             queued: Vec::new(),
             queue_hits: Vec::new(),
+            poll: None,
             hover: None,
             selection: None,
             layout: None,
@@ -343,6 +348,7 @@ impl App {
     pub fn open(&mut self, thread_id: Option<String>, title: Option<String>, history: &[Message]) {
         self.thread_id = thread_id;
         self.title = title;
+        self.poll = None;
         self.local_unsent.clear();
         self.transcript = Transcript::from_history(history);
         self.focus = Focus::Input;
@@ -563,6 +569,7 @@ impl App {
                     .push(Entry::from_agent(from, message.content));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
             ThreadEvent::AnswerCut { error } => self.error(format!(
                 "the answer broke off ({error}); what it wrote is kept"
             )),
@@ -668,6 +675,14 @@ impl App {
         {
             return Action::Command(command.clone());
         }
+        // A message written instead of answering the question declines it.
+        let text = match self.poll.take() {
+            Some(poll) if command.is_none() => poll.question.declined(&text),
+            poll => {
+                self.poll = poll;
+                text
+            }
+        };
         if command.is_some() {
             self.scroll = 0;
             self.transcript.notice(text.trim().to_owned(), Tone::Info);

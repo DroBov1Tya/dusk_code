@@ -20,7 +20,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    Activity, App, ChipHit, Focus, Input, InputRow, QueueButton, QueueHit, commands, paste,
+    Activity, App, ChipHit, Focus, Input, InputRow, PollHit, PollTarget, QueueButton, QueueHit,
+    commands, paste,
 };
 
 const MIN_ROWS: usize = 3;
@@ -34,7 +35,14 @@ const FRAME_ROWS: u16 = 3;
 /// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
-    queue_rows(app) + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16 + FRAME_ROWS
+    poll_rows(app) + queue_rows(app) + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16 + FRAME_ROWS
+}
+
+/// The question's border, its text, the options, the own answer and the buttons.
+fn poll_rows(app: &App) -> u16 {
+    app.poll
+        .as_ref()
+        .map_or(0, |poll| poll.question.options.len() as u16 + 5)
 }
 
 fn queue_rows(app: &App) -> u16 {
@@ -42,6 +50,20 @@ fn queue_rows(app: &App) -> u16 {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
+    let polled = poll_rows(app);
+    draw_poll(
+        frame,
+        Rect {
+            height: polled,
+            ..area
+        },
+        app,
+    );
+    let area = Rect {
+        y: area.y + polled,
+        height: area.height.saturating_sub(polled),
+        ..area
+    };
     let queued = queue_rows(app);
     draw_queue(
         frame,
@@ -120,6 +142,96 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     frame.render_widget(Paragraph::new(lines), text_area);
     show_cursor(frame, app, text_area, (cursor.0, cursor.1 - skip));
+}
+
+const SEND: &str = " send ";
+const DECLINE: &str = " decline ";
+
+/// The question the agent asked: options to choose, the user's own answer, and buttons.
+fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
+    let Some(poll) = &mut app.poll else {
+        return;
+    };
+    poll.hits.clear();
+    if area.height < 4 || area.width < 20 {
+        return;
+    }
+    let border = if poll.active { VIOLET } else { NIGHT };
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(fg(border))
+        .title(Span::styled(" question ", bold(VIOLET)));
+    let inner = block.inner(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+    let width = inner.width as usize;
+    let mut lines = vec![Line::from(Span::styled(
+        wrap::clip(&format!(" {}", poll.question.question), width),
+        bold(SUN),
+    ))];
+    let own_row = poll.own_row();
+    for row in 0..=own_row {
+        let here = poll.active && poll.cursor == row;
+        let pointer = if here { " \u{203A} " } else { "   " };
+        let (mark, text) = if row < own_row {
+            let mark = match (poll.question.multiple, poll.checked[row]) {
+                (true, true) => "[x] ",
+                (true, false) => "[ ] ",
+                (false, _) if here => "(\u{2022}) ",
+                (false, _) => "( ) ",
+            };
+            (mark, poll.question.options[row].clone())
+        } else {
+            let own = if poll.own.text.is_empty() && !here {
+                "your own answer".to_owned()
+            } else {
+                poll.own.text.clone()
+            };
+            ("\u{270E}  ", own)
+        };
+        let style = if here { bold(ROSE) } else { Style::new() };
+        let label = wrap::clip(&format!("{pointer}{mark}{text}"), width);
+        poll.hits.push(PollHit {
+            row: inner.y + 1 + row as u16,
+            left: inner.x,
+            right: inner.right(),
+            target: PollTarget::Row(row),
+        });
+        lines.push(Line::from(Span::styled(label, style)));
+    }
+    let hint = if poll.question.multiple {
+        "space marks  enter sends  tab to the box  esc declines"
+    } else {
+        "enter sends  tab to the box  esc declines"
+    };
+    let buttons_row = inner.y + lines.len() as u16;
+    let send_left = inner.x + 1;
+    let decline_left = send_left + SEND.width() as u16 + 1;
+    poll.hits.push(PollHit {
+        row: buttons_row,
+        left: send_left,
+        right: send_left + SEND.width() as u16,
+        target: PollTarget::Send,
+    });
+    poll.hits.push(PollHit {
+        row: buttons_row,
+        left: decline_left,
+        right: decline_left + DECLINE.width() as u16,
+        target: PollTarget::Decline,
+    });
+    lines.push(Line::from(vec![
+        Span::raw(" "),
+        Span::styled(SEND, fg(TEAL).bg(GLOW)),
+        Span::raw(" "),
+        Span::styled(DECLINE, fg(EMBER).bg(GLOW)),
+        Span::styled(format!("  {hint}"), dim()),
+    ]));
+    frame.render_widget(Paragraph::new(lines), inner);
+    if poll.active && poll.cursor == own_row {
+        let column = 6 + poll.own.text[..poll.own.cursor].width();
+        let x = (inner.x as usize + column).min(inner.right().saturating_sub(1) as usize);
+        frame.set_cursor_position(Position::new(x as u16, inner.y + 1 + own_row as u16));
+    }
 }
 
 /// The messages waiting for the turn to end, each with its buttons; the newest are shown
@@ -276,7 +388,8 @@ fn status(app: &App, width: usize) -> Line<'static> {
 }
 
 fn show_cursor(frame: &mut Frame, app: &App, area: Rect, (column, row): (usize, usize)) {
-    if app.panel.is_none() && app.focus == Focus::Input {
+    let polling = app.poll.as_ref().is_some_and(|poll| poll.active);
+    if app.panel.is_none() && app.focus == Focus::Input && !polling {
         let x = area.x + PROMPT.width() as u16 + column as u16;
         frame.set_cursor_position(Position::new(x, area.y + row as u16));
     }
