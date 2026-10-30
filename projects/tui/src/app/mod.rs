@@ -35,7 +35,7 @@ pub use panels::{
 pub use thread::goal::{GoalButton, GoalHit};
 pub use thread::poll::{Poll, PollHit, PollTarget};
 pub use thread::queue::{QueueButton, QueueHit};
-pub use thread::transcript::{Entry, Layout, Tone, Transcript};
+pub use thread::transcript::{Entry, ImageSpot, Layout, Tone, Transcript};
 
 /// What the session does for the app.
 pub enum Action {
@@ -275,6 +275,10 @@ pub struct App {
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
+    /// Image previews wholly on screen in the last frame, and the pictures drawn over
+    /// them where the terminal can.
+    pub previews: Vec<(Rect, dusk_core::state::artifacts::ImageArtifact)>,
+    pub pictures: crate::host::graphics::Pictures,
     /// What the folder of a path being typed holds.
     pub paths: Option<PathPopup>,
     pub subagents: Vec<SubagentView>,
@@ -374,6 +378,8 @@ impl App {
             git: None,
             quit_armed: None,
             command_popup: None,
+            previews: Vec::new(),
+            pictures: Default::default(),
             subagents: Vec::new(),
             tasks: Vec::new(),
             mcp: Vec::new(),

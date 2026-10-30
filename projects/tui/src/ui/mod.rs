@@ -111,4 +111,22 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     input::draw_commands(frame, body, app);
     input::draw_paths(frame, body, app);
     panels::draw(frame, screen, app);
+    pictures(frame, app);
+}
+
+/// Pictures over the previews, unless something is drawn on top of the thread: the
+/// terminal paints them above every cell, so a window would be hidden under them.
+fn pictures(frame: &mut Frame, app: &App) {
+    let covered = app.panel.is_some()
+        || app.sidebar_overlay.is_some()
+        || app.command_popup.is_some()
+        || app.paths.is_some();
+    if covered {
+        return;
+    }
+    for (area, artifact) in &app.previews {
+        app.pictures.draw(frame, *area, artifact, || {
+            app.transcript.images.original(artifact)
+        });
+    }
 }

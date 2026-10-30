@@ -24,11 +24,20 @@ const STACK_AT: usize = 60;
 const GAP: usize = 2;
 const BACKGROUND: [u8; 3] = [30, 27, 42];
 
+/// Where a card's preview is: its first row in the card's lines and its size in cells.
+/// The preview starts at the card's left edge.
+#[derive(Clone, Copy)]
+pub struct Preview {
+    pub row: usize,
+    pub width: u16,
+    pub height: u16,
+}
+
 pub fn render(
     transcript: &Transcript,
     artifact: &ImageArtifact,
     width: usize,
-) -> Vec<Line<'static>> {
+) -> (Vec<Line<'static>>, Option<Preview>) {
     let width = width.max(2);
     let stacked = width < STACK_AT;
     let thumbnail_width = THUMBNAIL_WIDTH.min(if stacked { width } else { width / 2 });
@@ -67,6 +76,7 @@ pub fn render(
             .map(Line::from),
     );
 
+    let mut spot = None;
     let preview = match transcript.images.thumbnail(artifact) {
         Some(image) => {
             let scale = (thumbnail_width as f64 / image.width() as f64)
@@ -74,6 +84,11 @@ pub fn render(
             let w = ((image.width() as f64 * scale).floor() as u32).max(1);
             let h = ((image.height() as f64 * scale).floor() as u32).max(1);
             let image = imageops::resize(&*image, w, h, FilterType::Lanczos3);
+            spot = Some(Preview {
+                row: 0,
+                width: w as u16,
+                height: h.div_ceil(2) as u16,
+            });
             (0..h)
                 .step_by(2)
                 .map(|y| {
@@ -131,11 +146,15 @@ pub fn render(
         )
         .len();
         let mut lines = text.drain(..title_lines).collect::<Vec<_>>();
+        let spot = spot.map(|spot| Preview {
+            row: lines.len(),
+            ..spot
+        });
         lines.extend(preview);
         lines.extend(text);
-        return lines;
+        return (lines, spot);
     }
-    (0..preview.len().max(text.len()))
+    let lines = (0..preview.len().max(text.len()))
         .map(|row| {
             let mut spans = preview
                 .get(row)
@@ -147,7 +166,8 @@ pub fn render(
             }
             Line::from(spans)
         })
-        .collect()
+        .collect();
+    (lines, spot)
 }
 
 fn plain(text: &str) -> String {

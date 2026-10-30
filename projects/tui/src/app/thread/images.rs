@@ -3,11 +3,14 @@
 use std::{cell::RefCell, collections::VecDeque, io::Cursor, sync::Arc};
 
 use dusk_core::state::artifacts::{ArtifactStore, ImageArtifact};
-use image::{ImageFormat, ImageReader, Limits, RgbaImage};
+use image::{DynamicImage, ImageFormat, ImageReader, Limits, RgbaImage};
 
 const CACHE_SIZE: usize = 32;
 const THUMBNAIL_EDGE: u32 = 256;
 const DECODE_LIMIT: u64 = 2 * 1024 * 1024;
+/// The core stores images of at most 4 megapixels; these bounds hold well above that.
+const ORIGINAL_EDGE: u32 = 8192;
+const ORIGINAL_LIMIT: u64 = 64 * 1024 * 1024;
 
 type Thumbnail = (ImageArtifact, Option<Arc<RgbaImage>>);
 
@@ -44,6 +47,23 @@ impl Images {
         }
         cache.push_back((artifact.clone(), image.clone()));
         image
+    }
+
+    /// The stored image itself, for terminals that draw it in full; read from disk only.
+    pub fn original(&self, artifact: &ImageArtifact) -> Option<DynamicImage> {
+        let bytes = self.store.as_ref()?.read(artifact).ok()?;
+        let format = match artifact.mime_type.as_str() {
+            "image/png" => ImageFormat::Png,
+            "image/jpeg" => ImageFormat::Jpeg,
+            _ => return None,
+        };
+        let mut limits = Limits::default();
+        limits.max_image_width = Some(ORIGINAL_EDGE);
+        limits.max_image_height = Some(ORIGINAL_EDGE);
+        limits.max_alloc = Some(ORIGINAL_LIMIT);
+        let mut reader = ImageReader::with_format(Cursor::new(bytes), format);
+        reader.limits(limits);
+        reader.decode().ok()
     }
 
     fn read(&self, artifact: &ImageArtifact) -> Option<RgbaImage> {
