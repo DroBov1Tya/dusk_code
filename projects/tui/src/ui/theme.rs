@@ -7,6 +7,8 @@ use ratatui::style::{Color, Modifier, Style};
 pub const VIOLET: Color = Color::Rgb(157, 124, 255);
 pub const ROSE: Color = Color::Rgb(240, 122, 176);
 pub const SUN: Color = Color::Rgb(255, 180, 84);
+/// The bar of the answer that ends a turn.
+pub const ORANGE: Color = Color::Rgb(255, 140, 66);
 pub const EMBER: Color = Color::Rgb(255, 99, 99);
 pub const TEAL: Color = Color::Rgb(94, 214, 194);
 /// Thinking, hints and anything said in passing.
