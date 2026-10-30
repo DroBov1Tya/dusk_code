@@ -19,10 +19,15 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         Span::styled("dusk", bold(VIOLET)),
         Span::styled(format!("  {DOT}  "), fg(NIGHT)),
     ];
-    let effort = format!(
-        " effort {} ",
-        app.effort.map_or("default", |effort| effort.name())
-    );
+    // The rail shows the effort; without it, the header does.
+    let effort = if app.sidebar_visible && !app.compact_layout {
+        String::new()
+    } else {
+        format!(
+            " effort {} ",
+            app.effort.map_or("default", |effort| effort.name())
+        )
+    };
     let effort_width = effort.width().min(area.width as usize);
     let title_area = Rect {
         width: area.width.saturating_sub(effort_width as u16),
@@ -38,7 +43,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     spans.push(title);
     frame.render_widget(Paragraph::new(Line::from(spans)), title_area);
     frame.render_widget(
-        Paragraph::new(Span::styled(effort, bold(SUN))).right_aligned(),
+        Paragraph::new(Span::styled(effort, thought())).right_aligned(),
         Rect {
             x: area.right().saturating_sub(effort_width as u16),
             width: effort_width as u16,

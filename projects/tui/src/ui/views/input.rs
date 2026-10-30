@@ -13,8 +13,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        EMBER, GLOW, HAZE, HORIZON_DARK, INPUT_BG, NIGHT, ROSE, SELECTED, SUN, TEAL, VIOLET, bold,
-        dim, fg, thought,
+        EMBER, GLOW, HAZE, INPUT_BG, NIGHT, ROSE, SELECTED, SUN, TEAL, VIOLET, bold, dim, fg,
+        thought,
     },
     transcript::spinner,
     wrap,
@@ -32,8 +32,10 @@ const MAX_ROWS: usize = 10;
 /// Queued messages shown above the box; older ones wait unseen.
 const MAX_QUEUED: usize = 4;
 const PROMPT: &str = " \u{203A} ";
-/// Rows around the text: the rule above, and a blank row on each side of the text.
+/// Rows around the text: a blank row to breathe, then the card's two edges.
 const FRAME_ROWS: u16 = 3;
+/// Columns between the card's edge and its text on each side: the edge and one blank.
+const SIDE: u16 = 2;
 
 /// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
@@ -116,18 +118,29 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(queued),
         ..area
     };
-    let rule = Rect { height: 1, ..area };
-    frame.render_widget(Paragraph::new(status(app, area.width as usize)), rule);
+    // The message is a card: what the agent does on its top edge, what is below on the
+    // right of it, and the text inside with a column of air on each side.
     let box_area = Rect {
         y: area.y + 1,
         height: area.height.saturating_sub(1),
         ..area
     };
-    frame.render_widget(Block::new().style(Style::new().bg(INPUT_BG)), box_area);
+    let (doing, below) = status(app);
+    let edge = if app.is_busy() { SELECTED } else { NIGHT };
+    let mut card = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(fg(edge))
+        .style(Style::new().bg(INPUT_BG))
+        .title(Line::from(doing));
+    if !below.is_empty() {
+        card = card.title(Line::from(Span::styled(format!(" {below} "), fg(SUN))).right_aligned());
+    }
+    frame.render_widget(card, box_area);
     let text_area = Rect {
+        x: box_area.x + SIDE,
         y: box_area.y + 1,
+        width: box_area.width.saturating_sub(2 * SIDE),
         height: box_area.height.saturating_sub(2),
-        ..box_area
     };
     app.input_chips.clear();
     app.input_rows.clear();
@@ -541,7 +554,8 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
 }
 
 /// The rule: what the agent is doing and how far the transcript is scrolled.
-fn status(app: &App, width: usize) -> Line<'static> {
+/// What goes on the card's top edge, and the note for its right end.
+fn status(app: &App) -> (Vec<Span<'static>>, String) {
     let doing = match (&app.activity, app.focus) {
         (Activity::Idle, Focus::Browse(_)) => {
             vec![Span::styled("up/down move  enter fold  esc back", dim())]
@@ -583,27 +597,14 @@ fn status(app: &App, width: usize) -> Line<'static> {
         (None, 0) => String::new(),
         (None, scroll) => format!("{scroll} lines below"),
     };
-    let mut doing = doing;
+    let mut spans = vec![Span::raw(" ")];
     if !app.mode.is_empty() {
-        doing.insert(0, Span::raw(" "));
-        doing.insert(0, mode_chip(&app.mode));
+        spans.push(mode_chip(&app.mode));
+        spans.push(Span::raw("  "));
     }
-    let left_width: usize = doing.iter().map(Span::width).sum::<usize>() + 4;
-    let right_width = below.width() + 2;
-    let fill_width = width.saturating_sub(left_width + right_width);
-    let mut spans = vec![Span::styled(
-        format!("{HORIZON_DARK}{HORIZON_DARK} "),
-        fg(NIGHT),
-    )];
     spans.extend(doing);
-    spans.push(Span::styled(
-        format!(" {} ", HORIZON_DARK.repeat(fill_width)),
-        fg(NIGHT),
-    ));
-    if !below.is_empty() {
-        spans.push(Span::styled(format!(" {below} "), fg(SUN)));
-    }
-    Line::from(spans)
+    spans.push(Span::raw(" "));
+    (spans, below)
 }
 
 fn show_cursor(frame: &mut Frame, app: &App, area: Rect, (column, row): (usize, usize)) {
@@ -615,7 +616,9 @@ fn show_cursor(frame: &mut Frame, app: &App, area: Rect, (column, row): (usize, 
 }
 
 fn text_width(width: u16) -> usize {
-    (width as usize).saturating_sub(PROMPT.width() + 1).max(1)
+    (width as usize)
+        .saturating_sub(PROMPT.width() + 1 + 2 * SIDE as usize)
+        .max(1)
 }
 
 /// A row of the box: its spans, where its chips are as (from, to, paste index), and where

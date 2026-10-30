@@ -1,5 +1,5 @@
-//! Drawing the app. The statistics rail fills the left edge; the thread and
-//! message box occupy the right side at wider terminal widths.
+//! Drawing the app. The statistics rail fills the left edge on a colour of its own; the
+//! thread and the message card take the rest, with air between them and no rule.
 
 mod loader;
 pub mod screen;
@@ -12,13 +12,14 @@ use views::{header, input, panels, sidebar, transcript};
 use ratatui::{
     Frame,
     layout::{Constraint, Layout, Rect},
-    widgets::{Block, Borders},
 };
 
 use crate::app::App;
 
 const SPLIT_AT: u16 = 84;
-const SIDEBAR_WIDTH: u16 = 28;
+const SIDEBAR_WIDTH: u16 = 30;
+/// Columns of air between the rail and the thread; the rail's own colour divides them.
+const GAP: u16 = 2;
 
 /// Braille dots that turn in the tab title while the agent works, as the tab is all a
 /// user sees of a terminal in the background.
@@ -44,8 +45,8 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     let sidebar_visible = !app.compact_layout && app.sidebar_visible;
     let main = if sidebar_visible {
         Rect {
-            x: screen.x + SIDEBAR_WIDTH + 1,
-            width: screen.width - SIDEBAR_WIDTH - 1,
+            x: screen.x + SIDEBAR_WIDTH + GAP,
+            width: screen.width - SIDEBAR_WIDTH - GAP,
             ..screen
         }
     } else {
@@ -89,17 +90,5 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     input::draw(frame, bottom, app);
     input::draw_commands(frame, body, app);
     input::draw_paths(frame, body, app);
-    if sidebar_visible {
-        frame.render_widget(
-            Block::default()
-                .borders(Borders::LEFT)
-                .border_style(theme::fg(theme::SIDEBAR_EDGE)),
-            Rect {
-                x: screen.x + SIDEBAR_WIDTH,
-                width: 1,
-                ..screen
-            },
-        );
-    }
     panels::draw(frame, screen, app);
 }

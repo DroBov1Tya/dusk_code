@@ -356,10 +356,11 @@ fn from_agent(thread_id: &str, text: &str, open: bool, width: usize) -> Vec<Line
     })
 }
 
-/// A sent message behind its bar; each pasted block is one line until opened.
+/// A sent message on a soft card behind its bar, with a row of air above and below;
+/// each pasted block is one line until opened.
 fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     let bar = || Span::styled(format!(" {USER_BAR} "), fg(ROSE));
-    let mut lines = Vec::new();
+    let mut lines = vec![Line::from(bar())];
     for part in paste::split(text) {
         match part {
             Part::Text(text) => lines.extend(
@@ -385,7 +386,25 @@ fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
             }
         }
     }
+    lines.push(Line::from(bar()));
+    // The card reaches the right edge: the bar, the text and the air after it.
+    let full = width + 3;
     lines
+        .into_iter()
+        .map(|line| {
+            let pad = full.saturating_sub(line.width());
+            let mut spans: Vec<Span> = line
+                .spans
+                .into_iter()
+                .map(|span| {
+                    let style = span.style.bg(GLOW);
+                    span.style(style)
+                })
+                .collect();
+            spans.push(Span::styled(" ".repeat(pad), Style::new().bg(GLOW)));
+            Line::from(spans)
+        })
+        .collect()
 }
 
 /// Whether the answer at `index` is the last word of its turn: no tool call follows it.
