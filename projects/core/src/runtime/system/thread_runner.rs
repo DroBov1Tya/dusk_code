@@ -19,12 +19,12 @@ use tokio::sync::mpsc;
 use super::{ThreadLock, model_choice::ModelChoice};
 use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
 use crate::{
-    chat::commands,
+    chat::{commands, goal},
     config::live::LiveConfig,
     providers::{ModelEvent, ToolCall},
     state::{
-        Compaction, LocalUnsent, Message, PendingMessage, State, Task, ThreadTokens, Turn,
-        estimate_tokens,
+        Compaction, Goal, GoalStatus, LocalUnsent, Message, PendingMessage, State, Task,
+        ThreadTokens, Turn, TurnStatus, estimate_tokens,
     },
     tools::{Question, ToolRegistry, ToolResult, ToolScope},
 };
@@ -161,6 +161,14 @@ pub enum ThreadEvent {
     Question(Question),
     /// Another agent wrote to this thread; the message has joined it.
     FromAgent(Message),
+    /// The standing goal changed, or the thread opened with one; `note` says what
+    /// happened in a line.
+    Goal {
+        goal: Option<Goal>,
+        note: String,
+        /// The message queued to start work on it, for a client to show as sent.
+        started: Option<String>,
+    },
     /// /fork wrote its summary; a client opens a new thread that starts from it.
     Forked {
         summary: String,
@@ -235,8 +243,18 @@ impl ThreadRunner {
 
     async fn serve(&mut self) -> Result<()> {
         self.agent.recover().await?;
-        // The client sees the context size before the first turn, too.
+        // The client sees the context size and the goal before the first turn, too.
         self.agent.report_tokens().await;
+        if self.agent.depth == 0
+            && let Some(goal) = self.agent.state.goal(&self.agent.thread_id).await?
+        {
+            let note = goal::describe(&goal);
+            self.agent.emit(ThreadEvent::Goal {
+                goal: Some(goal),
+                note,
+                started: None,
+            });
+        }
         loop {
             if self.agent.model.current().is_none() {
                 self.agent.emit(ThreadEvent::Idle);
@@ -274,23 +292,89 @@ impl ThreadRunner {
     /// Runs turns until nothing is queued, the user cancels or the context does not fit.
     /// The context is compacted first when it has grown too large. What was sent
     /// meanwhile is taken in after each turn, so the next one answers it.
+    /// An active goal starts the next turn itself once nothing else is queued.
     async fn run_queued(&mut self) -> Result<()> {
+        let mut ran = false;
+        let mut failed = false;
         loop {
             let stop = match self.agent.compact_if_needed(None, &mut self.inbox).await {
                 Some(stop) => Some(stop),
                 None => match self.agent.start_turn().await? {
-                    Some(turn) => match self.agent.run_turn(&turn, &mut self.inbox).await? {
-                        Some(stop) => Some(stop),
-                        None => self.agent.name_thread(&mut self.inbox).await,
-                    },
+                    Some(turn) => {
+                        ran = true;
+                        let (stop, status) = self.agent.run_turn(&turn, &mut self.inbox).await?;
+                        failed = status == TurnStatus::Failed;
+                        match stop {
+                            Some(stop) => Some(stop),
+                            None => self.agent.name_thread(&mut self.inbox).await,
+                        }
+                    }
+                    // Only a turn that ran goes on to the next round: a context too
+                    // large to start one would start none forever.
+                    // A failing turn would fail again: the goal waits for the user.
+                    None if ran && failed => {
+                        self.pause_goal("the last turn failed").await?;
+                        return Ok(());
+                    }
+                    None if ran && self.next_goal_round().await? => {
+                        ran = false;
+                        continue;
+                    }
                     None => return Ok(()),
                 },
             };
             self.take_in().await?;
             if stop == Some(Stop::Cancelled) {
+                self.pause_goal("stopped by the user").await?;
                 return self.cancel_agents().await;
             }
         }
+    }
+
+    /// Queues the next round of an active goal, or pauses it when the rounds are spent.
+    /// Returns whether a round was queued.
+    async fn next_goal_round(&mut self) -> Result<bool> {
+        let Some(goal) = self.agent.active_goal().await? else {
+            return Ok(false);
+        };
+        let rounds = self.agent.config.current().limits().max_goal_rounds;
+        if goal.rounds >= rounds {
+            self.pause_goal(&format!("all {rounds} rounds used"))
+                .await?;
+            return Ok(false);
+        }
+        let state = &self.agent.state;
+        let Some(goal) = state.count_goal_round(&self.agent.thread_id).await? else {
+            return Ok(false);
+        };
+        let kickoff = goal::kickoff(&goal, rounds);
+        state.add_pending(&self.agent.thread_id, &kickoff).await?;
+        let note = format!("goal round {} of {rounds}", goal.rounds);
+        self.agent.emit(ThreadEvent::Goal {
+            goal: Some(goal),
+            note,
+            started: Some(kickoff),
+        });
+        self.take_in().await?;
+        Ok(true)
+    }
+
+    async fn pause_goal(&self, reason: &str) -> Result<()> {
+        if self.agent.active_goal().await?.is_none() {
+            return Ok(());
+        }
+        let goal = self.agent.state.set_goal_status(
+            &self.agent.thread_id,
+            GoalStatus::Paused,
+            Some(reason),
+        );
+        let goal = goal.await?;
+        self.agent.emit(ThreadEvent::Goal {
+            goal,
+            note: format!("goal paused: {reason}"),
+            started: None,
+        });
+        Ok(())
     }
 
     /// Takes in what clients sent, oldest first: messages join the thread, commands run.
@@ -636,6 +720,54 @@ mod tests {
             .into_iter()
             .map(|message| (message.role, message.content))
             .collect()
+    }
+
+    #[tokio::test]
+    async fn a_goal_goes_on_round_after_round_until_they_run_out() {
+        let state = thread_state("goal_rounds").await;
+        let config = Arc::new(temp_live_config_with(
+            "goal_config",
+            "limits:\n  max_goal_rounds: 2\n",
+        ));
+        let answer = vec![Step::Text("working"), Step::Done];
+        // One more for the title the thread gets after its first turn.
+        let provider = provider(vec![answer.clone(); 4]);
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        let client = async move {
+            input.send("/goal build it").await.unwrap();
+            loop {
+                if let Some(ThreadEvent::Goal {
+                    goal: Some(goal), ..
+                }) = output.next_event().await
+                    && goal.status == GoalStatus::Paused
+                {
+                    return goal;
+                }
+            }
+        };
+
+        let (_, goal) = tokio::join!(runner.run(), client);
+        assert_eq!(goal.rounds, 2);
+        assert_eq!(goal.note.as_deref(), Some("all 2 rounds used"));
+        let users: Vec<_> = transcript(&state)
+            .await
+            .into_iter()
+            .filter(|(role, _)| *role == MessageRole::User)
+            .map(|(_, text)| text)
+            .collect();
+        assert_eq!(
+            users,
+            [
+                "Goal: build it",
+                "Continue toward the goal (round 1 of 2): build it",
+                "Continue toward the goal (round 2 of 2): build it",
+            ]
+        );
+        let requests = provider.requests.lock().unwrap();
+        assert!(matches!(
+            requests[0].last(),
+            Some(ChatMessage::System(text)) if text.starts_with("Standing goal")
+        ));
     }
 
     #[tokio::test]

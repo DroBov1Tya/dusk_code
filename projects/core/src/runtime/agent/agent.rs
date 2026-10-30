@@ -17,13 +17,17 @@ use crate::runtime::{
     },
 };
 use crate::{
+    chat::goal,
     config::live::LiveConfig,
     config::{Config, Effort},
     providers::{
-        ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
+        ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
         is_unsupported_effort,
     },
-    state::{CallPurpose, MessageRole, ModelCall, State, Turn, TurnAnswer, TurnOutcome},
+    state::{
+        CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, State, Turn, TurnAnswer,
+        TurnOutcome, TurnStatus,
+    },
     tools::{Progress, ToolRegistry, ToolScope},
 };
 
@@ -83,8 +87,13 @@ impl Agent {
         Ok(turn)
     }
 
-    /// Runs the turn to its end and records it. Returns why it stopped early, if it did.
-    pub async fn run_turn(&self, turn: &Turn, inbox: &mut Inbox) -> Result<Option<Stop>> {
+    /// Runs the turn to its end and records it. Returns why it stopped early, if it did,
+    /// and how it ended.
+    pub async fn run_turn(
+        &self,
+        turn: &Turn,
+        inbox: &mut Inbox,
+    ) -> Result<(Option<Stop>, TurnStatus)> {
         let mut outcome =
             TurnOutcome::Failed(format!("the model made more than {MAX_STEPS} tool steps"));
         let mut stop = None;
@@ -132,9 +141,19 @@ impl Agent {
                 self.thread_id, turn.turn_id, turn.status
             ),
         }
+        let status = turn.status;
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;
-        Ok(stop)
+        Ok((stop, status))
+    }
+
+    /// Only a chat has a goal: the user and the chat's own model set it.
+    pub async fn active_goal(&self) -> Result<Option<Goal>> {
+        if self.depth > 0 {
+            return Ok(None);
+        }
+        let goal = self.state.goal(&self.thread_id).await?;
+        Ok(goal.filter(|goal| goal.status == GoalStatus::Active))
     }
 
     /// Messages from other agents join the running turn, so the next step reads them.
@@ -198,7 +217,12 @@ impl Agent {
         if let Some(error) = self.context_too_large(&conversation, &tools) {
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
-        let messages = conversation.chat_messages();
+        let mut messages = conversation.chat_messages();
+        // The goal is said last, so it stays in view however long the context grows.
+        if let Some(goal) = self.active_goal().await? {
+            let rounds = config.limits().max_goal_rounds;
+            messages.push(ChatMessage::System(goal::reminder(&goal, rounds)));
+        }
         let choice = self.model.current().context("provider is unavailable")?;
         let request = ChatRequest {
             model: &choice.model.id,

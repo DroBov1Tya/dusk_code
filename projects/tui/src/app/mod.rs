@@ -6,6 +6,7 @@ mod composer;
 mod images;
 mod keys;
 pub use keys::EFFORTS;
+mod goal;
 mod panels;
 mod poll;
 mod queue;
@@ -24,11 +25,12 @@ use dusk_core::{
     mcp::McpStatus,
     providers::ModelEvent,
     runtime::ThreadEvent,
-    state::{LocalUnsent, Message, Task, ThreadTokens, TurnStatus},
+    state::{Goal, LocalUnsent, Message, Task, ThreadTokens, TurnStatus},
 };
 use ratatui::layout::Rect;
 
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
+pub use goal::{GoalButton, GoalHit};
 use panels::agents;
 pub use panels::{
     AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, ModelList, Panel,
@@ -50,6 +52,7 @@ pub enum Action {
         api_key: Option<String>,
     },
     SetAgentLimit(usize),
+    SetGoalRounds(u32),
     SetContextPolicy(ContextPolicy),
     /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {
@@ -274,6 +277,11 @@ pub struct App {
     pub subagents: Vec<SubagentView>,
     /// The agent's task board in the open thread.
     pub tasks: Vec<Task>,
+    /// The open thread's standing goal.
+    pub goal: Option<Goal>,
+    /// Rounds a goal may run before it pauses, as the config says.
+    pub goal_rounds: u32,
+    pub goal_hits: Vec<GoalHit>,
     /// The MCP servers of the config, as the core last reported them.
     pub mcp: Vec<McpStatus>,
     pub turn_started_at: Option<i64>,
@@ -343,6 +351,9 @@ impl App {
             editor_hits: Vec::new(),
             queued: Vec::new(),
             queue_hits: Vec::new(),
+            goal: None,
+            goal_rounds: config.current().limits().max_goal_rounds,
+            goal_hits: Vec::new(),
             poll: None,
             forked: None,
             hover: None,
@@ -401,6 +412,7 @@ impl App {
         self.mcp_max_scroll = 0;
         self.subagents.clear();
         self.tasks.clear();
+        self.goal = None;
         self.turn_started_at = None;
         self.last_turn_duration_ms = None;
         self.output_samples.clear();
@@ -597,6 +609,11 @@ impl App {
                     .push(Entry::from_agent(from, message.content));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::Goal {
+                goal,
+                note,
+                started,
+            } => self.goal_changed(goal, note, started),
             ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
             ThreadEvent::AnswerCut { error } => self.error(format!(
                 "the answer broke off ({error}); what it wrote is kept"

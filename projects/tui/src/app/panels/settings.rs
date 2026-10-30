@@ -91,6 +91,7 @@ pub struct SettingsView {
     pub manual_context: Option<Input>,
     pub model_error: Option<String>,
     pub max_agents_at_work: usize,
+    pub max_goal_rounds: u32,
     pub memory: Memory,
     pub update_channel: Channel,
     /// The mode whose tools are shown.
@@ -167,7 +168,7 @@ pub struct SettingsHit {
 }
 
 /// The agent limit takes the first row of the agents list.
-const LIMIT_ROWS: usize = 1;
+const LIMIT_ROWS: usize = 2;
 const PAGE: usize = 20;
 const WHEEL: usize = 3;
 
@@ -184,6 +185,7 @@ impl SettingsView {
             manual_context: None,
             model_error: None,
             max_agents_at_work: settings.max_agents_at_work,
+            max_goal_rounds: settings.max_goal_rounds,
             mode: settings.mode,
             memory: settings.memory,
             update_channel: settings.update_channel,
@@ -523,6 +525,14 @@ impl App {
                 KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+'),
             ) if view.selected < LIMIT_ROWS => {
                 let more = matches!(key.code, KeyCode::Right | KeyCode::Char('+'));
+                if view.selected == 1 {
+                    let rounds = if more {
+                        view.max_goal_rounds.saturating_add(1)
+                    } else {
+                        view.max_goal_rounds.saturating_sub(1).max(1)
+                    };
+                    return Action::SetGoalRounds(rounds);
+                }
                 let limit = if more {
                     view.max_agents_at_work.saturating_add(1)
                 } else {

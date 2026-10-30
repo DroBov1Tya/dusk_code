@@ -234,6 +234,16 @@ pub async fn run(
                 }
                 Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
             },
+            Action::SetGoalRounds(rounds) => match runtime.set_max_goal_rounds(rounds) {
+                Ok(()) => {
+                    if let Some(Panel::Settings(list)) = &mut app.panel {
+                        list.max_goal_rounds = rounds;
+                    }
+                    app.goal_rounds = rounds;
+                    app.flash = Some(format!("Goal rounds: {rounds}"));
+                }
+                Err(error) => app.error(format!("cannot save the goal rounds: {error:#}")),
+            },
             Action::Switch { kind, name, on } => {
                 let saved = match kind {
                     SwitchKind::Agent => runtime.set_agent_enabled(&name, on),

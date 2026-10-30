@@ -1,7 +1,8 @@
 //! What a thread is made of: its record, messages, turns, the messages waiting for it,
-//! compactions, token usage and the agent's task board.
+//! compactions, token usage, the agent's task board and the standing goal.
 
 mod compactions;
+mod goals;
 mod local_unsent;
 mod messages;
 mod pending;
@@ -11,6 +12,7 @@ mod tokens;
 mod turns;
 
 pub use compactions::Compaction;
+pub use goals::{Goal, GoalStatus};
 pub use local_unsent::LocalUnsent;
 pub use messages::{Message, MessageRole, estimate_tokens};
 pub use pending::PendingMessage;

@@ -27,8 +27,8 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AskAgent, AskUser, DisplayImage, McpTool, MessageParent, ReadHistory, Remember, Tasks,
-        ToolRegistry, ToolScope,
+        AskAgent, AskUser, DisplayImage, GoalTool, McpTool, MessageParent, ReadHistory, Remember,
+        Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -108,6 +108,10 @@ impl Launcher {
         // Only a chat has the user to ask.
         if depth == 0 {
             tools.add(Box::new(AskUser));
+            tools.add(Box::new(GoalTool::new(
+                Arc::clone(&self.state),
+                thread_id.to_owned(),
+            )));
             tools.add(Box::new(DisplayImage::new(ArtifactStore::new(
                 self.paths.artifacts_dir(),
             ))));

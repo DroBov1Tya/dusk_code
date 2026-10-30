@@ -19,9 +19,11 @@ use super::{
     transcript::spinner,
     wrap,
 };
+use dusk_core::state::GoalStatus;
+
 use crate::app::{
-    Activity, App, ChipHit, Focus, Input, InputRow, PollHit, PollTarget, QueueButton, QueueHit,
-    commands, paste,
+    Activity, App, ChipHit, Focus, GoalButton, GoalHit, Input, InputRow, PollHit, PollTarget,
+    QueueButton, QueueHit, commands, paste,
 };
 use crate::git::GitSummary;
 
@@ -37,6 +39,7 @@ const FRAME_ROWS: u16 = 3;
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
     poll_rows(app)
+        + goal_rows(app)
         + queue_rows(app)
         + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16
         + FRAME_ROWS
@@ -48,6 +51,10 @@ fn poll_rows(app: &App) -> u16 {
     app.poll
         .as_ref()
         .map_or(0, |poll| poll.question.options.len() as u16 + 5)
+}
+
+fn goal_rows(app: &App) -> u16 {
+    u16::from(app.goal.is_some())
 }
 
 fn queue_rows(app: &App) -> u16 {
@@ -79,6 +86,20 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     let area = Rect {
         height: area.height.saturating_sub(u16::from(app.git.is_some())),
+        ..area
+    };
+    let goal = goal_rows(app);
+    draw_goal(
+        frame,
+        Rect {
+            height: goal,
+            ..area
+        },
+        app,
+    );
+    let area = Rect {
+        y: area.y + goal,
+        height: area.height.saturating_sub(goal),
         ..area
     };
     let queued = queue_rows(app);
@@ -296,6 +317,53 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
 
 /// The messages waiting for the turn to end, each with its buttons; the newest are shown
 /// when there are more than fit.
+/// The standing goal in a line: its state, the round and the text, then its buttons.
+fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
+    app.goal_hits.clear();
+    let Some(goal) = &app.goal else {
+        return;
+    };
+    let (color, toggle) = match goal.status {
+        GoalStatus::Active => (TEAL, " pause "),
+        GoalStatus::Paused => (SUN, " resume "),
+        GoalStatus::Done => (VIOLET, " resume "),
+    };
+    const CLEAR: &str = " \u{00D7} ";
+    let head = format!(
+        "   \u{25CE} goal {}  {}/{}  ",
+        goal.status.name(),
+        goal.rounds,
+        app.goal_rounds
+    );
+    let buttons = toggle.width() + CLEAR.width() + 1;
+    let room = (area.width as usize).saturating_sub(head.width() + buttons + 1);
+    let text = wrap::clip(&goal.text.replace('\n', " "), room);
+    let gap = room.saturating_sub(text.width()) + 1;
+    let toggle_left = area.x + (head.width() + text.width() + gap) as u16;
+    let clear_left = toggle_left + toggle.width() as u16 + 1;
+    app.goal_hits.push(GoalHit {
+        row: area.y,
+        left: toggle_left,
+        right: toggle_left + toggle.width() as u16,
+        button: GoalButton::Toggle,
+    });
+    app.goal_hits.push(GoalHit {
+        row: area.y,
+        left: clear_left,
+        right: clear_left + CLEAR.width() as u16,
+        button: GoalButton::Clear,
+    });
+    let line = Line::from(vec![
+        Span::styled(head, bold(color)),
+        Span::raw(text),
+        Span::raw(" ".repeat(gap)),
+        Span::styled(toggle, fg(color).bg(GLOW)),
+        Span::raw(" "),
+        Span::styled(CLEAR, fg(EMBER).bg(GLOW)),
+    ]);
+    frame.render_widget(Paragraph::new(line), area);
+}
+
 fn draw_queue(frame: &mut Frame, area: Rect, app: &mut App) {
     app.queue_hits.clear();
     let skip = app.queued.len().saturating_sub(area.height as usize);

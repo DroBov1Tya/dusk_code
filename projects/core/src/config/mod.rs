@@ -351,6 +351,9 @@ pub struct Limits {
     /// Maximum number of subagents running across all threads.
     #[serde(default = "default_max_agents_at_work")]
     pub max_agents_at_work: usize,
+    /// Turns a goal may start by itself before it is paused for the user.
+    #[serde(default = "default_max_goal_rounds")]
+    pub max_goal_rounds: u32,
 }
 
 impl Default for Limits {
@@ -359,6 +362,7 @@ impl Default for Limits {
             max_input_tokens: default_token_limit(),
             max_output_tokens: default_token_limit(),
             max_agents_at_work: default_max_agents_at_work(),
+            max_goal_rounds: default_max_goal_rounds(),
         }
     }
 }
@@ -369,6 +373,10 @@ fn default_token_limit() -> u64 {
 
 fn default_max_agents_at_work() -> usize {
     8
+}
+
+fn default_max_goal_rounds() -> u32 {
+    10
 }
 
 /// What a thread stores from the model output. User messages are always stored.
@@ -539,6 +547,10 @@ impl Config {
         self.limits.max_agents_at_work = limit;
     }
 
+    pub fn set_max_goal_rounds(&mut self, rounds: u32) {
+        self.limits.max_goal_rounds = rounds;
+    }
+
     pub fn agent_enabled(&self, name: &str) -> bool {
         self.agents.get(name).copied().unwrap_or(true)
     }
@@ -576,6 +588,10 @@ impl Config {
         ensure!(
             self.limits.max_agents_at_work > 0,
             "max_agents_at_work must be above zero"
+        );
+        ensure!(
+            self.limits.max_goal_rounds > 0,
+            "max_goal_rounds must be above zero"
         );
         ensure!(
             self.previous_effort != Some(Effort::Off),

@@ -650,6 +650,14 @@ impl App {
         if let Some(target) = polled {
             return Some(self.press_poll(target));
         }
+        let goal = self
+            .goal_hits
+            .iter()
+            .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
+            .map(|hit| hit.button);
+        if let Some(button) = goal {
+            return Some(self.press_goal(button));
+        }
         let queued = self
             .queue_hits
             .iter()
