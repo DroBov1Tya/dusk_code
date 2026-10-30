@@ -16,7 +16,7 @@ use super::{
     loader::{Loader, agent_name, identity},
     markdown,
     theme::{
-        DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, HAZE, ROSE, SELECTED, SPINNER, SUN,
+        DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, HAZE, ORANGE, ROSE, SELECTED, SPINNER, SUN,
         SUN_GLYPH, TEAL, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR, VIOLET, bold, dim, dusk, fg,
         thought,
     },
@@ -209,7 +209,7 @@ pub fn thread_lines(
             let text = transcript.text(index).unwrap_or_default();
             vec![hidden_line(entry, &text)]
         } else {
-            entry_lines(entry, text_width, writing)
+            entry_lines(entry, text_width, writing, ends_turn(entries, index))
         };
         if browsed == Some(index)
             && let Some(header) = drawn.first_mut()
@@ -290,10 +290,31 @@ fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     lines
 }
 
+/// Whether the answer at `index` is the last word of its turn: no tool call follows it.
+fn ends_turn(entries: &[Entry], index: usize) -> bool {
+    let next = entries[index + 1..]
+        .iter()
+        .find(|entry| !matches!(entry, Entry::Reasoning { .. } | Entry::Notice { .. }));
+    matches!(entries[index], Entry::Answer(_)) && !matches!(next, Some(Entry::Tool { .. }))
+}
+
 /// `live` is set while the entry is still being written.
-fn entry_lines(entry: &Entry, width: usize, live: Option<&App>) -> Vec<Line<'static>> {
+fn entry_lines(
+    entry: &Entry,
+    width: usize,
+    live: Option<&App>,
+    ends_turn: bool,
+) -> Vec<Line<'static>> {
     match entry {
         Entry::User { text, open } => user(text, *open, width),
+        Entry::Answer(text) if ends_turn => markdown::render(text.trim_end(), width)
+            .into_iter()
+            .map(|line| {
+                let mut spans = vec![Span::styled(format!(" {USER_BAR} "), fg(ORANGE))];
+                spans.extend(line.spans);
+                Line::from(spans).style(line.style)
+            })
+            .collect(),
         Entry::Answer(text) => indent(markdown::render(text.trim_end(), width), "   "),
         Entry::Reasoning { text, open } => {
             let marker = live.map_or(fold_mark(*open), |app| spinner(app));
