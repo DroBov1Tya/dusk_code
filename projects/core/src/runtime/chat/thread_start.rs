@@ -34,6 +34,14 @@ pub const NO_PROMPT: &str = "(no prompt)";
 pub const FORK_INTRO: &str = "This thread goes on from an earlier one, described below. Its \
 messages are not here; work from this description.\n\n";
 
+/// `cwd` as the one name a folder goes by, however it was reached.
+pub fn project_dir(cwd: &Path) -> String {
+    cwd.canonicalize()
+        .unwrap_or_else(|_| cwd.to_owned())
+        .to_string_lossy()
+        .into_owned()
+}
+
 /// The folder is created first, so a failed write leaves an empty folder rather than a
 /// thread without one. A chat's first message is the prompt of the mode it starts in.
 pub async fn start_thread(
@@ -41,12 +49,16 @@ pub async fn start_thread(
     paths: &Paths,
     source: &str,
     mode: &str,
+    cwd: &Path,
 ) -> Result<StartedThread> {
     let prompt = modes::prompt(&paths.modes_dir(), mode)?;
     let thread_id = Uuid::now_v7().to_string();
     let workspace = paths.thread_workspace(&thread_id)?;
     create_private_dir(&workspace)?;
     state.create_thread(&thread_id, source).await?;
+    state
+        .set_thread_project(&thread_id, &project_dir(cwd))
+        .await?;
     let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
     state.add_system_message(&thread_id, prompt).await?;
     Ok(StartedThread {

@@ -120,7 +120,7 @@ impl App {
             return self.panel_key(key);
         }
         match key.code {
-            KeyCode::Char('t') if ctrl => return Action::Command(Command::Resume),
+            KeyCode::Char('t') if ctrl => return Action::Command(Command::Resume { cwd: None }),
             KeyCode::Char('n') if ctrl => return Action::Command(Command::New),
             KeyCode::Char('o') if ctrl => return Action::Command(Command::Settings),
             KeyCode::Char('r') if ctrl => {

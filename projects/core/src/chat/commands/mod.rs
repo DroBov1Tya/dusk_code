@@ -16,6 +16,8 @@ mod undo;
 pub use context::{ContextReport, ContextSection, report as context_report};
 pub use settings::{Settings, ToolInfo};
 
+use std::path::PathBuf;
+
 use anyhow::{Context, Result, bail};
 
 use crate::{
@@ -37,8 +39,8 @@ use crate::{
 pub enum Command {
     /// Summarizes the context so far; the argument is extra instructions for the summary.
     Compact { instructions: Option<String> },
-    /// Lists the threads to open again.
-    Resume,
+    /// Lists the threads to open again; a client fills in the folder it runs in.
+    Resume { cwd: Option<PathBuf> },
     /// Leaves the open thread for a new one, created with its first message.
     New,
     /// Lists the providers with their models, or switches to `provider/model`.
@@ -159,7 +161,7 @@ impl Command {
                 ..
             } => undo::run(agent, sequence).await,
             Self::Undo { sequence: None, .. } => {}
-            Self::Resume
+            Self::Resume { .. }
             | Self::New
             | Self::Model { .. }
             | Self::Settings
@@ -172,7 +174,7 @@ impl Command {
 
     pub async fn answer(self, runtime: &Runtime) -> Result<Answer> {
         match self {
-            Self::Resume => Ok(Answer::Threads(resume::run(runtime).await?)),
+            Self::Resume { cwd } => Ok(Answer::Threads(resume::run(runtime, cwd).await?)),
             Self::New => Ok(Answer::NewThread),
             Self::Settings => Ok(Answer::Settings(settings::run(runtime).await?)),
             Self::Update { channel } => {
@@ -246,7 +248,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "fork" => Ok(Command::Fork {
             instructions: argument,
         }),
-        "resume" => Ok(Command::Resume),
+        "resume" => Ok(Command::Resume { cwd: None }),
         "new" => Ok(Command::New),
         "settings" => Ok(Command::Settings),
         "context" => Ok(Command::Context { thread_id: None }),
