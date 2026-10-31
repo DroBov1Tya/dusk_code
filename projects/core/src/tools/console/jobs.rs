@@ -25,7 +25,7 @@ use super::{
 use crate::{
     BoxFuture,
     runtime::agent::{Input, Mailboxes},
-    state::{BackgroundJob, State},
+    state::{BackgroundJob, JobSummary, State},
     tools::{Tool, ToolContext, ToolKind, builtin::parse_arguments},
     util::sync::lock,
 };
@@ -54,6 +54,21 @@ struct RunningJob {
 struct Capture {
     bytes: Vec<u8>,
     truncated: bool,
+}
+
+/// A job as a client lists it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JobInfo {
+    pub job_id: String,
+    pub command: String,
+    /// In words: running, completed, failed, cancelled, timed_out, interrupted, or running
+    /// in, or unknown because of, another runtime.
+    pub status: String,
+    pub running: bool,
+    /// This runtime owns its process, so it can be stopped from here.
+    pub stoppable: bool,
+    pub started_at: i64,
+    pub finished_at: Option<i64>,
 }
 
 #[derive(Clone)]
@@ -92,18 +107,66 @@ impl JobManager {
     }
 
     fn status(&self, job: &BackgroundJob) -> String {
-        if job.status != "running" {
-            return job.status.clone();
+        self.status_of(
+            &job.status,
+            job.owner_runtime_id.as_deref(),
+            job.owner_lease_path.as_deref(),
+        )
+    }
+
+    fn status_of(&self, status: &str, owner: Option<&str>, lease_path: Option<&str>) -> String {
+        if status != "running" {
+            return status.to_owned();
         }
-        let (Some(id), Some(path)) = (&job.owner_runtime_id, &job.owner_lease_path) else {
+        let (Some(id), Some(path)) = (owner, lease_path) else {
             return "unknown (owner unavailable)".into();
         };
-        if id == &self.lease.id {
+        if id == self.lease.id {
             return "running".into();
         }
         match JobLease::inspect(id, path) {
             Owner::Live => "running (another runtime)".into(),
             Owner::Abandoned(_) | Owner::Unknown => "unknown (owner unavailable)".into(),
+        }
+    }
+
+    /// The thread's jobs, oldest first, as a client shows them.
+    pub async fn list(&self, thread_id: &str) -> Result<Vec<JobInfo>> {
+        let summaries = self.state.job_summaries(thread_id).await?;
+        let live = self.live.lock().await;
+        Ok(summaries
+            .into_iter()
+            .map(|job: JobSummary| JobInfo {
+                status: self.status_of(
+                    &job.status,
+                    job.owner_runtime_id.as_deref(),
+                    job.owner_lease_path.as_deref(),
+                ),
+                running: job.status == "running",
+                stoppable: live.contains_key(&job.job_id),
+                job_id: job.job_id,
+                command: job.command,
+                started_at: job.created_at,
+                finished_at: job.finished_at,
+            })
+            .collect())
+    }
+
+    /// What a job printed: live while it runs, the stored result after.
+    pub async fn output(&self, thread_id: &str, id: &str) -> Result<String> {
+        let job = self.state.job(thread_id, id).await?;
+        Ok(self.printed(thread_id, id, job).await)
+    }
+
+    async fn printed(&self, thread_id: &str, id: &str, job: BackgroundJob) -> String {
+        let live = self.live.lock().await;
+        match live.get(id).filter(|job| job.owner == thread_id) {
+            Some(job) => format!(
+                "stdout:\n{}\nstderr:\n{}",
+                lock(&job.stdout).text(),
+                lock(&job.stderr).text()
+            ),
+            None => job.output,
         }
     }
 
@@ -215,7 +278,7 @@ impl JobManager {
         Ok(job_id)
     }
 
-    async fn cancel(&self, owner: &str, id: &str) -> Result<String> {
+    pub async fn cancel(&self, owner: &str, id: &str) -> Result<String> {
         let stored = self.state.job(owner, id).await?;
         if let Some(job) = self.live.lock().await.get(id) {
             ensure!(
@@ -471,15 +534,7 @@ impl Tool for Jobs {
                 return Ok(format!("{}: {}", job.job_id, manager.status(&job)));
             }
             let status = manager.status(&job);
-            let live = manager.live.lock().await;
-            let output = match live.get(&id).filter(|job| job.owner == *thread_id) {
-                Some(job) => format!(
-                    "stdout:\n{}\nstderr:\n{}",
-                    lock(&job.stdout).text(),
-                    lock(&job.stderr).text()
-                ),
-                None => job.output,
-            };
+            let output = manager.printed(thread_id, &id, job).await;
             Ok(format!("job {id}: {status}\n{output}"))
         })
     }
@@ -606,5 +661,34 @@ mod tests {
         assert_eq!(manager.status(&job), "running (another runtime)");
         assert_eq!(announced(&state, "job").await, 0);
         assert!(Path::new(&path).exists());
+    }
+
+    #[tokio::test]
+    async fn a_client_lists_a_running_job_and_reads_its_output() {
+        let (state, database) = open("job-list").await;
+        let manager = manager(&state, &database).await;
+        let id = manager
+            .start("thread", "echo first; sleep 30", Path::new("."), 60)
+            .await
+            .unwrap();
+        let mut output = String::new();
+        for _ in 0..100 {
+            output = manager.output("thread", &id).await.unwrap();
+            if output.contains("first") {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        assert!(output.contains("first"), "live output: {output}");
+        let jobs = manager.list("thread").await.unwrap();
+        assert_eq!(jobs.len(), 1);
+        assert!(jobs[0].running && jobs[0].stoppable && jobs[0].status == "running");
+        assert!(manager.list("other").await.unwrap().is_empty());
+        manager.cancel("thread", &id).await.unwrap();
+        finished(&state, &id).await;
+        let jobs = manager.list("thread").await.unwrap();
+        assert!(!jobs[0].running && !jobs[0].stoppable);
+        assert_eq!(jobs[0].status, "cancelled");
+        assert!(jobs[0].finished_at.is_some());
     }
 }

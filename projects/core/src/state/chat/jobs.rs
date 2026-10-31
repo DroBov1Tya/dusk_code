@@ -15,6 +15,18 @@ pub struct BackgroundJob {
     pub owner_lease_path: Option<String>,
 }
 
+/// A job without its output, for lists that are read again and again.
+#[derive(Debug, Clone)]
+pub struct JobSummary {
+    pub job_id: String,
+    pub command: String,
+    pub status: String,
+    pub created_at: i64,
+    pub finished_at: Option<i64>,
+    pub owner_runtime_id: Option<String>,
+    pub owner_lease_path: Option<String>,
+}
+
 impl State {
     pub async fn create_job(
         &self,
@@ -149,6 +161,31 @@ impl State {
                     command: row.try_get("command")?,
                     status: row.try_get("status")?,
                     output: row.try_get("output")?,
+                    owner_runtime_id: row.try_get("owner_runtime_id")?,
+                    owner_lease_path: row.try_get("owner_lease_path")?,
+                })
+            })
+            .collect()
+    }
+
+    pub async fn job_summaries(&self, thread_id: &str) -> Result<Vec<JobSummary>> {
+        let rows = sqlx::query(
+            "SELECT job_id, command, status, created_at, finished_at, owner_runtime_id,
+                owner_lease_path FROM background_jobs WHERE thread_id = ?
+             ORDER BY created_at, job_id",
+        )
+        .bind(thread_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("list background jobs")?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(JobSummary {
+                    job_id: row.try_get("job_id")?,
+                    command: row.try_get("command")?,
+                    status: row.try_get("status")?,
+                    created_at: row.try_get("created_at")?,
+                    finished_at: row.try_get("finished_at")?,
                     owner_runtime_id: row.try_get("owner_runtime_id")?,
                     owner_lease_path: row.try_get("owner_lease_path")?,
                 })
