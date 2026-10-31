@@ -3,11 +3,13 @@
 mod delete;
 mod edit;
 mod read;
+mod search;
 mod write;
 
 pub use delete::DeleteFile;
 pub use edit::EditFile;
 pub use read::ReadFile;
+pub use search::SearchFiles;
 pub use write::WriteFile;
 
 use std::path::Path;
