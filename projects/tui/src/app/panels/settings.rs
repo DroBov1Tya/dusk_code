@@ -38,18 +38,20 @@ pub enum SettingCategory {
     Mcp,
     /// What the agent keeps about the user.
     Personalize,
+    Limits,
     Updates,
     System,
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Models,
         Self::Agents,
         Self::Skills,
         Self::Mcp,
         Self::Tools,
         Self::Personalize,
+        Self::Limits,
         Self::Updates,
         Self::System,
     ];
@@ -62,6 +64,7 @@ impl SettingCategory {
             Self::Skills => "skills",
             Self::Mcp => "mcp",
             Self::Personalize => "personalize",
+            Self::Limits => "limits",
             Self::Updates => "updates",
             Self::System => "system",
         }
@@ -105,6 +108,8 @@ pub struct SettingsView {
     pub model_error: Option<String>,
     pub max_agents_at_work: usize,
     pub max_goal_rounds: u32,
+    pub max_input_tokens: u64,
+    pub max_output_tokens: u64,
     pub memory: Memory,
     pub update_channel: Channel,
     /// The mode whose tools are shown.
@@ -189,6 +194,8 @@ const LIMIT_ROWS: usize = 2;
 /// The memory's size moves in steps this large, within these bounds.
 const MEMORY_STEP: usize = 500;
 const MEMORY_CHARS: std::ops::RangeInclusive<usize> = 500..=20_000;
+/// Token limits move in steps this large.
+const TOKEN_STEP: u64 = 10_000;
 const PAGE: usize = 20;
 const WHEEL: usize = 3;
 
@@ -207,6 +214,8 @@ impl SettingsView {
             model_error: None,
             max_agents_at_work: settings.max_agents_at_work,
             max_goal_rounds: settings.max_goal_rounds,
+            max_input_tokens: settings.max_input_tokens,
+            max_output_tokens: settings.max_output_tokens,
             mode: settings.mode,
             memory: settings.memory,
             update_channel: settings.update_channel,
@@ -249,6 +258,7 @@ impl SettingsView {
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize) => 2,
+            Some(SettingCategory::Limits) => 4,
             Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
@@ -330,6 +340,24 @@ impl SettingsView {
         agent.version.map(|_| agent.name.clone())
     }
 
+    /// What moving the limit on the selected row asks of the core.
+    fn limit_action(&self, more: bool) -> Action {
+        let stepped = |value: u64| match more {
+            true => value.saturating_add(TOKEN_STEP),
+            false => value.saturating_sub(TOKEN_STEP).max(TOKEN_STEP),
+        };
+        let counted = |value: u64| match more {
+            true => value.saturating_add(1),
+            false => value.saturating_sub(1).max(1),
+        };
+        match self.selected {
+            0 => Action::SetInputTokens(stepped(self.max_input_tokens)),
+            1 => Action::SetOutputTokens(stepped(self.max_output_tokens)),
+            2 => Action::SetAgentLimit(counted(self.max_agents_at_work as u64) as usize),
+            _ => Action::SetGoalRounds(counted(u64::from(self.max_goal_rounds)) as u32),
+        }
+    }
+
     /// What switching `row` asks of the core.
     fn switch(&self, row: usize) -> Option<Action> {
         let (kind, name, on) = match self.category? {
@@ -354,6 +382,7 @@ impl SettingsView {
                 McpRow::Tool(_, tool) => (SwitchKind::Tool, tool.name.clone(), tool.enabled),
             },
             SettingCategory::Personalize if row > 0 => return None,
+            SettingCategory::Limits => return None,
             SettingCategory::Personalize => {
                 (SwitchKind::Memory, "memory".into(), self.memory.enabled)
             }
@@ -574,7 +603,8 @@ impl App {
             }
             (Some(category), KeyCode::Esc | KeyCode::Left | KeyCode::Backspace)
                 if !(key.code == KeyCode::Left
-                    && (category == SettingCategory::Agents && view.selected < LIMIT_ROWS
+                    && (category == SettingCategory::Limits
+                        || category == SettingCategory::Agents && view.selected < LIMIT_ROWS
                         || category == SettingCategory::Personalize && view.selected == 1)) =>
             {
                 view.selected = SettingCategory::ALL
@@ -603,6 +633,13 @@ impl App {
                     view.max_agents_at_work.saturating_sub(1).max(1)
                 };
                 return Action::SetAgentLimit(limit);
+            }
+            (
+                Some(SettingCategory::Limits),
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+'),
+            ) => {
+                let more = matches!(key.code, KeyCode::Right | KeyCode::Char('+'));
+                return view.limit_action(more);
             }
             (
                 Some(SettingCategory::Personalize),
@@ -778,6 +815,7 @@ fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> boo
         SettingCategory::Models
         | SettingCategory::Tools
         | SettingCategory::Personalize
+        | SettingCategory::Limits
         | SettingCategory::Updates
         | SettingCategory::System => false,
     }

@@ -564,6 +564,14 @@ impl Config {
         self.limits.max_agents_at_work = limit;
     }
 
+    pub fn set_max_input_tokens(&mut self, tokens: u64) {
+        self.limits.max_input_tokens = tokens;
+    }
+
+    pub fn set_max_output_tokens(&mut self, tokens: u64) {
+        self.limits.max_output_tokens = tokens;
+    }
+
     pub fn set_max_goal_rounds(&mut self, rounds: u32) {
         self.limits.max_goal_rounds = rounds;
     }

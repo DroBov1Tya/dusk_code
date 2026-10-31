@@ -86,7 +86,7 @@ pub enum Answer {
     ModelSwitched(Choice),
     /// The client closes the open thread and shows an empty one.
     NewThread,
-    Settings(Settings),
+    Settings(Box<Settings>),
     Context(ContextReport),
     Update(UpdateInfo),
     /// The user's messages the thread can go back to, oldest first.
@@ -189,7 +189,7 @@ impl Command {
         match self {
             Self::Resume { cwd } => Ok(Answer::Threads(resume::run(runtime, cwd).await?)),
             Self::New => Ok(Answer::NewThread),
-            Self::Settings => Ok(Answer::Settings(settings::run(runtime).await?)),
+            Self::Settings => Ok(Answer::Settings(Box::new(settings::run(runtime).await?))),
             Self::Update { channel } => {
                 let channel = match channel.as_deref() {
                     None => None,

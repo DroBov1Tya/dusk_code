@@ -53,6 +53,8 @@ pub enum Action {
     SetAgentLimit(usize),
     SetGoalRounds(u32),
     SetMemoryChars(usize),
+    SetInputTokens(u64),
+    SetOutputTokens(u64),
     PinSource {
         id: String,
         pinned: bool,
