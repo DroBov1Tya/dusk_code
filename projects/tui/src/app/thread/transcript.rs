@@ -24,6 +24,11 @@ pub enum Entry {
         open: bool,
     },
     Answer(String),
+    /// Stands before a run of thinking and tool calls: one line that says what goes on,
+    /// with the run under it once opened.
+    Activity {
+        open: bool,
+    },
     Reasoning {
         text: String,
         open: bool,
@@ -52,6 +57,11 @@ pub enum Entry {
     },
 }
 
+/// Thinking and tool calls: the steps an activity line stands for.
+fn is_step(entry: &Entry) -> bool {
+    matches!(entry, Entry::Reasoning { .. } | Entry::Tool { .. })
+}
+
 /// Longer agent messages start folded.
 const OPEN_AGENT_LINES: usize = 12;
 
@@ -77,6 +87,8 @@ pub struct Transcript {
     pub entries: Vec<Entry>,
     /// Entries the user hid; each shows as one line until shown again.
     pub hidden: HashSet<usize>,
+    /// What the agent does now, for the activity line of the run in progress.
+    live: Option<String>,
     /// Only the root transcript is connected to the local image store.
     pub images: super::images::Images,
     /// Changes when anything but the text of the last entry changes, so the lines of the
@@ -131,6 +143,48 @@ impl Transcript {
     pub fn set_artifact_store(&mut self, store: dusk_core::state::artifacts::ArtifactStore) {
         self.images = super::images::Images::new(store);
         self.changed();
+    }
+
+    pub fn set_live(&mut self, live: Option<String>) {
+        if self.live != live {
+            self.live = live;
+            self.changed();
+        }
+    }
+
+    /// The run under the activity line at `index`: its steps.
+    pub fn run(&self, index: usize) -> impl Iterator<Item = &Entry> {
+        self.entries[index + 1..]
+            .iter()
+            .take_while(|entry| is_step(entry))
+    }
+
+    /// What the activity line at `index` says goes on, while its run is the newest thing
+    /// in the thread: the step reported, else the tool still running.
+    pub fn current_step(&self, index: usize) -> Option<String> {
+        if index + 1 + self.run(index).count() < self.entries.len() {
+            return None;
+        }
+        self.live.clone().or_else(|| {
+            self.run(index).find_map(|entry| match entry {
+                Entry::Tool {
+                    call, result: None, ..
+                } => Some(call.name.clone()),
+                _ => None,
+            })
+        })
+    }
+
+    /// A step under a folded activity line, which shows nothing of it.
+    pub fn is_folded_away(&self, index: usize) -> bool {
+        if !self.entries.get(index).is_some_and(is_step) {
+            return false;
+        }
+        let line = self.entries[..index]
+            .iter()
+            .rev()
+            .find(|entry| !is_step(entry));
+        matches!(line, Some(Entry::Activity { open: false }))
     }
 
     pub fn revision(&self) -> u64 {
@@ -206,6 +260,13 @@ impl Transcript {
     }
 
     pub fn push(&mut self, entry: Entry) {
+        let in_run = matches!(
+            self.entries.last(),
+            Some(Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Tool { .. })
+        );
+        if is_step(&entry) && !in_run {
+            self.entries.push(Entry::Activity { open: false });
+        }
         self.entries.push(entry);
         self.changed();
     }
@@ -310,6 +371,7 @@ impl Transcript {
         Some(match self.entries.get(index)? {
             Entry::User { text, .. } => paste::plain(text),
             Entry::Answer(text) => text.clone(),
+            Entry::Activity { .. } => String::new(),
             Entry::Reasoning { text, .. } | Entry::Summary { text, .. } => text.clone(),
             Entry::Notice { text, .. } | Entry::FromAgent { text, .. } => text.clone(),
             Entry::Tool { call, result, .. } => match result {
@@ -333,12 +395,16 @@ impl Transcript {
         if self.is_hidden(index) {
             return true;
         }
+        if self.is_folded_away(index) {
+            return false;
+        }
         match self.entries.get(index) {
             Some(Entry::User { text, .. }) => paste::has_pasted(text),
             entry => matches!(
                 entry,
                 Some(
-                    Entry::Reasoning { .. }
+                    Entry::Activity { .. }
+                        | Entry::Reasoning { .. }
                         | Entry::Tool { .. }
                         | Entry::Summary { .. }
                         | Entry::FromAgent { .. }
@@ -354,6 +420,7 @@ impl Transcript {
         }
         if let Some(
             Entry::User { open, .. }
+            | Entry::Activity { open }
             | Entry::Reasoning { open, .. }
             | Entry::Tool { open, .. }
             | Entry::Summary { open, .. }
@@ -371,8 +438,11 @@ impl Transcript {
             .iter()
             .any(|entry| matches!(entry, Entry::Reasoning { open: true, .. }));
         for entry in &mut self.entries {
-            if let Entry::Reasoning { open, .. } = entry {
-                *open = !any_open;
+            match entry {
+                Entry::Reasoning { open, .. } => *open = !any_open,
+                // What is opened has to show.
+                Entry::Activity { open } if !any_open => *open = true,
+                _ => {}
             }
         }
         self.changed();
