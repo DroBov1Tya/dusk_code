@@ -763,6 +763,14 @@ mod tests {
             provider: Arc::clone(provider) as Arc<dyn ModelProvider>,
             model,
         };
+        // The size of the real prompt must not decide what fits in these small limits.
+        std::fs::create_dir_all(root.join("modes")).unwrap();
+        std::fs::write(
+            root.join("modes/MAIN.md"),
+            "You are the main agent of duskcode, working with the user in a chat.\n\
+             Answer directly and concisely, in the language the user writes in.\n",
+        )
+        .unwrap();
         ThreadRunner::new(ThreadSetup {
             state: Arc::clone(state),
             model: Arc::new(ModelChoice::new(choice)),
