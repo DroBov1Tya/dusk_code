@@ -17,7 +17,7 @@ use crate::runtime::{
     },
 };
 use crate::{
-    chat::goal,
+    chat::{goal, sources},
     config::live::LiveConfig,
     config::{Config, Effort},
     providers::{
@@ -26,7 +26,7 @@ use crate::{
     },
     state::{
         CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, State, Turn, TurnAnswer,
-        TurnOutcome, TurnStatus,
+        TurnOutcome, TurnStatus, estimate_tokens,
     },
     tools::{Progress, ToolRegistry, ToolScope},
 };
@@ -76,7 +76,8 @@ impl Agent {
         }
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         let specs = self.tools.specs(&self.scope, &self.config.current());
-        if !conversation.has_queued() || self.context_too_large(&conversation, &specs).is_some() {
+        if !conversation.has_queued() || self.context_too_large(&conversation, &specs, 0).is_some()
+        {
             return Ok(None);
         }
         let turn = self.state.start_turn(&self.thread_id).await?;
@@ -217,11 +218,20 @@ impl Agent {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config.current();
         let tools = self.tools.specs(&self.scope, &config);
+        let workspace = self.scope.workspace();
+        let sources = sources::block(&self.state, workspace, &self.thread_id).await?;
+        let attached = sources
+            .as_ref()
+            .map_or(0, |(text, _)| estimate_tokens(text));
         // Tool results grow the context within a turn, so every step checks it.
-        if let Some(error) = self.context_too_large(&conversation, &tools) {
+        if let Some(error) = self.context_too_large(&conversation, &tools, attached) {
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         let mut messages = conversation.chat_messages();
+        let first_time = sources.map(|(text, first_time)| {
+            messages.push(ChatMessage::User(text));
+            first_time
+        });
         // The goal is said last, so it stays in view however long the context grows.
         if let Some(goal) = self.active_goal().await? {
             let rounds = config.limits().max_goal_rounds;
@@ -280,6 +290,9 @@ impl Agent {
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
             }
             Ok(Ok(calls)) if calls.is_empty() => {
+                // A turn cut short carries its new sources again next time.
+                let first_time = first_time.unwrap_or_default();
+                self.state.mark_sources_delivered(&first_time).await?;
                 return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
             }
             Ok(Ok(calls)) => calls,
@@ -424,8 +437,13 @@ impl Agent {
     }
 
     /// Reports a context past the input limit to the client and returns why.
-    fn context_too_large(&self, conversation: &Conversation, specs: &[ToolSpec]) -> Option<String> {
-        let tokens = conversation.tokens(specs);
+    fn context_too_large(
+        &self,
+        conversation: &Conversation,
+        specs: &[ToolSpec],
+        attached: u64,
+    ) -> Option<String> {
+        let tokens = conversation.tokens(specs) + attached;
         let limit = Some(self.input_limit()).filter(|&limit| tokens > limit)?;
         self.emit(ThreadEvent::ContextTooLarge { tokens, limit });
         Some(format!(

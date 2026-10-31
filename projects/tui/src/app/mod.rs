@@ -53,6 +53,11 @@ pub enum Action {
     SetAgentLimit(usize),
     SetGoalRounds(u32),
     SetMemoryChars(usize),
+    PinSource {
+        id: String,
+        pinned: bool,
+    },
+    RemoveSource(String),
     /// Ask a running background job of the open thread to stop.
     StopJob(String),
     SetContextPolicy(ContextPolicy),

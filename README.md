@@ -29,6 +29,16 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   Cards use half-block previews by default; `DUSKCODE_GRAPHICS=kitty|iterm2|sixel`
   opts into terminal pictures, and `off` keeps the previews. Inside tmux pictures
   need `allow-passthrough`.
+- Sources: a long paste goes to a file in the chat's folder
+  (`~/Documents/duskcode/<thread>/sources/`) and the message keeps a reference;
+  `/sources <path>` adds a copy of any file. A source goes to the model with one turn
+  and then stays by name and path for the agent to read; `/sources` lists them, space
+  pins one to every request, `d` twice deletes it. Text only: the model is told a
+  picture's path, it does not see the picture.
+- `/resume` lists the chats started in the folder duskcode runs in. A chat older than
+  this record shows everywhere until it is opened, then belongs to that folder.
+- Thinking and tool calls fold into one line that names the current step; it opens to
+  the steps, and each step opens to its arguments and result.
 - Markdown tables in answers render with aligned columns, stacked when narrow.
 - Background subagents with separate threads and messages to their parent.
 - Background commands: `run_command` with `background=true` returns a job id at once,

@@ -23,6 +23,7 @@ use crate::{
     catalog::modes,
     catalog::skills::{self, SkillInfo},
     chat::commands::{ContextReport, context_report},
+    chat::sources,
     config::live::LiveConfig,
     config::{ApiKey, ContextPolicy, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
@@ -35,7 +36,7 @@ use crate::{
         watch::UpdateWatch,
     },
     runtime::chat::thread_start::{FORK_INTRO, project_dir, start_thread},
-    state::{LocalUnsent, Message, State, Task, Thread, UndoPoint},
+    state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
     tools::{JobInfo, JobManager, ToolKind, ToolScope},
     util::{
         sync::lock,
@@ -455,6 +456,33 @@ impl Runtime {
     /// check has seen one.
     pub fn available_update(&self) -> Option<String> {
         self.updates.found()
+    }
+
+    /// `message` with its long pastes moved to the thread's sources.
+    pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
+        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
+        let state = &self.launcher.state;
+        sources::keep_pastes(state, &workspace, thread_id, message).await
+    }
+
+    pub async fn sources(&self, thread_id: &str) -> Result<Vec<Source>> {
+        self.launcher.state.sources(thread_id).await
+    }
+
+    /// Copies the file at `path` among the thread's sources.
+    pub async fn add_source(&self, thread_id: &str, path: &Path) -> Result<Source> {
+        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
+        sources::add_file(&self.launcher.state, &workspace, thread_id, path).await
+    }
+
+    pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
+        self.launcher.state.pin_source(thread_id, id, pinned).await
+    }
+
+    /// Forgets a source and deletes its file.
+    pub async fn remove_source(&self, thread_id: &str, id: &str) -> Result<()> {
+        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
+        sources::remove(&self.launcher.state, &workspace, thread_id, id).await
     }
 
     /// The background jobs of a thread, oldest first.

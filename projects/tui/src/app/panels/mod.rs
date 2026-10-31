@@ -7,7 +7,7 @@ use dusk_core::{
     chat::commands::ContextReport,
     release::update::{InstallProgress, UpdateInfo},
     runtime::model_choice::ProviderStatus,
-    state::{Message, MessageRole, Thread, UndoPoint},
+    state::{Message, MessageRole, Source, Thread, UndoPoint},
     tools::JobInfo,
 };
 
@@ -57,6 +57,12 @@ pub enum Panel {
         row: usize,
     },
     Jobs(JobsView),
+    /// What is attached to the thread; `removing` asks to press the key again.
+    Sources {
+        sources: Vec<Source>,
+        selected: usize,
+        removing: bool,
+    },
 }
 
 /// The thread's background jobs and the output of the chosen one, read again every second
