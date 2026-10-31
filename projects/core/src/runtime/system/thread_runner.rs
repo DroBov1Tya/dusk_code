@@ -57,6 +57,8 @@ pub struct ThreadSetup {
     pub thread_id: String,
     pub tools: ToolRegistry,
     pub scope: ToolScope,
+    /// The machine, the folder and the project's instructions.
+    pub project: String,
     pub compact_prompt: PathBuf,
     pub fork_prompt: PathBuf,
     pub modes_dir: PathBuf,
@@ -218,6 +220,7 @@ impl ThreadRunner {
             config: setup.config,
             tools: setup.tools,
             scope: setup.scope,
+            project: setup.project,
             pictures_refused: Mutex::new(None),
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
@@ -760,6 +763,14 @@ mod tests {
             provider: Arc::clone(provider) as Arc<dyn ModelProvider>,
             model,
         };
+        // The size of the real prompt must not decide what fits in these small limits.
+        std::fs::create_dir_all(root.join("modes")).unwrap();
+        std::fs::write(
+            root.join("modes/MAIN.md"),
+            "You are the main agent of duskcode, working with the user in a chat.\n\
+             Answer directly and concisely, in the language the user writes in.\n",
+        )
+        .unwrap();
         ThreadRunner::new(ThreadSetup {
             state: Arc::clone(state),
             model: Arc::new(ModelChoice::new(choice)),
@@ -767,6 +778,7 @@ mod tests {
             thread_id: "thread".into(),
             tools,
             scope: ToolScope::new(&root, &root).unwrap(),
+            project: String::new(),
             compact_prompt: root.join("COMPACT.md"),
             fork_prompt: root.join("FORK.md"),
             modes_dir: root.join("modes"),

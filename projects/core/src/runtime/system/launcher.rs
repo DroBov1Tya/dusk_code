@@ -18,6 +18,7 @@ use super::{
     model_choice::ModelChoice,
 };
 use crate::runtime::agent::{Input, Mailboxes};
+use crate::runtime::chat::project;
 use crate::{
     BoxFuture,
     catalog::agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
@@ -68,6 +69,7 @@ impl Launcher {
                 .protect(self.paths.config_root())
                 .share(&self.paths.skills_dir())
                 .share(&self.paths.agents_dir()),
+            project: project::context(cwd),
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),
             modes_dir: self.paths.modes_dir(),

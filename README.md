@@ -40,6 +40,11 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   this record shows everywhere until it is opened, then belongs to that folder.
 - Thinking and tool calls fold into one line that names the current step; it opens to
   the steps, and each step opens to its arguments and result.
+- Every request starts with the date, system, folder and git branch, and the project's
+  `AGENTS.md` or `CLAUDE.md` from the repository's top down to the folder (32 KiB),
+  read once when the thread starts. Subagents get the same.
+- `search_files` finds text and file names the way ripgrep does, within what the file
+  tools may touch.
 - Markdown tables in answers render with aligned columns, stacked when narrow.
 - Background subagents with separate threads and messages to their parent.
 - Background commands: `run_command` with `background=true` returns a job id at once,

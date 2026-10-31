@@ -33,7 +33,7 @@ use crate::{
     },
     state::{
         CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, State, Turn, TurnAnswer,
-        TurnOutcome, TurnStatus,
+        TurnOutcome, TurnStatus, estimate_tokens,
     },
     tools::{Progress, ToolRegistry, ToolScope},
     util::sync::lock,
@@ -52,6 +52,8 @@ pub struct Agent {
     pub config: Arc<LiveConfig>,
     pub tools: ToolRegistry,
     pub scope: ToolScope,
+    /// Comes right after the prompt in every request.
+    pub project: String,
     /// The model that refused pictures; the others still get them.
     pub pictures_refused: Mutex<Option<String>>,
     pub thread_id: String,
@@ -232,12 +234,24 @@ impl Agent {
         let with_pictures = self.takes_pictures();
         let sources =
             sources::block(&self.state, workspace, &self.thread_id, with_pictures).await?;
-        let attached = sources.as_ref().map_or(0, SourceBlock::tokens);
+        // The provider's last count already holds the project text.
+        let project = match conversation.last_prompt {
+            Some(_) => 0,
+            None => estimate_tokens(&self.project),
+        };
+        let attached = project + sources.as_ref().map_or(0, SourceBlock::tokens);
         // Tool results grow the context within a turn, so every step checks it.
         if let Some(error) = self.context_too_large(&conversation, &tools, attached) {
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         let mut messages = conversation.chat_messages();
+        let after_prompt = messages
+            .iter()
+            .position(|message| !matches!(message, ChatMessage::System(_)))
+            .unwrap_or(messages.len());
+        if !self.project.is_empty() {
+            messages.insert(after_prompt, ChatMessage::System(self.project.clone()));
+        }
         let first_time = sources.map(|block| {
             messages.push(block.message());
             block.first_time
@@ -458,7 +472,6 @@ impl Agent {
             })
     }
 
-    /// Reports a context past the input limit to the client and returns why.
     fn takes_pictures(&self) -> bool {
         let refused = lock(&self.pictures_refused);
         let current = self.model.current();
@@ -480,6 +493,7 @@ impl Agent {
         }
     }
 
+    /// Reports a context past the input limit to the client and returns why.
     fn context_too_large(
         &self,
         conversation: &Conversation,
