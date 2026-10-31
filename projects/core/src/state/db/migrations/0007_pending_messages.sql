@@ -10,7 +10,10 @@ CREATE TABLE pending_messages (
     content TEXT NOT NULL CHECK (length(trim(content)) > 0),
     created_at INTEGER NOT NULL CHECK (created_at >= 0),
     -- The agent's thread for a message another agent sent; NULL for a client's.
-    from_thread_id TEXT REFERENCES threads(id)
+    from_thread_id TEXT REFERENCES threads(id),
+    -- The job for a result that finished on its own; one result is queued once.
+    from_job_id TEXT
 );
 
+CREATE UNIQUE INDEX pending_messages_job ON pending_messages(from_job_id) WHERE from_job_id IS NOT NULL;
 CREATE INDEX pending_messages_thread ON pending_messages(thread_id, pending_id);

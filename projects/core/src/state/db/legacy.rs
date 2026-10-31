@@ -188,6 +188,11 @@ const MESSAGE_ARTIFACTS: &str = "ALTER TABLE messages ADD COLUMN artifacts_json 
         AND json_valid(artifacts_json) AND json_type(artifacts_json) = 'array'));";
 /// A development build added the column in a migration of its own.
 const OLD_ARTIFACTS_MIGRATION: &str = "image artifacts";
+/// What the messages migration adds now to a table made before background jobs.
+const MESSAGE_JOBS: &str = "ALTER TABLE messages ADD COLUMN from_job_id TEXT
+    CHECK (from_job_id IS NULL OR role = 'system');
+    CREATE UNIQUE INDEX IF NOT EXISTS messages_job ON messages(from_job_id)
+        WHERE from_job_id IS NOT NULL;";
 
 /// Databases made before messages carried image cards get the column, and the record
 /// of the messages migration is brought to its text now.
@@ -210,6 +215,12 @@ pub async fn convert_messages(pool: &SqlitePool, migrator: &Migrator) -> Result<
             .await
             .context("add the image card column")?;
     }
+    if !columns.iter().any(|column| column == "from_job_id") {
+        sqlx::raw_sql(MESSAGE_JOBS)
+            .execute(&mut *transaction)
+            .await
+            .context("add the job result column")?;
+    }
     sqlx::query("DELETE FROM _sqlx_migrations WHERE description = ?")
         .bind(OLD_ARTIFACTS_MIGRATION)
         .execute(&mut *transaction)
@@ -227,6 +238,76 @@ pub async fn convert_messages(pool: &SqlitePool, migrator: &Migrator) -> Result<
     Ok(())
 }
 
+/// What the pending messages migration adds now to a table made before background jobs.
+const PENDING_JOBS: &str = "ALTER TABLE pending_messages ADD COLUMN from_job_id TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS pending_messages_job ON pending_messages(from_job_id)
+        WHERE from_job_id IS NOT NULL;";
+/// What the jobs migration holds now beyond the first build of the table.
+const JOB_OWNERS: &str = "ALTER TABLE background_jobs ADD COLUMN owner_runtime_id TEXT;
+    ALTER TABLE background_jobs ADD COLUMN owner_lease_path TEXT;
+    CREATE INDEX IF NOT EXISTS background_jobs_runtime
+        ON background_jobs(owner_runtime_id, status);";
+/// A development build kept the owner columns in a migration of its own.
+const OLD_OWNERS_MIGRATION: &str = "background job owners";
+
+/// Databases made before background jobs get the job result column of the pending
+/// messages, and ones from a development build the owner columns of the jobs; the records
+/// of the pending messages and jobs migrations are brought to their text now.
+pub async fn convert_jobs(pool: &SqlitePool, migrator: &Migrator) -> Result<()> {
+    let columns = |table: &'static str| async move {
+        sqlx::query_scalar::<_, String>("SELECT name FROM pragma_table_info(?)")
+            .bind(table)
+            .fetch_all(pool)
+            .await
+            .context("read the table columns")
+    };
+    let pending = columns("pending_messages").await?;
+    if pending.is_empty() {
+        return Ok(());
+    }
+    let jobs = columns("background_jobs").await?;
+    let checksum = |version: i64| {
+        migrator
+            .iter()
+            .find(|migration| migration.version == version)
+            .map(|migration| migration.checksum.to_vec())
+            .context("a migration is missing")
+    };
+    let mut transaction = pool.begin().await.context("begin jobs upgrade")?;
+    if !pending.iter().any(|column| column == "from_job_id") {
+        sqlx::raw_sql(PENDING_JOBS)
+            .execute(&mut *transaction)
+            .await
+            .context("add the job result column to pending messages")?;
+    }
+    sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 7")
+        .bind(checksum(7)?)
+        .execute(&mut *transaction)
+        .await
+        .context("record the pending messages migration")?;
+    if !jobs.is_empty() {
+        if !jobs.iter().any(|column| column == "owner_runtime_id") {
+            sqlx::raw_sql(JOB_OWNERS)
+                .execute(&mut *transaction)
+                .await
+                .context("add the job owner columns")?;
+        }
+        // Matched by name as well: a later migration may take that number.
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = 14 AND description = ?")
+            .bind(OLD_OWNERS_MIGRATION)
+            .execute(&mut *transaction)
+            .await
+            .context("drop the old job owners migration")?;
+        sqlx::query("UPDATE _sqlx_migrations SET checksum = ? WHERE version = 13")
+            .bind(checksum(13)?)
+            .execute(&mut *transaction)
+            .await
+            .context("record the jobs migration")?;
+    }
+    transaction.commit().await.context("commit jobs upgrade")?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{state::State, testing::temp_dir};
@@ -241,6 +322,7 @@ mod tests {
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;",
             // A development build with the column in a migration of its own.
             "DROP TABLE goals;
+             DROP TABLE background_jobs;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
@@ -259,5 +341,70 @@ mod tests {
             assert_eq!(column, 1);
             state.close().await;
         }
+    }
+
+    async fn migrations(state: &State) -> Vec<i64> {
+        sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(&state.pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_database_before_jobs_gets_their_columns() {
+        let path = temp_dir("legacy-before-jobs").join("state.db");
+        State::open(&path).await.unwrap().close().await;
+        let state = State::open(&path).await.unwrap();
+        // As a release without background jobs left it: no job columns or table, and
+        // the messages and pending messages migrations as they were.
+        sqlx::raw_sql(
+            "DROP INDEX messages_job;
+             DROP INDEX pending_messages_job;
+             ALTER TABLE messages DROP COLUMN from_job_id;
+             ALTER TABLE pending_messages DROP COLUMN from_job_id;
+             DROP TABLE background_jobs;
+             DELETE FROM _sqlx_migrations WHERE version = 13;
+             UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        for (table, column) in [
+            ("messages", "from_job_id"),
+            ("pending_messages", "from_job_id"),
+            ("background_jobs", "owner_runtime_id"),
+        ] {
+            let found: i64 =
+                sqlx::query_scalar("SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = ?")
+                    .bind(table)
+                    .bind(column)
+                    .fetch_one(&state.pool)
+                    .await
+                    .unwrap();
+            assert_eq!(found, 1, "{table}.{column}");
+        }
+        state.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_development_build_of_jobs_loses_its_owner_migration() {
+        let path = temp_dir("legacy-job-owners").join("state.db");
+        State::open(&path).await.unwrap().close().await;
+        let state = State::open(&path).await.unwrap();
+        // The first jobs build recorded the owners as a migration of its own.
+        sqlx::raw_sql(
+            "UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7, 13);
+             INSERT INTO _sqlx_migrations (version, description, success, checksum,
+                execution_time) VALUES (14, 'background job owners', TRUE, X'00', 0);",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        assert_eq!(migrations(&state).await.last(), Some(&13));
+        state.close().await;
     }
 }
