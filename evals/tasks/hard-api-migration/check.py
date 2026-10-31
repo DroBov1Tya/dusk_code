@@ -10,8 +10,11 @@ for number in range(30):
     mail.OUTBOX.clear()
     module.run()
     assert len(mail.OUTBOX) == 1 + (number % 6 == 5), (number, mail.OUTBOX)
+    # The task does not say how OUTBOX records a mail, so any plain record will do.
     sent = mail.OUTBOX[0]
-    message, retries = (sent[0], sent[1]) if len(sent) == 2 else (None, None)
-    assert message is not None, (number, sent)
-    assert (message.to, message.subject, message.body) == (f"u{number}@x", f"s{number}", f"b{number}"), (number, message)
-    assert retries == (number % 3) + 1, (number, retries)
+    if len(sent) == 2:
+        message, retries = sent
+        fields = (message.to, message.subject, message.body, retries)
+    else:
+        fields = tuple(sent)
+    assert fields == (f"u{number}@x", f"s{number}", f"b{number}", number % 3 + 1), (number, sent)

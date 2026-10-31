@@ -818,6 +818,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dusk_core",
+ "regex",
  "serde",
  "serde_json",
  "tokio",

@@ -6,6 +6,7 @@ use std::{
     collections::BTreeSet,
     fs,
     path::Path,
+    sync::LazyLock,
     time::{Duration, Instant},
 };
 
@@ -16,6 +17,7 @@ use dusk_core::{
     providers::ModelEvent,
     runtime::{Runtime, ThreadEvent},
 };
+use regex::Regex;
 
 use crate::{
     args::Options,
@@ -25,6 +27,8 @@ use crate::{
 };
 
 const SOURCE: &str = "evals";
+static DELETES: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\b(rm|rmtree|unlink|rmdir)\b").expect("a valid pattern"));
 
 pub async fn all(options: &Options) -> Result<()> {
     let tasks = task::load(&options.tasks, &options.only)?;
@@ -65,6 +69,7 @@ pub async fn all(options: &Options) -> Result<()> {
                 task: task.name.clone(),
                 passed: false,
                 problem: Some(format!("{error:#}")),
+                why: String::new(),
                 seconds: 0,
                 model_calls: 0,
                 tokens: 0,
@@ -114,7 +119,17 @@ impl Watch {
                 self.subagents += 1;
                 self.agents_at_work.insert(thread_id);
             }
-            ThreadEvent::ToolStarted(_) => self.tool_calls += 1,
+            ThreadEvent::ToolStarted(call) => {
+                self.tool_calls += 1;
+                // Agents run on the real machine: what they delete is worth a record.
+                let command = call
+                    .arguments
+                    .get("command")
+                    .and_then(|command| command.as_str());
+                if let Some(command) = command.filter(|command| DELETES.is_match(command)) {
+                    eprintln!("deletes: {}", command.chars().take(200).collect::<String>());
+                }
+            }
             ThreadEvent::ToolFinished { result, .. } => {
                 self.tool_errors += u64::from(result.is_error);
             }
@@ -178,11 +193,25 @@ async fn one(runtime: &Runtime, task: &Task, home: &Path, timeout: Duration) -> 
     };
     drop(handle);
     // Timed-out work is judged as it stands: it counts as a failure whatever it holds.
-    let passed = problem.is_none() && sandbox::check(task, &project, &watch.answer, home)?;
+    let (passed, why) = match problem {
+        None => sandbox::check(task, &project, &watch.answer, home)?,
+        // Late work fails the task; the check tells stuck agents from a stuck count.
+        Some(_) => {
+            let (late, _) = sandbox::check(task, &project, &watch.answer, home)?;
+            let state = format!(
+                "work passes: {late}; turns {}, idle {}, agents at work {}",
+                watch.turns,
+                watch.idle,
+                watch.agents_at_work.len()
+            );
+            (false, state)
+        }
+    };
     Ok(Outcome {
         task: task.name.clone(),
         passed,
         problem,
+        why,
         seconds,
         model_calls: watch.model_calls,
         tokens: watch.spent,

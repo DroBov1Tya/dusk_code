@@ -44,13 +44,17 @@ pub fn private(path: &Path, mode: u32) -> Result<()> {
 /// Runs a script of the task. One that hangs fails, along with all it started: an agent's
 /// code may well hang, and a run must not stop for it.
 fn run(script: &Path, cwd: &Path, answer: &Path) -> Result<bool> {
+    run_logged(script, cwd, answer, Stdio::null())
+}
+
+fn run_logged(script: &Path, cwd: &Path, answer: &Path, errors: Stdio) -> Result<bool> {
     let mut child = Command::new("sh")
         .arg(script)
         .current_dir(cwd)
         .env("EVAL_ANSWER", answer)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
-        .stderr(Stdio::null())
+        .stderr(errors)
         .process_group(0)
         .spawn()
         .with_context(|| format!("cannot run {}", script.display()))?;
@@ -82,6 +86,10 @@ fn git(cwd: &Path, arguments: &[&str]) -> Result<()> {
 
 /// The task's project at `into`, as one commit.
 pub fn prepare(task: &Task, into: &Path) -> Result<()> {
+    ensure!(
+        into.parent().is_some_and(Path::is_dir),
+        "the run's temporary folder is gone"
+    );
     let status = Command::new("cp")
         .args(["-R"])
         .arg(task.folder.join("fixture"))
@@ -98,14 +106,21 @@ pub fn prepare(task: &Task, into: &Path) -> Result<()> {
     git(into, &["commit", "-q", "-m", "start"])
 }
 
-/// Whether the work in `cwd` passes the task's check, given the agent's last message.
-pub fn check(task: &Task, cwd: &Path, answer: &str, home: &Path) -> Result<bool> {
-    let file = home.join(format!("{}-answer.txt", Uuid::now_v7()));
+/// Whether the work in `cwd` passes the task's check, given the agent's last message, and
+/// the end of what the check said.
+pub fn check(task: &Task, cwd: &Path, answer: &str, home: &Path) -> Result<(bool, String)> {
+    let id = Uuid::now_v7();
+    let (file, said) = (
+        home.join(format!("{id}-answer")),
+        home.join(format!("{id}-said")),
+    );
     fs::write(&file, answer)?;
     let script = task.folder.join("check.sh").canonicalize()?;
-    let passed = run(&script, cwd, &file);
-    let _ = fs::remove_file(&file);
-    passed
+    let errors = fs::File::create(&said)?;
+    let passed = run_logged(&script, cwd, &file, errors.into())?;
+    let said = fs::read_to_string(&said).unwrap_or_default();
+    let tail: Vec<&str> = said.lines().rev().take(2).collect();
+    Ok((passed, tail.join(" | ").chars().take(300).collect()))
 }
 
 /// A check that passes on untouched work, or fails on the known solution, measures nothing.
@@ -115,13 +130,13 @@ pub fn selfcheck(tasks: &[Task]) -> Result<()> {
         let home = TempHome::new("dusk-eval-check")?;
         let untouched = home.0.join("untouched");
         prepare(task, &untouched)?;
-        let idle = check(task, &untouched, "", &home.0)?;
+        let (idle, _) = check(task, &untouched, "", &home.0)?;
         let solved = home.0.join("solved");
         prepare(task, &solved)?;
         let solution = task.folder.join("solution.sh").canonicalize()?;
         let applied = run(&solution, &solved, Path::new("/dev/null"))?;
         let answer = fs::read_to_string(task.folder.join("answer.txt")).unwrap_or_default();
-        let passes = applied && check(task, &solved, &answer, &home.0)?;
+        let passes = applied && check(task, &solved, &answer, &home.0)?.0;
         let good = !idle && passes;
         println!(
             "{} {:<24} untouched {}  solved {}",

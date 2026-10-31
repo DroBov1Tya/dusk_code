@@ -11,6 +11,9 @@ pub struct Outcome {
     pub passed: bool,
     /// Why there is no verdict on the work, such as a timeout or a dead provider.
     pub problem: Option<String>,
+    /// What the check said about a failure.
+    #[serde(default)]
+    pub why: String,
     pub seconds: u64,
     pub model_calls: u64,
     pub tokens: u64,
