@@ -27,3 +27,10 @@ A task is a folder in `tasks/`: `task.md` is the request, `fixture/` the project
 decides from the working folder, with the agent's last message in the file `$EVAL_ANSWER`,
 `solution.sh` is a known way to pass, and `answer.txt` the message it is checked with.
 `setup.sh`, if any, adds to the project. The agent never sees the check.
+
+## What is known so far
+
+On qwen3.8-flash, three runs of each task, MAIN of v0.69.1 against v0.69.4: both passed
+36 of 36, the new one at 14% more tokens and 27% more time (means). These tasks are too
+easy for this model to tell the two prompts apart, so they show the agents do not break
+and say nothing yet about which prompt is better. Harder tasks are what is missing.
