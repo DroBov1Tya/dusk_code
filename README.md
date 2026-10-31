@@ -61,6 +61,9 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   tool switches; any other `.md` there is a mode too. Tools follow the mode at once; the
   prompt is set at the thread's start and after each compaction, so the cached context
   stays the same in between.
+- Every agent gets the same rules and report format (Status, Result, Checked, Open) from
+  `internal/AGENT.md`, its own text stays in `AGENT.md`. `skills:` in the front matter
+  points it to skills, naming only those it can load now.
 - Persistent task boards displayed in the terminal sidebar.
 - Expert agents in `agents/<name>/AGENT.md` and skills in `skills/<name>/SKILL.md`, both
   editable in `/settings`; agents may improve skills and write new ones from repeated,
