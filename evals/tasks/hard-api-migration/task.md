@@ -1,0 +1,1 @@
+send() in mail.py now takes a Message: change its signature to send(message, retries=1), where Message is a dataclass with to, subject and body. Update every caller in the project; each module's run() must keep sending what it sent.

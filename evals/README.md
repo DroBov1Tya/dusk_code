@@ -28,6 +28,10 @@ decides from the working folder, with the agent's last message in the file `$EVA
 `solution.sh` is a known way to pass, and `answer.txt` the message it is checked with.
 `setup.sh`, if any, adds to the project. The agent never sees the check.
 
+The `hard-` tasks hide what the request does not spell out: randomized checks against a
+reference, concurrency under stress, encoded attacks, a specification with amendments, a
+large log. `--only hard-` runs them alone.
+
 ## What is known so far
 
 On qwen3.8-flash, three runs of each task, MAIN of v0.69.1 against v0.69.4: both passed

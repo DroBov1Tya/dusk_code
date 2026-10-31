@@ -1,0 +1,1 @@
+bank.py hangs in production now and then, and total() sometimes reports money that does not add up. Fix both. Keep per-account locks: a global lock around everything is not acceptable, since transfers between unrelated accounts must run at the same time. transfer must still refuse an overdraft and a transfer to the same account must change nothing.

@@ -1,0 +1,1 @@
+Security report: the file server can be made to read files outside its root through resolve() in server.py. Fix it properly: resolve must return the real path of a file inside root, and raise PermissionError for anything that gets out, however the path is written. Requests arrive URL-encoded, possibly more than once.

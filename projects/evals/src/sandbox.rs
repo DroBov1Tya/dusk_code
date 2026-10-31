@@ -3,14 +3,20 @@
 
 use std::{
     env, fs,
+    os::unix::process::CommandExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    thread,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail, ensure};
 use uuid::Uuid;
 
 use crate::task::Task;
+
+/// What a setup, a solution or a check may take.
+const SCRIPT_LIMIT: Duration = Duration::from_secs(120);
 
 /// A private folder that goes away with the value: it can hold a copy of the API key.
 pub struct TempHome(pub PathBuf);
@@ -35,17 +41,30 @@ pub fn private(path: &Path, mode: u32) -> Result<()> {
     fs::set_permissions(path, fs::Permissions::from_mode(mode)).context("cannot set permissions")
 }
 
+/// Runs a script of the task. One that hangs fails, along with all it started: an agent's
+/// code may well hang, and a run must not stop for it.
 fn run(script: &Path, cwd: &Path, answer: &Path) -> Result<bool> {
-    Ok(Command::new("sh")
+    let mut child = Command::new("sh")
         .arg(script)
         .current_dir(cwd)
         .env("EVAL_ANSWER", answer)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .status()
-        .with_context(|| format!("cannot run {}", script.display()))?
-        .success())
+        .process_group(0)
+        .spawn()
+        .with_context(|| format!("cannot run {}", script.display()))?;
+    let started = Instant::now();
+    while started.elapsed() < SCRIPT_LIMIT {
+        if let Some(status) = child.try_wait()? {
+            return Ok(status.success());
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
+    let group = format!("-{}", child.id());
+    let _ = Command::new("kill").args(["-9", "--", &group]).status();
+    child.wait()?;
+    Ok(false)
 }
 
 fn git(cwd: &Path, arguments: &[&str]) -> Result<()> {

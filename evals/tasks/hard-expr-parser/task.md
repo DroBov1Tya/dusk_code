@@ -1,0 +1,1 @@
+Implement evaluate(text) in calc.py: it computes an arithmetic expression and returns a float. It takes numbers (with decimals), + - * / % **, unary plus and minus, and parentheses, with Python's precedence and associativity. Anything malformed raises ValueError, and so does division by zero. Do not use eval, exec or compile.
