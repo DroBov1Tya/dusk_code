@@ -51,6 +51,25 @@ pub fn is_unsupported_effort(error: &anyhow::Error) -> bool {
         .any(|cause| cause.downcast_ref::<UnsupportedEffort>().is_some())
 }
 
+/// The provider refused a request that carried pictures. It may say nothing about why,
+/// so the same request without them tells.
+#[derive(Debug)]
+pub struct UnsupportedPictures;
+
+impl fmt::Display for UnsupportedPictures {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("provider refused a request with pictures")
+    }
+}
+
+impl std::error::Error for UnsupportedPictures {}
+
+pub fn is_unsupported_pictures(error: &anyhow::Error) -> bool {
+    error
+        .chain()
+        .any(|cause| cause.downcast_ref::<UnsupportedPictures>().is_some())
+}
+
 /// What the agent needs from a model provider. Tests put a scripted model behind it.
 pub trait ModelProvider: Send + Sync {
     /// Returns the catalogue sorted by model ID.

@@ -33,8 +33,9 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   (`~/Documents/duskcode/<thread>/sources/`) and the message keeps a reference;
   `/sources <path>` adds a copy of any file. A source goes to the model with one turn
   and then stays by name and path for the agent to read; `/sources` lists them, space
-  pins one to every request, `d` twice deletes it. Text only: the model is told a
-  picture's path, it does not see the picture.
+  pins one to every request, `d` twice deletes it. A PNG or JPEG goes to the model as a
+  picture, made smaller past 1568 pixels or 4 MiB; a model that refuses pictures is
+  told their paths instead, and the chat says so.
 - `/resume` lists the chats started in the folder duskcode runs in. A chat older than
   this record shows everywhere until it is opened, then belongs to that folder.
 - Thinking and tool calls fold into one line that names the current step; it opens to
