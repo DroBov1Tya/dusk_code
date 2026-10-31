@@ -7,3 +7,4 @@ pub mod complete;
 pub mod goal;
 pub mod inline_tags;
 pub mod pasted;
+pub mod sources;

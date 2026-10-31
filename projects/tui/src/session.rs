@@ -26,7 +26,7 @@ use ratatui::DefaultTerminal;
 use crate::{
     app::{
         Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, Panel, Preview,
-        SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
+        SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript, paste,
     },
     ui,
 };
@@ -439,6 +439,42 @@ pub async fn run(
                 };
                 answer(runtime, &mut app, &mut open, command).await;
             }
+            Action::Command(Command::Sources { add, .. }) => {
+                // A file can be the first thing a chat gets.
+                if add.is_some()
+                    && let Err(error) = ensure_open(runtime, &mut app, &mut open).await
+                {
+                    app.error(format!("cannot open a thread: {error:#}"));
+                    continue;
+                }
+                let thread_id = app.thread_id.clone();
+                let command = Command::Sources { thread_id, add };
+                answer(runtime, &mut app, &mut open, command).await;
+            }
+            Action::PinSource { id, pinned } => {
+                if let Some(thread_id) = app.thread_id.clone() {
+                    if let Err(error) = runtime.pin_source(&thread_id, &id, pinned).await {
+                        app.error(format!("cannot pin the source: {error:#}"));
+                    }
+                    let command = Command::Sources {
+                        thread_id: Some(thread_id),
+                        add: None,
+                    };
+                    answer(runtime, &mut app, &mut open, command).await;
+                }
+            }
+            Action::RemoveSource(id) => {
+                if let Some(thread_id) = app.thread_id.clone() {
+                    if let Err(error) = runtime.remove_source(&thread_id, &id).await {
+                        app.error(format!("cannot remove the source: {error:#}"));
+                    }
+                    let command = Command::Sources {
+                        thread_id: Some(thread_id),
+                        add: None,
+                    };
+                    answer(runtime, &mut app, &mut open, command).await;
+                }
+            }
             Action::Command(Command::Jobs { .. }) => {
                 let thread_id = app.thread_id.clone();
                 answer(runtime, &mut app, &mut open, Command::Jobs { thread_id }).await;
@@ -630,6 +666,21 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             let selected = points.len() - 1;
             app.panel = Some(Panel::Undo { points, selected });
         }
+        Ok(Answer::Sources(found)) if found.is_empty() => {
+            app.panel = None;
+            app.flash = Some("no sources; /sources <path> adds a file".into());
+        }
+        Ok(Answer::Sources(found)) => {
+            let selected = match &app.panel {
+                Some(Panel::Sources { selected, .. }) => (*selected).min(found.len() - 1),
+                _ => found.len() - 1,
+            };
+            app.panel = Some(Panel::Sources {
+                sources: found,
+                selected,
+                removing: false,
+            });
+        }
         Ok(Answer::Jobs(jobs)) if !jobs.is_empty() => {
             app.panel = Some(Panel::Jobs(JobsView {
                 selected: jobs.len() - 1,
@@ -765,6 +816,19 @@ async fn send(
     }
     let Some(thread) = open else {
         return;
+    };
+    // Long pastes leave the message for the thread's sources; the folder exists by now.
+    let text = if paste::has_pasted(&text) {
+        match runtime.keep_pastes(&thread.handle.thread_id, &text).await {
+            Ok(kept) => kept,
+            Err(error) => {
+                app.unsend(text);
+                app.error(format!("cannot keep the paste: {error:#}"));
+                return;
+            }
+        }
+    } else {
+        text
     };
     let input = &thread.handle.input;
     let sent = if now {

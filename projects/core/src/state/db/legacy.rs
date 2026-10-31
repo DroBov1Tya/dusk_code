@@ -324,6 +324,7 @@ mod tests {
             "DROP TABLE goals;
              DROP TABLE background_jobs;
              DROP TABLE thread_projects;
+             DROP TABLE sources;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
@@ -358,6 +359,7 @@ mod tests {
              ALTER TABLE pending_messages DROP COLUMN from_job_id;
              DROP TABLE background_jobs;
              DROP TABLE thread_projects;
+             DROP TABLE sources;
              DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
         )

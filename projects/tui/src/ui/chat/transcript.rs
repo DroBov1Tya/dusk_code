@@ -459,6 +459,11 @@ fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
                     .flat_map(|line| wrap::words(vec![Span::raw(line.to_owned())], width, 0))
                     .map(|spans| Line::from([vec![bar()], spans].concat())),
             ),
+            Part::Source(name) => lines.push(Line::from(vec![
+                bar(),
+                Span::styled(format!("{TOOL} "), fg(TEAL)),
+                Span::styled(name.to_owned(), fg(TEAL)),
+            ])),
             Part::Pasted(pasted) => {
                 lines.push(Line::from(vec![
                     bar(),

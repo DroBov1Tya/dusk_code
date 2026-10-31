@@ -473,6 +473,40 @@ impl App {
                 }
                 return Action::None;
             }
+            Panel::Sources {
+                sources,
+                selected,
+                removing,
+            } => {
+                let source = sources.get(*selected);
+                match key.code {
+                    KeyCode::Char('d') if !*removing => {
+                        *removing = true;
+                        return Action::None;
+                    }
+                    KeyCode::Char('d') => {
+                        if let Some(source) = source {
+                            return Action::RemoveSource(source.source_id.clone());
+                        }
+                    }
+                    _ if up || down => step(selected, sources.len(), down),
+                    KeyCode::Char(' ') | KeyCode::Enter => {
+                        if let Some(source) = source {
+                            return Action::PinSource {
+                                id: source.source_id.clone(),
+                                pinned: !source.pinned,
+                            };
+                        }
+                    }
+                    KeyCode::Esc => {
+                        self.panel = None;
+                        return Action::None;
+                    }
+                    _ => {}
+                }
+                *removing = false;
+                return Action::None;
+            }
             Panel::Jobs(view) => {
                 match key.code {
                     _ if up || down => {

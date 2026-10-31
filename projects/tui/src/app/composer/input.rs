@@ -48,6 +48,7 @@ impl Input {
             match part {
                 Part::Text(text) => self.text.push_str(text),
                 Part::Pasted(text) => self.push_chip(text.to_owned()),
+                Part::Source(name) => self.text.push_str(&paste::source_tag(name)),
             }
         }
         self.cursor = self.text.len();

@@ -160,6 +160,45 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 Some(*selected),
             )
         }
+        Panel::Sources {
+            sources,
+            selected,
+            removing,
+        } => {
+            let room = screen.width.saturating_sub(34).min(44) as usize;
+            let lines = sources
+                .iter()
+                .enumerate()
+                .map(|(index, source)| {
+                    let (mark, when) = match (source.pinned, source.delivered) {
+                        (true, _) => (ON, "every message"),
+                        (false, false) => (DOT, "next message"),
+                        (false, true) => (DOT, "kept"),
+                    };
+                    selectable(
+                        vec![
+                            Span::styled(format!(" {mark} "), fg(TEAL)),
+                            Span::raw(wrap::clip(&source.name, room)),
+                        ],
+                        Span::styled(
+                            format!("{} {DOT} {when} ", compact_number(source.bytes)),
+                            dim(),
+                        ),
+                        index == *selected,
+                    )
+                })
+                .collect();
+            (
+                "sources of this chat",
+                if *removing {
+                    "d again deletes the file  any other key keeps it"
+                } else {
+                    "space every message or once  d delete  esc close"
+                },
+                lines,
+                Some(*selected),
+            )
+        }
         Panel::Jobs(view) => {
             let width = screen.width.saturating_sub(8).min(72) as usize;
             (

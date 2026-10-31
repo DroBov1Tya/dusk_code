@@ -31,7 +31,7 @@ use crate::{
         agent::{Agent, Inbox},
         model_choice::{Choice, ProviderStatus},
     },
-    state::{Thread, UndoPoint},
+    state::{Source, Thread, UndoPoint},
     tools::JobInfo,
 };
 
@@ -64,6 +64,12 @@ pub enum Command {
         thread_id: Option<String>,
         sequence: Option<u64>,
     },
+    /// Lists a thread's sources, after copying the file at `add` among them; a client
+    /// fills in its open thread.
+    Sources {
+        thread_id: Option<String>,
+        add: Option<String>,
+    },
     /// Lists the background jobs of a thread; a client fills in its open thread.
     Jobs { thread_id: Option<String> },
 }
@@ -92,6 +98,8 @@ pub enum Answer {
     },
     /// The thread's background jobs, oldest first.
     Jobs(Vec<JobInfo>),
+    /// The thread's sources, oldest first.
+    Sources(Vec<Source>),
 }
 
 /// Every command, for clients to show: name and what it does.
@@ -128,6 +136,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
     (
         "/jobs",
         "background commands: their state and output; stop one",
+    ),
+    (
+        "/sources",
+        "files attached to this chat: pin or delete; a path adds a file",
     ),
 ];
 
@@ -168,6 +180,7 @@ impl Command {
             | Self::Context { .. }
             | Self::Effort { .. }
             | Self::Jobs { .. }
+            | Self::Sources { .. }
             | Self::Update { .. } => {}
         }
     }
@@ -221,6 +234,18 @@ impl Command {
                 Ok(Answer::UndoPoints(runtime.undo_points(&thread_id).await?))
             }
             Self::Undo { .. } => bail!("/undo <n> runs in a thread"),
+            Self::Sources {
+                thread_id: None, ..
+            } => Ok(Answer::Sources(Vec::new())),
+            Self::Sources {
+                thread_id: Some(thread_id),
+                add,
+            } => {
+                if let Some(path) = add {
+                    runtime.add_source(&thread_id, &expand_home(&path)).await?;
+                }
+                Ok(Answer::Sources(runtime.sources(&thread_id).await?))
+            }
             Self::Jobs { thread_id: None } => Ok(Answer::Jobs(Vec::new())),
             Self::Jobs {
                 thread_id: Some(thread_id),
@@ -268,8 +293,20 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         },
         "model" => Ok(Command::Model { name: argument }),
         "jobs" => Ok(Command::Jobs { thread_id: None }),
+        "sources" => Ok(Command::Sources {
+            thread_id: None,
+            add: argument,
+        }),
         _ => unknown(name),
     })
+}
+
+/// A leading `~/` as people write it.
+fn expand_home(path: &str) -> PathBuf {
+    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
+        _ => PathBuf::from(path),
+    }
 }
 
 fn unknown(name: &str) -> Result<Command> {
