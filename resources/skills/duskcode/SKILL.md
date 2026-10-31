@@ -8,13 +8,13 @@ tags: [dusk, setup]
 ---
 # Extending duskcode
 
-This skill's folder is `<config>/skills/duskcode`, so the dusk config folder `<config>` is
-two levels above it. Everything below lives there.
+This skill's folder is `<rules>/skills/duskcode`, so the rules folder `<rules>` is two
+levels above it, and the dusk config folder `<config>` one above that.
 
 | Add | Where | Applies |
 |---|---|---|
-| skill | `<config>/skills/<name>/SKILL.md` | at once |
-| agent | `<config>/agents/<name>/AGENT.md` | within a minute |
+| skill | `<rules>/skills/<name>/SKILL.md` | at once |
+| agent | `<rules>/agents/<name>/AGENT.md` | within a minute |
 | MCP server | `mcp:` in `<config>/config.yml` | when the user saves it |
 
 Names: letters, digits, `-` and `_`. A folder inside a folder gives `group/name`.
@@ -93,5 +93,5 @@ If the user edits `config.yml` by hand: change only `mcp:`. Leave `providers` (A
 switches alone; dusk
 rewrites the file and drops comments.
 
-`<config>/MEMORY.md` is what you remember about the user. Change it only with the
+`<rules>/MEMORY.md` is what you remember about the user. Change it only with the
 `remember` tool, never by hand; the user switches it off in `/settings` -> tools.

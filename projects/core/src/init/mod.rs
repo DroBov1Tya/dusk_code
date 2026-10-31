@@ -5,6 +5,7 @@ pub mod logs;
 pub mod paths;
 
 use std::{
+    collections::BTreeMap,
     fs::{self, DirBuilder, OpenOptions},
     io::{ErrorKind, Write},
     path::Path,
@@ -17,7 +18,7 @@ use tracing::{info, warn};
 use crate::{
     catalog::modes,
     init::paths::Paths,
-    release::builtin::{self, Synced},
+    release::builtin::{self, LOCK_FILE, Synced},
 };
 
 const CONFIG_TEMPLATE: &str = "\
@@ -67,6 +68,7 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     create_private_dir(paths.config_root())?;
     create_private_dir(&paths.records_dir())?;
     create_private_dir(paths.workspace_root())?;
+    move_into_rules(paths)?;
     create_private_dir(&paths.skills_dir())?;
     create_private_dir(&paths.agents_dir())?;
     let config_created = ensure_config(&paths.config_file())?;
@@ -95,6 +97,62 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     })
 }
 
+/// What sat in the config root before `rules/`, and where each goes in it, folders first.
+const BEFORE_RULES: [(&str, &str); 7] = [
+    ("agents", "agents"),
+    ("skills", "skills"),
+    ("modes", "modes"),
+    ("internal", "prompts"),
+    ("COMPACT.md", "prompts/COMPACT.md"),
+    ("FORK.md", "prompts/FORK.md"),
+    ("MEMORY.md", "MEMORY.md"),
+];
+
+/// Moves an older config folder's files into `rules/`. Each move is whole, so a stop half
+/// way goes on at the next start; something already in place is never replaced. The record
+/// of shipped files goes last with its paths rewritten: without it they would all read as
+/// the user's own, and updates would stop.
+fn move_into_rules(paths: &Paths) -> Result<()> {
+    let (root, rules) = (paths.config_root(), paths.rules_root());
+    create_private_dir(&rules)?;
+    for (old, new) in BEFORE_RULES {
+        let (from, to) = (root.join(old), rules.join(new));
+        if fs::symlink_metadata(&from).is_err() {
+            continue;
+        }
+        if fs::symlink_metadata(&to).is_ok() {
+            warn!("{old} stays in the config folder: {new} is already in rules");
+            continue;
+        }
+        if let Some(parent) = to.parent() {
+            create_private_dir(parent)?;
+        }
+        fs::rename(&from, &to).with_context(|| format!("cannot move {old} into rules"))?;
+        info!("{old} moved to rules/{new}");
+    }
+    let (old, new) = (root.join(LOCK_FILE), rules.join(LOCK_FILE));
+    if let (Ok(text), false) = (fs::read_to_string(&old), new.exists()) {
+        let lock: BTreeMap<String, String> = serde_json::from_str(&text).unwrap_or_default();
+        let moved: BTreeMap<String, String> = lock
+            .into_iter()
+            .map(|(path, hash)| (moved_path(&path), hash))
+            .collect();
+        fs::write(&new, serde_json::to_string_pretty(&moved)?)
+            .context("cannot write the shipped file record")?;
+        fs::remove_file(&old).context("cannot remove the old shipped file record")?;
+    }
+    Ok(())
+}
+
+/// A shipped file's path from the config root as it is from the rules folder now.
+fn moved_path(path: &str) -> String {
+    match path.strip_prefix("internal/") {
+        Some(rest) => format!("prompts/{rest}"),
+        None if matches!(path, "COMPACT.md" | "FORK.md") => format!("prompts/{path}"),
+        None => path.to_owned(),
+    }
+}
+
 /// Before modes, MAIN.md sat in the config root. A MAIN.md the user wrote becomes the
 /// orchestrator's prompt, as it was written to coordinate; the untouched template is
 /// MAIN mode's. The file is moved, never rewritten, and only into a free place.
@@ -118,6 +176,11 @@ fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
         modes::ORCHESTRATOR
     };
     let target = modes::file(&paths.modes_dir(), mode);
+    // The mode has its prompt: the old file is kept beside it, where it is no mode.
+    let target = match fs::symlink_metadata(&target) {
+        Ok(_) => target.with_extension("md.old"),
+        Err(_) => target,
+    };
     if fs::symlink_metadata(&target).is_ok() {
         return Ok(());
     }
@@ -204,6 +267,63 @@ mod tests {
         assert_eq!(mode(&paths.skills_dir()), 0o700);
         assert_eq!(mode(&paths.agents_dir()), 0o700);
         assert_eq!(mode(&paths.state_db()), 0o600);
+    }
+
+    #[test]
+    fn an_old_config_folder_moves_into_rules_and_stays_up_to_date() {
+        let paths = temp_paths("rules_move");
+        let root = paths.config_root();
+        fs::create_dir_all(root.join("agents/mine")).unwrap();
+        fs::create_dir_all(root.join("internal")).unwrap();
+        fs::create_dir_all(root.join("skills")).unwrap();
+        fs::write(root.join("agents/mine/AGENT.md"), "mine").unwrap();
+        fs::write(root.join("MEMORY.md"), "remembered").unwrap();
+        let old_compact = "older compaction text";
+        fs::write(root.join("COMPACT.md"), old_compact).unwrap();
+        // COMPACT.md is an old shipped file the user never changed.
+        let hash: String = <sha2::Sha256 as sha2::Digest>::digest(old_compact.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        let lock = format!("{{\"COMPACT.md\": \"{hash}\"}}");
+        fs::write(root.join(LOCK_FILE), lock).unwrap();
+        initialize(&paths).unwrap();
+        let rules = paths.rules_root();
+        assert_eq!(
+            fs::read_to_string(rules.join("agents/mine/AGENT.md")).unwrap(),
+            "mine"
+        );
+        assert_eq!(
+            fs::read_to_string(paths.memory_file()).unwrap(),
+            "remembered"
+        );
+        for gone in [
+            "agents",
+            "skills",
+            "internal",
+            "COMPACT.md",
+            "MEMORY.md",
+            LOCK_FILE,
+        ] {
+            assert!(!root.join(gone).exists(), "{gone}");
+        }
+        assert_ne!(
+            fs::read_to_string(paths.compact_prompt()).unwrap(),
+            old_compact
+        );
+        assert!(!rules.join("prompts/COMPACT.md.new").exists());
+        initialize(&paths).unwrap();
+    }
+
+    #[test]
+    fn a_file_already_in_rules_is_not_replaced() {
+        let paths = temp_paths("rules_keep");
+        fs::create_dir_all(paths.rules_root()).unwrap();
+        fs::write(paths.memory_file(), "newer").unwrap();
+        fs::write(paths.config_root().join("MEMORY.md"), "older").unwrap();
+        initialize(&paths).unwrap();
+        assert_eq!(fs::read_to_string(paths.memory_file()).unwrap(), "newer");
+        assert!(paths.config_root().join("MEMORY.md").exists());
     }
 
     #[test]

@@ -90,7 +90,7 @@ impl Tool for Remember {
         let prompt = self
             .file
             .parent()
-            .map(|root| root.join("internal/MEMORY.md"));
+            .map(|root| root.join("prompts/MEMORY.md"));
         let template = prompt
             .as_deref()
             .and_then(|path| {

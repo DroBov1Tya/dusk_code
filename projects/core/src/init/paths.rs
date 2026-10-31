@@ -4,6 +4,10 @@ use anyhow::{Result, anyhow, ensure};
 
 const CONFIG_ROOT: &str = ".config/duskcode";
 const CONFIG_FILE: &str = "config.yml";
+/// Everything that tells the agents how to work; the rest of the config folder is settings
+/// and records.
+const RULES_DIR: &str = "rules";
+const PROMPTS_DIR: &str = "prompts";
 /// Where MAIN.md was before modes; moved into `modes/` at start.
 const LEGACY_MAIN_PROMPT: &str = "MAIN.md";
 const MODES_DIR: &str = "modes";
@@ -45,13 +49,21 @@ impl Paths {
         &self.config_root
     }
 
+    pub fn rules_root(&self) -> PathBuf {
+        self.config_root.join(RULES_DIR)
+    }
+
+    fn prompts_dir(&self) -> PathBuf {
+        self.rules_root().join(PROMPTS_DIR)
+    }
+
     pub fn config_file(&self) -> PathBuf {
         self.config_root.join(CONFIG_FILE)
     }
 
     /// The prompt of every mode, one file each.
     pub fn modes_dir(&self) -> PathBuf {
-        self.config_root.join(MODES_DIR)
+        self.rules_root().join(MODES_DIR)
     }
 
     /// MAIN mode's prompt, which the general agent works with too.
@@ -65,17 +77,17 @@ impl Paths {
 
     /// How to summarize a thread when its context is compacted.
     pub fn compact_prompt(&self) -> PathBuf {
-        self.config_root.join(COMPACT_PROMPT)
+        self.prompts_dir().join(COMPACT_PROMPT)
     }
 
     /// How to describe a thread for /fork, so a new one can go on from it.
     pub fn fork_prompt(&self) -> PathBuf {
-        self.config_root.join(FORK_PROMPT)
+        self.prompts_dir().join(FORK_PROMPT)
     }
 
     /// What the agent remembers about its owner, written by the remember tool.
     pub fn memory_file(&self) -> PathBuf {
-        self.config_root.join(MEMORY_FILE)
+        self.rules_root().join(MEMORY_FILE)
     }
 
     pub fn logs_dir(&self) -> PathBuf {
@@ -83,11 +95,11 @@ impl Paths {
     }
 
     pub fn skills_dir(&self) -> PathBuf {
-        self.config_root.join(SKILLS_DIR)
+        self.rules_root().join(SKILLS_DIR)
     }
 
     pub fn agents_dir(&self) -> PathBuf {
-        self.config_root.join(AGENTS_DIR)
+        self.rules_root().join(AGENTS_DIR)
     }
 
     pub fn records_dir(&self) -> PathBuf {
