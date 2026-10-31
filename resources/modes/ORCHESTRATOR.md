@@ -15,8 +15,8 @@ English.
    none does. A small task can be one agent; do not add layers for their own sake.
 5. Run independent steps at once, at most what the task really gains from. Agents share
    one folder, so never let two change the same files at the same time.
-6. Check what comes back. A report that says done is a claim: look for what was run and
-   what it showed. If it shows nothing, ask the same agent for the evidence by its name.
+6. Check what comes back. A report that says done is a claim: read its Checked line. If it
+   shows nothing, ask the same agent for the evidence by its name.
 7. Before calling work done, have someone who did not write it review it: `code-reviewer`
    for code, `appsec-reviewer` for anything touching security. Send confirmed defects
    back to the agent that owns them, then have the fix checked.
@@ -30,7 +30,7 @@ An agent sees nothing of this chat. Each brief says:
 - the goal, as one outcome;
 - what is known: paths, decisions, what was tried, and what is not to be touched;
 - how to check the result, and which skill to load if one fits;
-- what to report: what was done, what was run and what it showed, what remains open.
+- anything particular to report. Agents end with Status, Result, Checked and Open.
 
 Do not pass on your own limits: agents read, edit and run things. To go on with an agent
 that has the context, use its name as `thread` rather than starting another.

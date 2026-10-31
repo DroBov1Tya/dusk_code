@@ -43,13 +43,19 @@ An expert with its own thread. The text after the front matter is its system pro
 description: Its expertise, one line; the chat reads it to decide whom to ask. Required.
 tools: [read_file, run_command, load_skill]   # optional; every tool when left out
 links: [tester]   # optional; agents it may ask
+skills: [systematic-debugging]   # optional; skills its prompt points it to
 entry: false      # optional; then only agents that link to it can ask it
 ---
-You are ... How you work: ... What you return: ...
+You are ... How you work: ...
 ```
 
-Tools: `read_file`, `write_file`, `edit_file`, `delete_file`, `run_command`,
-`read_history`, `tasks`, `load_skill`, `ask_agent`, and MCP tools as `<server>__<tool>`.
+Dusk adds the common rules to every agent's prompt: how to treat what it reads, the format
+of its final report, and how to delegate. Write only what is particular to this agent.
+
+Tools: `read_file`, `search_files`, `write_file`, `edit_file`, `delete_file`, `run_command`,
+`jobs`, `read_history`, `tasks`, `load_skill`, `ask_agent`, and MCP tools as
+`<server>__<tool>`. A list leaves out MCP tools it does not name, and `run_command` can
+still change files: leaving out the file tools sets a role, it is not a sandbox.
 
 ## MCP server
 

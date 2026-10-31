@@ -11,6 +11,7 @@
 //! description: Preparing a release
 //! links: [git/release-notes, git/changelog]
 //! tools: [read_file, run_command]   # agents only: the tools it gets; all when left out
+//! skills: [systematic-debugging]     # agents only: skills its prompt points it to
 //! source: Anthropic                 # where a node not written here comes from
 //! tags: [git, release]              # short words a client shows beside the name
 //! ---
@@ -92,9 +93,19 @@ struct FrontMatter {
     #[serde(default)]
     links: Vec<String>,
     tools: Option<Vec<String>>,
+    #[serde(default)]
+    skills: Vec<String>,
     source: Option<String>,
     #[serde(default)]
     tags: Vec<String>,
+}
+
+/// The skills a node's front matter names; none when it cannot be read.
+pub fn front_skills(text: &str) -> Vec<String> {
+    split_front_matter(text)
+        .ok()
+        .and_then(|(front, _)| serde_saphyr::from_str::<FrontMatter>(front).ok())
+        .map_or_else(Vec::new, |front| front.skills)
 }
 
 impl Graph {

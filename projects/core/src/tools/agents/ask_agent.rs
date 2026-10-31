@@ -20,6 +20,7 @@ use crate::tools::{Progress, Tool, ToolContext, ToolKind};
 use crate::{
     BoxFuture,
     catalog::agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
+    catalog::skills,
     runtime::chat::thread_start::{self, display_name, read_prompt, start_agent_thread},
     runtime::{ThreadEvent, system::Launcher},
     state::Identity,
@@ -146,7 +147,9 @@ impl AskAgent {
         let prompt = if builtin {
             read_prompt(&paths.main_prompt())?
         } else {
-            let (identity, prompt) = self.launcher.agents.prompt(agent_name).await?;
+            let config = self.launcher.config.current();
+            let skills = skills::list(&paths.skills_dir(), &config);
+            let (identity, prompt) = self.launcher.agents.prompt(agent_name, &skills).await?;
             info!("agent {agent_name} starts at version {}", identity.version);
             Some(prompt)
         };

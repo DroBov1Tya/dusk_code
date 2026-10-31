@@ -15,8 +15,12 @@ use anyhow::{Context, Result, ensure};
 use tracing::warn;
 
 use crate::{
-    catalog::graph::{AGENT_FILE, Graph, Problem, read_text, split_front_matter},
+    catalog::{
+        graph::{AGENT_FILE, Graph, Problem, front_skills, read_text, split_front_matter},
+        skills::SkillInfo,
+    },
     config::Config,
+    release::resources,
     runtime::chat::thread_start::fnv1a,
     state::{Identity, State},
     util::sync::{read, write},
@@ -128,9 +132,16 @@ impl Agents {
         config.agent_enabled(GENERAL_AGENT) && self.get(GENERAL_AGENT).is_none()
     }
 
-    /// The agent's prompt, from the file its identity names. A file edited since the last
-    /// read is recorded first, so the identity returned is the version the prompt is.
-    pub async fn prompt(&self, name: &str) -> Result<(Identity, String)> {
+    /// The agent's prompt: its file, which its identity names, and what every agent is
+    /// told. `skills` are those it can load now. A file edited since the last read is
+    /// recorded first, so the identity returned is the version the prompt is.
+    pub async fn prompt(&self, name: &str, skills: &[SkillInfo]) -> Result<(Identity, String)> {
+        let (identity, file) = self.read_current(name).await?;
+        let prompt = compose(&identity, &file, skills)?;
+        Ok((identity, prompt))
+    }
+
+    async fn read_current(&self, name: &str) -> Result<(Identity, AgentFile)> {
         let identity = self.get(name).with_context(|| format!("no agent {name}"))?;
         let (text, hash) = read_prompt(&identity)?;
         if hash == identity.content_hash {
@@ -262,14 +273,153 @@ fn read_agents(directory: &std::path::Path) -> (Vec<Identity>, Vec<Problem>) {
     (found, problems)
 }
 
-/// The prompt after the front matter, and the fingerprint of the whole file.
-fn read_prompt(identity: &Identity) -> Result<(String, String)> {
+/// What an agent's file says for its prompt.
+struct AgentFile {
+    body: String,
+    skills: Vec<String>,
+}
+
+/// The file's prompt, and the fingerprint of the whole file.
+fn read_prompt(identity: &Identity) -> Result<(AgentFile, String)> {
     let text = read_text(std::path::Path::new(&identity.path))
         .with_context(|| format!("cannot read agent {}", identity.name))?;
     let (_, body) = split_front_matter(&text)?;
-    Ok((body.trim().to_owned(), fingerprint(text.as_bytes())))
+    let file = AgentFile {
+        body: body.trim().to_owned(),
+        skills: front_skills(&text),
+    };
+    Ok((file, fingerprint(text.as_bytes())))
+}
+
+fn may_use(identity: &Identity, tool: &str) -> bool {
+    identity
+        .tools
+        .as_ref()
+        .is_none_or(|tools| tools.iter().any(|name| name == tool))
+}
+
+/// The agent's own text, then what all agents share: the rules, how far it delegates, and
+/// the skills it can load, so a skill switched off or gone is never pointed to.
+fn compose(identity: &Identity, file: &AgentFile, skills: &[SkillInfo]) -> Result<String> {
+    let rules = resources::text("internal/AGENT.md")?;
+    let delegates = !identity.links.is_empty() && may_use(identity, "ask_agent");
+    let reach = resources::text(match delegates {
+        true => "internal/AGENT_LINKS.md",
+        false => "internal/AGENT_LEAF.md",
+    })?;
+    let mut prompt = format!("{}\n\n{}\n\n{}", file.body, reach.trim(), rules.trim());
+    let usable: Vec<&str> = file
+        .skills
+        .iter()
+        .filter(|name| {
+            skills
+                .iter()
+                .any(|skill| skill.name == **name && skill.enabled && skill.problem.is_none())
+        })
+        .map(String::as_str)
+        .collect();
+    if !usable.is_empty() && may_use(identity, "load_skill") {
+        prompt.push_str(&format!(
+            "\n\nSkills made for this work; load the one that fits with load_skill before \
+             you start: {}.",
+            usable.join(", ")
+        ));
+    }
+    Ok(prompt)
 }
 
 fn fingerprint(bytes: &[u8]) -> String {
     format!("{:016x}", fnv1a(bytes))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use super::*;
+    use crate::{catalog::graph::SKILL_FILE, catalog::skills::SkillKind, tools::ToolRegistry};
+
+    fn identity(links: &[&str], tools: Option<&[&str]>) -> Identity {
+        Identity {
+            name: "tester".into(),
+            path: String::new(),
+            version: 1,
+            content_hash: String::new(),
+            description: String::new(),
+            entry: true,
+            links: links.iter().map(|link| (*link).to_owned()).collect(),
+            tools: tools.map(|tools| tools.iter().map(|tool| (*tool).to_owned()).collect()),
+            updated_at: 0,
+        }
+    }
+
+    fn skill(name: &str, enabled: bool) -> SkillInfo {
+        SkillInfo {
+            name: name.into(),
+            description: String::new(),
+            kind: SkillKind::Builtin,
+            source: None,
+            tags: Vec::new(),
+            enabled,
+            problem: None,
+        }
+    }
+
+    fn file() -> AgentFile {
+        AgentFile {
+            body: "You test.".into(),
+            skills: vec!["on".into(), "off".into(), "gone".into()],
+        }
+    }
+
+    #[test]
+    fn a_prompt_names_only_skills_that_can_be_loaded() {
+        let skills = [skill("on", true), skill("off", false)];
+        let prompt = compose(&identity(&[], None), &file(), &skills).unwrap();
+        assert!(prompt.starts_with("You test."));
+        assert!(prompt.contains("Status:") && prompt.contains("load_skill before"));
+        assert!(prompt.ends_with(": on."), "{prompt}");
+    }
+
+    #[test]
+    fn what_an_agent_is_told_follows_its_tools_and_links() {
+        let skills = [skill("on", true)];
+        let lead = compose(&identity(&["other"], None), &file(), &skills).unwrap();
+        assert!(lead.contains("Use ask_agent"));
+        let alone = compose(&identity(&[], None), &file(), &skills).unwrap();
+        assert!(alone.contains("You work alone"));
+        let limited = identity(&["other"], Some(&["read_file"]));
+        let limited = compose(&limited, &file(), &skills).unwrap();
+        assert!(limited.contains("You work alone") && !limited.contains("load_skill"));
+    }
+
+    /// A name that points at nothing fails silently at run time, as the first catalog did.
+    #[test]
+    fn the_shipped_agents_name_only_what_exists() {
+        let root = resources::root().unwrap();
+        let agents = Graph::load(&root.join("agents"), AGENT_FILE);
+        let skills = Graph::load(&root.join("skills"), SKILL_FILE);
+        assert!(agents.problems().is_empty(), "{:?}", agents.problems());
+        let mut known: BTreeSet<String> = ToolRegistry::builtin(&root.join("skills"))
+            .names()
+            .map(str::to_owned)
+            .collect();
+        known.extend(["ask_agent", "jobs", "read_history", "tasks"].map(str::to_owned));
+        let mut named = 0;
+        for agent in agents.nodes() {
+            for tool in agent.tools.iter().flatten() {
+                assert!(known.contains(tool), "{}: tool {tool}", agent.name);
+            }
+            let text = read_text(agent.file()).unwrap();
+            for skill in front_skills(&text) {
+                assert!(
+                    skills.get(&skill).is_some(),
+                    "{}: skill {skill}",
+                    agent.name
+                );
+                named += 1;
+            }
+        }
+        assert!(named > 0, "the skills were not read");
+    }
 }
