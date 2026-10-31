@@ -123,6 +123,10 @@ fn next_revision() -> u64 {
     REVISIONS.fetch_add(1, Ordering::Relaxed)
 }
 
+/// What a job result shows on screen: this many lines, and no more than this many characters.
+const JOB_LINES: usize = 12;
+const JOB_CHARS: usize = 1200;
+
 impl Transcript {
     pub fn set_artifact_store(&mut self, store: dusk_core::state::artifacts::ArtifactStore) {
         self.images = super::images::Images::new(store);
@@ -170,7 +174,7 @@ impl Transcript {
                         open: false,
                     },
                 }),
-                MessageRole::Job => transcript.notice(message.content.clone(), Tone::Info),
+                MessageRole::Job => transcript.job_result(&message.content),
                 MessageRole::Assistant => {
                     if let Some(reasoning) = &message.reasoning {
                         transcript.add_reasoning(reasoning);
@@ -204,6 +208,26 @@ impl Transcript {
     pub fn push(&mut self, entry: Entry) {
         self.entries.push(entry);
         self.changed();
+    }
+
+    /// A background job's result: the header and the first lines of its output. The
+    /// model gets all of it; a chatty job must not push the conversation off the screen.
+    pub fn job_result(&mut self, content: &str) {
+        let mut lines = content.lines();
+        let mut text = lines
+            .by_ref()
+            .take(JOB_LINES)
+            .collect::<Vec<_>>()
+            .join("\n");
+        if let Some((end, _)) = text.char_indices().nth(JOB_CHARS) {
+            text.truncate(end);
+            text.push_str("...");
+        }
+        match lines.count() {
+            0 => {}
+            more => text.push_str(&format!("\n[{more} more lines]")),
+        }
+        self.notice(text, Tone::Info);
     }
 
     pub fn notice(&mut self, text: impl Into<String>, tone: Tone) {
