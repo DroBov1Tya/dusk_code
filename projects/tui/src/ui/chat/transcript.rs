@@ -23,8 +23,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Button, ButtonHit, Entry, Focus, ImageSpot, Layout, ShownPreview, TEXT_COLUMN, Tone,
-    Transcript, TranscriptHit, compact_number,
+    Activity, App, Button, ButtonHit, Entry, Focus, ImageSpot, Layout, ShownPreview, TEXT_COLUMN,
+    Tone, Transcript, TranscriptHit, compact_number,
     paste::{self, Part},
 };
 
@@ -44,6 +44,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         welcome(frame, area);
         return;
     }
+    app.transcript.set_live(live_step(app));
     let width = area.width as usize;
     let browsed = match app.focus {
         Focus::Browse(index) => Some(index),
@@ -313,31 +314,36 @@ fn append_entry(
     }
     placed.starts.push(placed.lines.len());
     let mut previews = Vec::new();
-    let mut drawn = if transcript.is_hidden(index) {
+    let folded_away = transcript.is_folded_away(index);
+    let mut drawn = if folded_away {
+        Vec::new()
+    } else if matches!(entry, Entry::Activity { .. }) {
+        activity(transcript, index)
+    } else if transcript.is_hidden(index) {
         let text = transcript.text(index).unwrap_or_default();
         vec![hidden_line(entry, &text)]
     } else {
-        let mut lines = entry_lines(entry, text_width, live, ends_turn(entries, index));
-        if transcript.images.enabled()
-            && let Entry::Tool {
-                call,
-                result: Some(result),
-                ..
-            } = entry
-            && call.name == "display_image"
-            && !result.is_error
-        {
-            for artifact in &result.artifacts {
-                let (card, preview) =
-                    super::super::text::image_card::render(transcript, artifact, text_width);
-                if let Some(preview) = preview {
-                    previews.push((lines.len() + preview.row, preview, artifact.clone()));
-                }
-                lines.extend(indent(card, CARD_INDENT));
-            }
-        }
-        lines
+        entry_lines(entry, text_width, live, ends_turn(entries, index))
     };
+    // A picture stays in the thread whether or not its step is folded.
+    if transcript.images.enabled()
+        && let Entry::Tool {
+            call,
+            result: Some(result),
+            ..
+        } = entry
+        && call.name == "display_image"
+        && !result.is_error
+    {
+        for artifact in &result.artifacts {
+            let (card, preview) =
+                super::super::text::image_card::render(transcript, artifact, text_width);
+            if let Some(preview) = preview {
+                previews.push((drawn.len() + preview.row, preview, artifact.clone()));
+            }
+            drawn.extend(indent(card, CARD_INDENT));
+        }
+    }
     if browsed == Some(index)
         && let Some(header) = drawn.first_mut()
     {
@@ -358,11 +364,57 @@ fn append_entry(
     placed.lines.extend(drawn);
 }
 
+/// The step the activity line names, while the agent works.
+fn live_step(app: &App) -> Option<String> {
+    if !app.is_busy() {
+        return None;
+    }
+    match &app.activity {
+        Activity::Idle => None,
+        Activity::Thinking => Some("thinking".into()),
+        Activity::Writing => Some("writing".into()),
+        Activity::Tool(name) => Some(name.clone()),
+        Activity::Compacting => Some("compacting".into()),
+        Activity::Forking => Some("forking".into()),
+        Activity::Retrying(attempt) => Some(format!("retrying, attempt {attempt}")),
+    }
+}
+
+/// A run in one line: what goes on while it is the newest thing in the thread, then how
+/// many steps it took.
+fn activity(transcript: &Transcript, index: usize) -> Vec<Line<'static>> {
+    let open = matches!(transcript.entries[index], Entry::Activity { open: true });
+    let mark = Span::styled(format!("   {} ", fold_mark(open)), fg(TEAL));
+    if let Some(step) = transcript.current_step(index) {
+        return vec![Line::from(vec![mark, Span::styled(step, bold(SUN))])];
+    }
+    let steps = transcript.run(index).count();
+    let failed = transcript
+        .run(index)
+        .filter(
+            |entry| matches!(entry, Entry::Tool { result: Some(result), .. } if result.is_error),
+        )
+        .count();
+    let said = match steps {
+        1 => "1 step".to_owned(),
+        steps => format!("{steps} steps"),
+    };
+    let mut spans = vec![mark, Span::styled(said, thought())];
+    if failed > 0 {
+        spans.push(Span::styled(
+            format!("  {FAILED} {failed} failed"),
+            fg(EMBER),
+        ));
+    }
+    vec![Line::from(spans)]
+}
+
 /// What a hidden entry leaves: what it was and how long, to show it again.
 fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
     let what = match entry {
         Entry::User { .. } => "your message",
         Entry::Answer(_) => "answer",
+        Entry::Activity { .. } => "activity",
         Entry::Reasoning { .. } => "thinking",
         Entry::Tool { .. } => "tool call",
         Entry::Summary { .. } => "summary",
@@ -447,9 +499,12 @@ fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
 
 /// Whether the answer at `index` is the last word of its turn: no tool call follows it.
 fn ends_turn(entries: &[Entry], index: usize) -> bool {
-    let next = entries[index + 1..]
-        .iter()
-        .find(|entry| !matches!(entry, Entry::Reasoning { .. } | Entry::Notice { .. }));
+    let next = entries[index + 1..].iter().find(|entry| {
+        !matches!(
+            entry,
+            Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Notice { .. }
+        )
+    });
     matches!(entries[index], Entry::Answer(_)) && !matches!(next, Some(Entry::Tool { .. }))
 }
 
@@ -476,7 +531,6 @@ fn entry_lines(
             let header = Line::from(vec![
                 Span::styled(format!("   {marker} "), thought()),
                 Span::styled("thinking", thought()),
-                Span::styled(format!(" {DOT} ~{} tokens", tokens(text)), dim()),
             ]);
             folded(header, *open, || {
                 let body = plain(text.trim(), width.saturating_sub(2), thought());
@@ -484,6 +538,8 @@ fn entry_lines(
             })
         }
         Entry::Tool { call, result, open } => tool(call, result.as_ref(), *open, width, live),
+        // Drawn from the whole run in `append_entry`.
+        Entry::Activity { .. } => Vec::new(),
         Entry::Summary { text, open } => {
             let header = Line::from(vec![
                 Span::styled(format!("   {} ", fold_mark(*open)), fg(VIOLET)),
@@ -539,17 +595,15 @@ fn tool(
         ),
         Some(result) if result.is_error => (
             Span::styled(format!("   {TOOL} "), fg(EMBER)),
-            Span::styled(format!("{FAILED} failed"), fg(EMBER)),
+            Span::styled(FAILED, fg(EMBER)),
         ),
-        Some(result) => (
+        Some(_) => (
             Span::styled(format!("   {TOOL} "), fg(TEAL)),
-            Span::styled(format!("{DONE} {}", line_count(&result.content)), dim()),
+            Span::styled(DONE, fg(TEAL)),
         ),
     };
     let name = Span::styled(call.name.clone(), bold(TEAL));
-    let room = width.saturating_sub(call.name.len() + status.width() + 6);
-    let arguments = Span::styled(format!("  {}  ", wrap::clip(&preview(call), room)), dim());
-    let header = Line::from(vec![mark, name, arguments, status]);
+    let header = Line::from(vec![mark, name, Span::raw("  "), status]);
     folded(header, open, || {
         let gutter = format!("   {GUTTER} ");
         let mut body = indent(
@@ -625,7 +679,10 @@ fn indent(lines: Vec<Line<'static>>, lead: &str) -> Vec<Line<'static>> {
 }
 
 fn is_meta(entry: &Entry) -> bool {
-    matches!(entry, Entry::Reasoning { .. } | Entry::Tool { .. })
+    matches!(
+        entry,
+        Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Tool { .. }
+    )
 }
 
 fn fold_mark(open: bool) -> &'static str {
@@ -638,14 +695,6 @@ pub fn spinner(app: &App) -> &'static str {
 
 fn tokens(text: &str) -> String {
     compact_number(text.len().div_ceil(4) as u64)
-}
-
-fn line_count(text: &str) -> String {
-    match text.lines().count() {
-        0 => "empty".into(),
-        1 => wrap::clip(text.trim(), 40),
-        lines => format!("{lines} lines"),
-    }
 }
 
 fn pretty(arguments: &serde_json::Value) -> String {
@@ -689,30 +738,6 @@ fn welcome(frame: &mut Frame, area: Rect) {
     };
     let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
     frame.render_widget(paragraph, area);
-}
-
-/// What a tool call is about, in a few words: its command or path when it has one.
-fn preview(call: &ToolCall) -> String {
-    let arguments = &call.arguments;
-    let text = |key: &str| arguments.get(key).and_then(|value| value.as_str());
-    match call.name.as_str() {
-        "ask_agent" => {
-            let agent = text("thread").or(text("agent")).unwrap_or("general");
-            return format!("{agent}: {}", one_line(text("task").unwrap_or_default()));
-        }
-        "tasks" => {
-            let action = text("action").unwrap_or_default();
-            let about = text("task").or(text("id")).unwrap_or_default();
-            return one_line(&format!("{action} {about}"));
-        }
-        _ => {}
-    }
-    for key in ["command", "path", "search", "name"] {
-        if let Some(value) = text(key) {
-            return one_line(value);
-        }
-    }
-    arguments.to_string()
 }
 
 pub fn one_line(text: &str) -> String {
