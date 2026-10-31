@@ -31,6 +31,13 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   need `allow-passthrough`.
 - Markdown tables in answers render with aligned columns, stacked when narrow.
 - Background subagents with separate threads and messages to their parent.
+- Background commands: `run_command` with `background=true` returns a job id at once,
+  and the result joins the chat by itself when the command ends, even after the turn
+  did. The `jobs` tool lists, shows and cancels them. At most 8 run per thread; each
+  stream keeps 32 KiB. A job is never restarted: after a crash a running one is marked
+  interrupted. The chat shows the first lines of a result, the agent gets all of it.
+- `/update` shows the download and install as it goes; iTerm2 shows what the agent
+  is doing in its tab (session status and native progress).
 - Modes switched with Tab: MAIN works itself, PLAN only reads and plans, ORCHESTRATOR
   hands work to agents. Each is a prompt in `~/.config/duskcode/modes/` with its own
   tool switches; any other `.md` there is a mode too. Tools follow the mode at once; the

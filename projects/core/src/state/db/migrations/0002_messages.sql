@@ -26,6 +26,11 @@ CREATE TABLE messages (
     -- Image cards a tool message shows, as a JSON array; never sent to the model.
     artifacts_json TEXT CHECK (artifacts_json IS NULL OR (role = 'tool'
         AND json_valid(artifacts_json) AND json_type(artifacts_json) = 'array')),
+    -- For a background job's result: the job. It is stored with the role system and
+    -- decoded as a job message, so the role constraint above stays as it is.
+    from_job_id TEXT CHECK (from_job_id IS NULL OR role = 'system'),
     UNIQUE (thread_id, sequence),
     CHECK (length(trim(content)) > 0 OR tool_calls_json IS NOT NULL)
 );
+
+CREATE UNIQUE INDEX messages_job ON messages(from_job_id) WHERE from_job_id IS NOT NULL;

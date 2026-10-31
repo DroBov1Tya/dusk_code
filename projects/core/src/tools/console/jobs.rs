@@ -76,6 +76,13 @@ impl JobManager {
                 drop(abandoned);
             }
         }
+        let needed = state
+            .unfinished_job_owners()
+            .await?
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        lease.sweep(&needed);
         Ok(Arc::new(Self {
             state,
             mailboxes,
@@ -318,6 +325,7 @@ async fn execute(
         capture(stderr, &job.stderr, drain),
         wait
     );
+    let exited_cleanly = matches!(&exit, Ok(exit) if exit.success());
     let mut output = match exit {
         Ok(exit) => format!(
             "exit code: {}",
@@ -341,7 +349,9 @@ async fn execute(
             output.push_str(&format!("\n{name} read failed: {error}"));
         }
     }
-    let status = if failed && status == "completed" {
+    // Cancelled and timed-out jobs keep their own status; a finished one is judged by
+    // its exit code, which the model sees in the output as well.
+    let status = if status == "completed" && (failed || !exited_cleanly) {
         "failed"
     } else {
         status
@@ -443,7 +453,7 @@ impl Tool for Jobs {
                     .into_iter()
                     .map(|job| {
                         format!(
-                            "{}: {} — {}",
+                            "{}: {} - {}",
                             job.job_id,
                             manager.status(&job),
                             job.command.chars().take(120).collect::<String>()
@@ -472,5 +482,129 @@ impl Tool for Jobs {
             };
             Ok(format!("job {id}: {status}\n{output}"))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+
+    use super::*;
+    use crate::testing::temp_dir;
+
+    async fn open(name: &str) -> (Arc<State>, PathBuf) {
+        let database = temp_dir(name).join("state.db");
+        let state = Arc::new(State::open(&database).await.unwrap());
+        state.create_thread("thread", "test").await.unwrap();
+        (state, database)
+    }
+
+    async fn manager(state: &Arc<State>, database: &Path) -> Arc<JobManager> {
+        let mailboxes = Arc::new(Mailboxes::default());
+        JobManager::new(Arc::clone(state), mailboxes, database)
+            .await
+            .unwrap()
+    }
+
+    async fn finished(state: &State, id: &str) -> BackgroundJob {
+        for _ in 0..100 {
+            let job = state.job("thread", id).await.unwrap();
+            if job.status != "running" {
+                return job;
+            }
+            tokio::time::sleep(Duration::from_millis(50)).await;
+        }
+        panic!("the job did not finish");
+    }
+
+    async fn announced(state: &State, id: &str) -> i64 {
+        sqlx::query_scalar("SELECT COUNT(*) FROM pending_messages WHERE from_job_id = ?")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await
+            .unwrap()
+    }
+
+    #[tokio::test]
+    async fn a_finished_job_is_announced_once() {
+        let (state, database) = open("job-once").await;
+        let manager = manager(&state, &database).await;
+        let id = manager
+            .start("thread", "echo hi", Path::new("."), 10)
+            .await
+            .unwrap();
+        let job = finished(&state, &id).await;
+        assert_eq!(job.status, "completed");
+        assert!(job.output.contains("hi"));
+        // A replayed outcome changes nothing and queues nothing more.
+        state
+            .finish_job(&id, &manager.lease.id, "failed", "again")
+            .await
+            .unwrap();
+        assert_eq!(state.job("thread", &id).await.unwrap().status, "completed");
+        assert_eq!(announced(&state, &id).await, 1);
+    }
+
+    #[tokio::test]
+    async fn a_nonzero_exit_fails_the_job() {
+        let (state, database) = open("job-exit").await;
+        let manager = manager(&state, &database).await;
+        let id = manager
+            .start("thread", "echo bad >&2; exit 3", Path::new("."), 10)
+            .await
+            .unwrap();
+        let job = finished(&state, &id).await;
+        assert_eq!(job.status, "failed");
+        assert!(job.output.contains("exit code: 3") && job.output.contains("bad"));
+    }
+
+    #[tokio::test]
+    async fn cancelling_stops_the_process_and_says_so() {
+        let (state, database) = open("job-cancel").await;
+        let manager = manager(&state, &database).await;
+        let id = manager
+            .start("thread", "sleep 30", Path::new("."), 60)
+            .await
+            .unwrap();
+        manager.cancel("thread", &id).await.unwrap();
+        assert_eq!(finished(&state, &id).await.status, "cancelled");
+        assert!(manager.cancel("other", &id).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn an_abandoned_owner_is_interrupted_and_its_lease_swept() {
+        let (state, database) = open("job-abandoned").await;
+        // A runtime that is gone: its lease was taken and let go, the file stays.
+        let gone = JobLease::take(&database).unwrap();
+        let path = gone.stored_path().unwrap().to_owned();
+        state
+            .create_job("thread", "job", "sleep 99", &gone.id, &path)
+            .await
+            .unwrap();
+        drop(gone);
+        manager(&state, &database).await;
+        assert_eq!(
+            state.job("thread", "job").await.unwrap().status,
+            "interrupted"
+        );
+        assert_eq!(announced(&state, "job").await, 1);
+        assert!(!Path::new(&path).exists());
+    }
+
+    #[tokio::test]
+    async fn a_live_owner_is_left_alone() {
+        let (state, database) = open("job-live").await;
+        let live = JobLease::take(&database).unwrap();
+        let path = live.stored_path().unwrap().to_owned();
+        state
+            .create_job("thread", "job", "sleep 99", &live.id, &path)
+            .await
+            .unwrap();
+        let manager = manager(&state, &database).await;
+        let job = state.job("thread", "job").await.unwrap();
+        assert_eq!(job.status, "running");
+        assert_eq!(manager.status(&job), "running (another runtime)");
+        assert_eq!(announced(&state, "job").await, 0);
+        assert!(Path::new(&path).exists());
     }
 }

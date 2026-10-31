@@ -500,14 +500,14 @@ impl App {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         match event {
-            ThreadEvent::UserMessage(message) => {
-                // Crash recovery may admit a pending request already in the snapshot.
+            // Crash recovery may admit a pending request already in the snapshot.
+            ThreadEvent::UserMessage(message)
                 if self.thread_id.as_deref() == Some(message.thread_id.as_str())
-                    && self.sent_ids.insert(message.message_id)
-                {
-                    self.sent.push(message.content);
-                }
+                    && self.sent_ids.insert(message.message_id.clone()) =>
+            {
+                self.sent.push(message.content);
             }
+            ThreadEvent::UserMessage(_) => {}
             ThreadEvent::ModelSelected {
                 name,
                 context_window,
@@ -644,9 +644,7 @@ impl App {
                 self.start_subagent(thread_id, agent, task, parent);
             }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
-            ThreadEvent::FromJob(message) => {
-                self.transcript.notice(message.content, Tone::Info);
-            }
+            ThreadEvent::FromJob(message) => self.transcript.job_result(&message.content),
             ThreadEvent::FromAgent(message) => {
                 let from = message.from_thread_id.unwrap_or_default();
                 self.transcript

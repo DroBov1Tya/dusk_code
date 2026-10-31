@@ -2,6 +2,7 @@
 //! Lease files are never reused or removed while jobs could still need crash recovery.
 
 use std::{
+    collections::HashSet,
     fs::{File, OpenOptions, TryLockError},
     io::{Read, Write},
     path::{Path, PathBuf},
@@ -80,6 +81,36 @@ impl JobLease {
                 path,
                 _file: file,
             }),
+        }
+    }
+
+    /// Removes the lease files that nobody holds and no unfinished job names: a runtime
+    /// leaves one per start, and they would pile up. A held lease cannot be taken, and
+    /// one still being written does not read as its own ID, so a live runtime's stays.
+    pub fn sweep(&self, needed: &HashSet<String>) {
+        let Some(directory) = self.path.parent() else {
+            return;
+        };
+        let Ok(entries) = std::fs::read_dir(directory) else {
+            return;
+        };
+        for path in entries.flatten().map(|entry| entry.path()) {
+            let Some(id) = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .and_then(|name| name.strip_suffix(".lock"))
+            else {
+                continue;
+            };
+            if id == self.id || needed.contains(id) {
+                continue;
+            }
+            let Some(stored) = path.to_str() else {
+                continue;
+            };
+            if let Owner::Abandoned(abandoned) = Self::inspect(id, stored) {
+                let _ = std::fs::remove_file(&abandoned.path);
+            }
         }
     }
 
