@@ -504,6 +504,18 @@ impl Runtime {
         self.launcher.state.undo_points(thread_id).await
     }
 
+    pub fn set_max_input_tokens(&self, tokens: u64) -> Result<()> {
+        self.config()
+            .update(|config| config.set_max_input_tokens(tokens))?;
+        Ok(())
+    }
+
+    pub fn set_max_output_tokens(&self, tokens: u64) -> Result<()> {
+        self.config()
+            .update(|config| config.set_max_output_tokens(tokens))?;
+        Ok(())
+    }
+
     pub fn set_max_goal_rounds(&self, rounds: u32) -> Result<()> {
         self.launcher
             .config

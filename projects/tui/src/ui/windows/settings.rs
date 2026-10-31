@@ -105,6 +105,7 @@ fn hints(view: &SettingsView) -> &'static str {
             " digits enter token count  Ctrl+A select all  enter save  esc cancel "
         }
         (Some(SettingCategory::System), _) => " read every 2 s while open  esc back ",
+        (Some(SettingCategory::Limits), _) => " up/down choose  left/right change  esc back ",
         (Some(SettingCategory::Models), _) => {
             " up/down choose  enter/click apply  manual opens token count  esc back "
         }
@@ -221,6 +222,7 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 },
             ]
         }
+        Some(SettingCategory::Limits) => limit_rows(view, width),
         Some(SettingCategory::System) => system_rows(view, width),
         Some(SettingCategory::Updates) => {
             let dev = view.update_channel == Channel::Dev;
@@ -497,6 +499,46 @@ fn kind_color(kind: SkillKind) -> ratatui::style::Color {
         SkillKind::Own => TEAL,
         SkillKind::Other => SUN,
     }
+}
+
+/// What every model and thread is held to; a model's own input budget, set under models,
+/// goes before the first of these.
+fn limit_rows(view: &SettingsView, width: usize) -> Vec<Row> {
+    let row = |name: &str, value: String, about: &str| {
+        let line = right(
+            vec![Span::raw(format!("  {name}"))],
+            Span::styled(format!("\u{2212} {value} +  "), bold(SUN)),
+            width,
+        );
+        let row = Row {
+            lines: vec![line],
+            switch: None,
+            lead: 0,
+        };
+        described(row, about, width)
+    };
+    vec![
+        row(
+            "input tokens",
+            view.max_input_tokens.to_string(),
+            "    for a model without its own budget under models",
+        ),
+        row(
+            "output tokens",
+            view.max_output_tokens.to_string(),
+            "    what the model may write in one call",
+        ),
+        row(
+            "concurrent agents",
+            view.max_agents_at_work.to_string(),
+            "    subagents at work across all threads",
+        ),
+        row(
+            "goal rounds",
+            view.max_goal_rounds.to_string(),
+            "    turns a goal starts by itself before it pauses",
+        ),
+    ]
 }
 
 /// The limit first, then the tree, then what is wrong with the agents folder.

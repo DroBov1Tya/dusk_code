@@ -1,4 +1,4 @@
-//! The files dusk ships into the config folder: the prompts of the modes, COMPACT.md,
+//! The files dusk ships into the rules folder: the prompts of the modes, COMPACT.md,
 //! FORK.md, built-in skills and specialist agents. At every start each is brought to
 //! the version of this build, without losing what the user wrote: `builtin.lock`
 //! records the hash of each file as dusk last wrote it. A file still as written is
@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{init::create_private_dir, init::paths::Paths, release::resources};
 
-const LOCK_FILE: &str = "builtin.lock";
+pub const LOCK_FILE: &str = "builtin.lock";
 const NEW_SUFFIX: &str = ".new";
 
 /// What a start did to the shipped files, by their path in the config folder.
@@ -31,7 +31,8 @@ pub struct Synced {
 }
 
 pub fn sync(paths: &Paths) -> Result<Synced> {
-    let root = paths.config_root();
+    let root = paths.rules_root();
+    let root = root.as_path();
     let lock_path = root.join(LOCK_FILE);
     let mut lock = read_lock(&lock_path);
     let mut synced = Synced::default();
@@ -39,6 +40,8 @@ pub fn sync(paths: &Paths) -> Result<Synced> {
         let target = root.join(&path);
         safe_parent(root, &target)?;
         let shipped_hash = hash(&contents);
+        // A copy from when the user's file differed; nothing to offer once it is current.
+        let beside = PathBuf::from(format!("{}{NEW_SUFFIX}", target.display()));
         let on_disk = match fs::symlink_metadata(&target) {
             // A link was put there by hand; dusk does not write through it.
             Ok(metadata) if !metadata.is_file() => continue,
@@ -53,13 +56,15 @@ pub fn sync(paths: &Paths) -> Result<Synced> {
                 write(&target, &contents)?;
                 synced.written.push(path.clone());
             }
-            Some(disk) if disk == shipped_hash => {}
+            Some(disk) if disk == shipped_hash => {
+                let _ = fs::remove_file(&beside);
+            }
             Some(disk) if lock.get(&path) == Some(&disk) => {
                 write(&target, &contents)?;
+                let _ = fs::remove_file(&beside);
                 synced.updated.push(path.clone());
             }
             Some(_) => {
-                let beside = PathBuf::from(format!("{}{NEW_SUFFIX}", target.display()));
                 if fs::read(&beside).ok().as_deref() != Some(contents.as_slice()) {
                     write(&beside, &contents)?;
                     synced.kept.push(path);
@@ -81,8 +86,7 @@ fn shipped() -> Result<Vec<(String, Vec<u8>)>> {
         for relative in resources::files(&root.join(category))? {
             let source = root.join(category).join(&relative);
             let path = match (category, relative.to_str()) {
-                // Keep the existing editable paths and their hash-lock records.
-                ("internal", Some("COMPACT.md" | "FORK.md")) => relative.clone(),
+                ("internal", _) => Path::new("prompts").join(&relative),
                 _ => Path::new(category).join(&relative),
             };
             files.push((path.to_string_lossy().into_owned(), fs::read(source)?));
@@ -151,7 +155,7 @@ mod tests {
     #[test]
     fn shipped_files_follow_the_build_unless_the_user_changed_them() {
         let paths = temp_paths("builtin");
-        create_private_dir(paths.config_root()).unwrap();
+        create_private_dir(&paths.rules_root()).unwrap();
         let first = sync(&paths).unwrap();
         assert!(first.written.contains(&"modes/PLAN.md".to_owned()));
         assert!(
@@ -161,11 +165,11 @@ mod tests {
 
         // An older build wrote PLAN.md; this build ships another text.
         let plan = paths.modes_dir().join("PLAN.md");
-        let mut lock = read_lock(&paths.config_root().join(LOCK_FILE));
+        let mut lock = read_lock(&paths.rules_root().join(LOCK_FILE));
         fs::write(&plan, "old plan").unwrap();
         lock.insert("modes/PLAN.md".into(), hash(b"old plan"));
         write(
-            &paths.config_root().join(LOCK_FILE),
+            &paths.rules_root().join(LOCK_FILE),
             &serde_json::to_vec(&lock).unwrap(),
         )
         .unwrap();

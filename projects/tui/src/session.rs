@@ -313,6 +313,17 @@ pub async fn run(
                 }
                 Err(error) => app.error(format!("cannot save the goal rounds: {error:#}")),
             },
+            Action::SetInputTokens(tokens) => {
+                match runtime.set_max_input_tokens(tokens) {
+                    Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,
+                    Err(error) => app.error(format!("cannot save the limit: {error:#}")),
+                }
+                app.limit = runtime.input_limit();
+            }
+            Action::SetOutputTokens(tokens) => match runtime.set_max_output_tokens(tokens) {
+                Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,
+                Err(error) => app.error(format!("cannot save the limit: {error:#}")),
+            },
             Action::SetMemoryChars(chars) => match runtime.set_memory_chars(chars) {
                 Ok(()) => {
                     if let Some(Panel::Settings(list)) = &mut app.panel {
@@ -644,8 +655,8 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             app.flash = Some(format!("model {}", choice.name()));
         }
         Ok(Answer::Settings(settings)) => match &mut app.panel {
-            Some(Panel::Settings(view)) => view.refresh(settings),
-            _ => app.panel = Some(Panel::Settings(Box::new(SettingsView::new(settings)))),
+            Some(Panel::Settings(view)) => view.refresh(*settings),
+            _ => app.panel = Some(Panel::Settings(Box::new(SettingsView::new(*settings)))),
         },
         Ok(Answer::Effort { current, changed }) => {
             app.effort = current;

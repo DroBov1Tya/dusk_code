@@ -21,7 +21,7 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   tool; `/goal pause|resume|clear|done` and the buttons above the box do the same. A
   stop or a failed turn pauses it.
 - File reading, writing, editing and deletion; shell commands; loading skills from `SKILL.md` files.
-- `/effort off|low|medium|high|default`; off is sent as `none`, and a provider that
+- `/effort off|low|medium|high|xhigh|max|default`; off is sent as `none`, and a provider that
   rejects it gets the previous effort back. `/settings` -> models sets the input budget
   per model: Auto, 128k to 1M, or a token count, capped by the model window.
 - `display_image`: the chat shows a public HTTPS PNG or JPEG as an image card, kept
@@ -57,7 +57,7 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
 - `/update` shows the download and install as it goes; iTerm2 shows what the agent
   is doing in its tab (session status and native progress).
 - Modes switched with Tab: MAIN works itself, PLAN only reads and plans, ORCHESTRATOR
-  hands work to agents. Each is a prompt in `~/.config/duskcode/modes/` with its own
+  hands work to agents. Each is a prompt in `~/.config/duskcode/rules/modes/` with its own
   tool switches; any other `.md` there is a mode too. Tools follow the mode at once; the
   prompt is set at the thread's start and after each compaction, so the cached context
   stays the same in between.
@@ -67,6 +67,8 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   have no file-writing tools; they can still run commands, so this sets a role and is
   not a sandbox.
 - Persistent task boards displayed in the terminal sidebar.
+- What steers the agents is in `~/.config/duskcode/rules/`: `agents/`, `skills/`, `modes/`,
+  `prompts/` and `MEMORY.md`; an older config folder moves there at start.
 - Expert agents in `agents/<name>/AGENT.md` and skills in `skills/<name>/SKILL.md`, both
   editable in `/settings`; agents may improve skills and write new ones from repeated,
   verified practice.
@@ -76,7 +78,7 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   image cards and logs take on disk, read every 2 seconds while open.
 - Questions with options the agent asks above the message box (`ask_user`); the answer
   goes back as `QUESTION: ... ANSWER: ...`, and a message typed instead declines it.
-- Memory of the user's lasting preferences in `~/.config/duskcode/MEMORY.md`, kept
+- Memory of the user's lasting preferences in `~/.config/duskcode/rules/MEMORY.md`, kept
   short by the `remember` tool; switched in `/settings` -> personalize, sized by
   `memory.max_chars` in config.yml.
 

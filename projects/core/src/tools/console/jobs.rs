@@ -643,7 +643,16 @@ mod tests {
             "interrupted"
         );
         assert_eq!(announced(&state, "job").await, 1);
-        assert!(!Path::new(&path).exists());
+        // A process forking elsewhere holds an inherited lock for a moment, and then the
+        // lease waits for the next start; the sweep must get it in the end.
+        for _ in 0..20 {
+            if !Path::new(&path).exists() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+            self::manager(&state, &database).await;
+        }
+        panic!("the lease was not swept");
     }
 
     #[tokio::test]
