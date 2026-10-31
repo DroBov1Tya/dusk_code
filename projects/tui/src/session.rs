@@ -452,6 +452,10 @@ pub async fn run(
                     app.jobs_stale = true;
                 }
             }
+            Action::Command(Command::Resume { .. }) => {
+                let cwd = env::current_dir().ok();
+                answer(runtime, &mut app, &mut open, Command::Resume { cwd }).await;
+            }
             Action::Command(Command::Context { .. }) => {
                 let thread_id = app.thread_id.clone();
                 answer(runtime, &mut app, &mut open, Command::Context { thread_id }).await;

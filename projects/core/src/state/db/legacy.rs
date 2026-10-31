@@ -323,6 +323,7 @@ mod tests {
             // A development build with the column in a migration of its own.
             "DROP TABLE goals;
              DROP TABLE background_jobs;
+             DROP TABLE thread_projects;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
@@ -343,13 +344,6 @@ mod tests {
         }
     }
 
-    async fn migrations(state: &State) -> Vec<i64> {
-        sqlx::query_scalar("SELECT version FROM _sqlx_migrations ORDER BY version")
-            .fetch_all(&state.pool)
-            .await
-            .unwrap()
-    }
-
     #[tokio::test]
     async fn a_database_before_jobs_gets_their_columns() {
         let path = temp_dir("legacy-before-jobs").join("state.db");
@@ -363,7 +357,8 @@ mod tests {
              ALTER TABLE messages DROP COLUMN from_job_id;
              ALTER TABLE pending_messages DROP COLUMN from_job_id;
              DROP TABLE background_jobs;
-             DELETE FROM _sqlx_migrations WHERE version = 13;
+             DROP TABLE thread_projects;
+             DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
         )
         .execute(&state.pool)
@@ -395,7 +390,9 @@ mod tests {
         let state = State::open(&path).await.unwrap();
         // The first jobs build recorded the owners as a migration of its own.
         sqlx::raw_sql(
-            "UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7, 13);
+            "DROP TABLE thread_projects;
+             DELETE FROM _sqlx_migrations WHERE version = 14;
+             UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7, 13);
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
                 execution_time) VALUES (14, 'background job owners', TRUE, X'00', 0);",
         )
@@ -404,7 +401,13 @@ mod tests {
         .unwrap();
         state.close().await;
         let state = State::open(&path).await.unwrap();
-        assert_eq!(migrations(&state).await.last(), Some(&13));
+        // Its number went to the next migration, which ran in its place.
+        let description: String =
+            sqlx::query_scalar("SELECT description FROM _sqlx_migrations WHERE version = 14")
+                .fetch_one(&state.pool)
+                .await
+                .unwrap();
+        assert_ne!(description, super::OLD_OWNERS_MIGRATION);
         state.close().await;
     }
 }

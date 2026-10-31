@@ -22,6 +22,8 @@ pub struct Thread {
     pub agent: Option<String>,
     /// What an agent's thread goes by, such as `Fable-3a`.
     pub name: Option<String>,
+    /// The folder a chat was started in; `None` for one older than this record.
+    pub project: Option<String>,
 }
 
 impl State {
@@ -29,7 +31,40 @@ impl State {
         self.insert_thread(id, source, None, None, None).await
     }
 
-    /// A thread for `agent` to work in, under the thread that asked it.
+    pub async fn set_thread_project(&self, id: &str, dir: &str) -> Result<()> {
+        sqlx::query("INSERT OR REPLACE INTO thread_projects (thread_id, dir) VALUES (?, ?)")
+            .bind(id)
+            .bind(dir)
+            .execute(&self.pool)
+            .await
+            .context("store the thread's folder")?;
+        Ok(())
+    }
+
+    /// A chat older than the record of folders belongs to the first one it is opened in.
+    pub async fn adopt_thread(&self, id: &str, dir: &str) -> Result<()> {
+        sqlx::query("INSERT OR IGNORE INTO thread_projects (thread_id, dir) VALUES (?, ?)")
+            .bind(id)
+            .bind(dir)
+            .execute(&self.pool)
+            .await
+            .context("store the thread's folder")?;
+        Ok(())
+    }
+
+    /// The chats started in `dir`, and those older than the record of where a chat
+    /// started, which would otherwise be out of reach everywhere.
+    pub async fn project_threads(&self, dir: &str) -> Result<Vec<Thread>> {
+        let mut threads = self.list_threads().await?;
+        threads.retain(|thread| {
+            thread
+                .project
+                .as_deref()
+                .is_none_or(|project| project == dir)
+        });
+        Ok(threads)
+    }
+
     /// A thread for `agent` to work in under the thread that asked it, called `name`.
     pub async fn create_agent_thread(
         &self,
@@ -71,7 +106,8 @@ impl State {
 
     pub async fn load_thread(&self, id: &str) -> Result<Option<Thread>> {
         sqlx::query(
-            "SELECT threads.*, MAX(threads.created_at,
+            "SELECT threads.*, (SELECT dir FROM thread_projects WHERE thread_id = threads.id) AS project,
+                MAX(threads.created_at,
                 COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
                 COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
              FROM threads WHERE id = ?",
@@ -88,7 +124,8 @@ impl State {
     /// reached through `agent_threads`.
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
         sqlx::query(
-            "SELECT threads.*, MAX(threads.created_at,
+            "SELECT threads.*, (SELECT dir FROM thread_projects WHERE thread_id = threads.id) AS project,
+                MAX(threads.created_at,
                 COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
                 COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
              FROM threads WHERE parent_thread_id IS NULL ORDER BY active_at DESC, id DESC",
@@ -104,7 +141,8 @@ impl State {
     /// The subagent threads a thread started, oldest first.
     pub async fn agent_threads(&self, parent: &str) -> Result<Vec<Thread>> {
         sqlx::query(
-            "SELECT threads.*, MAX(threads.created_at,
+            "SELECT threads.*, (SELECT dir FROM thread_projects WHERE thread_id = threads.id) AS project,
+                MAX(threads.created_at,
                 COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
                 COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
              FROM threads WHERE parent_thread_id = ? ORDER BY created_at, id",
@@ -202,12 +240,28 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         parent_thread_id: row.try_get("parent_thread_id")?,
         agent: row.try_get("agent")?,
         name: row.try_get("name")?,
+        project: row.try_get("project")?,
     })
 }
 
 #[cfg(test)]
 mod tests {
     use crate::testing::temp_state;
+
+    #[tokio::test]
+    async fn a_folder_lists_its_chats_and_those_of_no_known_folder() {
+        let state = temp_state("thread-projects").await;
+        for (id, dir) in [("here", Some("/a")), ("there", Some("/b")), ("old", None)] {
+            state.create_thread(id, "test").await.unwrap();
+            if let Some(dir) = dir {
+                state.set_thread_project(id, dir).await.unwrap();
+            }
+        }
+        let shown = state.project_threads("/a").await.unwrap();
+        let mut ids: Vec<_> = shown.iter().map(|thread| thread.id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, ["here", "old"]);
+    }
 
     #[tokio::test]
     async fn a_stop_and_the_agent_budget_see_the_whole_tree() {

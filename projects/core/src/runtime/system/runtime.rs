@@ -34,7 +34,7 @@ use crate::{
         update::{self, Channel, InstallProgress, UpdateInfo},
         watch::UpdateWatch,
     },
-    runtime::chat::thread_start::{FORK_INTRO, start_thread},
+    runtime::chat::thread_start::{FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread, UndoPoint},
     tools::{JobInfo, JobManager, ToolKind, ToolScope},
     util::{
@@ -591,6 +591,11 @@ impl Runtime {
     }
 
     /// Every thread, the most recently active first, for a client to offer.
+    /// The chats started in `cwd`, the most recently active first.
+    pub async fn project_threads(&self, cwd: &Path) -> Result<Vec<Thread>> {
+        self.launcher.state.project_threads(&project_dir(cwd)).await
+    }
+
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
         self.launcher.state.list_threads().await
     }
@@ -627,8 +632,14 @@ impl Runtime {
     /// ends once the client drops every `ThreadInput` and the queue is done.
     pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
         let mode = self.config().current().mode().to_owned();
-        let thread =
-            start_thread(&self.launcher.state, &self.launcher.paths, source, &mode).await?;
+        let thread = start_thread(
+            &self.launcher.state,
+            &self.launcher.paths,
+            source,
+            &mode,
+            cwd,
+        )
+        .await?;
         info!(
             "thread {} started in {}",
             thread.thread_id,
@@ -646,8 +657,14 @@ impl Runtime {
         cwd: &Path,
     ) -> Result<ThreadHandle> {
         let mode = self.config().current().mode().to_owned();
-        let thread =
-            start_thread(&self.launcher.state, &self.launcher.paths, source, &mode).await?;
+        let thread = start_thread(
+            &self.launcher.state,
+            &self.launcher.paths,
+            source,
+            &mode,
+            cwd,
+        )
+        .await?;
         let summary = format!("{FORK_INTRO}{summary}");
         self.launcher
             .state
@@ -675,6 +692,10 @@ impl Runtime {
         );
         let workspace = self.launcher.paths.thread_workspace(thread_id)?;
         create_private_dir(&workspace)?;
+        self.launcher
+            .state
+            .adopt_thread(thread_id, &project_dir(cwd))
+            .await?;
         info!("thread {thread_id} resumed in {}", workspace.display());
         self.run_thread(thread_id.to_owned(), &workspace, cwd).await
     }
