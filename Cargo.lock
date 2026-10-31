@@ -812,6 +812,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "dusk_evals"
+version = "0.69.4"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dusk_core",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "dusk_tui"
 version = "0.69.4"
 dependencies = [
