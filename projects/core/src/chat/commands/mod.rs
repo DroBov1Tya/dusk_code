@@ -30,6 +30,7 @@ use crate::{
         model_choice::{Choice, ProviderStatus},
     },
     state::{Thread, UndoPoint},
+    tools::JobInfo,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,6 +62,8 @@ pub enum Command {
         thread_id: Option<String>,
         sequence: Option<u64>,
     },
+    /// Lists the background jobs of a thread; a client fills in its open thread.
+    Jobs { thread_id: Option<String> },
 }
 
 /// What a client command answers.
@@ -85,6 +88,8 @@ pub enum Answer {
         current: Option<Effort>,
         changed: bool,
     },
+    /// The thread's background jobs, oldest first.
+    Jobs(Vec<JobInfo>),
 }
 
 /// Every command, for clients to show: name and what it does.
@@ -117,6 +122,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
     (
         "/goal",
         "a goal worked on turn after turn until done; pause, resume, clear",
+    ),
+    (
+        "/jobs",
+        "background commands: their state and output; stop one",
     ),
 ];
 
@@ -156,6 +165,7 @@ impl Command {
             | Self::Settings
             | Self::Context { .. }
             | Self::Effort { .. }
+            | Self::Jobs { .. }
             | Self::Update { .. } => {}
         }
     }
@@ -209,6 +219,10 @@ impl Command {
                 Ok(Answer::UndoPoints(runtime.undo_points(&thread_id).await?))
             }
             Self::Undo { .. } => bail!("/undo <n> runs in a thread"),
+            Self::Jobs { thread_id: None } => Ok(Answer::Jobs(Vec::new())),
+            Self::Jobs {
+                thread_id: Some(thread_id),
+            } => Ok(Answer::Jobs(runtime.jobs(&thread_id).await?)),
         }
     }
 }
@@ -251,6 +265,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
             Some(Err(_)) => Err(anyhow::anyhow!("/undo takes a message number")),
         },
         "model" => Ok(Command::Model { name: argument }),
+        "jobs" => Ok(Command::Jobs { thread_id: None }),
         _ => unknown(name),
     })
 }

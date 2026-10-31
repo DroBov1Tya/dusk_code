@@ -36,6 +36,8 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   did. The `jobs` tool lists, shows and cancels them. At most 8 run per thread; each
   stream keeps 32 KiB. A job is never restarted: after a crash a running one is marked
   interrupted. The chat shows the first lines of a result, the agent gets all of it.
+  `/jobs` opens the thread's jobs with the output of the chosen one (`x` stops a
+  running job), and the rail lists the ones running.
 - `/update` shows the download and install as it goes; iTerm2 shows what the agent
   is doing in its tab (session status and native progress).
 - Modes switched with Tab: MAIN works itself, PLAN only reads and plans, ORCHESTRATOR

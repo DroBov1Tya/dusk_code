@@ -11,18 +11,23 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use dusk_core::{chat::commands::ContextReport, release::update::InstallStage, state::MessageRole};
+use dusk_core::{
+    chat::commands::ContextReport, release::update::InstallStage, state::MessageRole,
+    tools::JobInfo,
+};
 
 use super::{
     agent_window, input, markdown, settings,
+    sidebar::format_duration,
     theme::{
-        ALIVE, DONE, DOT, DOWN, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, ROSE, SUN, SUN_GLYPH, TEAL,
-        USER_BAR, VIOLET, bold, dim, fg, thought,
+        ALIVE, DONE, DOT, DOWN, ELLIPSIS, EMBER, FAILED, GLOW, GUTTER, HAZE, NIGHT, ON, ROSE, SUN,
+        SUN_GLYPH, TEAL, USER_BAR, VIOLET, bold, dim, fg, thought,
     },
+    transcript::{one_line, printable},
     wrap,
 };
 use crate::app::{
-    App, Connection, EFFORTS, EditorButton, EditorHit, ModelList, Panel, ThreadList,
+    App, Connection, EFFORTS, EditorButton, EditorHit, JobsView, ModelList, Panel, ThreadList,
     compact_number, paste,
 };
 
@@ -153,6 +158,15 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 "up/down choose  enter go back, the text returns to the box  esc close",
                 lines,
                 Some(*selected),
+            )
+        }
+        Panel::Jobs(view) => {
+            let width = screen.width.saturating_sub(8).min(72) as usize;
+            (
+                "background jobs",
+                "up/down choose  x stop  r read again  esc close",
+                jobs(view, width),
+                Some(view.selected),
             )
         }
         Panel::Context { report, .. } => (
@@ -886,6 +900,91 @@ fn selectable(left: Vec<Span<'static>>, right: Span<'static>, selected: bool) ->
         line.style(Style::new().bg(GLOW).add_modifier(Modifier::BOLD))
     } else {
         line
+    }
+}
+
+/// Rows of the chosen job's output the window shows: the end, where a failure is.
+const JOB_OUTPUT_ROWS: usize = 12;
+
+/// The jobs, one row each, and under them what the chosen one printed.
+fn jobs(view: &JobsView, width: usize) -> Vec<Line<'static>> {
+    let now = now_ms();
+    let mut lines: Vec<Line<'static>> = view
+        .jobs
+        .iter()
+        .enumerate()
+        .map(|(index, job)| {
+            let (mark, color) = job_mark(job);
+            let end = job.finished_at.unwrap_or(now);
+            let time = format_duration(end.saturating_sub(job.started_at).max(0) as u64);
+            selectable(
+                vec![
+                    Span::styled(format!(" {mark} "), fg(color)),
+                    Span::styled(format!("{:<8}", short_id(&job.job_id)), dim()),
+                    Span::styled(format!("{:<11}", wrap::clip(&job.status, 10)), fg(color)),
+                    Span::styled(format!("{time:>6}  "), dim()),
+                    Span::raw(wrap::clip(
+                        &one_line(&job.command),
+                        width.saturating_sub(32),
+                    )),
+                ],
+                Span::raw(" "),
+                index == view.selected,
+            )
+        })
+        .collect();
+    let Some(job) = view.jobs.get(view.selected) else {
+        return lines;
+    };
+    lines.push(Line::default());
+    lines.push(Line::from(Span::styled(
+        format!(" output of {}", short_id(&job.job_id)),
+        bold(SUN),
+    )));
+    // A finished job's exit code leads its output; it stays in view above the end.
+    let (code, body) = match view.output.split_once('\n') {
+        Some((first, rest)) if first.starts_with("exit code:") => (Some(first), rest),
+        _ => (None, view.output.as_str()),
+    };
+    if let Some(code) = code {
+        lines.push(Line::from(Span::styled(format!(" {code}"), dim())));
+    }
+    let printed: Vec<&str> = body
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .collect();
+    if printed.is_empty() {
+        lines.push(Line::from(Span::styled(" nothing printed yet", dim())));
+    }
+    let skip = printed.len().saturating_sub(JOB_OUTPUT_ROWS);
+    if skip > 0 {
+        lines.push(Line::from(Span::styled(
+            format!(" ... {skip} earlier lines"),
+            dim(),
+        )));
+    }
+    lines.extend(printed.iter().skip(skip).map(|line| {
+        Line::from(Span::raw(format!(
+            " {}",
+            wrap::clip(&printable(line), width.saturating_sub(2))
+        )))
+    }));
+    lines
+}
+
+/// The last characters of a job's ID, which differ between jobs started together; the
+/// first ones are a timestamp.
+fn short_id(id: &str) -> &str {
+    &id[id.len().saturating_sub(6)..]
+}
+
+fn job_mark(job: &JobInfo) -> (&'static str, ratatui::style::Color) {
+    match job.status.as_str() {
+        "completed" => (DONE, TEAL),
+        "failed" | "timed_out" => (FAILED, EMBER),
+        "cancelled" | "interrupted" => (DOT, HAZE),
+        _ if job.running => (ON, SUN),
+        _ => (DOT, HAZE),
     }
 }
 

@@ -36,7 +36,7 @@ use crate::{
     },
     runtime::chat::thread_start::{FORK_INTRO, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread, UndoPoint},
-    tools::{JobManager, ToolKind, ToolScope},
+    tools::{JobInfo, JobManager, ToolKind, ToolScope},
     util::{
         sync::lock,
         usage::{self, ProcessUsage},
@@ -455,6 +455,21 @@ impl Runtime {
     /// check has seen one.
     pub fn available_update(&self) -> Option<String> {
         self.updates.found()
+    }
+
+    /// The background jobs of a thread, oldest first.
+    pub async fn jobs(&self, thread_id: &str) -> Result<Vec<JobInfo>> {
+        self.launcher.jobs.list(thread_id).await
+    }
+
+    /// What a job of the thread printed so far.
+    pub async fn job_output(&self, thread_id: &str, job_id: &str) -> Result<String> {
+        self.launcher.jobs.output(thread_id, job_id).await
+    }
+
+    /// Asks a running job to stop; its result still arrives like any other.
+    pub async fn stop_job(&self, thread_id: &str, job_id: &str) -> Result<String> {
+        self.launcher.jobs.cancel(thread_id, job_id).await
     }
 
     pub async fn undo_points(&self, thread_id: &str) -> Result<Vec<UndoPoint>> {
