@@ -116,10 +116,19 @@ pub enum Effort {
     Low,
     Medium,
     High,
+    Xhigh,
+    Max,
 }
 
 impl Effort {
-    pub const ALL: [Self; 4] = [Self::Off, Self::Low, Self::Medium, Self::High];
+    pub const ALL: [Self; 6] = [
+        Self::Off,
+        Self::Low,
+        Self::Medium,
+        Self::High,
+        Self::Xhigh,
+        Self::Max,
+    ];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -127,6 +136,8 @@ impl Effort {
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
+            Self::Xhigh => "xhigh",
+            Self::Max => "max",
         }
     }
 
@@ -147,7 +158,9 @@ impl Effort {
             .into_iter()
             .find(|effort| effort.name() == text)
             .map(Some)
-            .with_context(|| format!("unknown effort {text}; off, low, medium, high or default"))
+            .with_context(|| {
+                format!("unknown effort {text}; off, low, medium, high, xhigh, max or default")
+            })
     }
 }
 

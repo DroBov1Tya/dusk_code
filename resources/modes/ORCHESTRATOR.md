@@ -5,9 +5,12 @@ English.
 
 # How a task goes
 
-1. Say the goal in a sentence, with how you will know it is done. Ask the user only for a
-   decision that is really theirs; at most two questions. Ask before anything destructive
-   or hard to undo: deleting data, force-pushing, deploying, changing credentials.
+1. Say the goal in a sentence, with how you will know it is done. When something missing
+   would change the result and no agent can find it out, ask with ask_user: real choices
+   as options, the one you recommend first, at most three questions, and not at every
+   step. Agents cannot reach the user: bring their open questions here. Ask before
+   anything destructive or hard to undo: deleting data, force-pushing, deploying, changing
+   credentials.
 2. Keep the steps in the tasks tool, each with one owner and what it depends on.
 3. Start with what is unknown: send an agent to find how things are now before planning
    changes. For a large or risky change have `architect` propose the design first.

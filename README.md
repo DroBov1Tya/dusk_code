@@ -21,7 +21,7 @@ A Rust AI agent application with a shared core library, `dusk_core`, and a termi
   tool; `/goal pause|resume|clear|done` and the buttons above the box do the same. A
   stop or a failed turn pauses it.
 - File reading, writing, editing and deletion; shell commands; loading skills from `SKILL.md` files.
-- `/effort off|low|medium|high|default`; off is sent as `none`, and a provider that
+- `/effort off|low|medium|high|xhigh|max|default`; off is sent as `none`, and a provider that
   rejects it gets the previous effort back. `/settings` -> models sets the input budget
   per model: Auto, 128k to 1M, or a token count, capped by the model window.
 - `display_image`: the chat shows a public HTTPS PNG or JPEG as an image card, kept

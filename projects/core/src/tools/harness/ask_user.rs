@@ -99,8 +99,10 @@ impl Tool for AskUser {
 
     fn description(&self, _context: &ToolContext<'_>) -> String {
         format!(
-            "Ask the user a question with options to choose from, when you need their \
-             decision to go on. Set `multiple` when several options may be chosen. The \
+            "Ask the user a question with options to choose from, when something missing \
+             would change the result and you cannot find it out yourself; not at every step, \
+             and not for what has a sensible default. List the option you recommend first. \
+             Set `multiple` when several options may be chosen. The \
              user can always write their own answer or decline. After calling it, end \
              your turn without writing more: the answer comes as the user's next message, \
              as QUESTION: ... ANSWER: .... {MIN_OPTIONS} to {MAX_OPTIONS} short options."

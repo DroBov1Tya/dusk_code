@@ -122,7 +122,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "/effort",
-        "how hard the model reasons: low, medium, high or default",
+        "how hard the model reasons: off, low, medium, high, xhigh, max or default",
     ),
     ("/update", "the newest version, and installing it"),
     (
