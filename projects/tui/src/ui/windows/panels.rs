@@ -16,7 +16,7 @@ use dusk_core::{chat::commands::ContextReport, release::update::InstallStage, st
 use super::{
     agent_window, input, markdown, settings,
     theme::{
-        ALIVE, DOT, DOWN, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, ROSE, SUN, SUN_GLYPH, TEAL,
+        ALIVE, DONE, DOT, DOWN, ELLIPSIS, EMBER, GLOW, GUTTER, NIGHT, ROSE, SUN, SUN_GLYPH, TEAL,
         USER_BAR, VIOLET, bold, dim, fg, thought,
     },
     wrap,
@@ -398,11 +398,10 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
             InstallStage::Installing => "installing update",
             InstallStage::Complete => "installed",
         };
-        let spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
         let marker = if progress.stage == InstallStage::Complete {
-            "✓"
+            DONE
         } else {
-            spinner[app.frame % spinner.len()]
+            super::super::TITLE_SPINNER[app.frame % super::super::TITLE_SPINNER.len()]
         };
         lines.push(Line::from(Span::styled(
             format!(" {marker} {stage}"),
@@ -417,8 +416,8 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
                     lines.push(Line::from(Span::styled(
                         format!(
                             " [{}{}]",
-                            "█".repeat(filled),
-                            "░".repeat(bar_width - filled)
+                            "\u{2588}".repeat(filled),
+                            "\u{2591}".repeat(bar_width - filled)
                         ),
                         fg(TEAL),
                     )));
