@@ -2,7 +2,11 @@
 //! response; when it calls tools, they run and the next step sends their results back,
 //! until the model answers without calling a tool.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, anyhow};
 use tokio::sync::mpsc;
@@ -17,18 +21,22 @@ use crate::runtime::{
     },
 };
 use crate::{
-    chat::{goal, sources},
+    chat::{
+        goal,
+        sources::{self, SourceBlock},
+    },
     config::live::LiveConfig,
     config::{Config, Effort},
     providers::{
         ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
-        is_unsupported_effort,
+        is_unsupported_effort, is_unsupported_pictures,
     },
     state::{
         CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, State, Turn, TurnAnswer,
-        TurnOutcome, TurnStatus, estimate_tokens,
+        TurnOutcome, TurnStatus,
     },
     tools::{Progress, ToolRegistry, ToolScope},
+    util::sync::lock,
 };
 
 /// Bounds a model that keeps calling tools.
@@ -44,6 +52,8 @@ pub struct Agent {
     pub config: Arc<LiveConfig>,
     pub tools: ToolRegistry,
     pub scope: ToolScope,
+    /// The model that refused pictures; the others still get them.
+    pub pictures_refused: Mutex<Option<String>>,
     pub thread_id: String,
     /// COMPACT.md: how to summarize the thread.
     pub compact_prompt: PathBuf,
@@ -219,18 +229,18 @@ impl Agent {
         let config = self.config.current();
         let tools = self.tools.specs(&self.scope, &config);
         let workspace = self.scope.workspace();
-        let sources = sources::block(&self.state, workspace, &self.thread_id).await?;
-        let attached = sources
-            .as_ref()
-            .map_or(0, |(text, _)| estimate_tokens(text));
+        let with_pictures = self.takes_pictures();
+        let sources =
+            sources::block(&self.state, workspace, &self.thread_id, with_pictures).await?;
+        let attached = sources.as_ref().map_or(0, SourceBlock::tokens);
         // Tool results grow the context within a turn, so every step checks it.
         if let Some(error) = self.context_too_large(&conversation, &tools, attached) {
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         let mut messages = conversation.chat_messages();
-        let first_time = sources.map(|(text, first_time)| {
-            messages.push(ChatMessage::User(text));
-            first_time
+        let first_time = sources.map(|block| {
+            messages.push(block.message());
+            block.first_time
         });
         // The goal is said last, so it stays in view however long the context grows.
         if let Some(goal) = self.active_goal().await? {
@@ -245,7 +255,19 @@ impl Agent {
             max_output_tokens: config.limits().max_output_tokens,
             effort: config.effort(),
         };
-        let (output, generated) = match self.call_model(&choice, request, &config, inbox).await {
+        let mut called = self.call_model(&choice, request, &config, inbox).await;
+        if matches!(&called, Ok((_, Ok(Err(error)))) if is_unsupported_pictures(error)) {
+            self.refuse_pictures(&choice.model.id, &mut messages);
+            let request = ChatRequest {
+                model: &choice.model.id,
+                messages: &messages,
+                tools: &tools,
+                max_output_tokens: config.limits().max_output_tokens,
+                effort: config.effort(),
+            };
+            called = self.call_model(&choice, request, &config, inbox).await;
+        }
+        let (output, generated) = match called {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
         };
@@ -437,6 +459,27 @@ impl Agent {
     }
 
     /// Reports a context past the input limit to the client and returns why.
+    fn takes_pictures(&self) -> bool {
+        let refused = lock(&self.pictures_refused);
+        let current = self.model.current();
+        current.is_none_or(|choice| refused.as_ref() != Some(&choice.model.id))
+    }
+
+    /// Takes the pictures out of the request, and sends none to this model from now on.
+    fn refuse_pictures(&self, model: &str, messages: &mut [ChatMessage]) {
+        *lock(&self.pictures_refused) = Some(model.to_owned());
+        warn!("thread {} model {model} refused pictures", self.thread_id);
+        self.emit(ThreadEvent::PicturesRefused {
+            model: model.to_owned(),
+        });
+        for message in messages {
+            if let ChatMessage::UserWithPictures { text, .. } = message {
+                let said = format!("{text}[this model refused the pictures named above]\n");
+                *message = ChatMessage::User(said);
+            }
+        }
+    }
+
     fn context_too_large(
         &self,
         conversation: &Conversation,

@@ -18,7 +18,7 @@ use serde_json::Value;
 use super::{
     chat::{ChatMessage, ChatRequest, ToolSpec},
     model_output::{FinishReason, ModelEvent, ToolCall, Usage},
-    provider::{Model, Transient, UnsupportedEffort},
+    provider::{Model, Transient, UnsupportedEffort, UnsupportedPictures},
     sse::SseDecoder,
 };
 use crate::config::{Effort, ProviderConfig};
@@ -81,6 +81,10 @@ enum WireMessage {
     User {
         content: String,
     },
+    #[serde(rename = "user")]
+    UserParts {
+        content: Vec<WirePart>,
+    },
     Assistant {
         content: String,
         #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -90,6 +94,18 @@ enum WireMessage {
         tool_call_id: String,
         content: String,
     },
+}
+
+#[derive(Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+enum WirePart {
+    Text { text: String },
+    ImageUrl { image_url: WireImageUrl },
+}
+
+#[derive(Serialize)]
+struct WireImageUrl {
+    url: String,
 }
 
 #[derive(Serialize)]
@@ -140,6 +156,19 @@ impl From<&ChatMessage> for WireMessage {
         match message.clone() {
             ChatMessage::System(content) => Self::System { content },
             ChatMessage::User(content) => Self::User { content },
+            ChatMessage::UserWithPictures { text, pictures } => {
+                let pictures = pictures.into_iter().map(|picture| WirePart::ImageUrl {
+                    image_url: WireImageUrl {
+                        url: format!("data:{};base64,{}", picture.mime_type, picture.base64),
+                    },
+                });
+                Self::UserParts {
+                    content: [WirePart::Text { text }]
+                        .into_iter()
+                        .chain(pictures)
+                        .collect(),
+                }
+            }
             ChatMessage::Assistant { text, tool_calls } => Self::Assistant {
                 content: text,
                 tool_calls: tool_calls.iter().map(WireToolCall::from).collect(),
@@ -282,6 +311,10 @@ impl OpenAiCompatible {
 
     pub async fn stream_chat(&self, request: ChatRequest<'_>) -> Result<CompletionStream> {
         let effort_off = request.effort == Some(Effort::Off);
+        let has_pictures = request
+            .messages
+            .iter()
+            .any(|message| matches!(message, ChatMessage::UserWithPictures { .. }));
         let request = CompletionRequest::new(request);
         let response = self
             .with_authorization(self.client.post(self.completions_url.clone()))
@@ -298,6 +331,9 @@ impl OpenAiCompatible {
             );
             if is_retryable(status) {
                 bail!(Transient(message));
+            }
+            if has_pictures && matches!(status.as_u16(), 400 | 413 | 415 | 422) {
+                bail!(UnsupportedPictures);
             }
             if effort_off && matches!(status.as_u16(), 400 | 422) {
                 // Inspect a bounded JSON error only; echoed provider text never reaches logs.

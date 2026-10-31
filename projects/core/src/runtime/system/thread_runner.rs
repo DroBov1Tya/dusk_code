@@ -11,7 +11,11 @@
 //! A subagent's runner ends once it is idle; a new message starts it again. Stopping a
 //! thread stops the agents it asked.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::{Result, ensure};
 use tokio::sync::mpsc;
@@ -127,6 +131,10 @@ pub enum ThreadEvent {
     },
     /// The model's answer broke off, such as on a dropped connection; the turn ends with
     /// what it wrote.
+    /// The model refused pictures; they stay files it is told the path of.
+    PicturesRefused {
+        model: String,
+    },
     AnswerCut {
         error: String,
     },
@@ -210,6 +218,7 @@ impl ThreadRunner {
             config: setup.config,
             tools: setup.tools,
             scope: setup.scope,
+            pictures_refused: Mutex::new(None),
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
             fork_prompt: setup.fork_prompt,

@@ -680,6 +680,10 @@ impl App {
                 started,
             } => self.goal_changed(goal, note, started),
             ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
+            ThreadEvent::PicturesRefused { model } => self.transcript.notice(
+                format!("{model} does not take pictures; it gets their paths instead"),
+                Tone::Info,
+            ),
             ThreadEvent::AnswerCut { error } => self.error(format!(
                 "the answer broke off ({error}); what it wrote is kept"
             )),

@@ -5,12 +5,24 @@ use serde_json::Value;
 use super::model_output::ToolCall;
 use crate::config::Effort;
 
+/// A picture as the model gets it.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Picture {
+    pub mime_type: &'static str,
+    pub base64: String,
+}
+
 /// One message as the model sees it: role and text, without core metadata.
 #[derive(Debug, Clone, PartialEq)]
 #[non_exhaustive]
 pub enum ChatMessage {
     System(String),
     User(String),
+    /// A user message with pictures after its text.
+    UserWithPictures {
+        text: String,
+        pictures: Vec<Picture>,
+    },
     Assistant {
         text: String,
         tool_calls: Vec<ToolCall>,
