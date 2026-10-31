@@ -100,6 +100,10 @@ impl JobManager {
         }
     }
 
+    pub async fn wake_state(&self, thread_id: &str) -> Result<(bool, bool)> {
+        self.state.job_wake_state(thread_id, &self.lease.id).await
+    }
+
     pub async fn has_running(&self, thread_id: &str) -> bool {
         self.live
             .lock()

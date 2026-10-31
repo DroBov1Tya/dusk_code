@@ -2,6 +2,7 @@
 
 use std::{collections::BTreeMap, path::Path, sync::Arc, time::Instant};
 
+use anyhow::Result;
 use serde_json::Value;
 use tracing::info;
 
@@ -54,6 +55,13 @@ impl ToolRegistry {
             registry.add(tool);
         }
         registry
+    }
+
+    pub(crate) async fn job_wake_state(&self, thread_id: &str) -> Result<(bool, bool)> {
+        match &self.jobs {
+            Some(jobs) => jobs.wake_state(thread_id).await,
+            None => Ok((false, false)),
+        }
     }
 
     pub(crate) async fn has_running_jobs(&self, thread_id: &str) -> bool {

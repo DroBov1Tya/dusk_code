@@ -122,6 +122,22 @@ impl State {
         Ok(())
     }
 
+    /// One snapshot closes the race between a foreign job leaving 'running' and
+    /// its completion joining pending_messages in the same transaction.
+    pub async fn job_wake_state(&self, thread_id: &str, runtime_id: &str) -> Result<(bool, bool)> {
+        sqlx::query_as(
+            "SELECT EXISTS(SELECT 1 FROM pending_messages WHERE thread_id = ?),
+                EXISTS(SELECT 1 FROM background_jobs WHERE thread_id = ? AND status = 'running'
+                    AND (owner_runtime_id IS NULL OR owner_runtime_id != ?))",
+        )
+        .bind(thread_id)
+        .bind(thread_id)
+        .bind(runtime_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("check foreign job wake state")
+    }
+
     pub async fn jobs(&self, thread_id: &str) -> Result<Vec<BackgroundJob>> {
         let rows = sqlx::query(
             "SELECT job_id, command, status, output, owner_runtime_id, owner_lease_path FROM background_jobs WHERE thread_id = ? ORDER BY created_at, job_id",

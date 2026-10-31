@@ -11,7 +11,7 @@
 //! A subagent's runner ends once it is idle; a new message starts it again. Stopping a
 //! thread stops the agents it asked.
 
-use std::{path::PathBuf, sync::Arc};
+use std::{path::PathBuf, sync::Arc, time::Duration};
 
 use anyhow::{Result, ensure};
 use tokio::sync::mpsc;
@@ -28,6 +28,10 @@ use crate::{
     },
     tools::{Question, ToolRegistry, ToolResult, ToolScope},
 };
+
+/// Foreign runtimes cannot signal this inbox. Poll only while their jobs could
+/// finish, without loading model context or doing other turn work on empty ticks.
+const FOREIGN_JOB_POLL: Duration = Duration::from_secs(2);
 
 /// Runs one thread; `Runtime` gives each active thread its own task with one of these.
 pub struct ThreadRunner {
@@ -285,32 +289,58 @@ impl ThreadRunner {
             if self.has_pending().await? {
                 continue;
             }
+            let (pending, foreign_jobs) = self
+                .agent
+                .tools
+                .job_wake_state(&self.agent.thread_id)
+                .await?;
+            if pending {
+                continue;
+            }
             self.agent.emit(ThreadEvent::Idle);
-            if self.ends_when_idle {
-                if self
+            if self.ends_when_idle
+                && !foreign_jobs
+                && !self
                     .agent
                     .tools
                     .has_running_jobs(&self.agent.thread_id)
                     .await
-                {
-                    // Keep this runner while its processes work, without starting a
-                    // second agent. Completion wakes this same inbox for a new turn.
-                    match self.inbox.wait().await {
-                        None => return Ok(()),
-                        Some(Input::Cancel) => self.cancel_agents().await?,
-                        Some(_) => {}
-                    }
-                } else if self.leave_if_idle().await? {
+            {
+                if self.leave_if_idle().await? {
                     return Ok(());
                 }
                 continue;
             }
-            match self.inbox.wait().await {
+            // Locally owned processes use the existing event-driven inbox. A
+            // reopened thread also watches durable results from other runtimes.
+            match self.wait_for_work(foreign_jobs).await? {
                 None => return Ok(()),
-                // The agents this thread asked may still be at work.
                 Some(Input::Cancel) => self.cancel_agents().await?,
                 Some(_) => {}
             }
+        }
+    }
+
+    async fn wait_for_work(&mut self, mut foreign_jobs: bool) -> Result<Option<Input>> {
+        loop {
+            if !foreign_jobs {
+                return Ok(self.inbox.wait().await);
+            }
+            tokio::select! {
+                input = self.inbox.wait() => return Ok(input),
+                _ = tokio::time::sleep(FOREIGN_JOB_POLL) => {}
+            }
+            let (pending, still_foreign) = self
+                .agent
+                .tools
+                .job_wake_state(&self.agent.thread_id)
+                .await?;
+            if pending {
+                return Ok(Some(Input::Sent));
+            }
+            // If the last foreign job completed before this SELECT, its pending
+            // event is in the same snapshot. Otherwise a later tick observes it.
+            foreign_jobs = still_foreign;
         }
     }
 
