@@ -473,6 +473,28 @@ impl App {
                 }
                 return Action::None;
             }
+            Panel::Jobs(view) => {
+                match key.code {
+                    _ if up || down => {
+                        step(&mut view.selected, view.jobs.len(), down);
+                        view.stale = true;
+                    }
+                    KeyCode::Char('x') => {
+                        let stoppable = view
+                            .jobs
+                            .get(view.selected)
+                            .filter(|job| job.running && job.stoppable);
+                        match stoppable {
+                            Some(job) => return Action::StopJob(job.job_id.clone()),
+                            None => self.flash = Some("this job cannot be stopped here".into()),
+                        }
+                    }
+                    KeyCode::Char('r') => view.stale = true,
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
+                return Action::None;
+            }
             Panel::Effort { selected } => {
                 match key.code {
                     _ if up || down => step(selected, EFFORTS.len(), down),

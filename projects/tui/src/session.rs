@@ -25,8 +25,8 @@ use ratatui::DefaultTerminal;
 
 use crate::{
     app::{
-        Action, AgentWindow, App, EFFORTS, FileEditor, ModelList, Panel, Preview, SettingCategory,
-        SettingsView, SwitchKind, ThreadList, Tone, Transcript,
+        Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, Panel, Preview,
+        SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
     ui,
 };
@@ -39,6 +39,8 @@ const FRAME: Duration = Duration::from_millis(80);
 const GIT_PERIOD: Duration = Duration::from_secs(5);
 /// How often the system tab reads its numbers again.
 const SYSTEM_PERIOD: Duration = Duration::from_secs(2);
+/// How often the jobs are read again while one runs or their window is open.
+const JOBS_PERIOD: Duration = Duration::from_secs(1);
 const MAX_EVENTS_PER_FRAME: usize = 512;
 
 struct OpenThread {
@@ -86,6 +88,7 @@ pub async fn run(
     let mut clock = tokio::time::interval(FRAME);
     let mut git_clock = tokio::time::interval(GIT_PERIOD);
     let mut system_clock = tokio::time::interval(SYSTEM_PERIOD);
+    let mut jobs_clock = tokio::time::interval(JOBS_PERIOD);
     let cwd = env::current_dir()?;
     let mut shown_title = String::new();
     let mut terminal_status = crate::host::terminal::TerminalStatus::new();
@@ -174,6 +177,7 @@ pub async fn run(
         app.refresh_paths();
         app.update_available = runtime.available_update();
         refresh_system(runtime, &mut app).await;
+        refresh_jobs(runtime, &mut app).await;
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {
@@ -228,6 +232,7 @@ pub async fn run(
             }
             // While the core looks for a model, the clock redraws what it finds.
             _ = system_clock.tick(), if system_open(&app) => Action::None,
+            _ = jobs_clock.tick(), if jobs_wanted(&app) => Action::None,
             _ = git_clock.tick() => {
                 app.git = crate::host::git::summary(&cwd).await;
                 Action::None
@@ -434,6 +439,19 @@ pub async fn run(
                 };
                 answer(runtime, &mut app, &mut open, command).await;
             }
+            Action::Command(Command::Jobs { .. }) => {
+                let thread_id = app.thread_id.clone();
+                answer(runtime, &mut app, &mut open, Command::Jobs { thread_id }).await;
+            }
+            Action::StopJob(job_id) => {
+                if let Some(thread_id) = app.thread_id.clone() {
+                    match runtime.stop_job(&thread_id, &job_id).await {
+                        Ok(_) => app.flash = Some("stopping the job".into()),
+                        Err(error) => app.error(format!("cannot stop the job: {error:#}")),
+                    }
+                    app.jobs_stale = true;
+                }
+            }
             Action::Command(Command::Context { .. }) => {
                 let thread_id = app.thread_id.clone();
                 answer(runtime, &mut app, &mut open, Command::Context { thread_id }).await;
@@ -608,6 +626,15 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             let selected = points.len() - 1;
             app.panel = Some(Panel::Undo { points, selected });
         }
+        Ok(Answer::Jobs(jobs)) if !jobs.is_empty() => {
+            app.panel = Some(Panel::Jobs(JobsView {
+                selected: jobs.len() - 1,
+                jobs,
+                output: String::new(),
+                stale: true,
+            }));
+        }
+        Ok(Answer::Jobs(_)) => app.flash = Some("no background jobs in this thread".into()),
         Ok(Answer::Update(info)) => {
             app.panel = Some(Panel::Update {
                 info: Some(info),
@@ -632,6 +659,45 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             app.panel = None;
             app.error(format!("{error:#}"));
         }
+    }
+}
+
+/// The jobs window is open, or a job runs: the clock reads them every `JOBS_PERIOD`.
+fn jobs_wanted(app: &App) -> bool {
+    matches!(app.panel, Some(Panel::Jobs(_))) || app.jobs.iter().any(|job| job.running)
+}
+
+/// Reads the open thread's jobs, and the output of the one chosen in the window, when
+/// something changed, and every `JOBS_PERIOD` while one runs or the window is open.
+async fn refresh_jobs(runtime: &Runtime, app: &mut App) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        app.jobs.clear();
+        return;
+    };
+    let in_window = matches!(app.panel, Some(Panel::Jobs(_)));
+    let window_stale = matches!(&app.panel, Some(Panel::Jobs(view)) if view.stale);
+    let due = app.jobs_read.elapsed() >= JOBS_PERIOD;
+    let running = app.jobs.iter().any(|job| job.running);
+    if !(app.jobs_stale || window_stale || (due && (in_window || running))) {
+        return;
+    }
+    app.jobs_stale = false;
+    app.jobs_read = Instant::now();
+    match runtime.jobs(&thread_id).await {
+        Ok(jobs) => app.jobs = jobs,
+        Err(error) => return app.error(format!("cannot read the jobs: {error:#}")),
+    }
+    if let Some(Panel::Jobs(view)) = &mut app.panel {
+        view.jobs = app.jobs.clone();
+        view.selected = view.selected.min(view.jobs.len().saturating_sub(1));
+        view.stale = false;
+        view.output = match view.jobs.get(view.selected) {
+            Some(job) => runtime
+                .job_output(&thread_id, &job.job_id)
+                .await
+                .unwrap_or_else(|error| format!("cannot read the output: {error:#}")),
+            None => String::new(),
+        };
     }
 }
 

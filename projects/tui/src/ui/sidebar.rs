@@ -25,6 +25,8 @@ use super::{
 };
 use crate::app::{App, compact_number, now_ms};
 
+/// Running jobs the rail lists before it sums up the rest.
+const MAX_JOB_ROWS: usize = 4;
 /// The statistics: fifteen lines and a blank one below.
 const STATS_HEIGHT: u16 = 16;
 /// The connectors folded: the heading and one line that sums them up.
@@ -63,6 +65,12 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
             },
             app,
         );
+    }
+    let running_jobs = app.jobs.iter().filter(|job| job.running).count();
+    if running_jobs > 0 && y + 1 < area.bottom() {
+        let wanted = 1 + running_jobs.min(MAX_JOB_ROWS + 1) as u16;
+        let height = wanted.min(area.bottom() - y);
+        y += background(frame, Rect { y, height, ..area }, app) + 1;
     }
     let agents_active = !app.subagents.is_empty();
     let mcp_active = !app.mcp.is_empty();
@@ -263,6 +271,55 @@ fn tasks(frame: &mut Frame, area: Rect, app: &mut App) -> u16 {
     }
     app.task_hits = hits;
     y - area.y
+}
+
+/// The background jobs that run, with how long each has: the command and its time. The
+/// rest are summed up, and `/jobs` opens them all. Returns the rows used.
+fn background(frame: &mut Frame, area: Rect, app: &App) -> u16 {
+    let width = area.width.saturating_sub(2 * PAD) as usize;
+    let now = now_ms();
+    let running: Vec<_> = app.jobs.iter().filter(|job| job.running).collect();
+    let heading = Line::from(vec![
+        heading("BACKGROUND"),
+        Span::styled("  /jobs", fg(SIDEBAR_MUTED)),
+    ]);
+    frame.render_widget(section(heading), Rect { height: 1, ..area });
+    let mut lines: Vec<Line<'static>> = running
+        .iter()
+        .take(MAX_JOB_ROWS)
+        .map(|job| {
+            let time = format_duration(now.saturating_sub(job.started_at).max(0) as u64);
+            Line::from(vec![
+                Span::styled(format!("{ON} "), fg(SUN)),
+                Span::styled(
+                    fill(
+                        &one_line(&job.command),
+                        width.saturating_sub(time.len() + 3),
+                    ),
+                    fg(SIDEBAR_FG),
+                ),
+                Span::styled(format!(" {time}"), fg(SUN)),
+            ])
+        })
+        .collect();
+    if running.len() > MAX_JOB_ROWS {
+        lines.push(Line::from(Span::styled(
+            format!("+{} more", running.len() - MAX_JOB_ROWS),
+            fg(SIDEBAR_MUTED),
+        )));
+    }
+    let rows = (lines.len() as u16).min(area.height.saturating_sub(1));
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .block(Block::new().padding(Padding::horizontal(PAD))),
+        Rect {
+            y: area.y + 1,
+            height: rows,
+            ..area
+        },
+    );
+    1 + rows
 }
 
 fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'static>> {

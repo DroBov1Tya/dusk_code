@@ -8,6 +8,7 @@ use dusk_core::{
     release::update::{InstallProgress, UpdateInfo},
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Thread, UndoPoint},
+    tools::JobInfo,
 };
 
 pub mod agents;
@@ -55,6 +56,18 @@ pub enum Panel {
         report: ContextReport,
         row: usize,
     },
+    Jobs(JobsView),
+}
+
+/// The thread's background jobs and the output of the chosen one, read again every second
+/// while the window is open.
+pub struct JobsView {
+    pub jobs: Vec<JobInfo>,
+    pub selected: usize,
+    /// What the chosen job printed, as read at the last refresh.
+    pub output: String,
+    /// The choice or the jobs changed: read again at once.
+    pub stale: bool,
 }
 
 /// The configured providers as the core found them, and their models to choose from.

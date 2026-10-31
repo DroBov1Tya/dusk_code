@@ -22,6 +22,7 @@ use dusk_core::{
     providers::ModelEvent,
     runtime::ThreadEvent,
     state::{Goal, LocalUnsent, Message, MessageRole, Task, ThreadTokens, TurnStatus},
+    tools::JobInfo,
 };
 use ratatui::layout::Rect;
 
@@ -29,8 +30,9 @@ pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 use panels::agents;
 pub use panels::{
-    AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, McpRow, ModelList, Panel,
-    Preview, SettingCategory, SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
+    AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, JobsView, McpRow,
+    ModelList, Panel, Preview, SettingCategory, SettingsHit, SettingsView, SubagentView,
+    SwitchKind, ThreadList,
 };
 pub use thread::goal::{GoalButton, GoalHit};
 pub use thread::poll::{Poll, PollHit, PollTarget};
@@ -51,6 +53,8 @@ pub enum Action {
     SetAgentLimit(usize),
     SetGoalRounds(u32),
     SetMemoryChars(usize),
+    /// Ask a running background job of the open thread to stop.
+    StopJob(String),
     SetContextPolicy(ContextPolicy),
     /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {
@@ -275,6 +279,11 @@ pub struct App {
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
+    /// The open thread's background jobs as last read; the rail shows the running ones.
+    pub jobs: Vec<JobInfo>,
+    /// Read the jobs again at once: a tool ended, a result arrived, a thread opened.
+    pub jobs_stale: bool,
+    pub jobs_read: Instant,
     /// Image previews on screen in the last frame, and the pictures drawn over them
     /// where the terminal can.
     pub previews: Vec<ShownPreview>,
@@ -380,6 +389,9 @@ impl App {
             git: None,
             quit_armed: None,
             command_popup: None,
+            jobs: Vec::new(),
+            jobs_stale: false,
+            jobs_read: Instant::now(),
             previews: Vec::new(),
             pictures: Default::default(),
             subagents: Vec::new(),
@@ -414,6 +426,8 @@ impl App {
             .unzip();
         self.recall = None;
         self.recall_draft = None;
+        self.jobs.clear();
+        self.jobs_stale = true;
         self.thread_id = thread_id;
         self.title = title;
         self.poll = None;
@@ -570,6 +584,7 @@ impl App {
                 self.transcript.start_tool(call);
             }
             ThreadEvent::ToolFinished { call_id, result } => {
+                self.jobs_stale = true;
                 self.transcript.finish_tool(&call_id, result);
                 self.activity = Activity::Thinking;
             }
@@ -644,7 +659,10 @@ impl App {
                 self.start_subagent(thread_id, agent, task, parent);
             }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
-            ThreadEvent::FromJob(message) => self.transcript.job_result(&message.content),
+            ThreadEvent::FromJob(message) => {
+                self.jobs_stale = true;
+                self.transcript.job_result(&message.content);
+            }
             ThreadEvent::FromAgent(message) => {
                 let from = message.from_thread_id.unwrap_or_default();
                 self.transcript
