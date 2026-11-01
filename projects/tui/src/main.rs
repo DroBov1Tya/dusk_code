@@ -23,6 +23,7 @@ async fn main() -> Result<()> {
     let (paths, state_db, thread) = match args::parse_args() {
         Args::Run { state_db, thread } => (Paths::from_home()?, state_db, thread),
         Args::Restore { archive } => return cli::restore::run(&archive),
+        Args::RecoverRestore => return cli::restore::recover(),
         Args::Remove => return cli::remove::run(&Paths::from_home()?),
         Args::InstallResources { directory } => {
             dusk_core::release::resources::install_snapshot(&directory, update::VERSION)?;
@@ -34,6 +35,8 @@ async fn main() -> Result<()> {
             return Ok(());
         }
     };
+    // Keep a shared lock for the full process lifetime, including log initialization.
+    let _restore_guard = dusk_core::archive::startup_guard()?;
     if let Err(error) = logs::init(&paths, env!("CARGO_CRATE_NAME"), "tui") {
         eprintln!("duskcode: no log files: {error:#}");
     }

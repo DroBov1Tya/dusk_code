@@ -15,3 +15,12 @@ pub fn run(archive_path: &Path) -> Result<()> {
     );
     Ok(())
 }
+
+pub fn recover() -> Result<()> {
+    let paths = Paths::from_home()?;
+    archive::recover(&paths)?;
+    println!(
+        "Interrupted restore completed. Both data roots match the journaled archive. Start duskcode normally when ready."
+    );
+    Ok(())
+}

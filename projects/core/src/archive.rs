@@ -5,7 +5,7 @@
 
 use std::{
     collections::BTreeMap,
-    fs::{self, DirBuilder, File, Metadata, OpenOptions},
+    fs::{self, DirBuilder, File, Metadata, OpenOptions, TryLockError},
     io::{self, BufReader, BufWriter, ErrorKind, Read, Write},
     path::{Component, Path, PathBuf},
 };
@@ -31,6 +31,8 @@ const MAX_DEPTH: usize = 128;
 const MAX_PATH_BYTES: usize = 4096;
 const MAX_PAYLOAD_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 const BUFFER_BYTES: usize = 64 * 1024;
+const PENDING_RESTORE: &str = ".restore-pending";
+const MAX_TRANSACTION_BYTES: u64 = 64 * 1024;
 
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -276,7 +278,7 @@ fn collect_file(source: &Path, target: &Path, name: &str, inventory: &mut Invent
     inspect_tree_path(source)?;
     let before = fs::symlink_metadata(source)?;
     ensure!(before.is_file(), "archive source is not a regular file");
-    let mut input = File::open(source)?;
+    let mut input = open_regular_input(source)?;
     ensure_same_file(&before, &input.metadata()?)?;
     let size = before.len();
     ensure!(
@@ -348,6 +350,8 @@ fn database_sidecar(path: &Path, database: &Path) -> bool {
 /// payload, in private staging, before installing either root. Other Dusk processes must
 /// be closed: there is no lock shared with already-running releases.
 pub fn restore(paths: &Paths, archive: &Path) -> Result<()> {
+    let _guard = restore_guard(true)?;
+    require_no_pending_restore()?;
     preflight(paths.config_root())?;
     preflight(paths.workspace_root())?;
     ensure!(
@@ -355,7 +359,7 @@ pub fn restore(paths: &Paths, archive: &Path) -> Result<()> {
             && !paths.workspace_root().starts_with(paths.config_root()),
         "restore roots must be separate directories"
     );
-    let mut input = BufReader::new(File::open(archive).context("open migration archive")?);
+    let mut input = BufReader::new(open_regular_input(archive)?);
     let archive_bytes = input.get_ref().metadata()?.len();
     ensure!(
         input.get_ref().metadata()?.is_file(),
@@ -425,67 +429,543 @@ pub fn restore(paths: &Paths, archive: &Path) -> Result<()> {
                 "archive checksum mismatch for {}",
                 entry.path
             );
-            output.sync_all()?;
             set_executable(&output, entry.executable)?;
+            output.sync_all()?;
         }
     }
     let mut end = [0];
     ensure!(input.read(&mut end)? == 0, "archive has trailing data");
     preflight(paths.config_root())?;
     preflight(paths.workspace_root())?;
-    install(paths, &mut config, &mut workspace)
+    sync_staging(&config.path, "config", &manifest)?;
+    sync_staging(&workspace.path, "workspace", &manifest)?;
+    // A published journal owns these directories. Never let an error-path Drop discard
+    // them once a root may have been installed; explicit recovery validates them first.
+    config.keep = true;
+    workspace.keep = true;
+    if let Err(error) = publish_transaction(paths, &config.path, &workspace.path, &json) {
+        if fs::symlink_metadata(pending_restore_path()?)
+            .is_err_and(|error| error.kind() == ErrorKind::NotFound)
+        {
+            config.keep = false;
+            workspace.keep = false;
+        }
+        return Err(error).with_context(|| {
+            format!(
+                "cannot journal restore; preserve any retained staging at {} and {}. If a pending journal was published, startup is blocked until duskcode restore --recover succeeds",
+                config.path.display(),
+                workspace.path.display()
+            )
+        });
+    }
+    finish_install(paths, &manifest, &mut config, &mut workspace)
 }
 
-fn install(paths: &Paths, config: &mut Temporary, workspace: &mut Temporary) -> Result<()> {
-    let config_staged = config.path.join("root");
-    let workspace_staged = workspace.path.join("root");
-    // Remove only genuinely empty directories. A new writer makes remove_dir fail;
-    // rename also refuses a non-empty directory and never follows a target symlink.
-    let config_existed = remove_empty_destination(paths.config_root())?;
-    let workspace_existed = match remove_empty_destination(paths.workspace_root()) {
-        Ok(existed) => existed,
-        Err(error) => {
-            if config_existed {
-                let _ = private_dir(paths.config_root());
-            }
-            return Err(error);
-        }
-    };
-    if let Err(error) = fs::rename(&config_staged, paths.config_root()) {
-        if config_existed {
-            let _ = private_dir(paths.config_root());
-        }
-        if workspace_existed {
-            let _ = private_dir(paths.workspace_root());
-        }
-        return Err(error).context("install restored config; existing data was not replaced");
+/// A live runtime holds a shared OS lock; offline restore and recovery require the
+/// exclusive lock. The lock file is never unlinked, so SIGKILL only releases ownership.
+pub struct RestoreGuard {
+    _file: File,
+}
+
+pub fn startup_guard() -> Result<RestoreGuard> {
+    let guard = restore_guard(false)?;
+    require_no_pending_restore()?;
+    Ok(guard)
+}
+
+fn restore_guard(exclusive: bool) -> Result<RestoreGuard> {
+    let root = restore_control_root()?;
+    directory_tree(&root)?;
+    let path = root.join(".restore.lock");
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) => ensure!(
+            metadata.is_file(),
+            "restore lock must be a regular file: {}",
+            path.display()
+        ),
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("inspect restore lock"),
     }
-    if let Err(error) = fs::rename(&workspace_staged, paths.workspace_root()) {
-        // Retain recovery data if rollback fails. Never delete a destination containing
-        // restored or concurrently-created user data in an attempt to repair a failure.
-        if let Err(rollback) = fs::rename(paths.config_root(), &config_staged) {
-            config.keep = true;
-            workspace.keep = true;
+    let mut options = OpenOptions::new();
+    options.read(true).write(true).create(true).truncate(false);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options
+            .mode(0o600)
+            .custom_flags(nix::libc::O_NOFOLLOW | nix::libc::O_NONBLOCK);
+    }
+    let file = options.open(&path).context("open restore lock")?;
+    ensure!(
+        file.metadata()?.is_file(),
+        "restore lock is not a regular file"
+    );
+    let locked = if exclusive {
+        file.try_lock()
+    } else {
+        file.try_lock_shared()
+    };
+    match locked {
+        Ok(()) => Ok(RestoreGuard { _file: file }),
+        Err(TryLockError::WouldBlock) => {
+            bail!("another duskcode process is running or restoring data; close it before retrying")
+        }
+        Err(TryLockError::Error(error)) => {
+            Err(error).context("lock duskcode data against offline restore")
+        }
+    }
+}
+
+// Unlike release resources, restore coordination must not move when XDG_DATA_HOME or
+// DUSKCODE_RESOURCE_DIR changes while the same HOME/config/workspace roots stay in use.
+fn restore_control_root() -> Result<PathBuf> {
+    let home = std::env::var_os("HOME").context("HOME is not set")?;
+    let root = PathBuf::from(home).join(".local/share/duskcode");
+    ensure!(
+        root.is_absolute(),
+        "restore control directory must be absolute"
+    );
+    Ok(root)
+}
+
+fn pending_restore_path() -> Result<PathBuf> {
+    Ok(restore_control_root()?.join(PENDING_RESTORE))
+}
+
+fn require_no_pending_restore() -> Result<()> {
+    let pending = pending_restore_path()?;
+    match fs::symlink_metadata(&pending) {
+        Err(error) if error.kind() == ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error).context("inspect restore transaction journal"),
+        Ok(_) => bail!(
+            "an interrupted restore blocks startup and new restores. Run duskcode restore --recover with all other duskcode processes closed. Preserve the private transaction journal at {} and its staging directories; do not delete the journal to bypass recovery",
+            pending.display()
+        ),
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RestoreTransaction {
+    format: String,
+    version: u32,
+    config_root: PathBuf,
+    workspace_root: PathBuf,
+    config_staging: PathBuf,
+    workspace_staging: PathBuf,
+}
+
+fn publish_transaction(
+    paths: &Paths,
+    config: &Path,
+    workspace: &Path,
+    manifest: &[u8],
+) -> Result<()> {
+    let root = restore_control_root()?;
+    let mut journal = Temporary::new(&root, "restore-journal")?;
+    let transaction = RestoreTransaction {
+        format: "duskcode-restore-transaction".into(),
+        version: VERSION,
+        config_root: paths.config_root().to_owned(),
+        workspace_root: paths.workspace_root().to_owned(),
+        config_staging: config.to_owned(),
+        workspace_staging: workspace.to_owned(),
+    };
+    let json = serde_json::to_vec(&transaction)?;
+    ensure!(
+        json.len() as u64 <= MAX_TRANSACTION_BYTES,
+        "restore transaction paths are too long"
+    );
+    for (name, contents) in [
+        ("transaction.json", json.as_slice()),
+        ("manifest.json", manifest),
+    ] {
+        let mut file = private_file(&journal.path.join(name))?;
+        file.write_all(contents)?;
+        file.sync_all()?;
+    }
+    sync_directory(&journal.path)?;
+    require_no_pending_restore()?;
+    fs::rename(&journal.path, root.join(PENDING_RESTORE))
+        .context("publish restore transaction journal")?;
+    journal.keep = true;
+    // No destination changes are permitted until this durable marker is visible.
+    sync_directory(&root).context("sync restore transaction journal before installing data")
+}
+
+/// Recovery is explicit. It never trusts a phase flag: after a crash, each root must
+/// exist either in its recorded staging location or at its destination, and must match
+/// every recorded file/directory/hash before recovery changes either destination.
+pub fn recover(paths: &Paths) -> Result<()> {
+    let _guard = restore_guard(true)?;
+    let pending = pending_restore_path()?;
+    inspect_tree_path(&pending)?;
+    ensure!(
+        fs::symlink_metadata(&pending)
+            .context("no pending restore journal; there is nothing to recover")?
+            .is_dir(),
+        "restore journal must be a real directory"
+    );
+    let transaction: RestoreTransaction = serde_json::from_slice(&read_bounded(
+        &pending.join("transaction.json"),
+        MAX_TRANSACTION_BYTES,
+    )?)
+    .context(
+        "invalid restore transaction; preserve the journal and staging data for manual recovery",
+    )?;
+    ensure!(
+        transaction.format == "duskcode-restore-transaction" && transaction.version == VERSION,
+        "unsupported restore transaction format"
+    );
+    ensure!(
+        transaction.config_root == paths.config_root()
+            && transaction.workspace_root == paths.workspace_root(),
+        "restore journal belongs to different data roots; preserve it and recover under the original HOME"
+    );
+    validate_staging_path(&transaction.config_staging, paths.config_root(), "config")?;
+    validate_staging_path(
+        &transaction.workspace_staging,
+        paths.workspace_root(),
+        "workspace",
+    )?;
+    let manifest: Manifest = serde_json::from_slice(&read_bounded(
+        &pending.join("manifest.json"),
+        MAX_MANIFEST_BYTES,
+    )?)
+    .context("invalid journaled archive manifest")?;
+    validate_manifest(&manifest)?;
+    let mut config = Temporary {
+        path: transaction.config_staging,
+        keep: true,
+        offline: true,
+    };
+    let mut workspace = Temporary {
+        path: transaction.workspace_staging,
+        keep: true,
+        offline: true,
+    };
+    finish_install(paths, &manifest, &mut config, &mut workspace)
+}
+
+fn validate_staging_path(staging: &Path, destination: &Path, name: &str) -> Result<()> {
+    ensure!(
+        staging.parent() == destination.parent(),
+        "restore staging directory has an unexpected parent"
+    );
+    let filename = staging
+        .file_name()
+        .and_then(|name| name.to_str())
+        .context("invalid restore staging filename")?;
+    let prefix = format!(".duskcode-restore-{name}-");
+    let id = filename
+        .strip_prefix(&prefix)
+        .context("invalid restore staging directory name")?;
+    Uuid::parse_str(id).context("invalid restore staging directory ID")?;
+    inspect_tree_path(staging)
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RootState {
+    Staged,
+    Installed,
+}
+
+fn root_state(
+    staging: &Path,
+    destination: &Path,
+    name: &str,
+    manifest: &Manifest,
+) -> Result<RootState> {
+    match fs::symlink_metadata(staging) {
+        Ok(metadata) => {
+            ensure!(
+                metadata.is_dir(),
+                "restore staging container must be a real directory"
+            );
+            for entry in fs::read_dir(staging)? {
+                ensure!(
+                    entry?.file_name() == "root",
+                    "restore staging contains unexpected data; preserve it for manual recovery"
+                );
+            }
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("inspect restore staging container"),
+    }
+    let staged_root = staging.join("root");
+    match fs::symlink_metadata(&staged_root) {
+        Ok(_) => {
+            verify_tree(&staged_root, name, manifest)?;
+            preflight(destination)?;
+            Ok(RootState::Staged)
+        }
+        Err(error) if error.kind() == ErrorKind::NotFound => {
+            let pending = pending_restore_path()?;
+            verify_tree(destination, name, manifest).with_context(|| format!("installed {name} data does not match the restore journal; preserve both roots, {} and all staging directories for manual recovery", pending.display()))?;
+            Ok(RootState::Installed)
+        }
+        Err(error) => Err(error).context("inspect journaled restore staging"),
+    }
+}
+
+fn finish_install(
+    paths: &Paths,
+    manifest: &Manifest,
+    config: &mut Temporary,
+    workspace: &mut Temporary,
+) -> Result<()> {
+    let config_state = root_state(&config.path, paths.config_root(), "config", manifest)?;
+    let workspace_state = root_state(
+        &workspace.path,
+        paths.workspace_root(),
+        "workspace",
+        manifest,
+    )?;
+    let installed = (|| -> Result<()> {
+        install_root(&config.path, paths.config_root(), config_state)?;
+        install_root(&workspace.path, paths.workspace_root(), workspace_state)
+    })();
+    if let Err(error) = installed {
+        // Roll back roots newly published by this attempt, in reverse order. Never
+        // delete data; even an unexpected concurrent writer's additions remain staged.
+        let workspace_rollback =
+            rollback_root(&workspace.path, paths.workspace_root(), workspace_state);
+        let config_rollback = rollback_root(&config.path, paths.config_root(), config_state);
+        let recovery = pending_restore_path()?;
+        if workspace_rollback.is_err() || config_rollback.is_err() {
             bail!(
-                "restore stopped after config installation: {error}; rollback failed: {rollback}. Config remains at {}. Recovery data is retained at {} and {}; preserve these paths and resolve the destination conflict before retrying",
-                paths.config_root().display(),
+                "restore installation failed: {error:#}; rollback results: workspace={}, config={}. Startup remains blocked. Preserve journal {} and staging {} and {}; resolve the destination conflict, then run duskcode restore --recover",
+                workspace_rollback
+                    .err()
+                    .map_or_else(|| "ok".to_owned(), |error| format!("{error:#}")),
+                config_rollback
+                    .err()
+                    .map_or_else(|| "ok".to_owned(), |error| format!("{error:#}")),
+                recovery.display(),
                 config.path.display(),
                 workspace.path.display()
             );
         }
-        if config_existed {
-            let _ = private_dir(paths.config_root());
-        }
-        if workspace_existed {
-            let _ = private_dir(paths.workspace_root());
-        }
-        // Even successful rollback may have moved data written by another process.
-        // Retain that config tree rather than deleting potentially new user data.
-        config.keep = true;
         bail!(
-            "restore was rolled back because workspace installation failed: {error}. Config recovery data is retained at {}; no destination data was overwritten. Close other duskcode processes and resolve the conflict before retrying",
-            config.path.display()
+            "restore installation failed: {error:#}. Startup remains blocked. Preserve journal {} and staging {} and {}; resolve the destination conflict, then run duskcode restore --recover",
+            recovery.display(),
+            config.path.display(),
+            workspace.path.display()
         );
+    }
+    // Both renames (including a prior interrupted attempt's renames) must be durable
+    // before retiring the marker. A crash before retirement still requires recovery.
+    sync_directory(
+        paths
+            .config_root()
+            .parent()
+            .context("config parent is missing")?,
+    )?;
+    sync_directory(
+        paths
+            .workspace_root()
+            .parent()
+            .context("workspace parent is missing")?,
+    )?;
+    retire_transaction()?;
+    config.keep = false;
+    workspace.keep = false;
+    Ok(())
+}
+
+fn rollback_root(staging: &Path, destination: &Path, original: RootState) -> Result<()> {
+    if original != RootState::Staged {
+        return Ok(());
+    }
+    let root = staging.join("root");
+    match fs::symlink_metadata(&root) {
+        Ok(_) => return Ok(()),
+        Err(error) if error.kind() == ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("inspect root before restore rollback"),
+    }
+    fs::rename(destination, &root).context("move installed root back into retained staging")?;
+    sync_directory(staging)?;
+    sync_directory(
+        destination
+            .parent()
+            .context("rollback destination parent is missing")?,
+    )
+}
+
+fn install_root(staging: &Path, destination: &Path, state: RootState) -> Result<()> {
+    if state == RootState::Staged {
+        remove_empty_destination(destination)?;
+        fs::rename(staging.join("root"), destination).context("publish restored data root")?;
+        sync_directory(staging)?;
+    }
+    sync_directory(
+        destination
+            .parent()
+            .context("restore destination has no parent")?,
+    )
+}
+
+fn retire_transaction() -> Result<()> {
+    let root = restore_control_root()?;
+    let retired = root.join(format!(".restore-completed-{}", Uuid::now_v7()));
+    fs::rename(root.join(PENDING_RESTORE), &retired)
+        .context("retire completed restore transaction")?;
+    sync_directory(&root).with_context(|| {
+        format!(
+            "both roots are installed, but final journal sync failed; preserve {}",
+            retired.display()
+        )
+    })?;
+    if let Err(error) = fs::remove_dir_all(&retired) {
+        eprintln!(
+            "duskcode: restore completed; private completed journal remains at {}: {error}",
+            retired.display()
+        );
+    }
+    Ok(())
+}
+
+fn sync_staging(staging: &Path, name: &str, manifest: &Manifest) -> Result<()> {
+    for entry in manifest.entries.iter().rev().filter(|entry| {
+        entry.kind == Kind::Directory
+            && (entry.path == name || entry.path.starts_with(&format!("{name}/")))
+    }) {
+        let relative = entry
+            .path
+            .strip_prefix(name)
+            .unwrap_or("")
+            .trim_start_matches('/');
+        sync_directory(&staging.join("root").join(relative))?;
+    }
+    sync_directory(staging)?;
+    sync_directory(
+        staging
+            .parent()
+            .context("staging directory has no parent")?,
+    )
+}
+
+fn sync_directory(directory: &Path) -> Result<()> {
+    #[cfg(unix)]
+    {
+        File::open(directory)?
+            .sync_all()
+            .with_context(|| format!("sync application directory {}", directory.display()))?;
+    }
+    // std does not expose a portable directory flush on other platforms. File syncs
+    // and atomic rename still apply; full power-loss durability depends on the OS/FS.
+    #[cfg(not(unix))]
+    {
+        let _ = directory;
+    }
+    Ok(())
+}
+
+fn read_bounded(path: &Path, maximum: u64) -> Result<Vec<u8>> {
+    let mut file = open_regular_input(path)?;
+    ensure!(
+        file.metadata()?.len() <= maximum,
+        "restore journal file is too large"
+    );
+    let mut bytes = Vec::new();
+    Read::by_ref(&mut file)
+        .take(maximum + 1)
+        .read_to_end(&mut bytes)?;
+    ensure!(
+        bytes.len() as u64 <= maximum,
+        "restore journal file is too large"
+    );
+    Ok(bytes)
+}
+
+fn open_regular_input(path: &Path) -> Result<File> {
+    let before =
+        fs::symlink_metadata(path).context("inspect archive or journal input before opening")?;
+    ensure!(
+        before.is_file(),
+        "archive or journal input must be a regular file, not a symlink or special file"
+    );
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        // A FIFO substituted after the metadata check cannot block open, and a final
+        // symlink substituted in that window cannot redirect it to a different target.
+        options.custom_flags(nix::libc::O_NONBLOCK | nix::libc::O_NOFOLLOW);
+    }
+    let file = options
+        .open(path)
+        .context("open regular archive or journal input")?;
+    ensure_same_file(&before, &file.metadata()?)?;
+    Ok(file)
+}
+
+fn verify_tree(root: &Path, name: &str, manifest: &Manifest) -> Result<()> {
+    inspect_tree_path(root)?;
+    let prefix = format!("{name}/");
+    let expected: BTreeMap<_, _> = manifest
+        .entries
+        .iter()
+        .filter(|entry| entry.path == name || entry.path.starts_with(&prefix))
+        .map(|entry| (entry.path.as_str(), entry))
+        .collect();
+    let mut seen = 0usize;
+    verify_tree_entry(root, name, &expected, &mut seen)?;
+    ensure!(
+        seen == expected.len(),
+        "restored tree is missing journaled entries"
+    );
+    Ok(())
+}
+
+fn verify_tree_entry(
+    path: &Path,
+    name: &str,
+    expected: &BTreeMap<&str, &Entry>,
+    seen: &mut usize,
+) -> Result<()> {
+    validate_path(name)?;
+    let entry = expected
+        .get(name)
+        .context("restored tree contains data absent from the journal; nothing was overwritten")?;
+    let metadata = fs::symlink_metadata(path)?;
+    *seen += 1;
+    match entry.kind {
+        Kind::Directory => {
+            ensure!(
+                metadata.is_dir(),
+                "journaled directory is missing or changed"
+            );
+            for child in fs::read_dir(path)? {
+                let child = child?;
+                let filename = child
+                    .file_name()
+                    .into_string()
+                    .map_err(|_| anyhow::anyhow!("restored tree contains a non-UTF-8 filename"))?;
+                verify_tree_entry(&child.path(), &format!("{name}/{filename}"), expected, seen)?;
+            }
+        }
+        Kind::File => {
+            ensure!(
+                metadata.is_file() && metadata.len() == entry.size,
+                "journaled file is missing or changed"
+            );
+            #[cfg(unix)]
+            ensure!(
+                executable(&metadata) == entry.executable,
+                "journaled file executable permission changed"
+            );
+            let mut file = open_regular_input(path)?;
+            let (size, hash) = copy_hash(
+                &mut Read::by_ref(&mut file).take(entry.size + 1),
+                &mut io::sink(),
+            )?;
+            ensure!(
+                size == entry.size && Some(&hash) == entry.sha256.as_ref(),
+                "journaled file checksum mismatch"
+            );
+        }
     }
     Ok(())
 }
@@ -670,7 +1150,10 @@ fn directory_tree(path: &Path) -> Result<()> {
                 "expected a real directory: {}",
                 current.display()
             ),
-            Err(error) if error.kind() == ErrorKind::NotFound => private_dir(&current)?,
+            Err(error) if error.kind() == ErrorKind::NotFound => {
+                private_dir(&current)?;
+                sync_directory(current.parent().context("new directory has no parent")?)?;
+            }
             Err(error) => return Err(error).context("inspect directory"),
         }
     }
@@ -794,6 +1277,9 @@ impl Drop for Temporary {
     fn drop(&mut self) {
         if !self.keep {
             if let Err(error) = fs::remove_dir_all(&self.path) {
+                if error.kind() == ErrorKind::NotFound {
+                    return;
+                }
                 tracing::warn!(
                     "cannot remove private archive staging directory {}: {error}",
                     self.path.display()
