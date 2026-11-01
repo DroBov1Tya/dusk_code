@@ -64,7 +64,12 @@ fn queue_rows(app: &App) -> u16 {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
-    let polled = poll_rows(app);
+    draw_footer(frame, area, app.git.as_ref());
+    let area = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let polled = poll_rows(app).min(area.height);
     draw_poll(
         frame,
         Rect {
@@ -78,12 +83,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(polled),
         ..area
     };
-    draw_footer(frame, area, app.git.as_ref());
-    let area = Rect {
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let goal = goal_rows(app);
+    let goal = goal_rows(app).min(area.height);
     draw_goal(
         frame,
         Rect {
@@ -97,7 +97,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(goal),
         ..area
     };
-    let queued = queue_rows(app);
+    let queued = queue_rows(app).min(area.height);
     draw_queue(
         frame,
         Rect {
