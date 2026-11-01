@@ -491,14 +491,19 @@ pub struct RestoreGuard {
 /// The HOME-scoped transaction only owns the standard data roots. Sandboxed runtimes
 /// with disjoint roots must not create default state or depend on its pending journal.
 pub fn startup_guard(paths: &Paths, state_db: Option<&Path>) -> Result<Option<RestoreGuard>> {
+    // Resolve before the HOME decision as well: an unresolved relative DB must never
+    // silently bypass coordination merely because current_dir could not be obtained.
+    let state_db = state_db.map(resolve_state_db).transpose()?;
+    let config_root = absolute_for_overlap(paths.config_root())?;
+    let workspace_root = absolute_for_overlap(paths.workspace_root())?;
     let standard = match Paths::from_home() {
         Ok(standard) => standard,
         Err(_) => return Ok(None),
     };
     let shared = [
-        Some(paths.config_root()),
-        Some(paths.workspace_root()),
-        state_db,
+        Some(config_root.as_path()),
+        Some(workspace_root.as_path()),
+        state_db.as_deref(),
     ]
     .into_iter()
     .flatten()
@@ -515,6 +520,24 @@ pub fn startup_guard(paths: &Paths, state_db: Option<&Path>) -> Result<Option<Re
     Ok(Some(guard))
 }
 
+/// Pin database selection before startup can await or initialize other components.
+/// The caller passes this same absolute path to both coordination and State::open.
+pub fn resolve_state_db(path: &Path) -> Result<PathBuf> {
+    ensure!(!path.as_os_str().is_empty(), "state database path is empty");
+    absolute_for_overlap(path)
+}
+
+fn absolute_for_overlap(path: &Path) -> Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_owned());
+    }
+    Ok(std::env::current_dir()
+        .context(
+            "cannot resolve a relative data path because the current directory is unavailable",
+        )?
+        .join(path))
+}
+
 fn paths_overlap(left: &Path, right: &Path) -> bool {
     if left.starts_with(right) || right.starts_with(left) {
         return true;
@@ -528,18 +551,24 @@ fn paths_overlap(left: &Path, right: &Path) -> bool {
 /// Resolve existing ancestors too: a symlink alias must still coordinate when the
 /// final data root has not been created yet. A disjoint inaccessible HOME is harmless.
 fn physical_path(path: &Path) -> Option<PathBuf> {
-    let mut head = path.to_owned();
-    let mut suffix = Vec::new();
-    loop {
-        if let Ok(mut physical) = fs::canonicalize(&head) {
-            for part in suffix.iter().rev() {
-                physical.push(part);
+    for ancestor in path.ancestors() {
+        if let Ok(mut physical) = fs::canonicalize(ancestor) {
+            // Preserve symlink semantics in the existing prefix, then normalize the
+            // missing suffix. A missing `sub/../state.db` still belongs to its parent.
+            for component in path.strip_prefix(ancestor).ok()?.components() {
+                match component {
+                    Component::Normal(name) => physical.push(name),
+                    Component::CurDir => {}
+                    Component::ParentDir => {
+                        physical.pop();
+                    }
+                    Component::Prefix(_) | Component::RootDir => return None,
+                }
             }
             return Some(physical);
         }
-        suffix.push(head.file_name()?.to_os_string());
-        head = head.parent()?.to_owned();
     }
+    None
 }
 
 /// Removal uses the same exclusive lock as restore. The command must retain this

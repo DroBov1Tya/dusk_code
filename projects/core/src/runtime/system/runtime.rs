@@ -103,9 +103,10 @@ impl Runtime {
     /// saved model without a network request. `state_db` replaces the default database
     /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
-        let restore_guard = crate::archive::startup_guard(&paths, state_db.as_deref())?;
+        let state_db =
+            crate::archive::resolve_state_db(&state_db.unwrap_or_else(|| paths.state_db()))?;
+        let restore_guard = crate::archive::startup_guard(&paths, Some(&state_db))?;
         let initialized = init::initialize(&paths)?;
-        let state_db = state_db.unwrap_or_else(|| paths.state_db());
         let state = Arc::new(State::open(&state_db).await?);
         let mailboxes = Arc::new(Mailboxes::default());
         let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes), &state_db).await?;
