@@ -9,19 +9,20 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, BorderType, Clear, Paragraph},
 };
+use unicode_width::UnicodeWidthStr;
 
 use super::sidebar::format_duration;
 use super::{
     loader::{Loader, agent_name, identity},
     panels::window,
     theme::{
-        DOT, EMBER, GLOW, GUTTER, SIDEBAR_BG, SIDEBAR_EDGE, SIDEBAR_FG, SIDEBAR_MUTED, SUN, TEAL,
-        bold, dusk, fg,
+        DOT, EMBER, GLOW, GUTTER, SELECTED, SIDEBAR_BG, SIDEBAR_EDGE, SIDEBAR_FG, SIDEBAR_MUTED,
+        SUN, TEAL, bold, dusk, fg,
     },
     transcript::{one_line, thread_lines},
     wrap,
 };
-use crate::app::{App, Panel, TranscriptHit, compact_number};
+use crate::app::{App, Panel, TEXT_COLUMN, TranscriptHit, compact_number};
 
 const STOP: &str = " \u{25A0} stop ";
 
@@ -41,6 +42,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         height: area.height.saturating_sub(2),
     };
     agent_window.area = area;
+    agent_window.stop = None;
     let thread_id = agent_window.thread_id.clone();
     let seed = identity(&thread_id);
     let loader = Loader::new(seed);
@@ -60,7 +62,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         ]))
         .title_bottom(
             Line::from(Span::styled(
-                " wheel or PgUp/PgDn scroll  click opens  Ctrl+R thinking  s stop  esc close ",
+                " drag copies  Ctrl+C copy  wheel/PgUp/PgDn scroll  click opens  Ctrl+R thinking  s stop  esc close ",
                 fg(SIDEBAR_MUTED),
             ))
             .right_aligned(),
@@ -69,6 +71,8 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
     if inner.height <= HEADER_ROWS {
+        agent_window.body = Rect::default();
+        agent_window.selection = None;
         return;
     }
     let width = inner.width as usize;
@@ -215,14 +219,54 @@ fn conversation(frame: &mut Frame, area: Rect, app: &mut App) {
             index,
         })
         .collect();
+    let text: Vec<String> = lines
+        .iter()
+        .map(|line| {
+            line.spans
+                .iter()
+                .map(|span| span.content.as_ref())
+                .collect()
+        })
+        .collect();
     let visible: Vec<Line> = lines.into_iter().skip(top).take(height).collect();
     frame.render_widget(
         Paragraph::new(visible).style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG)),
         area,
     );
     if let Some(Panel::Agent(agent_window)) = &mut app.panel {
+        if agent_window.body.x != area.x || agent_window.body.width != area.width {
+            agent_window.selection = None;
+        }
+        agent_window.body = area;
+        agent_window.drawn_top = top;
+        agent_window.drawn_text = text;
         agent_window.max_scroll = max_scroll;
         agent_window.scroll = scroll;
         agent_window.hits = hits;
+        if let Some(selection) = agent_window.selection {
+            let (start, end) = selection.ordered();
+            for row in 0..area.height {
+                let line = top + row as usize;
+                if line < start.0 || line > end.0 {
+                    continue;
+                }
+                let width = agent_window
+                    .drawn_text
+                    .get(line)
+                    .map_or(0, |text| text.width().min(area.width as usize) as u16);
+                let from = if line == start.0 { start.1 } else { area.x }
+                    .max(area.x.saturating_add(TEXT_COLUMN));
+                let to = if line == end.0 {
+                    end.1.saturating_add(1)
+                } else {
+                    area.right()
+                }
+                .min(area.x + width)
+                .min(area.right());
+                for x in from..to {
+                    frame.buffer_mut()[(x, area.y + row)].set_bg(SELECTED);
+                }
+            }
+        }
     }
 }

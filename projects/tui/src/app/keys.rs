@@ -93,7 +93,7 @@ impl App {
 
     fn key(&mut self, key: KeyEvent) -> Action {
         self.flash = None;
-        if key.code == KeyCode::Esc && self.selection.take().is_some() {
+        if self.panel.is_none() && key.code == KeyCode::Esc && self.selection.take().is_some() {
             return Action::None;
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
@@ -110,6 +110,19 @@ impl App {
             return Action::Copy(text);
         }
         if ctrl && key.code == KeyCode::Char('c') {
+            let selected = match &self.panel {
+                Some(Panel::Agent(window)) => window.selected_text(),
+                None => self.selection.and_then(|selection| {
+                    (selection.anchor != selection.cursor)
+                        .then(|| self.selected_text(selection))
+                        .filter(|text| !text.trim().is_empty())
+                }),
+                _ => None,
+            };
+            if let Some(text) = selected {
+                self.quit_armed = None;
+                return Action::Copy(text);
+            }
             return self.interrupt_key();
         }
         self.quit_armed = None;
@@ -588,6 +601,12 @@ impl App {
                 };
             }
             Panel::Threads(list) => match key.code {
+                KeyCode::Char('y') => {
+                    return list
+                        .threads
+                        .get(list.selected)
+                        .map_or(Action::None, |thread| Action::Copy(thread.id.clone()));
+                }
                 _ if up || down => {
                     step(&mut list.selected, list.threads.len(), down);
                     let shown = list.preview.as_ref().map(|preview| &preview.thread_id);
@@ -891,28 +910,41 @@ impl App {
 
     /// What a selection covers, line by line, without the bars and indents on the left.
     fn selected_text(&self, selection: Selection) -> String {
-        let left = self.transcript_area.map_or(0, |area| area.x);
-        let (start, end) = selection.ordered();
-        let mut lines = Vec::new();
-        for line in start.0..=end.0 {
-            let Some(text) = self.drawn_text(line) else {
-                break;
-            };
-            let from = if line == start.0 { start.1 - left } else { 0 };
-            let to = if line == end.0 {
-                end.1 - left + 1
-            } else {
-                u16::MAX
-            };
-            let from = from.max(TEXT_COLUMN);
-            lines.push(
-                columns(text, from as usize, to as usize)
-                    .trim_end()
-                    .to_owned(),
-            );
-        }
-        lines.join("\n")
+        selected_lines(
+            selection,
+            self.transcript_area.map_or(0, |area| area.x),
+            |line| self.drawn_text(line),
+        )
     }
+}
+
+/// Shared column-based selection for the main transcript and agent windows.
+pub(super) fn selected_lines<'a>(
+    selection: Selection,
+    left: u16,
+    text_at: impl Fn(usize) -> Option<&'a str>,
+) -> String {
+    let (start, end) = selection.ordered();
+    let mut lines = Vec::new();
+    for line in start.0..=end.0 {
+        let Some(text) = text_at(line) else { break };
+        let from = if line == start.0 {
+            start.1.saturating_sub(left)
+        } else {
+            0
+        };
+        let to = if line == end.0 {
+            end.1.saturating_sub(left).saturating_add(1)
+        } else {
+            u16::MAX
+        };
+        lines.push(
+            columns(text, from.max(TEXT_COLUMN) as usize, to as usize)
+                .trim_end()
+                .to_owned(),
+        );
+    }
+    lines.join("\n")
 }
 
 /// The part of `text` drawn in columns `from..to`; a wide character goes with its first column.
