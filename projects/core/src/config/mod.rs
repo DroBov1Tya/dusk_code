@@ -117,31 +117,37 @@ fn default_memory_chars() -> usize {
 #[serde(rename_all = "lowercase")]
 pub enum Effort {
     Off,
+    Minimal,
     Low,
     Medium,
     High,
     Xhigh,
     Max,
+    Ultra,
 }
 
 impl Effort {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 8] = [
         Self::Off,
+        Self::Minimal,
         Self::Low,
         Self::Medium,
         Self::High,
         Self::Xhigh,
         Self::Max,
+        Self::Ultra,
     ];
 
     pub fn name(self) -> &'static str {
         match self {
             Self::Off => "off",
+            Self::Minimal => "minimal",
             Self::Low => "low",
             Self::Medium => "medium",
             Self::High => "high",
             Self::Xhigh => "xhigh",
             Self::Max => "max",
+            Self::Ultra => "ultra",
         }
     }
 
@@ -163,7 +169,9 @@ impl Effort {
             .find(|effort| effort.name() == text)
             .map(Some)
             .with_context(|| {
-                format!("unknown effort {text}; off, low, medium, high, xhigh, max or default")
+                format!(
+                    "unknown effort {text}; off, minimal, low, medium, high, xhigh, max, ultra or default"
+                )
             })
     }
 }
