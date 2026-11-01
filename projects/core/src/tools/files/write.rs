@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-use super::write_text;
+use super::{skill_save, with_skill_save, write_text};
 
 pub struct WriteFile;
 
@@ -67,10 +67,14 @@ impl Tool for WriteFile {
                     .context("cannot create parent directories")?;
             }
             let bytes = arguments.content.len();
+            let saved = skill_save(scope, &path, &arguments.content).await;
             write_text(&path, arguments.content).await?;
-            Ok(format!(
-                "wrote {bytes} bytes to {}",
-                printable(&path.to_string_lossy())
+            Ok(with_skill_save(
+                format!(
+                    "wrote {bytes} bytes to {}",
+                    printable(&path.to_string_lossy())
+                ),
+                saved,
             ))
         })
     }

@@ -9,6 +9,8 @@
 
 use std::path::Path;
 
+use serde::{Deserialize, Serialize};
+
 use crate::{
     catalog::graph::{Graph, SKILL_FILE},
     config::Config,
@@ -42,6 +44,50 @@ pub struct SkillInfo {
     pub enabled: bool,
     /// Why the skill cannot be used as it is; it can still be opened and fixed.
     pub problem: Option<String>,
+}
+
+/// A successful file-tool save. Kept in its stored result so replay needs no filesystem
+/// inspection and cannot mistake a loaded skill for an updated one.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SkillSave {
+    pub name: String,
+    pub action: SkillSaveAction,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SkillSaveAction {
+    Created,
+    Updated,
+    Unchanged,
+}
+
+const SAVE_MARKER: &str = "[dusk_skill_saved] ";
+
+impl SkillSave {
+    pub fn stored(&self) -> String {
+        format!("{SAVE_MARKER}{}", serde_json::to_string(self).unwrap())
+    }
+
+    /// Only file-tool results are eligible; callers also check the tool's success.
+    pub fn from_result(content: &str) -> Option<Self> {
+        serde_json::from_str(content.lines().last()?.strip_prefix(SAVE_MARKER)?).ok()
+    }
+
+    pub fn notice(&self) -> String {
+        let action = match self.action {
+            SkillSaveAction::Created => "created",
+            SkillSaveAction::Updated => "updated",
+            SkillSaveAction::Unchanged => "saved without changes",
+        };
+        let name: String = self
+            .name
+            .chars()
+            .map(|c| if c.is_control() { '?' } else { c })
+            .collect();
+        format!("Skill {action}: {name}")
+    }
 }
 
 /// Every skill, the ones that cannot be read included, by name.

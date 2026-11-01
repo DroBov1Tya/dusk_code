@@ -18,6 +18,13 @@ use anyhow::{Context, Result, anyhow};
 use serde::Deserialize;
 
 use super::builtin::{read_regular, write_regular};
+use crate::{
+    catalog::{
+        graph::check_node,
+        skills::{SkillSave, SkillSaveAction},
+    },
+    tools::ToolScope,
+};
 
 /// Larger files would not fit the result limit anyway.
 const MAX_READ_BYTES: u64 = 1024 * 1024;
@@ -42,6 +49,33 @@ pub async fn write_text(path: &Path, text: String) -> Result<()> {
     tokio::task::spawn_blocking(move || write_regular(&path, text.as_bytes()))
         .await
         .context("cannot write file")?
+}
+
+/// A notice is prepared from the old bytes, but emitted only after the write succeeds.
+/// Unreadable/oversized old files and invalid skill text do not establish a skill update.
+async fn skill_save(scope: &ToolScope, path: &Path, text: &str) -> Option<SkillSave> {
+    let name = scope.skill_name(path)?;
+    check_node(text, &name).ok()?;
+    let action = match tokio::fs::symlink_metadata(path).await {
+        Ok(_) => {
+            let old = read_text(path).await.ok()?;
+            if old == text {
+                SkillSaveAction::Unchanged
+            } else {
+                SkillSaveAction::Updated
+            }
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => SkillSaveAction::Created,
+        Err(_) => return None,
+    };
+    Some(SkillSave { name, action })
+}
+
+fn with_skill_save(content: String, saved: Option<SkillSave>) -> String {
+    match saved {
+        Some(saved) => format!("{content}\n{}", saved.stored()),
+        None => content,
+    }
 }
 
 #[cfg(test)]

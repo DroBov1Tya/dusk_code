@@ -68,6 +68,7 @@ impl Launcher {
             scope: ToolScope::new(cwd, workspace)?
                 .protect(self.paths.config_root())
                 .share(&self.paths.skills_dir())
+                .with_skills(&self.paths.skills_dir())
                 .share(&self.paths.agents_dir()),
             project: project::context(cwd),
             compact_prompt: self.paths.compact_prompt(),
