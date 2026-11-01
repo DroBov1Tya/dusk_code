@@ -37,6 +37,8 @@ use crate::{
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// Writes a portable archive of config and chat data; never sends it anywhere.
+    Migrate { path: Option<String> },
     /// Summarizes the context so far; the argument is extra instructions for the summary.
     Compact { instructions: Option<String> },
     /// Lists the threads to open again; a client fills in the folder it runs in.
@@ -76,6 +78,8 @@ pub enum Command {
 
 /// What a client command answers.
 pub enum Answer {
+    /// The archive contains config secrets as well as chat history.
+    Migrated(PathBuf),
     Threads(Vec<Thread>),
     /// Every configured provider, checked just now, and the model in use.
     Providers {
@@ -104,6 +108,10 @@ pub enum Answer {
 
 /// Every command, for clients to show: name and what it does.
 pub const COMMANDS: &[(&str, &str)] = &[
+    (
+        "/migrate",
+        "save config and chats, including API keys; optional output path must be inside ~/Documents/duskcode/backups",
+    ),
     (
         "/compact",
         "summarize the conversation to free the context; text after it guides the summary",
@@ -174,6 +182,7 @@ impl Command {
             } => undo::run(agent, sequence).await,
             Self::Undo { sequence: None, .. } => {}
             Self::Resume { .. }
+            | Self::Migrate { .. }
             | Self::New
             | Self::Model { .. }
             | Self::Settings
@@ -187,6 +196,9 @@ impl Command {
 
     pub async fn answer(self, runtime: &Runtime) -> Result<Answer> {
         match self {
+            Self::Migrate { path } => Ok(Answer::Migrated(
+                runtime.migrate(path.as_deref().map(expand_home)).await?,
+            )),
             Self::Resume { cwd } => Ok(Answer::Threads(resume::run(runtime, cwd).await?)),
             Self::New => Ok(Answer::NewThread),
             Self::Settings => Ok(Answer::Settings(Box::new(settings::run(runtime).await?))),
@@ -267,6 +279,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
     }
     let argument = (!argument.is_empty()).then(|| argument.to_owned());
     Some(match name {
+        "migrate" => Ok(Command::Migrate { path: argument }),
         "compact" => Ok(Command::Compact {
             instructions: argument,
         }),

@@ -561,6 +561,10 @@ pub async fn run(
                 answer(runtime, &mut app, &mut open, Command::Context { thread_id }).await;
             }
             Action::Command(command) => {
+                if let Command::Migrate { .. } = command {
+                    app.flash = Some("creating a private archive; backups are excluded".into());
+                    terminal.draw(|frame| ui::draw(frame, &mut app))?;
+                }
                 // Checking providers takes a moment; the window says so meanwhile.
                 if let Command::Update { .. } = command {
                     let note = Some("asking GitHub for the newest version".into());
@@ -680,7 +684,16 @@ fn connect(runtime: &Runtime, base_url: String, api_key: Option<String>) -> Resu
 
 /// Shows what the core answered to a command that does not run in the thread.
 async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>, command: Command) {
+    let migrating = matches!(&command, Command::Migrate { .. });
     match command.answer(runtime).await {
+        Ok(Answer::Migrated(path)) => {
+            app.panel = None;
+            app.flash = None;
+            app.transcript.notice(format!(
+                "Archive saved: {}\nContains API keys and chat history; keep it private.\nRestore offline with duskcode restore <archive> into empty data roots. Saved absolute project paths are unchanged.",
+                path.display()
+            ), Tone::Info);
+        }
         Ok(Answer::Threads(threads)) => {
             let current = app.thread_id.as_deref();
             let selected = threads
@@ -775,6 +788,9 @@ async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>,
             set_update_note(app, format!("cannot check for updates: {error:#}"));
         }
         Err(error) => {
+            if migrating {
+                app.flash = None;
+            }
             app.panel = None;
             app.error(format!("{error:#}"));
         }

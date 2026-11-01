@@ -86,6 +86,17 @@ pub struct ThreadHandle {
 }
 
 impl Runtime {
+    /// A SQLite snapshot plus the two standard data roots, without the backup folder.
+    pub async fn migrate(&self, destination: Option<PathBuf>) -> Result<PathBuf> {
+        crate::archive::export(
+            self.paths(),
+            &self.launcher.state,
+            &self.state_db,
+            destination,
+        )
+        .await
+    }
+
     /// Sets up missing files, opens the database and the config, and picks the first
     /// saved model without a network request. `state_db` replaces the default database
     /// path. First start and unavailable providers still leave local history accessible.
