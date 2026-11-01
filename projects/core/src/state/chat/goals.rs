@@ -41,6 +41,30 @@ impl GoalStatus {
 }
 
 impl State {
+    /// Pending input and durable dependencies in one snapshot. Agent requests may be
+    /// waiting for a slot, admitted but not started yet, or in a running turn.
+    pub(crate) async fn goal_wake_state(&self, thread_id: &str) -> Result<(bool, bool)> {
+        sqlx::query_as(
+            "WITH RECURSIVE agents(id) AS (
+                SELECT id FROM threads WHERE parent_thread_id = ?1
+                UNION ALL
+                SELECT threads.id FROM threads JOIN agents ON threads.parent_thread_id = agents.id
+             ) SELECT EXISTS(SELECT 1 FROM pending_messages WHERE thread_id = ?1),
+                EXISTS(SELECT 1 FROM background_jobs WHERE thread_id = ?1 AND status = 'running')
+                OR EXISTS(SELECT 1 FROM pending_messages JOIN agents ON thread_id = agents.id)
+                OR EXISTS(SELECT 1 FROM turns JOIN agents ON thread_id = agents.id
+                    WHERE status = 'running')
+                OR EXISTS(SELECT 1 FROM messages JOIN agents ON thread_id = agents.id
+                    WHERE (role = 'user' OR from_job_id IS NOT NULL)
+                    AND sequence > (SELECT COALESCE(MAX(last_sequence), 0) FROM turns
+                        WHERE turns.thread_id = agents.id))",
+        )
+        .bind(thread_id)
+        .fetch_one(&self.pool)
+        .await
+        .context("check goal dependency wake state")
+    }
+
     pub async fn goal(&self, thread_id: &str) -> Result<Option<Goal>> {
         let row = sqlx::query("SELECT * FROM goals WHERE thread_id = ?")
             .bind(thread_id)

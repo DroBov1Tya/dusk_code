@@ -15,6 +15,9 @@ use crate::runtime::system::ThreadEvent;
 #[derive(Default)]
 pub struct Mailboxes {
     live: Mutex<HashMap<String, Mailbox>>,
+    /// A runner can leave before its final events have reached the asking thread.
+    /// Count overlapping runners of the same agent until their reports are drained.
+    agent_reports: Mutex<HashMap<String, usize>>,
     /// Set at shutdown: messages are still stored, but no agent starts.
     closed: AtomicBool,
 }
@@ -40,6 +43,29 @@ impl Mailboxes {
 
     pub async fn remove(&self, thread_id: &str) {
         self.lock().await.remove(thread_id);
+    }
+
+    /// The caller holds `live`, so starting work and a goal checking it cannot race.
+    pub async fn begin_agent_report(&self, thread_id: &str) {
+        let mut reports = self.agent_reports.lock().await;
+        *reports.entry(thread_id.to_owned()).or_default() += 1;
+    }
+
+    /// The caller holds `live`; a newer runner's report keeps the agent active.
+    pub async fn end_agent_report(&self, thread_id: &str) {
+        let mut reports = self.agent_reports.lock().await;
+        if let Some(count) = reports.get_mut(thread_id) {
+            *count -= 1;
+            if *count == 0 {
+                reports.remove(thread_id);
+            }
+        }
+    }
+
+    /// Includes execution and the delivery of its final result, beyond mailbox removal.
+    pub async fn has_agent_reports(&self, threads: &[String]) -> bool {
+        let reports = self.agent_reports.lock().await;
+        threads.iter().any(|thread| reports.contains_key(thread))
     }
 
     pub fn close(&self) {

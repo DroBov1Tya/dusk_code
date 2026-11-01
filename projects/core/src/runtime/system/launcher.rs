@@ -199,8 +199,10 @@ impl Launcher {
             {
                 return Ok(());
             }
+            let root = self.state.root_thread(&thread.id).await?;
             let (runner, input, output) = self.agent_runner(thread, cwd).await?;
             live.insert(thread.id.clone(), runner.mailbox(&input));
+            self.mailboxes.begin_agent_report(&thread.id).await;
             drop(live);
             let launcher = self.clone();
             let folder = cwd.to_owned();
@@ -217,7 +219,7 @@ impl Launcher {
             let reports: Pin<Box<dyn Future<Output = ()> + Send>> =
                 Box::pin(
                     self.clone()
-                        .report(output, thread.clone(), parent, cwd.to_owned()),
+                        .report(output, thread.clone(), parent, root, cwd.to_owned()),
                 );
             tokio::spawn(reports);
             Ok(())
@@ -258,9 +260,16 @@ impl Launcher {
     }
 
     /// Passes an agent's events on to the client of the thread that asked it, and its
-    /// answer to that thread when a turn ends. A turn the user stopped reports nothing,
-    /// so a stop does not wake the asking agent again.
-    async fn report(self, mut output: ThreadOutput, thread: Thread, parent: String, cwd: PathBuf) {
+    /// answer to that thread when a turn ends. A turn the user stopped has no answer
+    /// to forward; draining its lifecycle can still release a waiting goal.
+    async fn report(
+        self,
+        mut output: ThreadOutput,
+        thread: Thread,
+        parent: String,
+        root: String,
+        cwd: PathBuf,
+    ) {
         while let Some(event) = output.next_event().await {
             let report = match &event {
                 ThreadEvent::TurnFinished(turn) => match turn.status {
@@ -291,6 +300,13 @@ impl Launcher {
                     event: Box::new(event),
                 });
             }
+        }
+        // The report stream was drained before clearing the dependency. The wake also
+        // covers an interrupted turn, which deliberately has no result to deliver.
+        let live = self.mailboxes.lock().await;
+        self.mailboxes.end_agent_report(&thread.id).await;
+        if let Some(mailbox) = live.get(&root) {
+            mailbox.send(Input::DependencyFinished);
         }
     }
 
