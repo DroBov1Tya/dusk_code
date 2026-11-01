@@ -13,6 +13,10 @@ use std::{
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sqlx::{
+    ConnectOptions, Connection,
+    sqlite::{SqliteConnectOptions, SqliteJournalMode},
+};
 use uuid::Uuid;
 
 use crate::{init::paths::Paths, state::State};
@@ -112,10 +116,38 @@ pub async fn export(
         .context(
             "create a consistent SQLite snapshot for /migrate; retry when database writes are idle",
         )?;
+    rebuild_snapshot_search(&snapshot).await?;
     let paths = paths.clone();
     tokio::task::spawn_blocking(move || export_files(&paths, &snapshot, &destination, temporary))
         .await
         .context("archive writer stopped")?
+}
+
+/// `messages.message_id` is a TEXT primary key, so its implicit rowids may change
+/// during VACUUM. Rebuild the external-content FTS index against the snapshot's own
+/// messages before copying it. The live database and its search index are untouched.
+async fn rebuild_snapshot_search(snapshot: &Path) -> Result<()> {
+    let options = SqliteConnectOptions::new()
+        .filename(snapshot)
+        .create_if_missing(false)
+        // The archived snapshot must be self-contained after this connection closes.
+        .journal_mode(SqliteJournalMode::Delete)
+        .disable_statement_logging();
+    let mut connection = sqlx::SqliteConnection::connect_with(&options)
+        .await
+        .context("open the migration snapshot to rebuild message search")?;
+    let rebuilt = sqlx::query("INSERT INTO messages_search(messages_search) VALUES ('rebuild')")
+        .execute(&mut connection)
+        .await
+        .context("rebuild message search against the migration snapshot's rowids");
+    // Close even after a rebuild error, before export cleanup removes the staging tree.
+    let closed = connection
+        .close()
+        .await
+        .context("close the rebuilt migration snapshot");
+    rebuilt?;
+    closed?;
+    Ok(())
 }
 
 fn export_files(
