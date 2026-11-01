@@ -87,6 +87,13 @@ impl OpenThread {
                 self.alerted = true;
                 notify
             }
+            ThreadEvent::Idle => {
+                // The previous request has settled. A later standalone runner failure
+                // is a new notification, even if no new model turn has started.
+                self.active_turn = None;
+                self.alerted = false;
+                false
+            }
             _ => false,
         };
         app.apply(event);
