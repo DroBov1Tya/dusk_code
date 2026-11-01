@@ -15,7 +15,7 @@ mod turns;
 mod undo;
 
 pub use compactions::Compaction;
-pub use goals::{Goal, GoalStatus};
+pub use goals::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use jobs::{BackgroundJob, JobSummary};
 pub use local_unsent::LocalUnsent;
 pub use messages::{Message, MessageRole, estimate_tokens};

@@ -56,7 +56,7 @@ pub enum Command {
     Update { channel: Option<String> },
     /// Shows the reasoning effort, or sets it: low, medium, high or default.
     Effort { level: Option<String> },
-    /// Sets the standing goal, or shows, pauses, resumes, clears or completes it.
+    /// Creates a draft goal; shows, approves, confirms, pauses, resumes or clears it.
     Goal { argument: Option<String> },
     /// Lists the user's messages of a thread; a client fills in its open thread. With a
     /// sequence, takes the thread back to before that message.
@@ -131,7 +131,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     (
         "/goal",
-        "a goal worked on turn after turn until done; pause, resume, clear",
+        "a verified goal: review criteria, approve <revision>, confirm evidence; pause, resume, clear",
     ),
     (
         "/jobs",

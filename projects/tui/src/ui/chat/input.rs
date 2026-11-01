@@ -341,14 +341,20 @@ fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     };
     let (color, toggle) = match goal.status {
+        _ if !goal.approved => (SUN, " review "),
         GoalStatus::Active => (TEAL, " pause "),
         GoalStatus::Paused => (SUN, " resume "),
         GoalStatus::Done => (VIOLET, " resume "),
     };
     const CLEAR: &str = " \u{00D7} ";
     let head = format!(
-        "   \u{25CE} goal {}  {}/{}  ",
+        "   \u{25CE} goal {} [{}]  {}/{}  ",
         goal.status.name(),
+        if goal.approved || goal.status == GoalStatus::Done {
+            goal.verification.as_str()
+        } else {
+            "unapproved"
+        },
         goal.rounds,
         app.goal_rounds
     );

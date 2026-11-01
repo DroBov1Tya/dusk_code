@@ -36,23 +36,65 @@ impl State {
         runtime_id: &str,
         lease_path: &str,
     ) -> Result<()> {
+        self.create_job_for_call(thread_id, job_id, command, runtime_id, lease_path, None)
+            .await
+    }
+
+    /// The launch inherits the recorded call's epoch, including its position in a
+    /// batch. Reading the goal's newest epoch could bless a check before a later edit.
+    pub(crate) async fn create_job_for_call(
+        &self,
+        thread_id: &str,
+        job_id: &str,
+        command: &str,
+        runtime_id: &str,
+        lease_path: &str,
+        call_id: Option<&str>,
+    ) -> Result<()> {
         let mut transaction = self.pool.begin().await.context("begin background job")?;
+        let provenance: Option<(Option<String>, Option<i64>)> = if let Some(call_id) = call_id {
+            let provenance = sqlx::query_as(
+                "SELECT e.goal_revision, e.goal_epoch FROM tool_executions e
+                JOIN turns t ON t.turn_id = e.turn_id AND t.thread_id = e.thread_id
+                WHERE e.thread_id = ? AND e.call_id = ? AND e.tool_name = 'run_command'
+                    AND e.outcome = 'pending' AND t.status = 'running'
+                    AND json_extract(e.arguments_json, '$.command') = ?
+                    AND json_extract(e.arguments_json, '$.background') = 1",
+            )
+            .bind(thread_id)
+            .bind(call_id)
+            .bind(command)
+            .fetch_optional(&mut *transaction)
+            .await?;
+            ensure!(
+                provenance.is_some(),
+                "background job launch has no matching recorded call"
+            );
+            provenance
+        } else {
+            // Trusted runtime callers without a model tool call (including recovery tests).
+            sqlx::query_as("SELECT revision, work_epoch FROM goals WHERE thread_id = ? AND approved_at IS NOT NULL")
+                .bind(thread_id).fetch_optional(&mut *transaction).await?
+        };
+        let (goal_revision, goal_epoch) = provenance.unwrap_or_default();
         // Only finished history is pruned. Its completion event/message keeps the result.
         sqlx::query(
             "DELETE FROM background_jobs WHERE status != 'running' AND job_id NOT IN
              (SELECT job_id FROM background_jobs WHERE thread_id = ? ORDER BY created_at DESC, job_id DESC LIMIT 31)
-             AND thread_id = ?",
+             AND thread_id = ? AND NOT EXISTS (SELECT 1 FROM goals WHERE goals.thread_id = background_jobs.thread_id AND goals.revision = background_jobs.goal_revision)",
         )
         .bind(thread_id).bind(thread_id).execute(&mut *transaction).await?;
         sqlx::query(
             "DELETE FROM background_jobs WHERE status != 'running' AND job_id NOT IN
-             (SELECT job_id FROM background_jobs ORDER BY created_at DESC, job_id DESC LIMIT 127)",
+             (SELECT job_id FROM background_jobs ORDER BY created_at DESC, job_id DESC LIMIT 127)
+             AND NOT EXISTS (SELECT 1 FROM goals WHERE goals.thread_id = background_jobs.thread_id
+                AND goals.revision = background_jobs.goal_revision)",
         )
         .execute(&mut *transaction)
         .await?;
         sqlx::query(
-            "INSERT INTO background_jobs (job_id, thread_id, command, status, created_at, owner_runtime_id, owner_lease_path)
-             VALUES (?, ?, ?, 'running', ?, ?, ?)",
+            "INSERT INTO background_jobs (job_id, thread_id, command, status, created_at, owner_runtime_id, owner_lease_path, goal_revision, goal_epoch)
+             VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)",
         )
         .bind(job_id)
         .bind(thread_id)
@@ -60,6 +102,8 @@ impl State {
         .bind(timestamp_ms()?)
         .bind(runtime_id)
         .bind(lease_path)
+        .bind(goal_revision)
+        .bind(goal_epoch)
         .execute(&mut *transaction)
         .await
         .context("store background job")?;
@@ -99,6 +143,23 @@ impl State {
         .await
         .context("store job outcome")?;
         if let Some(owner) = owner {
+            // Unknown commands may have changed work even when they failed. Refresh
+            // their own epoch and invalidate earlier checks before announcing them.
+            sqlx::query("UPDATE goals SET work_epoch = work_epoch + 1 WHERE thread_id = ?1
+                AND approved_at IS NOT NULL
+                AND (revision IS NOT (SELECT goal_revision FROM background_jobs WHERE job_id = ?2)
+                OR NOT EXISTS (SELECT 1 FROM json_each(criteria_json) c WHERE
+                    json_extract(c.value, '$.check.kind') = 'command' AND json_extract(c.value, '$.check.command') =
+                    (SELECT command FROM background_jobs WHERE job_id = ?2)))")
+                .bind(&owner).bind(job_id).execute(&mut *transaction).await?;
+            // A check keeps its original launch epoch. A pause/resume or another
+            // mutation while it ran must not make an old check current again.
+            sqlx::query("UPDATE background_jobs SET goal_epoch = (SELECT work_epoch FROM goals WHERE thread_id = ?1)
+                WHERE job_id = ?2 AND NOT EXISTS (SELECT 1 FROM goals g, json_each(g.criteria_json) c
+                    WHERE g.thread_id = ?1 AND g.revision = background_jobs.goal_revision
+                    AND json_extract(c.value, '$.check.kind') = 'command'
+                    AND json_extract(c.value, '$.check.command') = background_jobs.command)")
+                .bind(&owner).bind(job_id).execute(&mut *transaction).await?;
             let content = format!("[background job {job_id} finished: {status}]\n{output}");
             sqlx::query(
                 "INSERT INTO pending_messages (thread_id, request_uid, content, created_at, from_job_id)

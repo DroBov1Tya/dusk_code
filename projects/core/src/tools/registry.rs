@@ -34,6 +34,8 @@ pub struct ToolRegistry {
 pub struct ToolResult {
     pub content: String,
     pub is_error: bool,
+    /// Set only by the foreground shell runner, never inferred from output text.
+    pub exit_code: Option<i32>,
     pub artifacts: Vec<ImageArtifact>,
 }
 
@@ -42,6 +44,7 @@ impl ToolResult {
         Self {
             content,
             is_error: false,
+            exit_code: None,
             artifacts: Vec::new(),
         }
     }
@@ -192,6 +195,7 @@ fn error_result(message: String) -> ToolResult {
     ToolResult {
         content: bounded(format!("error: {message}")),
         is_error: true,
+        exit_code: None,
         artifacts: Vec::new(),
     }
 }

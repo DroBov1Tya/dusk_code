@@ -9,10 +9,12 @@ mod db;
 
 pub use agents::Identity;
 pub use chat::{
-    BackgroundJob, CallPurpose, Compaction, Goal, GoalStatus, JobSummary, LastPrompt, LocalUnsent,
-    Message, MessageRole, ModelCall, PendingMessage, Source, Task, TaskItem, Thread, ThreadTokens,
-    TokenCounts, Turn, TurnAnswer, TurnOutcome, TurnStatus, UndoPoint, estimate_tokens,
+    BackgroundJob, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion, GoalEvidence,
+    GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
+    PendingMessage, Source, Task, TaskItem, Thread, ThreadTokens, TokenCounts, Turn, TurnAnswer,
+    TurnOutcome, TurnStatus, UndoPoint, estimate_tokens,
 };
 pub use db::State;
 
 use db::timestamp_ms;
+pub(crate) use db::timestamp_ms as db_timestamp;

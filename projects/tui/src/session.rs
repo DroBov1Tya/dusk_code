@@ -488,7 +488,7 @@ pub async fn run(
             }
             Action::Cancel => {
                 if let Some(thread) = &open
-                    && let Err(error) = thread.handle.input.cancel()
+                    && let Err(error) = thread.handle.input.cancel().await
                 {
                     app.error(format!("{error:#}"));
                 }
@@ -958,7 +958,7 @@ async fn close(open: Option<OpenThread>) {
         return;
     }
     // Cancelling a thread that already ended has nothing to stop.
-    let _ = input.cancel();
+    let _ = input.cancel().await;
     drop(input);
     let drained = async { while output.next_event().await.is_some() {} };
     let _ = tokio::time::timeout(CLOSE_TIMEOUT, drained).await;

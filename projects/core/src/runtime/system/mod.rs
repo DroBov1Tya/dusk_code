@@ -1,6 +1,7 @@
 //! What keeps threads going: the runtime clients start, the launcher that builds every
 //! thread, the runner of each, its lock, and the model all threads talk to.
 
+mod goal_verification;
 mod launcher;
 pub mod model_choice;
 // Named after its primary item, `Runtime`, as the style guide asks.

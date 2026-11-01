@@ -1,5 +1,5 @@
-//! `/goal [text | pause | resume | clear | done]`: sets the thread's standing goal, or
-//! changes it. Setting or resuming queues a message, so the work starts at once.
+//! `/goal` manages a user-owned acceptance contract. Drafts only request a proposal;
+//! approval/resume queues execution, confirmation queues deterministic evidence review.
 
 use crate::{
     chat::goal::{self, GoalAction},
@@ -8,7 +8,15 @@ use crate::{
 };
 
 pub async fn run(agent: &Agent, argument: Option<&str>) {
-    let action = GoalAction::from_command(argument);
+    let action = match GoalAction::from_command(argument) {
+        Ok(action) => action,
+        Err(error) => {
+            agent.emit(ThreadEvent::Rejected {
+                reason: format!("{error:#}"),
+            });
+            return;
+        }
+    };
     let starts = action.starts_work();
     let applied = async {
         let (goal, note) = goal::apply(&agent.state, &agent.thread_id, action).await?;
@@ -16,7 +24,7 @@ pub async fn run(agent: &Agent, argument: Option<&str>) {
         if starts
             && let Some(goal) = goal
                 .as_ref()
-                .filter(|goal| goal.status == GoalStatus::Active)
+                .filter(|goal| !goal.approved || goal.status == GoalStatus::Active)
         {
             let rounds = agent.config.current().limits().max_goal_rounds;
             let kickoff = goal::kickoff(goal, rounds);

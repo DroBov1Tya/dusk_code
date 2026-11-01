@@ -56,7 +56,7 @@ impl Tool for RunCommand {
         let scope = context.scope;
         format!(
             "Run a command with sh -c in {}. Stdin is empty. Returns the exit code, stdout \
-             and stderr, each cut at 32 KiB. A non-zero exit code is a normal result. Put \
+             and stderr, each cut at 32 KiB. A non-zero exit code is a failed result. Put \
              temporary and downloaded files in {}.",
             scope.cwd().display(),
             scope.workspace().display()
@@ -102,16 +102,47 @@ impl Tool for RunCommand {
                     .context("background jobs require a running thread")?;
                 let id = owner
                     .manager
-                    .start(&owner.thread_id, &arguments.command, scope.cwd(), timeout)
+                    .start(
+                        &owner.thread_id,
+                        &arguments.command,
+                        scope.cwd(),
+                        timeout,
+                        context.progress.map(|progress| progress.call_id),
+                    )
                     .await?;
                 return Ok(format!("background job started: job_id={id}"));
             }
-            run(&arguments.command, scope, timeout).await
+            Ok(run(&arguments.command, scope, timeout).await?.content)
+        })
+    }
+    fn call_result<'a>(
+        &'a self,
+        arguments: Value,
+        context: ToolContext<'a>,
+    ) -> BoxFuture<'a, crate::tools::ToolResult> {
+        Box::pin(async move {
+            let parsed: RunCommandArguments = parse_arguments(arguments.clone())?;
+            ensure!(!parsed.command.trim().is_empty(), "command is empty");
+            let timeout = parsed.timeout_seconds.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
+            ensure!(
+                (1..=MAX_TIMEOUT_SECONDS).contains(&timeout),
+                "invalid timeout_seconds"
+            );
+            if parsed.background {
+                return Ok(crate::tools::ToolResult::text(
+                    self.call(arguments, context).await?,
+                ));
+            }
+            run(&parsed.command, context.scope, timeout).await
         })
     }
 }
 
-async fn run(command: &str, scope: &ToolScope, timeout_seconds: u64) -> Result<String> {
+async fn run(
+    command: &str,
+    scope: &ToolScope,
+    timeout_seconds: u64,
+) -> Result<crate::tools::ToolResult> {
     let mut child = spawn(command, scope.cwd())?;
     let mut group = ProcessGroup(child.id());
     ensure!(group.0.is_some(), "command exited before it started");
@@ -139,7 +170,12 @@ async fn run(command: &str, scope: &ToolScope, timeout_seconds: u64) -> Result<S
             output.push_str(&format!("\n{name}:\n{text}"));
         }
     }
-    Ok(output)
+    Ok(crate::tools::ToolResult {
+        content: output,
+        is_error: !status.success(),
+        exit_code: status.code(),
+        artifacts: Vec::new(),
+    })
 }
 
 pub(super) fn spawn(command: &str, cwd: &Path) -> Result<Child> {
@@ -225,6 +261,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn foreground_exit_is_typed_even_if_output_claims_success() {
+        let scope = scope("shell-typed-exit");
+        let result = RunCommand::default()
+            .call_result(
+                json!({"command":"echo success; exit 7"}),
+                tool_context(&scope),
+            )
+            .await
+            .unwrap();
+        assert_eq!(result.exit_code, Some(7));
+        assert!(result.is_error);
+        let result = RunCommand::default()
+            .call_result(json!({"command":"exit 0"}), tool_context(&scope))
+            .await
+            .unwrap();
+        assert_eq!(result.exit_code, Some(0));
+        assert!(!result.is_error);
+    }
+
+    #[tokio::test]
     async fn kills_on_timeout() {
         let scope = scope("shell_timeout");
         let started = std::time::Instant::now();
@@ -239,7 +295,7 @@ mod tests {
         let scope = scope("shell_background");
         let started = std::time::Instant::now();
         let output = run("sleep 30 & echo started", &scope, 10).await.unwrap();
-        assert!(output.contains("started"));
+        assert!(output.content.contains("started"));
         assert!(
             started.elapsed() < Duration::from_secs(5),
             "waited for the background job"

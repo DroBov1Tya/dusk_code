@@ -103,6 +103,7 @@ impl DisplayImage {
                 artifact.id, artifact.width, artifact.height, artifact.mime_type
             ),
             is_error: false,
+            exit_code: None,
             artifacts: vec![artifact],
         })
     }
