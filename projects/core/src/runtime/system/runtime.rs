@@ -63,7 +63,7 @@ pub struct Runtime {
     kept_builtin: Vec<String>,
     state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
-    _restore_guard: crate::archive::RestoreGuard,
+    _restore_guard: Option<crate::archive::RestoreGuard>,
 }
 
 /// What the application costs the machine right now.
@@ -103,7 +103,7 @@ impl Runtime {
     /// saved model without a network request. `state_db` replaces the default database
     /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
-        let restore_guard = crate::archive::startup_guard()?;
+        let restore_guard = crate::archive::startup_guard(&paths, state_db.as_deref())?;
         let initialized = init::initialize(&paths)?;
         let state_db = state_db.unwrap_or_else(|| paths.state_db());
         let state = Arc::new(State::open(&state_db).await?);

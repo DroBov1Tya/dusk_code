@@ -32,6 +32,7 @@ const MAX_PATH_BYTES: usize = 4096;
 const MAX_PAYLOAD_BYTES: u64 = 1024 * 1024 * 1024 * 1024;
 const BUFFER_BYTES: usize = 64 * 1024;
 const PENDING_RESTORE: &str = ".restore-pending";
+const RESTORE_LOCK: &str = ".restore.lock";
 const MAX_TRANSACTION_BYTES: u64 = 64 * 1024;
 
 #[derive(Serialize, Deserialize)]
@@ -207,11 +208,31 @@ fn export_files(
     }
     output.flush()?;
     output.get_ref().sync_all()?;
-    drop(output);
+    // Keep the original writable handle until the published inode is fully synced.
     // Unlike rename, creating a hard link never replaces a concurrently created output.
     // Staging and output are both inside backups, so they are on the same filesystem.
     fs::hard_link(&archive_path, destination)
         .context("publish the archive without overwriting an existing file")?;
+    let parent = destination
+        .parent()
+        .context("published archive has no parent")?;
+    sync_directory(parent).with_context(|| {
+        format!(
+            "archive was published at {}, but its directory could not be synced",
+            destination.display()
+        )
+    })?;
+    // Remove this temporary hard link explicitly so the final inode/link count and
+    // destination name can be synced before reporting a successful durable publish.
+    fs::remove_file(&archive_path).with_context(|| {
+        format!(
+            "archive was published at {}, but its temporary link could not be removed",
+            destination.display()
+        )
+    })?;
+    output.get_ref().sync_all()?;
+    sync_directory(parent)?;
+    sync_directory(&temporary.path)?;
     Ok(destination.to_owned())
 }
 
@@ -467,16 +488,151 @@ pub struct RestoreGuard {
     _file: File,
 }
 
-pub fn startup_guard() -> Result<RestoreGuard> {
+/// The HOME-scoped transaction only owns the standard data roots. Sandboxed runtimes
+/// with disjoint roots must not create default state or depend on its pending journal.
+pub fn startup_guard(paths: &Paths, state_db: Option<&Path>) -> Result<Option<RestoreGuard>> {
+    let standard = match Paths::from_home() {
+        Ok(standard) => standard,
+        Err(_) => return Ok(None),
+    };
+    let shared = [
+        Some(paths.config_root()),
+        Some(paths.workspace_root()),
+        state_db,
+    ]
+    .into_iter()
+    .flatten()
+    .any(|actual| {
+        [standard.config_root(), standard.workspace_root()]
+            .iter()
+            .any(|default| paths_overlap(actual, default))
+    });
+    if !shared {
+        return Ok(None);
+    }
     let guard = restore_guard(false)?;
     require_no_pending_restore()?;
-    Ok(guard)
+    Ok(Some(guard))
+}
+
+fn paths_overlap(left: &Path, right: &Path) -> bool {
+    if left.starts_with(right) || right.starts_with(left) {
+        return true;
+    }
+    match (physical_path(left), physical_path(right)) {
+        (Some(left), Some(right)) => left.starts_with(&right) || right.starts_with(&left),
+        _ => false,
+    }
+}
+
+/// Resolve existing ancestors too: a symlink alias must still coordinate when the
+/// final data root has not been created yet. A disjoint inaccessible HOME is harmless.
+fn physical_path(path: &Path) -> Option<PathBuf> {
+    let mut head = path.to_owned();
+    let mut suffix = Vec::new();
+    loop {
+        if let Ok(mut physical) = fs::canonicalize(&head) {
+            for part in suffix.iter().rev() {
+                physical.push(part);
+            }
+            return Some(physical);
+        }
+        suffix.push(head.file_name()?.to_os_string());
+        head = head.parent()?.to_owned();
+    }
+}
+
+/// Removal uses the same exclusive lock as restore. The command must retain this
+/// guard through all deletions and must leave the coordination inode linked in place.
+pub struct RemovalGuard {
+    guard: RestoreGuard,
+    lock_path: PathBuf,
+}
+
+pub fn removal_guard() -> Result<RemovalGuard> {
+    let guard = restore_guard(true)?;
+    require_no_pending_restore()?;
+    Ok(RemovalGuard {
+        guard,
+        lock_path: restore_control_root()?.join(RESTORE_LOCK),
+    })
+}
+
+impl RemovalGuard {
+    pub fn lock_path(&self) -> &Path {
+        &self.lock_path
+    }
+
+    pub fn validate_application_data_root(&self, directory: &Path) -> Result<()> {
+        self.removal_directory(directory).map(|_| ())
+    }
+
+    /// A default install shares the restore control directory. Delete its other
+    /// children, never that directory or the live lock, so another process cannot
+    /// open a replacement inode while this exclusive owner is still deleting data.
+    pub fn remove_application_data(&self, directory: &Path) -> Result<()> {
+        require_no_pending_restore()?;
+        let Some((directory, control)) = self.removal_directory(directory)? else {
+            return Ok(());
+        };
+        if directory == control {
+            for entry in fs::read_dir(&directory)? {
+                let entry = entry?;
+                if entry.file_name() == RESTORE_LOCK {
+                    continue;
+                }
+                ensure!(
+                    entry.file_name() != PENDING_RESTORE,
+                    "pending restore journal appeared; removal stopped without deleting it"
+                );
+                let metadata = fs::symlink_metadata(entry.path())?;
+                if metadata.is_dir() {
+                    fs::remove_dir_all(entry.path())?;
+                } else {
+                    fs::remove_file(entry.path())?;
+                }
+            }
+            sync_directory(&control)?;
+        } else {
+            fs::remove_dir_all(&directory)
+                .with_context(|| format!("cannot remove {}", directory.display()))?;
+        }
+        Ok(())
+    }
+
+    fn removal_directory(&self, directory: &Path) -> Result<Option<(PathBuf, PathBuf)>> {
+        inspect_tree_path(directory)?;
+        match fs::symlink_metadata(directory) {
+            Ok(metadata) => ensure!(
+                metadata.is_dir(),
+                "application data root must be a real directory"
+            ),
+            Err(error) if error.kind() == ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error).context("inspect application data before removal"),
+        }
+        // Confirm the pathname still names the held inode before allowing deletion.
+        ensure_same_file(
+            &fs::symlink_metadata(&self.lock_path)?,
+            &self.guard._file.metadata()?,
+        )?;
+        let control = fs::canonicalize(
+            self.lock_path
+                .parent()
+                .context("restore lock has no parent")?,
+        )?;
+        let directory = fs::canonicalize(directory)?;
+        ensure!(
+            directory == control || !control.starts_with(&directory),
+            "refusing to recursively remove an application data root containing the restore control directory"
+        );
+        Ok(Some((directory, control)))
+    }
 }
 
 fn restore_guard(exclusive: bool) -> Result<RestoreGuard> {
     let root = restore_control_root()?;
     directory_tree(&root)?;
-    let path = root.join(".restore.lock");
+    let path = root.join(RESTORE_LOCK);
     match fs::symlink_metadata(&path) {
         Ok(metadata) => ensure!(
             metadata.is_file(),

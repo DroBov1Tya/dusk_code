@@ -36,7 +36,7 @@ async fn main() -> Result<()> {
         }
     };
     // Keep a shared lock for the full process lifetime, including log initialization.
-    let _restore_guard = dusk_core::archive::startup_guard()?;
+    let _restore_guard = dusk_core::archive::startup_guard(&paths, state_db.as_deref())?;
     if let Err(error) = logs::init(&paths, env!("CARGO_CRATE_NAME"), "tui") {
         eprintln!("duskcode: no log files: {error:#}");
     }

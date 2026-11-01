@@ -8,16 +8,18 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use dusk_core::{init::paths::Paths, release::resources};
+use dusk_core::{archive, init::paths::Paths, release::resources};
 
 const BINARY: &str = "duskcode";
 
 pub fn run(paths: &Paths) -> Result<()> {
+    let removal = archive::removal_guard()?;
     let home = PathBuf::from(env::var_os("HOME").context("HOME is not set")?);
     let exe = env::current_exe().context("cannot find this binary")?;
     let exe = fs::canonicalize(&exe).unwrap_or(exe);
     let links = links_to(&exe, &home);
     let install_dir = resources::data_root()?;
+    removal.validate_application_data_root(&install_dir)?;
     let config = paths.config_root();
     ensure!(
         config.ends_with("duskcode"),
@@ -49,6 +51,10 @@ pub fn run(paths: &Paths) -> Result<()> {
         "Thread files in {} are kept.",
         paths.workspace_root().display()
     );
+    println!(
+        "The coordination lock {} is kept.",
+        removal.lock_path().display()
+    );
     print!("Remove duskcode? [y/N] ");
     io::stdout().flush()?;
     let mut answer = String::new();
@@ -62,10 +68,7 @@ pub fn run(paths: &Paths) -> Result<()> {
         fs::remove_file(link).with_context(|| format!("cannot remove {}", link.display()))?;
     }
     fs::remove_file(&exe).with_context(|| format!("cannot remove {}", exe.display()))?;
-    if install_dir.exists() {
-        fs::remove_dir_all(&install_dir)
-            .with_context(|| format!("cannot remove {}", install_dir.display()))?;
-    }
+    removal.remove_application_data(&install_dir)?;
     if fs::symlink_metadata(config).is_ok() {
         fs::remove_dir_all(config)
             .with_context(|| format!("cannot remove {}", config.display()))?;
