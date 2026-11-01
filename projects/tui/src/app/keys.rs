@@ -879,6 +879,10 @@ impl App {
     /// after, below the section's top border.
     fn card_at(&self, x: u16, y: u16) -> Option<String> {
         let area = self.agent_area.filter(|area| inside(*area, x, y))?;
+        // The scroll hint occupies the last row instead of agent content.
+        if self.agent_max_scroll > 0 && area.height > 2 && y == area.bottom() - 1 {
+            return None;
+        }
         let row = (y - area.y).checked_sub(1)? as usize + self.agent_scroll;
         if row % 4 == 3 {
             return None;
