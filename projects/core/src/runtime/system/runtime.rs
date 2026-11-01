@@ -313,6 +313,7 @@ impl Runtime {
             thread.parent_thread_id.is_some(),
             "thread {thread_id} is not an agent's"
         );
+        let root = state.root_thread(thread_id).await?;
         let mut threads = state.descendant_threads(thread_id).await?;
         threads.insert(0, thread_id.to_owned());
         for thread_id in threads {
@@ -322,6 +323,11 @@ impl Runtime {
                 }
                 None => state.drop_pending(&thread_id).await?,
             }
+        }
+        // A queued agent has no runner/report stream to release a waiting goal.
+        // Its requests are durably dropped before the non-preemptive wake.
+        if let Some(mailbox) = self.launcher.mailboxes.get(&root).await {
+            mailbox.send(Input::DependencyFinished);
         }
         info!("agent thread {thread_id} stopped by the user");
         Ok(())
