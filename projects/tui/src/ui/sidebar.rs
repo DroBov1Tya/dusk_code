@@ -74,23 +74,34 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
     }
     let agents_active = !app.subagents.is_empty();
     let mcp_active = !app.mcp.is_empty();
-    if agents_active && y < area.bottom() {
-        let remaining = area.bottom() - y;
-        let height = match (mcp_active, app.connectors_open) {
-            (false, _) => remaining,
-            (true, false) => remaining
-                .saturating_sub(CONNECTORS_FOLDED + 1)
-                .max(3)
-                .min(remaining),
-            (true, true) => remaining.div_ceil(2).max(3).min(remaining),
+    let remaining = area.bottom().saturating_sub(y);
+    // Reserve the lower half for connectors even while agents are absent or the
+    // connectors are folded, so their heading never follows the agent content.
+    // On short rails, keep the connector heading and summary before agent rows.
+    let agent_slot = if mcp_active {
+        remaining
+            .div_ceil(2)
+            .min(remaining.saturating_sub(CONNECTORS_FOLDED))
+    } else {
+        remaining
+    };
+    let agent_height = if mcp_active {
+        agent_slot.saturating_sub(1)
+    } else {
+        agent_slot
+    };
+    if agents_active && agent_height > 0 {
+        let section = Rect {
+            y,
+            height: agent_height,
+            ..area
         };
-        let section = Rect { y, height, ..area };
         app.agent_area = Some(section);
         agents(frame, section, app);
-        // A blank row before the next section.
-        y += height + 1;
     }
-    if mcp_active && y + 1 < area.bottom() {
+    // The reserved agent slot includes the blank row before connectors.
+    y = y.saturating_add(agent_slot).min(area.bottom());
+    if mcp_active && area.bottom().saturating_sub(y) >= CONNECTORS_FOLDED {
         let height = match app.connectors_open {
             true => area.bottom() - y,
             false => CONNECTORS_FOLDED.min(area.bottom() - y),
