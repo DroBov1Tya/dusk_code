@@ -127,7 +127,7 @@ fn table(source: &[&str], width: usize) -> Option<(Vec<Line<'static>>, usize)> {
     while remaining > 0 {
         let Some(column) = (0..columns)
             .filter(|&column| widths[column] < natural[column])
-            .max_by_key(|&column| natural[column] - widths[column])
+            .min_by_key(|&column| widths[column])
         else {
             break;
         };
