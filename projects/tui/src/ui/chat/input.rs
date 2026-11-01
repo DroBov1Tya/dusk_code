@@ -45,7 +45,7 @@ pub fn height(app: &App, width: u16) -> u16 {
         + queue_rows(app)
         + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16
         + FRAME_ROWS
-        + u16::from(app.git.is_some())
+        + 1
 }
 
 /// The question's border, its text, the options, the own answer and the buttons.
@@ -78,16 +78,9 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(polled),
         ..area
     };
-    if let Some(summary) = &app.git {
-        let bottom = Rect {
-            y: area.bottom().saturating_sub(1),
-            height: 1,
-            ..area
-        };
-        frame.render_widget(Paragraph::new(git_line(summary)), bottom);
-    }
+    draw_footer(frame, area, app.git.as_ref());
     let area = Rect {
-        height: area.height.saturating_sub(u16::from(app.git.is_some())),
+        height: area.height.saturating_sub(1),
         ..area
     };
     let goal = goal_rows(app);
@@ -208,6 +201,39 @@ fn mode_chip(mode: &str) -> Span<'static> {
         _ => ROSE,
     };
     Span::styled(format!(" {} ", mode.to_lowercase()), bold(NIGHT).bg(color))
+}
+
+/// The repository summary and package version share a row below the message card.
+fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>) {
+    if area.is_empty() {
+        return;
+    }
+    let bottom = Rect {
+        y: area.bottom() - 1,
+        height: 1,
+        ..area
+    };
+    const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+    // Keep the version whole; an extremely narrow terminal has no room for it.
+    let version_width = VERSION.width() as u16;
+    let reserved = if bottom.width >= version_width {
+        frame.render_widget(
+            Paragraph::new(Span::styled(VERSION, dim())).right_aligned(),
+            bottom,
+        );
+        version_width.saturating_add(1)
+    } else {
+        0
+    };
+    if let Some(summary) = git {
+        frame.render_widget(
+            Paragraph::new(git_line(summary)),
+            Rect {
+                width: bottom.width.saturating_sub(reserved),
+                ..bottom
+            },
+        );
+    }
 }
 
 /// The repository, branch, commits, changed files and the distance to the upstream.
