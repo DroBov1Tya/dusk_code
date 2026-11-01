@@ -8,8 +8,7 @@ use crossterm::event::{
 use std::time::{Duration, Instant};
 
 use dusk_core::release::update::InstallStage;
-use ratatui::layout::Rect;
-use unicode_width::UnicodeWidthChar;
+use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
 use super::{
     Action, App, Button, Command, Entry, Focus, Panel, Selection, TEXT_COLUMN, commands,
@@ -947,15 +946,18 @@ pub(super) fn selected_lines<'a>(
     lines.join("\n")
 }
 
-/// The part of `text` drawn in columns `from..to`; a wide character goes with its first column.
+/// The part of `text` drawn in columns `from..to`; a wide grapheme goes with its first column.
 fn columns(text: &str, from: usize, to: usize) -> String {
     let mut column = 0;
     let mut part = String::new();
-    for c in text.chars() {
+    // Use Ratatui's graphemes so combining marks and joined emoji stay with the
+    // displayed cell they belong to, including at the right selection boundary.
+    let span = Span::raw(text);
+    for grapheme in span.styled_graphemes(Style::default()) {
         if column >= from && column < to {
-            part.push(c);
+            part.push_str(grapheme.symbol);
         }
-        column += c.width().unwrap_or(0);
+        column += usize::from(grapheme.symbol.cell_width());
     }
     part
 }
