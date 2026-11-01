@@ -294,7 +294,8 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
         bold(SUN),
     ))];
     let own_row = poll.own_row();
-    for row in 0..=own_row {
+    let visible_rows = inner.height.saturating_sub(1) as usize;
+    for row in (0..=own_row).take(visible_rows) {
         let here = poll.active && poll.cursor == row;
         let pointer = if here { " \u{203A} " } else { "   " };
         let (mark, text) = if row < own_row {
@@ -331,18 +332,20 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
     let buttons_row = inner.y + lines.len() as u16;
     let send_left = inner.x + 1;
     let decline_left = send_left + SEND.width() as u16 + 1;
-    poll.hits.push(PollHit {
-        row: buttons_row,
-        left: send_left,
-        right: send_left + SEND.width() as u16,
-        target: PollTarget::Send,
-    });
-    poll.hits.push(PollHit {
-        row: buttons_row,
-        left: decline_left,
-        right: decline_left + DECLINE.width() as u16,
-        target: PollTarget::Decline,
-    });
+    if buttons_row < inner.bottom() {
+        poll.hits.push(PollHit {
+            row: buttons_row,
+            left: send_left,
+            right: send_left + SEND.width() as u16,
+            target: PollTarget::Send,
+        });
+        poll.hits.push(PollHit {
+            row: buttons_row,
+            left: decline_left,
+            right: decline_left + DECLINE.width() as u16,
+            target: PollTarget::Decline,
+        });
+    }
     lines.push(Line::from(vec![
         Span::raw(" "),
         Span::styled(SEND, fg(TEAL).bg(GLOW)),
@@ -351,7 +354,7 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled(format!("  {hint}"), dim()),
     ]));
     frame.render_widget(Paragraph::new(lines), inner);
-    if poll.active && poll.cursor == own_row {
+    if poll.active && poll.cursor == own_row && own_row < visible_rows {
         let column = 6 + poll.own.text[..poll.own.cursor].width();
         let x = (inner.x as usize + column).min(inner.right().saturating_sub(1) as usize);
         frame.set_cursor_position(Position::new(x as u16, inner.y + 1 + own_row as u16));
@@ -363,6 +366,9 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
 /// The standing goal in a line: its state, the round and the text, then its buttons.
 fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
     app.goal_hits.clear();
+    if area.is_empty() {
+        return;
+    }
     let Some(goal) = &app.goal else {
         return;
     };
