@@ -57,12 +57,11 @@ impl ToolScope {
     }
 
     pub(crate) fn skill_name(&self, path: &Path) -> Option<String> {
-        let relative = path.strip_prefix(self.skills.as_ref()?).ok()?;
-        if relative.file_name()? != crate::catalog::graph::SKILL_FILE {
-            return None;
-        }
-        let name = relative.parent()?.to_str()?;
-        (!name.is_empty()).then(|| name.replace(std::path::MAIN_SEPARATOR, "/"))
+        crate::catalog::graph::node_name(
+            self.skills.as_ref()?,
+            crate::catalog::graph::SKILL_FILE,
+            path,
+        )
     }
 
     /// Commands run here and relative paths are resolved against it.
