@@ -539,7 +539,7 @@ fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
         .title(Line::from(Span::styled(" threads ", bold(VIOLET))))
         .title_bottom(
             Line::from(Span::styled(
-                " up/down choose  enter open  n new  esc close ",
+                " up/down choose  enter open  y copy UID  n new  esc close ",
                 dim(),
             ))
             .right_aligned(),
@@ -547,6 +547,33 @@ fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
+    // Keep the complete selected identifier visible even without the preview pane.
+    let uid: Vec<Line> = list
+        .threads
+        .get(list.selected)
+        .map(|thread| {
+            wrap::chars(
+                &format!("UID (y copy): {}", thread.id),
+                inner.width.max(1) as usize,
+            )
+            .into_iter()
+            .map(|line| Line::from(Span::styled(line, dim())))
+            .collect()
+        })
+        .unwrap_or_default();
+    let uid_height = (uid.len() as u16).min(inner.height);
+    frame.render_widget(
+        Paragraph::new(uid),
+        Rect {
+            height: uid_height,
+            ..inner
+        },
+    );
+    let inner = Rect {
+        y: inner.y + uid_height,
+        height: inner.height.saturating_sub(uid_height),
+        ..inner
+    };
     let with_preview = inner.width >= PREVIEW_MIN_WIDTH;
     let list_width = if with_preview {
         inner.width * 2 / 5

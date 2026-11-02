@@ -11,7 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use dusk_core::{providers::ModelEvent, runtime::ThreadEvent, state::ThreadTokens};
 use ratatui::layout::{Position, Rect};
 
-use crate::app::{Action, App, Entry, Panel, Transcript, TranscriptHit, now_ms};
+use crate::app::{Action, App, Entry, Panel, Selection, Transcript, TranscriptHit, now_ms};
 
 /// Output older than this no longer counts toward tokens per second.
 pub const RATE_WINDOW: Duration = Duration::from_secs(3);
@@ -47,6 +47,12 @@ pub struct AgentWindow {
     /// Lines scrolled up from the bottom; 0 follows new output.
     pub scroll: usize,
     pub max_scroll: usize,
+    /// Body geometry and plain rendered lines from the last frame.
+    pub body: Rect,
+    pub drawn_top: usize,
+    pub drawn_text: Vec<String>,
+    pub selection: Option<Selection>,
+    dragging: bool,
     /// Fold headers on the last drawn frame.
     pub hits: Vec<TranscriptHit>,
     /// The window with its border on the last drawn frame; a click outside closes it.
@@ -106,6 +112,11 @@ impl AgentWindow {
             transcript,
             scroll: 0,
             max_scroll: 0,
+            body: Rect::default(),
+            drawn_top: 0,
+            drawn_text: Vec::new(),
+            selection: None,
+            dragging: false,
             hits: Vec::new(),
             area: Rect::default(),
             stop: None,
@@ -118,6 +129,42 @@ impl AgentWindow {
         } else {
             self.scroll.saturating_sub(lines)
         };
+    }
+
+    pub fn selected_text(&self) -> Option<String> {
+        let selection = self.selection?;
+        if selection.anchor == selection.cursor {
+            return None;
+        }
+        let text = super::super::keys::selected_lines(selection, self.body.x, |line| {
+            self.drawn_text.get(line).map(String::as_str)
+        });
+        (!text.trim().is_empty()).then_some(text)
+    }
+
+    fn drag(&mut self, x: u16, y: u16) {
+        if !self.dragging || self.body.is_empty() {
+            return;
+        }
+        let Some(mut selection) = self.selection else {
+            return;
+        };
+        if y < self.body.y {
+            self.scroll_by(1, true);
+        } else if y >= self.body.bottom() {
+            self.scroll_by(1, false);
+        }
+        let top = self
+            .drawn_text
+            .len()
+            .saturating_sub(1)
+            .saturating_sub(self.body.height as usize + self.scroll);
+        let row = y.clamp(self.body.y, self.body.bottom() - 1);
+        selection.cursor = (
+            top + (row - self.body.y) as usize,
+            x.clamp(self.body.x, self.body.right() - 1),
+        );
+        self.selection = Some(selection);
     }
 
     /// What the agent's thread does shows in the window as it happens.
@@ -241,6 +288,7 @@ impl App {
             return Action::None;
         };
         match key.code {
+            KeyCode::Esc if window.selection.take().is_some() => window.dragging = false,
             KeyCode::Esc => self.panel = None,
             KeyCode::Char('s') if window.stop.is_some() => {
                 return Action::StopAgent(window.thread_id.clone());
@@ -251,6 +299,7 @@ impl App {
             KeyCode::PageDown => window.scroll_by(PAGE, false),
             KeyCode::End => window.scroll = 0,
             KeyCode::Char('r') if key.modifiers.contains(KeyModifiers::CONTROL) => {
+                window.selection = None;
                 window.transcript.toggle_reasoning()
             }
             _ => {}
@@ -279,13 +328,34 @@ impl App {
                 return Action::StopAgent(window.thread_id.clone());
             }
             MouseEventKind::Down(MouseButton::Left) => {
-                let hit = window
-                    .hits
-                    .iter()
-                    .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
-                    .map(|hit| hit.index);
-                if let Some(index) = hit {
-                    window.transcript.toggle(index);
+                window.selection = window.body.contains(Position::new(x, y)).then(|| {
+                    let at = (window.drawn_top + (y - window.body.y) as usize, x);
+                    Selection {
+                        anchor: at,
+                        cursor: at,
+                    }
+                });
+                window.dragging = window.selection.is_some();
+            }
+            MouseEventKind::Drag(MouseButton::Left) => window.drag(x, y),
+            MouseEventKind::Up(MouseButton::Left) if window.dragging => {
+                window.dragging = false;
+                if let Some(text) = window.selected_text() {
+                    return Action::Copy(text);
+                }
+                let clicked = window
+                    .selection
+                    .is_some_and(|selection| selection.anchor == selection.cursor);
+                window.selection = None;
+                if clicked {
+                    let hit = window
+                        .hits
+                        .iter()
+                        .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
+                        .map(|hit| hit.index);
+                    if let Some(index) = hit {
+                        window.transcript.toggle(index);
+                    }
                 }
             }
             _ => {}
