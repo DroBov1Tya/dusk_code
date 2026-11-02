@@ -1,6 +1,7 @@
 //! What a thread is made of: its record, messages, turns, the messages waiting for it,
 //! compactions, token usage, the agent's task board and the standing goal.
 
+mod agent_phases;
 mod compactions;
 mod goals;
 mod jobs;
@@ -14,6 +15,7 @@ mod tokens;
 mod turns;
 mod undo;
 
+pub use agent_phases::AgentPhase;
 pub use compactions::Compaction;
 pub use goals::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use jobs::{BackgroundJob, JobSummary};

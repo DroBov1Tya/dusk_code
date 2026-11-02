@@ -8,7 +8,11 @@ use std::{
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use dusk_core::{providers::ModelEvent, runtime::ThreadEvent, state::ThreadTokens};
+use dusk_core::{
+    providers::ModelEvent,
+    runtime::ThreadEvent,
+    state::{AgentPhase, ThreadTokens},
+};
 use ratatui::layout::{Position, Rect};
 
 use crate::app::{Action, App, Entry, Panel, Selection, Transcript, TranscriptHit, now_ms};
@@ -32,6 +36,8 @@ pub struct SubagentView {
     /// When its event stream was lost, without an observed completion.
     pub unavailable_at: Option<i64>,
     pub tokens: ThreadTokens,
+    /// Where it is in its work, with what it said about it.
+    pub phase: Option<(AgentPhase, String)>,
     /// Its largest request.
     pub limit: u64,
     /// Text that came in recently, with when, for tokens per second.
@@ -263,6 +269,7 @@ impl App {
             unavailable_at: None,
             tokens,
             limit,
+            phase: None,
             output: VecDeque::new(),
         });
     }
@@ -382,6 +389,7 @@ impl App {
                 card.tokens = *tokens;
                 card.limit = *limit;
             }
+            ThreadEvent::AgentPhase { phase, note } => card.phase = Some((*phase, note.clone())),
             ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) if card.finished_at.is_none() => {
                 card.finished_at = Some(now_ms());
             }

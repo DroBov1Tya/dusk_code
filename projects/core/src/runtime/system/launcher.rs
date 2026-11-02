@@ -28,7 +28,7 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AskAgent, AskUser, DisplayImage, GoalTool, JobManager, JobOwner, Jobs, McpTool,
+        AgentState, AskAgent, AskUser, DisplayImage, GoalTool, JobManager, JobOwner, Jobs, McpTool,
         MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry, ToolScope,
     },
 };
@@ -130,6 +130,10 @@ impl Launcher {
         if depth > 0 {
             tools.add(Box::new(MessageParent::new(
                 self.clone(),
+                thread_id.to_owned(),
+            )));
+            tools.add(Box::new(AgentState::new(
+                Arc::clone(&self.state),
                 thread_id.to_owned(),
             )));
         }

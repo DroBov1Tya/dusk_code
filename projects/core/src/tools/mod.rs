@@ -15,7 +15,7 @@ mod schema;
 mod scope;
 mod tool;
 
-pub use agents::{AskAgent, MessageParent};
+pub use agents::{AgentState, AskAgent, MessageParent};
 pub use builtin::read_regular;
 pub use console::JobInfo;
 pub(crate) use console::{JobManager, JobOwner, Jobs, RunCommand};
