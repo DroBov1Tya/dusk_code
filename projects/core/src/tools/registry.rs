@@ -237,7 +237,7 @@ mod tests {
     use crate::{
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
-        tools::{AskUser, DisplayImage, GoalTool, ReadHistory, Remember, Tasks},
+        tools::{AgentState, AskUser, DisplayImage, GoalTool, ReadHistory, Remember, Tasks},
     };
 
     /// Providers reject a schema that is not one plain object at the top.
@@ -252,6 +252,7 @@ mod tests {
         tools.push(Box::new(Remember::new(dir.join("MEMORY.md"))));
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
+        tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         for tool in tools {
             let schema = tool.parameters();
             let name = tool.name();

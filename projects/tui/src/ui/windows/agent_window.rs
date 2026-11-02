@@ -133,12 +133,19 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
         ];
     };
     let elapsed = format_duration(card.elapsed_ms());
-    let state = if card.unavailable_at.is_some() {
-        Span::styled(format!("unavailable after {elapsed}"), fg(NEGATIVE))
-    } else if card.is_working() {
-        Span::styled(format!("working {elapsed}"), bold(ACCENT))
-    } else {
-        Span::styled(format!("done in {elapsed}"), fg(POSITIVE))
+    let state = match (&card.phase, card.unavailable_at, card.is_working()) {
+        (_, Some(_), _) => Span::styled(format!("unavailable after {elapsed}"), fg(NEGATIVE)),
+        (Some((phase, note)), _, working) => {
+            let about = if note.is_empty() {
+                String::new()
+            } else {
+                format!(": {note}")
+            };
+            let style = if working { bold(ACCENT) } else { fg(TEXT_SOFT) };
+            Span::styled(format!("{} {elapsed}{about}", phase.name()), style)
+        }
+        (None, _, true) => Span::styled(format!("working {elapsed}"), bold(ACCENT)),
+        (None, _, false) => Span::styled(format!("done in {elapsed}"), fg(POSITIVE)),
     };
     let parent = match &card.parent {
         Some(parent) if Some(parent) == app.thread_id.as_ref() => {

@@ -9,8 +9,8 @@ mod db;
 
 pub use agents::Identity;
 pub use chat::{
-    BackgroundJob, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion, GoalEvidence,
-    GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
+    AgentPhase, BackgroundJob, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion,
+    GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
     PendingMessage, Source, Task, TaskItem, Thread, ThreadTokens, TokenCounts, Turn, TurnAnswer,
     TurnOutcome, TurnStatus, UndoPoint, estimate_tokens,
 };

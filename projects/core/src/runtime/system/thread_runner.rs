@@ -27,8 +27,8 @@ use crate::{
     config::live::LiveConfig,
     providers::{ModelEvent, ToolCall},
     state::{
-        Compaction, Goal, GoalStatus, LocalUnsent, Message, PendingMessage, State, Task,
-        ThreadTokens, Turn, TurnStatus, estimate_tokens,
+        AgentPhase, Compaction, Goal, GoalStatus, LocalUnsent, Message, PendingMessage, State,
+        Task, ThreadTokens, Turn, TurnStatus, estimate_tokens,
     },
     tools::{Question, ToolRegistry, ToolResult, ToolScope},
 };
@@ -175,6 +175,11 @@ pub enum ThreadEvent {
     },
     /// The thread's task board changed: every task with its steps.
     Tasks(Vec<Task>),
+    /// An agent's phase changed, by its own `agent_state` call or the runtime's.
+    AgentPhase {
+        phase: AgentPhase,
+        note: String,
+    },
     /// The agent asks the user to choose; the answer comes as the user's next message.
     Question(Question),
     /// Another agent wrote to this thread; the message has joined it.
