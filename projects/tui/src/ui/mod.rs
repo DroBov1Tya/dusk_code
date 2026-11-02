@@ -3,6 +3,7 @@
 
 mod chat;
 mod loader;
+pub mod screensaver;
 mod sidebar;
 mod text;
 mod theme;
@@ -113,6 +114,11 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     input::draw_commands(frame, body, app);
     input::draw_paths(frame, body, app);
     panels::draw(frame, screen, app);
+    // Over everything, pictures too: the terminal would paint those above the window.
+    if let Some(playing) = &app.screensaver {
+        playing.draw(frame);
+        return;
+    }
     pictures(frame, app);
 }
 

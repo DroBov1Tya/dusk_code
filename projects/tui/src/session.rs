@@ -11,7 +11,7 @@ use std::{
 };
 
 use anyhow::Result;
-use crossterm::event::EventStream;
+use crossterm::event::{Event, EventStream, MouseEventKind};
 use dusk_core::{
     chat::commands::{Answer, Command},
     config::Effort,
@@ -29,7 +29,7 @@ use crate::{
         Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, Panel, Preview,
         SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript, paste,
     },
-    ui,
+    ui::{self, screensaver},
 };
 
 const THREAD_SOURCE: &str = "tui";
@@ -150,6 +150,7 @@ pub async fn run(
     let mut terminal_status = crate::host::terminal::TerminalStatus::new();
     let mut known_model = choice.as_ref().map(|choice| choice.name());
     let mut update: Option<InstallingUpdate<'_>> = None;
+    let mut idle_since = Instant::now();
     loop {
         if let Some(update) = &mut update
             && let Some(Panel::Update { progress, .. }) = &mut app.panel
@@ -227,6 +228,10 @@ pub async fn run(
             send(runtime, &mut app, &mut open, text, false).await;
         }
         terminal_status.update(app.is_busy() || app.agents_at_work());
+        // Work is activity too: the idle screen waits for both to stop.
+        if app.is_busy() || app.agents_at_work() || update.is_some() {
+            idle_since = Instant::now();
+        }
         app.refresh_paths();
         app.update_available = runtime.available_update();
         refresh_system(runtime, &mut app).await;
@@ -258,9 +263,30 @@ pub async fn run(
                 Action::None
             }
             key = keys.next() => match key {
-                Some(event) => app.handle(event?),
+                Some(event) => {
+                    let event = event?;
+                    let woke = wakes(&event);
+                    if woke {
+                        idle_since = Instant::now();
+                    }
+                    // The touch that ends the idle screen does nothing else.
+                    if woke && app.screensaver.take().is_some() {
+                        Action::None
+                    } else {
+                        app.handle(event)
+                    }
+                }
                 None => Action::Quit,
             },
+            _ = tokio::time::sleep_until((idle_since + screensaver::IDLE).into()),
+                if app.screensaver.is_none() => {
+                app.screensaver = screensaver::Playing::random();
+                // Without frames built in, look again after another idle spell.
+                idle_since = Instant::now();
+                Action::None
+            }
+            _ = tokio::time::sleep(app.screensaver.as_ref().map_or(FRAME, |playing| playing.frame_period())),
+                if app.screensaver.is_some() => Action::None,
             event = next_event(&mut open) => {
                 match event {
                     Some(event) => {
@@ -1010,5 +1036,15 @@ fn editor_error(app: &mut App, error: String) {
         && let Some(editor) = &mut view.editor
     {
         editor.error = Some(error);
+    }
+}
+
+/// A key, a click, a scroll or a paste counts as the user being back; a moving pointer
+/// or a resize does not.
+fn wakes(event: &Event) -> bool {
+    match event {
+        Event::Key(_) | Event::Paste(_) => true,
+        Event::Mouse(mouse) => !matches!(mouse.kind, MouseEventKind::Moved),
+        _ => false,
     }
 }

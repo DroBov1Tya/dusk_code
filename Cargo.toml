@@ -28,6 +28,7 @@ base64 = "0.22.1"
 ratatui-image = { version = "11.1.0", default-features = false, features = ["crossterm"] }
 crossterm = { version = "0.29", features = ["event-stream"] }
 futures = "0.3"
+flate2 = "1"
 ignore = "0.4"
 regex = "1"
 schemars = "1.2"
