@@ -154,6 +154,7 @@ mod tests {
             scope: &scope,
             config: &config,
             progress: None,
+            approvals: None,
         };
         assert!(tool.description(&context).ends_with("(empty)"));
         tool.call(json!({"memory": "- prefers Russian"}), context)

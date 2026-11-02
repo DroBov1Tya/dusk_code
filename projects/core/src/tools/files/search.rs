@@ -17,7 +17,7 @@ use serde_json::Value;
 use crate::{
     BoxFuture,
     tools::{
-        ToolScope,
+        Place, ToolScope,
         builtin::{parse_arguments, read_regular},
         schema,
         tool::{Tool, ToolContext, ToolKind},
@@ -71,14 +71,19 @@ impl Tool for SearchFiles {
         let scope = context.scope.clone();
         Box::pin(async move {
             let arguments: SearchArguments = parse_arguments(arguments)?;
-            tokio::task::spawn_blocking(move || search(&arguments, &scope))
+            let root = context
+                .resolve(arguments.path.as_deref().unwrap_or("."), false)
+                .await?;
+            tokio::task::spawn_blocking(move || search(&arguments, &root, &scope))
                 .await
                 .context("the search stopped")?
         })
     }
 }
 
-fn search(arguments: &SearchArguments, scope: &ToolScope) -> Result<String> {
+/// `root` is resolved and, when outside the folders, approved; what is under it may be
+/// searched, the config folder never.
+fn search(arguments: &SearchArguments, root: &Path, scope: &ToolScope) -> Result<String> {
     ensure!(
         arguments.pattern.is_some() || arguments.name.is_some(),
         "give a pattern, a name or both"
@@ -89,11 +94,10 @@ fn search(arguments: &SearchArguments, scope: &ToolScope) -> Result<String> {
         .map(Regex::new)
         .transpose()
         .context("invalid regular expression")?;
-    let root = scope.resolve(arguments.path.as_deref().unwrap_or("."))?;
-    let mut walk = WalkBuilder::new(&root);
+    let mut walk = WalkBuilder::new(root);
     // Hidden files are searched, such as .github; git's own folder never is.
     walk.hidden(false).require_git(false);
-    let mut overrides = OverrideBuilder::new(&root);
+    let mut overrides = OverrideBuilder::new(root);
     overrides.add("!.git/").context("cannot skip .git")?;
     if let Some(name) = &arguments.name {
         overrides.add(name).context("invalid file name glob")?;
@@ -114,7 +118,12 @@ fn search(arguments: &SearchArguments, scope: &ToolScope) -> Result<String> {
         let Some(path) = entry.path().to_str() else {
             continue;
         };
-        if scope.resolve(path).is_err() {
+        let open = match scope.locate(path) {
+            Ok((_, Place::Inside)) => true,
+            Ok((resolved, Place::Outside)) => resolved.starts_with(root),
+            Err(_) => false,
+        };
+        if !open {
             continue;
         }
         let shown = shown_path(entry.path(), scope.cwd());
