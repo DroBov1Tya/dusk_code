@@ -224,6 +224,7 @@ impl ThreadRunner {
             scope: setup.scope,
             project: setup.project,
             pictures_refused: Mutex::new(None),
+            asking: Mutex::new(None),
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
             fork_prompt: setup.fork_prompt,

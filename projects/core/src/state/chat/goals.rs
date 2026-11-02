@@ -1,6 +1,7 @@
 //! A thread's standing goal, kept across restarts.
 
 use anyhow::{Context, Result, bail, ensure};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use sqlx::{Row, sqlite::SqliteRow};
 use uuid::Uuid;
@@ -31,7 +32,7 @@ pub struct Goal {
 
 /// All criteria are mandatory. A command proves exactly the approved check's exit;
 /// a semantic claim always needs a human's review of the saved result.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GoalCriterion {
     pub id: String,
@@ -39,14 +40,14 @@ pub struct GoalCriterion {
     pub check: GoalCheck,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum GoalCheck {
     Command { command: String },
     UserConfirmation,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct GoalEvidence {
     pub criterion_id: String,

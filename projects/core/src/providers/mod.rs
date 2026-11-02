@@ -6,6 +6,7 @@ mod model_output;
 mod openai;
 mod provider;
 mod sse;
+pub mod text_calls;
 
 pub use sse::SseDecoder;
 

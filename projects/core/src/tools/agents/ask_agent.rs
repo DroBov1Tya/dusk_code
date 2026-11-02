@@ -12,11 +12,12 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tracing::info;
 
-use crate::tools::{Progress, Tool, ToolContext, ToolKind};
+use crate::tools::{Progress, Tool, ToolContext, ToolKind, schema};
 use crate::{
     BoxFuture,
     catalog::agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
@@ -44,11 +45,15 @@ pub struct AskAgent {
     asker: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct AskAgentArguments {
+    /// Agent name, as listed; general when left out.
     agent: Option<String>,
+    /// Everything the agent needs.
     task: String,
+    /// The name of an agent asked before, such as Fable-3a, or its thread, to write to it
+    /// again.
     thread: Option<String>,
 }
 
@@ -219,23 +224,7 @@ impl Tool for AskAgent {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "agent": {
-                    "type": "string",
-                    "description": "Agent name, as listed; general when left out."
-                },
-                "task": { "type": "string", "description": "Everything the agent needs." },
-                "thread": {
-                    "type": "string",
-                    "description": "The name of an agent asked before, such as Fable-3a, \
-                        or its thread, to write to it again."
-                }
-            },
-            "required": ["task"],
-            "additionalProperties": false
-        })
+        schema::of::<AskAgentArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

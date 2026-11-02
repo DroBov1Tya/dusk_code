@@ -10,14 +10,16 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use ignore::{WalkBuilder, overrides::OverrideBuilder};
 use regex::Regex;
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     BoxFuture,
     tools::{
         ToolScope,
         builtin::{parse_arguments, read_regular},
+        schema,
         tool::{Tool, ToolContext, ToolKind},
     },
 };
@@ -30,11 +32,14 @@ const TIME_LIMIT: Duration = Duration::from_secs(10);
 
 pub struct SearchFiles;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct SearchArguments {
+    /// Regular expression.
     pattern: Option<String>,
+    /// Glob on file names.
     name: Option<String>,
+    /// File or folder to search.
     path: Option<String>,
 }
 
@@ -59,15 +64,7 @@ impl Tool for SearchFiles {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "pattern": { "type": "string", "description": "Regular expression." },
-                "name": { "type": "string", "description": "Glob on file names." },
-                "path": { "type": "string", "description": "File or folder to search." }
-            },
-            "additionalProperties": false
-        })
+        schema::of::<SearchArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

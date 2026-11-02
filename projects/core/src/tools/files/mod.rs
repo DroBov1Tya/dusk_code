@@ -15,6 +15,7 @@ pub use write::WriteFile;
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
+use schemars::JsonSchema;
 use serde::Deserialize;
 
 use super::builtin::{read_regular, write_regular};
@@ -30,9 +31,10 @@ use crate::{
 const MAX_READ_BYTES: u64 = 1024 * 1024;
 
 /// For tools that take only a path.
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct PathArguments {
+    /// The file.
     pub path: String,
 }
 

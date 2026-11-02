@@ -4,11 +4,13 @@
 //! the same whichever client asked.
 
 use anyhow::{Context, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::tools::{
     builtin::parse_arguments,
+    schema,
     tool::{Tool, ToolContext},
 };
 use crate::{BoxFuture, runtime::ThreadEvent};
@@ -20,10 +22,11 @@ const MAX_OPTIONS: usize = 8;
 
 /// A question as the client shows it. The client always adds a field for the user's
 /// own answer below the options.
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct Question {
     pub question: String,
+    #[schemars(length(min = MIN_OPTIONS, max = MAX_OPTIONS))]
     pub options: Vec<String>,
     /// Several options may be chosen; otherwise exactly one, or the user's own answer.
     #[serde(default)]
@@ -110,24 +113,7 @@ impl Tool for AskUser {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "question": { "type": "string" },
-                "options": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "minItems": MIN_OPTIONS,
-                    "maxItems": MAX_OPTIONS
-                },
-                "multiple": {
-                    "type": "boolean",
-                    "description": "Several options may be chosen. False by default."
-                }
-            },
-            "required": ["question", "options"],
-            "additionalProperties": false
-        })
+        schema::of::<Question>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

@@ -332,13 +332,23 @@ impl Runtime {
         let root = state.root_thread(thread_id).await?;
         let mut threads = state.descendant_threads(thread_id).await?;
         threads.insert(0, thread_id.to_owned());
-        for thread_id in threads {
-            match self.launcher.mailboxes.get(&thread_id).await {
+        for stopped in threads {
+            match self.launcher.mailboxes.get(&stopped).await {
                 Some(mailbox) => {
                     mailbox.send(Input::Cancel);
                 }
-                None => state.drop_pending(&thread_id).await?,
+                None => state.drop_pending(&stopped).await?,
             }
+        }
+        // A running agent reports its stop from its turn; one still waiting for a slot
+        // has no turn, so the asker is told here.
+        if self.launcher.mailboxes.get(thread_id).await.is_none()
+            && let Some(parent) = &thread.parent_thread_id
+        {
+            let stopped = "was stopped before it started";
+            self.launcher
+                .tell_stopped(parent, thread_id, stopped)
+                .await?;
         }
         // A queued agent has no runner/report stream to release a waiting goal.
         // Its requests are durably dropped before the non-preemptive wake.

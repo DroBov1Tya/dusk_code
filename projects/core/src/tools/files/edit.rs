@@ -2,13 +2,15 @@
 
 use anyhow::{bail, ensure};
 
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     BoxFuture,
     tools::{
         builtin::{parse_arguments, printable},
+        schema,
         tool::{Tool, ToolContext, ToolKind},
     },
 };
@@ -17,11 +19,14 @@ use super::{read_text, skill_save, with_skill_save, write_text};
 
 pub struct EditFile;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct EditFileArguments {
+    /// File to edit.
     path: String,
+    /// Exact text to replace, occurring once in the file.
     old_text: String,
+    /// Replacement text.
     new_text: String,
 }
 
@@ -45,19 +50,7 @@ impl Tool for EditFile {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "File to edit." },
-                "old_text": {
-                    "type": "string",
-                    "description": "Exact text to replace, occurring once in the file."
-                },
-                "new_text": { "type": "string", "description": "Replacement text." }
-            },
-            "required": ["path", "old_text", "new_text"],
-            "additionalProperties": false
-        })
+        schema::of::<EditFileArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

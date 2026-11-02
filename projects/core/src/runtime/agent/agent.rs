@@ -29,11 +29,11 @@ use crate::{
     config::{Config, Effort},
     providers::{
         ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
-        is_unsupported_effort, is_unsupported_pictures,
+        is_unsupported_effort, is_unsupported_pictures, text_calls,
     },
     state::{
-        CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, State, Turn, TurnAnswer,
-        TurnOutcome, TurnStatus, estimate_tokens,
+        CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, PendingMessage, State, Turn,
+        TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,
     },
     tools::{Progress, ToolRegistry, ToolScope},
     util::sync::lock,
@@ -56,6 +56,9 @@ pub struct Agent {
     pub project: String,
     /// The model that refused pictures; the others still get them.
     pub pictures_refused: Mutex<Option<String>>,
+    /// The question on the user's screen. Its answer joins the running turn instead of
+    /// waiting for the next one.
+    pub asking: Mutex<Option<String>>,
     pub thread_id: String,
     /// COMPACT.md: how to summarize the thread.
     pub compact_prompt: PathBuf,
@@ -170,11 +173,15 @@ impl Agent {
         Ok(goal.filter(|goal| goal.status == GoalStatus::Active && goal.approved))
     }
 
-    /// Messages from other agents join the running turn, so the next step reads them.
-    /// What clients sent waits for the next turn.
+    /// Messages from other agents join the running turn, so the next step reads them,
+    /// and so does the answer to the question on the user's screen. Anything else the
+    /// user sent waits for the next turn.
     async fn take_agent_messages(&self) -> Result<()> {
         for pending in self.state.pending_messages(&self.thread_id).await? {
             if pending.from_thread_id.is_none() && pending.from_job_id.is_none() {
+                if self.answers_question(&pending.content) {
+                    self.take_answer(&pending).await?;
+                }
                 continue;
             }
             let message = self.state.admit_pending(&self.thread_id, &pending).await?;
@@ -192,6 +199,35 @@ impl Agent {
             });
         }
         Ok(())
+    }
+
+    fn answers_question(&self, content: &str) -> bool {
+        lock(&self.asking)
+            .as_ref()
+            .is_some_and(|question| content.starts_with(&format!("QUESTION: {question}\n")))
+    }
+
+    async fn take_answer(&self, pending: &PendingMessage) -> Result<()> {
+        *lock(&self.asking) = None;
+        let message = self.state.admit_pending(&self.thread_id, pending).await?;
+        sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
+            .bind(&self.thread_id)
+            .execute(&self.state.pool)
+            .await?;
+        self.emit(ThreadEvent::Queued {
+            message_id: message.message_id.clone(),
+        });
+        self.emit(ThreadEvent::UserMessage(message));
+        Ok(())
+    }
+
+    /// Subagents think at medium for now: deep effort times many agents costs more than
+    /// it gives. The chat keeps the user's level; off and the provider's default stay.
+    fn effort(&self, config: &Config) -> Option<Effort> {
+        match config.effort() {
+            Some(effort) if self.depth > 0 && effort != Effort::Off => Some(Effort::Medium),
+            effort => effort,
+        }
     }
 
     /// Counting is for the client to see; a failure here does not touch the thread.
@@ -285,7 +321,7 @@ impl Agent {
             messages: &messages,
             tools: &tools,
             max_output_tokens: config.limits().max_output_tokens,
-            effort: config.effort(),
+            effort: self.effort(&config),
         };
         let mut called = self.call_model(&choice, request, &config, inbox).await;
         if matches!(&called, Ok((_, Ok(Err(error)))) if is_unsupported_pictures(error)) {
@@ -295,7 +331,7 @@ impl Agent {
                 messages: &messages,
                 tools: &tools,
                 max_output_tokens: config.limits().max_output_tokens,
-                effort: config.effort(),
+                effort: self.effort(&config),
             };
             called = self.call_model(&choice, request, &config, inbox).await;
         }
@@ -318,10 +354,22 @@ impl Agent {
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
             }
         }
-        let answer = TurnAnswer {
-            reasoning: recorded_reasoning(&config, &output),
-            content: output.text,
+        let reasoning = recorded_reasoning(&config, &output);
+        let (content, generated) = match generated {
+            Ok(Ok(calls)) if calls.is_empty() => match text_calls::recover(&output.text, &tools) {
+                Some((content, calls)) => {
+                    info!(
+                        "thread {}: {} tool calls written as text",
+                        self.thread_id,
+                        calls.len()
+                    );
+                    (content, Ok(Ok(calls)))
+                }
+                None => (output.text, Ok(Ok(calls))),
+            },
+            generated => (output.text, generated),
         };
+        let answer = TurnAnswer { reasoning, content };
         let calls = match generated {
             Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),
             // The connection is closed already; what was written so far is kept.
@@ -489,6 +537,13 @@ impl Agent {
                 exit_code,
             );
             stored.await.context("cannot store the tool result")?;
+            if call.name == "ask_user"
+                && let Some(result) = &finished
+                && !result.is_error
+                && let Some(question) = call.arguments["question"].as_str()
+            {
+                *lock(&self.asking) = Some(question.to_owned());
+            }
             // A visible result must already be available when the thread is reopened.
             if let Some(result) = finished {
                 self.emit(ThreadEvent::ToolFinished {

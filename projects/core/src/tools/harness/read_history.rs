@@ -5,11 +5,13 @@
 use std::sync::Arc;
 
 use anyhow::ensure;
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::tools::{
     builtin::parse_arguments,
+    schema,
     tool::{Tool, ToolContext},
 };
 use crate::{
@@ -27,11 +29,16 @@ pub struct ReadHistory {
     thread_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct ReadHistoryArguments {
+    /// Text to look for.
     search: Option<String>,
+    /// First message number to read. Defaults to 1.
+    #[schemars(range(min = 1))]
     from: Option<u64>,
+    /// How many messages. Defaults to 20.
+    #[schemars(range(min = 1, max = MAX_LIMIT))]
     limit: Option<u32>,
 }
 
@@ -55,24 +62,7 @@ impl Tool for ReadHistory {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "search": { "type": "string", "description": "Text to look for." },
-                "from": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "description": "First message number to read. Defaults to 1."
-                },
-                "limit": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": MAX_LIMIT,
-                    "description": "How many messages. Defaults to 20."
-                }
-            },
-            "additionalProperties": false
-        })
+        schema::of::<ReadHistoryArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext<'a>) -> BoxFuture<'a, String> {
@@ -141,6 +131,7 @@ mod tests {
         testing::{temp_dir, temp_state, tool_context},
         tools::ToolScope,
     };
+    use serde_json::json;
 
     async fn history(name: &str) -> ReadHistory {
         let state = temp_state(name).await;

@@ -124,12 +124,9 @@ impl App {
         self.send_text(text)
     }
 
-    /// Text that answers the question goes as a message, after the turn if one runs.
+    /// The answer goes at once, even while the thread works: the core lets it join the
+    /// running turn, which may be waiting for it.
     fn send_text(&mut self, text: String) -> Action {
-        if self.is_busy() {
-            self.queued.push(text);
-            return Action::None;
-        }
         self.show_sent(&text);
         Action::Send(text)
     }

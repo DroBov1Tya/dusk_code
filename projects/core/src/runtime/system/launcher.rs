@@ -261,8 +261,8 @@ impl Launcher {
     }
 
     /// Passes an agent's events on to the client of the thread that asked it, and its
-    /// answer to that thread when a turn ends. A turn the user stopped has no answer
-    /// to forward; draining its lifecycle can still release a waiting goal.
+    /// answer to that thread when a turn ends, however it ends: the asker must never
+    /// wait for an agent that is gone.
     async fn report(
         self,
         mut output: ThreadOutput,
@@ -284,7 +284,18 @@ impl Launcher {
                         "failed: {}",
                         turn.error_message.as_deref().unwrap_or("no reason given")
                     )),
-                    _ => None,
+                    TurnStatus::Interrupted => {
+                        let answer = match turn.response_message_id.as_deref() {
+                            Some(id) => self.answer(&thread.id, Some(id)).await,
+                            None => "(no answer yet)".into(),
+                        };
+                        let stopped = format!("was stopped before it finished; so far:\n{answer}");
+                        if let Err(error) = self.tell_stopped(&parent, &thread.id, &stopped).await {
+                            warn!("cannot report agent thread {}: {error:#}", thread.id);
+                        }
+                        None
+                    }
+                    TurnStatus::Running => None,
                 },
                 // The runner itself stopped, such as on a database error.
                 ThreadEvent::Failed(error) => Some(format!("failed: {error}")),
@@ -309,6 +320,33 @@ impl Launcher {
         if let Some(mailbox) = live.get(&root) {
             mailbox.send(Input::DependencyFinished);
         }
+    }
+
+    /// A stop must reach the asker without restarting work the user stopped: the report
+    /// waits stored, and is read at once only by a thread at work right now. An agent
+    /// asker that is not at work was stopped with it and is not told; the chat always is,
+    /// with its next request.
+    pub(crate) async fn tell_stopped(&self, parent: &str, from: &str, report: &str) -> Result<()> {
+        let live = self
+            .mailboxes
+            .get(parent)
+            .await
+            .filter(|mailbox| mailbox.is_live());
+        let is_chat = self
+            .state
+            .load_thread(parent)
+            .await?
+            .is_some_and(|thread| thread.parent_thread_id.is_none());
+        if live.is_none() && !is_chat {
+            return Ok(());
+        }
+        self.state
+            .add_pending_from(parent, report, Some(from))
+            .await?;
+        if let Some(mailbox) = live {
+            mailbox.send(Input::Sent);
+        }
+        Ok(())
     }
 
     async fn answer(&self, thread_id: &str, message_id: Option<&str>) -> String {
