@@ -19,6 +19,7 @@ regex.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
 sha2.workspace = true
+sha1.workspace = true
 tokio.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
