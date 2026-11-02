@@ -6,6 +6,13 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- Subagents have phases: planning, executing, reviewing, done and paused. An agent
+  moves itself on with the new `agent_state` tool in that order; each task starts in
+  planning, a stop or a failure pauses it, and after a crash it is found paused. The
+  sidebar and the agent window show the phase.
+
 ### Fixed
 
 - A compaction summary no longer keeps sources the user removed, so later turns do not
