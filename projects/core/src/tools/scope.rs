@@ -17,6 +17,8 @@ pub struct ToolScope {
     protected: Option<PathBuf>,
     /// Folders open to the tools wherever they are, the protected one included.
     shared: Vec<PathBuf>,
+    /// The launcher-selected skill root, for reporting writes without guessing paths.
+    skills: Option<PathBuf>,
 }
 
 impl ToolScope {
@@ -31,6 +33,7 @@ impl ToolScope {
                 .context("thread workspace is not accessible")?,
             protected: None,
             shared: Vec::new(),
+            skills: None,
         })
     }
 
@@ -45,6 +48,20 @@ impl ToolScope {
     pub fn share(mut self, folder: &Path) -> Self {
         self.shared.extend(folder.canonicalize().ok());
         self
+    }
+
+    /// Identifies skills for file-write notices; does not grant access to the folder.
+    pub(crate) fn with_skills(mut self, folder: &Path) -> Self {
+        self.skills = folder.canonicalize().ok();
+        self
+    }
+
+    pub(crate) fn skill_name(&self, path: &Path) -> Option<String> {
+        crate::catalog::graph::node_name(
+            self.skills.as_ref()?,
+            crate::catalog::graph::SKILL_FILE,
+            path,
+        )
     }
 
     /// Commands run here and relative paths are resolved against it.

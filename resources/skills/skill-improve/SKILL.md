@@ -24,6 +24,8 @@ Steps:
    the command and result that prove it.
 3. Edit the smallest part: replace the wrong step, keep the rest and the front matter.
    Keep `description` true. Do not let it grow; for each line added, look for one to cut.
+   Use `edit_file` or `write_file` to save `SKILL.md`; successful saves leave a skill
+   update notice in the chat history. Shell edits do not produce this notice.
 4. For a skill with a `source` other than `dusk_code`, add what you changed to its
    `changes:` field, so the credit stays honest.
 5. Read the file again and, when cheap, run the changed step once more.

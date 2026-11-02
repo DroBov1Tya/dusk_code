@@ -22,7 +22,7 @@ use std::{
     collections::BTreeMap,
     fs,
     io::Write,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
 };
 
 use anyhow::{Context, Result, anyhow, ensure};
@@ -200,10 +200,35 @@ fn subfolders(folder: &Path) -> impl Iterator<Item = String> {
         .filter_map(|entry| entry.ok())
         .filter(|entry| entry.file_type().is_ok_and(|kind| kind.is_dir()))
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
-        .filter(|name| is_plain_folder_name(name) && !SKIPPED.contains(&name.as_str()))
+        .filter(|name| is_node_folder_name(name))
         .collect();
     names.sort_by(|a, b| b.cmp(a));
     names.into_iter()
+}
+
+fn is_node_folder_name(name: &str) -> bool {
+    is_plain_folder_name(name) && !SKIPPED.contains(&name)
+}
+
+/// A node file's name under the graph root, using the same folder and depth rules as
+/// discovery. The caller resolves symlinks before passing the path.
+pub(crate) fn node_name(directory: &Path, file: &str, path: &Path) -> Option<String> {
+    let relative = path.strip_prefix(directory).ok()?;
+    if relative.file_name()? != file {
+        return None;
+    }
+    let mut names = Vec::new();
+    for component in relative.parent()?.components() {
+        let Component::Normal(name) = component else {
+            return None;
+        };
+        let name = name.to_str()?;
+        if !is_node_folder_name(name) {
+            return None;
+        }
+        names.push(name);
+    }
+    (!names.is_empty() && names.len() <= MAX_DEPTH).then(|| names.join("/"))
 }
 
 fn read_node(file: &Path, name: &str) -> Result<Node> {

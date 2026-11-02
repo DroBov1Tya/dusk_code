@@ -565,6 +565,7 @@ fn entry_lines(
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),
                 Tone::Error => (FAILED, fg(EMBER)),
+                Tone::Success => (DONE, bold(TEAL)),
             };
             // Each line of a notice wraps on its own, so a line break stays a line break.
             text.lines()

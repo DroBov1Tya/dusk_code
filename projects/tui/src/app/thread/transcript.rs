@@ -12,6 +12,7 @@ use std::{
 
 use super::paste;
 use dusk_core::{
+    catalog::skills::{SkillSave, SkillSaveAction},
     providers::ToolCall,
     state::{Message, MessageRole, artifacts::ImageArtifact},
     tools::ToolResult,
@@ -80,6 +81,7 @@ impl Entry {
 pub enum Tone {
     Info,
     Error,
+    Success,
 }
 
 #[derive(Default)]
@@ -337,14 +339,25 @@ impl Transcript {
     }
 
     pub fn finish_tool(&mut self, call_id: &str, finished: ToolResult) {
+        let mut saved = None;
         let running = self.entries.iter_mut().rev().find_map(|entry| match entry {
             Entry::Tool { call, result, .. } if call.id == call_id && result.is_none() => {
+                if !finished.is_error && matches!(call.name.as_str(), "write_file" | "edit_file") {
+                    saved = SkillSave::from_result(&finished.content);
+                }
                 Some(result)
             }
             _ => None,
         });
         if let Some(result) = running {
             *result = Some(finished);
+        }
+        if let Some(saved) = saved {
+            let tone = match saved.action {
+                SkillSaveAction::Unchanged => Tone::Info,
+                _ => Tone::Success,
+            };
+            self.notice(saved.notice(), tone);
         }
         self.changed();
     }

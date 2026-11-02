@@ -13,7 +13,7 @@ use crate::{
     },
 };
 
-use super::{read_text, write_text};
+use super::{read_text, skill_save, with_skill_save, write_text};
 
 pub struct EditFile;
 
@@ -72,8 +72,12 @@ impl Tool for EditFile {
                 bail!("old_text must match exactly once, found {matches} matches");
             }
             let edited = text.replacen(&arguments.old_text, &arguments.new_text, 1);
+            let saved = skill_save(scope, &path, &edited).await;
             write_text(&path, edited).await?;
-            Ok(format!("edited {}", printable(&path.to_string_lossy())))
+            Ok(with_skill_save(
+                format!("edited {}", printable(&path.to_string_lossy())),
+                saved,
+            ))
         })
     }
 }
