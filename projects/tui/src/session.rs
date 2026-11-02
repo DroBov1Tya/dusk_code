@@ -10,7 +10,7 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use crossterm::event::{Event, EventStream, MouseEventKind};
 use dusk_core::{
     chat::commands::{Answer, Command},
@@ -340,7 +340,11 @@ pub async fn run(
             Action::Quit => break,
             Action::Send(text) => send(runtime, &mut app, &mut open, text, false).await,
             Action::SendNow(text) => send(runtime, &mut app, &mut open, text, true).await,
-            Action::Connect { base_url, api_key } => match connect(runtime, base_url, api_key) {
+            Action::Connect {
+                name,
+                base_url,
+                api_key,
+            } => match connect(runtime, name, base_url, api_key) {
                 Ok(()) => {
                     app.panel = Some(Panel::Models(ModelList::checking(
                         runtime.model().map(|choice| choice.name()),
@@ -351,12 +355,9 @@ pub async fn run(
                         "Provider saved; choose a model, then /resend for local messages".into(),
                     );
                 }
-                Err(_) => {
+                Err(error) => {
                     if let Some(Panel::Connect(form)) = &mut app.panel {
-                        form.error = Some(
-                            "Could not save provider. Check the HTTPS URL and config access."
-                                .into(),
-                        );
+                        form.error = Some(format!("Could not save provider: {error:#}"));
                     }
                 }
             },
@@ -705,9 +706,20 @@ pub async fn run(
     Ok(())
 }
 
-/// Allocates the internal name against the configuration read during the same update.
-/// Existing providers remain intact even when their generated-looking names are occupied.
-fn connect(runtime: &Runtime, base_url: String, api_key: Option<String>) -> Result<()> {
+/// Takes the given name, or the next free `provider-N`, against the configuration read
+/// during the same update. An existing provider is never replaced.
+fn connect(
+    runtime: &Runtime,
+    name: Option<String>,
+    base_url: String,
+    api_key: Option<String>,
+) -> Result<()> {
+    if let Some(name) = &name {
+        ensure!(
+            name.len() <= 40 && !name.contains('/') && !name.chars().any(char::is_control),
+            "a name is up to 40 characters, without / or control characters"
+        );
+    }
     let provider = ProviderConfig {
         kind: ProviderKind::OpenAiCompatible,
         base_url,
@@ -715,15 +727,22 @@ fn connect(runtime: &Runtime, base_url: String, api_key: Option<String>) -> Resu
         inline_tags: false,
     };
     validate_provider(&provider)?;
+    let mut taken = false;
     runtime.config().update(|config| {
-        let mut index = 1usize;
-        let mut name = format!("provider-{index}");
-        while config.providers().contains_key(&name) {
-            index += 1;
-            name = format!("provider-{index}");
-        }
+        let name = match &name {
+            Some(name) if config.providers().contains_key(name) => {
+                taken = true;
+                return;
+            }
+            Some(name) => name.clone(),
+            None => (1..)
+                .map(|index| format!("provider-{index}"))
+                .find(|name| !config.providers().contains_key(name))
+                .expect("a free provider name"),
+        };
         config.set_provider(name, provider);
     })?;
+    ensure!(!taken, "a provider with this name exists");
     Ok(())
 }
 

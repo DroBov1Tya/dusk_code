@@ -47,6 +47,8 @@ pub enum Action {
     SendNow(String),
     Cancel,
     Connect {
+        /// `None` takes the next free `provider-N`.
+        name: Option<String>,
         base_url: String,
         api_key: Option<String>,
     },
