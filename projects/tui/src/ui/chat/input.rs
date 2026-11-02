@@ -13,8 +13,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        EMBER, GLOW, HAZE, INPUT_BG, NIGHT, QUEUED_BG, ROSE, SELECTED, SUN, TEAL, VIOLET, bold,
-        dim, fg, thought,
+        EMBER, GLOW, HAZE, INPUT_BG, NIGHT, QUEUED_BG, ROSE, SELECTED, SIDEBAR_BG, SUN, TEAL,
+        VIOLET, bold, dim, fg, thought,
     },
     transcript::spinner,
     wrap,
@@ -64,7 +64,7 @@ fn queue_rows(app: &App) -> u16 {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
-    draw_footer(frame, area, app.git.as_ref());
+    draw_footer(frame, area, app.git.as_ref(), &app.folder);
     let area = Rect {
         height: area.height.saturating_sub(1),
         ..area
@@ -204,7 +204,7 @@ fn mode_chip(mode: &str) -> Span<'static> {
 }
 
 /// The repository summary and package version share a row below the message card.
-fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>) {
+fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>, folder: &str) {
     if area.is_empty() {
         return;
     }
@@ -213,6 +213,8 @@ fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>) {
         height: 1,
         ..area
     };
+    // A status bar of its own colour, so the row reads as one even with little on it.
+    frame.render_widget(Block::new().style(Style::new().bg(SIDEBAR_BG)), bottom);
     const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
     // Keep the version whole; an extremely narrow terminal has no room for it.
     let version_width = VERSION.width() as u16;
@@ -225,15 +227,20 @@ fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>) {
     } else {
         0
     };
-    if let Some(summary) = git {
-        frame.render_widget(
-            Paragraph::new(git_line(summary)),
-            Rect {
-                width: bottom.width.saturating_sub(reserved),
-                ..bottom
-            },
-        );
-    }
+    let line = match git {
+        Some(summary) => git_line(summary),
+        None => Line::from(vec![
+            Span::styled(format!("  {folder}"), dim()),
+            Span::styled(" \u{00B7} not a git repository", dim()),
+        ]),
+    };
+    frame.render_widget(
+        Paragraph::new(line),
+        Rect {
+            width: bottom.width.saturating_sub(reserved),
+            ..bottom
+        },
+    );
 }
 
 /// The repository, branch, commits, changed files and the distance to the upstream.

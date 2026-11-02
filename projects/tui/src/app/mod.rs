@@ -247,6 +247,8 @@ pub struct App {
     /// The idle screen, while it plays.
     pub screensaver: Option<crate::ui::screensaver::Playing>,
     pub pressed: Option<Pressed>,
+    /// The folder duskcode runs in, by name, for the status bar.
+    pub folder: String,
     /// Hidden by F2 when there is room.
     pub sidebar_visible: bool,
     pub sidebar_overlay_open: bool,
@@ -375,9 +377,16 @@ impl App {
             transcript_area: None,
             frame: 0,
             screensaver: None,
+            pressed: None,
+            folder: std::env::current_dir()
+                .ok()
+                .and_then(|dir| {
+                    dir.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
+                .unwrap_or_default(),
             sidebar_visible: true,
             sidebar_overlay_open: false,
-            pressed: None,
             compact_layout: false,
             sidebar_overlay: None,
             sidebar_area: None,
