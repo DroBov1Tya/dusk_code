@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use super::{
-    theme::{BULLET, CODE_BAR, GUTTER, ROSE, SUN, VIOLET, bold, dim, fg, thought},
+    theme::{ACCENT, BULLET, CODE_BAR, GUTTER, TEXT, TEXT_MUTED, bold, dim, fg, thought},
     wrap,
 };
 
@@ -136,11 +136,7 @@ fn table(source: &[&str], width: usize) -> Option<(Vec<Line<'static>>, usize)> {
     }
     let mut lines = Vec::new();
     for (index, row) in rows.iter().enumerate() {
-        let base = if index == 0 {
-            bold(VIOLET)
-        } else {
-            Style::new()
-        };
+        let base = if index == 0 { bold(TEXT) } else { Style::new() };
         let wrapped: Vec<_> = row
             .iter()
             .zip(&widths)
@@ -188,7 +184,7 @@ fn stacked_table(rows: &[Vec<String>], width: usize) -> Vec<Line<'static>> {
             lines.push(Line::default());
         }
         for (header, cell) in rows[0].iter().zip(row) {
-            let mut spans = inline(header, bold(VIOLET));
+            let mut spans = inline(header, bold(TEXT));
             spans.push(Span::raw(": "));
             spans.extend(inline(cell, Style::new()));
             lines.extend(wrap::words(spans, width, 0).into_iter().map(Line::from));
@@ -197,7 +193,7 @@ fn stacked_table(rows: &[Vec<String>], width: usize) -> Vec<Line<'static>> {
     if rows.len() == 1 {
         for header in &rows[0] {
             lines.extend(
-                wrap::words(inline(header, bold(VIOLET)), width, 0)
+                wrap::words(inline(header, bold(TEXT)), width, 0)
                     .into_iter()
                     .map(Line::from),
             );
@@ -264,11 +260,11 @@ fn classify(source: &str) -> (Vec<Span<'static>>, usize, &str, Style) {
     }
     let hashes = trimmed.chars().take_while(|&c| c == '#').count();
     if (1..=6).contains(&hashes) && trimmed[hashes..].starts_with(' ') {
-        return (Vec::new(), 0, trimmed[hashes..].trim(), bold(VIOLET));
+        return (Vec::new(), 0, trimmed[hashes..].trim(), bold(TEXT));
     }
     for marker in ["- ", "* ", "+ "] {
         if let Some(rest) = trimmed.strip_prefix(marker) {
-            let bullet = Span::styled(format!("{}{BULLET} ", " ".repeat(lead)), fg(ROSE));
+            let bullet = Span::styled(format!("{}{BULLET} ", " ".repeat(lead)), fg(TEXT_MUTED));
             return (vec![bullet], lead + 2, rest, Style::new());
         }
     }
@@ -281,7 +277,7 @@ fn classify(source: &str) -> (Vec<Span<'static>>, usize, &str, Style) {
         let number = format!("{}{}. ", " ".repeat(lead), &trimmed[..digits]);
         let indent = number.len();
         return (
-            vec![Span::styled(number, fg(SUN))],
+            vec![Span::styled(number, fg(ACCENT))],
             indent,
             &trimmed[digits + 2..],
             Style::new(),
@@ -316,7 +312,7 @@ fn inline(text: &str, base: Style) -> Vec<Span<'static>> {
         let code = &rest[1..];
         match code.find('`') {
             Some(end) => {
-                spans.push(Span::styled(code[..end].to_owned(), fg(SUN)));
+                spans.push(Span::styled(code[..end].to_owned(), fg(ACCENT)));
                 rest = &code[end + 1..];
             }
             None => {

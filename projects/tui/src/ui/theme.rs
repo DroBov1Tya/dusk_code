@@ -1,33 +1,33 @@
-//! The look: a dusk sky. Violet at the top of the evening, rose and amber where the sun
-//! goes down, ember when the context is nearly full. Main text keeps the terminal's own
-//! colour, so light and dark terminals both read well.
+//! The look: dusk, after the sun has set. The chrome is ink, three greys of text and
+//! one amber accent, the last light at the horizon, used where something needs the eye:
+//! the active mode, the work going on, the choice under the cursor. Green and red only
+//! say done and failed. Colour beyond that is kept for the moments that are content:
+//! the agents' figures, code, the context gauge and the idle screen. Main text keeps
+//! the terminal's own colour, so light and dark terminals both read well.
 
 use ratatui::style::{Color, Modifier, Style};
 
-pub const VIOLET: Color = Color::Rgb(157, 124, 255);
-pub const ROSE: Color = Color::Rgb(240, 122, 176);
-pub const SUN: Color = Color::Rgb(255, 180, 84);
-/// The bar of the answer that ends a turn.
-pub const ORANGE: Color = Color::Rgb(255, 140, 66);
-pub const EMBER: Color = Color::Rgb(255, 99, 99);
-pub const TEAL: Color = Color::Rgb(94, 214, 194);
-/// Thinking, hints and anything said in passing.
-pub const HAZE: Color = Color::Rgb(128, 122, 150);
-/// Quiet borders and separators.
-pub const NIGHT: Color = Color::Rgb(68, 63, 88);
-/// Behind the selected entry.
-pub const GLOW: Color = Color::Rgb(44, 40, 60);
+/// The rail and status bar, the deepest surface.
+pub const DEEP: Color = Color::Rgb(17, 20, 27);
+/// Behind the message box and windows.
+pub const SURFACE: Color = Color::Rgb(22, 26, 35);
+/// A step up: the browsed entry, a message card, buttons, queued messages.
+pub const RAISED: Color = Color::Rgb(30, 35, 46);
+/// Borders and separators, quiet hairlines.
+pub const HAIRLINE: Color = Color::Rgb(46, 52, 66);
 /// Text marked with the mouse.
-pub const SELECTED: Color = Color::Rgb(78, 66, 112);
-/// A quiet contrast for the full-height statistics rail.
-pub const SIDEBAR_BG: Color = Color::Rgb(38, 35, 52);
-/// Behind the message box, so it stands apart from the transcript.
-pub const INPUT_BG: Color = Color::Rgb(30, 27, 42);
-/// Behind messages queued while the agent works, so they stand apart from the thread.
-pub const QUEUED_BG: Color = Color::Rgb(40, 36, 56);
-pub const SIDEBAR_FG: Color = Color::Rgb(230, 224, 240);
-pub const SIDEBAR_MUTED: Color = Color::Rgb(165, 157, 187);
-pub const SIDEBAR_EDGE: Color = Color::Rgb(107, 96, 132);
+pub const SELECTED: Color = Color::Rgb(48, 58, 80);
+
+/// The three roles of text: what is read, what explains it, and what is said in passing.
+pub const TEXT: Color = Color::Rgb(230, 232, 238);
+pub const TEXT_SOFT: Color = Color::Rgb(163, 169, 184);
+pub const TEXT_MUTED: Color = Color::Rgb(122, 130, 150);
+
+/// The one accent.
+pub const ACCENT: Color = Color::Rgb(232, 168, 90);
+/// Done and failed, toned to sit with the ink.
+pub const POSITIVE: Color = Color::Rgb(76, 195, 138);
+pub const NEGATIVE: Color = Color::Rgb(229, 72, 77);
 
 // Glyphs, written as escapes to keep the sources ASCII.
 pub const SUN_GLYPH: &str = "\u{25D2}";
@@ -44,9 +44,6 @@ pub const DOT: &str = "\u{00B7}";
 pub const BULLET: &str = "\u{2022}";
 pub const ELLIPSIS: &str = "\u{2026}";
 pub const ON: &str = "\u{25CF}";
-/// A provider that answered, and one that did not.
-pub const ALIVE: &str = "\u{1F7E2}";
-pub const DOWN: &str = "\u{1F534}";
 pub const OFF: &str = "\u{25CB}";
 pub const SPINNER: [&str; 6] = [
     "\u{25C7}\u{00B7}  ",
@@ -62,24 +59,25 @@ pub fn fg(color: Color) -> Style {
 }
 
 pub fn dim() -> Style {
-    fg(HAZE)
+    fg(TEXT_MUTED)
 }
 
 pub fn thought() -> Style {
-    fg(HAZE).add_modifier(Modifier::ITALIC)
+    fg(TEXT_MUTED).add_modifier(Modifier::ITALIC)
 }
 
 pub fn bold(color: Color) -> Style {
     fg(color).add_modifier(Modifier::BOLD)
 }
 
-/// The sky from early evening to the last light: `at` runs from 0 to 1.
+/// How full something is, from quiet ink through the amber to red at the end: `at`
+/// runs from 0 to 1.
 pub fn dusk(at: f64) -> Color {
     const STOPS: [(f64, (u8, u8, u8)); 4] = [
-        (0.0, (157, 124, 255)),
-        (0.45, (240, 122, 176)),
-        (0.75, (255, 180, 84)),
-        (1.0, (255, 99, 99)),
+        (0.0, (122, 130, 150)),
+        (0.5, (163, 169, 184)),
+        (0.8, (232, 168, 90)),
+        (1.0, (229, 72, 77)),
     ];
     let at = at.clamp(0.0, 1.0);
     let upper = STOPS

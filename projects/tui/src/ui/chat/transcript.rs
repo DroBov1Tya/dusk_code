@@ -16,9 +16,9 @@ use super::{
     loader::{Loader, agent_name, identity},
     markdown,
     theme::{
-        DONE, DOT, EMBER, FAILED, FOLDED, GLOW, GUTTER, HAZE, ORANGE, ROSE, SELECTED, SPINNER, SUN,
-        SUN_GLYPH, TEAL, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR, VIOLET, bold, dim, dusk, fg,
-        thought,
+        ACCENT, DONE, DOT, FAILED, FOLDED, GUTTER, HAIRLINE, NEGATIVE, POSITIVE, RAISED, SELECTED,
+        SPINNER, SUN_GLYPH, TEXT, TEXT_MUTED, TEXT_SOFT, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR,
+        bold, dim, fg, thought,
     },
     wrap,
 };
@@ -198,15 +198,15 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
     };
     let offered: &[(Button, &str, Color)] = match app.transcript.entries.get(index) {
         Some(Entry::Notice { .. }) | None => &[],
-        Some(_) if app.transcript.is_hidden(index) => &[(Button::Copy, " copy ", TEAL)],
+        Some(_) if app.transcript.is_hidden(index) => &[(Button::Copy, " copy ", TEXT_SOFT)],
         Some(Entry::User { .. }) => &[
-            (Button::Hide, " hide ", HAZE),
-            (Button::Edit, " edit ", ROSE),
-            (Button::Copy, " copy ", TEAL),
+            (Button::Hide, " hide ", TEXT_MUTED),
+            (Button::Edit, " edit ", TEXT_SOFT),
+            (Button::Copy, " copy ", TEXT_SOFT),
         ],
         Some(_) => &[
-            (Button::Hide, " hide ", HAZE),
-            (Button::Copy, " copy ", TEAL),
+            (Button::Hide, " hide ", TEXT_MUTED),
+            (Button::Copy, " copy ", TEXT_SOFT),
         ],
     };
     let Some(&(from, to)) = app.entry_lines.get(index) else {
@@ -234,7 +234,7 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
         let place = Rect::new(left, row, width + 1, 1);
         let shown = Line::from(vec![
             Span::raw(" "),
-            Span::styled(label, fg(color).bg(GLOW)),
+            Span::styled(label, fg(color).bg(RAISED)),
         ]);
         frame.render_widget(Paragraph::new(shown), place);
         app.button_hits.push(ButtonHit {
@@ -355,7 +355,7 @@ fn append_entry(
     if browsed == Some(index)
         && let Some(header) = drawn.first_mut()
     {
-        *header = std::mem::take(header).style(Style::new().bg(GLOW));
+        *header = std::mem::take(header).style(Style::new().bg(RAISED));
     }
     let first = placed.lines.len();
     placed.images.extend(
@@ -392,9 +392,9 @@ fn live_step(app: &App) -> Option<String> {
 /// many steps it took.
 fn activity(transcript: &Transcript, index: usize) -> Vec<Line<'static>> {
     let open = matches!(transcript.entries[index], Entry::Activity { open: true });
-    let mark = Span::styled(format!("   {} ", fold_mark(open)), fg(TEAL));
+    let mark = Span::styled(format!("   {} ", fold_mark(open)), fg(TEXT_MUTED));
     if let Some(step) = transcript.current_step(index) {
-        return vec![Line::from(vec![mark, Span::styled(step, bold(SUN))])];
+        return vec![Line::from(vec![mark, Span::styled(step, bold(ACCENT))])];
     }
     let steps = transcript.run(index).count();
     let failed = transcript
@@ -411,7 +411,7 @@ fn activity(transcript: &Transcript, index: usize) -> Vec<Line<'static>> {
     if failed > 0 {
         spans.push(Span::styled(
             format!("  {FAILED} {failed} failed"),
-            fg(EMBER),
+            fg(NEGATIVE),
         ));
     }
     vec![Line::from(spans)]
@@ -457,7 +457,7 @@ fn from_agent(thread_id: &str, text: &str, open: bool, width: usize) -> Vec<Line
 /// A sent message on a soft card behind its bar, with a row of air above and below;
 /// each pasted block is one line until opened.
 fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
-    let bar = || Span::styled(format!(" {USER_BAR} "), fg(ROSE));
+    let bar = || Span::styled(format!(" {USER_BAR} "), fg(TEXT_MUTED));
     let mut lines = vec![Line::from(bar())];
     for part in paste::split(text) {
         match part {
@@ -469,14 +469,14 @@ fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
             ),
             Part::Source(name) => lines.push(Line::from(vec![
                 bar(),
-                Span::styled(format!("{TOOL} "), fg(TEAL)),
-                Span::styled(name.to_owned(), fg(TEAL)),
+                Span::styled(format!("{TOOL} "), fg(TEXT_MUTED)),
+                Span::styled(name.to_owned(), fg(TEXT_SOFT)),
             ])),
             Part::Pasted(pasted) => {
                 lines.push(Line::from(vec![
                     bar(),
-                    Span::styled(format!("{} ", fold_mark(open)), fg(TEAL)),
-                    Span::styled(paste::label(pasted), fg(TEAL)),
+                    Span::styled(format!("{} ", fold_mark(open)), fg(TEXT_MUTED)),
+                    Span::styled(paste::label(pasted), fg(TEXT_SOFT)),
                 ]));
                 if open {
                     let gutter = || Span::styled(format!("{GUTTER} "), dim());
@@ -500,11 +500,11 @@ fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
                 .spans
                 .into_iter()
                 .map(|span| {
-                    let style = span.style.bg(GLOW);
+                    let style = span.style.bg(RAISED);
                     span.style(style)
                 })
                 .collect();
-            spans.push(Span::styled(" ".repeat(pad), Style::new().bg(GLOW)));
+            spans.push(Span::styled(" ".repeat(pad), Style::new().bg(RAISED)));
             Line::from(spans)
         })
         .collect()
@@ -533,7 +533,7 @@ fn entry_lines(
         Entry::Answer(text) if ends_turn => markdown::render(text.trim_end(), width)
             .into_iter()
             .map(|line| {
-                let mut spans = vec![Span::styled(format!(" {USER_BAR} "), fg(ORANGE))];
+                let mut spans = vec![Span::styled(format!(" {USER_BAR} "), fg(ACCENT))];
                 spans.extend(line.spans);
                 Line::from(spans).style(line.style)
             })
@@ -555,8 +555,8 @@ fn entry_lines(
         Entry::Activity { .. } => Vec::new(),
         Entry::Summary { text, open } => {
             let header = Line::from(vec![
-                Span::styled(format!("   {} ", fold_mark(*open)), fg(VIOLET)),
-                Span::styled("summary of the earlier conversation", fg(VIOLET)),
+                Span::styled(format!("   {} ", fold_mark(*open)), fg(TEXT_SOFT)),
+                Span::styled("summary of the earlier conversation", fg(TEXT_SOFT)),
                 Span::styled(format!(" {DOT} ~{} tokens", tokens(text)), dim()),
             ]);
             folded(header, *open, || {
@@ -572,8 +572,8 @@ fn entry_lines(
         Entry::Notice { text, tone, .. } => {
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),
-                Tone::Error => (FAILED, fg(EMBER)),
-                Tone::Success => (DONE, bold(TEAL)),
+                Tone::Error => (FAILED, fg(NEGATIVE)),
+                Tone::Success => (DONE, bold(POSITIVE)),
             };
             // Each line of a notice wraps on its own, so a line break stays a line break.
             text.lines()
@@ -604,19 +604,19 @@ fn tool(
 ) -> Vec<Line<'static>> {
     let (mark, status) = match result {
         None => (
-            Span::styled(format!("   {TOOL_RUNNING} "), fg(TEAL)),
-            Span::styled(live.map_or("", spinner), fg(SUN)),
+            Span::styled(format!("   {TOOL_RUNNING} "), fg(ACCENT)),
+            Span::styled(live.map_or("", spinner), fg(ACCENT)),
         ),
         Some(result) if result.is_error => (
-            Span::styled(format!("   {TOOL} "), fg(EMBER)),
-            Span::styled(FAILED, fg(EMBER)),
+            Span::styled(format!("   {TOOL} "), fg(NEGATIVE)),
+            Span::styled(FAILED, fg(NEGATIVE)),
         ),
         Some(_) => (
-            Span::styled(format!("   {TOOL} "), fg(TEAL)),
-            Span::styled(DONE, fg(TEAL)),
+            Span::styled(format!("   {TOOL} "), fg(TEXT_MUTED)),
+            Span::styled(DONE, fg(POSITIVE)),
         ),
     };
-    let name = Span::styled(call.name.clone(), bold(TEAL));
+    let name = Span::styled(call.name.clone(), fg(TEXT));
     let header = Line::from(vec![mark, name, Span::raw("  "), status]);
     folded(header, open, || {
         let gutter = format!("   {GUTTER} ");
@@ -626,7 +626,7 @@ fn tool(
         );
         if let Some(result) = result {
             let style = if result.is_error {
-                fg(EMBER)
+                fg(NEGATIVE)
             } else {
                 Style::new()
             };
@@ -729,14 +729,23 @@ fn keep_in_view(app: &mut App, start: usize, total: usize, height: usize) {
 /// A new thread: the sun on the horizon and what to do.
 fn welcome(frame: &mut Frame, area: Rect) {
     let width = (area.width as usize).min(44);
+    // The last light sits on the horizon under the sun and fades into the ink.
     let horizon: Vec<Span> = (0..width)
-        .map(|x| Span::styled("\u{2500}", fg(dusk(x as f64 / width as f64))))
+        .map(|x| {
+            let off_center = (x as f64 + 0.5 - width as f64 / 2.0).abs() / (width as f64 / 2.0);
+            let color = match off_center {
+                d if d < 0.12 => ACCENT,
+                d if d < 0.35 => TEXT_MUTED,
+                _ => HAIRLINE,
+            };
+            Span::styled("\u{2500}", fg(color))
+        })
         .collect();
     let lines = vec![
-        Line::from(Span::styled(SUN_GLYPH, bold(SUN))),
+        Line::from(Span::styled(SUN_GLYPH, bold(ACCENT))),
         Line::from(horizon),
         Line::default(),
-        Line::from(Span::styled("dusk", bold(VIOLET))),
+        Line::from(Span::styled("dusk", bold(TEXT))),
         Line::default(),
         Line::from(Span::styled("Write a message to begin.", Style::new())),
         Line::from(Span::styled(

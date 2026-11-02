@@ -13,8 +13,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        EMBER, GLOW, HAZE, INPUT_BG, NIGHT, QUEUED_BG, ROSE, SELECTED, SIDEBAR_BG, SUN, TEAL,
-        VIOLET, bold, dim, fg, thought,
+        ACCENT, DEEP, HAIRLINE, NEGATIVE, RAISED, SELECTED, SURFACE, TEXT, TEXT_MUTED, TEXT_SOFT,
+        bold, dim, fg, thought,
     },
     transcript::spinner,
     wrap,
@@ -119,18 +119,19 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         ..area
     };
     let (doing, below) = status(app);
-    let edge = if app.is_busy() { SELECTED } else { NIGHT };
+    let edge = if app.is_busy() { SELECTED } else { HAIRLINE };
     let mut card = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(edge))
-        .style(Style::new().bg(INPUT_BG))
+        .style(Style::new().bg(SURFACE))
         .title(Line::from(doing));
     if !below.is_empty() {
-        card = card.title(Line::from(Span::styled(format!(" {below} "), fg(SUN))).right_aligned());
+        card =
+            card.title(Line::from(Span::styled(format!(" {below} "), fg(ACCENT))).right_aligned());
     }
     if let Some(tag) = &app.update_available {
         let note = format!(" {tag} is out \u{00B7} /update ");
-        card = card.title_bottom(Line::from(Span::styled(note, fg(TEAL))).right_aligned());
+        card = card.title_bottom(Line::from(Span::styled(note, fg(TEXT_SOFT))).right_aligned());
     }
     frame.render_widget(card, box_area);
     let text_area = Rect {
@@ -143,7 +144,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     app.input_rows.clear();
     app.input_area = Some(box_area);
     let width = text_width(area.width);
-    let prompt = Span::styled(PROMPT, bold(ROSE));
+    let prompt = Span::styled(PROMPT, bold(ACCENT));
     if app.input.text.is_empty() {
         let hint = if !app.provider_available {
             "provider unavailable; /connect or /model to choose a provider"
@@ -195,12 +196,15 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
 /// The chat's mode as a cell of its own colour; Tab switches it.
 fn mode_chip(mode: &str) -> Span<'static> {
     let color = match mode {
-        "MAIN" => TEAL,
-        "PLAN" => SUN,
-        "ORCHESTRATOR" => VIOLET,
-        _ => ROSE,
+        "MAIN" => ACCENT,
+        "PLAN" => ACCENT,
+        "ORCHESTRATOR" => ACCENT,
+        _ => ACCENT,
     };
-    Span::styled(format!(" {} ", mode.to_lowercase()), bold(NIGHT).bg(color))
+    Span::styled(
+        format!(" {} ", mode.to_lowercase()),
+        bold(HAIRLINE).bg(color),
+    )
 }
 
 /// The repository summary and package version share a row below the message card.
@@ -214,7 +218,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>, folder: 
         ..area
     };
     // A status bar of its own colour, so the row reads as one even with little on it.
-    frame.render_widget(Block::new().style(Style::new().bg(SIDEBAR_BG)), bottom);
+    frame.render_widget(Block::new().style(Style::new().bg(DEEP)), bottom);
     const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
     // Keep the version whole; an extremely narrow terminal has no room for it.
     let version_width = VERSION.width() as u16;
@@ -251,7 +255,7 @@ fn git_line(summary: &GitSummary) -> Line<'static> {
         dot(),
         Span::styled(
             summary.branch.clone().unwrap_or_else(|| "detached".into()),
-            fg(TEAL),
+            fg(TEXT_SOFT),
         ),
         dot(),
         Span::styled(format!("{} commits", summary.commits), dim()),
@@ -259,7 +263,7 @@ fn git_line(summary: &GitSummary) -> Line<'static> {
     ];
     spans.push(match summary.changed {
         0 => Span::styled("clean", dim()),
-        changed => Span::styled(format!("{changed} changed"), fg(SUN)),
+        changed => Span::styled(format!("{changed} changed"), fg(TEXT_SOFT)),
     });
     if let Some((ahead, behind)) = summary.ahead_behind {
         spans.push(dot());
@@ -268,7 +272,7 @@ fn git_line(summary: &GitSummary) -> Line<'static> {
             if ahead + behind == 0 {
                 dim()
             } else {
-                fg(VIOLET)
+                fg(TEXT_SOFT)
             },
         ));
     }
@@ -287,18 +291,18 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
     if area.height < 4 || area.width < 20 {
         return;
     }
-    let border = if poll.active { VIOLET } else { NIGHT };
+    let border = if poll.active { ACCENT } else { HAIRLINE };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(border))
-        .title(Span::styled(" question ", bold(VIOLET)));
+        .title(Span::styled(" question ", bold(TEXT)));
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
     let width = inner.width as usize;
     let mut lines = vec![Line::from(Span::styled(
         wrap::clip(&format!(" {}", poll.question.question), width),
-        bold(SUN),
+        bold(TEXT),
     ))];
     let own_row = poll.own_row();
     let visible_rows = inner.height.saturating_sub(1) as usize;
@@ -321,7 +325,7 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
             };
             ("\u{270E}  ", own)
         };
-        let style = if here { bold(ROSE) } else { Style::new() };
+        let style = if here { bold(ACCENT) } else { Style::new() };
         let label = wrap::clip(&format!("{pointer}{mark}{text}"), width);
         poll.hits.push(PollHit {
             row: inner.y + 1 + row as u16,
@@ -355,9 +359,9 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     lines.push(Line::from(vec![
         Span::raw(" "),
-        Span::styled(SEND, fg(TEAL).bg(GLOW)),
+        Span::styled(SEND, fg(ACCENT).bg(RAISED)),
         Span::raw(" "),
-        Span::styled(DECLINE, fg(EMBER).bg(GLOW)),
+        Span::styled(DECLINE, fg(NEGATIVE).bg(RAISED)),
         Span::styled(format!("  {hint}"), dim()),
     ]));
     frame.render_widget(Paragraph::new(lines), inner);
@@ -380,10 +384,10 @@ fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     };
     let (color, toggle) = match goal.status {
-        _ if !goal.approved => (SUN, " review "),
-        GoalStatus::Active => (TEAL, " pause "),
-        GoalStatus::Paused => (SUN, " resume "),
-        GoalStatus::Done => (VIOLET, " resume "),
+        _ if !goal.approved => (ACCENT, " review "),
+        GoalStatus::Active => (TEXT_SOFT, " pause "),
+        GoalStatus::Paused => (ACCENT, " resume "),
+        GoalStatus::Done => (TEXT_SOFT, " resume "),
     };
     const CLEAR: &str = " \u{00D7} ";
     let head = format!(
@@ -419,9 +423,9 @@ fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled(head, bold(color)),
         Span::raw(text),
         Span::raw(" ".repeat(gap)),
-        Span::styled(toggle, fg(color).bg(GLOW)),
+        Span::styled(toggle, fg(color).bg(RAISED)),
         Span::raw(" "),
-        Span::styled(CLEAR, fg(EMBER).bg(GLOW)),
+        Span::styled(CLEAR, fg(NEGATIVE).bg(RAISED)),
     ]);
     frame.render_widget(Paragraph::new(line), area);
 }
@@ -466,15 +470,12 @@ fn draw_queue(frame: &mut Frame, area: Rect, app: &mut App) {
         lines.push(Line::from(vec![
             Span::styled(label, thought()),
             Span::raw(" ".repeat(gap)),
-            Span::styled(SEND, fg(SUN).bg(NIGHT)),
+            Span::styled(SEND, fg(ACCENT).bg(HAIRLINE)),
             Span::raw(" "),
-            Span::styled(REMOVE, fg(EMBER).bg(NIGHT)),
+            Span::styled(REMOVE, fg(NEGATIVE).bg(HAIRLINE)),
         ]));
     }
-    frame.render_widget(
-        Paragraph::new(lines).style(Style::new().bg(QUEUED_BG)),
-        area,
-    );
+    frame.render_widget(Paragraph::new(lines).style(Style::new().bg(RAISED)), area);
 }
 
 /// The command list above the box while a command is being typed.
@@ -499,8 +500,8 @@ pub fn draw_paths(frame: &mut Frame, above: Rect, app: &mut App) {
             let chosen = popup.selected == Some(index);
             let slash = if entry.directory { "/" } else { "" };
             let style = match (chosen, entry.directory) {
-                (true, _) => bold(SUN).bg(GLOW),
-                (false, true) => bold(VIOLET),
+                (true, _) => bold(ACCENT).bg(RAISED),
+                (false, true) => bold(TEXT),
                 (false, false) => Style::new(),
             };
             Line::from(Span::styled(format!("  {}{slash}  ", entry.name), style))
@@ -531,7 +532,7 @@ pub fn draw_paths(frame: &mut Frame, above: Rect, app: &mut App) {
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
+        .border_style(fg(HAIRLINE))
         .title(Span::styled(" tab completes ", dim()));
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(block), area);
@@ -589,9 +590,9 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
                 Span::styled(
                     format!(" {}{name}", if selected { "> " } else { "  " }),
                     if selected {
-                        bold(SUN).bg(GLOW)
+                        bold(ACCENT).bg(RAISED)
                     } else {
-                        bold(VIOLET)
+                        bold(TEXT)
                     },
                 ),
                 Span::styled(format!("  {about}"), dim()),
@@ -600,7 +601,7 @@ pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
         .collect();
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT));
+        .border_style(fg(HAIRLINE));
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(block), area);
 }
@@ -630,13 +631,15 @@ fn status(app: &App) -> (Vec<Span<'static>>, String) {
         }
         (activity, _) => {
             let (color, what) = match activity {
-                Activity::Thinking => (SUN, "thinking".to_owned()),
-                Activity::Writing => (SUN, "writing".to_owned()),
-                Activity::Tool(name) => (TEAL, format!("running {name}")),
-                Activity::Compacting => (VIOLET, "compacting the context".to_owned()),
-                Activity::Forking => (VIOLET, "describing the thread for a fork".to_owned()),
-                Activity::Retrying(attempt) => (EMBER, format!("retrying after attempt {attempt}")),
-                Activity::Idle => (HAZE, String::new()),
+                Activity::Thinking => (ACCENT, "thinking".to_owned()),
+                Activity::Writing => (ACCENT, "writing".to_owned()),
+                Activity::Tool(name) => (TEXT_SOFT, format!("running {name}")),
+                Activity::Compacting => (TEXT_SOFT, "compacting the context".to_owned()),
+                Activity::Forking => (TEXT_SOFT, "describing the thread for a fork".to_owned()),
+                Activity::Retrying(attempt) => {
+                    (NEGATIVE, format!("retrying after attempt {attempt}"))
+                }
+                Activity::Idle => (TEXT_MUTED, String::new()),
             };
             vec![
                 Span::styled(format!("{} ", spinner(app)), fg(color)),
@@ -752,7 +755,7 @@ pub fn layout(input: &Input, width: usize) -> (Vec<Row>, (usize, usize)) {
             Some((index, label)) => {
                 row.flush();
                 row.chips.push((row.width, row.width + char_width, index));
-                let style = fg(TEAL).bg(if selected { SELECTED } else { GLOW });
+                let style = fg(TEXT_SOFT).bg(if selected { SELECTED } else { RAISED });
                 row.spans.push(Span::styled(label, style));
             }
             None => row.push_plain(c, selected),

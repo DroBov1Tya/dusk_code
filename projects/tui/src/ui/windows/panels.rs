@@ -20,8 +20,8 @@ use super::{
     agent_window, input, markdown, settings,
     sidebar::format_duration,
     theme::{
-        ALIVE, DONE, DOT, DOWN, ELLIPSIS, EMBER, FAILED, GLOW, GUTTER, HAZE, NIGHT, ON, ROSE, SUN,
-        SUN_GLYPH, TEAL, USER_BAR, VIOLET, bold, dim, fg, thought,
+        ACCENT, DONE, DOT, ELLIPSIS, FAILED, GUTTER, HAIRLINE, NEGATIVE, ON, POSITIVE, RAISED,
+        SUN_GLYPH, TEXT, TEXT_MUTED, TEXT_SOFT, USER_BAR, bold, dim, fg, thought,
     },
     transcript::{one_line, printable},
     wrap,
@@ -177,7 +177,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                     };
                     selectable(
                         vec![
-                            Span::styled(format!(" {mark} "), fg(TEAL)),
+                            Span::styled(format!(" {mark} "), fg(TEXT_MUTED)),
                             Span::raw(wrap::clip(&source.name, room)),
                         ],
                         Span::styled(
@@ -260,8 +260,8 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     }
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
-        .title(Line::from(Span::styled(format!(" {title} "), bold(VIOLET))))
+        .border_style(fg(HAIRLINE))
+        .title(Line::from(Span::styled(format!(" {title} "), bold(TEXT))))
         .title_bottom(Line::from(Span::styled(format!(" {hints} "), dim())).right_aligned());
     let lines = fit(lines, width.saturating_sub(2) as usize);
     frame.render_widget(Clear, area);
@@ -279,14 +279,14 @@ fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
     let area = window(screen, 130);
     let mut title = vec![Span::styled(
         format!(" {} ", paste::label(&editor.text.text)),
-        bold(TEAL),
+        bold(TEXT),
     )];
     if editor.changed() {
-        title.push(Span::styled("changed ", fg(SUN)));
+        title.push(Span::styled("changed ", fg(ACCENT)));
     }
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
+        .border_style(fg(HAIRLINE))
         .title(Line::from(title));
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
@@ -314,20 +314,20 @@ fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
     frame.render_widget(Paragraph::new(lines), text_area);
     let bar = inner.bottom() - 1;
     let buttons = if editor.confirming {
-        let question = Span::styled(" Save the changes? ", bold(SUN));
+        let question = Span::styled(" Save the changes? ", bold(ACCENT));
         let line = Rect::new(inner.x, bar, inner.width, 1);
         frame.render_widget(Paragraph::new(Line::from(question)), line);
         vec![
-            (EditorButton::Save, " save  y ", TEAL),
-            (EditorButton::Discard, " discard  n ", EMBER),
-            (EditorButton::KeepEditing, " keep editing  Esc ", VIOLET),
+            (EditorButton::Save, " save  y ", ACCENT),
+            (EditorButton::Discard, " discard  n ", NEGATIVE),
+            (EditorButton::KeepEditing, " keep editing  Esc ", TEXT_SOFT),
         ]
     } else {
         let y = text_area.y + (row - editor.scroll) as u16;
         frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
         vec![
-            (EditorButton::Save, " save  Ctrl+S ", TEAL),
-            (EditorButton::Close, " close  Esc ", ROSE),
+            (EditorButton::Save, " save  Ctrl+S ", ACCENT),
+            (EditorButton::Close, " close  Esc ", TEXT_SOFT),
         ]
     };
     let mut right = inner.right();
@@ -336,7 +336,7 @@ fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
         let Some(left) = right.checked_sub(width + 1).filter(|&left| left >= inner.x) else {
             break;
         };
-        let shown = Line::from(Span::styled(label, fg(color).bg(GLOW)));
+        let shown = Line::from(Span::styled(label, fg(color).bg(RAISED)));
         frame.render_widget(Paragraph::new(shown), Rect::new(left, bar, width, 1));
         app.editor_hits.push(EditorHit {
             row: bar,
@@ -403,13 +403,13 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
         };
         let channel = |name: &str| {
             let style = match name == info.channel.name() {
-                true => bold(SUN).bg(GLOW),
+                true => bold(ACCENT).bg(RAISED),
                 false => dim(),
             };
             Span::styled(format!(" {name} "), style)
         };
         lines.push(row("running", Span::raw(info.current.clone())));
-        lines.push(row("newest", Span::styled(latest, bold(TEAL))));
+        lines.push(row("newest", Span::styled(latest, bold(TEXT))));
         lines.push(row("behind", Span::raw(behind)));
         lines.push(Line::from(vec![
             Span::styled(format!(" {:<10}", "channel"), dim()),
@@ -425,7 +425,7 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
                 info.latest
             );
             lines.extend(
-                wrap::words(vec![Span::styled(waiting, fg(SUN))], room, 0)
+                wrap::words(vec![Span::styled(waiting, fg(ACCENT))], room, 0)
                     .into_iter()
                     .map(|spans| Line::from([vec![Span::raw(" ")], spans].concat())),
             );
@@ -433,7 +433,7 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
             button_line = Some(lines.len());
             lines.push(Line::from(vec![
                 Span::raw(" "),
-                Span::styled(UPDATE_BUTTON, bold(NIGHT).bg(TEAL)),
+                Span::styled(UPDATE_BUTTON, bold(HAIRLINE).bg(ACCENT)),
                 Span::styled(format!("  to {}", info.latest), dim()),
             ]));
         } else if !info.newer {
@@ -458,7 +458,7 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
         };
         lines.push(Line::from(Span::styled(
             format!(" {marker} {stage}"),
-            bold(TEAL),
+            bold(TEXT),
         )));
         if progress.stage == InstallStage::Downloading {
             let bytes = match progress.total.filter(|total| *total > 0) {
@@ -472,7 +472,7 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
                             "\u{2588}".repeat(filled),
                             "\u{2591}".repeat(bar_width - filled)
                         ),
-                        fg(TEAL),
+                        fg(ACCENT),
                     )));
                     format!(
                         "{:.0}%  {} / {total} bytes",
@@ -496,7 +496,7 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
         // The whole reason, wrapped: the window grows to hold it.
         for line in note.lines() {
             lines.extend(
-                wrap::words(vec![Span::styled(line.to_owned(), fg(SUN))], room, 0)
+                wrap::words(vec![Span::styled(line.to_owned(), fg(ACCENT))], room, 0)
                     .into_iter()
                     .map(|spans| Line::from([vec![Span::raw(" ")], spans].concat())),
             );
@@ -524,8 +524,8 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
-        .title(Line::from(Span::styled(" update ", bold(VIOLET))))
+        .border_style(fg(HAIRLINE))
+        .title(Line::from(Span::styled(" update ", bold(TEXT))))
         .title_bottom(Line::from(Span::styled(help, dim())).right_aligned());
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(block), area);
@@ -535,8 +535,8 @@ fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
     let area = window(screen, 150);
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
-        .title(Line::from(Span::styled(" threads ", bold(VIOLET))))
+        .border_style(fg(HAIRLINE))
+        .title(Line::from(Span::styled(" threads ", bold(TEXT))))
         .title_bottom(
             Line::from(Span::styled(
                 " up/down choose  enter open  y copy UID  n new  esc close ",
@@ -595,7 +595,7 @@ fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
         width: 1,
         ..inner
     };
-    let bar = vec![Line::from(Span::styled(GUTTER, fg(NIGHT))); divider.height as usize];
+    let bar = vec![Line::from(Span::styled(GUTTER, fg(HAIRLINE))); divider.height as usize];
     frame.render_widget(Paragraph::new(bar), divider);
     let right = Rect {
         x: divider.x + 2,
@@ -614,7 +614,7 @@ fn preview(list: &ThreadList, width: usize, height: usize) -> Vec<Line<'static>>
     let title = thread.title.clone().unwrap_or_else(|| "no messages".into());
     let mut head = vec![Line::from(Span::styled(
         wrap::clip(&title, width),
-        bold(SUN),
+        bold(TEXT),
     ))];
     let loaded = list
         .preview
@@ -665,7 +665,7 @@ fn message_lines((role, text): &(MessageRole, String), width: usize) -> Vec<Line
                 .lines()
                 .flat_map(|line| wrap::words(vec![Span::raw(line.to_owned())], width - 3, 0))
                 .map(|spans| {
-                    let bar = Span::styled(format!(" {USER_BAR} "), fg(ROSE));
+                    let bar = Span::styled(format!(" {USER_BAR} "), fg(TEXT_MUTED));
                     Line::from([vec![bar], spans].concat())
                 })
                 .collect::<Vec<_>>();
@@ -700,7 +700,7 @@ fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
         .enumerate()
         .map(|(row, thread)| {
             let mark = if current == Some(thread.id.as_str()) {
-                Span::styled(format!(" {SUN_GLYPH} "), fg(SUN))
+                Span::styled(format!(" {SUN_GLYPH} "), fg(ACCENT))
             } else {
                 Span::raw("   ")
             };
@@ -729,14 +729,14 @@ fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
             lines.push(Line::default());
         }
         let (light, about) = match &provider.models {
-            Ok(models) if models.len() == 1 => (ALIVE, "1 model".into()),
-            Ok(models) => (ALIVE, format!("{} models", models.len())),
-            Err(_) => (DOWN, "unavailable".into()),
+            Ok(models) if models.len() == 1 => ((ON, POSITIVE), "1 model".into()),
+            Ok(models) => ((ON, POSITIVE), format!("{} models", models.len())),
+            Err(_) => ((ON, NEGATIVE), "unavailable".into()),
         };
         lines.push(selectable(
             vec![
-                Span::raw(format!(" {light} ")),
-                Span::styled(provider.name.clone(), bold(VIOLET)),
+                Span::styled(format!(" {} ", light.0), fg(light.1)),
+                Span::styled(provider.name.clone(), bold(TEXT)),
             ],
             Span::styled(about, dim()),
             false,
@@ -744,7 +744,7 @@ fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
         // Why a provider failed, in full under its name.
         if let Err(error) = &provider.models {
             lines.extend(
-                wrap::words(vec![Span::styled(error.clone(), fg(EMBER))], width, 0)
+                wrap::words(vec![Span::styled(error.clone(), fg(NEGATIVE))], width, 0)
                     .into_iter()
                     .map(|spans| Line::from([vec![Span::raw("    ")], spans].concat())),
             );
@@ -752,7 +752,7 @@ fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
         for model in provider.models.as_deref().unwrap_or_default() {
             let name = format!("{}/{}", provider.name, model.id);
             let mark = if list.current.as_deref() == Some(name.as_str()) {
-                Span::styled(format!("    {SUN_GLYPH} "), fg(SUN))
+                Span::styled(format!("    {SUN_GLYPH} "), fg(ACCENT))
             } else {
                 Span::raw("      ")
             };
@@ -829,7 +829,7 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
             selected = lines.len();
         }
         let style = if index == form.selected {
-            fg(SUN).bg(GLOW)
+            fg(ACCENT).bg(RAISED)
         } else {
             Style::new()
         };
@@ -841,9 +841,13 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
     }
     if let Some(error) = &form.error {
         lines.extend(
-            wrap::words(vec![Span::styled(error.clone(), fg(EMBER))], field_width, 0)
-                .into_iter()
-                .map(Line::from),
+            wrap::words(
+                vec![Span::styled(error.clone(), fg(NEGATIVE))],
+                field_width,
+                0,
+            )
+            .into_iter()
+            .map(Line::from),
         );
     }
     (lines, selected, rows)
@@ -907,7 +911,7 @@ fn context(report: &ContextReport) -> Vec<Line<'static>> {
     };
     let mut lines = vec![
         Line::from(vec![
-            Span::styled(" in context", bold(SUN)),
+            Span::styled(" in context", bold(TEXT)),
             Span::raw("\t"),
             Span::styled(
                 format!(
@@ -915,7 +919,7 @@ fn context(report: &ContextReport) -> Vec<Line<'static>> {
                     compact_number(report.total),
                     compact_number(report.limit)
                 ),
-                bold(SUN),
+                bold(TEXT),
             ),
         ]),
         Line::from(Span::styled(
@@ -926,9 +930,9 @@ fn context(report: &ContextReport) -> Vec<Line<'static>> {
     for section in &report.sections {
         lines.push(Line::default());
         lines.push(Line::from(vec![
-            Span::styled(format!(" {}", section.name), bold(VIOLET)),
+            Span::styled(format!(" {}", section.name), bold(TEXT)),
             Span::raw("\t"),
-            Span::styled(format!("{}  ", share(section.tokens)), bold(VIOLET)),
+            Span::styled(format!("{}  ", share(section.tokens)), bold(TEXT)),
         ]));
         if section.items.is_empty() {
             lines.push(Line::from(Span::styled("   none", dim())));
@@ -948,7 +952,7 @@ fn help() -> Vec<Line<'static>> {
     KEYS.iter()
         .map(|(keys, what)| {
             Line::from(vec![
-                Span::styled(format!(" {keys:>14}  "), bold(SUN)),
+                Span::styled(format!(" {keys:>14}  "), fg(TEXT_SOFT)),
                 Span::raw(*what),
             ])
         })
@@ -963,7 +967,7 @@ fn selectable(left: Vec<Span<'static>>, right: Span<'static>, selected: bool) ->
     spans.push(right);
     let line = Line::from(spans);
     if selected {
-        line.style(Style::new().bg(GLOW).add_modifier(Modifier::BOLD))
+        line.style(Style::new().bg(RAISED).add_modifier(Modifier::BOLD))
     } else {
         line
     }
@@ -1005,7 +1009,7 @@ fn jobs(view: &JobsView, width: usize) -> Vec<Line<'static>> {
     lines.push(Line::default());
     lines.push(Line::from(Span::styled(
         format!(" output of {}", short_id(&job.job_id)),
-        bold(SUN),
+        bold(TEXT),
     )));
     // A finished job's exit code leads its output; it stays in view above the end.
     let (code, body) = match view.output.split_once('\n') {
@@ -1046,11 +1050,11 @@ fn short_id(id: &str) -> &str {
 
 fn job_mark(job: &JobInfo) -> (&'static str, ratatui::style::Color) {
     match job.status.as_str() {
-        "completed" => (DONE, TEAL),
-        "failed" | "timed_out" => (FAILED, EMBER),
-        "cancelled" | "interrupted" => (DOT, HAZE),
-        _ if job.running => (ON, SUN),
-        _ => (DOT, HAZE),
+        "completed" => (DONE, POSITIVE),
+        "failed" | "timed_out" => (FAILED, NEGATIVE),
+        "cancelled" | "interrupted" => (DOT, TEXT_MUTED),
+        _ if job.running => (ON, ACCENT),
+        _ => (DOT, TEXT_MUTED),
     }
 }
 
