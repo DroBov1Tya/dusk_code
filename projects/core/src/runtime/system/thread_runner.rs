@@ -43,6 +43,8 @@ pub struct ThreadRunner {
     inbox: Inbox,
     mailboxes: Arc<Mailboxes>,
     ends_when_idle: bool,
+    /// The next automatic round waits for dependency completion, not a timer.
+    goal_waiting: bool,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
     /// Keeps other processes off the thread while this runner has it.
@@ -234,6 +236,7 @@ impl ThreadRunner {
             inbox: Inbox::new(inputs),
             mailboxes: setup.mailboxes,
             ends_when_idle: setup.ends_when_idle,
+            goal_waiting: false,
             left: false,
             _lock: setup.lock,
         };
@@ -291,7 +294,7 @@ impl ThreadRunner {
                 }
                 match self.inbox.wait().await {
                     None => return Ok(()),
-                    Some(Input::Cancel) => self.cancel_agents().await?,
+                    Some(Input::Cancel) => self.cancel_work().await?,
                     Some(_) => {}
                 }
                 continue;
@@ -327,7 +330,7 @@ impl ThreadRunner {
             // reopened thread also watches durable results from other runtimes.
             match self.wait_for_work(foreign_jobs).await? {
                 None => return Ok(()),
-                Some(Input::Cancel) => self.cancel_agents().await?,
+                Some(Input::Cancel) => self.cancel_work().await?,
                 Some(_) => {}
             }
         }
@@ -336,10 +339,25 @@ impl ThreadRunner {
     async fn wait_for_work(&mut self, mut foreign_jobs: bool) -> Result<Option<Input>> {
         loop {
             if !foreign_jobs {
-                return Ok(self.inbox.wait().await);
+                let input = self.inbox.wait().await;
+                // Real deliveries send Sent first. A lifecycle-only wake must not
+                // admit agent messages whose normal wake was withheld by its limit.
+                if matches!(input, Some(Input::DependencyFinished))
+                    && (!self.goal_waiting || self.has_pending().await?)
+                {
+                    continue;
+                }
+                return Ok(input);
             }
             tokio::select! {
-                input = self.inbox.wait() => return Ok(input),
+                input = self.inbox.wait() => {
+                    if matches!(input, Some(Input::DependencyFinished))
+                        && (!self.goal_waiting || self.has_pending().await?)
+                    {
+                        continue;
+                    }
+                    return Ok(input);
+                },
                 _ = tokio::time::sleep(FOREIGN_JOB_POLL) => {}
             }
             let (pending, still_foreign) = self
@@ -359,7 +377,8 @@ impl ThreadRunner {
     /// Runs turns until nothing is queued, the user cancels or the context does not fit.
     /// The context is compacted first when it has grown too large. What was sent
     /// meanwhile is taken in after each turn, so the next one answers it.
-    /// An active goal starts the next turn itself once nothing else is queued.
+    /// An active goal starts the next turn itself once nothing else is queued and
+    /// its dependencies have delivered their results.
     async fn run_queued(&mut self) -> Result<()> {
         let mut ran = false;
         let mut failed = false;
@@ -383,7 +402,7 @@ impl ThreadRunner {
                         self.pause_goal("the last turn failed").await?;
                         return Ok(());
                     }
-                    None if ran && self.next_goal_round().await? => {
+                    None if (ran || self.goal_waiting) && self.next_goal_round().await? => {
                         ran = false;
                         continue;
                     }
@@ -392,8 +411,7 @@ impl ThreadRunner {
             };
             self.take_in().await?;
             if stop == Some(Stop::Cancelled) {
-                self.pause_goal("stopped by the user").await?;
-                return self.cancel_agents().await;
+                return self.cancel_work().await;
             }
         }
     }
@@ -402,8 +420,37 @@ impl ThreadRunner {
     /// Returns whether a round was queued.
     async fn next_goal_round(&mut self) -> Result<bool> {
         let Some(goal) = self.agent.active_goal().await? else {
+            self.goal_waiting = false;
             return Ok(false);
         };
+        // A runner registers its report while holding this same lock. Checking
+        // durable queued/running work under it closes the handoff to a new runner;
+        // a finished report clears itself only after its results are stored.
+        let mailboxes = Arc::clone(&self.mailboxes);
+        let live = mailboxes.lock().await;
+        let descendants = self
+            .agent
+            .state
+            .descendant_threads(&self.agent.thread_id)
+            .await?;
+        let reporting = mailboxes.has_agent_reports(&descendants).await;
+        let (pending, dependencies) = self
+            .agent
+            .state
+            .goal_wake_state(&self.agent.thread_id)
+            .await?;
+        drop(live);
+        if pending {
+            // A result or user message won the race with start_turn: answer it
+            // before creating another goal message or consuming a round.
+            self.goal_waiting = true;
+            self.take_in().await?;
+            return Ok(true);
+        }
+        self.goal_waiting = reporting || dependencies;
+        if self.goal_waiting {
+            return Ok(false);
+        }
         let rounds = self.agent.config.current().limits().max_goal_rounds;
         if goal.rounds >= rounds {
             self.pause_goal(&format!("all {rounds} rounds used"))
@@ -495,6 +542,13 @@ impl ThreadRunner {
         }
         // Removed only once done: a command cut short by a crash runs again on restart.
         state.remove_pending(pending.pending_id).await
+    }
+
+    /// A cancel also pauses an idle goal waiting for dependency completion.
+    async fn cancel_work(&mut self) -> Result<()> {
+        self.goal_waiting = false;
+        self.pause_goal("stopped by the user").await?;
+        self.cancel_agents().await
     }
 
     /// Stopping a thread stops every agent below it, including those under an agent that

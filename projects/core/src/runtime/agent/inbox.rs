@@ -11,6 +11,8 @@ pub enum Input {
     Sent,
     SentNow,
     Cancel,
+    /// A child finished reporting; only a goal waiting on dependencies needs to wake.
+    DependencyFinished,
 }
 
 /// Why running work was stopped.
@@ -38,7 +40,7 @@ impl Inbox {
         // stop among them still counts.
         let mut input = input?;
         while let Ok(next) = self.inputs.try_recv() {
-            if matches!(next, Input::Cancel) {
+            if matches!(next, Input::Cancel) || matches!(input, Input::DependencyFinished) {
                 input = next;
             }
         }
@@ -53,7 +55,7 @@ impl Inbox {
             tokio::select! {
                 value = &mut work => return Ok(value),
                 input = self.inputs.recv(), if self.open => match input {
-                    Some(Input::Sent) => {}
+                    Some(Input::Sent | Input::DependencyFinished) => {}
                     Some(Input::SentNow) => return Err(Stop::Preempted),
                     Some(Input::Cancel) => return Err(Stop::Cancelled),
                     None => self.open = false,
