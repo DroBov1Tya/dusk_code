@@ -54,7 +54,7 @@ pub enum Command {
     Fork { instructions: Option<String> },
     /// The newest version on the update channel; `dev` or `stable` switches it first.
     Update { channel: Option<String> },
-    /// Shows the reasoning effort, or sets it: low, medium, high or default.
+    /// Shows the reasoning effort, or sets it to a supported level or default.
     Effort { level: Option<String> },
     /// Creates a draft goal; shows, approves, confirms, pauses, resumes or clears it.
     Goal { argument: Option<String> },
