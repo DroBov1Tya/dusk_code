@@ -882,6 +882,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dusk_core",
+ "flate2",
  "futures",
  "image",
  "ratatui",

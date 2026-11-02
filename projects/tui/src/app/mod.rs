@@ -232,6 +232,8 @@ pub struct App {
     pub transcript_area: Option<Rect>,
     /// Advances while the agent works, for the spinner.
     pub frame: usize,
+    /// The idle screen, while it plays.
+    pub screensaver: Option<crate::ui::screensaver::Playing>,
     /// Hidden by F2 when there is room.
     pub sidebar_visible: bool,
     pub sidebar_overlay_open: bool,
@@ -355,6 +357,7 @@ impl App {
             viewport: 0,
             transcript_area: None,
             frame: 0,
+            screensaver: None,
             sidebar_visible: true,
             sidebar_overlay_open: false,
             compact_layout: false,
