@@ -133,12 +133,12 @@ pub enum ThreadEvent {
     OutputLimitReached {
         limit: u64,
     },
-    /// The model's answer broke off, such as on a dropped connection; the turn ends with
-    /// what it wrote.
     /// The model refused pictures; they stay files it is told the path of.
     PicturesRefused {
         model: String,
     },
+    /// The model's answer broke off, such as on a dropped connection; the turn ends with
+    /// what it wrote.
     AnswerCut {
         error: String,
     },
