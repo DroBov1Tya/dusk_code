@@ -5,10 +5,12 @@
 
 use std::sync::Arc;
 
+use anyhow::{Context, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
-use crate::tools::{Tool, ToolContext, builtin::parse_arguments};
+use crate::tools::{Tool, ToolContext, builtin::parse_arguments, schema};
 use crate::{
     BoxFuture,
     runtime::ThreadEvent,
@@ -23,34 +25,58 @@ pub struct Tasks {
     thread_id: String,
 }
 
-#[derive(Deserialize)]
-#[serde(tag = "action", rename_all = "snake_case", deny_unknown_fields)]
-enum TasksArguments {
-    /// A new task with its steps.
-    Add {
-        task: String,
-        #[serde(default)]
-        items: Vec<String>,
-    },
-    /// More steps for a task.
-    AddItems {
-        id: String,
-        items: Vec<String>,
-    },
+/// Flat, since providers want one object at the top of a schema; `run` checks which
+/// fields each action needs.
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct TasksArguments {
+    action: Action,
+    /// For add: the task in a few words.
+    task: Option<String>,
+    /// For add and add_items: the steps, in order.
+    #[serde(default)]
+    items: Vec<Step>,
+    /// For add_items: a task. For start: a step. For done and edit: a task or a step.
+    id: Option<String>,
+    /// For edit: the new words.
+    text: Option<String>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+enum Action {
+    // A new task with its steps.
+    Add,
+    // More steps for a task.
+    AddItems,
     Show,
-    /// A step begins out of order; otherwise each starts when the one before is done.
-    Start {
-        id: String,
-    },
-    /// A step, or a whole task with all its steps.
-    Done {
-        id: String,
-    },
-    /// New words for a task or a step.
-    Edit {
-        id: String,
-        text: String,
-    },
+    // A step begins out of order; otherwise each starts when the one before is done.
+    Start,
+    // A step, or a whole task with all its steps.
+    Done,
+    // New words for a task or a step.
+    Edit,
+}
+
+// Models often write a step as an object with its text; both mean the same.
+#[derive(Deserialize, JsonSchema)]
+#[serde(untagged)]
+enum Step {
+    Text(String),
+    Object { text: String },
+}
+
+impl Step {
+    fn into_text(self) -> String {
+        match self {
+            Self::Text(text) | Self::Object { text } => text,
+        }
+    }
+}
+
+/// A field the action needs.
+fn needed(field: Option<String>, name: &str, action: &str) -> anyhow::Result<String> {
+    field.with_context(|| format!("{action} needs {name}"))
 }
 
 impl Tasks {
@@ -60,23 +86,38 @@ impl Tasks {
 
     async fn run(&self, arguments: TasksArguments) -> anyhow::Result<Vec<Task>> {
         let thread = &self.thread_id;
-        match arguments {
-            TasksArguments::Add { task, items } => {
+        let TasksArguments {
+            action,
+            task,
+            items,
+            id,
+            text,
+        } = arguments;
+        let items: Vec<String> = items.into_iter().map(Step::into_text).collect();
+        match action {
+            Action::Add => {
+                let task = needed(task, "task", "add")?;
                 self.state.add_task(thread, &task, &items).await?;
             }
-            TasksArguments::AddItems { id, items } => {
+            Action::AddItems => {
+                let id = needed(id, "id", "add_items")?;
+                ensure!(!items.is_empty(), "add_items needs items");
                 self.state.add_task_items(thread, &id, &items).await?;
             }
-            TasksArguments::Start { id } => {
+            Action::Start => {
+                let id = needed(id, "id", "start")?;
                 self.state.start_item(thread, &id).await?;
             }
-            TasksArguments::Done { id } => {
+            Action::Done => {
+                let id = needed(id, "id", "done")?;
                 self.state.complete(thread, &id).await?;
             }
-            TasksArguments::Edit { id, text } => {
+            Action::Edit => {
+                let id = needed(id, "id", "edit")?;
+                let text = needed(text, "text", "edit")?;
                 self.state.edit_task(thread, &id, &text).await?;
             }
-            TasksArguments::Show => {}
+            Action::Show => {}
         }
         self.state.thread_tasks(thread).await
     }
@@ -100,29 +141,7 @@ impl Tool for Tasks {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": ["add", "add_items", "show", "start", "done", "edit"]
-                },
-                "task": { "type": "string", "description": "For add: the task in a few words." },
-                "items": {
-                    "type": "array",
-                    "items": { "type": "string" },
-                    "description": "For add and add_items: the steps, in order."
-                },
-                "id": {
-                    "type": "string",
-                    "description": "For add_items: a task. For start: a step. For done and \
-                                    edit: a task or a step."
-                },
-                "text": { "type": "string", "description": "For edit: the new words." }
-            },
-            "required": ["action"],
-            "additionalProperties": false
-        })
+        schema::of::<TasksArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
@@ -194,20 +213,17 @@ mod tests {
     use super::*;
 
     #[test]
-    fn arguments_are_strict() {
-        let show: TasksArguments = parse_arguments(json!({ "action": "show" })).unwrap();
-        assert!(matches!(show, TasksArguments::Show));
-        let add = json!({ "action": "add", "task": "port", "items": ["read"] });
-        assert!(matches!(
-            parse_arguments::<TasksArguments>(add).unwrap(),
-            TasksArguments::Add { .. }
-        ));
-        for wrong in [
-            json!({ "action": "done" }),
-            json!({ "action": "drop", "id": "a1b2c3d4" }),
-            json!({ "action": "done", "id": "a1b2c3d4", "force": true }),
-        ] {
-            assert!(parse_arguments::<TasksArguments>(wrong).is_err());
-        }
+    fn steps_may_be_text_or_objects() {
+        let add =
+            json!({ "action": "add", "task": "port", "items": ["read", { "text": "write" }] });
+        let add: TasksArguments = parse_arguments(add).unwrap();
+        let items: Vec<String> = add.items.into_iter().map(Step::into_text).collect();
+        assert_eq!(items, ["read", "write"]);
+        let schema = schema::of::<TasksArguments>();
+        let check = schema::Check::new(&schema);
+        let objects = json!({ "action": "add", "task": "port", "items": [{ "text": "read" }] });
+        assert!(check.problems("tasks", &schema, &objects).is_none());
+        let wrong = json!({ "action": "drop", "id": "a1b2c3d4", "force": true });
+        assert!(check.problems("tasks", &schema, &wrong).is_some());
     }
 }

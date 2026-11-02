@@ -55,6 +55,25 @@ impl State {
         let task_id = Uuid::now_v7().to_string();
         let now = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin task")?;
+        // A model that lost track of its board adds the same task again; one is enough.
+        let open: Vec<(String, String)> = sqlx::query_as(
+            "SELECT task_id, description FROM tasks WHERE thread_id = ? AND done = 0",
+        )
+        .bind(thread_id)
+        .fetch_all(&mut *transaction)
+        .await
+        .context("read open tasks")?;
+        let words = description.trim().to_lowercase();
+        if let Some((open_id, _)) = open
+            .iter()
+            .find(|(_, open)| open.trim().to_lowercase() == words)
+        {
+            let short = &open_id[open_id.len().saturating_sub(8)..];
+            bail!(
+                "task #{short} with these words is already open, nothing was added; \
+                 add steps to it with add_items or look at the board with show"
+            );
+        }
         sqlx::query(
             "INSERT INTO tasks (task_id, thread_id, description, created_at, updated_at)
              VALUES (?, ?, ?, ?, ?)",
@@ -384,6 +403,17 @@ mod tests {
         assert!(task.items[0].done && !task.items[1].done && !task.done);
         let task = state.complete("mine", &task.task_id).await.unwrap();
         assert!(task.done && task.items.iter().all(|item| item.done));
+    }
+
+    #[tokio::test]
+    async fn an_open_task_is_not_added_twice() {
+        let state = temp_state("tasks_twice").await;
+        state.create_thread("mine", "test").await.unwrap();
+        let task = state.add_task("mine", "Port it", &[]).await.unwrap();
+        let again = state.add_task("mine", " port it ", &[]).await.unwrap_err();
+        assert!(again.to_string().contains("already open"), "{again}");
+        state.complete("mine", &task.task_id).await.unwrap();
+        state.add_task("mine", "port it", &[]).await.unwrap();
     }
 
     #[tokio::test]
