@@ -6,6 +6,12 @@ testing.
 
 ## Unreleased
 
+### Fixed
+
+- A compaction summary no longer keeps sources the user removed, so later turns do not
+  look for files that are gone. Source names go to the model as data, not as text it
+  could take for instructions.
+
 ### Added
 
 - `/connect` takes an optional name for the provider; without one it is `provider-N`
