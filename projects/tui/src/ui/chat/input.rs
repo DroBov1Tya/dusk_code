@@ -45,7 +45,7 @@ pub fn height(app: &App, width: u16) -> u16 {
         + queue_rows(app)
         + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16
         + FRAME_ROWS
-        + u16::from(app.git.is_some())
+        + 1
 }
 
 /// The question's border, its text, the options, the own answer and the buttons.
@@ -64,7 +64,12 @@ fn queue_rows(app: &App) -> u16 {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
-    let polled = poll_rows(app);
+    draw_footer(frame, area, app.git.as_ref());
+    let area = Rect {
+        height: area.height.saturating_sub(1),
+        ..area
+    };
+    let polled = poll_rows(app).min(area.height);
     draw_poll(
         frame,
         Rect {
@@ -78,19 +83,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(polled),
         ..area
     };
-    if let Some(summary) = &app.git {
-        let bottom = Rect {
-            y: area.bottom().saturating_sub(1),
-            height: 1,
-            ..area
-        };
-        frame.render_widget(Paragraph::new(git_line(summary)), bottom);
-    }
-    let area = Rect {
-        height: area.height.saturating_sub(u16::from(app.git.is_some())),
-        ..area
-    };
-    let goal = goal_rows(app);
+    let goal = goal_rows(app).min(area.height);
     draw_goal(
         frame,
         Rect {
@@ -104,7 +97,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         height: area.height.saturating_sub(goal),
         ..area
     };
-    let queued = queue_rows(app);
+    let queued = queue_rows(app).min(area.height);
     draw_queue(
         frame,
         Rect {
@@ -210,6 +203,39 @@ fn mode_chip(mode: &str) -> Span<'static> {
     Span::styled(format!(" {} ", mode.to_lowercase()), bold(NIGHT).bg(color))
 }
 
+/// The repository summary and package version share a row below the message card.
+fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>) {
+    if area.is_empty() {
+        return;
+    }
+    let bottom = Rect {
+        y: area.bottom() - 1,
+        height: 1,
+        ..area
+    };
+    const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+    // Keep the version whole; an extremely narrow terminal has no room for it.
+    let version_width = VERSION.width() as u16;
+    let reserved = if bottom.width >= version_width {
+        frame.render_widget(
+            Paragraph::new(Span::styled(VERSION, dim())).right_aligned(),
+            bottom,
+        );
+        version_width.saturating_add(1)
+    } else {
+        0
+    };
+    if let Some(summary) = git {
+        frame.render_widget(
+            Paragraph::new(git_line(summary)),
+            Rect {
+                width: bottom.width.saturating_sub(reserved),
+                ..bottom
+            },
+        );
+    }
+}
+
 /// The repository, branch, commits, changed files and the distance to the upstream.
 fn git_line(summary: &GitSummary) -> Line<'static> {
     let dot = || Span::styled(" \u{00B7} ", dim());
@@ -268,7 +294,8 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
         bold(SUN),
     ))];
     let own_row = poll.own_row();
-    for row in 0..=own_row {
+    let visible_rows = inner.height.saturating_sub(1) as usize;
+    for row in (0..=own_row).take(visible_rows) {
         let here = poll.active && poll.cursor == row;
         let pointer = if here { " \u{203A} " } else { "   " };
         let (mark, text) = if row < own_row {
@@ -305,18 +332,20 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
     let buttons_row = inner.y + lines.len() as u16;
     let send_left = inner.x + 1;
     let decline_left = send_left + SEND.width() as u16 + 1;
-    poll.hits.push(PollHit {
-        row: buttons_row,
-        left: send_left,
-        right: send_left + SEND.width() as u16,
-        target: PollTarget::Send,
-    });
-    poll.hits.push(PollHit {
-        row: buttons_row,
-        left: decline_left,
-        right: decline_left + DECLINE.width() as u16,
-        target: PollTarget::Decline,
-    });
+    if buttons_row < inner.bottom() {
+        poll.hits.push(PollHit {
+            row: buttons_row,
+            left: send_left,
+            right: send_left + SEND.width() as u16,
+            target: PollTarget::Send,
+        });
+        poll.hits.push(PollHit {
+            row: buttons_row,
+            left: decline_left,
+            right: decline_left + DECLINE.width() as u16,
+            target: PollTarget::Decline,
+        });
+    }
     lines.push(Line::from(vec![
         Span::raw(" "),
         Span::styled(SEND, fg(TEAL).bg(GLOW)),
@@ -325,7 +354,7 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
         Span::styled(format!("  {hint}"), dim()),
     ]));
     frame.render_widget(Paragraph::new(lines), inner);
-    if poll.active && poll.cursor == own_row {
+    if poll.active && poll.cursor == own_row && own_row < visible_rows {
         let column = 6 + poll.own.text[..poll.own.cursor].width();
         let x = (inner.x as usize + column).min(inner.right().saturating_sub(1) as usize);
         frame.set_cursor_position(Position::new(x as u16, inner.y + 1 + own_row as u16));
@@ -337,6 +366,9 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
 /// The standing goal in a line: its state, the round and the text, then its buttons.
 fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
     app.goal_hits.clear();
+    if area.is_empty() {
+        return;
+    }
     let Some(goal) = &app.goal else {
         return;
     };
