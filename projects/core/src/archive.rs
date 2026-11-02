@@ -1460,22 +1460,24 @@ impl Temporary {
 
 impl Drop for Temporary {
     fn drop(&mut self) {
-        if !self.keep {
-            if let Err(error) = fs::remove_dir_all(&self.path) {
-                if error.kind() == ErrorKind::NotFound {
-                    return;
-                }
-                tracing::warn!(
-                    "cannot remove private archive staging directory {}: {error}",
-                    self.path.display()
-                );
-                if self.offline {
-                    eprintln!(
-                        "duskcode: private restore staging remains at {}: {error}",
-                        self.path.display()
-                    );
-                }
-            }
+        if self.keep {
+            return;
+        }
+        let Err(error) = fs::remove_dir_all(&self.path) else {
+            return;
+        };
+        if error.kind() == ErrorKind::NotFound {
+            return;
+        }
+        tracing::warn!(
+            "cannot remove private archive staging directory {}: {error}",
+            self.path.display()
+        );
+        if self.offline {
+            eprintln!(
+                "duskcode: private restore staging remains at {}: {error}",
+                self.path.display()
+            );
         }
     }
 }
