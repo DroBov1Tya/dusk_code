@@ -31,6 +31,8 @@ const MAX_JOB_ROWS: usize = 4;
 const STATS_HEIGHT: u16 = 16;
 /// The connectors folded: the heading and one line that sums them up.
 const CONNECTORS_FOLDED: u16 = 2;
+/// A compact bottom panel, kept the same height when connectors fold.
+const CONNECTORS_HEIGHT: u16 = 5;
 /// Columns of air on each side of the rail's text.
 const PAD: u16 = 2;
 const GAUGE: &str = "\u{2501}";
@@ -52,8 +54,25 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
         app,
     );
     let mut y = area.y + stats_height;
-    if app.tasks.iter().any(|task| !task.done) && y < area.bottom() {
-        let remaining = area.bottom() - y;
+    let remaining = area.bottom() - y;
+    // Dock connectors before allocating the content above them. Their geometry
+    // depends only on the rail, never on agents, tasks, or their folded state.
+    let mcp_section = if !app.mcp.is_empty() && remaining >= CONNECTORS_FOLDED {
+        let height = CONNECTORS_HEIGHT.min(remaining.div_ceil(2).max(CONNECTORS_FOLDED));
+        Some(Rect {
+            y: area.bottom() - height,
+            height,
+            ..area
+        })
+    } else {
+        None
+    };
+    // Leave one blank row above the dock when the rail has room for it.
+    let content_bottom = mcp_section
+        .map(|section| section.y.saturating_sub(1).max(y))
+        .unwrap_or(area.bottom());
+    if app.tasks.iter().any(|task| !task.done) && y < content_bottom {
+        let remaining = content_bottom - y;
         // The tasks take what they need, up to half of what is left.
         let room = remaining.div_ceil(2).max(3).min(remaining);
         y += tasks(
@@ -67,35 +86,21 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
         );
     }
     let running_jobs = app.jobs.iter().filter(|job| job.running).count();
-    if running_jobs > 0 && y + 1 < area.bottom() {
+    if running_jobs > 0 && y + 1 < content_bottom {
         let wanted = 1 + running_jobs.min(MAX_JOB_ROWS + 1) as u16;
-        let height = wanted.min(area.bottom() - y);
+        let height = wanted.min(content_bottom - y);
         y += background(frame, Rect { y, height, ..area }, app) + 1;
     }
-    let agents_active = !app.subagents.is_empty();
-    let mcp_active = !app.mcp.is_empty();
-    if agents_active && y < area.bottom() {
-        let remaining = area.bottom() - y;
-        let height = match (mcp_active, app.connectors_open) {
-            (false, _) => remaining,
-            (true, false) => remaining
-                .saturating_sub(CONNECTORS_FOLDED + 1)
-                .max(3)
-                .min(remaining),
-            (true, true) => remaining.div_ceil(2).max(3).min(remaining),
+    if !app.subagents.is_empty() && y < content_bottom {
+        let section = Rect {
+            y,
+            height: content_bottom - y,
+            ..area
         };
-        let section = Rect { y, height, ..area };
         app.agent_area = Some(section);
         agents(frame, section, app);
-        // A blank row before the next section.
-        y += height + 1;
     }
-    if mcp_active && y + 1 < area.bottom() {
-        let height = match app.connectors_open {
-            true => area.bottom() - y,
-            false => CONNECTORS_FOLDED.min(area.bottom() - y),
-        };
-        let section = Rect { y, height, ..area };
+    if let Some(section) = mcp_section {
         app.mcp_area = Some(section);
         mcp(frame, section, app);
     }
@@ -440,7 +445,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     app.agent_max_scroll = scroll_limit(lines.len(), area);
     app.agent_scroll = app.agent_scroll.min(app.agent_max_scroll);
     let mut block = section(Line::from(heading("SUBAGENTS")));
-    if app.agent_max_scroll > 0 {
+    if app.agent_max_scroll > 0 && area.height > 2 {
         block = block.title_bottom(Line::from(Span::styled(
             " wheel to scroll ",
             fg(SIDEBAR_MUTED),
@@ -525,7 +530,7 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
     app.mcp_max_scroll = scroll_limit(lines.len(), area);
     app.mcp_scroll = app.mcp_scroll.min(app.mcp_max_scroll);
     let mut block = section(title);
-    if app.mcp_max_scroll > 0 {
+    if app.mcp_max_scroll > 0 && area.height > 2 {
         block = block.title_bottom(Line::from(Span::styled(
             " wheel to scroll ",
             fg(SIDEBAR_MUTED),
@@ -540,9 +545,12 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
     );
 }
 
-/// Lines past what a section shows below its heading.
+/// Lines past the heading and, on overflow, the scroll hint below the body.
 fn scroll_limit(line_count: usize, area: Rect) -> usize {
-    let visible = area.height.saturating_sub(1) as usize;
+    let mut visible = area.height.saturating_sub(1) as usize;
+    if line_count > visible && area.height > 2 {
+        visible -= 1;
+    }
     if visible == 0 {
         0
     } else {
