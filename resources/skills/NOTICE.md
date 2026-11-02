@@ -25,5 +25,5 @@ matter of each `SKILL.md` names its `source`, `author`, `license`, `upstream` an
 Upstreams: https://github.com/anthropics/skills, https://github.com/openai/skills,
 https://github.com/NousResearch/hermes-agent.
 
-`duskcode`, `skill-improve` and `skill-from-practice` are part of dusk_code itself and
-share its MIT license.
+`duskcode`, `project-tree`, `skill-improve` and `skill-from-practice` are part of
+dusk_code itself and share its MIT license.
