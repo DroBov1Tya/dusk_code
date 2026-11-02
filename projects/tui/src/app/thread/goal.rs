@@ -39,6 +39,7 @@ impl App {
             return Action::None;
         };
         let command = match (button, goal.status) {
+            (GoalButton::Toggle, _) if !goal.approved => "/goal",
             (GoalButton::Clear, _) => "/goal clear",
             (GoalButton::Toggle, GoalStatus::Active) => "/goal pause",
             (GoalButton::Toggle, GoalStatus::Paused | GoalStatus::Done) => "/goal resume",

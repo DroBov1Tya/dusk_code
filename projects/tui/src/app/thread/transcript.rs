@@ -247,6 +247,7 @@ impl Transcript {
                     let result = ToolResult {
                         content: message.content.clone(),
                         is_error: failed,
+                        exit_code: None,
                         artifacts: message.artifacts.clone(),
                     };
                     let call_id = message.tool_call_id.clone().unwrap_or_default();
@@ -359,6 +360,7 @@ impl Transcript {
                 *result = Some(ToolResult {
                     content: "stopped: the user interrupted the turn".into(),
                     is_error: true,
+                    exit_code: None,
                     artifacts: Vec::new(),
                 });
             }

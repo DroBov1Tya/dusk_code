@@ -312,6 +312,33 @@ pub async fn convert_jobs(pool: &SqlitePool, migrator: &Migrator) -> Result<()> 
 mod tests {
     use crate::{state::State, testing::temp_dir};
 
+    /// Build a fixture from before migration 16. The simulated migration ledger
+    /// and schema must agree, just as they did in those releases.
+    async fn before_goal_verification(state: &State) {
+        sqlx::raw_sql(
+            "DROP TABLE tool_executions;
+            DROP TABLE goal_confirmations;
+            ALTER TABLE goals DROP COLUMN revision;
+            ALTER TABLE goals DROP COLUMN criteria_json;
+            ALTER TABLE goals DROP COLUMN approved_at;
+            ALTER TABLE goals DROP COLUMN work_epoch;
+            ALTER TABLE goals DROP COLUMN awaiting_user;
+            ALTER TABLE goals DROP COLUMN evidence_after_sequence;
+            ALTER TABLE goals DROP COLUMN verification;
+            ALTER TABLE goals DROP COLUMN verification_id;
+            ALTER TABLE goals DROP COLUMN verification_request;
+            ALTER TABLE goals DROP COLUMN verification_turn_id;
+            ALTER TABLE goals DROP COLUMN verification_attempts;
+            ALTER TABLE goals DROP COLUMN verification_note;
+            ALTER TABLE background_jobs DROP COLUMN goal_revision;
+            ALTER TABLE background_jobs DROP COLUMN goal_epoch;
+            DELETE FROM _sqlx_migrations WHERE version = 16;",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn messages_without_image_cards_get_the_column() {
         let path = temp_dir("legacy-messages").join("state.db");
@@ -331,6 +358,7 @@ mod tests {
                 execution_time) VALUES (12, 'image artifacts', TRUE, X'00', 0);",
         ] {
             let state = State::open(&path).await.unwrap();
+            before_goal_verification(&state).await;
             sqlx::raw_sql(old).execute(&state.pool).await.unwrap();
             state.close().await;
             let state = State::open(&path).await.unwrap();
@@ -350,6 +378,7 @@ mod tests {
         let path = temp_dir("legacy-before-jobs").join("state.db");
         State::open(&path).await.unwrap().close().await;
         let state = State::open(&path).await.unwrap();
+        before_goal_verification(&state).await;
         // As a release without background jobs left it: no job columns or table, and
         // the messages and pending messages migrations as they were.
         sqlx::raw_sql(

@@ -78,7 +78,8 @@ enum StepEnd {
 impl Agent {
     /// Marks turns left running by a stopped process as interrupted.
     pub async fn recover(&self) -> Result<()> {
-        self.state.interrupt_running_turns(&self.thread_id).await
+        self.state.interrupt_running_turns(&self.thread_id).await?;
+        self.state.recover_goal_verification(&self.thread_id).await
     }
 
     /// Starts a turn when something is queued and the context fits the input limit.
@@ -166,7 +167,7 @@ impl Agent {
             return Ok(None);
         }
         let goal = self.state.goal(&self.thread_id).await?;
-        Ok(goal.filter(|goal| goal.status == GoalStatus::Active))
+        Ok(goal.filter(|goal| goal.status == GoalStatus::Active && goal.approved))
     }
 
     /// Messages from other agents join the running turn, so the next step reads them.
@@ -177,6 +178,10 @@ impl Agent {
                 continue;
             }
             let message = self.state.admit_pending(&self.thread_id, &pending).await?;
+            if message.from_thread_id.is_some() {
+                sqlx::query("UPDATE goals SET work_epoch = work_epoch + 1 WHERE thread_id = ? AND approved_at IS NOT NULL")
+                    .bind(&self.thread_id).execute(&self.state.pool).await?;
+            }
             self.emit(ThreadEvent::Queued {
                 message_id: message.message_id.clone(),
             });
@@ -229,7 +234,18 @@ impl Agent {
         }
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config.current();
-        let tools = self.tools.specs(&self.scope, &config);
+        let mut tools = self.tools.specs(&self.scope, &config);
+        let standing = if self.depth == 0 {
+            self.state.goal(&self.thread_id).await?
+        } else {
+            None
+        };
+        if standing
+            .as_ref()
+            .is_some_and(|g| !g.approved && g.status != GoalStatus::Done)
+        {
+            tools.retain(|tool| tool.name == "goal");
+        }
         let workspace = self.scope.workspace();
         let with_pictures = self.takes_pictures();
         let sources =
@@ -257,7 +273,9 @@ impl Agent {
             block.first_time
         });
         // The goal is said last, so it stays in view however long the context grows.
-        if let Some(goal) = self.active_goal().await? {
+        if let Some(goal) = standing.filter(|g| {
+            g.status == GoalStatus::Active || (!g.approved && g.status != GoalStatus::Done)
+        }) {
             let rounds = config.limits().max_goal_rounds;
             messages.push(ChatMessage::System(goal::reminder(&goal, rounds)));
         }
@@ -421,8 +439,20 @@ impl Agent {
         for call in calls {
             let mut artifacts = Vec::new();
             let mut finished = None;
+            let mut outcome = "cancelled";
+            let mut exit_code = None;
+            let draft = self.depth == 0
+                && self
+                    .state
+                    .goal(&self.thread_id)
+                    .await?
+                    .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
             let content = match stop {
                 Some(_) => "not run: the user interrupted the turn".to_owned(),
+                None if draft && call.name != "goal" => {
+                    outcome = "failed";
+                    "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned()
+                }
                 None => {
                     self.emit(ThreadEvent::ToolStarted(call.clone()));
                     let progress = Progress {
@@ -433,6 +463,12 @@ impl Agent {
                     match inbox.race(called).await {
                         Ok(result) => {
                             let content = result.content.clone();
+                            outcome = if result.is_error {
+                                "failed"
+                            } else {
+                                "succeeded"
+                            };
+                            exit_code = result.exit_code;
                             artifacts = result.artifacts.clone();
                             finished = Some(result);
                             content
@@ -444,11 +480,13 @@ impl Agent {
                     }
                 }
             };
-            let stored = self.state.record_tool_result_with_artifacts(
+            let stored = self.state.record_tool_result_with_outcome(
                 &turn.turn_id,
                 &call.id,
                 content,
                 artifacts,
+                outcome,
+                exit_code,
             );
             stored.await.context("cannot store the tool result")?;
             // A visible result must already be available when the thread is reopened.
