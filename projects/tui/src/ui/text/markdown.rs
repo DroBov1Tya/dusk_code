@@ -7,7 +7,7 @@ use ratatui::{
 };
 
 use super::{
-    theme::{ACCENT, BULLET, CODE_BAR, GUTTER, TEXT, TEXT_MUTED, bold, dim, fg, thought},
+    theme::{ACCENT, BULLET, CODE_BAR, DUSK, GUTTER, TEXT, TEXT_MUTED, bold, dim, fg, thought},
     wrap,
 };
 
@@ -184,7 +184,7 @@ fn stacked_table(rows: &[Vec<String>], width: usize) -> Vec<Line<'static>> {
             lines.push(Line::default());
         }
         for (header, cell) in rows[0].iter().zip(row) {
-            let mut spans = inline(header, bold(TEXT));
+            let mut spans = inline(header, bold(DUSK));
             spans.push(Span::raw(": "));
             spans.extend(inline(cell, Style::new()));
             lines.extend(wrap::words(spans, width, 0).into_iter().map(Line::from));
@@ -193,7 +193,7 @@ fn stacked_table(rows: &[Vec<String>], width: usize) -> Vec<Line<'static>> {
     if rows.len() == 1 {
         for header in &rows[0] {
             lines.extend(
-                wrap::words(inline(header, bold(TEXT)), width, 0)
+                wrap::words(inline(header, bold(DUSK)), width, 0)
                     .into_iter()
                     .map(Line::from),
             );
@@ -260,7 +260,7 @@ fn classify(source: &str) -> (Vec<Span<'static>>, usize, &str, Style) {
     }
     let hashes = trimmed.chars().take_while(|&c| c == '#').count();
     if (1..=6).contains(&hashes) && trimmed[hashes..].starts_with(' ') {
-        return (Vec::new(), 0, trimmed[hashes..].trim(), bold(TEXT));
+        return (Vec::new(), 0, trimmed[hashes..].trim(), bold(DUSK));
     }
     for marker in ["- ", "* ", "+ "] {
         if let Some(rest) = trimmed.strip_prefix(marker) {

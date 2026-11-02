@@ -20,8 +20,8 @@ use super::{
     agent_window, input, markdown, settings,
     sidebar::format_duration,
     theme::{
-        ACCENT, DONE, DOT, ELLIPSIS, FAILED, GUTTER, HAIRLINE, NEGATIVE, ON, POSITIVE, RAISED,
-        SUN_GLYPH, TEXT, TEXT_MUTED, TEXT_SOFT, USER_BAR, bold, dim, fg, thought,
+        ACCENT, DONE, DOT, DUSK, ELLIPSIS, FAILED, GUTTER, HAIRLINE, NEGATIVE, ON, POSITIVE,
+        RAISED, SUN_GLYPH, TEXT, TEXT_MUTED, TEXT_SOFT, USER_BAR, bold, dim, fg, thought,
     },
     transcript::{one_line, printable},
     wrap,
@@ -261,7 +261,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(HAIRLINE))
-        .title(Line::from(Span::styled(format!(" {title} "), bold(TEXT))))
+        .title(Line::from(Span::styled(format!(" {title} "), bold(DUSK))))
         .title_bottom(Line::from(Span::styled(format!(" {hints} "), dim())).right_aligned());
     let lines = fit(lines, width.saturating_sub(2) as usize);
     frame.render_widget(Clear, area);
@@ -279,7 +279,7 @@ fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
     let area = window(screen, 130);
     let mut title = vec![Span::styled(
         format!(" {} ", paste::label(&editor.text.text)),
-        bold(TEXT),
+        bold(DUSK),
     )];
     if editor.changed() {
         title.push(Span::styled("changed ", fg(ACCENT)));
@@ -525,7 +525,7 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(HAIRLINE))
-        .title(Line::from(Span::styled(" update ", bold(TEXT))))
+        .title(Line::from(Span::styled(" update ", bold(DUSK))))
         .title_bottom(Line::from(Span::styled(help, dim())).right_aligned());
     frame.render_widget(Clear, area);
     frame.render_widget(Paragraph::new(lines).block(block), area);
@@ -536,7 +536,7 @@ fn draw_threads(frame: &mut Frame, screen: Rect, app: &App, list: &ThreadList) {
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(HAIRLINE))
-        .title(Line::from(Span::styled(" threads ", bold(TEXT))))
+        .title(Line::from(Span::styled(" threads ", bold(DUSK))))
         .title_bottom(
             Line::from(Span::styled(
                 " up/down choose  enter open  y copy UID  n new  esc close ",

@@ -16,9 +16,9 @@ use super::{
     loader::{Loader, agent_name, identity},
     markdown,
     theme::{
-        ACCENT, DONE, DOT, FAILED, FOLDED, GUTTER, HAIRLINE, NEGATIVE, POSITIVE, RAISED, SELECTED,
-        SPINNER, SUN_GLYPH, TEXT, TEXT_MUTED, TEXT_SOFT, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR,
-        bold, dim, fg, thought,
+        ACCENT, DONE, DOT, DUSK, FAILED, FOLDED, GUTTER, HAIRLINE, NEGATIVE, POSITIVE, RAISED,
+        SELECTED, SPINNER, SUN_GLYPH, TEXT, TEXT_MUTED, TEXT_SOFT, TOOL, TOOL_RUNNING, UNFOLDED,
+        USER_BAR, bold, dim, fg, thought,
     },
     wrap,
 };
@@ -729,13 +729,13 @@ fn keep_in_view(app: &mut App, start: usize, total: usize, height: usize) {
 /// A new thread: the sun on the horizon and what to do.
 fn welcome(frame: &mut Frame, area: Rect) {
     let width = (area.width as usize).min(44);
-    // The last light sits on the horizon under the sun and fades into the ink.
+    // The last light sits on the horizon under the sun, the violet sky beside it.
     let horizon: Vec<Span> = (0..width)
         .map(|x| {
             let off_center = (x as f64 + 0.5 - width as f64 / 2.0).abs() / (width as f64 / 2.0);
             let color = match off_center {
                 d if d < 0.12 => ACCENT,
-                d if d < 0.35 => TEXT_MUTED,
+                d if d < 0.4 => DUSK,
                 _ => HAIRLINE,
             };
             Span::styled("\u{2500}", fg(color))
@@ -745,7 +745,7 @@ fn welcome(frame: &mut Frame, area: Rect) {
         Line::from(Span::styled(SUN_GLYPH, bold(ACCENT))),
         Line::from(horizon),
         Line::default(),
-        Line::from(Span::styled("dusk", bold(TEXT))),
+        Line::from(Span::styled("dusk", bold(DUSK))),
         Line::default(),
         Line::from(Span::styled("Write a message to begin.", Style::new())),
         Line::from(Span::styled(
