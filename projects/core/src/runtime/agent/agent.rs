@@ -195,6 +195,15 @@ impl Agent {
     }
 
     /// Counting is for the client to see; a failure here does not touch the thread.
+    /// Subagents think at medium for now: deep effort times many agents costs more than
+    /// it gives. The chat keeps the user's level; off and the provider's default stay.
+    fn effort(&self, config: &Config) -> Option<Effort> {
+        match config.effort() {
+            Some(effort) if self.depth > 0 && effort != Effort::Off => Some(Effort::Medium),
+            effort => effort,
+        }
+    }
+
     pub async fn report_tokens(&self) {
         let specs = self.tools.specs(&self.scope, &self.config.current());
         let counted = async {
@@ -285,7 +294,7 @@ impl Agent {
             messages: &messages,
             tools: &tools,
             max_output_tokens: config.limits().max_output_tokens,
-            effort: config.effort(),
+            effort: self.effort(&config),
         };
         let mut called = self.call_model(&choice, request, &config, inbox).await;
         if matches!(&called, Ok((_, Ok(Err(error)))) if is_unsupported_pictures(error)) {
@@ -295,7 +304,7 @@ impl Agent {
                 messages: &messages,
                 tools: &tools,
                 max_output_tokens: config.limits().max_output_tokens,
-                effort: config.effort(),
+                effort: self.effort(&config),
             };
             called = self.call_model(&choice, request, &config, inbox).await;
         }
