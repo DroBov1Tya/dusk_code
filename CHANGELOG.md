@@ -1,6 +1,14 @@
 # Changelog
 
 What changed in each release. A release's section here is also its notes on GitHub.
+Patch versions are pre-releases; minor versions are full releases, made after end-to-end
+testing.
+
+## Unreleased
+
+### Changed
+
+- Every minor version is a full release and every patch version a pre-release.
 
 ## 0.70.0 - 2026-11-03
 
