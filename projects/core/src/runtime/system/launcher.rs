@@ -254,7 +254,9 @@ impl Launcher {
         let depth = self.state.thread_depth(&thread.id).await?;
         let name = thread.agent.as_deref().unwrap_or(GENERAL_AGENT);
         let identity = self.agents.get(name);
-        let workspace = self.paths.thread_workspace(&thread.id)?;
+        let workspace =
+            crate::runtime::chat::thread_start::workspace(&self.state, &self.paths, &thread.id)
+                .await?;
         let mut setup = self.setup(&thread.id, cwd, &workspace, identity.as_ref(), depth)?;
         setup.ends_when_idle = true;
         Ok(ThreadRunner::new(setup))

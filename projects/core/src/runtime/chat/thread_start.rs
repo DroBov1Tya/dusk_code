@@ -34,6 +34,45 @@ pub const NO_PROMPT: &str = "(no prompt)";
 pub const FORK_INTRO: &str = "This thread goes on from an earlier one, described below. Its \
 messages are not here; work from this description.\n\n";
 
+/// Where an agent's folder sits inside its chat's.
+const AGENTS_FOLDER: &str = "agents";
+
+/// Where a thread's files are: the folder it was given, or, for a thread from before
+/// folders were named by date, the one named by its ID.
+pub async fn workspace(state: &State, paths: &Paths, thread_id: &str) -> Result<PathBuf> {
+    match state.thread_folder(thread_id).await? {
+        Some(folder) => paths.workspace_folder(&folder),
+        None => paths.thread_workspace(thread_id),
+    }
+}
+
+/// A new chat's folder, named by the day for people to find it: `03_11_2026`, then
+/// `03_11_2026-1` and on for later chats that day. Made here, so two chats starting at
+/// once cannot take the same name.
+fn new_chat_folder(paths: &Paths) -> Result<(String, PathBuf)> {
+    create_private_dir(paths.workspace_root())?;
+    let day = chrono::Local::now().format("%d_%m_%Y").to_string();
+    for number in 0..10_000 {
+        let folder = match number {
+            0 => day.clone(),
+            number => format!("{day}-{number}"),
+        };
+        let path = paths.workspace_folder(&folder)?;
+        let mut builder = fs::DirBuilder::new();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::DirBuilderExt;
+            builder.mode(0o700);
+        }
+        match builder.create(&path) {
+            Ok(()) => return Ok((folder, path)),
+            Err(error) if error.kind() == ErrorKind::AlreadyExists => continue,
+            Err(_) => bail!("cannot create the chat's folder"),
+        }
+    }
+    bail!("too many chats today for a folder of their own")
+}
+
 /// `cwd` as the one name a folder goes by, however it was reached.
 pub fn project_dir(cwd: &Path) -> String {
     cwd.canonicalize()
@@ -53,9 +92,9 @@ pub async fn start_thread(
 ) -> Result<StartedThread> {
     let prompt = modes::prompt(&paths.modes_dir(), mode)?;
     let thread_id = Uuid::now_v7().to_string();
-    let workspace = paths.thread_workspace(&thread_id)?;
-    create_private_dir(&workspace)?;
+    let (folder, workspace) = new_chat_folder(paths)?;
     state.create_thread(&thread_id, source).await?;
+    state.set_thread_folder(&thread_id, &folder).await?;
     state
         .set_thread_project(&thread_id, &project_dir(cwd))
         .await?;
@@ -90,11 +129,19 @@ pub async fn start_agent_thread(
             break (thread_id, name);
         }
     };
-    let workspace = paths.thread_workspace(&thread_id)?;
+    // Inside the chat's folder, so a chat's agents stay with it on disk.
+    let root = state.root_thread(parent).await?;
+    let chat = match state.thread_folder(&root).await? {
+        Some(folder) => folder,
+        None => root,
+    };
+    let folder = format!("{chat}/{AGENTS_FOLDER}/{thread_id}");
+    let workspace = paths.workspace_folder(&folder)?;
     create_private_dir(&workspace)?;
     state
         .create_agent_thread(&thread_id, parent, agent, &name)
         .await?;
+    state.set_thread_folder(&thread_id, &folder).await?;
     if let Some(prompt) = prompt.filter(|prompt| !prompt.trim().is_empty()) {
         state.add_system_message(&thread_id, &prompt).await?;
     }
@@ -149,4 +196,40 @@ pub fn read_prompt(path: &Path) -> Result<Option<String>> {
         Err(_) => bail!("cannot read {name} as UTF-8 text"),
     };
     Ok(Some(prompt).filter(|prompt| !prompt.trim().is_empty()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testing::{temp_paths, temp_state};
+
+    #[tokio::test]
+    async fn chats_are_filed_by_day_and_agents_inside_them() {
+        let (state, paths) = (temp_state("folders").await, temp_paths("folders"));
+        let cwd = std::env::temp_dir();
+        let first = start_thread(&state, &paths, "test", "MAIN", &cwd)
+            .await
+            .unwrap();
+        let second = start_thread(&state, &paths, "test", "MAIN", &cwd)
+            .await
+            .unwrap();
+        let day = chrono::Local::now().format("%d_%m_%Y").to_string();
+        assert_eq!(first.workspace, paths.workspace_root().join(&day));
+        assert_eq!(
+            second.workspace,
+            paths.workspace_root().join(format!("{day}-1"))
+        );
+        let agent = start_agent_thread(&state, &paths, &second.thread_id, "general", None)
+            .await
+            .unwrap();
+        let inside = second.workspace.join(AGENTS_FOLDER).join(&agent.thread_id);
+        assert_eq!(agent.workspace, inside);
+        assert!(inside.is_dir());
+        let found = workspace(&state, &paths, &agent.thread_id).await.unwrap();
+        assert_eq!(found, inside);
+        // A thread from before dated folders keeps the one named by its ID.
+        state.create_thread("older", "test").await.unwrap();
+        let older = workspace(&state, &paths, "older").await.unwrap();
+        assert_eq!(older, paths.workspace_root().join("older"));
+    }
 }
