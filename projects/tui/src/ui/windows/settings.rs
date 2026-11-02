@@ -21,8 +21,8 @@ use super::{
     input,
     panels::window,
     theme::{
-        ACCENT, DOT, FAILED, HAIRLINE, NEGATIVE, OFF, ON, POSITIVE, RAISED, SELECTED, SURFACE,
-        TEXT, TEXT_MUTED, TEXT_SOFT, bold, dim, fg,
+        ACCENT, DOT, DUSK, FAILED, HAIRLINE, NEGATIVE, OFF, ON, POSITIVE, RAISED, SELECTED,
+        SURFACE, TEXT, TEXT_MUTED, TEXT_SOFT, bold, dim, fg,
     },
     wrap,
 };
@@ -61,7 +61,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(HAIRLINE))
-        .title(Line::from(Span::styled(title, bold(TEXT))))
+        .title(Line::from(Span::styled(title, bold(DUSK))))
         .title_bottom(Line::from(Span::styled(hints(view), dim())).right_aligned());
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
@@ -667,7 +667,7 @@ fn tool_rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 vec![Line::default()]
             };
             row.lead = gap.len() + 1;
-            let heading = Line::from(Span::styled(format!("  {}", tool.kind.name()), bold(TEXT)));
+            let heading = Line::from(Span::styled(format!("  {}", tool.kind.name()), bold(DUSK)));
             row.lines = [gap, vec![heading], row.lines].concat();
         }
         rows.push(row);
@@ -719,7 +719,7 @@ fn system_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let heading = |text: &str| Row {
         lines: vec![
             Line::default(),
-            Line::from(Span::styled(format!("  {text}"), bold(TEXT))),
+            Line::from(Span::styled(format!("  {text}"), bold(DUSK))),
         ],
         switch: None,
         lead: 0,
@@ -805,7 +805,7 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     let top = (fields.len() as u16 + 2)
         .min(METADATA_ROWS)
         .min(area.height / 2);
-    let mut title = vec![Span::styled(format!(" {} ", editor.title()), bold(TEXT))];
+    let mut title = vec![Span::styled(format!(" {} ", editor.title()), bold(DUSK))];
     if editor.changed() {
         title.push(Span::styled("changed ", fg(ACCENT)));
     }
