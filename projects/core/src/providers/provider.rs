@@ -9,6 +9,7 @@ use std::{
 use anyhow::{Context, Result};
 
 use super::{
+    anthropic::{Anthropic, MessageStream},
     chat::ChatRequest,
     model_output::{ChatStream, ModelEvent},
     openai::{CompletionStream, OpenAiCompatible},
@@ -90,6 +91,7 @@ pub struct Provider {
 
 enum ProviderAdapter {
     OpenAiCompatible(OpenAiCompatible),
+    Anthropic(Anthropic),
 }
 
 struct ProviderStream {
@@ -100,6 +102,7 @@ struct ProviderStream {
 
 enum StreamAdapter {
     OpenAiCompatible(CompletionStream),
+    Anthropic(MessageStream),
 }
 
 impl ProviderRegistry {
@@ -123,20 +126,16 @@ impl ProviderRegistry {
 
 /// Validates endpoint security and optional credentials without a network request.
 pub fn validate_provider(settings: &ProviderConfig) -> Result<()> {
-    match settings.kind {
-        ProviderKind::OpenAiCompatible => {
-            OpenAiCompatible::new(settings)?;
-        }
-    }
-    Ok(())
+    Provider::new(settings).map(drop)
 }
 
 impl Provider {
     pub fn new(settings: &ProviderConfig) -> Result<Self> {
         let adapter = match settings.kind {
-            ProviderKind::OpenAiCompatible => {
+            ProviderKind::OpenAiCompatible | ProviderKind::OpenAi => {
                 ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
             }
+            ProviderKind::Anthropic => ProviderAdapter::Anthropic(Anthropic::new(settings)?),
         };
         Ok(Self {
             adapter,
@@ -174,6 +173,7 @@ impl ModelProvider for Provider {
         Box::pin(async move {
             match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
+                ProviderAdapter::Anthropic(adapter) => adapter.list_models().await,
             }
         })
     }
@@ -183,6 +183,9 @@ impl ModelProvider for Provider {
             let adapter = match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => {
                     StreamAdapter::OpenAiCompatible(adapter.stream_chat(request).await?)
+                }
+                ProviderAdapter::Anthropic(adapter) => {
+                    StreamAdapter::Anthropic(adapter.stream_chat(request).await?)
                 }
             };
             let stream = ProviderStream {
@@ -204,6 +207,7 @@ impl ChatStream for ProviderStream {
                 }
                 let event = match &mut self.adapter {
                     StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
+                    StreamAdapter::Anthropic(stream) => stream.next_event().await?,
                 };
                 let Some(tags) = &mut self.tags else {
                     return Ok(event);

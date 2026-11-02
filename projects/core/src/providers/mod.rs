@@ -1,6 +1,7 @@
 //! Model providers: one interface for catalogue discovery and streamed chat, with one
 //! event type for everything a model sends back.
 
+mod anthropic;
 mod chat;
 mod model_output;
 mod openai;
