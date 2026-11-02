@@ -88,6 +88,7 @@ impl Tool for RunCommand {
                 (1..=MAX_TIMEOUT_SECONDS).contains(&timeout),
                 "timeout_seconds must be between 1 and {MAX_TIMEOUT_SECONDS}"
             );
+            context.approve_command(&arguments.command).await?;
             if arguments.background {
                 let owner = self
                     .jobs
@@ -126,6 +127,7 @@ impl Tool for RunCommand {
                     self.call(arguments, context).await?,
                 ));
             }
+            context.approve_command(&parsed.command).await?;
             run(&parsed.command, context.scope, timeout).await
         })
     }

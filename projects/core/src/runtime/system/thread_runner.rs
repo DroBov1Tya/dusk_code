@@ -30,7 +30,7 @@ use crate::{
         AgentPhase, Compaction, Goal, GoalStatus, LocalUnsent, Message, PendingMessage, State,
         Task, ThreadTokens, Turn, TurnStatus, estimate_tokens,
     },
-    tools::{Question, ToolRegistry, ToolResult, ToolScope},
+    tools::{ApprovalRequest, Question, ToolRegistry, ToolResult, ToolScope},
 };
 
 /// Foreign runtimes cannot signal this inbox. Poll only while their jobs could
@@ -182,6 +182,12 @@ pub enum ThreadEvent {
     },
     /// The agent asks the user to choose; the answer comes as the user's next message.
     Question(Question),
+    /// A tool waits for the user's yes; the client answers through the runtime.
+    Approval(ApprovalRequest),
+    /// The request is answered or its call is gone; the client stops showing it.
+    ApprovalClosed {
+        id: u64,
+    },
     /// Another agent wrote to this thread; the message has joined it.
     FromAgent(Message),
     /// A background process result joined this thread at a safe execution boundary.

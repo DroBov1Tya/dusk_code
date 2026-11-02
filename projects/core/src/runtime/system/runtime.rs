@@ -25,7 +25,7 @@ use crate::{
     chat::commands::{ContextReport, context_report},
     chat::sources,
     config::live::LiveConfig,
-    config::{ApiKey, ContextPolicy, ProviderConfig, ProviderKind},
+    config::{ApiKey, ApprovalPolicy, ContextPolicy, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
     init::paths::Paths,
     init::{self, create_private_dir},
@@ -37,7 +37,7 @@ use crate::{
     },
     runtime::chat::thread_start::{self, FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
-    tools::{JobInfo, JobManager, ToolKind, ToolScope},
+    tools::{Decision, JobInfo, JobManager, ToolKind, ToolScope},
     util::{
         sync::lock,
         usage::{self, ProcessUsage},
@@ -138,6 +138,7 @@ impl Runtime {
             paths,
             mailboxes,
             jobs,
+            approvals: Arc::default(),
             mcp: McpServers::start(&config.current()),
             agents,
         };
@@ -555,6 +556,18 @@ impl Runtime {
         self.config()
             .update(|config| config.set_idle_screen_minutes(minutes))?;
         Ok(())
+    }
+
+    /// Full access answers every approval request with yes.
+    pub fn set_approvals(&self, policy: ApprovalPolicy) -> Result<()> {
+        self.config()
+            .update(|config| config.set_approvals(policy))?;
+        Ok(())
+    }
+
+    /// False when the request is no longer waiting, such as after its turn was stopped.
+    pub fn answer_approval(&self, id: u64, decision: Decision) -> bool {
+        self.launcher.approvals.answer(id, decision)
     }
 
     pub fn set_max_goal_rounds(&self, rounds: u32) -> Result<()> {

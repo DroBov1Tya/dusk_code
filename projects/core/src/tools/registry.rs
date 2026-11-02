@@ -30,6 +30,7 @@ pub struct ToolRegistry {
     /// Set only from trusted launcher depth, never from model/config identity.
     root: bool,
     pub(crate) jobs: Option<Arc<super::JobManager>>,
+    pub(crate) approvals: Option<Arc<super::Approvals>>,
 }
 
 /// What the model gets back from a call.
@@ -137,6 +138,7 @@ impl ToolRegistry {
             scope,
             config,
             progress: None,
+            approvals: None,
         };
         self.tools
             .values()
@@ -183,6 +185,7 @@ impl ToolRegistry {
             scope,
             config,
             progress: Some(progress),
+            approvals: self.approvals.as_deref(),
         };
         let started = Instant::now();
         if !tool.available(&context) {
