@@ -26,6 +26,9 @@ const FPS: u32 = 12;
 /// Terminal cells are about twice as tall as wide; round shapes are stretched by this.
 const ASPECT: f32 = 2.0;
 const BACKGROUND: Color = theme::SURFACE;
+/// Scenes are drawn in a space this much larger than the window and shrunk into its
+/// cells, so a window holds more of each: more waves, stars, drops and blobs.
+const ZOOM: f32 = 1.8;
 // The scenes are the one place for rich colour; they keep their own.
 const AURORA_LOW: Color = Color::Rgb(94, 214, 194);
 const AURORA_HIGH: Color = Color::Rgb(157, 124, 255);
@@ -128,6 +131,7 @@ fn render(scene: Scene, width: u16, height: u16, t: f32) -> Vec<(char, Color)> {
     let mut canvas = Canvas {
         w,
         h,
+        zoom: ZOOM,
         cells: vec![(' ', BACKGROUND); w * h],
     };
     match scene {
@@ -141,29 +145,41 @@ fn render(scene: Scene, width: u16, height: u16, t: f32) -> Vec<(char, Color)> {
     canvas.cells
 }
 
+/// The window's cells, addressed in the larger space a scene is drawn in.
 struct Canvas {
     w: usize,
     h: usize,
+    zoom: f32,
     cells: Vec<(char, Color)>,
 }
 
 impl Canvas {
+    /// The size of the space a scene draws in.
+    fn width(&self) -> f32 {
+        self.w as f32 * self.zoom
+    }
+
+    fn height(&self) -> f32 {
+        self.h as f32 * self.zoom
+    }
+
+    /// The cell under a point of that space.
     fn set(&mut self, x: f32, y: f32, symbol: char, color: Color) {
         if x < 0.0 || y < 0.0 {
             return;
         }
-        let (x, y) = (x as usize, y as usize);
+        let (x, y) = ((x / self.zoom) as usize, (y / self.zoom) as usize);
         if x < self.w && y < self.h {
             self.cells[y * self.w + x] = (symbol, color);
         }
     }
 
-    /// Every cell, with its position and the window's size.
+    /// Every cell, with its point and the size of the space a scene draws in.
     fn each(&mut self, mut paint: impl FnMut(f32, f32, f32, f32) -> Option<(char, Color)>) {
-        let (w, h) = (self.w as f32, self.h as f32);
+        let (w, h, zoom) = (self.width(), self.height(), self.zoom);
         for y in 0..self.h {
             for x in 0..self.w {
-                if let Some(cell) = paint(x as f32, y as f32, w, h) {
+                if let Some(cell) = paint(x as f32 * zoom, y as f32 * zoom, w, h) {
                     self.cells[y * self.w + x] = cell;
                 }
             }
@@ -222,9 +238,9 @@ fn sea(canvas: &mut Canvas, t: f32) {
 }
 
 fn rain(canvas: &mut Canvas, t: f32) {
-    let h = canvas.h as f32;
+    let h = canvas.height();
     let drop = Color::Rgb(120, 150, 200);
-    for column in 0..canvas.w {
+    for column in 0..canvas.width() as usize {
         let x = column as f32;
         if hash(x, 0.0, 3) < 0.55 {
             continue;
@@ -248,7 +264,7 @@ fn rain(canvas: &mut Canvas, t: f32) {
         }
     }
     canvas.each(|x, y, _, h| {
-        let puddle = y >= h - 1.0 && noise(x * 0.3 + t * 0.5, 3.0) > 0.55;
+        let puddle = y >= h - ZOOM && noise(x * 0.3 + t * 0.5, 3.0) > 0.55;
         puddle.then(|| ('_', mix(BACKGROUND, Color::Rgb(90, 110, 150), 0.6)))
     });
 }
@@ -280,7 +296,7 @@ fn aurora(canvas: &mut Canvas, t: f32) {
 }
 
 fn stars(canvas: &mut Canvas, t: f32) {
-    let (w, h) = (canvas.w as f32, canvas.h as f32);
+    let (w, h) = (canvas.width(), canvas.height());
     for (layer, (speed, symbol, light)) in
         [(0.8, '.', 0.35), (2.0, '\u{00B7}', 0.6), (4.5, '*', 0.95)]
             .into_iter()
@@ -309,10 +325,10 @@ fn stars(canvas: &mut Canvas, t: f32) {
 }
 
 fn embers(canvas: &mut Canvas, t: f32) {
-    let (w, h) = (canvas.w as f32, canvas.h as f32);
+    let (w, h) = (canvas.width(), canvas.height());
     canvas.each(|x, y, _, h| {
         let flame = noise(x * 0.2, t * 1.5) * 3.0;
-        let depth = h - 1.0 - y;
+        let depth = h - ZOOM - y;
         (depth < flame).then(|| {
             let heat = 1.0 - depth / 3.0;
             let symbol = ['\u{2581}', '\u{2583}', '\u{2585}'][(heat * 2.9) as usize % 3];
@@ -343,8 +359,8 @@ fn embers(canvas: &mut Canvas, t: f32) {
 }
 
 fn lava(canvas: &mut Canvas, t: f32) {
-    let (w, h) = (canvas.w as f32, canvas.h as f32);
-    let blobs: Vec<(f32, f32, f32)> = (0..5)
+    let (w, h) = (canvas.width(), canvas.height());
+    let blobs: Vec<(f32, f32, f32)> = (0..8)
         .map(|blob| {
             let seed = blob as f32;
             let speed = 0.08 + hash(seed, 0.0, 10) * 0.08;
