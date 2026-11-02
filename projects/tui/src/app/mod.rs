@@ -52,6 +52,7 @@ pub enum Action {
     },
     SetAgentLimit(usize),
     SetGoalRounds(u32),
+    SetIdleMinutes(u32),
     SetMemoryChars(usize),
     SetInputTokens(u64),
     SetOutputTokens(u64),

@@ -13,6 +13,7 @@ pub struct Settings {
     pub max_goal_rounds: u32,
     pub max_input_tokens: u64,
     pub max_output_tokens: u64,
+    pub idle_screen_minutes: u32,
     pub memory: Memory,
     pub update_channel: Channel,
     /// The chat's mode, whose switches `tools` shows.
@@ -47,6 +48,7 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         max_goal_rounds: config.limits().max_goal_rounds,
         max_input_tokens: config.limits().max_input_tokens,
         max_output_tokens: config.limits().max_output_tokens,
+        idle_screen_minutes: config.appearance().idle_screen_minutes,
         mode: config.mode().to_owned(),
         memory: config.memory(),
         update_channel: config.update_channel(),

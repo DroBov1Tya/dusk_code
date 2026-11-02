@@ -1,4 +1,5 @@
-//! The idle screen: after a while with no input and no work, a random animated piece
+//! The idle screen: after a while with no input and no work (`appearance` in the config,
+//! five minutes by default), a random animated piece
 //! plays in a window over the app, a margin of the app still showing around it. Any
 //! key or click puts the app back.
 //!
@@ -24,8 +25,6 @@ use ratatui::{
 use super::theme;
 
 const PIECES: &[u8] = include_bytes!("../../assets/screensaver.bin");
-/// No input and no work for this long starts the idle screen.
-pub const IDLE: Duration = Duration::from_secs(5 * 60);
 /// What stays of the app around the window, in cells.
 const MARGIN_X: u16 = 3;
 const MARGIN_Y: u16 = 1;

@@ -39,12 +39,14 @@ pub enum SettingCategory {
     /// What the agent keeps about the user.
     Personalize,
     Limits,
+    /// How the app looks and behaves on screen.
+    Appearance,
     Updates,
     System,
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Models,
         Self::Agents,
         Self::Skills,
@@ -52,6 +54,7 @@ impl SettingCategory {
         Self::Tools,
         Self::Personalize,
         Self::Limits,
+        Self::Appearance,
         Self::Updates,
         Self::System,
     ];
@@ -65,6 +68,7 @@ impl SettingCategory {
             Self::Mcp => "mcp",
             Self::Personalize => "personalize",
             Self::Limits => "limits",
+            Self::Appearance => "appearance",
             Self::Updates => "updates",
             Self::System => "system",
         }
@@ -108,6 +112,8 @@ pub struct SettingsView {
     pub model_error: Option<String>,
     pub max_agents_at_work: usize,
     pub max_goal_rounds: u32,
+    /// 0 never starts the idle screen.
+    pub idle_screen_minutes: u32,
     pub max_input_tokens: u64,
     pub max_output_tokens: u64,
     pub memory: Memory,
@@ -214,6 +220,7 @@ impl SettingsView {
             model_error: None,
             max_agents_at_work: settings.max_agents_at_work,
             max_goal_rounds: settings.max_goal_rounds,
+            idle_screen_minutes: settings.idle_screen_minutes,
             max_input_tokens: settings.max_input_tokens,
             max_output_tokens: settings.max_output_tokens,
             mode: settings.mode,
@@ -259,6 +266,7 @@ impl SettingsView {
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize) => 2,
             Some(SettingCategory::Limits) => 4,
+            Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
@@ -382,7 +390,7 @@ impl SettingsView {
                 McpRow::Tool(_, tool) => (SwitchKind::Tool, tool.name.clone(), tool.enabled),
             },
             SettingCategory::Personalize if row > 0 => return None,
-            SettingCategory::Limits => return None,
+            SettingCategory::Limits | SettingCategory::Appearance => return None,
             SettingCategory::Personalize => {
                 (SwitchKind::Memory, "memory".into(), self.memory.enabled)
             }
@@ -604,6 +612,7 @@ impl App {
             (Some(category), KeyCode::Esc | KeyCode::Left | KeyCode::Backspace)
                 if !(key.code == KeyCode::Left
                     && (category == SettingCategory::Limits
+                        || category == SettingCategory::Appearance
                         || category == SettingCategory::Agents && view.selected < LIMIT_ROWS
                         || category == SettingCategory::Personalize && view.selected == 1)) =>
             {
@@ -633,6 +642,17 @@ impl App {
                     view.max_agents_at_work.saturating_sub(1).max(1)
                 };
                 return Action::SetAgentLimit(limit);
+            }
+            (
+                Some(SettingCategory::Appearance),
+                KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+'),
+            ) => {
+                let minutes = if matches!(key.code, KeyCode::Right | KeyCode::Char('+')) {
+                    view.idle_screen_minutes.saturating_add(1)
+                } else {
+                    view.idle_screen_minutes.saturating_sub(1)
+                };
+                return Action::SetIdleMinutes(minutes);
             }
             (
                 Some(SettingCategory::Limits),
@@ -816,6 +836,7 @@ fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> boo
         | SettingCategory::Tools
         | SettingCategory::Personalize
         | SettingCategory::Limits
+        | SettingCategory::Appearance
         | SettingCategory::Updates
         | SettingCategory::System => false,
     }

@@ -105,7 +105,9 @@ fn hints(view: &SettingsView) -> &'static str {
             " digits enter token count  Ctrl+A select all  enter save  esc cancel "
         }
         (Some(SettingCategory::System), _) => " read every 2 s while open  esc back ",
-        (Some(SettingCategory::Limits), _) => " up/down choose  left/right change  esc back ",
+        (Some(SettingCategory::Limits | SettingCategory::Appearance), _) => {
+            " up/down choose  left/right change  esc back "
+        }
         (Some(SettingCategory::Models), _) => {
             " up/down choose  enter/click apply  manual opens token count  esc back "
         }
@@ -223,6 +225,24 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             ]
         }
         Some(SettingCategory::Limits) => limit_rows(view, width),
+        Some(SettingCategory::Appearance) => {
+            let minutes = match view.idle_screen_minutes {
+                0 => "off".to_owned(),
+                minutes => format!("{minutes} min"),
+            };
+            let line = right(
+                vec![Span::raw("  idle screen")],
+                Span::styled(format!("\u{2212} {minutes} +  "), bold(SUN)),
+                width,
+            );
+            let row = Row {
+                lines: vec![line],
+                switch: None,
+                lead: 0,
+            };
+            let about = "    an animation after this long with no input and no work; 0 is off";
+            vec![described(row, about, width)]
+        }
         Some(SettingCategory::System) => system_rows(view, width),
         Some(SettingCategory::Updates) => {
             let dev = view.update_channel == Channel::Dev;
