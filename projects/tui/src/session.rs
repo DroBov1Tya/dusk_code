@@ -242,6 +242,8 @@ pub async fn run(
             crate::host::terminal::set_title(&title);
             shown_title = title;
         }
+        let idle_after =
+            Duration::from_secs(60 * u64::from(config.appearance().idle_screen_minutes));
         let action = tokio::select! {
             result = async {
                 match &mut update {
@@ -278,8 +280,8 @@ pub async fn run(
                 }
                 None => Action::Quit,
             },
-            _ = tokio::time::sleep_until((idle_since + screensaver::IDLE).into()),
-                if app.screensaver.is_none() => {
+            _ = tokio::time::sleep_until((idle_since + idle_after).into()),
+                if app.screensaver.is_none() && idle_after > Duration::ZERO => {
                 app.screensaver = screensaver::Playing::random();
                 // Without frames built in, look again after another idle spell.
                 idle_since = Instant::now();
@@ -381,6 +383,19 @@ pub async fn run(
                     app.flash = Some(format!("Concurrent agents: {limit}"));
                 }
                 Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
+            },
+            Action::SetIdleMinutes(minutes) => match runtime.set_idle_screen_minutes(minutes) {
+                Ok(()) => {
+                    let minutes = runtime.config().current().appearance().idle_screen_minutes;
+                    if let Some(Panel::Settings(list)) = &mut app.panel {
+                        list.idle_screen_minutes = minutes;
+                    }
+                    app.flash = Some(match minutes {
+                        0 => "Idle screen: off".to_owned(),
+                        minutes => format!("Idle screen: after {minutes} min"),
+                    });
+                }
+                Err(error) => app.error(format!("cannot save the idle screen: {error:#}")),
             },
             Action::SetGoalRounds(rounds) => match runtime.set_max_goal_rounds(rounds) {
                 Ok(()) => {

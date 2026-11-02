@@ -548,6 +548,12 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_idle_screen_minutes(&self, minutes: u32) -> Result<()> {
+        self.config()
+            .update(|config| config.set_idle_screen_minutes(minutes))?;
+        Ok(())
+    }
+
     pub fn set_max_goal_rounds(&self, rounds: u32) -> Result<()> {
         self.launcher
             .config

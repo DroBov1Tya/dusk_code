@@ -40,6 +40,8 @@ pub struct Config {
     /// profile may silence the bell; set this to false to disable notifications here.
     #[serde(default = "yes")]
     sound_notifications: bool,
+    #[serde(default, skip_serializing_if = "Appearance::is_default")]
+    appearance: Appearance,
     /// Tools switched on or off by name; a tool not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tools: BTreeMap<String, bool>,
@@ -404,6 +406,36 @@ fn default_max_goal_rounds() -> u32 {
     10
 }
 
+/// How the client looks and behaves on screen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Appearance {
+    /// Minutes with no input and no work before the idle screen plays; 0 never.
+    #[serde(default = "default_idle_screen_minutes")]
+    pub idle_screen_minutes: u32,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        Self {
+            idle_screen_minutes: default_idle_screen_minutes(),
+        }
+    }
+}
+
+impl Appearance {
+    /// A day is past any idle a user would wait for.
+    pub const MAX_IDLE_SCREEN_MINUTES: u32 = 24 * 60;
+
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+fn default_idle_screen_minutes() -> u32 {
+    5
+}
+
 /// What a thread stores from the model output. User messages are always stored.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -456,6 +488,14 @@ impl Config {
 
     pub fn sound_notifications(&self) -> bool {
         self.sound_notifications
+    }
+
+    pub fn appearance(&self) -> Appearance {
+        self.appearance
+    }
+
+    pub fn set_idle_screen_minutes(&mut self, minutes: u32) {
+        self.appearance.idle_screen_minutes = minutes.min(Appearance::MAX_IDLE_SCREEN_MINUTES);
     }
 
     pub fn tool_enabled(&self, name: &str) -> bool {
@@ -637,6 +677,11 @@ impl Config {
         ensure!(
             self.limits.max_goal_rounds > 0,
             "max_goal_rounds must be above zero"
+        );
+        ensure!(
+            self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,
+            "appearance.idle_screen_minutes must be at most {}",
+            Appearance::MAX_IDLE_SCREEN_MINUTES
         );
         ensure!(
             self.previous_effort != Some(Effort::Off),
