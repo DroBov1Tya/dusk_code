@@ -8,6 +8,10 @@ testing.
 
 ### Added
 
+- A PNG or JPEG named by its full path in a message, as a terminal pastes a dropped
+  file, is copied among the chat's sources and sent to the model as a picture. Quoted
+  paths, escaped spaces, `~/` and `file://` URLs work.
+
 - Install and update check every resource file against the release's tag on GitHub
   and fetch any that is missing or different, verified by its git hash. Offline, the
   archive is installed as it came.

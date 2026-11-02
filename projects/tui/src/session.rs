@@ -27,7 +27,7 @@ use ratatui::DefaultTerminal;
 use crate::{
     app::{
         Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel, Preview,
-        SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript, paste,
+        SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
     ui::{self, screensaver},
 };
@@ -961,18 +961,15 @@ async fn send(
     let Some(thread) = open else {
         return;
     };
-    // Long pastes leave the message for the thread's sources; the folder exists by now.
-    let text = if paste::has_pasted(&text) {
-        match runtime.keep_pastes(&thread.handle.thread_id, &text).await {
-            Ok(kept) => kept,
-            Err(error) => {
-                app.unsend(text);
-                app.error(format!("cannot keep the paste: {error:#}"));
-                return;
-            }
+    // Long pastes and named pictures leave the message for the thread's sources; the
+    // folder exists by now.
+    let text = match runtime.keep_pastes(&thread.handle.thread_id, &text).await {
+        Ok(kept) => kept,
+        Err(error) => {
+            app.unsend(text);
+            app.error(format!("cannot keep the paste: {error:#}"));
+            return;
         }
-    } else {
-        text
     };
     let input = &thread.handle.input;
     let sent = if now {
