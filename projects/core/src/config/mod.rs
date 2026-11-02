@@ -178,8 +178,9 @@ impl Effort {
     }
 }
 
-/// A model's input budget. Fixed and Manual replace the global input cap, while a
-/// known model window remains a hard ceiling. Auto retains the global cap.
+/// A model's input budget. Auto is the model's own window as its provider reports it,
+/// and the global input cap for a model that reports none. Fixed and Manual are set by
+/// hand; a known window stays their ceiling.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ContextPolicy {
@@ -236,7 +237,7 @@ impl ContextPolicy {
     /// The single resolver used by request guards, context reports and compaction.
     pub fn input_limit(self, global: u64, model_window: Option<u64>) -> u64 {
         let selected = match self {
-            Self::Auto => global,
+            Self::Auto => return model_window.unwrap_or(global),
             Self::Fixed(preset) => preset.tokens(),
             Self::Manual(tokens) => tokens,
         };
@@ -368,8 +369,8 @@ pub struct ThreadConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
-    /// A request larger than this is not sent; the context is compacted well before it.
-    /// The model window applies too, when it is smaller.
+    /// For a model whose window is not known, a request larger than this is not sent;
+    /// the context is compacted well before it.
     #[serde(default = "default_token_limit")]
     pub max_input_tokens: u64,
     /// The model is stopped after writing this many tokens in one call.
@@ -842,6 +843,16 @@ fn is_false(value: &bool) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn auto_takes_the_model_window() {
+        let auto = ContextPolicy::Auto;
+        assert_eq!(auto.input_limit(100_000, Some(256_000)), 256_000);
+        assert_eq!(auto.input_limit(100_000, None), 100_000);
+        let manual = ContextPolicy::Manual(300_000);
+        assert_eq!(manual.input_limit(100_000, Some(256_000)), 256_000);
+        assert_eq!(manual.input_limit(100_000, None), 300_000);
+    }
+
     use super::*;
 
     const PROVIDERS: &str = "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n";
