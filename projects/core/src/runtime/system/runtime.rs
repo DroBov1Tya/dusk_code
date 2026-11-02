@@ -35,7 +35,7 @@ use crate::{
         update::{self, Channel, InstallProgress, UpdateInfo},
         watch::UpdateWatch,
     },
-    runtime::chat::thread_start::{FORK_INTRO, project_dir, start_thread},
+    runtime::chat::thread_start::{self, FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
     tools::{JobInfo, JobManager, ToolKind, ToolScope},
     util::{
@@ -492,7 +492,8 @@ impl Runtime {
 
     /// `message` with its long pastes moved to the thread's sources.
     pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
-        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
+        let workspace =
+            thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
         let state = &self.launcher.state;
         sources::keep_pastes(state, &workspace, thread_id, message).await
     }
@@ -503,7 +504,8 @@ impl Runtime {
 
     /// Copies the file at `path` among the thread's sources.
     pub async fn add_source(&self, thread_id: &str, path: &Path) -> Result<Source> {
-        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
+        let workspace =
+            thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
         sources::add_file(&self.launcher.state, &workspace, thread_id, path).await
     }
 
@@ -513,7 +515,8 @@ impl Runtime {
 
     /// Forgets a source and deletes its file.
     pub async fn remove_source(&self, thread_id: &str, id: &str) -> Result<()> {
-        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
+        let workspace =
+            thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
         sources::remove(&self.launcher.state, &workspace, thread_id, id).await
     }
 
@@ -768,7 +771,8 @@ impl Runtime {
             thread.parent_thread_id.is_none(),
             "thread {thread_id} belongs to an agent"
         );
-        let workspace = self.launcher.paths.thread_workspace(thread_id)?;
+        let workspace =
+            thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
         create_private_dir(&workspace)?;
         self.launcher
             .state

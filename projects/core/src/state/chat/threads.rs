@@ -41,6 +41,25 @@ impl State {
         Ok(())
     }
 
+    /// The thread's folder under the workspace root, when it was given one.
+    pub async fn thread_folder(&self, id: &str) -> Result<Option<String>> {
+        sqlx::query_scalar("SELECT folder FROM thread_folders WHERE thread_id = ?")
+            .bind(id)
+            .fetch_optional(&self.pool)
+            .await
+            .context("read the thread's files folder")
+    }
+
+    pub async fn set_thread_folder(&self, id: &str, folder: &str) -> Result<()> {
+        sqlx::query("INSERT INTO thread_folders (thread_id, folder) VALUES (?, ?)")
+            .bind(id)
+            .bind(folder)
+            .execute(&self.pool)
+            .await
+            .context("store the thread's files folder")?;
+        Ok(())
+    }
+
     /// A chat older than the record of folders belongs to the first one it is opened in.
     pub async fn adopt_thread(&self, id: &str, dir: &str) -> Result<()> {
         sqlx::query("INSERT OR IGNORE INTO thread_projects (thread_id, dir) VALUES (?, ?)")
