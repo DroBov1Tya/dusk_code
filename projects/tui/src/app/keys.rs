@@ -660,6 +660,12 @@ impl App {
                     .saturating_add(3)
                     .min(self.agent_max_scroll)
             };
+        } else if self.task_area.is_some_and(|area| inside(area, x, y)) {
+            self.task_scroll = if up {
+                self.task_scroll.saturating_sub(3)
+            } else {
+                self.task_scroll.saturating_add(3).min(self.task_max_scroll)
+            };
         } else if self.mcp_area.is_some_and(|area| inside(area, x, y)) {
             self.mcp_scroll = if up {
                 self.mcp_scroll.saturating_sub(3)

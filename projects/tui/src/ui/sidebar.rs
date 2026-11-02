@@ -174,28 +174,16 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
         )),
         Line::default(),
         Line::from(heading("TOKENS")),
-        row(
-            vec![Span::styled("in / out", fg(SIDEBAR_MUTED))],
-            Span::styled(
-                format!(
-                    "{} / {}",
-                    compact_number(spent.prompt_tokens),
-                    compact_number(spent.completion_tokens)
-                ),
-                fg(SIDEBAR_FG),
-            ),
+        token_row(
+            "in / out",
+            spent.prompt_tokens,
+            spent.completion_tokens,
             width,
         ),
-        row(
-            vec![Span::styled("cache / think", fg(SIDEBAR_MUTED))],
-            Span::styled(
-                format!(
-                    "{} / {}",
-                    compact_number(spent.cached_prompt_tokens),
-                    compact_number(spent.reasoning_tokens)
-                ),
-                fg(SIDEBAR_FG),
-            ),
+        token_row(
+            "cache / think",
+            spent.cached_prompt_tokens,
+            spent.reasoning_tokens,
             width,
         ),
         Line::default(),
@@ -228,10 +216,36 @@ fn heading(text: &str) -> Span<'static> {
 }
 
 /// `left` on the left and `right` against the right edge.
+/// Two counts after a label. On a narrow rail the decimals go first, so the numbers
+/// never run into the label.
+fn token_row(label: &'static str, first: u64, second: u64, width: usize) -> Line<'static> {
+    let full = format!("{} / {}", compact_number(first), compact_number(second));
+    let value = if label.len() + 1 + full.len() <= width {
+        full
+    } else {
+        format!("{} / {}", whole_number(first), whole_number(second))
+    };
+    row(
+        vec![Span::styled(label, fg(SIDEBAR_MUTED))],
+        Span::styled(value, fg(SIDEBAR_FG)),
+        width,
+    )
+}
+
+/// Like `compact_number`, rounded to a whole unit.
+fn whole_number(value: u64) -> String {
+    match value {
+        0..1_000 => value.to_string(),
+        1_000..1_000_000 => format!("{}k", (value + 500) / 1_000),
+        _ => format!("{}M", (value + 500_000) / 1_000_000),
+    }
+}
+
 fn row(left: Vec<Span<'static>>, right: Span<'static>, width: usize) -> Line<'static> {
     let used: usize = left.iter().map(Span::width).sum::<usize>() + right.width();
     let mut spans = left;
-    spans.push(Span::raw(" ".repeat(width.saturating_sub(used))));
+    // At least one space, so a value never reads as part of its label.
+    spans.push(Span::raw(" ".repeat(width.saturating_sub(used).max(1))));
     spans.push(right);
     Line::from(spans)
 }
@@ -252,30 +266,61 @@ fn section(title: Line<'static>) -> Block<'static> {
 fn tasks(frame: &mut Frame, area: Rect, app: &mut App) -> u16 {
     let width = area.width.saturating_sub(2 * PAD) as usize;
     let now = now_ms();
-    let heading_area = Rect { height: 1, ..area };
-    frame.render_widget(section(Line::from(heading("TASKS"))), heading_area);
-    let mut y = area.y + 1;
-    let mut hits = Vec::new();
+    // Every open task's rows, a blank row between tasks, each row with its task.
+    let mut rows: Vec<(Line<'static>, Option<String>)> = Vec::new();
     for task in app.tasks.iter().filter(|task| !task.done) {
-        let unfolded = app.unfolded_tasks.contains(&task.task_id);
-        let lines = task_lines(task, unfolded, width, now);
-        let height = (lines.len() as u16).min(area.bottom() - y);
-        if height == 0 {
-            break;
+        if !rows.is_empty() {
+            rows.push((Line::default(), None));
         }
-        let block_area = Rect { y, height, ..area };
-        frame.render_widget(
-            Paragraph::new(lines)
-                .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
-                .block(Block::new().padding(Padding::horizontal(PAD))),
-            block_area,
-        );
-        hits.push((block_area, task.task_id.clone()));
-        // A blank row between tasks.
-        y = (y + height + 1).min(area.bottom());
+        let unfolded = app.unfolded_tasks.contains(&task.task_id);
+        for line in task_lines(task, unfolded, width, now) {
+            rows.push((line, Some(task.task_id.clone())));
+        }
     }
-    app.task_hits = hits;
-    y - area.y
+    app.task_max_scroll = scroll_limit(rows.len(), area);
+    app.task_scroll = app.task_scroll.min(app.task_max_scroll);
+    app.task_area = Some(area);
+    let mut block = section(Line::from(heading("TASKS")));
+    let scrolls = app.task_max_scroll > 0 && area.height > 2;
+    if scrolls {
+        block = block.title_bottom(Line::from(Span::styled(
+            " wheel to scroll ",
+            fg(SIDEBAR_MUTED),
+        )));
+    }
+    let inner = block.inner(area);
+    let shown = rows
+        .iter()
+        .skip(app.task_scroll)
+        .take(inner.height as usize);
+    app.task_hits = shown
+        .clone()
+        .enumerate()
+        .filter_map(|(row, (_, task_id))| {
+            let task_id = task_id.clone()?;
+            Some((
+                Rect {
+                    y: inner.y + row as u16,
+                    height: 1,
+                    ..area
+                },
+                task_id,
+            ))
+        })
+        .collect();
+    let lines: Vec<Line> = shown.map(|(line, _)| line.clone()).collect();
+    let used = 1 + lines.len() as u16 + u16::from(scrolls);
+    frame.render_widget(
+        Paragraph::new(lines)
+            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .block(block),
+        Rect {
+            height: used.min(area.height),
+            ..area
+        },
+    );
+    // A blank row before the next section.
+    (used + 1).min(area.height)
 }
 
 /// The background jobs that run, with how long each has: the command and its time. The
@@ -381,6 +426,10 @@ fn fill(text: &str, width: usize) -> String {
 fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     let width = area.width.saturating_sub(8 + 2 * PAD) as usize;
+    // When every agent does not fit in full, each takes two rows, so the last ones
+    // still show what they work on.
+    let full_rows = app.subagents.len() * 4 - 1;
+    let compact = full_rows > area.height.saturating_sub(1) as usize;
     for (index, agent) in app.subagents.iter().enumerate() {
         let seed = identity(&agent.thread_id);
         let loader = Loader::new(seed);
@@ -396,6 +445,29 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
         } else {
             "done"
         };
+        // Room left by the loader, the time and the status.
+        let room = (area.width as usize).saturating_sub(13 + state.len() + 2 * PAD as usize);
+        let named = vec![
+            Span::raw(" "),
+            Span::styled(wrap::clip(&name, room), bold(color)),
+            Span::styled(format!(" {age} "), fg(SIDEBAR_MUTED)),
+            Span::styled(state, fg(SUN)),
+        ];
+        if compact {
+            lines.push(Line::from([middle, named].concat()));
+            let task = format!("{} \u{00B7} {}", agent.agent, one_line(&agent.task));
+            lines.push(Line::from(
+                [
+                    bottom,
+                    vec![
+                        Span::raw(" "),
+                        Span::styled(wrap::clip(&task, width), fg(SIDEBAR_FG)),
+                    ],
+                ]
+                .concat(),
+            ));
+            continue;
+        }
         // The random name stands out; the agent it works as and the task stay quiet.
         lines.push(Line::from(
             [
@@ -408,26 +480,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
             ]
             .concat(),
         ));
-        lines.push(Line::from(
-            [
-                middle,
-                vec![
-                    Span::raw(" "),
-                    // Room left by the loader, the time and the status.
-                    Span::styled(
-                        wrap::clip(
-                            &name,
-                            (area.width as usize)
-                                .saturating_sub(13 + state.len() + 2 * PAD as usize),
-                        ),
-                        bold(color),
-                    ),
-                    Span::styled(format!(" {age} "), fg(SIDEBAR_MUTED)),
-                    Span::styled(state, fg(SUN)),
-                ],
-            ]
-            .concat(),
-        ));
+        lines.push(Line::from([middle, named].concat()));
         lines.push(Line::from(
             [
                 bottom,

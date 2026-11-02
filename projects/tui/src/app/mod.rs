@@ -261,6 +261,10 @@ pub struct App {
     /// A drag that started in the message box selects there.
     pub input_dragging: bool,
     pub editor_hits: Vec<EditorHit>,
+    /// The tasks section on the last frame, and how far it is scrolled.
+    pub task_area: Option<Rect>,
+    pub task_scroll: usize,
+    pub task_max_scroll: usize,
     /// Messages written while the agent works, oldest first.
     pub queued: Vec<String>,
     pub queue_hits: Vec<QueueHit>,
@@ -390,6 +394,9 @@ impl App {
             goal_hits: Vec::new(),
             poll: None,
             forked: None,
+            task_area: None,
+            task_scroll: 0,
+            task_max_scroll: 0,
             hover: None,
             selection: None,
             layout: None,
@@ -484,6 +491,7 @@ impl App {
     pub fn tick(&mut self) {
         self.frame = self.frame.wrapping_add(1);
         self.trim_output_samples();
+        self.task_scroll = 0;
     }
 
     /// Recent visible output divided by four bytes per estimated token.
