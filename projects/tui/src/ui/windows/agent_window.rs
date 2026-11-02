@@ -16,8 +16,8 @@ use super::{
     loader::{Loader, agent_name, identity},
     panels::window,
     theme::{
-        DOT, EMBER, GLOW, GUTTER, SELECTED, SIDEBAR_BG, SIDEBAR_EDGE, SIDEBAR_FG, SIDEBAR_MUTED,
-        SUN, TEAL, bold, dusk, fg,
+        ACCENT, DEEP, DOT, GUTTER, NEGATIVE, POSITIVE, RAISED, SELECTED, TEXT, TEXT_MUTED,
+        TEXT_SOFT, bold, dusk, fg,
     },
     transcript::{one_line, thread_lines},
     wrap,
@@ -53,17 +53,17 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         .find(|card| card.thread_id == thread_id);
     let kind = card.map_or("agent", |card| card.agent.as_str());
     let block = Block::bordered()
-        .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+        .style(Style::new().fg(TEXT).bg(DEEP))
         .border_type(BorderType::Rounded)
-        .border_style(fg(SIDEBAR_EDGE))
+        .border_style(fg(TEXT_MUTED))
         .title(Line::from(vec![
             Span::styled(format!(" {} ", agent_name(&thread_id)), bold(color)),
-            Span::styled(format!("{DOT} {kind} "), fg(SIDEBAR_MUTED)),
+            Span::styled(format!("{DOT} {kind} "), fg(TEXT_SOFT)),
         ]))
         .title_bottom(
             Line::from(Span::styled(
                 " drag copies  Ctrl+C copy  wheel/PgUp/PgDn scroll  click opens  Ctrl+R thinking  s stop  esc close ",
-                fg(SIDEBAR_MUTED),
+                fg(TEXT_SOFT),
             ))
             .right_aligned(),
         );
@@ -82,7 +82,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         let left = area.right() - STOP.len() as u16 - 2;
         let button = Rect::new(left, area.y, STOP.len() as u16, 1);
         frame.render_widget(
-            Paragraph::new(Span::styled(STOP, fg(EMBER).bg(GLOW))),
+            Paragraph::new(Span::styled(STOP, fg(NEGATIVE).bg(RAISED))),
             button,
         );
         agent_window.stop = Some((area.y, left, button.right()));
@@ -101,11 +101,11 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         })
         .chain([Line::from(Span::styled(
             "\u{2500}".repeat(width),
-            fg(SIDEBAR_EDGE),
+            fg(TEXT_MUTED),
         ))])
         .collect();
     frame.render_widget(
-        Paragraph::new(header).style(Style::new().fg(SIDEBAR_FG).bg(GLOW)),
+        Paragraph::new(header).style(Style::new().fg(TEXT).bg(RAISED)),
         Rect {
             height: HEADER_ROWS,
             ..inner
@@ -127,18 +127,18 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
         .find(|card| card.thread_id == thread_id)
     else {
         return [
-            vec![Span::styled("no numbers yet", fg(SIDEBAR_MUTED))],
+            vec![Span::styled("no numbers yet", fg(TEXT_SOFT))],
             Vec::new(),
             Vec::new(),
         ];
     };
     let elapsed = format_duration(card.elapsed_ms());
     let state = if card.unavailable_at.is_some() {
-        Span::styled(format!("unavailable after {elapsed}"), fg(EMBER))
+        Span::styled(format!("unavailable after {elapsed}"), fg(NEGATIVE))
     } else if card.is_working() {
-        Span::styled(format!("working {elapsed}"), bold(SUN))
+        Span::styled(format!("working {elapsed}"), bold(ACCENT))
     } else {
-        Span::styled(format!("done in {elapsed}"), fg(TEAL))
+        Span::styled(format!("done in {elapsed}"), fg(POSITIVE))
     };
     let parent = match &card.parent {
         Some(parent) if Some(parent) == app.thread_id.as_ref() => {
@@ -155,7 +155,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
     };
     let percent = fill * 100.0;
     let share_color = if percent >= AUTO_COMPACT_PERCENT as f64 {
-        EMBER
+        NEGATIVE
     } else {
         dusk(fill)
     };
@@ -165,7 +165,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
     [
         vec![
             state,
-            Span::styled(format!("  {DOT}  asked by "), fg(SIDEBAR_MUTED)),
+            Span::styled(format!("  {DOT}  asked by "), fg(TEXT_SOFT)),
             Span::raw(wrap::clip(&parent, width.saturating_sub(30))),
         ],
         vec![
@@ -181,15 +181,15 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
                     compact_number(tokens.spent.reasoning_tokens),
                     tokens.model_calls,
                 ),
-                fg(SIDEBAR_MUTED),
+                fg(TEXT_SOFT),
             ),
-            Span::styled(rate, fg(TEAL)),
+            Span::styled(rate, fg(TEXT_SOFT)),
         ],
         vec![
-            Span::styled(format!("task {GUTTER} "), fg(SIDEBAR_MUTED)),
+            Span::styled(format!("task {GUTTER} "), fg(TEXT_SOFT)),
             Span::styled(
                 wrap::clip(&one_line(&card.task), width.saturating_sub(8)),
-                bold(SIDEBAR_FG),
+                bold(TEXT),
             ),
         ],
     ]
@@ -230,7 +230,7 @@ fn conversation(frame: &mut Frame, area: Rect, app: &mut App) {
         .collect();
     let visible: Vec<Line> = lines.into_iter().skip(top).take(height).collect();
     frame.render_widget(
-        Paragraph::new(visible).style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG)),
+        Paragraph::new(visible).style(Style::new().fg(TEXT).bg(DEEP)),
         area,
     );
     if let Some(Panel::Agent(agent_window)) = &mut app.panel {

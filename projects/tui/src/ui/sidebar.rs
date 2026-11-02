@@ -19,8 +19,8 @@ use super::{
     loader::{Loader, agent_name, identity},
     text::wrap,
     theme::{
-        DONE, DOT, EMBER, FAILED, FOLDED, NIGHT, OFF, ON, SIDEBAR_BG, SIDEBAR_EDGE, SIDEBAR_FG,
-        SIDEBAR_MUTED, SUN, TEAL, UNFOLDED, VIOLET, bold, dusk, fg,
+        ACCENT, DEEP, DONE, DOT, FAILED, FOLDED, HAIRLINE, NEGATIVE, OFF, ON, POSITIVE, TEXT,
+        TEXT_SOFT, UNFOLDED, bold, dusk, fg,
     },
 };
 use crate::app::{App, compact_number, now_ms};
@@ -40,7 +40,7 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
     if overlay {
         frame.render_widget(Clear, area);
     }
-    frame.render_widget(Block::default().style(Style::new().bg(SIDEBAR_BG)), area);
+    frame.render_widget(Block::default().style(Style::new().bg(DEEP)), area);
     if area.width < 4 || area.height < 3 {
         return;
     }
@@ -135,7 +135,11 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
         .approximate_tokens_per_second()
         .map(|value| format!("~{value:.1} tok/s"))
         .unwrap_or_else(|| "--".into());
-    let context_color = if near_compaction { EMBER } else { dusk(fill) };
+    let context_color = if near_compaction {
+        NEGATIVE
+    } else {
+        dusk(fill)
+    };
     let mode = match app.effort {
         Some(effort) => format!(
             "{} \u{00B7} effort {}",
@@ -147,17 +151,17 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
     let filled = ((width as f64) * fill).round() as usize;
     let lines = vec![
         Line::default(),
-        Line::from(Span::styled(wrap::clip(&app.model, width), bold(VIOLET))),
-        Line::from(Span::styled(wrap::clip(&mode, width), fg(SIDEBAR_MUTED))),
+        Line::from(Span::styled(wrap::clip(&app.model, width), bold(TEXT))),
+        Line::from(Span::styled(wrap::clip(&mode, width), fg(TEXT_SOFT))),
         Line::default(),
         row(
-            vec![heading("CONTEXT")],
+            vec![heading("Context")],
             Span::styled(format!("{percent:.0}%"), bold(context_color)),
             width,
         ),
         Line::from(vec![
             Span::styled(GAUGE.repeat(filled), fg(context_color)),
-            Span::styled(GAUGE.repeat(width - filled), fg(NIGHT)),
+            Span::styled(GAUGE.repeat(width - filled), fg(HAIRLINE)),
         ]),
         Line::from(Span::styled(
             format!(
@@ -170,10 +174,10 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
                     ""
                 }
             ),
-            fg(SIDEBAR_MUTED),
+            fg(TEXT_SOFT),
         )),
         Line::default(),
-        Line::from(heading("TOKENS")),
+        Line::from(heading("Tokens")),
         token_row(
             "in / out",
             spent.prompt_tokens,
@@ -187,35 +191,32 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
             width,
         ),
         Line::default(),
-        Line::from(heading("ACTIVITY")),
+        Line::from(heading("Activity")),
         row(
-            vec![Span::styled(
-                format!("{time_label}{calls}"),
-                fg(SIDEBAR_MUTED),
-            )],
-            Span::styled(elapsed, fg(SUN)),
+            vec![Span::styled(format!("{time_label}{calls}"), fg(TEXT_SOFT))],
+            Span::styled(elapsed, fg(ACCENT)),
             width,
         ),
         row(
-            vec![Span::styled("output", fg(SIDEBAR_MUTED))],
-            Span::styled(rate, fg(TEAL)),
+            vec![Span::styled("output", fg(TEXT_SOFT))],
+            Span::styled(rate, fg(TEXT_SOFT)),
             width,
         ),
     ];
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .style(Style::new().fg(TEXT).bg(DEEP))
             .block(Block::new().padding(Padding::horizontal(PAD))),
         area,
     );
 }
 
 /// A section's name, quiet and in capitals, above what it holds.
+/// A section's name: sentence case, quieter than what it heads.
 fn heading(text: &str) -> Span<'static> {
-    Span::styled(text.to_owned(), bold(SIDEBAR_EDGE))
+    Span::styled(text.to_owned(), fg(TEXT_SOFT))
 }
 
-/// `left` on the left and `right` against the right edge.
 /// Two counts after a label. On a narrow rail the decimals go first, so the numbers
 /// never run into the label.
 fn token_row(label: &'static str, first: u64, second: u64, width: usize) -> Line<'static> {
@@ -226,8 +227,8 @@ fn token_row(label: &'static str, first: u64, second: u64, width: usize) -> Line
         format!("{} / {}", whole_number(first), whole_number(second))
     };
     row(
-        vec![Span::styled(label, fg(SIDEBAR_MUTED))],
-        Span::styled(value, fg(SIDEBAR_FG)),
+        vec![Span::styled(label, fg(TEXT_SOFT))],
+        Span::styled(value, fg(TEXT)),
         width,
     )
 }
@@ -241,6 +242,7 @@ fn whole_number(value: u64) -> String {
     }
 }
 
+/// `left` on the left and `right` against the right edge.
 fn row(left: Vec<Span<'static>>, right: Span<'static>, width: usize) -> Line<'static> {
     let used: usize = left.iter().map(Span::width).sum::<usize>() + right.width();
     let mut spans = left;
@@ -256,7 +258,7 @@ fn section(title: Line<'static>) -> Block<'static> {
     let mut title = title;
     title.spans.insert(0, Span::raw(" ".repeat(PAD as usize)));
     Block::new()
-        .style(Style::new().bg(SIDEBAR_BG))
+        .style(Style::new().bg(DEEP))
         .title(title)
         .padding(Padding::horizontal(PAD))
 }
@@ -280,13 +282,10 @@ fn tasks(frame: &mut Frame, area: Rect, app: &mut App) -> u16 {
     app.task_max_scroll = scroll_limit(rows.len(), area);
     app.task_scroll = app.task_scroll.min(app.task_max_scroll);
     app.task_area = Some(area);
-    let mut block = section(Line::from(heading("TASKS")));
+    let mut block = section(Line::from(heading("Tasks")));
     let scrolls = app.task_max_scroll > 0 && area.height > 2;
     if scrolls {
-        block = block.title_bottom(Line::from(Span::styled(
-            " wheel to scroll ",
-            fg(SIDEBAR_MUTED),
-        )));
+        block = block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
     }
     let inner = block.inner(area);
     let shown = rows
@@ -312,7 +311,7 @@ fn tasks(frame: &mut Frame, area: Rect, app: &mut App) -> u16 {
     let used = 1 + lines.len() as u16 + u16::from(scrolls);
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .style(Style::new().fg(TEXT).bg(DEEP))
             .block(block),
         Rect {
             height: used.min(area.height),
@@ -330,8 +329,8 @@ fn background(frame: &mut Frame, area: Rect, app: &App) -> u16 {
     let now = now_ms();
     let running: Vec<_> = app.jobs.iter().filter(|job| job.running).collect();
     let heading = Line::from(vec![
-        heading("BACKGROUND"),
-        Span::styled("  /jobs", fg(SIDEBAR_MUTED)),
+        heading("Background"),
+        Span::styled("  /jobs", fg(TEXT_SOFT)),
     ]);
     frame.render_widget(section(heading), Rect { height: 1, ..area });
     let mut lines: Vec<Line<'static>> = running
@@ -340,28 +339,28 @@ fn background(frame: &mut Frame, area: Rect, app: &App) -> u16 {
         .map(|job| {
             let time = format_duration(now.saturating_sub(job.started_at).max(0) as u64);
             Line::from(vec![
-                Span::styled(format!("{ON} "), fg(SUN)),
+                Span::styled(format!("{ON} "), fg(ACCENT)),
                 Span::styled(
                     fill(
                         &one_line(&job.command),
                         width.saturating_sub(time.len() + 3),
                     ),
-                    fg(SIDEBAR_FG),
+                    fg(TEXT),
                 ),
-                Span::styled(format!(" {time}"), fg(SUN)),
+                Span::styled(format!(" {time}"), fg(ACCENT)),
             ])
         })
         .collect();
     if running.len() > MAX_JOB_ROWS {
         lines.push(Line::from(Span::styled(
             format!("+{} more", running.len() - MAX_JOB_ROWS),
-            fg(SIDEBAR_MUTED),
+            fg(TEXT_SOFT),
         )));
     }
     let rows = (lines.len() as u16).min(area.height.saturating_sub(1));
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .style(Style::new().fg(TEXT).bg(DEEP))
             .block(Block::new().padding(Padding::horizontal(PAD))),
         Rect {
             y: area.y + 1,
@@ -377,21 +376,21 @@ fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'
     let count = format!(" {finished}/{}", task.items.len());
     let fold = if unfolded { UNFOLDED } else { FOLDED };
     let mut lines = vec![Line::from(vec![
-        Span::styled(format!("{fold} "), fg(SUN)),
+        Span::styled(format!("{fold} "), fg(ACCENT)),
         Span::styled(
             fill(&task.description, width.saturating_sub(count.len() + 2)),
-            bold(SIDEBAR_FG),
+            bold(TEXT),
         ),
-        Span::styled(count, fg(SIDEBAR_MUTED)),
+        Span::styled(count, fg(TEXT_SOFT)),
     ])];
     if !unfolded {
         return lines;
     }
     for item in &task.items {
         let (mark, color) = match (item.done, item.started_at) {
-            (true, _) => (DONE, TEAL),
-            (false, Some(_)) => (ON, SUN),
-            (false, None) => (DOT, SIDEBAR_MUTED),
+            (true, _) => (DONE, POSITIVE),
+            (false, Some(_)) => (ON, ACCENT),
+            (false, None) => (DOT, TEXT_SOFT),
         };
         // A running step counts up; a done one shows what it took.
         let time = item
@@ -408,9 +407,9 @@ fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'
             Span::styled(format!("{mark} "), fg(color)),
             Span::styled(
                 fill(&item.description, width.saturating_sub(time.len() + 2)),
-                fg(if item.done { SIDEBAR_MUTED } else { SIDEBAR_FG }),
+                fg(if item.done { TEXT_SOFT } else { TEXT }),
             ),
-            Span::styled(time, fg(if item.done { SIDEBAR_MUTED } else { SUN })),
+            Span::styled(time, fg(if item.done { TEXT_SOFT } else { ACCENT })),
         ]));
     }
     lines
@@ -450,8 +449,8 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
         let named = vec![
             Span::raw(" "),
             Span::styled(wrap::clip(&name, room), bold(color)),
-            Span::styled(format!(" {age} "), fg(SIDEBAR_MUTED)),
-            Span::styled(state, fg(SUN)),
+            Span::styled(format!(" {age} "), fg(TEXT_SOFT)),
+            Span::styled(state, fg(ACCENT)),
         ];
         if compact {
             lines.push(Line::from([middle, named].concat()));
@@ -461,7 +460,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
                     bottom,
                     vec![
                         Span::raw(" "),
-                        Span::styled(wrap::clip(&task, width), fg(SIDEBAR_FG)),
+                        Span::styled(wrap::clip(&task, width), fg(TEXT)),
                     ],
                 ]
                 .concat(),
@@ -473,10 +472,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
             [
                 top,
                 vec![Span::raw(" ")],
-                vec![Span::styled(
-                    wrap::clip(&agent.agent, width),
-                    fg(SIDEBAR_MUTED),
-                )],
+                vec![Span::styled(wrap::clip(&agent.agent, width), fg(TEXT_SOFT))],
             ]
             .concat(),
         ));
@@ -486,7 +482,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
                 bottom,
                 vec![
                     Span::raw(" "),
-                    Span::styled(wrap::clip(&one_line(&agent.task), width), fg(SIDEBAR_FG)),
+                    Span::styled(wrap::clip(&one_line(&agent.task), width), fg(TEXT)),
                 ],
             ]
             .concat(),
@@ -497,16 +493,13 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     app.agent_max_scroll = scroll_limit(lines.len(), area);
     app.agent_scroll = app.agent_scroll.min(app.agent_max_scroll);
-    let mut block = section(Line::from(heading("SUBAGENTS")));
+    let mut block = section(Line::from(heading("Subagents")));
     if app.agent_max_scroll > 0 && area.height > 2 {
-        block = block.title_bottom(Line::from(Span::styled(
-            " wheel to scroll ",
-            fg(SIDEBAR_MUTED),
-        )));
+        block = block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
     }
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .style(Style::new().fg(TEXT).bg(DEEP))
             .block(block)
             .scroll((app.agent_scroll as u16, 0)),
         area,
@@ -524,8 +517,8 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
         FOLDED
     };
     let title = Line::from(vec![
-        heading("CONNECTORS"),
-        Span::styled(format!(" {mark}"), fg(SIDEBAR_MUTED)),
+        heading("Connectors"),
+        Span::styled(format!(" {mark}"), fg(TEXT_SOFT)),
     ]);
     if !app.connectors_open {
         let ready = app
@@ -538,17 +531,17 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
             .iter()
             .filter(|server| matches!(server.state, McpState::Failed(_)))
             .count();
-        let mut summary = vec![Span::styled(format!("{ON} {ready} ready"), fg(TEAL))];
+        let mut summary = vec![Span::styled(format!("{ON} {ready} ready"), fg(POSITIVE))];
         if failed > 0 {
             summary.push(Span::styled(
                 format!("  {FAILED} {failed} failed"),
-                fg(EMBER),
+                fg(NEGATIVE),
             ));
         }
         let block = section(title);
         frame.render_widget(
             Paragraph::new(Line::from(summary))
-                .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+                .style(Style::new().fg(TEXT).bg(DEEP))
                 .block(block),
             area,
         );
@@ -556,19 +549,19 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
     }
     for server in &app.mcp {
         let (mark, color, state) = match &server.state {
-            McpState::Off => (OFF, SIDEBAR_MUTED, "off".to_owned()),
-            McpState::Starting => (OFF, SUN, "starting".to_owned()),
+            McpState::Off => (OFF, TEXT_SOFT, "off".to_owned()),
+            McpState::Starting => (OFF, ACCENT, "starting".to_owned()),
             McpState::Ready(tools) => {
                 let plural = if tools.len() == 1 { "" } else { "s" };
-                (ON, TEAL, format!("{} tool{plural}", tools.len()))
+                (ON, POSITIVE, format!("{} tool{plural}", tools.len()))
             }
-            McpState::Failed(_) => (FAILED, EMBER, "failed".to_owned()),
+            McpState::Failed(_) => (FAILED, NEGATIVE, "failed".to_owned()),
         };
         let room = width.saturating_sub(state.len() + 3);
         lines.push(Line::from(vec![
             Span::styled(format!("{mark} "), fg(color)),
-            Span::styled(fill(&server.name, room), bold(SIDEBAR_FG)),
-            Span::styled(format!(" {state}"), fg(SIDEBAR_MUTED)),
+            Span::styled(fill(&server.name, room), bold(TEXT)),
+            Span::styled(format!(" {state}"), fg(TEXT_SOFT)),
         ]));
         if let McpState::Failed(error) = &server.state {
             lines.push(Line::from(Span::styled(
@@ -576,7 +569,7 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
                     "   {}",
                     wrap::clip(&one_line(error), width.saturating_sub(3))
                 ),
-                fg(SIDEBAR_MUTED),
+                fg(TEXT_SOFT),
             )));
         }
     }
@@ -584,14 +577,11 @@ fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
     app.mcp_scroll = app.mcp_scroll.min(app.mcp_max_scroll);
     let mut block = section(title);
     if app.mcp_max_scroll > 0 && area.height > 2 {
-        block = block.title_bottom(Line::from(Span::styled(
-            " wheel to scroll ",
-            fg(SIDEBAR_MUTED),
-        )));
+        block = block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
     }
     frame.render_widget(
         Paragraph::new(lines)
-            .style(Style::new().fg(SIDEBAR_FG).bg(SIDEBAR_BG))
+            .style(Style::new().fg(TEXT).bg(DEEP))
             .block(block)
             .scroll((app.mcp_scroll as u16, 0)),
         area,

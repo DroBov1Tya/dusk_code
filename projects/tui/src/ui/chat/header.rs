@@ -1,7 +1,7 @@
 //! The thread name sits quietly above the transcript.
 
 use super::{
-    theme::{DOT, NIGHT, SUN, SUN_GLYPH, VIOLET, bold, fg, thought},
+    theme::{ACCENT, DOT, HAIRLINE, SUN_GLYPH, TEXT, bold, fg, thought},
     wrap,
 };
 use crate::app::App;
@@ -15,9 +15,9 @@ use unicode_width::UnicodeWidthStr;
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
     let brand = vec![
-        Span::styled(format!(" {SUN_GLYPH} "), bold(SUN)),
-        Span::styled("dusk", bold(VIOLET)),
-        Span::styled(format!("  {DOT}  "), fg(NIGHT)),
+        Span::styled(format!(" {SUN_GLYPH} "), bold(ACCENT)),
+        Span::styled("dusk", bold(TEXT)),
+        Span::styled(format!("  {DOT}  "), fg(HAIRLINE)),
     ];
     // The rail shows the effort; without it, the header does.
     let effort = if app.sidebar_visible && !app.compact_layout {
