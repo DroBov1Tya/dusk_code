@@ -8,6 +8,10 @@ testing.
 
 ### Changed
 
+- A new chat's folder in `~/Documents/duskcode` is named by its day, like `03_11_2026`,
+  then `03_11_2026-1` for the next one that day; its agents' folders sit inside it.
+  Chats from before keep their folders.
+
 - Every minor version is a full release and every patch version a pre-release.
 
 ## 0.70.0 - 2026-11-03

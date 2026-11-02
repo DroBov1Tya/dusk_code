@@ -120,6 +120,16 @@ impl Paths {
 
     /// Thread IDs are caller-assigned, so only plain folder names are accepted:
     /// nothing like `..` or `a/b` can lead outside the workspace root.
+    /// A folder under the workspace root, given as plain names joined by `/`.
+    pub fn workspace_folder(&self, folder: &str) -> Result<PathBuf> {
+        ensure!(
+            folder.split('/').all(is_plain_folder_name),
+            "thread folder is not a valid folder path"
+        );
+        Ok(self.workspace_root.join(folder))
+    }
+
+    /// Where a thread's files were before folders were named by date.
     pub fn thread_workspace(&self, thread_id: &str) -> Result<PathBuf> {
         ensure!(
             is_plain_folder_name(thread_id),
@@ -154,5 +164,9 @@ mod tests {
         for name in ["", ".", "..", "../x", "a/b", "/etc", "a b", &"x".repeat(65)] {
             assert!(paths.thread_workspace(name).is_err(), "{name:?}");
         }
+        for folder in ["", "a//b", "a/../b", "/a", "a/", "03_11_2026/agents/.."] {
+            assert!(paths.workspace_folder(folder).is_err(), "{folder:?}");
+        }
+        assert!(paths.workspace_folder("03_11_2026-1/agents/x").is_ok());
     }
 }

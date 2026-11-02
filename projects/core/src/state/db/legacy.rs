@@ -382,7 +382,9 @@ mod tests {
     /// and schema must agree, just as they did in those releases.
     async fn before_goal_verification(state: &State) {
         sqlx::raw_sql(
-            "DROP TABLE tool_executions;
+            "DROP TABLE thread_folders;
+            DELETE FROM _sqlx_migrations WHERE version = 17;
+            DROP TABLE tool_executions;
             DROP TABLE goal_confirmations;
             ALTER TABLE goals DROP COLUMN revision;
             ALTER TABLE goals DROP COLUMN criteria_json;
@@ -512,9 +514,12 @@ mod tests {
     async fn a_development_build_past_the_release_is_undone() {
         let path = temp_dir("legacy-unreleased").join("state.db");
         let state = State::open(&path).await.unwrap();
-        // What that build's migrations 17 to 19 made, recorded with their checksums.
+        // What that build's migrations 17 to 19 made, recorded with their checksums, in
+        // place of the released 17.
         sqlx::raw_sql(
-            "ALTER TABLE pending_messages ADD COLUMN deferred_until_user INTEGER NOT NULL DEFAULT 0;
+            "DROP TABLE thread_folders;
+             DELETE FROM _sqlx_migrations WHERE version = 17;
+             ALTER TABLE pending_messages ADD COLUMN deferred_until_user INTEGER NOT NULL DEFAULT 0;
              ALTER TABLE pending_messages ADD COLUMN joins_running_turn INTEGER NOT NULL DEFAULT 0;
              CREATE TABLE codex_sessions (thread_id TEXT PRIMARY KEY);
              CREATE TABLE message_attachments (request_uid TEXT NOT NULL);",
@@ -540,7 +545,8 @@ mod tests {
         state.close().await;
         let state = State::open(&path).await.unwrap();
         let left: i64 = sqlx::query_scalar(
-            "SELECT (SELECT count(*) FROM _sqlx_migrations WHERE version >= 17)
+            "SELECT (SELECT count(*) FROM _sqlx_migrations
+                     WHERE version >= 17 AND description != 'thread folders')
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')
