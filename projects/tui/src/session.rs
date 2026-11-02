@@ -140,6 +140,8 @@ pub async fn run(
     }
     let mut keys = EventStream::new();
     let mut clock = tokio::time::interval(FRAME);
+    // The clock sleeps while idle; missed frames must not play back in a burst.
+    clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     let mut git_clock = tokio::time::interval(GIT_PERIOD);
     let mut system_clock = tokio::time::interval(SYSTEM_PERIOD);
     let mut jobs_clock = tokio::time::interval(JOBS_PERIOD);
