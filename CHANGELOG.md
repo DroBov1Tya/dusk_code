@@ -13,6 +13,9 @@ testing.
 
 ### Changed
 
+- The context limit follows the model's own window when its provider reports one;
+  the global input cap is used only for models that do not, and a size set under
+  `/settings` > models still wins.
 - A new chat's folder in `~/Documents/duskcode` is named by its day, like `03_11_2026`,
   then `03_11_2026-1` for the next one that day; its agents' folders sit inside it.
   Chats from before keep their folders.
