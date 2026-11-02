@@ -315,6 +315,9 @@ impl Agent {
             let rounds = config.limits().max_goal_rounds;
             messages.push(ChatMessage::System(goal::reminder(&goal, rounds)));
         }
+        if let Some(note) = missing_tools(&messages, &tools) {
+            messages.push(ChatMessage::System(note));
+        }
         let choice = self.model.current().context("provider is unavailable")?;
         let request = ChatRequest {
             model: &choice.model.id,
@@ -611,4 +614,58 @@ fn interrupted(answer: TurnAnswer) -> TurnOutcome {
 fn recorded_reasoning(config: &Config, output: &ModelOutput) -> Option<String> {
     let keep = config.thread().record.records_reasoning() && !output.reasoning.trim().is_empty();
     keep.then(|| output.reasoning.clone())
+}
+
+/// A model copies the calls it sees in the thread. After a switch to a mode with fewer
+/// tools, it is told which of those it no longer has, so it does not reach for them.
+fn missing_tools(messages: &[ChatMessage], tools: &[ToolSpec]) -> Option<String> {
+    let mut missing: Vec<&str> = messages
+        .iter()
+        .filter_map(|message| match message {
+            ChatMessage::Assistant { tool_calls, .. } => Some(tool_calls),
+            _ => None,
+        })
+        .flatten()
+        .map(|call| call.name.as_str())
+        .filter(|name| !tools.iter().any(|tool| tool.name == *name))
+        .collect();
+    missing.sort_unstable();
+    missing.dedup();
+    if missing.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "Earlier in this thread there are calls to tools you do not have now, since the \
+         mode or the tool switches changed: {}. Do not call them; work with the tools you \
+         have, or ask an agent that has them.",
+        missing.join(", ")
+    ))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn tools_called_before_a_mode_switch_are_named() {
+        let call = |name: &str| ToolCall {
+            id: name.into(),
+            name: name.into(),
+            arguments: json!({}),
+        };
+        let messages = [ChatMessage::Assistant {
+            text: String::new(),
+            tool_calls: vec![call("run_command"), call("ask_agent"), call("run_command")],
+        }];
+        let spec = |name: &str| ToolSpec {
+            name: name.into(),
+            description: String::new(),
+            parameters: json!({}),
+        };
+        let note = missing_tools(&messages, &[spec("ask_agent")]).unwrap();
+        assert!(note.contains(": run_command."), "{note}");
+        assert!(missing_tools(&messages, &[spec("ask_agent"), spec("run_command")]).is_none());
+    }
 }
