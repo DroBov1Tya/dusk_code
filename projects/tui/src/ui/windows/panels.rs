@@ -12,8 +12,8 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use dusk_core::{
-    chat::commands::ContextReport, release::update::InstallStage, state::MessageRole,
-    tools::JobInfo,
+    chat::commands::ContextReport, config::ProviderKind, release::update::InstallStage,
+    state::MessageRole, tools::JobInfo,
 };
 
 use super::{
@@ -100,7 +100,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             connection_rows = rows;
             (
                 "connect provider",
-                "up/down/tab/click focus  enter continue/save  esc cancel",
+                "up/down/tab focus  left/right provider  enter continue/save  esc cancel",
                 lines,
                 Some(selected),
             )
@@ -782,18 +782,41 @@ fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
 
 /// Connection details stay in this form and are never echoed into the transcript.
 fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Vec<usize>) {
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "HTTPS URL is required. Name and API key are optional.",
-            dim(),
-        )),
-        Line::default(),
-    ];
-    let labels = ["name (optional)", "base URL", "API key (optional)"];
-    let mut rows = Vec::new();
-    let mut selected = 0;
     let field_width = width.saturating_sub(4).clamp(1, 68);
+    let intro = match form.kind {
+        ProviderKind::Anthropic => {
+            "An API key from console.anthropic.com. A Claude subscription works only in \
+             Anthropic's own apps."
+        }
+        ProviderKind::OpenAi => "An API key from platform.openai.com.",
+        _ => "HTTPS URL is required. Name and API key are optional.",
+    };
+    let mut lines: Vec<Line<'static>> =
+        wrap::words(vec![Span::styled(intro, dim())], field_width, 0)
+            .into_iter()
+            .map(Line::from)
+            .collect();
+    lines.push(Line::default());
+    let mut rows = vec![lines.len()];
+    lines.push(Line::from(Span::styled(" provider", dim())));
+    let style = if form.selected == 0 {
+        fg(ACCENT).bg(RAISED)
+    } else {
+        Style::new()
+    };
+    lines.push(Line::from(Span::styled(
+        format!(" \u{2039} {} \u{203A}", form.kind.label()),
+        style,
+    )));
+    lines.push(Line::default());
+    let key_label = match form.kind.base_url() {
+        Some(_) => "API key",
+        None => "API key (optional)",
+    };
+    let labels = ["name (optional)", "base URL", key_label];
+    let mut selected = rows[0] + 1;
     for (index, field) in form.fields.iter().enumerate() {
+        let row = index + 1;
         rows.push(lines.len());
         lines.push(Line::from(Span::styled(
             format!(" {}", labels[index]),
@@ -811,7 +834,7 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
             value.push('\u{2026}');
         }
         for position in start..=chars.len() {
-            if position == at && index == form.selected {
+            if position == at && row == form.selected {
                 value.push('\u{258F}');
             }
             if let Some(c) = chars.get(position) {
@@ -822,13 +845,14 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
             value.push_str(match index {
                 0 => "provider-N when left blank",
                 1 => "required",
+                _ if form.kind.base_url().is_some() => "required",
                 _ => "leave blank if not needed",
             });
         }
-        if index == form.selected {
+        if row == form.selected {
             selected = lines.len();
         }
-        let style = if index == form.selected {
+        let style = if row == form.selected {
             fg(ACCENT).bg(RAISED)
         } else {
             Style::new()
