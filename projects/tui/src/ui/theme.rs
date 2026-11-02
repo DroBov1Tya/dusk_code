@@ -1,6 +1,7 @@
-//! The look: dusk, after the sun has set. The chrome is ink, three greys of text and
-//! one amber accent, the last light at the horizon, used where something needs the eye:
-//! the active mode, the work going on, the choice under the cursor. Green and red only
+//! The look: dusk, after the sun has set. The chrome is ink and three greys of text,
+//! with two accents from the evening sky: amber, the last light at the horizon, where
+//! something needs the eye (work going on, the choice under the cursor), and a dark
+//! violet above it for names and headings. Green and red only
 //! say done and failed. Colour beyond that is kept for the moments that are content:
 //! the agents' figures, code, the context gauge and the idle screen. Main text keeps
 //! the terminal's own colour, so light and dark terminals both read well.
@@ -23,8 +24,10 @@ pub const TEXT: Color = Color::Rgb(230, 232, 238);
 pub const TEXT_SOFT: Color = Color::Rgb(163, 169, 184);
 pub const TEXT_MUTED: Color = Color::Rgb(122, 130, 150);
 
-/// The one accent.
+/// The accent: the last light at the horizon, for what needs the eye now.
 pub const ACCENT: Color = Color::Rgb(232, 168, 90);
+/// The sky above it: names and headings, the modes that are not MAIN.
+pub const DUSK: Color = Color::Rgb(128, 108, 204);
 /// Done and failed, toned to sit with the ink.
 pub const POSITIVE: Color = Color::Rgb(76, 195, 138);
 pub const NEGATIVE: Color = Color::Rgb(229, 72, 77);

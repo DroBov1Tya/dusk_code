@@ -13,8 +13,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        ACCENT, DEEP, HAIRLINE, NEGATIVE, RAISED, SELECTED, SURFACE, TEXT, TEXT_MUTED, TEXT_SOFT,
-        bold, dim, fg, thought,
+        ACCENT, DEEP, DUSK, HAIRLINE, NEGATIVE, RAISED, SELECTED, SURFACE, TEXT, TEXT_MUTED,
+        TEXT_SOFT, bold, dim, fg, thought,
     },
     transcript::spinner,
     wrap,
@@ -193,18 +193,11 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     show_cursor(frame, app, text_area, (cursor.0, cursor.1 - skip));
 }
 
-/// The chat's mode as a cell of its own colour; Tab switches it.
+/// The chat's mode as a cell of its own colour, amber for MAIN and violet for the
+/// others; Tab switches it.
 fn mode_chip(mode: &str) -> Span<'static> {
-    let color = match mode {
-        "MAIN" => ACCENT,
-        "PLAN" => ACCENT,
-        "ORCHESTRATOR" => ACCENT,
-        _ => ACCENT,
-    };
-    Span::styled(
-        format!(" {} ", mode.to_lowercase()),
-        bold(HAIRLINE).bg(color),
-    )
+    let color = if mode == "MAIN" { ACCENT } else { DUSK };
+    Span::styled(format!(" {} ", mode.to_lowercase()), bold(DEEP).bg(color))
 }
 
 /// The repository summary and package version share a row below the message card.
@@ -295,7 +288,7 @@ fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(border))
-        .title(Span::styled(" question ", bold(TEXT)));
+        .title(Span::styled(" question ", bold(DUSK)));
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
@@ -634,8 +627,8 @@ fn status(app: &App) -> (Vec<Span<'static>>, String) {
                 Activity::Thinking => (ACCENT, "thinking".to_owned()),
                 Activity::Writing => (ACCENT, "writing".to_owned()),
                 Activity::Tool(name) => (TEXT_SOFT, format!("running {name}")),
-                Activity::Compacting => (TEXT_SOFT, "compacting the context".to_owned()),
-                Activity::Forking => (TEXT_SOFT, "describing the thread for a fork".to_owned()),
+                Activity::Compacting => (DUSK, "compacting the context".to_owned()),
+                Activity::Forking => (DUSK, "describing the thread for a fork".to_owned()),
                 Activity::Retrying(attempt) => {
                     (NEGATIVE, format!("retrying after attempt {attempt}"))
                 }
