@@ -22,7 +22,7 @@ use dusk_core::{
     providers::ModelEvent,
     runtime::ThreadEvent,
     state::{Goal, LocalUnsent, Message, MessageRole, Task, ThreadTokens, TurnStatus},
-    tools::JobInfo,
+    tools::{Decision, JobInfo},
 };
 use ratatui::layout::Rect;
 
@@ -34,6 +34,7 @@ pub use panels::{
     ModelList, Panel, Preview, SettingCategory, SettingsHit, SettingsView, SubagentView,
     SwitchKind, ThreadList,
 };
+pub use thread::approval::{ApprovalHit, Asked};
 pub use thread::goal::{GoalButton, GoalHit};
 pub use thread::poll::{Poll, PollHit, PollTarget};
 pub use thread::queue::{QueueButton, QueueHit};
@@ -46,6 +47,11 @@ pub enum Action {
     Send(String),
     SendNow(String),
     Cancel,
+    /// The answer to a tool's request for approval.
+    Approve {
+        id: u64,
+        decision: Decision,
+    },
     Connect {
         /// `None` takes the next free `provider-N`.
         name: Option<String>,
@@ -291,6 +297,9 @@ pub struct App {
     pub undone: Option<String>,
     /// A question the agent asked, until it is answered or declined.
     pub poll: Option<Poll>,
+    /// Tools waiting for the user's yes, the oldest first; only the first is shown.
+    pub approvals: Vec<Asked>,
+    pub approval_hits: Vec<ApprovalHit>,
     /// The entry under the mouse, which shows its buttons.
     pub hover: Option<usize>,
     pub selection: Option<Selection>,
@@ -417,6 +426,8 @@ impl App {
             goal_rounds: config.current().limits().max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
+            approvals: Vec::new(),
+            approval_hits: Vec::new(),
             forked: None,
             task_area: None,
             task_scroll: 0,
@@ -718,6 +729,8 @@ impl App {
                 started,
             } => self.goal_changed(goal, note, started),
             ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
+            ThreadEvent::Approval(request) => self.ask_approval(request, None),
+            ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             ThreadEvent::PicturesRefused { model } => self.transcript.notice(
                 format!("{model} does not take pictures; it gets their paths instead"),
                 Tone::Info,

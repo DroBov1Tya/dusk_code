@@ -211,6 +211,9 @@ impl App {
             }
             _ => {}
         }
+        if !self.approvals.is_empty() {
+            return self.approval_key(key);
+        }
         if self.poll.as_ref().is_some_and(|poll| poll.active) {
             return self.poll_key(key);
         }
@@ -766,6 +769,15 @@ impl App {
     }
 
     fn press_button(&mut self, x: u16, y: u16) -> Option<Action> {
+        let approved = self
+            .approval_hits
+            .iter()
+            .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
+            .map(|hit| (hit.choice, (hit.row, hit.left, hit.right)));
+        if let Some((choice, place)) = approved {
+            self.press(place);
+            return Some(self.answer_approval(Some(choice)));
+        }
         let polled = self.poll.as_ref().and_then(|poll| {
             poll.hits
                 .iter()
