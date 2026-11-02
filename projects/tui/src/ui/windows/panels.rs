@@ -784,12 +784,12 @@ fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
 fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Vec<usize>) {
     let mut lines = vec![
         Line::from(Span::styled(
-            "HTTPS URL is required. API key is optional.",
+            "HTTPS URL is required. Name and API key are optional.",
             dim(),
         )),
         Line::default(),
     ];
-    let labels = ["base URL", "API key (optional)"];
+    let labels = ["name (optional)", "base URL", "API key (optional)"];
     let mut rows = Vec::new();
     let mut selected = 0;
     let field_width = width.saturating_sub(4).clamp(1, 68);
@@ -800,7 +800,7 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
             dim(),
         )));
         let at = field.text[..field.cursor].chars().count();
-        let chars: Vec<char> = if index == 1 {
+        let chars: Vec<char> = if index == 2 {
             vec!['*'; field.text.chars().count()]
         } else {
             field.text.chars().collect()
@@ -819,10 +819,10 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
             }
         }
         if value.is_empty() {
-            value.push_str(if index == 1 {
-                "leave blank if not needed"
-            } else {
-                "required"
+            value.push_str(match index {
+                0 => "provider-N when left blank",
+                1 => "required",
+                _ => "leave blank if not needed",
             });
         }
         if index == form.selected {

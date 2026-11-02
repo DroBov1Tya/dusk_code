@@ -157,11 +157,12 @@ impl Preview {
 
 #[derive(Default)]
 pub struct Connection {
-    pub fields: [Input; 2],
+    /// Name, base URL and API key.
+    pub fields: [Input; 3],
     pub selected: usize,
     pub error: Option<String>,
     /// Visible label and value rows on the last drawn frame.
-    pub field_areas: [Option<Rect>; 2],
+    pub field_areas: [Option<Rect>; 3],
 }
 
 /// Moves a selection within `len` items, stopping at the ends.

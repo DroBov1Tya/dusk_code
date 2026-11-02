@@ -421,14 +421,20 @@ impl App {
                     }
                     KeyCode::Enter if form.selected + 1 < form.fields.len() => form.selected += 1,
                     KeyCode::Enter => {
-                        let base_url = form.fields[0].text.trim().to_owned();
+                        let base_url = form.fields[1].text.trim().to_owned();
                         if base_url.is_empty() {
                             form.error = Some("Provider URL is required".into());
-                            form.selected = 0;
+                            form.selected = 1;
                         } else {
-                            let key = form.fields[1].text.trim();
-                            let api_key = (!key.is_empty()).then(|| key.to_owned());
-                            return Action::Connect { base_url, api_key };
+                            let given = |index: usize| {
+                                let text = form.fields[index].text.trim();
+                                (!text.is_empty()).then(|| text.to_owned())
+                            };
+                            return Action::Connect {
+                                name: given(0),
+                                base_url,
+                                api_key: given(2),
+                            };
                         }
                     }
                     KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => {
