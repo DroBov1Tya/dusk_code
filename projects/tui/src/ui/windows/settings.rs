@@ -293,7 +293,7 @@ fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
         ContextPolicy::Fixed(ContextPreset::K512),
         ContextPolicy::Fixed(ContextPreset::M1),
     ];
-    let names = ["Auto (global input cap)", "128k", "256k", "512k", "1M"];
+    let names = ["Auto (the model's window)", "128k", "256k", "512k", "1M"];
     let mut rows: Vec<Row> = policies
         .into_iter()
         .zip(names)
@@ -541,7 +541,7 @@ fn limit_rows(view: &SettingsView, width: usize) -> Vec<Row> {
         row(
             "input tokens",
             view.max_input_tokens.to_string(),
-            "    for a model without its own budget under models",
+            "    for a model whose window is not known and has no budget under models",
         ),
         row(
             "output tokens",
