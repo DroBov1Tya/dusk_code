@@ -26,7 +26,7 @@ use ratatui::DefaultTerminal;
 
 use crate::{
     app::{
-        Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, Panel, Preview,
+        Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel, Preview,
         SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript, paste,
     },
     ui::{self, screensaver},
@@ -287,6 +287,10 @@ pub async fn run(
                 idle_since = Instant::now();
                 Action::None
             }
+            // The pressed shade is drawn away once its moment is over.
+            _ = tokio::time::sleep(
+                app.pressed.as_ref().map_or(PRESS, |pressed| PRESS.saturating_sub(pressed.at.elapsed())),
+            ), if app.pressed.is_some() => Action::None,
             _ = tokio::time::sleep(app.screensaver.as_ref().map_or(FRAME, |playing| playing.frame_period())),
                 if app.screensaver.is_some() => Action::None,
             event = next_event(&mut open) => {

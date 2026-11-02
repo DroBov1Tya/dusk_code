@@ -11,7 +11,7 @@ mod panels;
 use std::{
     collections::{HashSet, VecDeque},
     sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use dusk_core::{
@@ -141,6 +141,17 @@ pub enum Activity {
     Retrying(u32),
 }
 
+/// The button pressed last, which darkens for `PRESS` after the click.
+pub struct Pressed {
+    pub row: u16,
+    pub left: u16,
+    pub right: u16,
+    pub at: Instant,
+}
+
+/// How long a pressed button stays dark: long enough to see, short enough not to wait.
+pub const PRESS: Duration = Duration::from_millis(140);
+
 /// A button on the entry under the mouse, on the last drawn frame.
 pub struct ButtonHit {
     pub row: u16,
@@ -235,6 +246,7 @@ pub struct App {
     pub frame: usize,
     /// The idle screen, while it plays.
     pub screensaver: Option<crate::ui::screensaver::Playing>,
+    pub pressed: Option<Pressed>,
     /// Hidden by F2 when there is room.
     pub sidebar_visible: bool,
     pub sidebar_overlay_open: bool,
@@ -365,6 +377,7 @@ impl App {
             screensaver: None,
             sidebar_visible: true,
             sidebar_overlay_open: false,
+            pressed: None,
             compact_layout: false,
             sidebar_overlay: None,
             sidebar_area: None,

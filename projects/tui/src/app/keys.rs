@@ -11,7 +11,7 @@ use dusk_core::release::update::InstallStage;
 use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
 use super::{
-    Action, App, Button, Command, Entry, Focus, Panel, Selection, TEXT_COLUMN, commands,
+    Action, App, Button, Command, Entry, Focus, Panel, Pressed, Selection, TEXT_COLUMN, commands,
     panels::step,
 };
 
@@ -749,30 +749,43 @@ impl App {
         Action::None
     }
 
+    /// A pressed button shows it for a moment: its cells darken.
+    fn press(&mut self, (row, left, right): (u16, u16, u16)) {
+        self.pressed = Some(Pressed {
+            row,
+            left,
+            right,
+            at: Instant::now(),
+        });
+    }
+
     fn press_button(&mut self, x: u16, y: u16) -> Option<Action> {
         let polled = self.poll.as_ref().and_then(|poll| {
             poll.hits
                 .iter()
                 .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
-                .map(|hit| hit.target)
+                .map(|hit| (hit.target, (hit.row, hit.left, hit.right)))
         });
-        if let Some(target) = polled {
+        if let Some((target, place)) = polled {
+            self.press(place);
             return Some(self.press_poll(target));
         }
         let goal = self
             .goal_hits
             .iter()
             .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
-            .map(|hit| hit.button);
-        if let Some(button) = goal {
+            .map(|hit| (hit.button, (hit.row, hit.left, hit.right)));
+        if let Some((button, place)) = goal {
+            self.press(place);
             return Some(self.press_goal(button));
         }
         let queued = self
             .queue_hits
             .iter()
             .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
-            .map(|hit| (hit.index, hit.button));
-        if let Some((index, button)) = queued {
+            .map(|hit| (hit.index, hit.button, (hit.row, hit.left, hit.right)));
+        if let Some((index, button, place)) = queued {
+            self.press(place);
             return Some(self.press_queued(index, button));
         }
         let chip = self
@@ -788,6 +801,7 @@ impl App {
             .iter()
             .find(|hit| y == hit.row && x >= hit.left && x < hit.right)?;
         let (index, button) = (hit.index, hit.button);
+        self.press((hit.row, hit.left, hit.right));
         self.selection = None;
         match button {
             Button::Copy => self.transcript.text(index).map(Action::Copy),
