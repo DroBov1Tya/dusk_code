@@ -112,7 +112,12 @@ fn hints(view: &SettingsView) -> &'static str {
             " up/down choose  enter/click apply  manual opens token count  esc back "
         }
         (
-            Some(SettingCategory::Tools | SettingCategory::Personalize | SettingCategory::Updates),
+            Some(
+                SettingCategory::Tools
+                | SettingCategory::Personalize
+                | SettingCategory::Updates
+                | SettingCategory::Access,
+            ),
             _,
         ) => " up/down choose  space/click switch  esc back ",
         (Some(_), Some(_)) => " Ctrl+S save  Ctrl+R revert  Esc close  click another one ",
@@ -244,6 +249,14 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             vec![described(row, about, width)]
         }
         Some(SettingCategory::System) => system_rows(view, width),
+        Some(SettingCategory::Access) => {
+            let about = "    on: no questions; off: asks before outside paths and commands";
+            vec![described(
+                switch_row(vec![Span::raw("  full access")], view.full_access, width),
+                about,
+                width,
+            )]
+        }
         Some(SettingCategory::Updates) => {
             let dev = view.update_channel == Channel::Dev;
             let about = "    on: every tag, pre-releases too; off: full releases only. \
