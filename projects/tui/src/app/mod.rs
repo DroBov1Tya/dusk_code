@@ -11,7 +11,7 @@ mod panels;
 use std::{
     collections::{HashSet, VecDeque},
     sync::Arc,
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use dusk_core::{
@@ -141,6 +141,17 @@ pub enum Activity {
     Retrying(u32),
 }
 
+/// The button pressed last, which darkens for `PRESS` after the click.
+pub struct Pressed {
+    pub row: u16,
+    pub left: u16,
+    pub right: u16,
+    pub at: Instant,
+}
+
+/// How long a pressed button stays dark: long enough to see, short enough not to wait.
+pub const PRESS: Duration = Duration::from_millis(140);
+
 /// A button on the entry under the mouse, on the last drawn frame.
 pub struct ButtonHit {
     pub row: u16,
@@ -235,6 +246,9 @@ pub struct App {
     pub frame: usize,
     /// The idle screen, while it plays.
     pub screensaver: Option<crate::ui::screensaver::Playing>,
+    pub pressed: Option<Pressed>,
+    /// The folder duskcode runs in, by name, for the status bar.
+    pub folder: String,
     /// Hidden by F2 when there is room.
     pub sidebar_visible: bool,
     pub sidebar_overlay_open: bool,
@@ -261,6 +275,10 @@ pub struct App {
     /// A drag that started in the message box selects there.
     pub input_dragging: bool,
     pub editor_hits: Vec<EditorHit>,
+    /// The tasks section on the last frame, and how far it is scrolled.
+    pub task_area: Option<Rect>,
+    pub task_scroll: usize,
+    pub task_max_scroll: usize,
     /// Messages written while the agent works, oldest first.
     pub queued: Vec<String>,
     pub queue_hits: Vec<QueueHit>,
@@ -359,6 +377,14 @@ impl App {
             transcript_area: None,
             frame: 0,
             screensaver: None,
+            pressed: None,
+            folder: std::env::current_dir()
+                .ok()
+                .and_then(|dir| {
+                    dir.file_name()
+                        .map(|name| name.to_string_lossy().into_owned())
+                })
+                .unwrap_or_default(),
             sidebar_visible: true,
             sidebar_overlay_open: false,
             compact_layout: false,
@@ -390,6 +416,9 @@ impl App {
             goal_hits: Vec::new(),
             poll: None,
             forked: None,
+            task_area: None,
+            task_scroll: 0,
+            task_max_scroll: 0,
             hover: None,
             selection: None,
             layout: None,
@@ -484,6 +513,7 @@ impl App {
     pub fn tick(&mut self) {
         self.frame = self.frame.wrapping_add(1);
         self.trim_output_samples();
+        self.task_scroll = 0;
     }
 
     /// Recent visible output divided by four bytes per estimated token.

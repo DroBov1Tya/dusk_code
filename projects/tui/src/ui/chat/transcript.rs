@@ -217,7 +217,15 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
         return;
     }
     let row = area.y + (line - app.drawn_top) as u16;
-    let mut right = area.right();
+    // A message sits on a card narrower than the thread; its buttons end where it ends,
+    // or they hang past its edge.
+    let card_right = match app.transcript.entries.get(index) {
+        Some(Entry::User { .. }) => app
+            .drawn_text(line)
+            .map(|text| area.x + text.width() as u16),
+        _ => None,
+    };
+    let mut right = card_right.map_or(area.right(), |edge| edge.min(area.right()));
     for &(button, label, color) in offered.iter().rev() {
         let width = label.width() as u16;
         let Some(left) = right.checked_sub(width + 1).filter(|&left| left >= area.x) else {

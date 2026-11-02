@@ -208,21 +208,26 @@ impl Input {
             .map_or(self.text.len(), |offset| self.cursor + offset);
     }
 
-    /// Moves to the line above or below, keeping the column where it can. Returns false
-    /// when there is no such line.
+    /// Moves to the line above or below, keeping the column where it can. With no such
+    /// line it goes to the end or the start of the text first, as editors do. Returns
+    /// false when it is there already.
     pub fn vertical(&mut self, down: bool) -> bool {
         let start = self.line_start();
         let column = self.text[start..self.cursor].chars().count();
+        let edge = if down { self.text.len() } else { 0 };
         let target = if down {
-            match self.text[self.cursor..].find('\n') {
-                Some(offset) => self.cursor + offset + 1,
-                None => return false,
-            }
+            self.text[self.cursor..]
+                .find('\n')
+                .map(|offset| self.cursor + offset + 1)
         } else {
-            match start.checked_sub(1) {
-                Some(before) => self.text[..before].rfind('\n').map_or(0, |at| at + 1),
-                None => return false,
-            }
+            start
+                .checked_sub(1)
+                .map(|before| self.text[..before].rfind('\n').map_or(0, |at| at + 1))
+        };
+        let Some(target) = target else {
+            let moved = self.cursor != edge;
+            self.cursor = edge;
+            return moved;
         };
         let line_end = self.text[target..]
             .find('\n')
@@ -248,5 +253,27 @@ impl Input {
     fn next_boundary(&self) -> Option<usize> {
         let next = self.text[self.cursor..].chars().next()?;
         Some(self.cursor + next.len_utf8())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn past_the_last_line_the_cursor_goes_to_the_end_first() {
+        let mut input = Input {
+            text: "one\ntwo words".into(),
+            cursor: 1,
+            ..Input::default()
+        };
+        assert!(input.vertical(true));
+        assert_eq!(input.cursor, 5);
+        assert!(input.vertical(true), "to the end of the last line");
+        assert_eq!(input.cursor, input.text.len());
+        assert!(!input.vertical(true), "then history may take it");
+        assert!(input.vertical(false) && input.vertical(false));
+        assert_eq!(input.cursor, 0);
+        assert!(!input.vertical(false));
     }
 }

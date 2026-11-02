@@ -82,6 +82,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     app.agent_area = None;
     app.mcp_area = None;
     app.task_hits.clear();
+    app.task_area = None;
     app.agent_max_scroll = 0;
     app.mcp_max_scroll = 0;
     if sidebar_visible {
@@ -114,12 +115,34 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     input::draw_commands(frame, body, app);
     input::draw_paths(frame, body, app);
     panels::draw(frame, screen, app);
+    pressed(frame, app);
     // Over everything, pictures too: the terminal would paint those above the window.
     if let Some(playing) = &app.screensaver {
         playing.draw(frame);
         return;
     }
     pictures(frame, app);
+}
+
+/// The button just clicked, a shade darker, so the click is felt.
+fn pressed(frame: &mut Frame, app: &mut App) {
+    let Some(pressed) = &app.pressed else {
+        return;
+    };
+    if pressed.at.elapsed() >= crate::app::PRESS {
+        app.pressed = None;
+        return;
+    }
+    let buffer = frame.buffer_mut();
+    for x in pressed.left..pressed.right {
+        if let Some(cell) = buffer.cell_mut((x, pressed.row)) {
+            let shade = match cell.bg {
+                Color::Rgb(r, g, b) => Color::Rgb(r / 2, g / 2, b / 2),
+                _ => Color::Black,
+            };
+            cell.set_bg(shade);
+        }
+    }
 }
 
 /// Explicitly requested pictures over the previews, unless something is drawn on top
