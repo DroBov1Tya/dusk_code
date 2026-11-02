@@ -51,6 +51,11 @@ pub fn set_title(text: &str) {
     let _ = execute!(stdout(), SetTitle(clean));
 }
 
+/// Requests the terminal's bell. Its profile decides whether this produces sound.
+pub fn bell() {
+    write_status(b"\x07");
+}
+
 /// Fixed states only: untrusted transcript text never becomes a terminal payload.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SessionStatus {

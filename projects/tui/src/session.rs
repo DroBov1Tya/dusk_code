@@ -19,6 +19,7 @@ use dusk_core::{
     providers::validate_provider,
     release::update::{Channel, InstallProgress},
     runtime::{Runtime, ThreadEvent, ThreadHandle},
+    state::TurnStatus,
 };
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
@@ -47,6 +48,59 @@ struct OpenThread {
     handle: ThreadHandle,
     /// The thread's task ended; the next message opens it again.
     ended: bool,
+    active_turn: Option<String>,
+    alerted: bool,
+}
+
+impl OpenThread {
+    fn new(handle: ThreadHandle) -> Self {
+        Self {
+            handle,
+            ended: false,
+            active_turn: None,
+            alerted: false,
+        }
+    }
+
+    /// Only live root events count: history, child agents and intermediate errors
+    /// never ring. Consuming the terminal event first also deduplicates a fatal error
+    /// and a finish for the same turn, including while notifications are muted.
+    fn apply(&mut self, app: &mut App, event: ThreadEvent) {
+        let notify = match &event {
+            ThreadEvent::TurnStarted(turn) => {
+                self.active_turn = Some(turn.turn_id.clone());
+                self.alerted = false;
+                false
+            }
+            ThreadEvent::TurnFinished(turn)
+                if self.active_turn.as_deref() == Some(turn.turn_id.as_str()) =>
+            {
+                self.active_turn = None;
+                let notify = !self.alerted
+                    && matches!(turn.status, TurnStatus::Completed | TurnStatus::Failed);
+                self.alerted = true;
+                notify
+            }
+            ThreadEvent::Failed(_) => {
+                self.active_turn = None;
+                let notify = !self.alerted;
+                self.alerted = true;
+                notify
+            }
+            ThreadEvent::Idle => {
+                // The previous request has settled. A later standalone runner failure
+                // is a new notification, even if no new model turn has started.
+                self.active_turn = None;
+                self.alerted = false;
+                false
+            }
+            _ => false,
+        };
+        app.apply(event);
+        if notify && app.config.current().sound_notifications() {
+            crate::host::terminal::bell();
+        }
+    }
 }
 
 struct InstallingUpdate<'a> {
@@ -159,10 +213,7 @@ pub async fn run(
                         Tone::Info,
                     );
                     app.transcript.add_summary(&summary);
-                    open = Some(OpenThread {
-                        handle,
-                        ended: false,
-                    });
+                    open = Some(OpenThread::new(handle));
                 }
                 Err(error) => app.error(format!("cannot fork: {error:#}")),
             }
@@ -211,15 +262,15 @@ pub async fn run(
             event = next_event(&mut open) => {
                 match event {
                     Some(event) => {
-                        app.apply(event);
                         // Everything that has arrived meanwhile is drawn in one frame, so
                         // fast streams do not cost a frame per token.
                         if let Some(thread) = &mut open {
+                            thread.apply(&mut app, event);
                             for _ in 0..MAX_EVENTS_PER_FRAME {
                                 let Some(event) = thread.handle.output.ready_event() else {
                                     break;
                                 };
-                                app.apply(event);
+                                thread.apply(&mut app, event);
                             }
                         }
                     }
@@ -866,18 +917,12 @@ async fn ensure_open(
             let thread_id = thread.handle.thread_id.clone();
             close(Some(thread)).await;
             let handle = runtime.resume_thread(&thread_id, &cwd).await?;
-            *open = Some(OpenThread {
-                handle,
-                ended: false,
-            });
+            *open = Some(OpenThread::new(handle));
         }
         None => {
             let handle = runtime.new_thread(THREAD_SOURCE, &cwd).await?;
             app.thread_id = Some(handle.thread_id.clone());
-            *open = Some(OpenThread {
-                handle,
-                ended: false,
-            });
+            *open = Some(OpenThread::new(handle));
         }
     }
     Ok(())
@@ -898,15 +943,12 @@ async fn resume(runtime: &Runtime, app: &mut App, thread_id: &str) -> Result<Ope
     for message in runtime.local_unsent(thread_id).await? {
         app.show_local_unsent(message);
     }
-    Ok(OpenThread {
-        handle,
-        ended: false,
-    })
+    Ok(OpenThread::new(handle))
 }
 
 /// Stops the thread's turn and waits for its task to end, so it can be opened again.
 async fn close(open: Option<OpenThread>) {
-    let Some(OpenThread { handle, ended }) = open else {
+    let Some(OpenThread { handle, ended, .. }) = open else {
         return;
     };
     let ThreadHandle {

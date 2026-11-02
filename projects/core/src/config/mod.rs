@@ -36,6 +36,10 @@ pub struct Config {
     thread: ThreadConfig,
     #[serde(default)]
     limits: Limits,
+    /// Ring the terminal bell when the visible thread completes or fails. A terminal
+    /// profile may silence the bell; set this to false to disable notifications here.
+    #[serde(default = "yes")]
+    sound_notifications: bool,
     /// Tools switched on or off by name; a tool not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     tools: BTreeMap<String, bool>,
@@ -440,6 +444,10 @@ impl Config {
 
     pub fn limits(&self) -> Limits {
         self.limits
+    }
+
+    pub fn sound_notifications(&self) -> bool {
+        self.sound_notifications
     }
 
     pub fn tool_enabled(&self, name: &str) -> bool {
