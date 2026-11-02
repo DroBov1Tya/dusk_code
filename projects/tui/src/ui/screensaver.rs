@@ -25,7 +25,14 @@ const MARGIN_Y: u16 = 1;
 const FPS: u32 = 12;
 /// Terminal cells are about twice as tall as wide; round shapes are stretched by this.
 const ASPECT: f32 = 2.0;
-const BACKGROUND: Color = theme::INPUT_BG;
+const BACKGROUND: Color = theme::SURFACE;
+// The scenes are the one place for rich colour; they keep their own.
+const AURORA_LOW: Color = Color::Rgb(94, 214, 194);
+const AURORA_HIGH: Color = Color::Rgb(157, 124, 255);
+const LAVA_TOP: Color = Color::Rgb(240, 122, 176);
+const LAVA_BOTTOM: Color = Color::Rgb(157, 124, 255);
+const FIRE_HOT: Color = Color::Rgb(255, 180, 84);
+const FIRE_COOL: Color = Color::Rgb(255, 99, 99);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Scene {
@@ -93,9 +100,9 @@ impl Playing {
         }
         let window = Block::bordered()
             .border_type(BorderType::Rounded)
-            .border_style(Style::new().fg(theme::NIGHT))
+            .border_style(Style::new().fg(theme::HAIRLINE))
             .title(format!(" {} ", self.scene.name()))
-            .title_style(Style::new().fg(theme::HAZE))
+            .title_style(Style::new().fg(theme::TEXT_MUTED))
             .style(Style::new().bg(BACKGROUND));
         let inner = window.inner(area);
         frame.render_widget(Clear, area);
@@ -175,7 +182,7 @@ fn twinkle(canvas: &mut Canvas, t: f32, below: f32) {
             let symbol = if shine > 0.8 { '*' } else { '\u{00B7}' };
             (
                 symbol,
-                mix(theme::NIGHT, theme::SIDEBAR_FG, 0.4 + 0.5 * shine.max(0.0)),
+                mix(theme::HAIRLINE, theme::TEXT, 0.4 + 0.5 * shine.max(0.0)),
             )
         })
     });
@@ -202,7 +209,7 @@ fn sea(canvas: &mut Canvas, t: f32) {
         let path = (x - mx).abs() < 1.5 + depth * w * 0.12 && swell > 0.45;
         if path {
             let symbol = if swell > 0.6 { '\u{2550}' } else { '-' };
-            return Some((symbol, mix(theme::NIGHT, pale, 0.9 - depth * 0.4)));
+            return Some((symbol, mix(theme::HAIRLINE, pale, 0.9 - depth * 0.4)));
         }
         let sea = mix(Color::Rgb(26, 48, 92), Color::Rgb(70, 110, 170), swell);
         match swell {
@@ -261,7 +268,7 @@ fn aurora(canvas: &mut Canvas, t: f32) {
         let band = (-((y - center) / spread).powi(2)).exp();
         let curtain = noise(x * 0.15 + t * 0.25, t * 0.15);
         let light = band * (0.3 + 0.7 * curtain);
-        let color = mix(theme::TEAL, theme::VIOLET, (y / h * 1.6).min(1.0));
+        let color = mix(AURORA_LOW, AURORA_HIGH, (y / h * 1.6).min(1.0));
         match light {
             l if l > 0.75 => Some(('\u{2503}', color)),
             l if l > 0.5 => Some(('\u{2502}', mix(BACKGROUND, color, 0.8))),
@@ -284,7 +291,7 @@ fn stars(canvas: &mut Canvas, t: f32) {
             let seed = star as f32;
             let x = (hash(seed, layer as f32, 6) * w - t * speed).rem_euclid(w);
             let y = hash(seed, layer as f32, 7) * h;
-            canvas.set(x, y, symbol, mix(BACKGROUND, theme::SIDEBAR_FG, light));
+            canvas.set(x, y, symbol, mix(BACKGROUND, theme::TEXT, light));
         }
     }
     // Now and then a meteor crosses.
@@ -296,7 +303,7 @@ fn stars(canvas: &mut Canvas, t: f32) {
             let along = age * 40.0 - trail as f32 * 1.5;
             let (x, y) = (w * start + along * 1.6, h * 0.15 + along * 0.4);
             let fade = 1.0 - trail as f32 / 6.0;
-            canvas.set(x, y, '\u{2572}', mix(BACKGROUND, theme::SUN, fade));
+            canvas.set(x, y, '\u{2572}', mix(BACKGROUND, FIRE_HOT, fade));
         }
     }
 }
@@ -309,7 +316,7 @@ fn embers(canvas: &mut Canvas, t: f32) {
         (depth < flame).then(|| {
             let heat = 1.0 - depth / 3.0;
             let symbol = ['\u{2581}', '\u{2583}', '\u{2585}'][(heat * 2.9) as usize % 3];
-            (symbol, mix(theme::EMBER, theme::SUN, heat))
+            (symbol, mix(FIRE_COOL, FIRE_HOT, heat))
         })
     });
     let count = (w / 2.0) as usize + 8;
@@ -327,7 +334,7 @@ fn embers(canvas: &mut Canvas, t: f32) {
             '.'
         };
         let color = mix(
-            mix(theme::SUN, theme::EMBER, age),
+            mix(FIRE_HOT, FIRE_COOL, age),
             BACKGROUND,
             (age - 0.5).max(0.0),
         );
@@ -355,7 +362,7 @@ fn lava(canvas: &mut Canvas, t: f32) {
             .iter()
             .map(|&(bx, by, r)| r * r / (((x - bx) / ASPECT).powi(2) + (y - by).powi(2) + 0.5))
             .sum();
-        let color = mix(theme::ROSE, theme::VIOLET, y / h);
+        let color = mix(LAVA_TOP, LAVA_BOTTOM, y / h);
         match field {
             f if f > 2.2 => Some(('\u{2588}', color)),
             f if f > 1.4 => Some(('\u{2593}', mix(BACKGROUND, color, 0.85))),

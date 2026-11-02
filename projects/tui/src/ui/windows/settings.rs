@@ -21,8 +21,8 @@ use super::{
     input,
     panels::window,
     theme::{
-        DOT, EMBER, FAILED, GLOW, INPUT_BG, NIGHT, OFF, ON, ROSE, SELECTED, SUN, TEAL, VIOLET,
-        bold, dim, fg,
+        ACCENT, DOT, FAILED, HAIRLINE, NEGATIVE, OFF, ON, POSITIVE, RAISED, SELECTED, SURFACE,
+        TEXT, TEXT_MUTED, TEXT_SOFT, bold, dim, fg,
     },
     wrap,
 };
@@ -60,8 +60,8 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
-        .title(Line::from(Span::styled(title, bold(VIOLET))))
+        .border_style(fg(HAIRLINE))
+        .title(Line::from(Span::styled(title, bold(TEXT))))
         .title_bottom(Line::from(Span::styled(hints(view), dim())).right_aligned());
     let inner = block.inner(area);
     frame.render_widget(Clear, area);
@@ -87,7 +87,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     );
     let divider = Rect::new(inner.x + list_width, inner.y, 1, inner.height);
     let line: Vec<Line> = (0..inner.height)
-        .map(|_| Line::from(Span::styled("\u{2502}", fg(NIGHT))))
+        .map(|_| Line::from(Span::styled("\u{2502}", fg(HAIRLINE))))
         .collect();
     frame.render_widget(Paragraph::new(line), divider);
     let pane = Rect {
@@ -178,7 +178,7 @@ fn list(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
                 });
             }
             lines.push(if selectable && index == view.selected {
-                line.style(Style::new().bg(GLOW))
+                line.style(Style::new().bg(RAISED))
             } else {
                 line
             });
@@ -216,7 +216,7 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 Row {
                     lines: vec![right(
                         vec![Span::raw("  memory size, characters")],
-                        Span::styled(format!("\u{2212} {} +  ", view.memory.max_chars), bold(SUN)),
+                        Span::styled(format!("\u{2212} {} +  ", view.memory.max_chars), fg(TEXT)),
                         width,
                     )],
                     switch: None,
@@ -232,7 +232,7 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             };
             let line = right(
                 vec![Span::raw("  idle screen")],
-                Span::styled(format!("\u{2212} {minutes} +  "), bold(SUN)),
+                Span::styled(format!("\u{2212} {minutes} +  "), fg(TEXT)),
                 width,
             );
             let row = Row {
@@ -303,11 +303,11 @@ fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 lines: vec![Line::from(vec![
                     Span::styled(
                         format!("  {} ", if active { ON } else { OFF }),
-                        fg(if active { TEAL } else { NIGHT }),
+                        fg(if active { ACCENT } else { HAIRLINE }),
                     ),
                     Span::styled(
                         format!("context {name}"),
-                        if active { bold(TEAL) } else { Style::new() },
+                        if active { fg(TEXT) } else { Style::new() },
                     ),
                 ])],
                 switch: None,
@@ -326,14 +326,14 @@ fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let mut manual_lines = vec![Line::from(vec![
         Span::styled(
             format!("  {} ", if active { ON } else { OFF }),
-            fg(if active { TEAL } else { NIGHT }),
+            fg(if active { ACCENT } else { HAIRLINE }),
         ),
         Span::styled(
             format!("context {manual}"),
             fg(if view.manual_context.is_some() {
-                SUN
+                ACCENT
             } else {
-                TEAL
+                TEXT_SOFT
             }),
         ),
     ])];
@@ -350,7 +350,7 @@ fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
             Span::raw("  reasoning effort  "),
             Span::styled(
                 view.effort.map_or("default", |effort| effort.name()),
-                bold(SUN),
+                fg(TEXT),
             ),
             Span::styled("  open > (shared across models)", dim()),
         ])],
@@ -364,18 +364,18 @@ fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let mut heading = vec![
         Line::from(Span::styled(
             format!("  {}", wrap::clip(model, width.saturating_sub(2))),
-            bold(VIOLET),
+            bold(TEXT),
         )),
         Line::from(Span::styled(
             format!(
                 "  effective input limit: {} tokens (model window is the ceiling)",
                 view.effective_limit
             ),
-            fg(TEAL),
+            fg(TEXT_SOFT),
         )),
     ];
     if let Some(error) = &view.model_error {
-        heading.extend(indented(error, fg(EMBER), "  ", width));
+        heading.extend(indented(error, fg(NEGATIVE), "  ", width));
     }
     heading.push(Line::default());
     rows[0].lead = heading.len();
@@ -400,11 +400,11 @@ fn manual_context_line(input: &Input, width: usize) -> Line<'static> {
             .map_or(' ', |byte| *byte as char);
         let selected = selection.is_some_and(|(from, to)| at >= from && at < to);
         let style = if at == input.cursor {
-            fg(INPUT_BG).bg(SUN)
+            fg(SURFACE).bg(ACCENT)
         } else if selected {
-            fg(SUN).bg(SELECTED)
+            fg(ACCENT).bg(SELECTED)
         } else {
-            fg(SUN)
+            fg(ACCENT)
         };
         spans.push(Span::styled(cell.to_string(), style));
     }
@@ -437,32 +437,32 @@ fn mcp_tool_row(tool: &McpToolInfo, width: usize) -> Row {
 fn mcp_row(server: &McpInfo, open: bool, width: usize) -> Row {
     let on = server.state != McpState::Off;
     let (state, color) = match &server.state {
-        McpState::Off => ("off".to_owned(), NIGHT),
-        McpState::Starting => ("starting".to_owned(), SUN),
+        McpState::Off => ("off".to_owned(), HAIRLINE),
+        McpState::Starting => ("starting".to_owned(), ACCENT),
         McpState::Ready(_) => {
             let on = server.tools.iter().filter(|tool| tool.enabled).count();
             let mark = if open { "\u{25BE}" } else { "\u{25B8}" };
             match server.tools.len() {
-                all if on == all => (format!("{all} tools {mark}"), TEAL),
-                all => (format!("{on}/{all} tools {mark}"), SUN),
+                all if on == all => (format!("{all} tools {mark}"), POSITIVE),
+                all => (format!("{on}/{all} tools {mark}"), ACCENT),
             }
         }
-        McpState::Failed(_) => ("failed".to_owned(), EMBER),
+        McpState::Failed(_) => ("failed".to_owned(), NEGATIVE),
     };
     let place = if server.remote { "remote" } else { "local" };
     let first = vec![
         Span::styled(
             format!("  {}", server.name),
-            if on { bold(TEAL) } else { dim() },
+            if on { fg(TEXT) } else { dim() },
         ),
         Span::raw(" "),
-        Span::styled(format!(" {place} "), fg(VIOLET).bg(GLOW)),
+        Span::styled(format!(" {place} "), fg(TEXT_SOFT).bg(RAISED)),
         Span::raw(" "),
-        Span::styled(format!(" {state} "), fg(color).bg(GLOW)),
+        Span::styled(format!(" {state} "), fg(color).bg(RAISED)),
     ];
     let mut row = switch_row(first, on, width);
     let (text, style) = match &server.state {
-        McpState::Failed(error) => (format!("{FAILED} {error}"), fg(EMBER)),
+        McpState::Failed(error) => (format!("{FAILED} {error}"), fg(NEGATIVE)),
         _ => (server.target.clone(), dim()),
     };
     // A failure is shown in full; an address stays on one line.
@@ -489,20 +489,20 @@ fn indented(text: &str, style: Style, lead: &str, width: usize) -> Vec<Line<'sta
 fn skill_row(skill: &SkillInfo, wide: bool, width: usize) -> Row {
     let mut first = vec![Span::styled(
         format!("  {}", skill.name),
-        if skill.enabled { bold(TEAL) } else { dim() },
+        if skill.enabled { fg(TEXT) } else { dim() },
     )];
     let mut tags = vec![(skill.kind.name().to_owned(), kind_color(skill.kind))];
-    tags.extend(skill.source.iter().map(|source| (source.clone(), SUN)));
+    tags.extend(skill.source.iter().map(|source| (source.clone(), ACCENT)));
     if wide {
-        tags.extend(skill.tags.iter().map(|tag| (tag.clone(), VIOLET)));
+        tags.extend(skill.tags.iter().map(|tag| (tag.clone(), TEXT_MUTED)));
     }
     for (tag, color) in tags {
         first.push(Span::raw(" "));
-        first.push(Span::styled(format!(" {tag} "), fg(color).bg(GLOW)));
+        first.push(Span::styled(format!(" {tag} "), fg(color).bg(RAISED)));
     }
     let mut row = switch_row(first, skill.enabled, width);
     let (text, style) = match &skill.problem {
-        Some(problem) => (format!("{FAILED} {problem}"), fg(EMBER)),
+        Some(problem) => (format!("{FAILED} {problem}"), fg(NEGATIVE)),
         None => (skill.description.clone(), dim()),
     };
     let room = width.saturating_sub(5);
@@ -515,9 +515,9 @@ fn skill_row(skill: &SkillInfo, wide: bool, width: usize) -> Row {
 
 fn kind_color(kind: SkillKind) -> ratatui::style::Color {
     match kind {
-        SkillKind::Builtin => VIOLET,
-        SkillKind::Own => TEAL,
-        SkillKind::Other => SUN,
+        SkillKind::Builtin => TEXT_MUTED,
+        SkillKind::Own => TEXT_SOFT,
+        SkillKind::Other => ACCENT,
     }
 }
 
@@ -527,7 +527,7 @@ fn limit_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let row = |name: &str, value: String, about: &str| {
         let line = right(
             vec![Span::raw(format!("  {name}"))],
-            Span::styled(format!("\u{2212} {value} +  "), bold(SUN)),
+            Span::styled(format!("\u{2212} {value} +  "), fg(TEXT)),
             width,
         );
         let row = Row {
@@ -568,7 +568,7 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
             vec![Span::raw("  concurrent agents")],
             Span::styled(
                 format!("\u{2212} {} +  ", view.max_agents_at_work),
-                bold(SUN),
+                fg(TEXT),
             ),
             width,
         )],
@@ -578,7 +578,7 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     rows.push(Row {
         lines: vec![right(
             vec![Span::raw("  goal rounds before a pause")],
-            Span::styled(format!("\u{2212} {} +  ", view.max_goal_rounds), bold(SUN)),
+            Span::styled(format!("\u{2212} {} +  ", view.max_goal_rounds), fg(TEXT)),
             width,
         )],
         switch: None,
@@ -589,7 +589,7 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
         rows.push(Row {
             lines: vec![Line::from(Span::styled(
                 format!("  {FAILED} {}: {}", problem.node, problem.reason),
-                fg(EMBER),
+                fg(NEGATIVE),
             ))],
             switch: None,
             lead: 0,
@@ -607,38 +607,41 @@ fn agent_row(agent: &AgentRow, width: usize) -> Row {
     if agent.depth == 0 {
         return Row {
             lines: vec![Line::from(vec![
-                Span::styled(format!("  {ROOT} "), bold(TEAL)),
-                Span::styled(agent.name.clone(), bold(TEAL)),
+                Span::styled(format!("  {ROOT} "), bold(TEXT)),
+                Span::styled(agent.name.clone(), bold(TEXT)),
                 Span::styled(format!("  {}", agent.description), dim()),
             ])],
             switch: None,
             lead: 0,
         };
     }
-    let trace = if agent.active { TEAL } else { NIGHT };
+    let trace = if agent.active { TEXT_MUTED } else { HAIRLINE };
     let mut left = vec![Span::raw("  ")];
     for &goes_on in &agent.rails {
-        left.push(Span::styled(if goes_on { TRACE } else { "   " }, fg(NIGHT)));
+        left.push(Span::styled(
+            if goes_on { TRACE } else { "   " },
+            fg(HAIRLINE),
+        ));
     }
     let branch = if agent.last { LAST_BRANCH } else { BRANCH };
     left.push(Span::styled(branch, fg(trace)));
     let (pad, pad_color) = match (agent.enabled, agent.active) {
-        (true, true) => (ON, TEAL),
-        (true, false) => (ON, SUN),
-        (false, _) => (OFF, EMBER),
+        (true, true) => (ON, POSITIVE),
+        (true, false) => (ON, ACCENT),
+        (false, _) => (OFF, NEGATIVE),
     };
     left.push(Span::styled(format!("{pad} "), fg(pad_color)));
     left.push(Span::styled(
         agent.name.clone(),
-        if agent.active { bold(TEAL) } else { dim() },
+        if agent.active { fg(TEXT) } else { dim() },
     ));
     if let Some(version) = agent.version {
-        left.push(Span::styled(format!(" v{version}"), fg(VIOLET)));
+        left.push(Span::styled(format!(" v{version}"), fg(TEXT_MUTED)));
     }
     if !agent.links.is_empty() {
         left.push(Span::styled(
             format!("  asks {}", agent.links.join(", ")),
-            fg(SUN),
+            fg(TEXT_SOFT),
         ));
     }
     left.push(Span::styled(format!("  {}", agent.description), dim()));
@@ -664,10 +667,7 @@ fn tool_rows(view: &SettingsView, width: usize) -> Vec<Row> {
                 vec![Line::default()]
             };
             row.lead = gap.len() + 1;
-            let heading = Line::from(Span::styled(
-                format!("  {}", tool.kind.name()),
-                bold(VIOLET),
-            ));
+            let heading = Line::from(Span::styled(format!("  {}", tool.kind.name()), bold(TEXT)));
             row.lines = [gap, vec![heading], row.lines].concat();
         }
         rows.push(row);
@@ -687,9 +687,9 @@ fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Row {
     let switch = Span::styled(
         label,
         if on {
-            bold(TEAL).bg(GLOW)
+            fg(POSITIVE).bg(RAISED)
         } else {
-            fg(NIGHT).bg(GLOW)
+            fg(HAIRLINE).bg(RAISED)
         },
     );
     let room = width.saturating_sub(label.len() + 2);
@@ -710,7 +710,7 @@ fn system_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let value = |left: &str, value: String| Row {
         lines: vec![right(
             vec![Span::raw(format!("    {left}"))],
-            Span::styled(format!("{value}  "), bold(SUN)),
+            Span::styled(format!("{value}  "), fg(TEXT)),
             width,
         )],
         switch: None,
@@ -719,7 +719,7 @@ fn system_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let heading = |text: &str| Row {
         lines: vec![
             Line::default(),
-            Line::from(Span::styled(format!("  {text}"), bold(VIOLET))),
+            Line::from(Span::styled(format!("  {text}"), bold(TEXT))),
         ],
         switch: None,
         lead: 0,
@@ -805,13 +805,13 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     let top = (fields.len() as u16 + 2)
         .min(METADATA_ROWS)
         .min(area.height / 2);
-    let mut title = vec![Span::styled(format!(" {} ", editor.title()), bold(TEAL))];
+    let mut title = vec![Span::styled(format!(" {} ", editor.title()), bold(TEXT))];
     if editor.changed() {
-        title.push(Span::styled("changed ", fg(SUN)));
+        title.push(Span::styled("changed ", fg(ACCENT)));
     }
     let header = Block::bordered()
         .border_type(BorderType::Rounded)
-        .border_style(fg(NIGHT))
+        .border_style(fg(HAIRLINE))
         .title(Line::from(title));
     frame.render_widget(
         Paragraph::new(fields).block(header),
@@ -826,7 +826,7 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     // An error longer than the room beside the buttons takes rows of its own above them.
     let error_lines = match &editor.error {
         Some(error) if error.width() > area.width.saturating_sub(46) as usize => {
-            indented(error, fg(EMBER), " ", area.width as usize)
+            indented(error, fg(NEGATIVE), " ", area.width as usize)
         }
         _ => Vec::new(),
     };
@@ -865,13 +865,13 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     let bar = area.bottom() - 1;
     if let Some(error) = editor.error.as_ref().filter(|_| error_rows == 0) {
         let room = area.width.saturating_sub(46) as usize;
-        let line = Line::from(Span::styled(wrap::clip(error, room), fg(EMBER)));
+        let line = Line::from(Span::styled(wrap::clip(error, room), fg(NEGATIVE)));
         frame.render_widget(Paragraph::new(line), Rect::new(area.x, bar, area.width, 1));
     }
     let buttons = [
-        (FileButton::Save, " save ", TEAL),
-        (FileButton::Revert, " revert ", SUN),
-        (FileButton::Close, " close ", ROSE),
+        (FileButton::Save, " save ", ACCENT),
+        (FileButton::Revert, " revert ", ACCENT),
+        (FileButton::Close, " close ", TEXT_SOFT),
     ];
     let mut right = area.right();
     for &(button, label, color) in buttons.iter().rev() {
@@ -879,7 +879,7 @@ fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
         let Some(left) = right.checked_sub(width + 1).filter(|&left| left >= area.x) else {
             break;
         };
-        let shown = Line::from(Span::styled(label, bold(color).bg(GLOW)));
+        let shown = Line::from(Span::styled(label, bold(color).bg(RAISED)));
         frame.render_widget(Paragraph::new(shown), Rect::new(left, bar, width, 1));
         view.hits.insert(
             0,
@@ -909,7 +909,7 @@ fn metadata(editor: &FileEditor, width: usize) -> Vec<Line<'static>> {
             continue;
         }
         lines.push(Line::from(vec![
-            Span::styled(format!("{key} {DOT} "), fg(VIOLET)),
+            Span::styled(format!("{key} {DOT} "), fg(TEXT_SOFT)),
             Span::styled(
                 wrap::clip(value, width.saturating_sub(key.len() + 3)),
                 dim(),
@@ -919,7 +919,7 @@ fn metadata(editor: &FileEditor, width: usize) -> Vec<Line<'static>> {
     if lines.is_empty() {
         lines.push(Line::from(Span::styled(
             "no front matter: the file must start with --- and a description",
-            fg(EMBER),
+            fg(NEGATIVE),
         )));
     }
     lines
