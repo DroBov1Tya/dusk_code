@@ -8,6 +8,10 @@ testing.
 
 ### Added
 
+- Install and update check every resource file against the release's tag on GitHub
+  and fetch any that is missing or different, verified by its git hash. Offline, the
+  archive is installed as it came.
+
 - Subagents have phases: planning, executing, reviewing, done and paused. An agent
   moves itself on with the new `agent_state` tool in that order; each task starts in
   planning, a stop or a failure pauses it, and after a crash it is found paused. The
