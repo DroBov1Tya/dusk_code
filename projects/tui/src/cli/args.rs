@@ -9,6 +9,12 @@ pub enum Args {
         thread: Option<String>,
     },
     Remove,
+    /// Restore data offline, before config, logs or SQLite are opened.
+    Restore {
+        archive: PathBuf,
+    },
+    /// Explicitly resume a journaled offline restore after interruption.
+    RecoverRestore,
     /// Install the newest version on the configured channel, without the screen.
     Update,
     /// Internal installer entry point; does not initialize config or start the UI.
@@ -50,7 +56,34 @@ pub fn parse_args() -> Args {
         .subcommand(Command::new("remove").about(
             "Remove duskcode, its resources, links and ~/.config/duskcode after one question",
         ))
+        .subcommand(
+            Command::new("restore")
+                .about("Restore a private migration archive offline into absent or empty data roots")
+                .long_about("Restore a /migrate archive before starting duskcode. Close every other duskcode process first. Both ~/.config/duskcode and ~/Documents/duskcode must be absent or empty, real directories. Existing data is never merged or replaced. An interrupted restore blocks normal startup; use duskcode restore --recover to validate and finish its journaled installation. Archives include API keys and chat history; keep them private. Absolute project paths inside saved data are not rewritten.")
+                .arg(
+                    Arg::new("archive")
+                        .required_unless_present("recover")
+                        .conflicts_with("recover")
+                        .value_name("ARCHIVE")
+                        .value_parser(value_parser!(PathBuf)),
+                )
+                .arg(Arg::new("recover")
+                    .long("recover")
+                    .action(clap::ArgAction::SetTrue)
+                    .help("Validate and finish an interrupted restore from its private transaction journal")),
+        )
         .get_matches();
+    if let Some(restore) = matches.subcommand_matches("restore") {
+        if restore.get_flag("recover") {
+            return Args::RecoverRestore;
+        }
+        return Args::Restore {
+            archive: restore
+                .get_one::<PathBuf>("archive")
+                .expect("required archive")
+                .clone(),
+        };
+    }
     if let Some(directory) = matches.get_one::<PathBuf>("install-resources") {
         return Args::InstallResources {
             directory: directory.clone(),

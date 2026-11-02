@@ -62,6 +62,8 @@ pub struct Runtime {
     /// Shipped files the user changed, kept at the start, with the new version beside.
     kept_builtin: Vec<String>,
     state_db: PathBuf,
+    // Declared last so coordination is released after the other owned runtime fields.
+    _restore_guard: Option<crate::archive::RestoreGuard>,
 }
 
 /// What the application costs the machine right now.
@@ -86,12 +88,25 @@ pub struct ThreadHandle {
 }
 
 impl Runtime {
+    /// A SQLite snapshot plus the two standard data roots, without the backup folder.
+    pub async fn migrate(&self, destination: Option<PathBuf>) -> Result<PathBuf> {
+        crate::archive::export(
+            self.paths(),
+            &self.launcher.state,
+            &self.state_db,
+            destination,
+        )
+        .await
+    }
+
     /// Sets up missing files, opens the database and the config, and picks the first
     /// saved model without a network request. `state_db` replaces the default database
     /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
+        let state_db =
+            crate::archive::resolve_state_db(&state_db.unwrap_or_else(|| paths.state_db()))?;
+        let restore_guard = crate::archive::startup_guard(&paths, Some(&state_db))?;
         let initialized = init::initialize(&paths)?;
-        let state_db = state_db.unwrap_or_else(|| paths.state_db());
         let state = Arc::new(State::open(&state_db).await?);
         let mailboxes = Arc::new(Mailboxes::default());
         let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes), &state_db).await?;
@@ -165,6 +180,7 @@ impl Runtime {
             None
         };
         Ok(Self {
+            _restore_guard: restore_guard,
             launcher,
             config_check,
             agents_check,

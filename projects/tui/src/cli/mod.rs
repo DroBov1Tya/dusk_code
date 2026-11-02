@@ -2,3 +2,4 @@
 
 pub mod args;
 pub mod remove;
+pub mod restore;
