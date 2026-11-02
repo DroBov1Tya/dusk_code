@@ -12,7 +12,7 @@ use ratatui::{
 };
 
 use super::{
-    theme::{HAZE, TEAL, bold, dim},
+    theme::{TEXT, TEXT_MUTED, bold, dim},
     wrap,
 };
 use crate::app::Transcript;
@@ -53,7 +53,7 @@ pub fn render(
         .filter(|title| !title.is_empty())
         .unwrap_or_else(|| "Image".into());
     let mut text: Vec<Line<'static>> =
-        wrap::words(vec![Span::styled(title, bold(TEAL))], text_width, 0)
+        wrap::words(vec![Span::styled(title, bold(TEXT))], text_width, 0)
             .into_iter()
             .map(Line::from)
             .collect();
@@ -116,7 +116,10 @@ pub fn render(
                 .collect::<Vec<_>>()
         }
         None => wrap::words(
-            vec![Span::styled("[image unavailable]", Style::new().fg(HAZE))],
+            vec![Span::styled(
+                "[image unavailable]",
+                Style::new().fg(TEXT_MUTED),
+            )],
             thumbnail_width,
             0,
         )
@@ -139,7 +142,7 @@ pub fn render(
                     .map(plain)
                     .filter(|title| !title.is_empty())
                     .unwrap_or_else(|| "Image".into()),
-                bold(TEAL),
+                bold(TEXT),
             )],
             width,
             0,
