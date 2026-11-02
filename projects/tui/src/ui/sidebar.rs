@@ -437,12 +437,12 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
         let [top, middle, bottom] = loader.rows(running.then_some(app.frame));
         let name = agent_name(&agent.thread_id);
         let age = format_duration(agent.elapsed_ms());
-        let state = if agent.unavailable_at.is_some() {
-            "unavailable"
-        } else if running {
-            ""
-        } else {
-            "done"
+        // The phase the agent is in, as it said; without one, whether it is still at work.
+        let state = match (&agent.phase, agent.unavailable_at, running) {
+            (_, Some(_), _) => "unavailable",
+            (Some((phase, _)), _, _) => phase.name(),
+            (None, _, true) => "",
+            (None, _, false) => "done",
         };
         // Room left by the loader, the time and the status.
         let room = (area.width as usize).saturating_sub(13 + state.len() + 2 * PAD as usize);

@@ -32,8 +32,8 @@ use crate::{
         is_unsupported_effort, is_unsupported_pictures, text_calls,
     },
     state::{
-        CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, PendingMessage, State, Turn,
-        TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,
+        AgentPhase, CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, PendingMessage, State,
+        Turn, TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,
     },
     tools::{Progress, ToolRegistry, ToolScope},
     util::sync::lock,
@@ -79,9 +79,13 @@ enum StepEnd {
 }
 
 impl Agent {
-    /// Marks turns left running by a stopped process as interrupted.
+    /// Marks turns left running by a stopped process as interrupted, and an agent that
+    /// was at work then as paused.
     pub async fn recover(&self) -> Result<()> {
         self.state.interrupt_running_turns(&self.thread_id).await?;
+        if self.phase().await.is_some_and(AgentPhase::is_open) {
+            self.runtime_phase(AgentPhase::Paused).await;
+        }
         self.state.recover_goal_verification(&self.thread_id).await
     }
 
@@ -100,6 +104,12 @@ impl Agent {
         if let Some(turn) = &turn {
             info!("thread {} turn {} starts", self.thread_id, turn.turn_id);
             self.emit(ThreadEvent::TurnStarted(turn.clone()));
+            // A new task starts with planning; a paused one goes on.
+            match self.phase().await {
+                None | Some(AgentPhase::Done) => self.runtime_phase(AgentPhase::Planning).await,
+                Some(AgentPhase::Paused) => self.runtime_phase(AgentPhase::Executing).await,
+                Some(_) => {}
+            }
         }
         Ok(turn)
     }
@@ -159,6 +169,18 @@ impl Agent {
             ),
         }
         let status = turn.status;
+        let ended = match status {
+            TurnStatus::Completed => Some(AgentPhase::Done),
+            TurnStatus::Failed | TurnStatus::Interrupted => Some(AgentPhase::Paused),
+            TurnStatus::Running => None,
+        };
+        // An answer is the end of the task, unless the agent paused itself to wait.
+        let now = self.phase().await;
+        if let Some(phase) = ended
+            && now.is_some_and(AgentPhase::is_open)
+        {
+            self.runtime_phase(phase).await;
+        }
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;
         Ok((stop, status))
@@ -219,6 +241,36 @@ impl Agent {
         });
         self.emit(ThreadEvent::UserMessage(message));
         Ok(())
+    }
+
+    /// A subagent's phase; a chat has none.
+    async fn phase(&self) -> Option<AgentPhase> {
+        if self.depth == 0 {
+            return None;
+        }
+        match self.state.agent_phase(&self.thread_id).await {
+            Ok(phase) => phase,
+            Err(error) => {
+                warn!("thread {}: {error:#}", self.thread_id);
+                None
+            }
+        }
+    }
+
+    /// The runtime's own move of a subagent's phase. A failure to record it is logged:
+    /// the phase is for people to follow and must not stop the work.
+    async fn runtime_phase(&self, phase: AgentPhase) {
+        if self.depth == 0 {
+            return;
+        }
+        if let Err(error) = self.state.set_agent_phase(&self.thread_id, phase, "").await {
+            warn!("thread {}: {error:#}", self.thread_id);
+            return;
+        }
+        self.emit(ThreadEvent::AgentPhase {
+            phase,
+            note: String::new(),
+        });
     }
 
     /// Subagents think at medium for now: deep effort times many agents costs more than
