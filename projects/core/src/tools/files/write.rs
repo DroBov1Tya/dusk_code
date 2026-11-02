@@ -56,7 +56,7 @@ impl Tool for WriteFile {
         let scope = context.scope;
         Box::pin(async move {
             let arguments: WriteFileArguments = parse_arguments(arguments)?;
-            let path = scope.resolve(&arguments.path)?;
+            let path = context.resolve(&arguments.path, true).await?;
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent)
                     .await

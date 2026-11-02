@@ -39,6 +39,8 @@ pub enum SettingCategory {
     /// What the agent keeps about the user.
     Personalize,
     Limits,
+    /// Whether tools ask before leaving their folders and before commands.
+    Access,
     /// How the app looks and behaves on screen.
     Appearance,
     Updates,
@@ -46,7 +48,7 @@ pub enum SettingCategory {
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Models,
         Self::Agents,
         Self::Skills,
@@ -54,6 +56,7 @@ impl SettingCategory {
         Self::Tools,
         Self::Personalize,
         Self::Limits,
+        Self::Access,
         Self::Appearance,
         Self::Updates,
         Self::System,
@@ -68,6 +71,7 @@ impl SettingCategory {
             Self::Mcp => "mcp",
             Self::Personalize => "personalize",
             Self::Limits => "limits",
+            Self::Access => "access",
             Self::Appearance => "appearance",
             Self::Updates => "updates",
             Self::System => "system",
@@ -84,6 +88,8 @@ pub enum SwitchKind {
     Memory,
     /// On is the dev channel, off the stable one.
     DevChannel,
+    /// On answers every approval request with yes.
+    FullAccess,
 }
 
 /// One row of the agent tree, with what is needed to draw the traces to it.
@@ -118,6 +124,7 @@ pub struct SettingsView {
     pub max_output_tokens: u64,
     pub memory: Memory,
     pub update_channel: Channel,
+    pub full_access: bool,
     /// The mode whose tools are shown.
     pub mode: String,
     pub tools: Vec<ToolInfo>,
@@ -226,6 +233,7 @@ impl SettingsView {
             mode: settings.mode,
             memory: settings.memory,
             update_channel: settings.update_channel,
+            full_access: settings.full_access,
             tools: settings.tools,
             skills: settings.skills,
             mcp: settings.mcp,
@@ -268,6 +276,7 @@ impl SettingsView {
             Some(SettingCategory::Limits) => 4,
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
+            Some(SettingCategory::Access) => 1,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp_rows().len(),
@@ -398,6 +407,11 @@ impl SettingsView {
                 let dev = self.update_channel == Channel::Dev;
                 (SwitchKind::DevChannel, "dev".into(), dev)
             }
+            SettingCategory::Access => (
+                SwitchKind::FullAccess,
+                "full access".into(),
+                self.full_access,
+            ),
             SettingCategory::System => return None,
         };
         Some(Action::Switch {
@@ -838,6 +852,7 @@ fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> boo
         | SettingCategory::Limits
         | SettingCategory::Appearance
         | SettingCategory::Updates
+        | SettingCategory::Access
         | SettingCategory::System => false,
     }
 }

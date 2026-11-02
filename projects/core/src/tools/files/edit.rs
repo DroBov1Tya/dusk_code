@@ -58,7 +58,7 @@ impl Tool for EditFile {
         Box::pin(async move {
             let arguments: EditFileArguments = parse_arguments(arguments)?;
             ensure!(!arguments.old_text.is_empty(), "old_text is empty");
-            let path = scope.resolve(&arguments.path)?;
+            let path = context.resolve(&arguments.path, true).await?;
             let text = read_text(&path).await?;
             let matches = text.matches(&arguments.old_text).count();
             if matches != 1 {

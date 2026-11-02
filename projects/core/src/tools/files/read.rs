@@ -37,10 +37,9 @@ impl Tool for ReadFile {
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
-        let scope = context.scope;
         Box::pin(async move {
             let arguments: PathArguments = parse_arguments(arguments)?;
-            read_text(&scope.resolve(&arguments.path)?).await
+            read_text(&context.resolve(&arguments.path, false).await?).await
         })
     }
 }

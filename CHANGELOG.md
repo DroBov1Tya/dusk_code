@@ -12,6 +12,13 @@ testing.
   file, is copied among the chat's sources and sent to the model as a picture. Quoted
   paths, escaped spaces, `~/` and `file://` URLs work.
 
+- Tools ask before they leave their folders: reading or writing a path outside the
+  working directory and the thread workspace, and running any command. The request
+  shows above the message box, subagents' too; it can be allowed once, for the session
+  (that folder, or that program on plain command lines), or denied. Full access, in
+  /settings, allows everything without asking and shows in the footer. The config
+  folder stays closed either way.
+
 - Install and update check every resource file against the release's tag on GitHub
   and fetch any that is missing or different, verified by its git hash. Offline, the
   archive is installed as it came.

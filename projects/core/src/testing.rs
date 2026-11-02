@@ -60,6 +60,7 @@ pub fn tool_context(scope: &ToolScope) -> ToolContext<'_> {
         scope,
         config,
         progress: None,
+        approvals: None,
     }
 }
 
