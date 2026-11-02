@@ -5,6 +5,7 @@
 //! about the thread itself. MCP tools come from servers; `mcp` wraps them.
 
 mod agents;
+mod approvals;
 mod builtin;
 mod console;
 mod files;
@@ -16,11 +17,12 @@ mod scope;
 mod tool;
 
 pub use agents::{AgentState, AskAgent, MessageParent};
+pub use approvals::{ApprovalRequest, Approvals, Decision, Request};
 pub use builtin::read_regular;
 pub use console::JobInfo;
 pub(crate) use console::{JobManager, JobOwner, Jobs, RunCommand};
 pub use harness::{AskUser, DisplayImage, GoalTool, Question, ReadHistory, Remember, Tasks};
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
-pub use scope::ToolScope;
+pub use scope::{Place, ToolScope};
 pub use tool::{Progress, Tool, ToolContext, ToolKind};

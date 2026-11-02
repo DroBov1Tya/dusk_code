@@ -4,8 +4,8 @@
 use anyhow::Result;
 
 use crate::{
-    catalog::agents::AgentTree, catalog::skills::SkillInfo, config::Memory, mcp::McpInfo,
-    release::update::Channel, runtime::Runtime, tools::ToolKind,
+    catalog::agents::AgentTree, catalog::skills::SkillInfo, config::ApprovalPolicy, config::Memory,
+    mcp::McpInfo, release::update::Channel, runtime::Runtime, tools::ToolKind,
 };
 
 pub struct Settings {
@@ -16,6 +16,7 @@ pub struct Settings {
     pub idle_screen_minutes: u32,
     pub memory: Memory,
     pub update_channel: Channel,
+    pub full_access: bool,
     /// The chat's mode, whose switches `tools` shows.
     pub mode: String,
     /// Every tool by kind and then by name.
@@ -52,6 +53,7 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         mode: config.mode().to_owned(),
         memory: config.memory(),
         update_channel: config.update_channel(),
+        full_access: config.approvals() == ApprovalPolicy::FullAccess,
         tools,
         skills: runtime.skills(),
         agents: runtime.agent_tree(),

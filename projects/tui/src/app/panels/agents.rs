@@ -232,6 +232,15 @@ impl App {
                 thread_id: child,
                 event,
             } => self.apply_subagent(&child, *event),
+            ThreadEvent::Approval(request) => {
+                let agent = self
+                    .subagents
+                    .iter()
+                    .find(|view| view.thread_id == thread_id)
+                    .map(|view| view.agent.clone());
+                self.ask_approval(request, agent.or_else(|| Some("an agent".into())));
+            }
+            ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
             event => {
                 self.update_card(thread_id, &event);
                 if let Some(Panel::Agent(window)) = &mut self.panel

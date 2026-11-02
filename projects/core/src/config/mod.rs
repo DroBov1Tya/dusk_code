@@ -82,6 +82,25 @@ pub struct Config {
     /// MCP servers by name, started with the core.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     mcp: BTreeMap<String, McpServerConfig>,
+    /// Whether tools ask before a path outside their folders and before every command.
+    #[serde(default, skip_serializing_if = "ApprovalPolicy::is_ask")]
+    approvals: ApprovalPolicy,
+}
+
+/// Ask is the default; full access answers every request with yes. The config folder
+/// stays closed either way.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalPolicy {
+    #[default]
+    Ask,
+    FullAccess,
+}
+
+impl ApprovalPolicy {
+    fn is_ask(&self) -> bool {
+        *self == Self::Ask
+    }
 }
 
 /// The memory of the user: whether the agent keeps it, and its size. Every request
@@ -561,6 +580,14 @@ impl Config {
 
     pub fn set_update_channel(&mut self, channel: Channel) {
         self.update_channel = (channel != Channel::Stable).then_some(channel);
+    }
+
+    pub fn approvals(&self) -> ApprovalPolicy {
+        self.approvals
+    }
+
+    pub fn set_approvals(&mut self, policy: ApprovalPolicy) {
+        self.approvals = policy;
     }
 
     pub fn effort(&self) -> Option<Effort> {

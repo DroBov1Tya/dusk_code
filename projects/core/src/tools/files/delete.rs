@@ -41,10 +41,9 @@ impl Tool for DeleteFile {
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
-        let scope = context.scope;
         Box::pin(async move {
             let arguments: PathArguments = parse_arguments(arguments)?;
-            let path = scope.resolve(&arguments.path)?;
+            let path = context.resolve(&arguments.path, true).await?;
             let metadata = fs::symlink_metadata(&path).await.context("no such file")?;
             ensure!(metadata.is_file(), "not a file");
             fs::remove_file(&path).await.context("cannot delete file")?;

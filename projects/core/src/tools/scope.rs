@@ -77,20 +77,26 @@ impl ToolScope {
     /// Resolves a path the model gave, existing or not, and checks that it stays inside
     /// the working directory or the workspace.
     pub fn resolve(&self, path: &str) -> Result<PathBuf> {
+        let (resolved, place) = self.locate(path)?;
+        ensure!(
+            place == Place::Inside,
+            "path is outside the working directory and the thread workspace"
+        );
+        Ok(resolved)
+    }
+
+    /// Resolves a path the model gave and says whether it is inside the tools' folders.
+    /// The config folder is an error wherever it is: no approval opens it.
+    pub fn locate(&self, path: &str) -> Result<(PathBuf, Place)> {
         ensure!(!path.trim().is_empty(), "path is empty");
-        let path = self.cwd.join(path);
-        let resolved = resolve_existing_prefix(&path)?;
+        let resolved = resolve_existing_prefix(&self.cwd.join(path))?;
         if self
             .shared
             .iter()
             .any(|shared| resolved.starts_with(shared))
         {
-            return Ok(resolved);
+            return Ok((resolved, Place::Inside));
         }
-        ensure!(
-            resolved.starts_with(&self.cwd) || resolved.starts_with(&self.workspace),
-            "path is outside the working directory and the thread workspace"
-        );
         ensure!(
             !self
                 .protected
@@ -98,8 +104,20 @@ impl ToolScope {
                 .is_some_and(|protected| resolved.starts_with(protected)),
             "path is inside the dusk config folder, which tools may not touch"
         );
-        Ok(resolved)
+        let place = match resolved.starts_with(&self.cwd) || resolved.starts_with(&self.workspace) {
+            true => Place::Inside,
+            false => Place::Outside,
+        };
+        Ok((resolved, place))
     }
+}
+
+/// Where a resolved path lies: inside the tools' folders, or outside, where a tool needs
+/// the user's approval.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Place {
+    Inside,
+    Outside,
 }
 
 /// Canonicalizes the longest existing prefix and appends the rest, which must be plain names.
@@ -166,6 +184,18 @@ mod tests {
                 "through a dangling symlink"
             );
         }
+    }
+
+    /// Outside the folders a path waits for approval; the config folder never does.
+    #[test]
+    fn the_config_folder_is_closed_outside_the_folders_too() {
+        let (scope, root) = scope("scope_outside");
+        fs::create_dir_all(root.join("config")).unwrap();
+        let scope = scope.protect(&root.join("config"));
+        let (_, place) = scope.locate("../elsewhere/file").unwrap();
+        assert_eq!(place, Place::Outside);
+        assert!(scope.resolve("../elsewhere/file").is_err());
+        assert!(scope.locate("../config/config.yml").is_err());
     }
 
     #[test]

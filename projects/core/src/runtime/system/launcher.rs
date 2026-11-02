@@ -28,8 +28,9 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AgentState, AskAgent, AskUser, DisplayImage, GoalTool, JobManager, JobOwner, Jobs, McpTool,
-        MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry, ToolScope,
+        AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, JobManager, JobOwner,
+        Jobs, McpTool, MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry,
+        ToolScope,
     },
 };
 
@@ -46,6 +47,8 @@ pub struct Launcher {
     pub mcp: Arc<McpServers>,
     pub agents: Arc<Agents>,
     pub(crate) jobs: Arc<JobManager>,
+    /// One for every thread, so a yes for the session holds in all of them.
+    pub(crate) approvals: Arc<Approvals>,
 }
 
 impl Launcher {
@@ -90,6 +93,7 @@ impl Launcher {
         tools.chat = depth == 0;
         tools.set_depth(depth);
         tools.jobs = Some(Arc::clone(&self.jobs));
+        tools.approvals = Some(Arc::clone(&self.approvals));
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
                 tools.add(Box::new(tool));

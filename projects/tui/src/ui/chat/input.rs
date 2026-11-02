@@ -19,11 +19,11 @@ use super::{
     transcript::spinner,
     wrap,
 };
-use dusk_core::state::GoalStatus;
+use dusk_core::{config::ApprovalPolicy, state::GoalStatus, tools::Decision};
 
 use crate::app::{
-    Activity, App, ChipHit, Focus, GoalButton, GoalHit, Input, InputRow, PollHit, PollTarget,
-    QueueButton, QueueHit, commands, paste,
+    Activity, App, ApprovalHit, ChipHit, Focus, GoalButton, GoalHit, Input, InputRow, PollHit,
+    PollTarget, QueueButton, QueueHit, commands, paste,
 };
 use crate::host::git::GitSummary;
 
@@ -40,12 +40,20 @@ const SIDE: u16 = 2;
 /// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
-    poll_rows(app)
+    approval_rows(app)
+        + poll_rows(app)
         + goal_rows(app)
         + queue_rows(app)
         + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16
         + FRAME_ROWS
         + 1
+}
+
+/// The border, the request, its choices and the hint.
+fn approval_rows(app: &App) -> u16 {
+    app.approvals
+        .first()
+        .map_or(0, |asked| asked.choices().len() as u16 + 4)
 }
 
 /// The question's border, its text, the options, the own answer and the buttons.
@@ -64,9 +72,24 @@ fn queue_rows(app: &App) -> u16 {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
-    draw_footer(frame, area, app.git.as_ref(), &app.folder);
+    let full_access = app.config.current().approvals() == ApprovalPolicy::FullAccess;
+    draw_footer(frame, area, app.git.as_ref(), &app.folder, full_access);
     let area = Rect {
         height: area.height.saturating_sub(1),
+        ..area
+    };
+    let approval = approval_rows(app).min(area.height);
+    draw_approval(
+        frame,
+        Rect {
+            height: approval,
+            ..area
+        },
+        app,
+    );
+    let area = Rect {
+        y: area.y + approval,
+        height: area.height.saturating_sub(approval),
         ..area
     };
     let polled = poll_rows(app).min(area.height);
@@ -201,7 +224,13 @@ fn mode_chip(mode: &str) -> Span<'static> {
 }
 
 /// The repository summary and package version share a row below the message card.
-fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>, folder: &str) {
+fn draw_footer(
+    frame: &mut Frame,
+    area: Rect,
+    git: Option<&GitSummary>,
+    folder: &str,
+    full_access: bool,
+) {
     if area.is_empty() {
         return;
     }
@@ -224,13 +253,18 @@ fn draw_footer(frame: &mut Frame, area: Rect, git: Option<&GitSummary>, folder: 
     } else {
         0
     };
-    let line = match git {
+    let mut line = match git {
         Some(summary) => git_line(summary),
         None => Line::from(vec![
             Span::styled(format!("  {folder}"), dim()),
             Span::styled(" \u{00B7} not a git repository", dim()),
         ]),
     };
+    // First, so a narrow terminal cuts the folder rather than the warning.
+    if full_access {
+        line.spans
+            .insert(0, Span::styled(" full access ", bold(NEGATIVE)));
+    }
     frame.render_widget(
         Paragraph::new(line),
         Rect {
@@ -270,6 +304,61 @@ fn git_line(summary: &GitSummary) -> Line<'static> {
         ));
     }
     Line::from(spans)
+}
+
+/// The first request of a tool waiting for the user's yes, with its choices.
+fn draw_approval(frame: &mut Frame, area: Rect, app: &mut App) {
+    app.approval_hits.clear();
+    let Some(asked) = app.approvals.first() else {
+        return;
+    };
+    if area.height < 4 || area.width < 20 {
+        return;
+    }
+    let waiting = app.approvals.len();
+    let title = match waiting {
+        1 => " approval ".to_owned(),
+        _ => format!(" approval 1 of {waiting} "),
+    };
+    let block = Block::bordered()
+        .border_type(BorderType::Rounded)
+        .border_style(fg(ACCENT))
+        .title(Span::styled(title, bold(DUSK)));
+    let inner = block.inner(area);
+    frame.render_widget(Clear, area);
+    frame.render_widget(block, area);
+    let width = inner.width as usize;
+    let mut lines = vec![Line::from(Span::styled(
+        wrap::clip(&format!(" {}", asked.title()), width),
+        bold(TEXT),
+    ))];
+    for (row, (decision, label)) in asked.choices().into_iter().enumerate() {
+        let here = asked.cursor == row;
+        let pointer = if here { " \u{203A} " } else { "   " };
+        let style = match (here, decision) {
+            (true, Decision::Deny) => bold(NEGATIVE),
+            (true, _) => bold(ACCENT),
+            (false, _) => Style::new(),
+        };
+        let y = inner.y + 1 + row as u16;
+        if y < inner.bottom() {
+            app.approval_hits.push(ApprovalHit {
+                row: y,
+                left: inner.x,
+                right: inner.right(),
+                choice: row,
+            });
+        }
+        lines.push(Line::from(Span::styled(
+            wrap::clip(&format!("{pointer}{label}"), width),
+            style,
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        "  up/down choose  enter answers  esc denies",
+        dim(),
+    )));
+    frame.render_widget(Paragraph::new(lines), inner);
 }
 
 const SEND: &str = " send ";

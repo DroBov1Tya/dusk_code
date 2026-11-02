@@ -15,7 +15,7 @@ use crossterm::event::{Event, EventStream, MouseEventKind};
 use dusk_core::{
     chat::commands::{Answer, Command},
     config::Effort,
-    config::{ApiKey, ProviderConfig, ProviderKind},
+    config::{ApiKey, ApprovalPolicy, ProviderConfig, ProviderKind},
     providers::validate_provider,
     release::update::{Channel, InstallProgress},
     runtime::{Runtime, ThreadEvent, ThreadHandle},
@@ -339,6 +339,11 @@ pub async fn run(
             }
             Action::Quit => break,
             Action::Send(text) => send(runtime, &mut app, &mut open, text, false).await,
+            Action::Approve { id, decision } => {
+                if !runtime.answer_approval(id, decision) {
+                    app.flash = Some("that request is no longer waiting".into());
+                }
+            }
             Action::SendNow(text) => send(runtime, &mut app, &mut open, text, true).await,
             Action::Connect {
                 name,
@@ -442,6 +447,10 @@ pub async fn run(
                     SwitchKind::DevChannel => runtime.set_update_channel(match on {
                         true => Channel::Dev,
                         false => Channel::Stable,
+                    }),
+                    SwitchKind::FullAccess => runtime.set_approvals(match on {
+                        true => ApprovalPolicy::FullAccess,
+                        false => ApprovalPolicy::Ask,
                     }),
                 };
                 match saved {

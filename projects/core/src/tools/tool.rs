@@ -1,13 +1,16 @@
 //! The tool interface: what the model reads about a tool, and the call that turns JSON
 //! arguments into text for the model.
 
-use std::{future::Future, pin::Pin};
+use std::{future::Future, path::PathBuf, pin::Pin};
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
-use super::scope::ToolScope;
+use super::{
+    approvals::{Approvals, Request},
+    scope::{Place, ToolScope},
+};
 use crate::{config::Config, runtime::ThreadEvent};
 
 /// Boxed so tools of different kinds, built-in or MCP, fit in one registry.
@@ -20,6 +23,41 @@ pub struct ToolContext<'a> {
     pub config: &'a Config,
     /// The running call; `None` while tools are only described to the model.
     pub progress: Option<Progress<'a>>,
+    /// Where requests for the user's approval go; `None` where no runtime runs the tools.
+    pub approvals: Option<&'a Approvals>,
+}
+
+impl ToolContext<'_> {
+    /// Resolves a path the model gave; one outside the folders needs the user's yes.
+    pub async fn resolve(&self, path: &str, write: bool) -> Result<PathBuf> {
+        let (resolved, place) = self.scope.locate(path)?;
+        if place == Place::Outside {
+            let approvals = self
+                .approvals
+                .context("path is outside the working directory and the thread workspace")?;
+            let request = Request::Path {
+                path: resolved.clone(),
+                write,
+            };
+            approvals
+                .ask(request, self.progress, self.config.approvals())
+                .await?;
+        }
+        Ok(resolved)
+    }
+
+    /// Every command needs the user's yes, unless full access or the session gives it.
+    pub async fn approve_command(&self, command: &str) -> Result<()> {
+        let Some(approvals) = self.approvals else {
+            return Ok(());
+        };
+        let request = Request::Command {
+            command: command.to_owned(),
+        };
+        approvals
+            .ask(request, self.progress, self.config.approvals())
+            .await
+    }
 }
 
 /// Where a running call reports what happens inside it, such as a subagent at work.
