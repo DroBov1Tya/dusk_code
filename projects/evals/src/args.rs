@@ -43,7 +43,7 @@ pub fn parse_args() -> Args {
             Arg::new("only")
                 .long("only")
                 .action(ArgAction::Append)
-                .help("Run this task only; may be repeated"),
+                .help("Run tasks whose name starts with this; may be repeated"),
         )
         .arg(
             Arg::new("config")
