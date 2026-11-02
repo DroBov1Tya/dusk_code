@@ -6,6 +6,11 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- `/connect` takes an optional name for the provider; without one it is `provider-N`
+  as before. A name already in use is refused instead of replacing that provider.
+
 ### Changed
 
 - A new chat's folder in `~/Documents/duskcode` is named by its day, like `03_11_2026`,
