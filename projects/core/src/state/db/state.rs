@@ -51,6 +51,7 @@ impl State {
         legacy::convert_tasks(&pool, &MIGRATOR).await?;
         legacy::convert_messages(&pool, &MIGRATOR).await?;
         legacy::convert_jobs(&pool, &MIGRATOR).await?;
+        legacy::convert_unreleased(&pool).await?;
         MIGRATOR
             .run(&pool)
             .await

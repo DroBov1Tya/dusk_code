@@ -308,6 +308,72 @@ pub async fn convert_jobs(pool: &SqlitePool, migrator: &Migrator) -> Result<()> 
     Ok(())
 }
 
+/// Migrations a development build applied that never shipped, by version, the SHA-384
+/// of their SQL, and how to undo them, newest first. Their tables served code that was
+/// dropped, so nothing reads what they hold.
+const UNRELEASED: [(i64, &str, &str); 3] = [
+    (
+        19,
+        "e48002c70afaf9cb27826675cd7cb57e5943eda3cf98be2d11c19806fc6e1336b1edec5eec08b5fe0021441c94ad421d",
+        "DROP TABLE IF EXISTS message_attachments;",
+    ),
+    (
+        18,
+        "83aa66eab6c4caaec0cf7ce548f2999f9c86b907d4d58846dd98754fb10c410371bde4002af6ae5937b9a8541d2e0d39",
+        "DROP TABLE IF EXISTS codex_sessions;",
+    ),
+    (
+        17,
+        "b7ab72e8fcf160ce29bff7af122e703ae5d063211c15b11cbd25b5161ab662b9f24b6badcf369f656f27fc925fcd923f",
+        "ALTER TABLE pending_messages DROP COLUMN joins_running_turn;
+         ALTER TABLE pending_messages DROP COLUMN deferred_until_user;",
+    ),
+];
+
+/// Databases a development build migrated past what was released. Matched by checksum
+/// as well as number, so a later migration that takes the number is left alone.
+pub async fn convert_unreleased(pool: &SqlitePool) -> Result<()> {
+    let ledger: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master
+                        WHERE type = 'table' AND name = '_sqlx_migrations')",
+    )
+    .fetch_one(pool)
+    .await
+    .context("look for the migration record")?;
+    if !ledger {
+        return Ok(());
+    }
+    let mut transaction = pool.begin().await.context("begin unreleased undo")?;
+    for (version, checksum, undo) in UNRELEASED {
+        let recorded: Option<Vec<u8>> =
+            sqlx::query_scalar("SELECT checksum FROM _sqlx_migrations WHERE version = ?")
+                .bind(version)
+                .fetch_optional(&mut *transaction)
+                .await
+                .context("read the migration record")?;
+        let hex = recorded.map(|bytes| {
+            bytes
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect::<String>()
+        });
+        if hex.as_deref() != Some(checksum) {
+            continue;
+        }
+        sqlx::raw_sql(undo)
+            .execute(&mut *transaction)
+            .await
+            .with_context(|| format!("undo unreleased migration {version}"))?;
+        sqlx::query("DELETE FROM _sqlx_migrations WHERE version = ?")
+            .bind(version)
+            .execute(&mut *transaction)
+            .await
+            .context("forget an unreleased migration")?;
+        tracing::info!("undid unreleased migration {version}");
+    }
+    transaction.commit().await.context("commit unreleased undo")
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{state::State, testing::temp_dir};
@@ -439,6 +505,51 @@ mod tests {
                 .await
                 .unwrap();
         assert_ne!(description, super::OLD_OWNERS_MIGRATION);
+        state.close().await;
+    }
+
+    #[tokio::test]
+    async fn a_development_build_past_the_release_is_undone() {
+        let path = temp_dir("legacy-unreleased").join("state.db");
+        let state = State::open(&path).await.unwrap();
+        // What that build's migrations 17 to 19 made, recorded with their checksums.
+        sqlx::raw_sql(
+            "ALTER TABLE pending_messages ADD COLUMN deferred_until_user INTEGER NOT NULL DEFAULT 0;
+             ALTER TABLE pending_messages ADD COLUMN joins_running_turn INTEGER NOT NULL DEFAULT 0;
+             CREATE TABLE codex_sessions (thread_id TEXT PRIMARY KEY);
+             CREATE TABLE message_attachments (request_uid TEXT NOT NULL);",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        for (version, checksum, _) in super::UNRELEASED {
+            let bytes: Vec<u8> = (0..checksum.len())
+                .step_by(2)
+                .map(|at| u8::from_str_radix(&checksum[at..at + 2], 16).unwrap())
+                .collect();
+            sqlx::query(
+                "INSERT INTO _sqlx_migrations (version, description, success, checksum,
+                    execution_time) VALUES (?, 'unreleased', TRUE, ?, 0)",
+            )
+            .bind(version)
+            .bind(bytes)
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        }
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        let left: i64 = sqlx::query_scalar(
+            "SELECT (SELECT count(*) FROM _sqlx_migrations WHERE version >= 17)
+                  + (SELECT count(*) FROM sqlite_master
+                     WHERE name IN ('codex_sessions', 'message_attachments'))
+                  + (SELECT count(*) FROM pragma_table_info('pending_messages')
+                     WHERE name IN ('deferred_until_user', 'joins_running_turn'))",
+        )
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+        assert_eq!(left, 0);
         state.close().await;
     }
 }
