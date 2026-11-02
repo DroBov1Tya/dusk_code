@@ -85,7 +85,9 @@ async fn store(
     Ok(source)
 }
 
-/// `message` with every pasted block moved to a source and replaced by its tag.
+/// `message` with every pasted block, and every picture it names by its full path,
+/// moved to a source and replaced by its tag. A terminal pastes a dropped file as its
+/// path, so this is how a screenshot reaches the model.
 pub async fn keep_pastes(
     state: &State,
     workspace: &Path,
@@ -96,7 +98,9 @@ pub async fn keep_pastes(
     let mut kept = String::new();
     for part in split(message) {
         match part {
-            Part::Text(text) => kept.push_str(text),
+            Part::Text(text) => {
+                kept.push_str(&keep_pictures(state, workspace, thread_id, text).await?)
+            }
             Part::Source(name) => kept.push_str(&source_tag(name)),
             Part::Pasted(text) => {
                 count += 1;
@@ -107,6 +111,115 @@ pub async fn keep_pastes(
         }
     }
     Ok(kept)
+}
+
+/// `text` with each picture path in it replaced by the tag of the picture's copy.
+async fn keep_pictures(
+    state: &State,
+    workspace: &Path,
+    thread_id: &str,
+    text: &str,
+) -> Result<String> {
+    let mut kept = String::new();
+    let mut from = 0;
+    for (range, path) in picture_paths(text) {
+        if !is_picture_file(&path).await {
+            continue;
+        }
+        let source = add_file(state, workspace, thread_id, &path).await?;
+        kept.push_str(&text[from..range.start]);
+        kept.push_str(&source_tag(&source.name));
+        from = range.end;
+    }
+    kept.push_str(&text[from..]);
+    Ok(kept)
+}
+
+async fn is_picture_file(path: &Path) -> bool {
+    use tokio::io::AsyncReadExt;
+    let Ok(mut file) = tokio::fs::File::open(path).await else {
+        return false;
+    };
+    let mut head = [0; 16];
+    file.read(&mut head).await.is_ok_and(|_| is_picture(&head))
+}
+
+/// Words of `text` that name a PNG or JPEG by its full path, as a terminal pastes a
+/// dropped file: quoted, with spaces escaped, or as a `file://` URL.
+fn picture_paths(text: &str) -> Vec<(std::ops::Range<usize>, PathBuf)> {
+    let mut found = Vec::new();
+    let mut chars = text.char_indices().peekable();
+    while let Some(&(start, first)) = chars.peek() {
+        if first.is_whitespace() {
+            chars.next();
+            continue;
+        }
+        let mut word = String::new();
+        let mut end = start;
+        if matches!(first, '\'' | '"') {
+            chars.next();
+            for (at, c) in chars.by_ref() {
+                end = at + c.len_utf8();
+                if c == first {
+                    break;
+                }
+                word.push(c);
+            }
+        } else {
+            while let Some((at, c)) = chars.next() {
+                if c.is_whitespace() {
+                    break;
+                }
+                end = at + c.len_utf8();
+                match c {
+                    '\\' => {
+                        if let Some((at, escaped)) = chars.next() {
+                            end = at + escaped.len_utf8();
+                            word.push(escaped);
+                        }
+                    }
+                    c => word.push(c),
+                }
+            }
+        }
+        // Punctuation after a bare path ends the sentence; a quoted path is exact.
+        let mut trimmed = word.as_str();
+        if !matches!(first, '\'' | '"') {
+            trimmed = word.trim_end_matches([',', ';', ':', '!', '?', ')']);
+            end -= word.len() - trimmed.len();
+        }
+        if let Some(path) = picture_path(trimmed) {
+            found.push((start..end, path));
+        }
+    }
+    found
+}
+
+fn picture_path(word: &str) -> Option<PathBuf> {
+    let path = match word.strip_prefix("file://") {
+        Some(url) => PathBuf::from(percent_decoded(url)?),
+        None => match word.strip_prefix("~/") {
+            Some(rest) => PathBuf::from(std::env::var_os("HOME")?).join(rest),
+            None => PathBuf::from(word),
+        },
+    };
+    let extension = path.extension()?.to_str()?.to_ascii_lowercase();
+    (path.is_absolute() && matches!(extension.as_str(), "png" | "jpg" | "jpeg")).then_some(path)
+}
+
+fn percent_decoded(text: &str) -> Option<String> {
+    let mut bytes = Vec::new();
+    let mut rest = text.bytes();
+    while let Some(byte) = rest.next() {
+        match byte {
+            b'%' => {
+                let hex = [rest.next()?, rest.next()?];
+                bytes.push(u8::from_str_radix(std::str::from_utf8(&hex).ok()?, 16).ok()?);
+            }
+            byte => bytes.push(byte),
+        }
+    }
+    String::from_utf8(bytes).ok()
 }
 
 /// A copy of the file at `path` among the chat's sources.
@@ -328,6 +441,37 @@ mod tests {
         let empty = block(&state, &workspace, "thread", true).await.unwrap();
         assert!(empty.is_none());
         assert_eq!(std::fs::read_dir(folder(&workspace)).unwrap().count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_pasted_picture_path_becomes_a_source() {
+        let state = temp_state("sources-picture-path").await;
+        state.create_thread("thread", "test").await.unwrap();
+        let workspace = temp_dir("sources-picture-path-workspace");
+        let dir = temp_dir("sources-picture-path-files");
+        std::fs::create_dir_all(&dir).unwrap();
+        let shot = dir.join("my shot.png");
+        std::fs::write(&shot, png(16)).unwrap();
+        std::fs::write(dir.join("fake.png"), "not a picture").unwrap();
+        let escaped = shot.display().to_string().replace(' ', "\\ ");
+        let message = format!(
+            "see {escaped}, and '{}' and {}/fake.png",
+            shot.display(),
+            dir.display()
+        );
+        let kept = keep_pastes(&state, &workspace, "thread", &message)
+            .await
+            .unwrap();
+        assert_eq!(
+            kept,
+            format!(
+                "see <source>my_shot.png</source>, and <source>my_shot.png</source> and {}/fake.png",
+                dir.display()
+            )
+        );
+        assert_eq!(state.sources("thread").await.unwrap().len(), 2);
+        let url = format!("file://{}", shot.display().to_string().replace(' ', "%20"));
+        assert_eq!(picture_paths(&url)[0].1, shot);
     }
 
     fn png(edge: u32) -> Vec<u8> {
