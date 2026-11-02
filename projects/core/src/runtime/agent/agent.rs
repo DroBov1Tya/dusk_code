@@ -29,7 +29,7 @@ use crate::{
     config::{Config, Effort},
     providers::{
         ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
-        is_unsupported_effort, is_unsupported_pictures,
+        is_unsupported_effort, is_unsupported_pictures, text_calls,
     },
     state::{
         CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, State, Turn, TurnAnswer,
@@ -318,10 +318,22 @@ impl Agent {
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
             }
         }
-        let answer = TurnAnswer {
-            reasoning: recorded_reasoning(&config, &output),
-            content: output.text,
+        let reasoning = recorded_reasoning(&config, &output);
+        let (content, generated) = match generated {
+            Ok(Ok(calls)) if calls.is_empty() => match text_calls::recover(&output.text, &tools) {
+                Some((content, calls)) => {
+                    info!(
+                        "thread {}: {} tool calls written as text",
+                        self.thread_id,
+                        calls.len()
+                    );
+                    (content, Ok(Ok(calls)))
+                }
+                None => (output.text, Ok(Ok(calls))),
+            },
+            generated => (output.text, generated),
         };
+        let answer = TurnAnswer { reasoning, content };
         let calls = match generated {
             Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),
             // The connection is closed already; what was written so far is kept.
