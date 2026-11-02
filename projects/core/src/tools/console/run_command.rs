@@ -5,8 +5,9 @@
 use std::{path::Path, process::Stdio, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::{Child, Command},
@@ -15,6 +16,7 @@ use tokio::{
 use crate::BoxFuture;
 use crate::tools::{
     builtin::parse_arguments,
+    schema,
     scope::ToolScope,
     tool::{Tool, ToolContext, ToolKind},
 };
@@ -34,11 +36,16 @@ impl RunCommand {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RunCommandArguments {
+    /// Shell command line.
     command: String,
+    /// Kill the command after this many seconds. Defaults to 60.
+    #[schemars(range(min = 1, max = MAX_TIMEOUT_SECONDS))]
     timeout_seconds: Option<u64>,
+    /// Return immediately and deliver completion to this agent automatically. Defaults to
+    /// false.
     #[serde(default)]
     background: bool,
 }
@@ -68,21 +75,7 @@ impl Tool for RunCommand {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "command": { "type": "string", "description": "Shell command line." },
-                "background": { "type": "boolean", "description": "Return immediately and deliver completion to this agent automatically. Defaults to false." },
-                "timeout_seconds": {
-                    "type": "integer",
-                    "minimum": 1,
-                    "maximum": MAX_TIMEOUT_SECONDS,
-                    "description": "Kill the command after this many seconds. Defaults to 60."
-                }
-            },
-            "required": ["command"],
-            "additionalProperties": false
-        })
+        schema::of::<RunCommandArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
@@ -241,6 +234,7 @@ async fn read_capped(mut stream: impl AsyncRead + Unpin) -> std::io::Result<Stri
 
 #[cfg(test)]
 mod tests {
+    use serde_json::json;
     use std::fs;
 
     use super::*;

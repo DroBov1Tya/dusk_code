@@ -11,6 +11,7 @@ mod files;
 mod harness;
 pub mod mcp;
 mod registry;
+mod schema;
 mod scope;
 mod tool;
 

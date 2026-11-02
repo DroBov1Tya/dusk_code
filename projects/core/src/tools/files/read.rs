@@ -1,11 +1,12 @@
 //! `read_file`: a UTF-8 text file, up to 1 MiB.
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     BoxFuture,
     tools::{
         builtin::parse_arguments,
+        schema,
         tool::{Tool, ToolContext, ToolKind},
     },
 };
@@ -32,14 +33,7 @@ impl Tool for ReadFile {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "File to read." }
-            },
-            "required": ["path"],
-            "additionalProperties": false
-        })
+        schema::of::<PathArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

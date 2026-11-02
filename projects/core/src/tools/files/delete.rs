@@ -3,12 +3,13 @@
 use anyhow::{Context, ensure};
 use tokio::fs;
 
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     BoxFuture,
     tools::{
         builtin::{parse_arguments, printable},
+        schema,
         tool::{Tool, ToolContext, ToolKind},
     },
 };
@@ -36,14 +37,7 @@ impl Tool for DeleteFile {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "File to delete." }
-            },
-            "required": ["path"],
-            "additionalProperties": false
-        })
+        schema::of::<PathArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

@@ -8,11 +8,13 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::tools::{
     builtin::parse_arguments,
+    schema,
     tool::{Tool, ToolContext},
 };
 use crate::{
@@ -34,9 +36,10 @@ pub struct LoadSkill {
     graph: Mutex<Option<(Instant, Arc<Graph>)>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct LoadSkillArguments {
+    /// Node name, as listed.
     name: String,
 }
 
@@ -79,14 +82,7 @@ impl Tool for LoadSkill {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "name": { "type": "string", "description": "Node name, as listed." }
-            },
-            "required": ["name"],
-            "additionalProperties": false
-        })
+        schema::of::<LoadSkillArguments>()
     }
 
     fn available(&self, context: &ToolContext<'_>) -> bool {

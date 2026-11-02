@@ -4,13 +4,14 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     BoxFuture,
     runtime::system::Launcher,
-    tools::{Tool, ToolContext, ToolKind},
+    tools::{Tool, ToolContext, ToolKind, schema},
 };
 
 pub struct MessageParent {
@@ -18,9 +19,10 @@ pub struct MessageParent {
     thread_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct MessageParentArguments {
+    /// The message.
     text: String,
 }
 
@@ -62,14 +64,7 @@ impl Tool for MessageParent {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "text": { "type": "string", "description": "The message." }
-            },
-            "required": ["text"],
-            "additionalProperties": false
-        })
+        schema::of::<MessageParentArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

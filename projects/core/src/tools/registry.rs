@@ -7,6 +7,7 @@ use serde_json::Value;
 use tracing::info;
 
 use super::{
+    schema::Check,
     scope::ToolScope,
     tool::{Progress, Tool, ToolContext, ToolKind},
 };
@@ -22,6 +23,8 @@ const MAX_RESULT_BYTES: usize = 64 * 1024;
 #[derive(Default)]
 pub struct ToolRegistry {
     tools: BTreeMap<String, Box<dyn Tool>>,
+    /// Compiled once per tool, when it is added.
+    checks: BTreeMap<String, Check>,
     /// A chat's tools follow the switches of the chat's mode; an agent's follow MAIN's.
     pub chat: bool,
     /// Set only from trusted launcher depth, never from model/config identity.
@@ -81,7 +84,10 @@ impl ToolRegistry {
         if tool.name() == "display_image" && !tool.root_only() {
             return;
         }
-        self.tools.insert(tool.name().to_owned(), tool);
+        let name = tool.name().to_owned();
+        self.checks
+            .insert(name.clone(), Check::new(&tool.parameters()));
+        self.tools.insert(name, tool);
     }
 
     pub(crate) fn set_depth(&mut self, depth: usize) {
@@ -92,6 +98,8 @@ impl ToolRegistry {
     pub fn keep(&mut self, names: &[String]) {
         self.tools
             .retain(|name, _| names.iter().any(|kept| kept == name));
+        let tools = &self.tools;
+        self.checks.retain(|name, _| tools.contains_key(name));
     }
 
     pub fn names(&self) -> impl Iterator<Item = &str> {
@@ -165,6 +173,12 @@ impl ToolRegistry {
             }
             _ => return error_result("arguments must be a JSON object".into()),
         };
+        if let Some(check) = self.checks.get(call.name.as_str())
+            && let Some(problems) = check.problems(&call.name, &tool.parameters(), &arguments)
+        {
+            info!("tool {} called with invalid arguments", call.name);
+            return error_result(problems);
+        }
         let context = ToolContext {
             scope,
             config,
@@ -213,4 +227,42 @@ fn bounded(mut content: String) -> String {
         content.push_str("\n[output truncated]");
     }
     content
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::{
+        state::artifacts::ArtifactStore,
+        testing::{temp_dir, temp_state},
+        tools::{AskUser, DisplayImage, GoalTool, ReadHistory, Remember, Tasks},
+    };
+
+    /// Providers reject a schema that is not one plain object at the top.
+    #[tokio::test]
+    async fn every_schema_is_one_object_providers_accept() {
+        let state = Arc::new(temp_state("registry_schemas").await);
+        let dir = temp_dir("registry_schemas");
+        let mut tools: Vec<Box<dyn Tool>> = super::super::builtin::all(&dir);
+        tools.push(Box::new(Tasks::new(Arc::clone(&state), "t".into())));
+        tools.push(Box::new(GoalTool::new(Arc::clone(&state), "t".into())));
+        tools.push(Box::new(ReadHistory::new(Arc::clone(&state), "t".into())));
+        tools.push(Box::new(Remember::new(dir.join("MEMORY.md"))));
+        tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
+        tools.push(Box::new(AskUser));
+        for tool in tools {
+            let schema = tool.parameters();
+            let name = tool.name();
+            assert_eq!(schema["type"], "object", "{name}");
+            for key in ["oneOf", "anyOf", "allOf", "$ref", "$defs", "$schema"] {
+                assert!(schema.get(key).is_none(), "{name} has {key} at the top");
+            }
+            assert!(
+                jsonschema::Validator::new(&schema).is_ok(),
+                "{name} schema does not compile"
+            );
+        }
+    }
 }

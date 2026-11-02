@@ -8,8 +8,9 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
     process::Child,
@@ -26,7 +27,7 @@ use crate::{
     BoxFuture,
     runtime::agent::{Input, Mailboxes},
     state::{BackgroundJob, JobSummary, State},
-    tools::{Tool, ToolContext, ToolKind, builtin::parse_arguments},
+    tools::{Tool, ToolContext, ToolKind, builtin::parse_arguments, schema},
     util::sync::lock,
 };
 
@@ -473,13 +474,14 @@ impl Capture {
 
 pub struct Jobs(pub JobOwner);
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Arguments {
     action: Action,
+    /// Required except for list.
     job_id: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum Action {
     List,
@@ -499,10 +501,7 @@ impl Tool for Jobs {
         "List, inspect output/status, or cancel this thread's background commands. Results are delivered automatically; polling is optional. Output keeps at most 32 KiB per stream. Finished job history is bounded and older IDs expire.".into()
     }
     fn parameters(&self) -> Value {
-        json!({"type":"object", "properties": {
-            "action": {"type":"string", "enum":["list","status","output","cancel"]},
-            "job_id": {"type":"string", "description":"Required except for list."}
-        }, "required":["action"], "additionalProperties":false})
+        schema::of::<Arguments>()
     }
     fn call<'a>(&'a self, arguments: Value, _: ToolContext<'a>) -> BoxFuture<'a, String> {
         Box::pin(async move {

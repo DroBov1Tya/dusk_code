@@ -3,13 +3,15 @@
 use anyhow::Context;
 use tokio::fs;
 
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     BoxFuture,
     tools::{
         builtin::{parse_arguments, printable},
+        schema,
         tool::{Tool, ToolContext, ToolKind},
     },
 };
@@ -18,10 +20,12 @@ use super::{skill_save, with_skill_save, write_text};
 
 pub struct WriteFile;
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct WriteFileArguments {
+    /// File to write.
     path: String,
+    /// The whole new content.
     content: String,
 }
 
@@ -45,15 +49,7 @@ impl Tool for WriteFile {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "path": { "type": "string", "description": "File to write." },
-                "content": { "type": "string", "description": "The whole new content." }
-            },
-            "required": ["path", "content"],
-            "additionalProperties": false
-        })
+        schema::of::<WriteFileArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {

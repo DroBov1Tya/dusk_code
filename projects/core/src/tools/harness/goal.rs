@@ -4,15 +4,16 @@
 use std::sync::Arc;
 
 use anyhow::{Context, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::{
     BoxFuture,
     chat::goal,
     runtime::ThreadEvent,
     state::{GoalCriterion, GoalEvidence, State},
-    tools::{Tool, ToolContext, builtin::parse_arguments},
+    tools::{Tool, ToolContext, builtin::parse_arguments, schema},
 };
 
 pub struct GoalTool {
@@ -20,16 +21,19 @@ pub struct GoalTool {
     thread_id: String,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Arguments {
     action: Action,
     revision: Option<String>,
+    #[schemars(length(min = 1, max = 20))]
     criteria: Option<Vec<GoalCriterion>>,
+    #[schemars(length(max = 20))]
     evidence: Option<Vec<GoalEvidence>>,
+    /// For show: inspect saved output.
     result_id: Option<String>,
 }
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 enum Action {
     Show,
@@ -56,22 +60,7 @@ impl Tool for GoalTool {
         "Inspect the standing goal, its immutable user-approved acceptance contract, saved result IDs and verification gaps. show with result_id reads the saved output. Propose criteria only for an existing unapproved draft, using its revision. Semantic/subjective claims must use user_confirmation; command checks must name the exact command the user approves. request_verification submits the current revision plus one real saved result_id per criterion (tool:<result message ID> or job:<job ID>). It only requests runtime review after the turn and dependencies finish. You cannot approve/change an approved contract, pause/resume/clear a goal, confirm for the user or set done. Failed, cancelled, stale, foreign or untyped results cannot pass.".into()
     }
     fn parameters(&self) -> Value {
-        json!({"type":"object", "properties": {
-            "action":{"type":"string","enum":["show","propose","request_verification"]},
-            "revision":{"type":"string"},
-            "result_id":{"type":"string","description":"For show: inspect saved output."},
-            "criteria":{"type":"array","minItems":1,"maxItems":20,"items":{
-                "type":"object","properties":{
-                    "id":{"type":"string"},"description":{"type":"string"},
-                    "check":{"oneOf":[
-                        {"type":"object","properties":{"kind":{"const":"command"},"command":{"type":"string"}},"required":["kind","command"],"additionalProperties":false},
-                        {"type":"object","properties":{"kind":{"const":"user_confirmation"}},"required":["kind"],"additionalProperties":false}
-                    ]}
-                },"required":["id","description","check"],"additionalProperties":false}},
-            "evidence":{"type":"array","maxItems":20,"items":{"type":"object","properties":{
-                "criterion_id":{"type":"string"},"result_id":{"type":"string"}
-            },"required":["criterion_id","result_id"],"additionalProperties":false}}
-        },"required":["action"],"additionalProperties":false})
+        schema::of::<Arguments>()
     }
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
         Box::pin(async move {
@@ -141,6 +130,7 @@ mod tests {
         testing::{temp_dir, temp_state, tool_context},
         tools::ToolScope,
     };
+    use serde_json::json;
 
     #[tokio::test]
     async fn model_has_no_approval_edit_confirmation_or_completion_authority() {

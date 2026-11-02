@@ -11,12 +11,14 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use crate::BoxFuture;
 use crate::tools::{
     builtin::parse_arguments,
+    schema,
     tool::{Tool, ToolContext},
 };
 
@@ -24,9 +26,10 @@ pub struct Remember {
     file: PathBuf,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct RememberArguments {
+    /// The whole new memory, replacing the current one.
     memory: String,
 }
 
@@ -109,17 +112,7 @@ impl Tool for Remember {
     }
 
     fn parameters(&self) -> Value {
-        json!({
-            "type": "object",
-            "properties": {
-                "memory": {
-                    "type": "string",
-                    "description": "The whole new memory, replacing the current one."
-                }
-            },
-            "required": ["memory"],
-            "additionalProperties": false
-        })
+        schema::of::<RememberArguments>()
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
@@ -148,6 +141,7 @@ impl Tool for Remember {
 mod tests {
     use super::*;
     use crate::{config::Config, testing::temp_dir, tools::ToolScope};
+    use serde_json::json;
 
     #[tokio::test]
     async fn the_memory_is_replaced_whole_and_shown_in_the_description() {

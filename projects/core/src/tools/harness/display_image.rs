@@ -12,13 +12,15 @@ use reqwest::{
     Url,
     header::{ACCEPT, ACCEPT_ENCODING, LOCATION},
 };
+use schemars::JsonSchema;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::Value;
 use tokio::sync::Semaphore;
 
 use crate::tools::{
     Tool, ToolContext, ToolResult,
     builtin::{parse_arguments, printable},
+    schema,
 };
 use crate::{
     BoxFuture,
@@ -40,11 +42,15 @@ pub struct DisplayImage {
     store: ArtifactStore,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
 struct Arguments {
+    /// Public HTTPS image URL.
+    #[schemars(length(max = 8192))]
     url: String,
+    #[schemars(length(max = 160))]
     title: Option<String>,
+    #[schemars(length(max = 2000))]
     description: Option<String>,
 }
 
@@ -127,12 +133,7 @@ impl Tool for DisplayImage {
     }
 
     fn parameters(&self) -> Value {
-        json!({"type":"object", "additionalProperties":false,
-            "properties": {
-                "url":{"type":"string", "maxLength":8192, "description":"Public HTTPS image URL."},
-                "title":{"type":"string", "maxLength":160},
-                "description":{"type":"string", "maxLength":2000}
-            }, "required":["url"]})
+        schema::of::<Arguments>()
     }
 
     fn call<'a>(&'a self, _arguments: Value, _context: ToolContext<'a>) -> BoxFuture<'a, String> {
