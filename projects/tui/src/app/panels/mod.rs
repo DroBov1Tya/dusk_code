@@ -5,6 +5,7 @@ use ratatui::layout::Rect;
 
 use dusk_core::{
     chat::commands::ContextReport,
+    config::ProviderKind,
     release::update::{InstallProgress, UpdateInfo},
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Source, Thread, UndoPoint},
@@ -157,12 +158,62 @@ impl Preview {
 
 #[derive(Default)]
 pub struct Connection {
+    pub kind: ProviderKind,
     /// Name, base URL and API key.
     pub fields: [Input; 3],
+    /// The row in focus: the provider kind, then the fields.
     pub selected: usize,
     pub error: Option<String>,
     /// Visible label and value rows on the last drawn frame.
-    pub field_areas: [Option<Rect>; 3],
+    pub field_areas: [Option<Rect>; Connection::ROWS],
+}
+
+impl Connection {
+    pub const ROWS: usize = 4;
+
+    /// The field in focus; none while the provider kind is.
+    pub fn field(&mut self) -> Option<&mut Input> {
+        let index = self.selected.checked_sub(1)?;
+        self.fields.get_mut(index)
+    }
+
+    /// The next or previous kind, filling in its URL and name over ones the form put
+    /// there itself.
+    pub fn switch_kind(&mut self, forward: bool) {
+        let kinds = ProviderKind::ALL;
+        let at = kinds
+            .iter()
+            .position(|&kind| kind == self.kind)
+            .unwrap_or(0);
+        let next = match forward {
+            true => (at + 1) % kinds.len(),
+            false => (at + kinds.len() - 1) % kinds.len(),
+        };
+        let (old, new) = (self.kind, kinds[next]);
+        self.kind = new;
+        let [name, url, _] = &mut self.fields;
+        if name.text.is_empty() || name.text == default_name(old) {
+            *name = filled(default_name(new));
+        }
+        if url.text.is_empty() || Some(url.text.as_str()) == old.base_url() {
+            *url = filled(new.base_url().unwrap_or_default());
+        }
+        self.error = None;
+    }
+}
+
+fn filled(text: &str) -> Input {
+    let mut input = Input::default();
+    input.insert(text);
+    input
+}
+
+fn default_name(kind: ProviderKind) -> &'static str {
+    match kind {
+        ProviderKind::Anthropic => "anthropic",
+        ProviderKind::OpenAi => "openai",
+        _ => "",
+    }
 }
 
 /// Moves a selection within `len` items, stopping at the ends.

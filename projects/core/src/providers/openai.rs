@@ -21,7 +21,7 @@ use super::{
     provider::{Model, Transient, UnsupportedEffort, UnsupportedPictures},
     sse::SseDecoder,
 };
-use crate::config::{Effort, ProviderConfig};
+use crate::config::{Effort, ProviderConfig, ProviderKind};
 
 const MAX_ERROR_BYTES: usize = 64 * 1024;
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
@@ -37,6 +37,8 @@ pub struct OpenAiCompatible {
     models_url: Url,
     completions_url: Url,
     authorization: Option<HeaderValue>,
+    /// OpenAI itself takes `max_completion_tokens`; its reasoning models refuse `max_tokens`.
+    completion_tokens: bool,
 }
 
 #[derive(Deserialize)]
@@ -60,7 +62,10 @@ struct CompletionRequest {
     messages: Vec<WireMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<WireTool>,
-    max_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<&'static str>,
     stream: bool,
@@ -136,12 +141,14 @@ struct WireFunction {
 }
 
 impl CompletionRequest {
-    fn new(request: ChatRequest<'_>) -> Self {
+    fn new(request: ChatRequest<'_>, completion_tokens: bool) -> Self {
+        let limit = Some(request.max_output_tokens);
         Self {
             model: request.model.to_owned(),
             messages: request.messages.iter().map(WireMessage::from).collect(),
             tools: request.tools.iter().map(WireTool::from).collect(),
-            max_tokens: request.max_output_tokens,
+            max_tokens: limit.filter(|_| !completion_tokens),
+            max_completion_tokens: limit.filter(|_| completion_tokens),
             reasoning_effort: request.effort.map(Effort::wire_name),
             stream: true,
             stream_options: StreamOptions {
@@ -257,6 +264,7 @@ impl OpenAiCompatible {
             models_url: endpoint(&base_url, &["models"])?,
             completions_url: endpoint(&base_url, &["chat", "completions"])?,
             authorization,
+            completion_tokens: matches!(config.kind, ProviderKind::OpenAi),
         })
     }
 
@@ -315,7 +323,7 @@ impl OpenAiCompatible {
             .messages
             .iter()
             .any(|message| matches!(message, ChatMessage::UserWithPictures { .. }));
-        let request = CompletionRequest::new(request);
+        let request = CompletionRequest::new(request, self.completion_tokens);
         let response = self
             .with_authorization(self.client.post(self.completions_url.clone()))
             .header(ACCEPT, EVENT_STREAM)

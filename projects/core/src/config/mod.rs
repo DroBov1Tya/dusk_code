@@ -359,12 +359,39 @@ pub struct ProviderConfig {
     pub inline_tags: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[non_exhaustive]
 pub enum ProviderKind {
     #[default]
     #[serde(rename = "openai_compatible")]
     OpenAiCompatible,
+    /// OpenAI itself: Chat Completions with `max_completion_tokens`.
+    #[serde(rename = "openai")]
+    OpenAi,
+    /// The Anthropic Messages API.
+    #[serde(rename = "anthropic")]
+    Anthropic,
+}
+
+impl ProviderKind {
+    pub const ALL: [Self; 3] = [Self::OpenAiCompatible, Self::Anthropic, Self::OpenAi];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OpenAiCompatible => "Custom (OpenAI-compatible)",
+            Self::OpenAi => "OpenAI",
+            Self::Anthropic => "Anthropic",
+        }
+    }
+
+    /// The provider's own API, for a form to fill in; none for a custom one.
+    pub fn base_url(self) -> Option<&'static str> {
+        match self {
+            Self::OpenAiCompatible => None,
+            Self::OpenAi => Some("https://api.openai.com/v1"),
+            Self::Anthropic => Some("https://api.anthropic.com/v1"),
+        }
+    }
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
