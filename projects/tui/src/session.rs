@@ -346,10 +346,11 @@ pub async fn run(
             }
             Action::SendNow(text) => send(runtime, &mut app, &mut open, text, true).await,
             Action::Connect {
+                kind,
                 name,
                 base_url,
                 api_key,
-            } => match connect(runtime, name, base_url, api_key) {
+            } => match connect(runtime, kind, name, base_url, api_key) {
                 Ok(()) => {
                     app.panel = Some(Panel::Models(ModelList::checking(
                         runtime.model().map(|choice| choice.name()),
@@ -719,6 +720,7 @@ pub async fn run(
 /// during the same update. An existing provider is never replaced.
 fn connect(
     runtime: &Runtime,
+    kind: ProviderKind,
     name: Option<String>,
     base_url: String,
     api_key: Option<String>,
@@ -730,7 +732,7 @@ fn connect(
         );
     }
     let provider = ProviderConfig {
-        kind: ProviderKind::OpenAiCompatible,
+        kind,
         base_url,
         api_key: ApiKey(api_key.unwrap_or_default()),
         inline_tags: false,

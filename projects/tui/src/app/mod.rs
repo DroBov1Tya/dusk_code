@@ -17,7 +17,7 @@ use std::{
 use dusk_core::{
     chat::commands::{self, COMMANDS, Command},
     config::live::LiveConfig,
-    config::{ContextPolicy, Effort},
+    config::{ContextPolicy, Effort, ProviderKind},
     mcp::McpStatus,
     providers::ModelEvent,
     runtime::ThreadEvent,
@@ -53,6 +53,7 @@ pub enum Action {
         decision: Decision,
     },
     Connect {
+        kind: ProviderKind,
         /// `None` takes the next free `provider-N`.
         name: Option<String>,
         base_url: String,

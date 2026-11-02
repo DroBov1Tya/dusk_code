@@ -8,6 +8,12 @@ testing.
 
 ### Added
 
+- /connect offers Anthropic and OpenAI next to a custom OpenAI-compatible server:
+  pick the provider and paste an API key, the URL and name fill themselves in.
+  Anthropic goes through its own Messages API, with adaptive thinking, effort and
+  prompt caching. A Claude subscription cannot be used: Anthropic allows it only in
+  its own apps.
+
 - A PNG or JPEG named by its full path in a message, as a terminal pastes a dropped
   file, is copied among the chat's sources and sent to the model as a picture. Quoted
   paths, escaped spaces, `~/` and `file://` URLs work.

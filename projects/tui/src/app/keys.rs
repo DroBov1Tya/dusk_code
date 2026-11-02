@@ -12,7 +12,7 @@ use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
 use super::{
     Action, App, Button, Command, Entry, Focus, Panel, Pressed, Selection, TEXT_COLUMN, commands,
-    panels::step,
+    panels::{Connection, step},
 };
 
 /// What /effort offers, as the core names them.
@@ -30,7 +30,9 @@ impl App {
             Event::Paste(text) if matches!(self.panel, Some(Panel::Connect(_))) => {
                 if let Some(Panel::Connect(form)) = &mut self.panel {
                     let single_line: String = text.chars().filter(|c| !c.is_control()).collect();
-                    form.fields[form.selected].insert(&single_line);
+                    if let Some(field) = form.field() {
+                        field.insert(&single_line);
+                    }
                     form.error = None;
                 }
                 Action::None
@@ -408,49 +410,63 @@ impl App {
                     KeyCode::Up | KeyCode::Down => {
                         step(
                             &mut form.selected,
-                            form.fields.len(),
+                            Connection::ROWS,
                             key.code == KeyCode::Down,
                         );
                     }
                     KeyCode::Tab | KeyCode::BackTab => {
                         let back = key.code == KeyCode::BackTab
                             || key.modifiers.contains(KeyModifiers::SHIFT);
-                        let count = form.fields.len();
+                        let count = Connection::ROWS;
                         form.selected = if back {
                             (form.selected + count - 1) % count
                         } else {
                             (form.selected + 1) % count
                         };
                     }
-                    KeyCode::Enter if form.selected + 1 < form.fields.len() => form.selected += 1,
+                    KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if form.selected == 0 => {
+                        form.switch_kind(key.code != KeyCode::Left);
+                    }
+                    KeyCode::Enter if form.selected + 1 < Connection::ROWS => form.selected += 1,
                     KeyCode::Enter => {
                         let base_url = form.fields[1].text.trim().to_owned();
                         if base_url.is_empty() {
                             form.error = Some("Provider URL is required".into());
-                            form.selected = 1;
+                            form.selected = 2;
+                        } else if form.kind.base_url().is_some() && form.fields[2].is_empty() {
+                            form.error = Some("This provider needs an API key".into());
+                            form.selected = 3;
                         } else {
                             let given = |index: usize| {
                                 let text = form.fields[index].text.trim();
                                 (!text.is_empty()).then(|| text.to_owned())
                             };
                             return Action::Connect {
+                                kind: form.kind,
                                 name: given(0),
                                 base_url,
                                 api_key: given(2),
                             };
                         }
                     }
-                    KeyCode::Char(c) if !ctrl && !key.modifiers.contains(KeyModifiers::ALT) => {
-                        form.fields[form.selected].insert(c.encode_utf8(&mut [0; 4]));
-                        form.error = None;
+                    code => {
+                        let alt = key.modifiers.contains(KeyModifiers::ALT);
+                        if let Some(field) = form.field() {
+                            match code {
+                                KeyCode::Char(c) if !ctrl && !alt => {
+                                    field.insert(c.encode_utf8(&mut [0; 4]));
+                                    form.error = None;
+                                }
+                                KeyCode::Backspace => field.backspace(),
+                                KeyCode::Delete => field.delete(),
+                                KeyCode::Left => field.left(),
+                                KeyCode::Right => field.right(),
+                                KeyCode::Home => field.home(),
+                                KeyCode::End => field.end(),
+                                _ => {}
+                            }
+                        }
                     }
-                    KeyCode::Backspace => form.fields[form.selected].backspace(),
-                    KeyCode::Delete => form.fields[form.selected].delete(),
-                    KeyCode::Left => form.fields[form.selected].left(),
-                    KeyCode::Right => form.fields[form.selected].right(),
-                    KeyCode::Home => form.fields[form.selected].home(),
-                    KeyCode::End => form.fields[form.selected].end(),
-                    _ => {}
                 }
                 return Action::None;
             }
