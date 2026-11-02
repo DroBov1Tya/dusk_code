@@ -20,7 +20,7 @@ use tokio::sync::watch;
 
 use crate::{config::Config, init::paths::Paths};
 
-const REPOSITORY: &str = "DroBov1Tya/dusk_code";
+pub(super) const REPOSITORY: &str = "DroBov1Tya/dusk_code";
 const API: &str = "https://api.github.com/repos";
 const DOWNLOADS: &str = "https://github.com";
 const TARGET: &str = env!("DUSK_TARGET");
@@ -322,9 +322,18 @@ fn unpack_into(
         fs::set_permissions(&new, fs::Permissions::from_mode(0o755))
             .context("cannot make the new binary runnable")?;
     }
+    // Missing or changed files are fetched from the tag; offline the archive stands.
+    let resources = work.join(name).join("resources");
+    let checked = tokio::runtime::Handle::current()
+        .block_on(crate::release::complete::complete(&resources, version));
+    match checked {
+        Ok(0) => {}
+        Ok(fetched) => tracing::info!("fetched {fetched} resource files from GitHub"),
+        Err(error) => tracing::warn!("resources not checked against GitHub: {error:#}"),
+    }
     // If staging fails, the running binary and all existing snapshots stay intact.
     // A later binary-rename failure leaves only a harmless unused snapshot.
-    crate::release::resources::install_snapshot(&work.join(name).join("resources"), version)?;
+    crate::release::resources::install_snapshot(&resources, version)?;
     fs::rename(&new, binary).context("cannot replace the binary")
 }
 

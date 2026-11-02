@@ -26,6 +26,12 @@ async fn main() -> Result<()> {
         Args::RecoverRestore => return cli::restore::recover(),
         Args::Remove => return cli::remove::run(&Paths::from_home()?),
         Args::InstallResources { directory } => {
+            // The installer's archive is checked against the tag first; offline it stands.
+            match dusk_core::release::complete::complete(&directory, update::VERSION).await {
+                Ok(0) => {}
+                Ok(fetched) => eprintln!("fetched {fetched} resource files from GitHub"),
+                Err(error) => eprintln!("resources not checked against GitHub: {error:#}"),
+            }
             dusk_core::release::resources::install_snapshot(&directory, update::VERSION)?;
             return Ok(());
         }
