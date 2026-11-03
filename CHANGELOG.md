@@ -8,6 +8,14 @@ testing.
 
 ### Added
 
+- /tgbot <token> mirrors the chat in a Telegram bot: what you write there goes to the
+  chat, the agent's final answers come back formatted, questions come as buttons and
+  approval requests as Allow and Deny, and while it works you hear every five minutes
+  that the bot is alive. /stop, /resume, /status, /approve, /deny, /mode, /model,
+  /compact, /goal and /alive work there, with the main ones as buttons under the
+  message box. The token stays in memory; the bot answers only whoever sends it the
+  pairing code duskcode shows. /tgbot alone lists the bots to stop, start or remove.
+
 - OpenTelemetry traces: with `logging.traces` in the config, spans of turns, steps,
   model calls, tool calls and compaction go to your collector over OTLP/HTTP. Log
   lines carry the same span context.
