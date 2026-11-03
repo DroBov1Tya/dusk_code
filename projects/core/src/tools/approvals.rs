@@ -5,11 +5,10 @@
 use std::{
     collections::HashMap,
     path::PathBuf,
-    sync::{
-        Mutex, PoisonError,
-        atomic::{AtomicU64, Ordering},
-    },
+    sync::atomic::{AtomicU64, Ordering},
 };
+
+use parking_lot::Mutex;
 
 use anyhow::{Result, bail};
 use tokio::sync::{mpsc, oneshot};
@@ -88,7 +87,7 @@ impl Approvals {
         progress: Option<Progress<'_>>,
         policy: ApprovalPolicy,
     ) -> Result<()> {
-        if policy == ApprovalPolicy::FullAccess || lock(&self.grants).covers(&request) {
+        if policy == ApprovalPolicy::FullAccess || self.grants.lock().covers(&request) {
             return Ok(());
         }
         let Some(progress) = progress else {
@@ -99,7 +98,7 @@ impl Approvals {
         };
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, answer) = oneshot::channel();
-        lock(&self.pending).insert(id, sender);
+        self.pending.lock().insert(id, sender);
         // Closes the request on the client however the wait ends, a stopped turn included.
         let _open = Open {
             approvals: self,
@@ -113,7 +112,7 @@ impl Approvals {
         match answer.await {
             Ok(Decision::Once) => Ok(()),
             Ok(Decision::Session) => {
-                lock(&self.grants).add(&request);
+                self.grants.lock().add(&request);
                 Ok(())
             }
             Ok(Decision::Deny) | Err(_) => bail!(
@@ -125,7 +124,8 @@ impl Approvals {
 
     /// False when nothing waits for `id`, such as after its turn was stopped.
     pub fn answer(&self, id: u64, decision: Decision) -> bool {
-        lock(&self.pending)
+        self.pending
+            .lock()
             .remove(&id)
             .is_some_and(|sender| sender.send(decision).is_ok())
     }
@@ -139,7 +139,7 @@ struct Open<'a> {
 
 impl Drop for Open<'_> {
     fn drop(&mut self) {
-        lock(&self.approvals.pending).remove(&self.id);
+        self.approvals.pending.lock().remove(&self.id);
         let _ = self
             .events
             .send(ThreadEvent::ApprovalClosed { id: self.id });
@@ -195,10 +195,6 @@ fn program(command: &str) -> Option<&str> {
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || "-_./+".contains(c));
     (plain && !RUNNERS.contains(&name.rsplit('/').next().unwrap_or(name))).then_some(name)
-}
-
-fn lock<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 #[cfg(test)]

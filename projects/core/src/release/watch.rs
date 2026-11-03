@@ -3,20 +3,16 @@
 //! GitHub little, and it pauses until the rate limit lifts when few requests are left:
 //! without a token GitHub allows 60 an hour for every program on this address.
 
-use std::{
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
+
+use parking_lot::RwLock;
 
 use anyhow::{Context, Result};
 use reqwest::{Client, StatusCode, header};
 use tracing::{debug, warn};
 
 use super::update::{self, Channel, Release};
-use crate::{
-    config::live::LiveConfig,
-    util::sync::{read, write},
-};
+use crate::config::live::LiveConfig;
 
 const PERIOD: Duration = Duration::from_secs(60);
 /// Requests kept for /update and other programs before the watch pauses.
@@ -31,7 +27,7 @@ pub struct UpdateWatch {
 impl UpdateWatch {
     /// The newer version to offer, such as `v0.66.5`.
     pub fn found(&self) -> Option<String> {
-        read(&self.found).clone()
+        self.found.read().clone()
     }
 
     pub async fn run(self: Arc<Self>, config: Arc<LiveConfig>) {
@@ -51,7 +47,7 @@ impl UpdateWatch {
                         etag = Some((channel, tag));
                     }
                     if let Some(release) = polled.release {
-                        *write(&self.found) = offer(&release);
+                        *self.found.write() = offer(&release);
                     }
                     polled.wait.unwrap_or(PERIOD)
                 }

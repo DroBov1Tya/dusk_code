@@ -3,9 +3,11 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::Arc,
     time::{Duration, Instant},
 };
+
+use parking_lot::Mutex;
 
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
@@ -21,7 +23,6 @@ use crate::{
     BoxFuture,
     catalog::graph::{Graph, Node, SKILL_FILE},
     config::Config,
-    util::sync::lock,
 };
 
 /// The graph is described to the model several times a step; reading it again this
@@ -52,7 +53,7 @@ impl LoadSkill {
     }
 
     fn graph(&self) -> Arc<Graph> {
-        let mut cached = lock(&self.graph);
+        let mut cached = self.graph.lock();
         match &*cached {
             Some((read, graph)) if read.elapsed() < GRAPH_TTL => Arc::clone(graph),
             _ => {

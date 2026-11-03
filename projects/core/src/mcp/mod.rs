@@ -6,12 +6,9 @@
 mod client;
 mod oauth;
 
-use std::{
-    collections::BTreeMap,
-    path::PathBuf,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
+
+use parking_lot::RwLock;
 
 use anyhow::{Context, Result};
 use reqwest::Url;
@@ -25,7 +22,6 @@ pub use oauth::TokenFile;
 use crate::{
     config::{Config, McpServerConfig},
     tools::{ToolKind, mcp::McpTool},
-    util::sync::{read, write},
 };
 
 /// How a server stands, for clients to show.
@@ -104,16 +100,16 @@ impl McpServers {
     /// server switched off, leaves it stopped. Threads opened after it is ready get its
     /// tools; open ones keep what they had.
     pub fn restart(self: &Arc<Self>, name: &str, server: Option<McpServerConfig>) {
-        write(&self.ready).retain(|ready| ready.name != name);
+        self.ready.write().retain(|ready| ready.name != name);
         let attempt = {
-            let mut attempts = write(&self.attempts);
+            let mut attempts = self.attempts.write();
             let attempt = attempts.entry(name.to_owned()).or_default();
             *attempt += 1;
             *attempt
         };
         let state = match &server {
             None => {
-                write(&self.statuses).retain(|status| status.name != name);
+                self.statuses.write().retain(|status| status.name != name);
                 return self.settle();
             }
             Some(server) if !server.enabled() => McpState::Off,
@@ -121,7 +117,7 @@ impl McpServers {
         };
         let starting = state == McpState::Starting;
         {
-            let mut statuses = write(&self.statuses);
+            let mut statuses = self.statuses.write();
             match statuses.iter_mut().find(|status| status.name == name) {
                 Some(status) => status.state = state,
                 None => statuses.push(McpStatus {
@@ -139,7 +135,7 @@ impl McpServers {
         tokio::spawn(async move {
             let started = connect(&name, &server, this.token_file(&name, &server)).await;
             // Held to the end, so a restart cannot slip in between the check and the update.
-            let attempts = read(&this.attempts);
+            let attempts = this.attempts.read();
             if attempts.get(&name) != Some(&attempt) {
                 return;
             }
@@ -147,7 +143,7 @@ impl McpServers {
                 Ok(server) => {
                     let tools = server.tools.iter().map(|tool| tool.name.clone()).collect();
                     info!("MCP server {name} is ready");
-                    write(&this.ready).push(Arc::new(server));
+                    this.ready.write().push(Arc::new(server));
                     McpState::Ready(tools)
                 }
                 Err(error) => {
@@ -199,16 +195,16 @@ impl McpServers {
 
     /// The servers that started, for building a thread's tools.
     pub fn ready(&self) -> Vec<Arc<McpServer>> {
-        read(&self.ready).clone()
+        self.ready.read().clone()
     }
 
     pub fn statuses(&self) -> Vec<McpStatus> {
-        read(&self.statuses).clone()
+        self.statuses.read().clone()
     }
 
     /// Every server in `config`, with how it stands.
     pub fn infos(&self, config: &Config) -> Vec<McpInfo> {
-        let statuses = read(&self.statuses);
+        let statuses = self.statuses.read();
         config
             .mcp()
             .iter()
@@ -226,7 +222,7 @@ impl McpServers {
     }
 
     fn tool_infos(&self, name: &str, config: &Config) -> Vec<McpToolInfo> {
-        let ready = read(&self.ready);
+        let ready = self.ready.read();
         let Some(server) = ready.iter().find(|server| server.name == name) else {
             return Vec::new();
         };
@@ -256,7 +252,9 @@ impl McpServers {
     }
 
     fn set_state(&self, name: &str, state: McpState) {
-        if let Some(status) = write(&self.statuses)
+        if let Some(status) = self
+            .statuses
+            .write()
             .iter_mut()
             .find(|status| status.name == name)
         {
@@ -266,7 +264,9 @@ impl McpServers {
     }
 
     fn settle(&self) {
-        let settled = read(&self.statuses)
+        let settled = self
+            .statuses
+            .read()
             .iter()
             .all(|status| status.state != McpState::Starting);
         self.settled.send_replace(settled);
