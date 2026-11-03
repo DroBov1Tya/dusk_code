@@ -90,6 +90,8 @@ pub enum SwitchKind {
     DevChannel,
     /// On answers every approval request with yes.
     FullAccess,
+    /// Off writes no logs and sends no traces.
+    Logging,
 }
 
 /// One row of the agent tree, with what is needed to draw the traces to it.
@@ -125,6 +127,7 @@ pub struct SettingsView {
     pub memory: Memory,
     pub update_channel: Channel,
     pub full_access: bool,
+    pub logging: bool,
     /// The mode whose tools are shown.
     pub mode: String,
     pub tools: Vec<ToolInfo>,
@@ -234,6 +237,7 @@ impl SettingsView {
             memory: settings.memory,
             update_channel: settings.update_channel,
             full_access: settings.full_access,
+            logging: settings.logging,
             tools: settings.tools,
             skills: settings.skills,
             mcp: settings.mcp,
@@ -276,7 +280,7 @@ impl SettingsView {
             Some(SettingCategory::Limits) => 4,
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
-            Some(SettingCategory::Access) => 1,
+            Some(SettingCategory::Access) => 2,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp_rows().len(),
@@ -407,11 +411,12 @@ impl SettingsView {
                 let dev = self.update_channel == Channel::Dev;
                 (SwitchKind::DevChannel, "dev".into(), dev)
             }
-            SettingCategory::Access => (
+            SettingCategory::Access if row == 0 => (
                 SwitchKind::FullAccess,
                 "full access".into(),
                 self.full_access,
             ),
+            SettingCategory::Access => (SwitchKind::Logging, "logs".into(), self.logging),
             SettingCategory::System => return None,
         };
         Some(Action::Switch {
