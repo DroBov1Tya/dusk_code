@@ -463,7 +463,7 @@ fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
         let marker = if progress.stage == InstallStage::Complete {
             DONE
         } else {
-            super::super::TITLE_SPINNER[app.frame % super::super::TITLE_SPINNER.len()]
+            super::super::frame::TITLE_SPINNER[app.frame % super::super::frame::TITLE_SPINNER.len()]
         };
         lines.push(Line::from(Span::styled(
             format!(" {marker} {stage}"),

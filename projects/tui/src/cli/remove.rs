@@ -8,7 +8,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use dusk_core::{archive, init::paths::Paths, release::resources};
+use dusk_core::{init::paths::Paths, release::resources, util::archive};
 
 const BINARY: &str = "duskcode";
 

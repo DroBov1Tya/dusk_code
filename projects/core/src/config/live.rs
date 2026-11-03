@@ -7,17 +7,16 @@ use std::{
     fs::{self, OpenOptions},
     io::Write,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard, RwLock},
+    sync::Arc,
     time::{Duration, SystemTime},
 };
+
+use parking_lot::{Mutex, MutexGuard, RwLock};
 
 use anyhow::{Context, Result, anyhow};
 use tracing::warn;
 
-use crate::{
-    config::Config,
-    util::sync::{lock, read, write},
-};
+use crate::config::Config;
 
 pub struct LiveConfig {
     path: PathBuf,
@@ -47,7 +46,7 @@ impl LiveConfig {
 
     /// A snapshot: later changes do not affect it.
     pub fn current(&self) -> Arc<Config> {
-        Arc::clone(&read(&self.current))
+        Arc::clone(&self.current.read())
     }
 
     /// Reads the file now, for example after something was added through a client.
@@ -69,7 +68,7 @@ impl LiveConfig {
         write_atomically(&self.path, yaml.as_bytes())?;
         *loaded = FileStamp::of(&self.path)?;
         let config = Arc::new(config);
-        *write(&self.current) = Arc::clone(&config);
+        *self.current.write() = Arc::clone(&config);
         Ok(config)
     }
 
@@ -99,14 +98,14 @@ impl LiveConfig {
     fn read_from_disk(&self, loaded: &mut FileStamp) -> Result<()> {
         let stamp = FileStamp::of(&self.path)?;
         let config = Config::load_from(&self.path)?;
-        *write(&self.current) = Arc::new(config);
+        *self.current.write() = Arc::new(config);
         *loaded = stamp;
         Ok(())
     }
 
     fn lock_loaded(&self) -> MutexGuard<'_, FileStamp> {
         // The guarded value is a plain stamp, still valid after a panic elsewhere.
-        lock(&self.loaded)
+        self.loaded.lock()
     }
 }
 
