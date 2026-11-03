@@ -4,10 +4,14 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
-## Unreleased
+## 0.70.2 - 2026-11-03
 
 ### Added
 
+- Plugins: a folder with a plugin.yml under `~/.config/duskcode/rules/plugins/` brings
+  skills, agents, MCP tools, providers, hooks on thread events and platforms such as a
+  chat bot. They are found while duskcode runs and stay off until switched on in
+  /plugins; docs/plugins.md describes them.
 - Sandbox mode in /settings > access: commands run without asking, writing only in the
   working folder, the thread's workspace and temporary folders, with the config folder
   closed (Seatbelt on macOS, Landlock on Linux, which keeps writes out but not reads).
@@ -23,13 +27,16 @@ testing.
   its own where the agent clicks: an arrow with a glowing rim that rocks slightly,
   passes the mouse through and stays out of screenshots.
 - `ask_agent` takes an `effort` for the subagent; its window shows the level it works at.
-- The Telegram bot sets its command menu when added; /mode and /model without a name
-  answer with buttons, or a list past ten options.
+- The Telegram bot sets its command menu when added, and /mode without a name answers
+  with buttons.
 - Eleven new idle scenes in dense coloured halftone dots, a knight by his fire among
   them; they fit the window at any size.
 
 ### Changed
 
+- The Telegram bot is the built-in `telegram` plugin: its token goes under its settings
+  in config.yml, it runs whether or not a chat is open, and its pairing outlives a
+  restart. /plugins replaces /tgbot.
 - The token counters left the sidebar and the input and output token limits left the
   config: requests follow the model's window or the size set under /settings > models,
   and answers the model's own output cap. Older configs still load.
@@ -43,11 +50,17 @@ testing.
 
 - The update check runs every half hour instead of every minute, so it no longer uses up
   GitHub's request limit.
-- A binary installed without its resources rebuilds them from the release on GitHub.  It
+- A binary installed without its resources rebuilds them from the release on GitHub. It
   fetches only files missing or changed since the installed snapshot, shows its progress
   before the screen opens, and fails at once when the release lacks a file the build
   needs.
 - Subagent cards in the sidebar are parted by a blank row when many are listed.
+- Scrolled up while the agent writes, the transcript stays on what is being read;
+  within three lines of the bottom it still follows the output.
+- Computer use asks macOS for Accessibility, so the terminal shows up in its list to be
+  switched on.
+- A provider that does not answer no longer holds /model or the model search at start.
+- Two writes to one memory or agent file at once no longer share a staging file.
 - An empty answer after a long think is asked again instead of failing the turn, and a
   turn may take 150 tool steps instead of 50.
 
