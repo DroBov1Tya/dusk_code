@@ -161,63 +161,122 @@ pub struct BotRow {
     pub running: bool,
 }
 
+/// Where /connect starts: the providers to pick from, each with what it needs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Preset {
+    OpenAi,
+    Anthropic,
+    Ollama,
+    Custom,
+}
+
+impl Preset {
+    pub const ALL: [Self; 4] = [Self::OpenAi, Self::Anthropic, Self::Ollama, Self::Custom];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::OpenAi => "OpenAI",
+            Self::Anthropic => "Anthropic",
+            Self::Ollama => "Ollama, on this machine",
+            Self::Custom => "Custom, OpenAI-compatible",
+        }
+    }
+
+    pub fn about(self) -> &'static str {
+        match self {
+            Self::OpenAi => "GPT models with an API key from the OpenAI platform.",
+            Self::Anthropic => {
+                "Claude models with an API key from the Anthropic console. A Claude \
+                 subscription works only in Anthropic's own apps."
+            }
+            Self::Ollama => {
+                "Models Ollama serves locally, no key. For long tasks start Ollama with a \
+                 larger OLLAMA_CONTEXT_LENGTH; its default window is small."
+            }
+            Self::Custom => "Any server with the OpenAI API: an HTTPS URL, a key if it needs one.",
+        }
+    }
+
+    pub fn kind(self) -> ProviderKind {
+        match self {
+            Self::OpenAi => ProviderKind::OpenAi,
+            Self::Anthropic => ProviderKind::Anthropic,
+            Self::Ollama | Self::Custom => ProviderKind::OpenAiCompatible,
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::OpenAi => "openai",
+            Self::Anthropic => "anthropic",
+            Self::Ollama => "ollama",
+            Self::Custom => "",
+        }
+    }
+
+    fn url(self) -> &'static str {
+        match self {
+            Self::Ollama => "http://127.0.0.1:11434/v1",
+            _ => self.kind().base_url().unwrap_or_default(),
+        }
+    }
+
+    /// Where a key is made, to open in the browser.
+    pub fn key_page(self) -> Option<&'static str> {
+        match self {
+            Self::OpenAi => Some("https://platform.openai.com/api-keys"),
+            Self::Anthropic => Some("https://console.anthropic.com/settings/keys"),
+            Self::Ollama | Self::Custom => None,
+        }
+    }
+
+    pub fn needs_key(self) -> bool {
+        self.key_page().is_some()
+    }
+}
+
 #[derive(Default)]
 pub struct Connection {
-    pub kind: ProviderKind,
+    /// None while the provider is picked from the list.
+    pub preset: Option<Preset>,
+    /// The provider under the cursor in the list.
+    pub choice: usize,
     /// Name, base URL and API key.
     pub fields: [Input; 3],
-    /// The row in focus: the provider kind, then the fields.
+    /// The field in focus.
     pub selected: usize,
     pub error: Option<String>,
-    /// Visible label and value rows on the last drawn frame.
+    /// Visible list or field rows on the last drawn frame.
     pub field_areas: [Option<Rect>; Connection::ROWS],
 }
 
 impl Connection {
-    pub const ROWS: usize = 4;
+    /// The longer of the provider list and the form.
+    pub const ROWS: usize = Preset::ALL.len();
+    pub const FIELDS: usize = 3;
 
-    /// The field in focus; none while the provider kind is.
     pub fn field(&mut self) -> Option<&mut Input> {
-        let index = self.selected.checked_sub(1)?;
-        self.fields.get_mut(index)
+        self.preset?;
+        self.fields.get_mut(self.selected)
     }
 
-    /// The next or previous kind, filling in its URL and name over ones the form put
-    /// there itself.
-    pub fn switch_kind(&mut self, forward: bool) {
-        let kinds = ProviderKind::ALL;
-        let at = kinds
-            .iter()
-            .position(|&kind| kind == self.kind)
-            .unwrap_or(0);
-        let next = match forward {
-            true => (at + 1) % kinds.len(),
-            false => (at + kinds.len() - 1) % kinds.len(),
+    /// Opens the form for `preset`, its name and URL filled in, focus where typing
+    /// starts.
+    pub fn pick(&mut self, preset: Preset) {
+        self.preset = Some(preset);
+        self.fields = Default::default();
+        self.fields[0].insert(preset.name());
+        self.fields[1].insert(preset.url());
+        self.selected = match preset {
+            Preset::Custom => 1,
+            _ => 2,
         };
-        let (old, new) = (self.kind, kinds[next]);
-        self.kind = new;
-        let [name, url, _] = &mut self.fields;
-        if name.text.is_empty() || name.text == default_name(old) {
-            *name = filled(default_name(new));
-        }
-        if url.text.is_empty() || Some(url.text.as_str()) == old.base_url() {
-            *url = filled(new.base_url().unwrap_or_default());
-        }
         self.error = None;
     }
-}
 
-fn filled(text: &str) -> Input {
-    let mut input = Input::default();
-    input.insert(text);
-    input
-}
-
-fn default_name(kind: ProviderKind) -> &'static str {
-    match kind {
-        ProviderKind::Anthropic => "anthropic",
-        ProviderKind::OpenAi => "openai",
-        _ => "",
+    pub fn back(&mut self) {
+        self.preset = None;
+        self.error = None;
     }
 }
 

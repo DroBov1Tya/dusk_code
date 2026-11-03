@@ -34,16 +34,6 @@ pub enum ProviderKind {
 }
 
 impl ProviderKind {
-    pub const ALL: [Self; 3] = [Self::OpenAiCompatible, Self::Anthropic, Self::OpenAi];
-
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::OpenAiCompatible => "Custom (OpenAI-compatible)",
-            Self::OpenAi => "OpenAI",
-            Self::Anthropic => "Anthropic",
-        }
-    }
-
     /// The provider's own API, for a form to fill in; none for a custom one.
     pub fn base_url(self) -> Option<&'static str> {
         match self {

@@ -22,7 +22,7 @@ pub use hits::{
 pub use keys::EFFORTS;
 pub use panels::{
     AgentRow, AgentWindow, BotRow, Connection, FileButton, FileEditor, HitTarget, JobsView, McpRow,
-    ModelList, Panel, Preview, SettingCategory, SettingsHit, SettingsView, SubagentView,
+    ModelList, Panel, Preset, Preview, SettingCategory, SettingsHit, SettingsView, SubagentView,
     SwitchKind, ThreadList,
 };
 pub use state::{App, compact_number, now_ms};

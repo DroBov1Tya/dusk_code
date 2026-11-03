@@ -22,9 +22,15 @@ testing.
   and /model without a name answer with buttons to pick from, or, past ten options, a
   list to send `/model <name>` from.
 
+- /connect opens on a list of providers: OpenAI, Anthropic, Ollama on this machine and
+  any OpenAI-compatible server; picking one opens a form of only what it needs, with
+  its name and URL filled in. For OpenAI and Anthropic, ctrl+o opens the page where a
+  key is made.
+
 ### Changed
 
-- The input and output token limits are gone from /settings and the config. A request
+- The token counters are gone from the sidebar, and the input and output token limits
+  from /settings and the config. A request
   is held to the model's window, or to the size set under /settings > models, and a
   model writes up to its own output cap. Older configs that set them still load.
 

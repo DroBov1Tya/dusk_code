@@ -79,6 +79,8 @@ pub enum Action {
     OpenThread(String),
     /// Download a release and put it in place of the running binary.
     InstallUpdate(String),
+    /// Open a page in the system's browser.
+    OpenLink(String),
     /// Move the chat to its next mode.
     NextMode,
     /// Move the chat to the mode named, as a Telegram bot asked.

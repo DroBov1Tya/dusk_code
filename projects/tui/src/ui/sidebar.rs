@@ -28,7 +28,7 @@ use crate::app::{App, compact_number, now_ms};
 /// Running jobs the rail lists before it sums up the rest.
 const MAX_JOB_ROWS: usize = 4;
 /// The statistics: fifteen lines and a blank one below.
-const STATS_HEIGHT: u16 = 16;
+const STATS_HEIGHT: u16 = 12;
 /// The connectors folded: the heading and one line that sums them up.
 const CONNECTORS_FOLDED: u16 = 2;
 /// A compact bottom panel, kept the same height when connectors fold.
@@ -115,9 +115,7 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
     };
     let percent = fill * 100.0;
     let near_compaction = percent >= AUTO_COMPACT_PERCENT as f64;
-    let ThreadTokens {
-        spent, model_calls, ..
-    } = app.tokens;
+    let ThreadTokens { model_calls, .. } = app.tokens;
     let elapsed = app
         .elapsed_ms()
         .map(format_duration)
@@ -177,20 +175,6 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
             fg(TEXT_SOFT),
         )),
         Line::default(),
-        Line::from(heading("Tokens")),
-        token_row(
-            "in / out",
-            spent.prompt_tokens,
-            spent.completion_tokens,
-            width,
-        ),
-        token_row(
-            "cache / think",
-            spent.cached_prompt_tokens,
-            spent.reasoning_tokens,
-            width,
-        ),
-        Line::default(),
         Line::from(heading("Activity")),
         row(
             vec![Span::styled(format!("{time_label}{calls}"), fg(TEXT_SOFT))],
@@ -215,31 +199,6 @@ fn statistics(frame: &mut Frame, area: Rect, app: &App) {
 /// A section's name: sentence case, quieter than what it heads.
 fn heading(text: &str) -> Span<'static> {
     Span::styled(text.to_owned(), fg(TEXT_SOFT))
-}
-
-/// Two counts after a label. On a narrow rail the decimals go first, so the numbers
-/// never run into the label.
-fn token_row(label: &'static str, first: u64, second: u64, width: usize) -> Line<'static> {
-    let full = format!("{} / {}", compact_number(first), compact_number(second));
-    let value = if label.len() + 1 + full.len() <= width {
-        full
-    } else {
-        format!("{} / {}", whole_number(first), whole_number(second))
-    };
-    row(
-        vec![Span::styled(label, fg(TEXT_SOFT))],
-        Span::styled(value, fg(TEXT)),
-        width,
-    )
-}
-
-/// Like `compact_number`, rounded to a whole unit.
-fn whole_number(value: u64) -> String {
-    match value {
-        0..1_000 => value.to_string(),
-        1_000..1_000_000 => format!("{}k", (value + 500) / 1_000),
-        _ => format!("{}M", (value + 500_000) / 1_000_000),
-    }
 }
 
 /// `left` on the left and `right` against the right edge.

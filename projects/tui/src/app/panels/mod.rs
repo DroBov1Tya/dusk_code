@@ -6,7 +6,9 @@ mod panel;
 pub mod settings;
 
 pub use agents::{AgentWindow, SubagentView};
-pub use panel::{BotRow, Connection, JobsView, ModelList, Panel, Preview, ThreadList, step};
+pub use panel::{
+    BotRow, Connection, JobsView, ModelList, Panel, Preset, Preview, ThreadList, step,
+};
 pub use settings::{
     AgentRow, FileButton, FileEditor, HitTarget, McpRow, SettingCategory, SettingsHit,
     SettingsView, SwitchKind,
