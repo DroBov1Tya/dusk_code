@@ -1,10 +1,11 @@
 //! How hard the model reasons.
 
 use anyhow::{Context, Result};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Reasoning effort. Off is explicit; the provider default omits `reasoning_effort`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
 pub enum Effort {
     Off,
@@ -47,6 +48,15 @@ impl Effort {
         match self {
             Self::Off => "none",
             other => other.name(),
+        }
+    }
+
+    /// What a subagent thinks at: what its asker chose, medium when it chose nothing.
+    /// Off and the provider's default are the user's choice for every thread, so they stay.
+    pub fn for_subagent(chat: Option<Self>, asked: Option<Self>) -> Option<Self> {
+        match chat {
+            None | Some(Self::Off) => chat,
+            Some(_) => Some(asked.unwrap_or(Self::Medium)),
         }
     }
 
