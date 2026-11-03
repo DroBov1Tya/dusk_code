@@ -182,7 +182,7 @@ fn export_files(
         format: FORMAT.into(),
         version: VERSION,
         application_version: env!("CARGO_PKG_VERSION").into(),
-        created_at_ms: crate::state::db_timestamp()?,
+        created_at_ms: crate::state::timestamp_ms()?,
         excluded_workspace_paths: vec![BACKUPS.into()],
         entries: inventory.entries,
     };

@@ -20,7 +20,6 @@ mod tool;
 
 pub use agents::{AgentState, AskAgent, MessageParent};
 pub use approvals::{ApprovalRequest, Approvals, Decision, Judge, Request, Verdict};
-pub use builtin::read_regular;
 #[cfg(target_os = "macos")]
 pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText, run_overlay_if_asked};
 pub use console::JobInfo;

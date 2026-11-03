@@ -13,7 +13,7 @@ use crate::{
     chat::goal,
     runtime::ThreadEvent,
     state::{GoalCriterion, GoalEvidence, State},
-    tools::{Tool, ToolContext, builtin::parse_arguments, schema},
+    tools::{Tool, ToolContext, schema, schema::parse_arguments},
 };
 
 pub struct GoalTool {

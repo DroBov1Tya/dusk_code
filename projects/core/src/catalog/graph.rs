@@ -21,7 +21,6 @@
 use std::{
     collections::BTreeMap,
     fs,
-    io::Write,
     path::{Component, Path, PathBuf},
 };
 
@@ -29,7 +28,7 @@ use anyhow::{Context, Result, anyhow, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{init::paths::is_plain_folder_name, tools::read_regular};
+use crate::{init::paths::is_plain_folder_name, util::fs::read_regular};
 
 pub const SKILL_FILE: &str = "SKILL.md";
 pub const AGENT_FILE: &str = "AGENT.md";
@@ -323,12 +322,7 @@ pub fn save_node_text(directory: &Path, file: &str, name: &str, text: &str) -> R
     let path = node_file(directory, file, name)?;
     ensure!(path.is_file(), "{name} does not exist");
     check_node(text, name)?;
-    let temporary = path.with_extension("md.saving");
-    let mut out = fs::File::create(&temporary).context("cannot write the file")?;
-    out.write_all(text.as_bytes())
-        .and_then(|()| out.sync_all())
-        .context("cannot write the file")?;
-    fs::rename(&temporary, &path).context("cannot replace the file")?;
+    crate::util::atomic::write_private(&path, text.as_bytes())?;
     read_node_text(directory, file, name)
 }
 

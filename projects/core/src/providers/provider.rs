@@ -6,7 +6,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 
 use super::{
     anthropic::{Anthropic, MessageStream},
@@ -16,8 +16,8 @@ use super::{
 };
 use crate::{
     BoxFuture,
-    chat::inline_tags::TagSplitter,
     config::{Config, ProviderConfig, ProviderKind},
+    providers::inline_tags::TagSplitter,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -143,15 +143,6 @@ impl Provider {
             adapter,
             inline_tags: settings.inline_tags,
         })
-    }
-
-    /// Picks the first model of the catalogue so callers need no configured model ID.
-    pub async fn default_model(&self) -> Result<Model> {
-        self.list_models()
-            .await?
-            .into_iter()
-            .next()
-            .context("provider offers no models")
     }
 }
 

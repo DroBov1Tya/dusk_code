@@ -14,7 +14,7 @@ use tracing::{info, warn};
 use crate::{
     catalog::modes,
     init::paths::Paths,
-    release::builtin::{self, LOCK_FILE, Synced},
+    release::shipped::{self, LOCK_FILE, Synced},
 };
 
 const CONFIG_TEMPLATE: &str = "\
@@ -66,7 +66,7 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     create_private_dir(&paths.modes_dir())?;
     move_legacy_main_prompt(paths)?;
     // Shipped files out of date only make the agent know less; they never stop the start.
-    let builtin = match builtin::sync(paths) {
+    let builtin = match shipped::sync(paths) {
         Ok(synced) => {
             for (what, files) in [
                 ("added", &synced.written),

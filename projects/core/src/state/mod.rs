@@ -16,5 +16,4 @@ pub use chat::{
 };
 pub use db::State;
 
-use db::timestamp_ms;
-pub(crate) use db::timestamp_ms as db_timestamp;
+pub use db::timestamp_ms;

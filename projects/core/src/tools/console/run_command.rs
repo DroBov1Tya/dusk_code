@@ -17,8 +17,8 @@ use crate::BoxFuture;
 use crate::config::ApprovalPolicy;
 use crate::platform::{self, Confinement};
 use crate::tools::{
-    builtin::parse_arguments,
     schema,
+    schema::parse_arguments,
     scope::ToolScope,
     tool::{Tool, ToolContext, ToolKind},
 };

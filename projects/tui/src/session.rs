@@ -150,7 +150,6 @@ pub async fn run(
     }
     let mut keys = EventStream::new();
     let mut telegram = Telegram::default();
-    // A /mode from a bot is answered with the mode it switched to.
     let mut clock = tokio::time::interval(FRAME);
     // The clock sleeps while idle; missed frames must not play back in a burst.
     clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -851,7 +850,6 @@ fn connect(
     Ok(())
 }
 
-/// Shows what the core answered to a command that does not run in the thread.
 /// What a bot's command can be set to: the modes, or the models every provider has now.
 async fn bot_menu(runtime: &Runtime, app: &App, telegram: &Telegram, bot: usize, menu: BotMenu) {
     let (command, title, options) = match menu {
@@ -882,6 +880,7 @@ async fn bot_menu(runtime: &Runtime, app: &App, telegram: &Telegram, bot: usize,
     telegram.menu(bot, command, title, options);
 }
 
+/// Shows what the core answered to a command that does not run in the thread.
 async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>, command: Command) {
     let migrating = matches!(&command, Command::Migrate { .. });
     match command.answer(runtime).await {

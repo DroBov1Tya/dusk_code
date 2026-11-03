@@ -10,19 +10,6 @@ mod overlay;
 mod screen;
 mod tools;
 
+pub use overlay::run_overlay_if_asked;
 pub use screen::Screen;
 pub use tools::{Click, PressKeys, Screenshot, Scroll, TypeText};
-
-/// In the cursor's helper process, draws the cursor until its parent goes and returns
-/// true; otherwise returns false at once. A client calls it first thing in `main`, on
-/// the main thread, which AppKit needs.
-pub fn run_overlay_if_asked() -> bool {
-    if std::env::args_os()
-        .nth(1)
-        .is_some_and(|arg| arg == cursor::OVERLAY_ARG)
-    {
-        overlay::run();
-        return true;
-    }
-    false
-}

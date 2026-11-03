@@ -5,11 +5,12 @@ use tokio::fs;
 
 use serde_json::Value;
 
+use crate::util::fs::printable;
 use crate::{
     BoxFuture,
     tools::{
-        builtin::{parse_arguments, printable},
         schema,
+        schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
 };

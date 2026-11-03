@@ -116,7 +116,7 @@ fn retire(root: &Path, manifest: &str, synced: &mut Synced) -> Result<()> {
             synced.preserved.push(fields[1].to_owned());
             continue;
         }
-        let contents = crate::tools::read_regular(&target, metadata.len())?;
+        let contents = crate::util::fs::read_regular(&target, metadata.len())?;
         if hash(&contents) == expected {
             let archived = Path::new("retired-skills")
                 .join(uuid::Uuid::now_v7().to_string())

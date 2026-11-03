@@ -3,14 +3,21 @@
 //! schema before the tool runs; a wrong call comes back to the model as a format error
 //! it can fix in the same turn.
 
+use anyhow::{Context, Result};
 use jsonschema::Validator;
 use schemars::{JsonSchema, generate::SchemaSettings};
+use serde::de::DeserializeOwned;
 use serde_json::Value;
 
 /// Problems listed per call; the first few are enough to fix a call.
 const MAX_PROBLEMS: usize = 5;
 /// The schema is quoted back only while it is short; the tool list has it anyway.
 const MAX_QUOTED_SCHEMA: usize = 2048;
+
+/// Strict on purpose: a misspelled field is reported to the model instead of ignored.
+pub fn parse_arguments<T: DeserializeOwned>(arguments: Value) -> Result<T> {
+    serde_json::from_value(arguments).context("invalid arguments")
+}
 
 /// The arguments schema of `T`, as providers accept it: one object at the top, every
 /// subschema inline, no meta keys. An absent optional field is just not required.

@@ -4,7 +4,7 @@
 
 use std::env;
 
-use dusk_core::chat::complete::{self, PathCompletion};
+use dusk_core::chat::path_completion::{self, PathCompletion};
 
 use super::App;
 
@@ -37,7 +37,7 @@ impl App {
             return;
         }
         let cwd = env::current_dir().unwrap_or_default();
-        let found = complete::paths(&word, &cwd);
+        let found = path_completion::paths(&word, &cwd);
         self.paths = (!found.entries.is_empty()).then_some(PathPopup {
             start,
             word,
@@ -55,7 +55,7 @@ impl App {
         });
         let word = &before[start..];
         let command = start == 0 && word.matches('/').count() < 2 && word.starts_with('/');
-        (complete::is_path(word) && !command).then(|| (start, word.to_owned()))
+        (path_completion::is_path(word) && !command).then(|| (start, word.to_owned()))
     }
 
     /// Puts the next entry in place of the word. Returns whether Tab was used.

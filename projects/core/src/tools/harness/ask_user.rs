@@ -9,8 +9,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::tools::{
-    builtin::parse_arguments,
     schema,
+    schema::parse_arguments,
     tool::{Tool, ToolContext},
 };
 use crate::{BoxFuture, runtime::ThreadEvent};

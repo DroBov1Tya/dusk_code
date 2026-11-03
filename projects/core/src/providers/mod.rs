@@ -4,6 +4,7 @@
 mod anthropic;
 mod chat;
 mod http;
+mod inline_tags;
 mod model_output;
 mod openai;
 mod provider;

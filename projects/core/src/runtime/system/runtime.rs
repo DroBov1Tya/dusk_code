@@ -231,13 +231,6 @@ impl Runtime {
         update::check(self.config().current().update_channel()).await
     }
 
-    /// Puts release `tag` in place of the running binary; it applies at the next start.
-    pub async fn install_update(&self, tag: &str) -> Result<PathBuf> {
-        let binary = update::install(tag).await?;
-        info!("updated to {tag} at {}", binary.display());
-        Ok(binary)
-    }
-
     /// Installs a release while publishing the latest stage and downloaded bytes.
     pub async fn install_update_with_progress(
         &self,

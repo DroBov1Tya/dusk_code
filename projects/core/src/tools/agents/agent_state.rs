@@ -12,7 +12,7 @@ use crate::{
     BoxFuture,
     runtime::ThreadEvent,
     state::{AgentPhase, State},
-    tools::{Tool, ToolContext, ToolKind, builtin::parse_arguments, schema},
+    tools::{Tool, ToolContext, ToolKind, schema, schema::parse_arguments},
 };
 
 pub struct AgentState {
