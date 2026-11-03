@@ -50,7 +50,7 @@ pub struct App {
     /// Advances while the agent works, for the spinner.
     pub frame: usize,
     /// The idle screen, while it plays.
-    pub screensaver: Option<crate::ui::screensaver::Playing>,
+    pub screensaver: Option<crate::screensaver::Playing>,
     pub pressed: Option<Pressed>,
     /// The folder duskcode runs in, by name, for the status bar.
     pub folder: String,

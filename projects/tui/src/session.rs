@@ -29,8 +29,9 @@ use crate::{
         Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel, Preview,
         SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
+    screensaver,
     telegram::{self, Telegram},
-    ui::{self, screensaver},
+    ui,
 };
 
 const THREAD_SOURCE: &str = "tui";
