@@ -175,7 +175,7 @@ impl Runtime {
                         for mailbox in mailboxes.lock().await.values() {
                             mailbox.emit(ThreadEvent::ModelSelected {
                                 name: selected.name(),
-                                context_window: selected.model.context_window,
+                                input_limit: selected.input_limit(&config.current()),
                             });
                             mailbox.send(Input::Sent);
                         }
@@ -269,7 +269,7 @@ impl Runtime {
     pub fn input_limit(&self) -> u64 {
         let config = self.config().current();
         self.model()
-            .map_or(config.limits().max_input_tokens, |choice| {
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
                 choice.input_limit(&config)
             })
     }
@@ -381,7 +381,7 @@ impl Runtime {
         let prompt = modes::prompt(&launcher.paths.modes_dir(), &mode)?;
         let limit = self
             .model()
-            .map_or(config.limits().max_input_tokens, |choice| {
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
                 choice.input_limit(&config)
             });
         context_report(&launcher.state, thread_id, &mode, prompt, &specs, limit).await
@@ -559,18 +559,6 @@ impl Runtime {
         self.launcher.state.undo_points(thread_id).await
     }
 
-    pub fn set_max_input_tokens(&self, tokens: u64) -> Result<()> {
-        self.config()
-            .update(|config| config.set_max_input_tokens(tokens))?;
-        Ok(())
-    }
-
-    pub fn set_max_output_tokens(&self, tokens: u64) -> Result<()> {
-        self.config()
-            .update(|config| config.set_max_output_tokens(tokens))?;
-        Ok(())
-    }
-
     /// Turns every log and trace of the process off or on again, at once.
     pub fn set_logging_enabled(&self, enabled: bool) -> Result<()> {
         self.config()
@@ -613,12 +601,13 @@ impl Runtime {
             .update(|config| config.set_model(name))?;
         self.launcher.model.set(choice.clone());
         let mailboxes = Arc::clone(&self.launcher.mailboxes);
+        let input_limit = choice.input_limit(&self.launcher.config.current());
         let selected = choice;
         tokio::spawn(async move {
             for mailbox in mailboxes.lock().await.values() {
                 mailbox.emit(ThreadEvent::ModelSelected {
                     name: selected.name(),
-                    context_window: selected.model.context_window,
+                    input_limit,
                 });
                 mailbox.send(Input::Sent);
             }

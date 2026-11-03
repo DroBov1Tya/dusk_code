@@ -49,6 +49,7 @@ struct ModelPage {
 struct ModelEntry {
     id: String,
     max_input_tokens: Option<u64>,
+    max_tokens: Option<u64>,
 }
 
 impl Anthropic {
@@ -87,7 +88,7 @@ impl Anthropic {
                     !model.id.trim().is_empty() && !model.id.chars().any(char::is_control),
                     "provider returned an empty or invalid model ID"
                 );
-                models.insert(model.id, model.max_input_tokens);
+                models.insert(model.id, (model.max_input_tokens, model.max_tokens));
             }
             match (page.has_more, page.last_id) {
                 (true, Some(last)) => after = Some(last),
@@ -96,7 +97,11 @@ impl Anthropic {
         }
         Ok(models
             .into_iter()
-            .map(|(id, context_window)| Model { id, context_window })
+            .map(|(id, (context_window, max_output))| Model {
+                id,
+                context_window,
+                max_output,
+            })
             .collect())
     }
 

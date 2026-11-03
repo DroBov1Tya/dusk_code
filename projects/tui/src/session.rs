@@ -467,17 +467,6 @@ pub async fn run(
                 }
                 Err(error) => app.error(format!("cannot save the goal rounds: {error:#}")),
             },
-            Action::SetInputTokens(tokens) => {
-                match runtime.set_max_input_tokens(tokens) {
-                    Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,
-                    Err(error) => app.error(format!("cannot save the limit: {error:#}")),
-                }
-                app.limit = runtime.input_limit();
-            }
-            Action::SetOutputTokens(tokens) => match runtime.set_max_output_tokens(tokens) {
-                Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,
-                Err(error) => app.error(format!("cannot save the limit: {error:#}")),
-            },
             Action::SetMemoryChars(chars) => match runtime.set_memory_chars(chars) {
                 Ok(()) => {
                     if let Some(Panel::Settings(list)) = &mut app.panel {

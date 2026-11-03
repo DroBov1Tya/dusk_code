@@ -58,13 +58,12 @@ impl Agent {
             .find(|message| message.role == MessageRole::User)
             .context("the thread has no user message")?;
         let prompt = format!("{TITLE_PROMPT}{}", clip(&first.content, MAX_PROMPT_CHARS));
-        let max_output = self.config.current().limits().max_output_tokens;
         let choice = self.model.current().context("provider is unavailable")?;
         let request = ChatRequest {
             model: &choice.model.id,
             messages: &[ChatMessage::User(prompt)],
             tools: &[],
-            max_output_tokens: max_output.min(TITLE_OUTPUT_TOKENS),
+            max_output_tokens: Some(TITLE_OUTPUT_TOKENS),
             // A title needs no thought.
             effort: None,
         };

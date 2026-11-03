@@ -290,8 +290,7 @@ impl Config {
     }
 
     pub fn input_limit(&self, provider: &str, model: &str, window: Option<u64>) -> u64 {
-        self.context_policy(provider, model)
-            .input_limit(self.limits.max_input_tokens, window)
+        self.context_policy(provider, model).input_limit(window)
     }
 
     pub fn set_provider(&mut self, name: String, provider: ProviderConfig) {
@@ -300,14 +299,6 @@ impl Config {
 
     pub fn set_max_agents_at_work(&mut self, limit: usize) {
         self.limits.max_agents_at_work = limit;
-    }
-
-    pub fn set_max_input_tokens(&mut self, tokens: u64) {
-        self.limits.max_input_tokens = tokens;
-    }
-
-    pub fn set_max_output_tokens(&mut self, tokens: u64) {
-        self.limits.max_output_tokens = tokens;
     }
 
     pub fn set_max_goal_rounds(&mut self, rounds: u32) {
@@ -344,10 +335,6 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
-        ensure!(
-            self.limits.max_input_tokens > 0 && self.limits.max_output_tokens > 0,
-            "token limits must be above zero"
-        );
         ensure!(
             self.limits.max_agents_at_work > 0,
             "max_agents_at_work must be above zero"
@@ -502,16 +489,16 @@ fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{mcp_server_yaml, parse_mcp_server};
+    use crate::config::{UNKNOWN_WINDOW, mcp_server_yaml, parse_mcp_server};
 
     #[test]
     fn auto_takes_the_model_window() {
         let auto = ContextPolicy::Auto;
-        assert_eq!(auto.input_limit(100_000, Some(256_000)), 256_000);
-        assert_eq!(auto.input_limit(100_000, None), 100_000);
+        assert_eq!(auto.input_limit(Some(256_000)), 256_000);
+        assert_eq!(auto.input_limit(None), UNKNOWN_WINDOW);
         let manual = ContextPolicy::Manual(300_000);
-        assert_eq!(manual.input_limit(100_000, Some(256_000)), 256_000);
-        assert_eq!(manual.input_limit(100_000, None), 300_000);
+        assert_eq!(manual.input_limit(Some(256_000)), 256_000);
+        assert_eq!(manual.input_limit(None), 300_000);
     }
 
     const PROVIDERS: &str = "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n";

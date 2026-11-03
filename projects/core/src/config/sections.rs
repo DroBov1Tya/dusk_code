@@ -87,13 +87,11 @@ pub struct ThreadConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Limits {
-    /// For a model whose window is not known, a request larger than this is not sent;
-    /// the context is compacted well before it.
-    #[serde(default = "default_token_limit")]
-    pub max_input_tokens: u64,
-    /// The model is stopped after writing this many tokens in one call.
-    #[serde(default = "default_token_limit")]
-    pub max_output_tokens: u64,
+    /// Older configs set these; the model's window and output cap replace them.
+    #[serde(default, skip_serializing)]
+    max_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing)]
+    max_output_tokens: Option<u64>,
     /// Maximum number of subagents running across all threads.
     #[serde(default = "default_max_agents_at_work")]
     pub max_agents_at_work: usize,
@@ -105,16 +103,12 @@ pub struct Limits {
 impl Default for Limits {
     fn default() -> Self {
         Self {
-            max_input_tokens: default_token_limit(),
-            max_output_tokens: default_token_limit(),
+            max_input_tokens: None,
+            max_output_tokens: None,
             max_agents_at_work: default_max_agents_at_work(),
             max_goal_rounds: default_max_goal_rounds(),
         }
     }
-}
-
-fn default_token_limit() -> u64 {
-    100_000
 }
 
 fn default_max_agents_at_work() -> usize {

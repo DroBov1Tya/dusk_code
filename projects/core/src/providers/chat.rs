@@ -49,7 +49,7 @@ pub struct ChatRequest<'a> {
     pub model: &'a str,
     pub messages: &'a [ChatMessage],
     pub tools: &'a [ToolSpec],
-    /// The provider stops the model after this many tokens.
-    pub max_output_tokens: u64,
+    /// The provider stops the model after this many tokens; its own cap when unknown.
+    pub max_output_tokens: Option<u64>,
     pub effort: Option<Effort>,
 }

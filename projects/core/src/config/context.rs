@@ -3,8 +3,12 @@
 use anyhow::{Result, ensure};
 use serde::{Deserialize, Serialize};
 
+/// The window taken for a model whose provider reports none and that has no size set
+/// under `/settings` > models.
+pub const UNKNOWN_WINDOW: u64 = 128_000;
+
 /// A model's input budget. Auto is the model's own window as its provider reports it,
-/// and the global input cap for a model that reports none. Fixed and Manual are set by
+/// and [`UNKNOWN_WINDOW`] for a model that reports none. Fixed and Manual are set by
 /// hand; a known window stays their ceiling.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,9 +64,9 @@ impl ContextPolicy {
     }
 
     /// The single resolver used by request guards, context reports and compaction.
-    pub fn input_limit(self, global: u64, model_window: Option<u64>) -> u64 {
+    pub fn input_limit(self, model_window: Option<u64>) -> u64 {
         let selected = match self {
-            Self::Auto => return model_window.unwrap_or(global),
+            Self::Auto => return model_window.unwrap_or(UNKNOWN_WINDOW),
             Self::Fixed(preset) => preset.tokens(),
             Self::Manual(tokens) => tokens,
         };

@@ -37,7 +37,7 @@ pub async fn sees_pictures(choice: &Choice) -> Option<bool> {
         model: &choice.model.id,
         messages: &messages,
         tools: &[],
-        max_output_tokens: MAX_ANSWER_TOKENS,
+        max_output_tokens: Some(MAX_ANSWER_TOKENS),
         effort: None,
     };
     let mut output = ModelOutput::default();

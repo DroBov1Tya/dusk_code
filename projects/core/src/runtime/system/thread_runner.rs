@@ -96,7 +96,8 @@ pub enum ThreadEvent {
     /// The active model changed or was discovered after the thread opened.
     ModelSelected {
         name: String,
-        context_window: Option<u64>,
+        /// The largest request to it: its window or the size set under models.
+        input_limit: u64,
     },
     /// Saved locally, outside the model queue, until the client explicitly resends it.
     LocalUnsent(LocalUnsent),
@@ -129,11 +130,8 @@ pub enum ThreadEvent {
     TitleChanged {
         title: String,
     },
-    /// The model wrote `limit` tokens in one call and was stopped; the turn ends with
-    /// what it wrote.
-    OutputLimitReached {
-        limit: u64,
-    },
+    /// The model reached its output cap in one call; the turn ends with what it wrote.
+    OutputLimitReached,
     /// The model refused pictures; they stay files it is told the path of.
     PicturesRefused {
         model: String,
@@ -677,7 +675,7 @@ impl ThreadInput {
         let limit = self
             .model
             .current()
-            .map_or(config.limits().max_input_tokens, |choice| {
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
                 choice.input_limit(&config)
             });
         let tokens = estimate_tokens(&text);
@@ -856,6 +854,7 @@ mod tests {
         Model {
             id: "fake".into(),
             context_window,
+            max_output: None,
         }
     }
 
@@ -1296,8 +1295,7 @@ mod tests {
     #[tokio::test]
     async fn a_model_past_the_output_limit_is_stopped_and_its_text_kept() {
         let state = thread_state("output_limit").await;
-        let limits = "limits:\n  max_output_tokens: 2\n";
-        let config = Arc::new(temp_live_config_with("output_limit_config", limits));
+        let config = Arc::new(temp_live_config_with("output_limit_config", ""));
         // The third piece takes the output to 3 tokens; the stream must not be read on.
         let script = vec![
             Step::Text("abcd"),
@@ -1306,22 +1304,26 @@ mod tests {
             Step::Hang,
         ];
         let provider = provider(vec![script]);
-        let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+        let capped = Model {
+            max_output: Some(2),
+            ..model(None)
+        };
+        let (runner, input, mut output) = runner(&state, &provider, &config, capped);
         input.send("write a lot").await.unwrap();
         drop(input);
 
         runner.run().await;
 
-        let mut reached = None;
+        let mut reached = false;
         let mut status = None;
         while let Some(event) = output.next_event().await {
             match event {
-                ThreadEvent::OutputLimitReached { limit } => reached = Some(limit),
+                ThreadEvent::OutputLimitReached => reached = true,
                 ThreadEvent::TurnFinished(turn) => status = Some(turn.status),
                 _ => {}
             }
         }
-        assert_eq!(reached, Some(2));
+        assert!(reached);
         assert_eq!(status, Some(TurnStatus::Interrupted));
         let transcript = transcript(&state).await;
         assert_eq!(

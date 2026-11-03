@@ -11,6 +11,10 @@ use crate::{
     },
 };
 
+/// Messages requires a cap; this one every current model takes, for a model whose
+/// catalogue entry gives none.
+const DEFAULT_MAX_TOKENS: u64 = 32_000;
+
 #[derive(Serialize)]
 pub(super) struct MessagesRequest {
     model: String,
@@ -54,7 +58,7 @@ impl MessagesRequest {
         };
         Self {
             model: request.model.to_owned(),
-            max_tokens: request.max_output_tokens,
+            max_tokens: request.max_output_tokens.unwrap_or(DEFAULT_MAX_TOKENS),
             system,
             messages,
             tools: request.tools.iter().map(WireTool::from).collect(),

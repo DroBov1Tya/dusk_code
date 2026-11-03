@@ -34,11 +34,6 @@ thread:
   record: full
 
 limits:
-  # A request larger than this is not sent; the context is compacted at 80% of it,
-  # or of the model window when that is smaller.
-  max_input_tokens: 100000
-  # The model is stopped after writing this many tokens in one call.
-  max_output_tokens: 100000
   # Maximum number of subagents working at once across all threads.
   max_agents_at_work: 8
 

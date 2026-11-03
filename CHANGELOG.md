@@ -13,6 +13,12 @@ testing.
   keeps it up to date itself. It lives in the config folder, not in the repository, with
   its own size limit.
 
+### Changed
+
+- The input and output token limits are gone from /settings and the config. A request
+  is held to the model's window, or to the size set under /settings > models, and a
+  model writes up to its own output cap. Older configs that set them still load.
+
 ## 0.70.1 - 2026-11-03
 
 ### Added

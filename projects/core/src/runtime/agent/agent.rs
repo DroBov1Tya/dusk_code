@@ -390,7 +390,7 @@ impl Agent {
             model: &choice.model.id,
             messages: &messages,
             tools: &tools,
-            max_output_tokens: config.limits().max_output_tokens,
+            max_output_tokens: choice.model.max_output,
             effort: self.effort(&config),
         };
         let mut called = self.call_model(&choice, request, &config, inbox).await;
@@ -400,7 +400,7 @@ impl Agent {
                 model: &choice.model.id,
                 messages: &messages,
                 tools: &tools,
-                max_output_tokens: config.limits().max_output_tokens,
+                max_output_tokens: choice.model.max_output,
                 effort: self.effort(&config),
             };
             called = self.call_model(&choice, request, &config, inbox).await;
@@ -444,8 +444,7 @@ impl Agent {
             Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),
             // The connection is closed already; what was written so far is kept.
             Ok(Err(error)) if is_output_limit(&error) => {
-                let limit = config.limits().max_output_tokens;
-                self.emit(ThreadEvent::OutputLimitReached { limit });
+                self.emit(ThreadEvent::OutputLimitReached);
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }
             // The connection broke after the model wrote something: what it wrote stays in
@@ -630,7 +629,7 @@ impl Agent {
         let config = self.config.current();
         self.model
             .current()
-            .map_or(config.limits().max_input_tokens, |choice| {
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
                 choice.input_limit(&config)
             })
     }

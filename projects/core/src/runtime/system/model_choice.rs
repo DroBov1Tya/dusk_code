@@ -205,6 +205,7 @@ pub fn configured(config: &Config) -> Result<Option<Choice>> {
         model: Model {
             id: id.to_owned(),
             context_window: None,
+            max_output: None,
         },
     }))
 }
