@@ -59,7 +59,7 @@ pub struct Runtime {
     model_discovery: Option<JoinHandle<()>>,
     threads: Mutex<JoinSet<()>>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
-    kept_builtin: Vec<String>,
+    updated_builtin: Vec<String>,
     state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
     _restore_guard: Option<crate::util::archive::RestoreGuard>,
@@ -189,15 +189,15 @@ impl Runtime {
             updates,
             model_discovery,
             threads: Mutex::new(JoinSet::new()),
-            kept_builtin: initialized.builtin.kept,
+            updated_builtin: initialized.builtin.updated,
             state_db,
         })
     }
 
-    /// Shipped prompts and skills the user changed: kept, with the new version beside
-    /// each as `.new`, by their path in the config folder.
-    pub fn kept_builtin(&self) -> &[String] {
-        &self.kept_builtin
+    /// Shipped prompts, skills and agents this start brought to the build's version, by
+    /// their path in the config folder.
+    pub fn updated_builtin(&self) -> &[String] {
+        &self.updated_builtin
     }
 
     /// The newest version on the update channel; `channel` switches the channel first.

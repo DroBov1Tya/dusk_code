@@ -65,6 +65,11 @@ testing.
 
 ### Changed
 
+- Shipped prompts, skills and agents always follow the build: at every start, one that
+  differs from the repository's version is replaced, a local edit included, and the
+  start notes which. Your own agents, skills and modes, under names of their own, are
+  never touched. A MAIN.md from before modes, if you wrote it, becomes the MINE mode.
+
 - The context limit follows the model's own window when its provider reports one;
   the global input cap is used only for models that do not, and a size set under
   `/settings` > models still wins.
