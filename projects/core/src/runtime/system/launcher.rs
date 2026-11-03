@@ -19,6 +19,7 @@ use super::{
 };
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::runtime::chat::project;
+use crate::util::environment::Environment;
 use crate::{
     BoxFuture,
     catalog::agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
@@ -49,6 +50,8 @@ pub struct Launcher {
     pub(crate) jobs: Arc<JobManager>,
     /// One for every thread, so a yes for the session holds in all of them.
     pub(crate) approvals: Arc<Approvals>,
+    /// Found once at start; built-in tools that need what is missing stay off.
+    pub environment: Environment,
 }
 
 impl Launcher {
@@ -94,6 +97,7 @@ impl Launcher {
         tools.set_depth(depth);
         tools.jobs = Some(Arc::clone(&self.jobs));
         tools.approvals = Some(Arc::clone(&self.approvals));
+        tools.environment = self.environment;
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
                 tools.add(Box::new(tool));
