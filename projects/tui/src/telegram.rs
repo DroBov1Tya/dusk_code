@@ -41,7 +41,7 @@ impl Default for Telegram {
 impl Telegram {
     /// Checks the token and starts the bot; returns its name and pairing code.
     pub async fn add(&mut self, token: String) -> anyhow::Result<(String, String)> {
-        let mut bot = dusk_telegram::connect(token, self.next_id).await?;
+        let mut bot = TelegramBot::connect(token, self.next_id).await?;
         self.next_id += 1;
         bot.start(self.sender.clone());
         let named = (bot.username().to_owned(), bot.code().to_owned());

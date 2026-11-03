@@ -2,11 +2,7 @@
 
 use std::time::Duration;
 
-use teloxide::{
-    adaptors::throttle::Limits,
-    types::{KeyboardButton, KeyboardMarkup},
-    utils::command::BotCommands,
-};
+use teloxide::{adaptors::throttle::Limits, utils::command::BotCommands};
 
 /// How often the owner hears that the bot is alive while the agent works.
 pub const ALIVE_EVERY: Duration = Duration::from_secs(5 * 60);
@@ -36,6 +32,7 @@ pub const MULTIPLE: &str = "Tap the options, then Send; or write your own answer
 pub const SINGLE: &str = "Tap an option, or write your own answer.";
 pub const APPROVAL: &str = "The agent waits for your approval:";
 pub const SEND: &str = "Send";
+pub const ONLY_TEXT: &str = "Only text reaches the chat for now.";
 pub const ALLOW: &str = "Allow";
 pub const DENY: &str = "Deny";
 
@@ -66,12 +63,4 @@ pub enum Command {
     Goal(String),
     #[command(description = "check that the bot is alive")]
     Alive,
-}
-
-/// The buttons under the message box.
-pub fn keyboard() -> KeyboardMarkup {
-    let row = |labels: [&str; 2]| labels.map(KeyboardButton::new).to_vec();
-    KeyboardMarkup::new([row(["/stop", "/resume"]), row(["/status", "/approve"])])
-        .resize_keyboard()
-        .persistent()
 }
