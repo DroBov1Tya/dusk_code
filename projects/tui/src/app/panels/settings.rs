@@ -722,6 +722,11 @@ impl App {
                     return Action::RestartMcp(server.name.clone());
                 }
             }
+            (Some(SettingCategory::Mcp), KeyCode::Char('l')) => {
+                if let Some(server) = view.mcp_server(view.selected) {
+                    return Action::SignInMcp(server.name.clone());
+                }
+            }
             (Some(_), KeyCode::Char(' ') | KeyCode::Enter) => {
                 if let Some(action) = view.switch(view.selected) {
                     return action;

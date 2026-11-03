@@ -517,6 +517,21 @@ pub async fn run(
                 }
                 Err(error) => editor_error(&mut app, format!("not saved: {error:#}")),
             },
+            Action::SignInMcp(name) => match runtime.sign_in_mcp(&name).await {
+                Ok(page) => {
+                    // The full address carries the sign-in's state; shown only when needed.
+                    let notice = match open_in_browser(page.as_str()) {
+                        true => format!(
+                            "Sign-in to {name} opened in the browser at {}",
+                            page.origin().ascii_serialization()
+                        ),
+                        false => format!("Sign-in to {name}: open {page} in a browser"),
+                    };
+                    app.transcript.notice(notice, Tone::Info);
+                    app.flash = Some(format!("{name} starts again once you have signed in"));
+                }
+                Err(error) => app.flash = Some(format!("cannot sign in to {name}: {error:#}")),
+            },
             Action::RestartMcp(name) => {
                 runtime.restart_mcp(&name);
                 app.flash = Some(format!("MCP server {name} starting again"));
@@ -714,6 +729,22 @@ pub async fn run(
     }
     close(open.take()).await;
     Ok(())
+}
+
+/// The system's browser shows the page; false when none could be started.
+fn open_in_browser(url: &str) -> bool {
+    let program = if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    std::process::Command::new(program)
+        .arg(url)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .is_ok()
 }
 
 /// Takes the given name, or the next free `provider-N`, against the configuration read

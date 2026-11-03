@@ -128,7 +128,7 @@ fn hints(view: &SettingsView) -> &'static str {
             " up/down choose  enter open  space switch  r reload  esc back "
         }
         (Some(SettingCategory::Mcp), None) => {
-            " up/down choose  enter edit  t tools  n new  c reconnect  space switch  esc back "
+            " up/down choose  enter edit  t tools  n new  c reconnect  l sign in  space switch  esc back "
         }
     }
 }
