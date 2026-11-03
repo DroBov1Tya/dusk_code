@@ -1,11 +1,11 @@
 ---
 name: design-patterns
 description: Replace generic interface choices with patterns justified by the user's task, content and product constraints. Use for a visual redesign, a UI critique or a request to make a screen less templated; excludes backend architecture and software design patterns.
-source: dusk_code
+source: "dusk_code"
 license: MIT
 metadata:
-  author: dusk_code contributors
-  inspiration: https://github.com/heydamir/unslop
+  author: "dusk_code"
+  credit: "ideas from unslop by Damir Sokolovsky (https://github.com/heydamir/unslop, CC BY 4.0); the text is written anew"
 ---
 
 # Design Patterns

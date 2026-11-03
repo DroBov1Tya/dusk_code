@@ -1,7 +1,8 @@
 ---
 name: api-security-assessment
 description: Enumerate API contracts and validate identity, object and business-flow boundaries with paired evidence.
-source: Dusk Code
+source: "dusk_code"
+license: MIT
 tags: [security, assessment]
 ---
 

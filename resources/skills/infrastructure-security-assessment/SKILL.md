@@ -1,7 +1,8 @@
 ---
 name: infrastructure-security-assessment
 description: Assess infrastructure, cloud and network exposure with configuration and effective-access evidence.
-source: Dusk Code
+source: "dusk_code"
+license: MIT
 tags: [security, assessment]
 ---
 
