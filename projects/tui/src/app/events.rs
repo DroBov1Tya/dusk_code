@@ -164,6 +164,11 @@ impl App {
             ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
             ThreadEvent::Approval(request) => self.ask_approval(request, None),
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
+            ThreadEvent::ArbiterDecided {
+                what,
+                allow,
+                reason,
+            } => self.arbiter_decided(what, allow, reason),
             ThreadEvent::PicturesRefused { model } => self.transcript.notice(
                 format!("{model} does not take pictures; it gets their paths instead"),
                 Tone::Info,

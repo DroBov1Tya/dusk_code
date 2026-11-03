@@ -7,13 +7,15 @@ use serde::{Deserialize, Serialize};
 
 /// Ask is the default. Sandbox runs commands without asking, confined by the system to
 /// the working folders; paths outside them and the screen are still asked. Full access
-/// answers every request with yes. The config folder stays closed either way.
+/// answers every request with yes. Arbiter hands each request to an agent that decides
+/// in the user's place. The config folder stays closed either way.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalPolicy {
     #[default]
     Ask,
     Sandbox,
+    Arbiter,
     FullAccess,
 }
 
@@ -22,6 +24,7 @@ impl ApprovalPolicy {
         match self {
             Self::Ask => "ask",
             Self::Sandbox => "sandbox",
+            Self::Arbiter => "arbiter",
             Self::FullAccess => "full access",
         }
     }

@@ -38,6 +38,11 @@ testing.
   hide a folder from reading but still keeps writes out of it. Paths outside the folders
   and the screen are still asked; the footer shows the mode.
 
+- Arbiter mode, in /settings > access: while you are away, an agent decides each
+  approval request in your place, allowing ordinary local work and refusing what is
+  destructive, outward or unclear. The chat notes every verdict, and the arbiter's card
+  in the sidebar opens its thread of requests and verdicts. A failure counts as no.
+
 ### Changed
 
 - The token counters are gone from the sidebar, and the input and output token limits

@@ -158,6 +158,12 @@ impl Runtime {
             mcp,
             agents,
         };
+        launcher
+            .approvals
+            .set_judge(Arc::new(super::arbiter::Arbiter::new(
+                Arc::clone(&launcher.state),
+                Arc::clone(&launcher.model),
+            )));
         let model_discovery = if !config.current().providers().is_empty() {
             let config = Arc::clone(&config);
             let model = Arc::clone(&launcher.model);
