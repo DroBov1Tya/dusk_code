@@ -62,7 +62,7 @@ pub struct Runtime {
     kept_builtin: Vec<String>,
     state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
-    _restore_guard: Option<crate::archive::RestoreGuard>,
+    _restore_guard: Option<crate::util::archive::RestoreGuard>,
 }
 
 /// What the application costs the machine right now.
@@ -89,7 +89,7 @@ pub struct ThreadHandle {
 impl Runtime {
     /// A SQLite snapshot plus the two standard data roots, without the backup folder.
     pub async fn migrate(&self, destination: Option<PathBuf>) -> Result<PathBuf> {
-        crate::archive::export(
+        crate::util::archive::export(
             self.paths(),
             &self.launcher.state,
             &self.state_db,
@@ -103,8 +103,8 @@ impl Runtime {
     /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
         let state_db =
-            crate::archive::resolve_state_db(&state_db.unwrap_or_else(|| paths.state_db()))?;
-        let restore_guard = crate::archive::startup_guard(&paths, Some(&state_db))?;
+            crate::util::archive::resolve_state_db(&state_db.unwrap_or_else(|| paths.state_db()))?;
+        let restore_guard = crate::util::archive::startup_guard(&paths, Some(&state_db))?;
         let initialized = init::initialize(&paths)?;
         let state = Arc::new(State::open(&state_db).await?);
         let mailboxes = Arc::new(Mailboxes::default());
