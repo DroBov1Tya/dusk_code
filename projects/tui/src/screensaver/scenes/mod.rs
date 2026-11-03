@@ -1,7 +1,7 @@
 //! The scenes, each a picture painted from a point and the time alone.
 
-mod autumn;
 mod desert;
+mod knight;
 mod night;
 mod water;
 
@@ -15,28 +15,24 @@ pub enum Scene {
     Dunes,
     Campfire,
     Caravan,
-    CountryRoad,
-    Pagoda,
+    KnightFire,
     LanternRiver,
     AuroraCabin,
-    Forest,
     NeonSunset,
     OceanSunset,
 }
 
 impl Scene {
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 11] = [
         Self::FujiLake,
         Self::RiverDawn,
         Self::MilkyWayCamp,
         Self::Dunes,
         Self::Campfire,
         Self::Caravan,
-        Self::CountryRoad,
-        Self::Pagoda,
+        Self::KnightFire,
         Self::LanternRiver,
         Self::AuroraCabin,
-        Self::Forest,
         Self::NeonSunset,
         Self::OceanSunset,
     ];
@@ -49,11 +45,9 @@ impl Scene {
             Self::Dunes => "dunes",
             Self::Campfire => "campfire under the stars",
             Self::Caravan => "caravan at dusk",
-            Self::CountryRoad => "autumn road",
-            Self::Pagoda => "pagoda in the maples",
+            Self::KnightFire => "a knight at his fire",
             Self::LanternRiver => "lantern festival",
             Self::AuroraCabin => "northern lights over a cabin",
-            Self::Forest => "autumn forest",
             Self::NeonSunset => "neon sunset",
             Self::OceanSunset => "ocean sunset",
         }
@@ -67,11 +61,9 @@ impl Scene {
             Self::Dunes => desert::dunes(p, t),
             Self::Campfire => desert::campfire(p, t),
             Self::Caravan => desert::caravan(p, t),
-            Self::CountryRoad => autumn::country_road(p, t),
-            Self::Pagoda => autumn::pagoda(p, t),
+            Self::KnightFire => knight::knight_fire(p, t),
             Self::LanternRiver => night::lantern_river(p, t),
             Self::AuroraCabin => night::aurora_cabin(p, t),
-            Self::Forest => autumn::forest(p, t),
             Self::NeonSunset => water::neon_sunset(p, t),
             Self::OceanSunset => water::ocean_sunset(p, t),
         }

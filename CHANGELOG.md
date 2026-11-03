@@ -12,12 +12,11 @@ testing.
   agent offers to keep a short summary of the project in the working directory and then
   keeps it up to date itself. It lives on this machine in
   `~/Documents/duskcode/projects/`, never in the repository, with its own size limit.
-- The idle screen plays thirteen new scenes in place of the six: a mountain lake and a
+- The idle screen plays eleven new scenes in place of the six: a mountain lake and a
   river at dawn, a desert camp under the Milky Way, dunes, a campfire, a caravan at
-  dusk, an autumn road, a pagoda in the maples, a lantern festival, northern lights over
-  a cabin, an autumn forest, a neon sunset and the sea at sunset. They are drawn in
-  coloured halftone dots, eight to a cell, and fit the whole window at any size,
-  offline.
+  dusk, a knight resting by his fire, a lantern festival, northern lights over a cabin,
+  a neon sunset and the sea at sunset. They are drawn in dense coloured halftone dots,
+  eight to a cell, and fit the whole window at any size, offline.
 
 ### Changed
 
