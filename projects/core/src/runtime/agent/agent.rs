@@ -116,6 +116,11 @@ impl Agent {
 
     /// Runs the turn to its end and records it. Returns why it stopped early, if it did,
     /// and how it ended.
+    #[tracing::instrument(
+        name = "turn",
+        skip_all,
+        fields(thread = %turn.thread_id, turn = %turn.turn_id, depth = self.depth)
+    )]
     pub async fn run_turn(
         &self,
         turn: &Turn,
@@ -307,6 +312,7 @@ impl Agent {
     }
 
     /// Database writes happen outside `race`, so stopping never cuts one in half.
+    #[tracing::instrument(name = "step", skip_all)]
     async fn step(&self, turn: &Turn, inbox: &mut Inbox) -> Result<StepEnd> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         // Messages that joined between steps are answered by this turn, not a next one.

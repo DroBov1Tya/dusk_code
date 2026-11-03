@@ -46,9 +46,13 @@ async fn main() -> Result<()> {
         .transpose()?;
     // Keep a shared lock for the full process lifetime, including log initialization.
     let _restore_guard = dusk_core::archive::startup_guard(&paths, state_db.as_deref())?;
-    if let Err(error) = logs::init(&paths, env!("CARGO_CRATE_NAME"), "tui") {
-        eprintln!("duskcode: no log files: {error:#}");
-    }
+    let telemetry = match logs::init(&paths, env!("CARGO_CRATE_NAME"), "tui") {
+        Ok(telemetry) => Some(telemetry),
+        Err(error) => {
+            eprintln!("duskcode: no log files: {error:#}");
+            None
+        }
+    };
     log_panics();
     info!("duskcode {} starts", env!("CARGO_PKG_VERSION"));
     // Started before the screen is taken, so a first-start message stays readable.
@@ -60,6 +64,9 @@ async fn main() -> Result<()> {
     match &result {
         Ok(()) => info!("duskcode exits"),
         Err(error) => error!("duskcode exits: {error:#}"),
+    }
+    if let Some(telemetry) = telemetry {
+        telemetry.shutdown();
     }
     result
 }

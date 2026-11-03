@@ -251,11 +251,19 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
         Some(SettingCategory::System) => system_rows(view, width),
         Some(SettingCategory::Access) => {
             let about = "    on: no questions; off: asks before outside paths and commands";
-            vec![described(
-                switch_row(vec![Span::raw("  full access")], view.full_access, width),
-                about,
-                width,
-            )]
+            let logs = "    off: no log files and no traces are written or sent, from now on";
+            vec![
+                described(
+                    switch_row(vec![Span::raw("  full access")], view.full_access, width),
+                    about,
+                    width,
+                ),
+                described(
+                    switch_row(vec![Span::raw("  logs")], view.logging, width),
+                    logs,
+                    width,
+                ),
+            ]
         }
         Some(SettingCategory::Updates) => {
             let dev = view.update_channel == Channel::Dev;
