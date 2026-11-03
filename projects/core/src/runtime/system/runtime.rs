@@ -19,6 +19,7 @@ use super::{
     model_choice::{self, Choice, ModelChoice},
 };
 use crate::runtime::agent::{Input, Mailboxes};
+use crate::util::environment::Environment;
 use crate::{
     catalog::agents::{AgentTree, Agents},
     catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
@@ -131,6 +132,11 @@ impl Runtime {
         let updates = Arc::new(UpdateWatch::default());
         let update_check = tokio::spawn(Arc::clone(&updates).run(Arc::clone(&config)));
         let mcp = McpServers::start(&config.current(), paths.mcp_tokens_dir());
+        let environment = Environment::detect();
+        info!(
+            "environment: {:?}, screen: {}",
+            environment.os, environment.gui
+        );
         let launcher = Launcher {
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
@@ -139,6 +145,7 @@ impl Runtime {
             mailboxes,
             jobs,
             approvals: Arc::default(),
+            environment,
             mcp,
             agents,
         };
