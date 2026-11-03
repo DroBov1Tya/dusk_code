@@ -18,12 +18,13 @@ use rmcp::{
     service::RunningService,
     transport::{
         StreamableHttpClientTransport, TokioChildProcess,
-        streamable_http_client::StreamableHttpClientTransportConfig,
+        streamable_http_client::{StreamableHttpClient, StreamableHttpClientTransportConfig},
     },
 };
 use serde_json::Value;
 use tokio::process::Command;
 
+use super::oauth::{self, TokenFile};
 use crate::{
     config::{HttpServerConfig, McpServerConfig, StdioServerConfig},
     providers::is_loopback,
@@ -78,11 +79,12 @@ pub fn check_headers(config: &HttpServerConfig) -> Result<HashMap<HeaderName, He
 }
 
 impl McpClient {
-    /// Starts or reaches the server and agrees on the protocol with it.
-    pub async fn start(config: &McpServerConfig) -> Result<Self> {
+    /// Starts or reaches the server and agrees on the protocol with it. A remote server
+    /// signed in to gets the token from `tokens`.
+    pub async fn start(config: &McpServerConfig, tokens: Option<TokenFile>) -> Result<Self> {
         let service = match config {
             McpServerConfig::Stdio(config) => start_child(config).await?,
-            McpServerConfig::Http(config) => reach(config).await?,
+            McpServerConfig::Http(config) => reach(config, tokens).await?,
         };
         Ok(Self { service })
     }
@@ -151,7 +153,10 @@ async fn start_child(config: &StdioServerConfig) -> Result<RunningService<RoleCl
         .map_err(|error| anyhow!("initialize: {error}"))
 }
 
-async fn reach(config: &HttpServerConfig) -> Result<RunningService<RoleClient, ()>> {
+async fn reach(
+    config: &HttpServerConfig,
+    tokens: Option<TokenFile>,
+) -> Result<RunningService<RoleClient, ()>> {
     let url = check_url(&config.url)?;
     let client = Client::builder()
         .redirect(Policy::none())
@@ -160,16 +165,32 @@ async fn reach(config: &HttpServerConfig) -> Result<RunningService<RoleClient, (
         .map_err(|_| anyhow!("cannot build MCP HTTP client"))?;
     let transport_config = StreamableHttpClientTransportConfig::with_uri(url.as_str())
         .custom_headers(check_headers(config)?);
-    let transport = StreamableHttpClientTransport::with_client(client, transport_config);
+    let signed_in = match tokens {
+        Some(tokens) => oauth::authorized(tokens, &url, client.clone()).await?,
+        None => None,
+    };
+    match signed_in {
+        Some(client) => serve(client, transport_config, &url).await,
+        None => serve(client, transport_config, &url).await,
+    }
+}
+
+async fn serve<C: StreamableHttpClient + Send + Sync + 'static>(
+    client: C,
+    config: StreamableHttpClientTransportConfig,
+    url: &Url,
+) -> Result<RunningService<RoleClient, ()>> {
+    let transport = StreamableHttpClientTransport::with_client(client, config);
     // The error text may quote the URL, which may carry a key in its query.
     tokio::time::timeout(START_TIMEOUT, ().serve(transport))
         .await
         .context("the server did not answer in time")?
         .map_err(|error| {
-            anyhow!(
-                "initialize: {}",
-                error.to_string().replace(url.as_str(), "<url>")
-            )
+            let text = error.to_string();
+            if text.contains("Auth required") {
+                return anyhow!("the server asks to sign in: press l on it in /settings");
+            }
+            anyhow!("initialize: {}", text.replace(url.as_str(), "<url>"))
         })
 }
 
