@@ -61,8 +61,8 @@ impl Tool for RunCommand {
         ToolKind::Console
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
-        let scope = context.scope;
+    fn description(&self, context: &ToolContext) -> String {
+        let scope = &*context.scope;
         format!(
             "Run a command with sh -c in {}. Stdin is empty. Returns the exit code, stdout \
              and stderr, each cut at 32 KiB. A non-zero exit code is a failed result. Put \
@@ -80,9 +80,9 @@ impl Tool for RunCommand {
         schema::of::<RunCommandArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
-        let scope = context.scope;
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
+            let scope = &*context.scope;
             let arguments: RunCommandArguments = parse_arguments(arguments)?;
             ensure!(!arguments.command.trim().is_empty(), "command is empty");
             let timeout = arguments.timeout_seconds.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
@@ -104,7 +104,10 @@ impl Tool for RunCommand {
                         scope.cwd(),
                         confinement(&context).as_ref(),
                         timeout,
-                        context.progress.map(|progress| progress.call_id),
+                        context
+                            .progress
+                            .as_ref()
+                            .map(|progress| progress.call_id.as_str()),
                     )
                     .await?;
                 return Ok(format!("background job started: job_id={id}"));
@@ -120,7 +123,7 @@ impl Tool for RunCommand {
     fn call_result<'a>(
         &'a self,
         arguments: Value,
-        context: ToolContext<'a>,
+        context: ToolContext,
     ) -> BoxFuture<'a, crate::tools::ToolResult> {
         Box::pin(async move {
             let parsed: RunCommandArguments = parse_arguments(arguments.clone())?;
@@ -139,7 +142,7 @@ impl Tool for RunCommand {
             let confinement = confinement(&context);
             run(
                 &parsed.command,
-                context.scope,
+                &context.scope,
                 confinement.as_ref(),
                 timeout,
             )
@@ -190,8 +193,8 @@ async fn run(
 }
 
 /// How the command is confined in sandbox mode, by the scope it runs in.
-pub(super) fn confinement(context: &ToolContext<'_>) -> Option<Confinement> {
-    let scope = context.scope;
+pub(super) fn confinement(context: &ToolContext) -> Option<Confinement> {
+    let scope = &*context.scope;
     (context.config.approvals() == ApprovalPolicy::Sandbox)
         .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))
 }

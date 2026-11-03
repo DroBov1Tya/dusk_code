@@ -47,7 +47,7 @@ pub struct Agent {
     pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
     pub tools: ToolRegistry,
-    pub scope: ToolScope,
+    pub scope: Arc<ToolScope>,
     /// Comes right after the prompt in every request.
     pub project: String,
     /// The model that refused pictures; the others still get them.
@@ -560,7 +560,7 @@ impl Agent {
         &self,
         turn: &Turn,
         calls: &[ToolCall],
-        config: &Config,
+        config: &Arc<Config>,
         inbox: &mut Inbox,
     ) -> Result<Option<Stop>> {
         let mut stop = None;
@@ -596,8 +596,8 @@ impl Agent {
                 None => {
                     self.emit(ThreadEvent::ToolStarted(call.clone()));
                     let progress = Progress {
-                        call_id: &call.id,
-                        events: &self.events,
+                        call_id: call.id.clone(),
+                        events: self.events.clone(),
                     };
                     let called = self.tools.call(call, &self.scope, config, progress);
                     match inbox.race(called).await {

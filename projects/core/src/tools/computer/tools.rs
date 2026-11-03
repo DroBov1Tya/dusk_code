@@ -83,7 +83,7 @@ struct RegionArguments {
 impl Tool for Screenshot {
     computer_tool!("screenshot");
 
-    fn description(&self, _: &ToolContext<'_>) -> String {
+    fn description(&self, _: &ToolContext) -> String {
         "See the screen: a picture of the main display, of one app's window, or of a \
          region of the last screenshot to look closer. Take one before acting, and again only to check a \
          result or when the screen has changed; one picture is enough for several \
@@ -96,14 +96,14 @@ impl Tool for Screenshot {
         schema::of::<ScreenshotArguments>()
     }
 
-    fn call<'a>(&'a self, _: Value, _: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, _: Value, _: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async { anyhow::bail!("screenshot returns a picture") })
     }
 
     fn call_result<'a>(
         &'a self,
         arguments: Value,
-        context: ToolContext<'a>,
+        context: ToolContext,
     ) -> BoxFuture<'a, ToolResult> {
         Box::pin(async move {
             let arguments: ScreenshotArguments = parse_arguments(arguments)?;
@@ -146,7 +146,7 @@ struct ClickArguments {
 impl Tool for Click {
     computer_tool!("click");
 
-    fn description(&self, _: &ToolContext<'_>) -> String {
+    fn description(&self, _: &ToolContext) -> String {
         "Click at x, y of the newest screenshot: left by default, right or double when \
          asked. Moves the user's pointer there."
             .into()
@@ -156,7 +156,7 @@ impl Tool for Click {
         schema::of::<ClickArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ClickArguments = parse_arguments(arguments)?;
             let action = format!("click at {}, {}", arguments.x, arguments.y);
@@ -182,7 +182,7 @@ struct TypeTextArguments {
 impl Tool for TypeText {
     computer_tool!("type_text");
 
-    fn description(&self, _: &ToolContext<'_>) -> String {
+    fn description(&self, _: &ToolContext) -> String {
         format!(
             "Type text into whatever has the keyboard focus, as a person would; click the \
              field first. Up to {MAX_TYPED_CHARS} characters. For Enter, shortcuts and \
@@ -194,7 +194,7 @@ impl Tool for TypeText {
         schema::of::<TypeTextArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: TypeTextArguments = parse_arguments(arguments)?;
             let count = arguments.text.chars().count();
@@ -226,7 +226,7 @@ struct PressKeysArguments {
 impl Tool for PressKeys {
     computer_tool!("press_keys");
 
-    fn description(&self, _: &ToolContext<'_>) -> String {
+    fn description(&self, _: &ToolContext) -> String {
         "Press a key or a shortcut: a letter, digit, enter, tab, space, esc, delete, the \
          arrows, home, end, pageup, pagedown or f1 to f12, with cmd, shift, ctrl and alt \
          joined by +."
@@ -237,7 +237,7 @@ impl Tool for PressKeys {
         schema::of::<PressKeysArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: PressKeysArguments = parse_arguments(arguments)?;
             let (key, flags) = keys(&arguments.keys)?;
@@ -269,7 +269,7 @@ struct ScrollArguments {
 impl Tool for Scroll {
     computer_tool!("scroll");
 
-    fn description(&self, _: &ToolContext<'_>) -> String {
+    fn description(&self, _: &ToolContext) -> String {
         "Scroll what is under x, y of the newest screenshot by pixels down or right; \
          negative goes up or left."
             .into()
@@ -279,7 +279,7 @@ impl Tool for Scroll {
         schema::of::<ScrollArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ScrollArguments = parse_arguments(arguments)?;
             let bounded = |pixels: i32| pixels.clamp(-MAX_SCROLL_PIXELS, MAX_SCROLL_PIXELS);

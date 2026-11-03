@@ -56,7 +56,7 @@ impl Tool for MessageParent {
         ToolKind::Agents
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         "Write to the agent that gave you your task, while you work: a question, a finding \
          it should know now, how far you are. It reads the message between its steps. Your \
          final answer reaches it on its own, so do not send that too."
@@ -67,7 +67,7 @@ impl Tool for MessageParent {
         schema::of::<MessageParentArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         let cwd = context.scope.cwd().to_owned();
         Box::pin(async move {
             let arguments: MessageParentArguments =

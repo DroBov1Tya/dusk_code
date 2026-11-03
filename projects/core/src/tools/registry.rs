@@ -142,10 +142,10 @@ impl ToolRegistry {
     }
 
     /// The tools the config has on, as the model sees them.
-    pub fn specs(&self, scope: &ToolScope, config: &Config) -> Vec<ToolSpec> {
+    pub fn specs(&self, scope: &Arc<ToolScope>, config: &Arc<Config>) -> Vec<ToolSpec> {
         let context = ToolContext {
-            scope,
-            config,
+            scope: Arc::clone(scope),
+            config: Arc::clone(config),
             progress: None,
             approvals: None,
         };
@@ -170,9 +170,9 @@ impl ToolRegistry {
     pub async fn call(
         &self,
         call: &ToolCall,
-        scope: &ToolScope,
-        config: &Config,
-        progress: Progress<'_>,
+        scope: &Arc<ToolScope>,
+        config: &Arc<Config>,
+        progress: Progress,
     ) -> ToolResult {
         let Some(tool) = self.tools.get(call.name.as_str()) else {
             return error_result(format!("unknown tool {}", call.name));
@@ -196,10 +196,10 @@ impl ToolRegistry {
             return error_result(problems);
         }
         let context = ToolContext {
-            scope,
-            config,
+            scope: Arc::clone(scope),
+            config: Arc::clone(config),
             progress: Some(progress),
-            approvals: self.approvals.as_deref(),
+            approvals: self.approvals.clone(),
         };
         let started = Instant::now();
         if !tool.available(&context) {
@@ -268,13 +268,13 @@ mod tests {
         fn needs(&self) -> crate::platform::Needs {
             crate::platform::Needs::Gui
         }
-        fn description(&self, _: &ToolContext<'_>) -> String {
+        fn description(&self, _: &ToolContext) -> String {
             String::new()
         }
         fn parameters(&self) -> Value {
             serde_json::json!({"type": "object"})
         }
-        fn call<'a>(&'a self, _: Value, _: ToolContext<'a>) -> crate::BoxFuture<'a, String> {
+        fn call<'a>(&'a self, _: Value, _: ToolContext) -> crate::BoxFuture<'a, String> {
             Box::pin(async { Ok(String::new()) })
         }
     }
@@ -290,7 +290,7 @@ mod tests {
         registry.add(Box::new(NeedsScreen));
         let offered = |registry: &ToolRegistry| {
             registry
-                .specs(&scope, context.config)
+                .specs(&context.scope, &context.config)
                 .iter()
                 .any(|spec| spec.name == "screen")
         };

@@ -80,11 +80,13 @@ impl Launcher {
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
-            scope: ToolScope::new(cwd, workspace)?
-                .protect(self.paths.config_root())
-                .share(&self.paths.skills_dir())
-                .with_skills(&self.paths.skills_dir())
-                .share(&self.paths.agents_dir()),
+            scope: Arc::new(
+                ToolScope::new(cwd, workspace)?
+                    .protect(self.paths.config_root())
+                    .share(&self.paths.skills_dir())
+                    .with_skills(&self.paths.skills_dir())
+                    .share(&self.paths.agents_dir()),
+            ),
             project: project::context(cwd),
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),

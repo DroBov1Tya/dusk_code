@@ -420,7 +420,7 @@ impl Runtime {
         let launcher = &self.launcher;
         let config = launcher.config.current();
         let cwd = std::env::current_dir()?;
-        let scope = ToolScope::new(&cwd, &cwd)?;
+        let scope = Arc::new(ToolScope::new(&cwd, &cwd)?);
         let specs = launcher
             .tools(thread_id.unwrap_or_default(), None, 0)
             .specs(&scope, &config);

@@ -70,9 +70,9 @@ impl Tool for LoadSkill {
         "load_skill"
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
+    fn description(&self, context: &ToolContext) -> String {
         let graph = self.graph();
-        let entries = enabled(graph.entries(), context.config);
+        let entries = enabled(graph.entries(), &context.config);
         format!(
             "Load the instructions of a skill when the task matches its description, and \
              follow them. To use a skill, load it with this tool by name rather than reading \
@@ -86,13 +86,13 @@ impl Tool for LoadSkill {
         schema::of::<LoadSkillArguments>()
     }
 
-    fn available(&self, context: &ToolContext<'_>) -> bool {
+    fn available(&self, context: &ToolContext) -> bool {
         self.graph()
             .entries()
             .any(|skill| context.config.skill_enabled(&skill.name))
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: LoadSkillArguments = parse_arguments(arguments)?;
             let directory = self.directory.clone();

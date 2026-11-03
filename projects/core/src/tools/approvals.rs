@@ -121,7 +121,7 @@ impl Approvals {
     pub async fn ask(
         &self,
         request: Request,
-        progress: Option<Progress<'_>>,
+        progress: Option<Progress>,
         policy: ApprovalPolicy,
     ) -> Result<()> {
         // In sandbox mode a command needs no yes: the system confines it when it runs.
@@ -166,7 +166,7 @@ impl Approvals {
     }
 
     /// The arbiter's verdict stands for the user's answer; the thread that asked hears it.
-    async fn arbitrate(&self, request: Request, progress: Option<Progress<'_>>) -> Result<()> {
+    async fn arbitrate(&self, request: Request, progress: Option<Progress>) -> Result<()> {
         let what = request.what();
         let verdict = match self.judge.get() {
             Some(judge) => judge.judge(&request).await.unwrap_or_else(|error| Verdict {
@@ -334,8 +334,8 @@ mod tests {
         let approvals = Approvals::default();
         let (events, mut seen) = mpsc::unbounded_channel();
         let progress = Progress {
-            call_id: "c",
-            events: &events,
+            call_id: "c".into(),
+            events: events.clone(),
         };
         let ask = approvals.ask(command("ls"), Some(progress), ApprovalPolicy::Ask);
         let answer = async {

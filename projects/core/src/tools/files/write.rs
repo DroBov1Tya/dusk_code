@@ -39,8 +39,8 @@ impl Tool for WriteFile {
         ToolKind::Files
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
-        let scope = context.scope;
+    fn description(&self, context: &ToolContext) -> String {
+        let scope = &*context.scope;
         format!(
             "Create or overwrite a file with the given content, creating parent directories. \
              Relative paths resolve against {}; scratch files belong in {}.",
@@ -53,9 +53,9 @@ impl Tool for WriteFile {
         schema::of::<WriteFileArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
-        let scope = context.scope;
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
+            let scope = &*context.scope;
             let arguments: WriteFileArguments = parse_arguments(arguments)?;
             let path = context.resolve(&arguments.path, true).await?;
             if let Some(parent) = path.parent() {

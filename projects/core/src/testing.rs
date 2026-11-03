@@ -1,5 +1,6 @@
 //! Shared test fixtures.
 
+use std::sync::Arc;
 use std::{
     path::PathBuf,
     sync::{
@@ -53,12 +54,12 @@ pub fn temp_live_config_with(name: &str, settings: &str) -> LiveConfig {
 }
 
 /// A context with a valid config where every tool and skill is on.
-pub fn tool_context(scope: &ToolScope) -> ToolContext<'_> {
-    static CONFIG: OnceLock<Config> = OnceLock::new();
-    let config = CONFIG.get_or_init(|| Config::parse(TEST_CONFIG.as_bytes()).unwrap());
+pub fn tool_context(scope: &ToolScope) -> ToolContext {
+    static CONFIG: OnceLock<Arc<Config>> = OnceLock::new();
+    let config = CONFIG.get_or_init(|| Arc::new(Config::parse(TEST_CONFIG.as_bytes()).unwrap()));
     ToolContext {
-        scope,
-        config,
+        scope: Arc::new(scope.clone()),
+        config: Arc::clone(config),
         progress: None,
         approvals: None,
     }

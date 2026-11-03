@@ -37,13 +37,13 @@ impl Tool for Jobs {
     fn kind(&self) -> ToolKind {
         ToolKind::Console
     }
-    fn description(&self, _: &ToolContext<'_>) -> String {
+    fn description(&self, _: &ToolContext) -> String {
         "List, inspect output/status, or cancel this thread's background commands. Results are delivered automatically; polling is optional. Output keeps at most 32 KiB per stream. Finished job history is bounded and older IDs expire.".into()
     }
     fn parameters(&self) -> Value {
         schema::of::<Arguments>()
     }
-    fn call<'a>(&'a self, arguments: Value, _: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, _: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: Arguments = parse_arguments(arguments)?;
             let JobOwner { manager, thread_id } = &self.0;

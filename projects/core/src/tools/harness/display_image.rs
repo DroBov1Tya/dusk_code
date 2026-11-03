@@ -122,7 +122,7 @@ impl Tool for DisplayImage {
         true
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         "Fetch a public HTTPS PNG or JPEG image and display a persistent image card. \
          Call deliberately when an image helps the user. Ordinary URLs in messages remain text \
          and are never fetched automatically. Optional title and description label the card. \
@@ -134,14 +134,14 @@ impl Tool for DisplayImage {
         schema::of::<Arguments>()
     }
 
-    fn call<'a>(&'a self, _arguments: Value, _context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, _arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async { bail!("image tools require typed result transport") })
     }
 
     fn call_result<'a>(
         &'a self,
         arguments: Value,
-        _context: ToolContext<'a>,
+        _context: ToolContext,
     ) -> BoxFuture<'a, ToolResult> {
         Box::pin(async move { self.display(parse_arguments(arguments)?).await })
     }

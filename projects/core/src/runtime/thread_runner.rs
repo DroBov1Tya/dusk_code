@@ -55,7 +55,7 @@ pub struct ThreadSetup {
     pub config: Arc<LiveConfig>,
     pub thread_id: String,
     pub tools: ToolRegistry,
-    pub scope: ToolScope,
+    pub scope: Arc<ToolScope>,
     /// The machine, the folder and the project's instructions.
     pub project: String,
     pub compact_prompt: PathBuf,
@@ -601,7 +601,7 @@ mod tests {
             "echo"
         }
 
-        fn description(&self, _context: &ToolContext<'_>) -> String {
+        fn description(&self, _context: &ToolContext) -> String {
             "Returns its text.".into()
         }
 
@@ -609,11 +609,7 @@ mod tests {
             json!({ "type": "object" })
         }
 
-        fn call<'a>(
-            &'a self,
-            arguments: Value,
-            _context: ToolContext<'a>,
-        ) -> BoxFuture<'a, String> {
+        fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
             Box::pin(async move { Ok(arguments["text"].as_str().unwrap_or_default().to_owned()) })
         }
     }
@@ -684,7 +680,7 @@ mod tests {
             config: Arc::clone(config),
             thread_id: "thread".into(),
             tools,
-            scope: ToolScope::new(&root, &root).unwrap(),
+            scope: Arc::new(ToolScope::new(&root, &root).unwrap()),
             project: String::new(),
             compact_prompt: root.join("COMPACT.md"),
             fork_prompt: root.join("FORK.md"),
@@ -1154,7 +1150,7 @@ mod tests {
             "echo"
         }
 
-        fn description(&self, _context: &ToolContext<'_>) -> String {
+        fn description(&self, _context: &ToolContext) -> String {
             "Lets the subagent write back.".into()
         }
 
@@ -1162,11 +1158,7 @@ mod tests {
             json!({ "type": "object" })
         }
 
-        fn call<'a>(
-            &'a self,
-            _arguments: Value,
-            _context: ToolContext<'a>,
-        ) -> BoxFuture<'a, String> {
+        fn call<'a>(&'a self, _arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
             Box::pin(async move {
                 let sent = self.0.add_pending_from("thread", "found it", Some("child"));
                 sent.await?;
