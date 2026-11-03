@@ -997,6 +997,7 @@ name = "dusk_telegram"
 version = "0.70.0"
 dependencies = [
  "anyhow",
+ "parking_lot",
  "teloxide",
  "tokio",
  "tracing",
