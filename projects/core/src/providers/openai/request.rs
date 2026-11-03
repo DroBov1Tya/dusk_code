@@ -6,7 +6,7 @@ use serde_json::Value;
 use crate::{
     config::Effort,
     providers::{
-        chat::{ChatMessage, ChatRequest, ToolSpec},
+        chat::{ChatMessage, ChatRequest, Picture, ToolSpec},
         model_output::ToolCall,
     },
 };
@@ -101,7 +101,7 @@ impl CompletionRequest {
         let limit = Some(request.max_output_tokens);
         Self {
             model: request.model.to_owned(),
-            messages: request.messages.iter().map(WireMessage::from).collect(),
+            messages: wire_messages(request.messages),
             tools: request.tools.iter().map(WireTool::from).collect(),
             max_tokens: limit.filter(|_| !completion_tokens),
             max_completion_tokens: limit.filter(|_| completion_tokens),
@@ -114,17 +114,51 @@ impl CompletionRequest {
     }
 }
 
+/// Chat Completions takes no pictures in a tool message: those of a step's tool results
+/// follow them as one user message.
+fn wire_messages(messages: &[ChatMessage]) -> Vec<WireMessage> {
+    let mut wire = Vec::new();
+    let mut pending = Vec::new();
+    for message in messages {
+        let is_tool = matches!(message, ChatMessage::Tool { .. });
+        if !is_tool && !pending.is_empty() {
+            wire.push(tool_pictures(std::mem::take(&mut pending)));
+        }
+        if let ChatMessage::Tool { pictures, .. } = message {
+            pending.extend(pictures.iter().map(image_part));
+        }
+        wire.push(WireMessage::from(message));
+    }
+    if !pending.is_empty() {
+        wire.push(tool_pictures(pending));
+    }
+    wire
+}
+
+fn tool_pictures(pictures: Vec<WirePart>) -> WireMessage {
+    let text = WirePart::Text {
+        text: "[the pictures the tool calls above returned]".into(),
+    };
+    WireMessage::UserParts {
+        content: [text].into_iter().chain(pictures).collect(),
+    }
+}
+
+fn image_part(picture: &Picture) -> WirePart {
+    WirePart::ImageUrl {
+        image_url: WireImageUrl {
+            url: format!("data:{};base64,{}", picture.mime_type, picture.base64),
+        },
+    }
+}
+
 impl From<&ChatMessage> for WireMessage {
     fn from(message: &ChatMessage) -> Self {
         match message.clone() {
             ChatMessage::System(content) => Self::System { content },
             ChatMessage::User(content) => Self::User { content },
             ChatMessage::UserWithPictures { text, pictures } => {
-                let pictures = pictures.into_iter().map(|picture| WirePart::ImageUrl {
-                    image_url: WireImageUrl {
-                        url: format!("data:{};base64,{}", picture.mime_type, picture.base64),
-                    },
-                });
+                let pictures = pictures.iter().map(image_part);
                 Self::UserParts {
                     content: [WirePart::Text { text }]
                         .into_iter()
@@ -136,7 +170,9 @@ impl From<&ChatMessage> for WireMessage {
                 content: text,
                 tool_calls: tool_calls.iter().map(WireToolCall::from).collect(),
             },
-            ChatMessage::Tool { call_id, content } => Self::Tool {
+            ChatMessage::Tool {
+                call_id, content, ..
+            } => Self::Tool {
                 tool_call_id: call_id,
                 content,
             },

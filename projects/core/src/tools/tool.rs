@@ -46,6 +46,19 @@ impl ToolContext<'_> {
         Ok(resolved)
     }
 
+    /// The screen needs the user's yes once a session, unless full access gives it.
+    pub async fn approve_screen(&self, action: &str) -> Result<()> {
+        let Some(approvals) = self.approvals else {
+            return Ok(());
+        };
+        let request = Request::Screen {
+            action: action.to_owned(),
+        };
+        approvals
+            .ask(request, self.progress, self.config.approvals())
+            .await
+    }
+
     /// Every command needs the user's yes, unless full access or the session gives it.
     pub async fn approve_command(&self, command: &str) -> Result<()> {
         let Some(approvals) = self.approvals else {
@@ -83,6 +96,8 @@ pub enum ToolKind {
     /// The thread itself: its history, tasks and skills.
     Harness,
     Mcp,
+    /// The screen: screenshots, mouse and keyboard. Heavy, so off until switched on.
+    Computer,
 }
 
 impl ToolKind {
@@ -93,7 +108,13 @@ impl ToolKind {
             Self::Agents => "agents",
             Self::Harness => "harness",
             Self::Mcp => "mcp",
+            Self::Computer => "computer",
         }
+    }
+
+    /// Whether a tool of this kind is on before the user switches it.
+    pub fn on_by_default(self) -> bool {
+        self != Self::Computer
     }
 }
 

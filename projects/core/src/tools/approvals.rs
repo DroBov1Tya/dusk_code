@@ -35,6 +35,8 @@ pub enum Request {
     Path { path: PathBuf, write: bool },
     /// A shell command line.
     Command { command: String },
+    /// Seeing the screen and driving its mouse and keyboard; `action` is the first one.
+    Screen { action: String },
 }
 
 impl Request {
@@ -44,6 +46,7 @@ impl Request {
         match self {
             Self::Path { path, .. } => Some(folder_of(path).display().to_string()),
             Self::Command { command } => program(command).map(str::to_owned),
+            Self::Screen { .. } => Some("the screen".into()),
         }
     }
 
@@ -52,6 +55,7 @@ impl Request {
             Self::Path { path, write: true } => format!("writing {}", path.display()),
             Self::Path { path, write: false } => format!("reading {}", path.display()),
             Self::Command { command } => format!("running `{command}`"),
+            Self::Screen { action } => format!("using the screen: {action}"),
         }
     }
 }
@@ -152,6 +156,7 @@ struct Grants {
     /// Folders with whether writing is allowed too.
     folders: Vec<(PathBuf, bool)>,
     programs: Vec<String>,
+    screen: bool,
 }
 
 impl Grants {
@@ -164,6 +169,7 @@ impl Grants {
             Request::Command { command } => {
                 program(command).is_some_and(|name| self.programs.iter().any(|p| p == name))
             }
+            Request::Screen { .. } => self.screen,
         }
     }
 
@@ -173,6 +179,7 @@ impl Grants {
             Request::Command { command } => {
                 self.programs.extend(program(command).map(str::to_owned))
             }
+            Request::Screen { .. } => self.screen = true,
         }
     }
 }

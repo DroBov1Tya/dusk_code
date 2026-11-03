@@ -7,6 +7,8 @@
 mod agents;
 mod approvals;
 mod builtin;
+#[cfg(target_os = "macos")]
+mod computer;
 mod console;
 mod files;
 mod harness;
@@ -19,6 +21,8 @@ mod tool;
 pub use agents::{AgentState, AskAgent, MessageParent};
 pub use approvals::{ApprovalRequest, Approvals, Decision, Request};
 pub use builtin::read_regular;
+#[cfg(target_os = "macos")]
+pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
 pub use console::JobInfo;
 pub(crate) use console::{JobManager, JobOwner, Jobs, RunCommand};
 pub use harness::{AskUser, DisplayImage, GoalTool, Question, ReadHistory, Remember, Tasks};

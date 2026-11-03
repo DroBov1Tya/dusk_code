@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 
 use super::{ThreadLock, model_choice::ModelChoice};
 use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
+use crate::state::artifacts::ArtifactStore;
 use crate::{
     chat::{commands, goal},
     config::live::LiveConfig,
@@ -62,6 +63,8 @@ pub struct ThreadSetup {
     pub compact_prompt: PathBuf,
     pub fork_prompt: PathBuf,
     pub modes_dir: PathBuf,
+    /// Where tool results keep their pictures, such as screenshots.
+    pub artifacts: ArtifactStore,
     /// How many agents are above this thread; 0 for a chat.
     pub depth: usize,
     pub mailboxes: Arc<Mailboxes>,
@@ -238,6 +241,7 @@ impl ThreadRunner {
             compact_prompt: setup.compact_prompt,
             fork_prompt: setup.fork_prompt,
             modes_dir: setup.modes_dir,
+            artifacts: setup.artifacts,
             depth: setup.depth,
             events,
         };
@@ -911,6 +915,7 @@ mod tests {
             compact_prompt: root.join("COMPACT.md"),
             fork_prompt: root.join("FORK.md"),
             modes_dir: root.join("modes"),
+            artifacts: ArtifactStore::new(root.join("artifacts")),
             depth: 0,
             mailboxes: Arc::default(),
             ends_when_idle: false,
