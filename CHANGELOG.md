@@ -4,6 +4,15 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Fixed
+
+- An MCP server that stops after it was ready shows as failed instead of ready, and its
+  tools leave new threads until it is restarted from /settings.
+- A tool call some models write inline with its arguments as a string is read like the
+  other inline calls instead of failing.
+
 ## 0.70.2 - 2026-11-03
 
 ### Added
