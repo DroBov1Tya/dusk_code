@@ -3,7 +3,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use dusk_core::{archive, init::paths::Paths};
+use dusk_core::{init::paths::Paths, util::archive};
 
 pub fn run(archive_path: &Path) -> Result<()> {
     let paths = Paths::from_home()?;

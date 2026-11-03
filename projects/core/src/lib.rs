@@ -9,7 +9,6 @@
 //! - `runtime`, `chat`, `state`: running threads, client commands and the records;
 //! - `util`: small helpers with no domain.
 
-pub mod archive;
 pub mod catalog;
 pub mod chat;
 pub mod config;
