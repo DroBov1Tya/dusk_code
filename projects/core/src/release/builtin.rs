@@ -1,15 +1,12 @@
 //! The files dusk ships into the rules folder: the prompts of the modes, COMPACT.md,
-//! FORK.md, built-in skills and specialist agents. At every start each is brought to
-//! the version of this build, without losing what the user wrote: `builtin.lock`
-//! records the hash of each file as dusk last wrote it. A file still as written is
-//! replaced; a file the user changed, or one from before the record, is kept, and
-//! the new version is put beside it as `<file>.new`.
+//! FORK.md, built-in skills and specialist agents. They are the repository's: at every
+//! start each one whose hash differs from this build's is replaced with it, a local edit
+//! included. Files the user added beside them are never touched.
 
 use std::{
-    collections::BTreeMap,
     fs::{self, OpenOptions},
     io::{ErrorKind, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 use anyhow::{Context, Result};
@@ -17,64 +14,48 @@ use sha2::{Digest, Sha256};
 
 use crate::{init::create_private_dir, init::paths::Paths, release::resources};
 
+/// Kept edited shipped files by their hash in older builds.
 pub const LOCK_FILE: &str = "builtin.lock";
-const NEW_SUFFIX: &str = ".new";
+const OLD_NEW_SUFFIX: &str = ".new";
 
 /// What a start did to the shipped files, by their path in the config folder.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Synced {
     pub written: Vec<String>,
+    /// Differed from this build, by an older build or a local edit, and were replaced.
     pub updated: Vec<String>,
-    /// Changed by the user and kept; the new version is beside each as `.new`. Only
-    /// files whose `.new` is new or changed this start, so each is told once.
-    pub kept: Vec<String>,
 }
 
 pub fn sync(paths: &Paths) -> Result<Synced> {
     let root = paths.rules_root();
     let root = root.as_path();
-    let lock_path = root.join(LOCK_FILE);
-    let mut lock = read_lock(&lock_path);
+    // Left by builds that kept edited shipped files; nothing reads it now.
+    let _ = fs::remove_file(root.join(LOCK_FILE));
     let mut synced = Synced::default();
     for (path, contents) in shipped()? {
         let target = root.join(&path);
         safe_parent(root, &target)?;
-        let shipped_hash = hash(&contents);
-        // A copy from when the user's file differed; nothing to offer once it is current.
-        let beside = PathBuf::from(format!("{}{NEW_SUFFIX}", target.display()));
+        // A copy those builds put beside an edited file.
+        let _ = fs::remove_file(format!("{}{OLD_NEW_SUFFIX}", target.display()));
         let on_disk = match fs::symlink_metadata(&target) {
             // A link was put there by hand; dusk does not write through it.
             Ok(metadata) if !metadata.is_file() => continue,
-            Ok(_) => Some(hash(
-                &fs::read(&target).context("cannot read a shipped file")?,
-            )),
+            Ok(_) => Some(fs::read(&target).context("cannot read a shipped file")?),
             Err(error) if error.kind() == ErrorKind::NotFound => None,
             Err(_) => continue,
         };
         match on_disk {
             None => {
                 write(&target, &contents)?;
-                synced.written.push(path.clone());
+                synced.written.push(path);
             }
-            Some(disk) if disk == shipped_hash => {
-                let _ = fs::remove_file(&beside);
-            }
-            Some(disk) if lock.get(&path) == Some(&disk) => {
+            Some(disk) if hash(&disk) != hash(&contents) => {
                 write(&target, &contents)?;
-                let _ = fs::remove_file(&beside);
-                synced.updated.push(path.clone());
+                synced.updated.push(path);
             }
-            Some(_) => {
-                if fs::read(&beside).ok().as_deref() != Some(contents.as_slice()) {
-                    write(&beside, &contents)?;
-                    synced.kept.push(path);
-                }
-                continue;
-            }
+            Some(_) => {}
         }
-        lock.insert(path, shipped_hash);
     }
-    write(&lock_path, serde_json::to_string_pretty(&lock)?.as_bytes())?;
     Ok(synced)
 }
 
@@ -107,13 +88,6 @@ fn safe_parent(root: &Path, target: &Path) -> Result<()> {
         create_private_dir(&directory)?;
     }
     Ok(())
-}
-
-fn read_lock(path: &Path) -> BTreeMap<String, String> {
-    fs::read(path)
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
 }
 
 /// Written beside the target and moved over it, private to the user. The archive keeps
@@ -153,7 +127,7 @@ mod tests {
     use crate::{catalog::skills, config::Config, testing::temp_paths};
 
     #[test]
-    fn shipped_files_follow_the_build_unless_the_user_changed_them() {
+    fn shipped_files_follow_the_build_and_added_files_stay() {
         let paths = temp_paths("builtin");
         create_private_dir(&paths.rules_root()).unwrap();
         let first = sync(&paths).unwrap();
@@ -163,38 +137,29 @@ mod tests {
             "nothing to do twice"
         );
 
-        // An older build wrote PLAN.md; this build ships another text.
+        // An older build wrote PLAN.md, the user edited MAIN.md and added a mode.
         let plan = paths.modes_dir().join("PLAN.md");
-        let mut lock = read_lock(&paths.rules_root().join(LOCK_FILE));
         fs::write(&plan, "old plan").unwrap();
-        lock.insert("modes/PLAN.md".into(), hash(b"old plan"));
-        write(
-            &paths.rules_root().join(LOCK_FILE),
-            &serde_json::to_vec(&lock).unwrap(),
-        )
-        .unwrap();
-        // The user changed MAIN.md.
         let main = paths.main_prompt();
         fs::write(&main, "my main").unwrap();
+        fs::write(format!("{}.new", main.display()), "left over").unwrap();
+        let mine = paths.modes_dir().join("MINE.md");
+        fs::write(&mine, "my mode").unwrap();
 
-        let synced = sync(&paths).unwrap();
-        assert_eq!(synced.updated, ["modes/PLAN.md"]);
+        let mut updated = sync(&paths).unwrap().updated;
+        updated.sort();
+        assert_eq!(updated, ["modes/MAIN.md", "modes/PLAN.md"]);
+        let shipped = |name| crate::catalog::modes::template(name).unwrap().unwrap();
         assert_eq!(
             fs::read_to_string(&plan).unwrap(),
-            crate::catalog::modes::template(crate::catalog::modes::PLAN)
-                .unwrap()
-                .unwrap()
+            shipped(crate::catalog::modes::PLAN)
         );
-        assert_eq!(synced.kept, ["modes/MAIN.md"]);
-        assert_eq!(fs::read_to_string(&main).unwrap(), "my main");
-        let beside = paths.modes_dir().join("MAIN.md.new");
         assert_eq!(
-            fs::read_to_string(beside).unwrap(),
-            crate::catalog::modes::template(crate::catalog::modes::MAIN)
-                .unwrap()
-                .unwrap()
+            fs::read_to_string(&main).unwrap(),
+            shipped(crate::catalog::modes::MAIN)
         );
-        assert!(sync(&paths).unwrap().kept.is_empty(), "told once");
+        assert!(!paths.modes_dir().join("MAIN.md.new").exists());
+        assert_eq!(fs::read_to_string(&mine).unwrap(), "my mode");
 
         let listed = skills::list(&paths.skills_dir(), &Config::parse(b"{}").unwrap());
         let broken: Vec<_> = listed
