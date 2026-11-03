@@ -970,7 +970,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dusk_core"
-version = "0.70.0"
+version = "0.70.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -1005,7 +1005,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_evals"
-version = "0.70.0"
+version = "0.70.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -1019,7 +1019,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_telegram"
-version = "0.70.0"
+version = "0.70.1"
 dependencies = [
  "anyhow",
  "parking_lot",
@@ -1031,7 +1031,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_tui"
-version = "0.70.0"
+version = "0.70.1"
 dependencies = [
  "anyhow",
  "clap",
