@@ -8,47 +8,38 @@ testing.
 
 ### Added
 
-- Project memory: switched on in /settings > personalize, next to your own memory, the
-  agent offers to keep a short summary of the project in the working directory and then
-  keeps it up to date itself. It lives on this machine in
-  `~/Documents/duskcode/projects/`, never in the repository, with its own size limit.
-- The idle screen plays eleven new scenes in place of the six: a mountain lake and a
-  river at dawn, a desert camp under the Milky Way, dunes, a campfire, a caravan at
-  dusk, a knight resting by his fire, a lantern festival, northern lights over a cabin,
-  a neon sunset and the sea at sunset. They are drawn in dense coloured halftone dots,
-  eight to a cell, and fit the whole window at any size, offline.
-
-- The Telegram bot lists its commands in Telegram's menu as soon as it is added. /mode
-  and /model without a name answer with buttons to pick from, or, past ten options, a
-  list to send `/model <name>` from.
-
-- /connect opens on a list of providers: OpenAI, Anthropic, Ollama on this machine and
-  any OpenAI-compatible server; picking one opens a form of only what it needs, with
-  its name and URL filled in. For OpenAI and Anthropic, ctrl+o opens the page where a
-  key is made.
-
-- Computer use: a screenshot can be of one app's window, found by its app name or
-  title, even under other windows; clicks then land in that window. A ring of dusk's own
-  marks where the agent last clicked or scrolled; it lets the mouse through and stays
-  out of screenshots.
-
-- Sandbox mode, in /settings > access: commands run without asking, confined by the
-  system to the working folder, the thread's workspace and the temporary folders, with
-  the config folder closed to them. macOS uses Seatbelt, Linux Landlock, which cannot
-  hide a folder from reading but still keeps writes out of it. Paths outside the folders
-  and the screen are still asked; the footer shows the mode.
-
-- Arbiter mode, in /settings > access: while you are away, an agent decides each
-  approval request in your place, allowing ordinary local work and refusing what is
-  destructive, outward or unclear. The chat notes every verdict, and the arbiter's card
-  in the sidebar opens its thread of requests and verdicts. A failure counts as no.
+- Sandbox mode in /settings > access: commands run without asking, writing only in the
+  working folder, the thread's workspace and temporary folders, with the config folder
+  closed (Seatbelt on macOS, Landlock on Linux, which keeps writes out but not reads).
+- Arbiter mode in /settings > access: an agent decides approval requests in your place
+  and refuses what is destructive, outward or unclear. Each verdict shows in the chat;
+  the arbiter's card in the sidebar opens its thread.
+- Project memory in /settings > personalize: the agent offers to keep a short summary of
+  the project and maintains it, in `~/Documents/duskcode/projects/`, never in the
+  repository.
+- /connect starts with a list of providers, Ollama included; each opens a form of only
+  what it needs, and ctrl+o opens the page where OpenAI or Anthropic keys are made.
+- Computer use can capture one app's window, even under others, and shows a ring where
+  the agent clicks; the ring passes the mouse through and stays out of screenshots.
+- The Telegram bot sets its command menu when added; /mode and /model without a name
+  answer with buttons, or a list past ten options.
+- Eleven new idle scenes in dense coloured halftone dots, a knight by his fire among
+  them; they fit the window at any size.
 
 ### Changed
 
-- The token counters are gone from the sidebar, and the input and output token limits
-  from /settings and the config. A request
-  is held to the model's window, or to the size set under /settings > models, and a
-  model writes up to its own output cap. Older configs that set them still load.
+- The token counters left the sidebar and the input and output token limits left the
+  config: requests follow the model's window or the size set under /settings > models,
+  and answers the model's own output cap. Older configs still load.
+- skill-creator reviews its runs in Markdown instead of a browser page.
+
+### Fixed
+
+- The update check runs every half hour instead of every minute, so it no longer uses up
+  GitHub's request limit.
+- A binary installed without its resources rebuilds them from the release on GitHub.
+- An empty answer after a long think is asked again instead of failing the turn, and a
+  turn may take 150 tool steps instead of 50.
 
 ## 0.70.1 - 2026-11-03
 
