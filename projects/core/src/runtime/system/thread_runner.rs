@@ -11,11 +11,9 @@
 //! A subagent's runner ends once it is idle; a new message starts it again. Stopping a
 //! thread stops the agents it asked.
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use parking_lot::Mutex;
 
 use anyhow::{Result, ensure};
 use tokio::sync::mpsc;
