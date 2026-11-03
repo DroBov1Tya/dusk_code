@@ -2,7 +2,11 @@
 //! a model call that has started finishes with the model it started with. The choice is
 //! kept in the config as `model: provider/model`, so it outlives a restart.
 
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use parking_lot::RwLock;
 
@@ -23,10 +27,15 @@ pub struct ProviderStatus {
     pub models: Result<Vec<Model>, String>,
 }
 
+/// How long a model whose vision could not be checked waits to be asked again.
+const VISION_RETRY: Duration = Duration::from_secs(10 * 60);
+
 pub struct ModelChoice {
     current: RwLock<Selection>,
     /// Whether each model, by `provider/model`, saw the test picture.
     vision: RwLock<HashMap<String, bool>>,
+    /// When asking a model failed, so it is not asked again at every step.
+    vision_failed: RwLock<HashMap<String, Instant>>,
 }
 
 struct Selection {
@@ -65,6 +74,7 @@ impl ModelChoice {
                 revision: Arc::new(()),
             }),
             vision: RwLock::default(),
+            vision_failed: RwLock::default(),
         }
     }
 
@@ -75,6 +85,7 @@ impl ModelChoice {
                 revision: Arc::new(()),
             }),
             vision: RwLock::default(),
+            vision_failed: RwLock::default(),
         }
     }
 
@@ -84,7 +95,20 @@ impl ModelChoice {
     }
 
     pub fn set_vision(&self, model: String, sees: bool) {
+        self.vision_failed.write().remove(&model);
         self.vision.write().insert(model, sees);
+    }
+
+    /// Whether the model may be asked again after a failed ask.
+    pub fn may_ask_vision(&self, model: &str) -> bool {
+        self.vision_failed
+            .read()
+            .get(model)
+            .is_none_or(|failed| failed.elapsed() >= VISION_RETRY)
+    }
+
+    pub fn vision_failed(&self, model: String) {
+        self.vision_failed.write().insert(model, Instant::now());
     }
 
     pub fn current(&self) -> Option<Choice> {

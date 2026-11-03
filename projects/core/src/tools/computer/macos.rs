@@ -21,7 +21,8 @@ const MAX_TYPED_UNITS: usize = 20;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
-    fn AXIsProcessTrusted() -> bool;
+    /// Returns a `Boolean`, an unsigned char.
+    fn AXIsProcessTrusted() -> u8;
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -62,7 +63,7 @@ pub fn capture(rect: CGRect, file: &Path) -> Result<()> {
 
 fn source() -> Result<CGEventSource> {
     // SAFETY: takes no arguments; only reads whether this process may post events.
-    if !unsafe { AXIsProcessTrusted() } {
+    if unsafe { AXIsProcessTrusted() } == 0 {
         bail!(
             "the terminal duskcode runs in needs Accessibility permission to click and \
              type: System Settings > Privacy & Security > Accessibility"
@@ -111,14 +112,28 @@ pub fn click(at: CGPoint, right: bool, count: i64) -> Result<()> {
 }
 
 pub fn type_text(text: &str) -> Result<()> {
-    let units: Vec<u16> = text.encode_utf16().collect();
-    for chunk in units.chunks(MAX_TYPED_UNITS) {
-        for down in [true, false] {
-            let event = CGEvent::new_keyboard_event(source()?, 0, down)
-                .map_err(|_| anyhow::anyhow!("cannot create a key event"))?;
-            event.set_string_from_utf16_unchecked(chunk);
-            post(Ok(event))?;
+    // Cut between characters, so no surrogate pair is split.
+    let mut chunk: Vec<u16> = Vec::new();
+    for c in text.chars() {
+        let mut units = [0; 2];
+        let units = c.encode_utf16(&mut units);
+        if chunk.len() + units.len() > MAX_TYPED_UNITS {
+            type_units(&std::mem::take(&mut chunk))?;
         }
+        chunk.extend_from_slice(units);
+    }
+    if !chunk.is_empty() {
+        type_units(&chunk)?;
+    }
+    Ok(())
+}
+
+fn type_units(units: &[u16]) -> Result<()> {
+    for down in [true, false] {
+        let event = CGEvent::new_keyboard_event(source()?, 0, down)
+            .map_err(|_| anyhow::anyhow!("cannot create a key event"))?;
+        event.set_string_from_utf16_unchecked(units);
+        post(Ok(event))?;
     }
     Ok(())
 }

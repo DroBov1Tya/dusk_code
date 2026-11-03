@@ -58,6 +58,8 @@ impl Screen {
             None => macos::display(),
             Some(region) => {
                 let from = self.point(region.x, region.y)?;
+                // The far corner must lie in the picture too.
+                self.point(region.x + region.width, region.y + region.height)?;
                 let view = self.view()?;
                 CGRect::new(
                     &from,
