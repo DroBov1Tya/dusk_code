@@ -616,6 +616,9 @@ fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
             lead: 0,
         });
     }
+    for skipped in &view.skipped {
+        rows.push(note(&format!("  {}: {}", skipped.node, skipped.reason)));
+    }
     if view.agents.len() <= 2 {
         rows.push(note(
             "  add folders with an AGENT.md to agents/ for expert agents",
