@@ -8,6 +8,12 @@ testing.
 
 ### Added
 
+- OpenTelemetry traces: with `logging.traces` in the config, spans of turns, steps,
+  model calls, tool calls and compaction go to your collector over OTLP/HTTP. Log
+  lines carry the same span context.
+- A logs switch in /settings (Access) and `logging.enabled` in the config: off, no log
+  is written and no trace is sent, from that moment on.
+
 - Remote MCP servers sign in with OAuth: l on one in the MCP tab of /settings opens
   its sign-in page in the browser. The tokens are kept private in the config folder
   and refreshed by themselves.

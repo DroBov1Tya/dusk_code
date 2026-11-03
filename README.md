@@ -96,9 +96,11 @@ you set.
 
 | Location | Contents |
 | --- | --- |
-| `~/.config/duskcode/config.yml` | Providers, model, limits, tools, agents, skills, MCP servers, appearance |
+| `~/.config/duskcode/config.yml` | Providers, model, limits, tools, agents, skills, MCP servers, appearance, logging |
 | `~/.config/duskcode/rules/` | Agents, skills, modes, prompts and the user memory |
 | `~/.config/duskcode/session/` | The session database |
+| `~/.config/duskcode/logs/` | `core.log` and `tui.log`; `DUSKCODE_LOG` sets the level |
+| `~/.config/duskcode/mcp-auth/` | OAuth tokens of the MCP servers signed in to |
 | `~/Documents/duskcode/` | One folder per chat for its sources and files |
 | `~/.local/share/duskcode/` | The installed binary and its resources |
 
@@ -111,13 +113,27 @@ duskcode has no telemetry. It talks to the model providers and MCP servers you
 configure, to GitHub when it checks for updates, and to an image host when asked to show
 a remote image. What a provider does with your requests is set by that provider.
 
+Logs stay on disk. To trace turns, model calls and tool calls in your own OpenTelemetry
+collector, name it in the config; spans carry names, IDs, counts and times, not message
+text:
+
+```yaml
+logging:
+  traces:
+    endpoint: http://127.0.0.1:4318   # OTLP/HTTP; spans go to /v1/traces
+    headers: {}                       # such as a collector's API key
+```
+
+`logging.enabled: false`, or the logs switch in /settings, writes and sends nothing.
+
 ## Limitations
 
 - It is pre-1.0: commands, config keys and the database still change between releases,
   with migrations for the database.
-- `run_command` runs any shell command with your permissions. It is not a sandbox; run
-  duskcode where that is acceptable.
-- Only OpenAI-compatible Chat Completions APIs are supported.
+- `run_command` runs any shell command with your permissions once you allow it, or
+  without asking in Full access. It is not a sandbox; run duskcode where that is
+  acceptable.
+- Providers are OpenAI-compatible Chat Completions APIs and the Anthropic Messages API.
 - No Windows build. Themes and key bindings are fixed.
 - Pictures need a terminal with kitty, iTerm2 or sixel graphics; others get a preview
   drawn in characters.
