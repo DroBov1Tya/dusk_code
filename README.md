@@ -70,11 +70,11 @@ duskcode TUI
 | Location | Contents |
 | --- | --- |
 | `~/.config/duskcode/config.yml` | Providers, model, limits, tools, agents, skills, MCP servers, appearance, and logging |
-| `~/.config/duskcode/rules/` | Agents, skills, modes, prompts, user and project memory |
+| `~/.config/duskcode/rules/` | Agents, skills, modes, prompts, and user memory |
 | `~/.config/duskcode/session/` | Session database and artifacts |
 | `~/.config/duskcode/logs/` | Application logs |
 | `~/.config/duskcode/mcp-auth/` | MCP OAuth tokens |
-| `~/Documents/duskcode/` | Chat workspaces and files |
+| `~/Documents/duskcode/` | Chat workspaces and files; `projects/` holds project memory |
 | `~/.local/share/duskcode/` | Default installation directory; the installer also supports `XDG_DATA_HOME` |
 
 `DUSKCODE_LOG` sets the log level. Logging can be disabled with `logging.enabled: false`;

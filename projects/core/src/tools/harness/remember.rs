@@ -1,7 +1,7 @@
 //! `remember` and `remember_project`: what the agent keeps across conversations. The
-//! first holds the owner's preferences in MEMORY.md, the second the facts of the project
-//! in the working directory, in `projects/<folder>/MEMORY.md` of the rules folder, out of
-//! the repository and out of the tools' reach. The memory is shown in the tool's
+//! first holds the owner's preferences in MEMORY.md of the rules folder, the second the
+//! facts of the project in the working directory, in `projects/<folder>/MEMORY.md` of
+//! `~/Documents/duskcode`: on this machine only, never in the repository. The memory is shown in the tool's
 //! description, so every request carries it while it is on in the settings; switched
 //! off, the tool is gone and the memory with it. Each call writes the whole memory
 //! again, which keeps it a short summary rather than a log.
@@ -29,10 +29,10 @@ use crate::tools::{
 /// Of a project's folder name, what names its memory folder before the hash.
 const NAME_CHARS: usize = 40;
 
-#[derive(Clone, Copy)]
 enum Kind {
     User,
-    Project,
+    /// The folder that holds every project's memory.
+    Project(PathBuf),
 }
 
 pub struct Remember {
@@ -56,29 +56,26 @@ impl Remember {
         }
     }
 
-    /// The working directory's memory, kept in the rules folder too.
-    pub fn project(rules: PathBuf) -> Self {
+    /// The working directory's memory, kept under `workspace`; its prompt can be
+    /// changed in the rules folder like the user's.
+    pub fn project(rules: PathBuf, workspace: &Path) -> Self {
         Self {
             rules,
-            kind: Kind::Project,
+            kind: Kind::Project(workspace.join("projects")),
         }
     }
 
     fn file(&self, cwd: &Path) -> PathBuf {
-        match self.kind {
+        match &self.kind {
             Kind::User => self.rules.join("MEMORY.md"),
-            Kind::Project => self
-                .rules
-                .join("projects")
-                .join(project_folder(cwd))
-                .join("MEMORY.md"),
+            Kind::Project(projects) => projects.join(project_folder(cwd)).join("MEMORY.md"),
         }
     }
 
     fn prompt(&self) -> &'static str {
         match self.kind {
             Kind::User => "MEMORY.md",
-            Kind::Project => "WORK_MEMORY.md",
+            Kind::Project(_) => "WORK_MEMORY.md",
         }
     }
 
@@ -88,7 +85,7 @@ impl Remember {
                 context.config.memory().enabled,
                 context.config.memory().max_chars,
             ),
-            Kind::Project => (
+            Kind::Project(_) => (
                 context.config.work_history().enabled,
                 context.config.work_history().max_chars,
             ),
@@ -149,7 +146,7 @@ impl Tool for Remember {
     fn name(&self) -> &'static str {
         match self.kind {
             Kind::User => "remember",
-            Kind::Project => "remember_project",
+            Kind::Project(_) => "remember_project",
         }
     }
 
@@ -260,7 +257,7 @@ mod tests {
         for folder in [&rules, &one, &two] {
             fs::create_dir_all(folder).unwrap();
         }
-        let tool = Remember::project(rules.clone());
+        let tool = Remember::project(rules.clone(), &root.join("workspace"));
         let off = Config::parse(b"{}").unwrap();
         let on = Config::parse(b"work_history:\n  enabled: true\n").unwrap();
         let (one, two) = (
@@ -288,5 +285,9 @@ mod tests {
         );
         assert!(tool.description(&context(&two, &on)).ends_with("(empty)"));
         assert!(!fs::exists(root.join("a/app/MEMORY.md")).unwrap());
+        let kept = fs::read_dir(root.join("workspace/projects"))
+            .unwrap()
+            .count();
+        assert_eq!(kept, 1);
     }
 }

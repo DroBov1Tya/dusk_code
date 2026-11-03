@@ -117,7 +117,10 @@ impl Launcher {
             thread_id.to_owned(),
         )));
         tools.add(Box::new(Remember::user(self.paths.rules_root())));
-        tools.add(Box::new(Remember::project(self.paths.rules_root())));
+        tools.add(Box::new(Remember::project(
+            self.paths.rules_root(),
+            self.paths.workspace_root(),
+        )));
         #[cfg(target_os = "macos")]
         {
             use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};

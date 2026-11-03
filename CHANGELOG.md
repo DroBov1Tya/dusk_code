@@ -10,8 +10,8 @@ testing.
 
 - Project memory: switched on in /settings > personalize, next to your own memory, the
   agent offers to keep a short summary of the project in the working directory and then
-  keeps it up to date itself. It lives in the config folder, not in the repository, with
-  its own size limit.
+  keeps it up to date itself. It lives on this machine in
+  `~/Documents/duskcode/projects/`, never in the repository, with its own size limit.
 - The idle screen plays thirteen new scenes in place of the six: a mountain lake and a
   river at dawn, a desert camp under the Milky Way, dunes, a campfire, a caravan at
   dusk, an autumn road, a pagoda in the maples, a lantern festival, northern lights over
