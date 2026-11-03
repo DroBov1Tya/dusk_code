@@ -1,7 +1,8 @@
 ---
 name: web-security-assessment
 description: Discover and assess web attack surfaces with bounded crawling, targeted fuzzing and browser/server evidence.
-source: Dusk Code
+source: "dusk_code"
+license: MIT
 tags: [security, assessment]
 ---
 

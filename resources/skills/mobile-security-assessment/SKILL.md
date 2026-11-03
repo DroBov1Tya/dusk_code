@@ -1,7 +1,8 @@
 ---
 name: mobile-security-assessment
 description: Assess mobile packages, device behavior and backend boundaries with explicit evidence levels.
-source: Dusk Code
+source: "dusk_code"
+license: MIT
 tags: [security, assessment]
 ---
 
