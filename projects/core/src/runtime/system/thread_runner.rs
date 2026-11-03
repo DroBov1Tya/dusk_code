@@ -71,6 +71,7 @@ pub struct ThreadSetup {
     /// A subagent's runner ends when idle instead of waiting for its client.
     pub ends_when_idle: bool,
     pub lock: ThreadLock,
+    pub hooks: Arc<crate::plugins::Hooks>,
 }
 
 /// The client's side for sending. Dropping every clone ends the thread once the queue is done.
@@ -250,6 +251,7 @@ impl ThreadRunner {
             artifacts: setup.artifacts,
             depth: setup.depth,
             events,
+            hooks: setup.hooks,
         };
         let runner = Self {
             agent,
@@ -586,6 +588,12 @@ impl ThreadRunner {
             }
             if message.from_job_id.is_none() {
                 self.agent.title_from_first_message(&message).await?;
+            }
+            if message.from_thread_id.is_none() && message.from_job_id.is_none() {
+                let details = serde_json::json!({ "text": message.content });
+                self.agent
+                    .hook_notes(crate::plugins::HookEvent::UserMessage, details)
+                    .await?;
             }
             self.agent.emit(ThreadEvent::Queued {
                 message_id: message.message_id.clone(),
@@ -927,6 +935,7 @@ mod tests {
             mailboxes: Arc::default(),
             ends_when_idle: false,
             lock: ThreadLock::take(&root).unwrap(),
+            hooks: Arc::default(),
         })
     }
 

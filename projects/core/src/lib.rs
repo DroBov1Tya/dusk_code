@@ -16,6 +16,7 @@ pub mod config;
 pub mod init;
 pub mod mcp;
 pub mod platform;
+pub mod plugins;
 pub mod providers;
 pub mod release;
 pub mod runtime;

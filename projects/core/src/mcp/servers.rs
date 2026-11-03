@@ -81,7 +81,7 @@ impl McpServers {
             settled: watch::Sender::new(true),
             tokens,
         });
-        for (name, server) in config.mcp() {
+        for (name, server) in &config.all_mcp() {
             this.restart(name, Some(server.clone()));
         }
         this
@@ -197,7 +197,7 @@ impl McpServers {
     pub fn infos(&self, config: &Config) -> Vec<McpInfo> {
         let statuses = self.statuses.read();
         config
-            .mcp()
+            .all_mcp()
             .iter()
             .map(|(name, server)| McpInfo {
                 name: name.clone(),

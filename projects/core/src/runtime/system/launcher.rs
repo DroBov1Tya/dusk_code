@@ -11,15 +11,18 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use tracing::warn;
+use tracing::{info, warn};
 
 use super::{
     ThreadEvent, ThreadInput, ThreadLock, ThreadOutput, ThreadRunner, ThreadSetup,
     model_choice::ModelChoice,
 };
+use crate::init::create_private_dir;
 use crate::platform::Platform;
+use crate::runtime::ThreadHandle;
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::runtime::chat::project;
+use crate::runtime::chat::thread_start::{self, project_dir, start_thread};
 use crate::{
     BoxFuture,
     catalog::agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
@@ -37,6 +40,8 @@ use crate::{
 
 /// Messages from agents a chat takes between two of the user's.
 const MAX_AGENT_MESSAGES: u64 = 30;
+/// How long the first chat waits for MCP servers still starting.
+const MCP_START_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
 
 #[derive(Clone)]
 pub struct Launcher {
@@ -52,6 +57,10 @@ pub struct Launcher {
     pub(crate) approvals: Arc<Approvals>,
     /// Found once at start; built-in tools that need what is missing stay off.
     pub platform: Platform,
+    /// The tasks of open chats, which shutdown lets finish.
+    pub threads: Arc<parking_lot::Mutex<tokio::task::JoinSet<()>>>,
+    /// What plugins run when something happens in a thread.
+    pub hooks: Arc<crate::plugins::Hooks>,
 }
 
 impl Launcher {
@@ -85,6 +94,7 @@ impl Launcher {
             mailboxes: Arc::clone(&self.mailboxes),
             ends_when_idle: false,
             lock: ThreadLock::take(workspace)?,
+            hooks: Arc::clone(&self.hooks),
         })
     }
 
@@ -161,6 +171,74 @@ impl Launcher {
             )));
         }
         tools
+    }
+
+    /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
+    /// ends once the client drops every `ThreadInput` and the queue is done.
+    pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
+        let mode = self.config.current().mode().to_owned();
+        let thread = start_thread(&self.state, &self.paths, source, &mode, cwd).await?;
+        info!(
+            "thread {} started in {}",
+            thread.thread_id,
+            thread.workspace.display()
+        );
+        self.run_thread(thread.thread_id, &thread.workspace, cwd)
+            .await
+    }
+
+    /// Picks a stored thread up again, with its tools working in `cwd`. What it left
+    /// unfinished is closed first: a running turn ends as interrupted, and messages sent
+    /// before a crash are taken in.
+    pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
+        let thread = self
+            .state
+            .load_thread(thread_id)
+            .await?
+            .with_context(|| format!("thread {thread_id} does not exist"))?;
+        // An agent's thread runs as that agent, started by the core when it is written to.
+        ensure!(
+            thread.parent_thread_id.is_none(),
+            "thread {thread_id} belongs to an agent"
+        );
+        let workspace = thread_start::workspace(&self.state, &self.paths, thread_id).await?;
+        create_private_dir(&workspace)?;
+        self.state
+            .adopt_thread(thread_id, &project_dir(cwd))
+            .await?;
+        info!("thread {thread_id} resumed in {}", workspace.display());
+        self.run_thread(thread_id.to_owned(), &workspace, cwd).await
+    }
+
+    /// One task per thread: two would answer the same messages twice.
+    pub async fn run_thread(
+        &self,
+        thread_id: String,
+        workspace: &Path,
+        cwd: &Path,
+    ) -> Result<ThreadHandle> {
+        // A chat opened right after the start still gets the tools of MCP servers.
+        self.mcp.wait(MCP_START_WAIT).await;
+        let mailboxes = Arc::clone(&self.mailboxes);
+        let mut live = mailboxes.lock().await;
+        ensure!(
+            !live.contains_key(&thread_id),
+            "thread {thread_id} is already open"
+        );
+        let setup = self.setup(&thread_id, cwd, workspace, None, 0)?;
+        let (runner, input, output) = ThreadRunner::new(setup);
+        live.insert(thread_id.clone(), runner.mailbox(&input));
+        drop(live);
+        let id = thread_id.clone();
+        self.threads.lock().spawn(async move {
+            runner.run().await;
+            mailboxes.remove(&id).await;
+        });
+        Ok(ThreadHandle {
+            thread_id,
+            input,
+            output,
+        })
     }
 
     /// Stores a message from one agent's thread to another and wakes its reader: a running
