@@ -6,6 +6,13 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- Project memory: switched on in /settings > personalize, next to your own memory, the
+  agent offers to keep a short summary of the project in the working directory and then
+  keeps it up to date itself. It lives in the config folder, not in the repository, with
+  its own size limit.
+
 ## 0.70.1 - 2026-11-03
 
 ### Added

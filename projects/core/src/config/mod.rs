@@ -19,4 +19,5 @@ pub use mcp::{
 pub use providers::{ApiKey, ProviderConfig, ProviderKind};
 pub use sections::{
     Appearance, ApprovalPolicy, Limits, Logging, Memory, RecordMode, ThreadConfig, Traces,
+    WorkHistory,
 };

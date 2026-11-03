@@ -487,6 +487,16 @@ pub async fn run(
                 }
                 Err(error) => app.error(format!("cannot save the memory size: {error:#}")),
             },
+            Action::SetWorkHistoryChars(chars) => match runtime.set_work_history_chars(chars) {
+                Ok(()) => {
+                    let chars = runtime.config().current().work_history().max_chars;
+                    if let Some(Panel::Settings(list)) = &mut app.panel {
+                        list.work_history.max_chars = chars;
+                    }
+                    app.flash = Some(format!("Project memory: up to {chars} characters"));
+                }
+                Err(error) => app.error(format!("cannot save the project memory size: {error:#}")),
+            },
             Action::Switch { kind, name, on } => {
                 let saved = match kind {
                     SwitchKind::Agent => runtime.set_agent_enabled(&name, on),
@@ -494,6 +504,7 @@ pub async fn run(
                     SwitchKind::Skill => runtime.set_skill_enabled(&name, on),
                     SwitchKind::Mcp => runtime.set_mcp_enabled(&name, on),
                     SwitchKind::Memory => runtime.set_memory_enabled(on),
+                    SwitchKind::WorkHistory => runtime.set_work_history_enabled(on),
                     SwitchKind::DevChannel => runtime.set_update_channel(match on {
                         true => Channel::Dev,
                         false => Channel::Stable,

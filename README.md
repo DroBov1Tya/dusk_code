@@ -70,7 +70,7 @@ duskcode TUI
 | Location | Contents |
 | --- | --- |
 | `~/.config/duskcode/config.yml` | Providers, model, limits, tools, agents, skills, MCP servers, appearance, and logging |
-| `~/.config/duskcode/rules/` | Agents, skills, modes, prompts, and user memory |
+| `~/.config/duskcode/rules/` | Agents, skills, modes, prompts, user and project memory |
 | `~/.config/duskcode/session/` | Session database and artifacts |
 | `~/.config/duskcode/logs/` | Application logs |
 | `~/.config/duskcode/mcp-auth/` | MCP OAuth tokens |

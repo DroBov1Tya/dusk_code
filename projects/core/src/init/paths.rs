@@ -12,7 +12,6 @@ const PROMPTS_DIR: &str = "prompts";
 const LEGACY_MAIN_PROMPT: &str = "MAIN.md";
 const MODES_DIR: &str = "modes";
 const COMPACT_PROMPT: &str = "COMPACT.md";
-const MEMORY_FILE: &str = "MEMORY.md";
 const FORK_PROMPT: &str = "FORK.md";
 const SKILLS_DIR: &str = "skills";
 const AGENTS_DIR: &str = "agents";
@@ -83,11 +82,6 @@ impl Paths {
     /// How to describe a thread for /fork, so a new one can go on from it.
     pub fn fork_prompt(&self) -> PathBuf {
         self.prompts_dir().join(FORK_PROMPT)
-    }
-
-    /// What the agent remembers about its owner, written by the remember tool.
-    pub fn memory_file(&self) -> PathBuf {
-        self.rules_root().join(MEMORY_FILE)
     }
 
     /// Tokens of the MCP servers signed in to; inside the folder tools may not touch.

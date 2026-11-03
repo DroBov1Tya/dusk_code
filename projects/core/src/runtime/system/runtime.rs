@@ -434,6 +434,18 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_work_history_enabled(&self, enabled: bool) -> Result<()> {
+        self.config()
+            .update(|config| config.set_work_history_enabled(enabled))?;
+        Ok(())
+    }
+
+    pub fn set_work_history_chars(&self, chars: usize) -> Result<()> {
+        self.config()
+            .update(|config| config.set_work_history_chars(chars))?;
+        Ok(())
+    }
+
     pub fn set_update_channel(&self, channel: Channel) -> Result<()> {
         self.config()
             .update(|config| config.set_update_channel(channel))?;

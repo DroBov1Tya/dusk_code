@@ -93,5 +93,7 @@ If the user edits `config.yml` by hand: change only `mcp:`. Leave `providers` (A
 switches alone; dusk
 rewrites the file and drops comments.
 
-`<rules>/MEMORY.md` is what you remember about the user. Change it only with the
-`remember` tool, never by hand; the user switches it off in `/settings` -> tools.
+`<rules>/MEMORY.md` is what you remember about the user, and
+`<rules>/projects/<folder>/MEMORY.md` what you remember about a project. Change them only
+with the `remember` and `remember_project` tools, never by hand; the user switches them
+in `/settings` -> personalize.
