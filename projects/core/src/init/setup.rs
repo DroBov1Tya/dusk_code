@@ -94,6 +94,9 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
 }
 
 /// What sat in the config root before `rules/`, and where each goes in it, folders first.
+/// The mode an old MAIN.md the user wrote becomes.
+const LEGACY_MODE: &str = "MINE";
+
 const BEFORE_RULES: [(&str, &str); 7] = [
     ("agents", "agents"),
     ("skills", "skills"),
@@ -149,9 +152,10 @@ fn moved_path(path: &str) -> String {
     }
 }
 
-/// Before modes, MAIN.md sat in the config root. A MAIN.md the user wrote becomes the
-/// orchestrator's prompt, as it was written to coordinate; the untouched template is
-/// MAIN mode's. The file is moved, never rewritten, and only into a free place.
+/// Before modes, MAIN.md sat in the config root. One the user wrote becomes a mode of
+/// their own, `MINE`, since the shipped modes follow the build; the untouched template
+/// goes, as MAIN mode ships it. The file is moved, never rewritten, and only into a free
+/// place.
 fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
     let legacy = paths.legacy_main_prompt();
     let Ok(text) = fs::read_to_string(&legacy) else {
@@ -166,13 +170,11 @@ fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
             return Ok(());
         }
     };
-    let mode = if text.trim() == template.trim() {
-        modes::MAIN
-    } else {
-        modes::ORCHESTRATOR
-    };
-    let target = modes::file(&paths.modes_dir(), mode);
-    // The mode has its prompt: the old file is kept beside it, where it is no mode.
+    if text.trim() == template.trim() {
+        fs::remove_file(&legacy).context("cannot remove the old MAIN.md")?;
+        return Ok(());
+    }
+    let target = modes::file(&paths.modes_dir(), LEGACY_MODE);
     let target = match fs::symlink_metadata(&target) {
         Ok(_) => target.with_extension("md.old"),
         Err(_) => target,
@@ -181,7 +183,7 @@ fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
         return Ok(());
     }
     fs::rename(&legacy, &target).context("cannot move MAIN.md into modes")?;
-    info!("MAIN.md moved to modes/{mode}.md");
+    info!("MAIN.md moved to modes/{LEGACY_MODE}.md");
     Ok(())
 }
 
@@ -323,17 +325,14 @@ mod tests {
     }
 
     #[test]
-    fn a_written_main_prompt_becomes_the_orchestrator() {
+    fn a_written_main_prompt_becomes_a_mode_of_its_own() {
         let paths = temp_paths("legacy_main");
         fs::create_dir_all(paths.config_root()).unwrap();
         fs::write(paths.legacy_main_prompt(), "Coordinate the agents.").unwrap();
         initialize(&paths).unwrap();
         assert!(!paths.legacy_main_prompt().exists());
-        let orchestrator = modes::file(&paths.modes_dir(), modes::ORCHESTRATOR);
-        assert_eq!(
-            fs::read_to_string(orchestrator).unwrap(),
-            "Coordinate the agents."
-        );
+        let mine = modes::file(&paths.modes_dir(), LEGACY_MODE);
+        assert_eq!(fs::read_to_string(mine).unwrap(), "Coordinate the agents.");
         let main = fs::read_to_string(paths.main_prompt()).unwrap();
         assert_eq!(main, modes::template(modes::MAIN).unwrap().unwrap());
     }

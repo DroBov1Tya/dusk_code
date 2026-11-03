@@ -127,14 +127,22 @@ pub async fn run(
     if let Some(thread_id) = thread {
         open = Some(resume(runtime, &mut app, &thread_id).await?);
     }
-    // Shipped prompts and skills the user changed stay theirs; the new ones wait beside.
-    let kept = runtime.kept_builtin();
-    if !kept.is_empty() {
+    // Shipped files follow the build; a local edit to one is replaced, so say which.
+    let updated = runtime.updated_builtin();
+    if !updated.is_empty() {
+        let mut names = updated
+            .iter()
+            .take(5)
+            .cloned()
+            .collect::<Vec<_>>()
+            .join(", ");
+        if updated.len() > 5 {
+            names.push_str(&format!(" and {} more", updated.len() - 5));
+        }
         app.transcript.notice(
             format!(
-                "dusk ships newer versions of files you changed: {}; yours are kept, the new \
-                 ones are beside them as .new",
-                kept.join(", ")
+                "shipped files brought to this version: {names}. Your own agents and \
+                 skills belong beside them under another name"
             ),
             Tone::Info,
         );
