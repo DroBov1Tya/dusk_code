@@ -13,9 +13,9 @@ use std::{
 use anyhow::{Result, ensure};
 use crossterm::event::{Event, EventStream, MouseEventKind};
 use dusk_core::{
-    chat::commands::{Answer, Command},
     config::Effort,
     config::{ApiKey, ApprovalPolicy, ProviderConfig, ProviderKind},
+    message::commands::{Answer, Command},
     providers::validate_provider,
     release::update::{Channel, InstallProgress},
     runtime::{Runtime, ThreadEvent, ThreadHandle},

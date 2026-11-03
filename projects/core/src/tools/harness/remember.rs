@@ -152,7 +152,7 @@ impl Tool for Remember {
             memory
         };
         let prompt = self.rules.join("prompts").join(self.prompt());
-        let template = crate::runtime::chat::thread_start::read_prompt(&prompt)
+        let template = crate::runtime::thread::thread_start::read_prompt(&prompt)
             .ok()
             .flatten()
             .or_else(|| {

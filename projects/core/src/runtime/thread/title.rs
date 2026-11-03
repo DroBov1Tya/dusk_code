@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use tracing::warn;
 
 use crate::runtime::{
+    ThreadEvent,
     agent::{Agent, Inbox, Stop, generation},
-    system::ThreadEvent,
 };
 use crate::{
     providers::{ChatMessage, ChatRequest, ModelOutput},

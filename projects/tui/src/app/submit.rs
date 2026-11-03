@@ -1,6 +1,6 @@
 //! Sending what is typed: commands, messages, the queue and recall.
 
-use dusk_core::chat::commands::{self, Command};
+use dusk_core::message::commands::{self, Command};
 
 use super::{Action, Activity, App, Connection, Panel, Tone};
 

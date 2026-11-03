@@ -5,8 +5,8 @@ pub mod panels;
 pub mod settings;
 
 use super::{
-    chat::{input, transcript},
-    loader, sidebar,
+    loader,
     text::{markdown, wrap},
     theme,
+    thread::{input, transcript},
 };

@@ -3,8 +3,8 @@
 use ratatui::layout::Rect;
 
 use dusk_core::{
-    chat::commands::ContextReport,
     config::ProviderKind,
+    message::commands::ContextReport,
     release::update::{InstallProgress, UpdateInfo},
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Source, Thread, UndoPoint},

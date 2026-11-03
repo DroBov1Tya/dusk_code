@@ -12,7 +12,7 @@ use std::{
 use anyhow::Result;
 
 use crate::{
-    init::paths::is_plain_folder_name, runtime::chat::thread_start::read_prompt, tools::ToolKind,
+    init::paths::is_plain_folder_name, runtime::thread::thread_start::read_prompt, tools::ToolKind,
 };
 
 pub const MAIN: &str = "MAIN";

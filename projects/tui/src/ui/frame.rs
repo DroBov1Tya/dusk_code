@@ -1,6 +1,6 @@
 //! One frame: the split between transcript and sidebar, the windows over them, and the tab title.
 
-use chat::{header, input, transcript};
+use thread::{header, input, transcript};
 use windows::panels;
 
 use ratatui::{
@@ -12,7 +12,7 @@ use ratatui::{
 
 use crate::app::App;
 
-use super::{chat, sidebar, windows};
+use super::{sidebar, thread, windows};
 
 const SPLIT_AT: u16 = 84;
 const SIDEBAR_WIDTH: u16 = 30;

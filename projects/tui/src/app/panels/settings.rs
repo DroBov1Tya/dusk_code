@@ -12,9 +12,9 @@ use dusk_core::{
     catalog::graph::NodeText,
     catalog::graph::Problem,
     catalog::skills::SkillInfo,
-    chat::commands::{Command, Settings, ToolInfo},
     config::{ApprovalPolicy, ContextPolicy, ContextPreset, Effort, Memory, WorkHistory},
     mcp::{McpInfo, McpState, McpToolInfo},
+    message::commands::{Command, Settings, ToolInfo},
     release::update::Channel,
     runtime::SystemReport,
 };

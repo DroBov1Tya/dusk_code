@@ -11,7 +11,6 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use super::sidebar::format_duration;
 use super::{
     loader::{Loader, agent_name, identity},
     panels::window,
@@ -19,10 +18,11 @@ use super::{
         ACCENT, DEEP, DOT, GUTTER, NEGATIVE, POSITIVE, RAISED, SELECTED, TEXT, TEXT_MUTED,
         TEXT_SOFT, bold, dusk, fg,
     },
-    transcript::{one_line, thread_lines},
+    transcript::thread_lines,
     wrap,
 };
 use crate::app::{App, Panel, TEXT_COLUMN, TranscriptHit, compact_number};
+use crate::ui::text::format::{format_duration, one_line};
 
 const STOP: &str = " \u{25A0} stop ";
 

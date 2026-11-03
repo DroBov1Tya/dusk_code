@@ -3,6 +3,7 @@
 //! they ask. It also carries messages between agents, starting an agent's runner when
 //! a message finds it stopped.
 
+use crate::runtime::ThreadEvent;
 use std::{
     future::Future,
     path::{Path, PathBuf},
@@ -14,15 +15,14 @@ use anyhow::{Context, Result, ensure};
 use tracing::{info, warn};
 
 use super::{
-    ThreadEvent, ThreadInput, ThreadLock, ThreadOutput, ThreadRunner, ThreadSetup,
-    model_choice::ModelChoice,
+    ThreadInput, ThreadLock, ThreadOutput, ThreadRunner, ThreadSetup, model_choice::ModelChoice,
 };
 use crate::init::create_private_dir;
 use crate::platform::Platform;
 use crate::runtime::ThreadHandle;
 use crate::runtime::agent::{Input, Mailboxes};
-use crate::runtime::chat::project;
-use crate::runtime::chat::thread_start::{self, project_dir, start_thread};
+use crate::runtime::thread::project;
+use crate::runtime::thread::thread_start::{self, project_dir, start_thread};
 use crate::{
     BoxFuture,
     catalog::agents::{Agents, GENERAL_AGENT, MAX_AGENT_DEPTH},
@@ -392,7 +392,7 @@ impl Launcher {
         let name = thread.agent.as_deref().unwrap_or(GENERAL_AGENT);
         let identity = self.agents.get(name);
         let workspace =
-            crate::runtime::chat::thread_start::workspace(&self.state, &self.paths, &thread.id)
+            crate::runtime::thread::thread_start::workspace(&self.state, &self.paths, &thread.id)
                 .await?;
         let mut setup = self.setup(&thread.id, cwd, &workspace, identity.as_ref(), depth)?;
         setup.ends_when_idle = true;

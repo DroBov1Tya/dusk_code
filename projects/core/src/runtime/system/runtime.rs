@@ -2,6 +2,7 @@
 //! database, the live config and the model, checks the config file in the background
 //! and gives each active thread its own task.
 
+use crate::runtime::ThreadEvent;
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -13,7 +14,7 @@ use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 use super::{
-    Launcher, ThreadEvent, ThreadInput, ThreadOutput,
+    Launcher, ThreadInput, ThreadOutput,
     model_choice::{self, Choice, ModelChoice},
 };
 use crate::platform::Platform;
@@ -23,20 +24,20 @@ use crate::{
     catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
     catalog::modes,
     catalog::skills::{self, SkillInfo},
-    chat::commands::{ContextReport, context_report},
-    chat::sources,
     config::live::LiveConfig,
     config::{ApiKey, ApprovalPolicy, ContextPolicy, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
     init,
     init::paths::Paths,
     mcp::{McpInfo, McpServers, McpStatus},
+    message::commands::{ContextReport, context_report},
+    message::sources,
     providers::Provider,
     release::{
         update::{self, Channel, InstallProgress, UpdateInfo},
         watch::UpdateWatch,
     },
-    runtime::chat::thread_start::{self, FORK_INTRO, project_dir, start_thread},
+    runtime::thread::thread_start::{self, FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
     tools::{Decision, JobInfo, JobManager, ToolKind, ToolScope},
     util::usage::{self, ProcessUsage},
@@ -61,7 +62,7 @@ pub struct Runtime {
     updated_builtin: Vec<String>,
     state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
-    _restore_guard: Option<crate::util::archive::RestoreGuard>,
+    _restore_guard: Option<crate::backup::archive::RestoreGuard>,
 }
 
 /// What the application costs the machine right now.
@@ -88,7 +89,7 @@ pub struct ThreadHandle {
 impl Runtime {
     /// A SQLite snapshot plus the two standard data roots, without the backup folder.
     pub async fn migrate(&self, destination: Option<PathBuf>) -> Result<PathBuf> {
-        crate::util::archive::export(
+        crate::backup::archive::export(
             self.paths(),
             &self.launcher.state,
             &self.state_db,
@@ -101,9 +102,10 @@ impl Runtime {
     /// saved model without a network request. `state_db` replaces the default database
     /// path. First start and unavailable providers still leave local history accessible.
     pub async fn start(paths: Paths, state_db: Option<PathBuf>) -> Result<Self> {
-        let state_db =
-            crate::util::archive::resolve_state_db(&state_db.unwrap_or_else(|| paths.state_db()))?;
-        let restore_guard = crate::util::archive::startup_guard(&paths, Some(&state_db))?;
+        let state_db = crate::backup::archive::resolve_state_db(
+            &state_db.unwrap_or_else(|| paths.state_db()),
+        )?;
+        let restore_guard = crate::backup::archive::startup_guard(&paths, Some(&state_db))?;
         // A client that shows the restore calls this first; then it is not tried again.
         let version = crate::release::update::VERSION;
         match crate::release::complete::ensure_installed(&|_| {}).await {

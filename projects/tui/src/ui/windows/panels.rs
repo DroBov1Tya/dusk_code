@@ -1,7 +1,5 @@
 //! Panels over the transcript: threads, tool and skill switches, and the keys.
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use ratatui::{
     Frame,
     layout::{Position, Rect},
@@ -12,24 +10,23 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use dusk_core::{
-    chat::commands::ContextReport, release::update::InstallStage, state::MessageRole,
+    message::commands::ContextReport, release::update::InstallStage, state::MessageRole,
     tools::JobInfo,
 };
 
 use super::{
     agent_window, input, markdown, settings,
-    sidebar::format_duration,
     theme::{
         ACCENT, DONE, DOT, DUSK, ELLIPSIS, FAILED, GUTTER, HAIRLINE, NEGATIVE, ON, POSITIVE,
         RAISED, SUN_GLYPH, TEXT, TEXT_MUTED, TEXT_SOFT, USER_BAR, bold, dim, fg, thought,
     },
-    transcript::{one_line, printable},
     wrap,
 };
 use crate::app::{
     App, Connection, EFFORTS, EditorButton, EditorHit, JobsView, ModelList, Panel, Preset,
     ThreadList, compact_number, paste,
 };
+use crate::ui::text::format::{format_duration, one_line, printable};
 
 const KEYS: [(&str, &str); 30] = [
     (
@@ -621,7 +618,7 @@ fn preview(list: &ThreadList, width: usize, height: usize) -> Vec<Line<'static>>
     let Some(thread) = list.threads.get(list.selected) else {
         return Vec::new();
     };
-    let now = now_ms();
+    let now = crate::app::now_ms();
     let title = thread.title.clone().unwrap_or_else(|| "no messages".into());
     let mut head = vec![Line::from(Span::styled(
         wrap::clip(&title, width),
@@ -705,7 +702,7 @@ fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
     if list.threads.is_empty() {
         return vec![Line::from(Span::styled(" no threads yet", thought()))];
     }
-    let now = now_ms();
+    let now = crate::app::now_ms();
     list.threads
         .iter()
         .enumerate()
@@ -1074,7 +1071,7 @@ const JOB_OUTPUT_ROWS: usize = 12;
 
 /// The jobs, one row each, and under them what the chosen one printed.
 fn jobs(view: &JobsView, width: usize) -> Vec<Line<'static>> {
-    let now = now_ms();
+    let now = crate::app::now_ms();
     let mut lines: Vec<Line<'static>> = view
         .jobs
         .iter()
@@ -1194,10 +1191,4 @@ fn age(ms: i64) -> String {
         60..1440 => format!("{}h", minutes / 60),
         _ => format!("{}d", minutes / 1440),
     }
-}
-
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }

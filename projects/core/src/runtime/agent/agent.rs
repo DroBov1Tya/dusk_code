@@ -14,20 +14,18 @@ use tracing::{info, warn};
 use super::{Inbox, Stop, generation};
 use crate::plugins::{HookEvent, Hooks, hooks::Outcome};
 use crate::runtime::{
-    chat::{Conversation, spec_tokens},
-    system::{
-        ThreadEvent,
-        model_choice::{Choice, ModelChoice},
-    },
+    ThreadEvent,
+    system::model_choice::{Choice, ModelChoice},
+    thread::{Conversation, spec_tokens},
 };
 use crate::state::artifacts::ArtifactStore;
 use crate::{
-    chat::{
+    config::live::LiveConfig,
+    config::{Config, Effort},
+    message::{
         goal,
         sources::{self, SourceBlock},
     },
-    config::live::LiveConfig,
-    config::{Config, Effort},
     providers::{
         ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
         is_unsupported_effort, is_unsupported_pictures, text_calls,

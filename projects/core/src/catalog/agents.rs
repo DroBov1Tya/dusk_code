@@ -19,7 +19,7 @@ use crate::{
     },
     config::Config,
     release::resources,
-    runtime::chat::thread_start::fnv1a,
+    runtime::thread::thread_start::fnv1a,
     state::{Identity, State},
 };
 

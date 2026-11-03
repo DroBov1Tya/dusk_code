@@ -10,7 +10,7 @@ use std::{
 use tokio::sync::{Mutex, MutexGuard, mpsc::WeakUnboundedSender};
 
 use super::Input;
-use crate::runtime::system::ThreadEvent;
+use crate::runtime::ThreadEvent;
 
 #[derive(Default)]
 pub struct Mailboxes {

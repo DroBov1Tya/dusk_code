@@ -7,14 +7,17 @@
 //! - `catalog`: what the user edits as files: skills, agents and mode prompts;
 //! - `release`: shipped resources, their sync into the config, and updates;
 //! - `providers`, `mcp`, `tools`: what the agents talk to and act with;
-//! - `runtime`, `chat`, `state`: running threads, client commands and the records;
+//! - `runtime`, `message`, `state`: running threads, what messages carry, and the records;
+//! - `plugins`: what the community adds without changing this code;
+//! - `backup`: `/migrate` archives, their restore, and the guard of an uninstall;
 //! - `util`: small helpers with no domain.
 
+pub mod backup;
 pub mod catalog;
-pub mod chat;
 pub mod config;
 pub mod init;
 pub mod mcp;
+pub mod message;
 pub mod platform;
 pub mod plugins;
 pub mod providers;

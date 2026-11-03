@@ -7,7 +7,7 @@ use crossterm::event::{
 };
 use std::time::{Duration, Instant};
 
-use dusk_core::{chat::commands::Command, release::update::InstallStage};
+use dusk_core::{message::commands::Command, release::update::InstallStage};
 use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
 use super::{
