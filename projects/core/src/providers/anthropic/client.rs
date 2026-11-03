@@ -110,8 +110,7 @@ impl Anthropic {
             .map_err(|_| anyhow!("provider model request failed"))?;
         ensure!(
             response.status().is_success(),
-            "provider model request returned HTTP {}",
-            response.status().as_u16()
+            http::refused("model", response.status())
         );
         let mut bytes = Vec::new();
         while let Some(chunk) = response
@@ -148,15 +147,10 @@ impl Anthropic {
                 .await
                 .ok()
                 .flatten();
+            let refused = http::refused("completion", status);
             let message = match &reason {
-                Some(reason) => format!(
-                    "provider completion request returned HTTP {}: {reason}",
-                    status.as_u16()
-                ),
-                None => format!(
-                    "provider completion request returned HTTP {}",
-                    status.as_u16()
-                ),
+                Some(reason) => format!("{refused}: {reason}"),
+                None => refused,
             };
             if http::is_retryable(status) {
                 bail!(Transient(message));
