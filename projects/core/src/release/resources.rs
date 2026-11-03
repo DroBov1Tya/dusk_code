@@ -121,7 +121,10 @@ pub fn validate(root: &Path, version: Option<&str>) -> Result<()> {
     for relative in REQUIRED {
         let text = fs::read_to_string(root.join(relative))
             .with_context(|| format!("resource {relative} is missing"))?;
-        ensure!(!text.trim().is_empty(), "resource {relative} must not be blank");
+        ensure!(
+            !text.trim().is_empty(),
+            "resource {relative} must not be blank"
+        );
     }
     if let Some(version) = version {
         ensure!(
