@@ -27,6 +27,11 @@ testing.
   its name and URL filled in. For OpenAI and Anthropic, ctrl+o opens the page where a
   key is made.
 
+- Computer use: a screenshot can be of one app's window, found by its app name or
+  title, even under other windows; clicks then land in that window. A ring of dusk's own
+  marks where the agent last clicked or scrolled; it lets the mouse through and stays
+  out of screenshots.
+
 ### Changed
 
 - The token counters are gone from the sidebar, and the input and output token limits
