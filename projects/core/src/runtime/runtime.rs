@@ -48,6 +48,8 @@ use crate::{
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);
 /// How long shutdown waits for stopped subagents to end.
 const AGENTS_STOP_WAIT: Duration = Duration::from_secs(5);
+/// A provider's name is this long at most; it shows in `provider/model`.
+const MAX_PROVIDER_NAME: usize = 40;
 
 pub struct Runtime {
     launcher: Launcher,
@@ -307,31 +309,50 @@ impl Runtime {
             .is_some_and(|task| !task.is_finished())
     }
 
-    /// Adds or replaces a provider in the private YAML config. A model can be chosen
-    /// separately through `/model`; saving this setting makes no network request.
+    /// Adds a provider to the private YAML config under `name`, or the next free
+    /// `provider-N`, and returns the name. A model is chosen separately through
+    /// `/model`; saving makes no network request.
     pub fn connect_provider(
         &self,
-        name: String,
+        kind: ProviderKind,
+        name: Option<String>,
         base_url: String,
         api_key: Option<String>,
-    ) -> Result<()> {
-        ensure!(!name.trim().is_empty(), "provider name must not be empty");
-        ensure!(
-            !name.contains('/') && !name.chars().any(char::is_control),
-            "provider name is invalid"
-        );
+    ) -> Result<String> {
+        if let Some(name) = &name {
+            ensure!(
+                !name.trim().is_empty()
+                    && name.len() <= MAX_PROVIDER_NAME
+                    && !name.contains('/')
+                    && !name.chars().any(char::is_control),
+                "a name is up to {MAX_PROVIDER_NAME} characters, without / or control characters"
+            );
+        }
         let provider = ProviderConfig {
-            kind: ProviderKind::OpenAiCompatible,
+            kind,
             base_url,
             api_key: ApiKey(api_key.unwrap_or_default()),
             inline_tags: false,
         };
+        crate::providers::validate_provider(&provider)?;
         let adapter = Arc::new(Provider::new(&provider)?);
-        self.launcher
-            .config
-            .update(|config| config.set_provider(name.clone(), provider))?;
+        let mut chosen = Err(anyhow::anyhow!("a provider with this name exists"));
+        self.launcher.config.update(|config| {
+            let free = |name: &String| !config.providers().contains_key(name);
+            let name = match &name {
+                Some(name) if !free(name) => return,
+                Some(name) => name.clone(),
+                None => (1..)
+                    .map(|index| format!("provider-{index}"))
+                    .find(free)
+                    .expect("a free provider name"),
+            };
+            config.set_provider(name.clone(), provider);
+            chosen = Ok(name);
+        })?;
+        let name = chosen?;
         self.launcher.model.replace_provider(&name, adapter);
-        Ok(())
+        Ok(name)
     }
 
     /// Reads the agents folder now instead of at the next minute.

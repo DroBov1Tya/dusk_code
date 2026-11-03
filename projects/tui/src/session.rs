@@ -10,13 +10,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use anyhow::{Result, ensure};
+use anyhow::Result;
 use crossterm::event::{Event, EventStream, MouseEventKind};
 use dusk_core::{
+    config::ApprovalPolicy,
     config::Effort,
-    config::{ApiKey, ApprovalPolicy, ProviderConfig, ProviderKind},
     message::commands::{Answer, Command},
-    providers::validate_provider,
     release::update::{Channel, InstallProgress},
     runtime::{Runtime, ThreadEvent, ThreadHandle},
     state::TurnStatus,
@@ -381,8 +380,8 @@ pub async fn run(
                 name,
                 base_url,
                 api_key,
-            } => match connect(runtime, kind, name, base_url, api_key) {
-                Ok(()) => {
+            } => match runtime.connect_provider(kind, name, base_url, api_key) {
+                Ok(_) => {
                     app.panel = Some(Panel::Models(ModelList::checking(
                         runtime.model().map(|choice| choice.name()),
                     )));
@@ -792,45 +791,6 @@ fn open_in_browser(url: &str) -> bool {
 
 /// Takes the given name, or the next free `provider-N`, against the configuration read
 /// during the same update. An existing provider is never replaced.
-fn connect(
-    runtime: &Runtime,
-    kind: ProviderKind,
-    name: Option<String>,
-    base_url: String,
-    api_key: Option<String>,
-) -> Result<()> {
-    if let Some(name) = &name {
-        ensure!(
-            name.len() <= 40 && !name.contains('/') && !name.chars().any(char::is_control),
-            "a name is up to 40 characters, without / or control characters"
-        );
-    }
-    let provider = ProviderConfig {
-        kind,
-        base_url,
-        api_key: ApiKey(api_key.unwrap_or_default()),
-        inline_tags: false,
-    };
-    validate_provider(&provider)?;
-    let mut taken = false;
-    runtime.config().update(|config| {
-        let name = match &name {
-            Some(name) if config.providers().contains_key(name) => {
-                taken = true;
-                return;
-            }
-            Some(name) => name.clone(),
-            None => (1..)
-                .map(|index| format!("provider-{index}"))
-                .find(|name| !config.providers().contains_key(name))
-                .expect("a free provider name"),
-        };
-        config.set_provider(name, provider);
-    })?;
-    ensure!(!taken, "a provider with this name exists");
-    Ok(())
-}
-
 /// Shows what the core answered to a command that does not run in the thread.
 async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>, command: Command) {
     let migrating = matches!(&command, Command::Migrate { .. });

@@ -60,7 +60,9 @@ fn call(body: &str, tools: &[ToolSpec]) -> Option<(String, Value)> {
         .then_some((name, arguments))
 }
 
-fn json(body: &str) -> Option<(String, Value)> {
+/// `{"name": …, "arguments": …}`, the arguments as an object or a string holding one;
+/// the inline tag filter reads the same form.
+pub fn json(body: &str) -> Option<(String, Value)> {
     let mut call: Map<String, Value> = serde_json::from_str(body).ok()?;
     let name = call.remove("name")?.as_str()?.to_owned();
     let arguments = match call.remove("arguments").unwrap_or_default() {
