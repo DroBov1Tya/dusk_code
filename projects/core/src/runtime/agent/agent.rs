@@ -22,14 +22,12 @@ use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
     config::{Config, Effort},
-    message::{
-        goal,
-        sources::{self, SourceBlock},
-    },
+    message::sources::{self, SourceBlock},
     providers::{
         ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
         is_unsupported_effort, is_unsupported_pictures, text_calls,
     },
+    runtime::goal::action as goal,
     state::{
         AgentPhase, CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, PendingMessage, State,
         Turn, TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,

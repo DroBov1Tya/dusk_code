@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use crate::{
     BoxFuture,
-    message::goal,
     runtime::ThreadEvent,
+    runtime::goal::action as goal,
     state::{GoalCriterion, GoalEvidence, State},
     tools::{Tool, ToolContext, schema, schema::parse_arguments},
 };

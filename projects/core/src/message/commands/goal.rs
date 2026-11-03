@@ -2,7 +2,7 @@
 //! approval/resume queues execution, confirmation queues deterministic evidence review.
 
 use crate::{
-    message::goal::{self, GoalAction},
+    runtime::goal::action::{self as goal, GoalAction},
     runtime::{ThreadEvent, agent::Agent},
     state::GoalStatus,
 };

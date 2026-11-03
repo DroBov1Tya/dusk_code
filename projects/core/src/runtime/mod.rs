@@ -7,7 +7,7 @@
 pub mod agent;
 pub mod arbiter;
 mod events;
-mod goal_verification;
+pub mod goal;
 pub mod jobs;
 mod launcher;
 pub mod model_choice;

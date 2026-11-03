@@ -21,11 +21,12 @@ use tokio::sync::mpsc;
 use super::{ThreadLock, model_choice::ModelChoice};
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
+use crate::runtime::goal::action as goal;
 use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
-    message::{commands, goal},
-    state::{GoalStatus, PendingMessage, State, TurnStatus, estimate_tokens},
+    message::commands,
+    state::{PendingMessage, State, TurnStatus, estimate_tokens},
     tools::{ToolRegistry, ToolScope},
 };
 
@@ -35,12 +36,12 @@ const FOREIGN_JOB_POLL: Duration = Duration::from_secs(2);
 
 /// Runs one thread; `Runtime` gives each active thread its own task with one of these.
 pub struct ThreadRunner {
-    agent: Agent,
+    pub agent: Agent,
     inbox: Inbox,
-    mailboxes: Arc<Mailboxes>,
+    pub mailboxes: Arc<Mailboxes>,
     ends_when_idle: bool,
     /// The next automatic round waits for dependency completion, not a timer.
-    goal_waiting: bool,
+    pub goal_waiting: bool,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
     /// Keeps other processes off the thread while this runner has it.
@@ -305,118 +306,9 @@ impl ThreadRunner {
         }
     }
 
-    async fn verification_pending(&self) -> Result<bool> {
-        Ok(self.agent.depth == 0
-            && self
-                .agent
-                .state
-                .goal(&self.agent.thread_id)
-                .await?
-                .is_some_and(|g| {
-                    g.approved && g.status == GoalStatus::Active && g.verification == "pending"
-                }))
-    }
-
-    /// Queues the next round of an active goal, or pauses it when the rounds are spent.
-    /// Returns whether a round was queued.
-    async fn next_goal_round(&mut self) -> Result<bool> {
-        let Some(goal) = self.agent.active_goal().await? else {
-            self.goal_waiting = false;
-            return Ok(false);
-        };
-        // A runner registers its report while holding this same lock. Checking
-        // durable queued/running work under it closes the handoff to a new runner;
-        // a finished report clears itself only after its results are stored.
-        let mailboxes = Arc::clone(&self.mailboxes);
-        let live = mailboxes.lock().await;
-        let descendants = self
-            .agent
-            .state
-            .descendant_threads(&self.agent.thread_id)
-            .await?;
-        let reporting = mailboxes.has_agent_reports(&descendants).await;
-        let (pending, dependencies) = self
-            .agent
-            .state
-            .goal_wake_state(&self.agent.thread_id)
-            .await?;
-        if !pending && !dependencies && !reporting && goal.verification == "pending" {
-            if let Some(reviewed) =
-                super::goal_verification::verify(&self.agent.state, &self.agent.thread_id).await?
-            {
-                let note = goal::describe(&reviewed);
-                self.agent.emit(ThreadEvent::Goal {
-                    goal: Some(reviewed.clone()),
-                    note,
-                    started: None,
-                });
-                if reviewed.status == GoalStatus::Done || reviewed.verification == "needs_user" {
-                    self.goal_waiting = false;
-                    return Ok(false);
-                }
-            } else {
-                self.goal_waiting = true;
-                return Ok(false);
-            }
-        }
-        drop(live);
-        if pending {
-            // A result or user message won the race with start_turn: answer it
-            // before creating another goal message or consuming a round.
-            self.goal_waiting = true;
-            self.take_in().await?;
-            return Ok(true);
-        }
-        self.goal_waiting = reporting || dependencies;
-        if self.goal_waiting {
-            return Ok(false);
-        }
-        if goal.verification == "needs_user" {
-            return Ok(false);
-        }
-        let rounds = self.agent.config.current().limits().max_goal_rounds;
-        if goal.rounds >= rounds {
-            self.pause_goal(&format!("all {rounds} rounds used"))
-                .await?;
-            return Ok(false);
-        }
-        let state = &self.agent.state;
-        let Some(goal) = state.count_goal_round(&self.agent.thread_id).await? else {
-            return Ok(false);
-        };
-        let kickoff = goal::kickoff(&goal, rounds);
-        state.add_pending(&self.agent.thread_id, &kickoff).await?;
-        let note = format!("goal round {} of {rounds}", goal.rounds);
-        self.agent.emit(ThreadEvent::Goal {
-            goal: Some(goal),
-            note,
-            started: Some(kickoff),
-        });
-        self.take_in().await?;
-        Ok(true)
-    }
-
-    async fn pause_goal(&self, reason: &str) -> Result<()> {
-        if self.agent.active_goal().await?.is_none() {
-            return Ok(());
-        }
-        let goal = self.agent.state.set_goal_status(
-            &self.agent.thread_id,
-            GoalStatus::Paused,
-            Some(reason),
-        );
-        let goal = goal.await?;
-        self.agent.emit(ThreadEvent::Goal {
-            goal,
-            note: format!("goal paused: {reason}"),
-            started: None,
-        });
-        Ok(())
-    }
-
     /// Takes in what clients sent, oldest first: messages join the thread, commands run.
     /// A command can take a while, so whatever arrived meanwhile is taken in as well.
-    async fn take_in(&mut self) -> Result<()> {
+    pub async fn take_in(&mut self) -> Result<()> {
         loop {
             let pending = self
                 .agent
@@ -599,7 +491,7 @@ mod tests {
 
     use super::*;
     use crate::providers::{ModelEvent, ToolCall};
-    use crate::state::{Goal, Turn};
+    use crate::state::{Goal, GoalStatus, Turn};
     use crate::{
         BoxFuture,
         providers::{
