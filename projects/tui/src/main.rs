@@ -10,6 +10,7 @@
 mod app;
 mod cli;
 mod host;
+mod screensaver;
 mod session;
 mod telegram;
 mod ui;

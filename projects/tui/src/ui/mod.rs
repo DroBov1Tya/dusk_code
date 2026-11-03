@@ -4,10 +4,9 @@
 mod chat;
 mod frame;
 mod loader;
-pub mod screensaver;
 mod sidebar;
 mod text;
-mod theme;
+pub mod theme;
 mod windows;
 
 pub use frame::{draw, tab_title};
