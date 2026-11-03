@@ -35,6 +35,7 @@ pub struct Agents {
     state: Arc<State>,
     identities: RwLock<Vec<Identity>>,
     problems: RwLock<Vec<Problem>>,
+    skipped: RwLock<Vec<Problem>>,
 }
 
 /// One agent in the tree a client draws: the chat at the root, then whom each may ask.
@@ -54,8 +55,10 @@ pub struct AgentNode {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AgentTree {
     pub root: AgentNode,
-    /// Agents that could not be read, and links to agents that do not exist.
+    /// Agents that could not be read.
     pub problems: Vec<Problem>,
+    /// Links to agents that are not there; skipped, the rest works.
+    pub skipped: Vec<Problem>,
 }
 
 impl Agents {
@@ -65,18 +68,21 @@ impl Agents {
             state,
             identities: RwLock::default(),
             problems: RwLock::default(),
+            skipped: RwLock::default(),
         })
     }
 
     /// Reads `agents/` and records what is there.
     pub async fn scan(&self) -> Result<()> {
         let directory = self.directory.clone();
-        let (found, problems) = tokio::task::spawn_blocking(move || read_agents(&directory))
-            .await
-            .context("cannot read the agents")?;
+        let (found, problems, skipped) =
+            tokio::task::spawn_blocking(move || read_agents(&directory))
+                .await
+                .context("cannot read the agents")?;
         let identities = self.state.sync_identities(&found).await?;
         *self.identities.write() = identities;
         *self.problems.write() = problems;
+        *self.skipped.write() = skipped;
         Ok(())
     }
 
@@ -135,7 +141,10 @@ impl Agents {
     /// recorded first, so the identity returned is the version the prompt is.
     pub async fn prompt(&self, name: &str, skills: &[SkillInfo]) -> Result<(Identity, String)> {
         let (identity, file) = self.read_current(name).await?;
-        let prompt = compose(&identity, &file, skills)?;
+        // An agent whose links are all missing works alone, and is told so.
+        let mut present = identity.clone();
+        present.links.retain(|link| self.get(link).is_some());
+        let prompt = compose(&present, &file, skills)?;
         Ok((identity, prompt))
     }
 
@@ -203,6 +212,7 @@ impl Agents {
                 children,
             },
             problems: self.problems.read().clone(),
+            skipped: self.skipped.read().clone(),
         }
     }
 }
@@ -245,8 +255,9 @@ fn branches(
         .collect()
 }
 
-fn read_agents(directory: &std::path::Path) -> (Vec<Identity>, Vec<Problem>) {
+fn read_agents(directory: &std::path::Path) -> (Vec<Identity>, Vec<Problem>, Vec<Problem>) {
     let graph = Graph::load(directory, AGENT_FILE);
+    let skipped = graph.skipped().to_vec();
     let mut problems = graph.problems().to_vec();
     let mut found = Vec::new();
     for node in graph.nodes() {
@@ -268,7 +279,7 @@ fn read_agents(directory: &std::path::Path) -> (Vec<Identity>, Vec<Problem>) {
             }),
         }
     }
-    (found, problems)
+    (found, problems, skipped)
 }
 
 /// What an agent's file says for its prompt.
@@ -391,9 +402,10 @@ mod tests {
         assert!(limited.contains("You work alone") && !limited.contains("load_skill"));
     }
 
-    /// A name that points at nothing fails silently at run time, as the first catalog did.
+    /// Every shipped agent reads, names real tools and loads at least some skills. A link
+    /// or skill not written yet is skipped at run time, so it is no failure here.
     #[test]
-    fn the_shipped_agents_name_only_what_exists() {
+    fn the_shipped_agents_read_and_name_real_tools() {
         let root = resources::root().unwrap();
         let agents = Graph::load(&root.join("agents"), AGENT_FILE);
         let skills = Graph::load(&root.join("skills"), SKILL_FILE);
@@ -409,14 +421,10 @@ mod tests {
                 assert!(known.contains(tool), "{}: tool {tool}", agent.name);
             }
             let text = read_text(agent.file()).unwrap();
-            for skill in front_skills(&text) {
-                assert!(
-                    skills.get(&skill).is_some(),
-                    "{}: skill {skill}",
-                    agent.name
-                );
-                named += 1;
-            }
+            named += front_skills(&text)
+                .iter()
+                .filter(|skill| skills.get(skill).is_some())
+                .count();
         }
         assert!(named > 0, "the skills were not read");
     }

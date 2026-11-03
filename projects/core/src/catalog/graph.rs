@@ -55,6 +55,9 @@ const SKIPPED: [&str; 6] = [
 pub struct Graph {
     nodes: BTreeMap<String, Node>,
     problems: Vec<Problem>,
+    /// Links to nodes that are not there, such as agents not written yet. They are
+    /// skipped; the rest works.
+    skipped: Vec<Problem>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -76,7 +79,7 @@ pub struct Node {
     file: PathBuf,
 }
 
-/// A node that could not be read, or a link to a node that does not exist.
+/// A node that could not be read, or a link to a node that is not there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Problem {
     pub node: String,
@@ -151,6 +154,10 @@ impl Graph {
         &self.problems
     }
 
+    pub fn skipped(&self) -> &[Problem] {
+        &self.skipped
+    }
+
     fn add(&mut self, file: &Path, name: String) {
         match read_node(file, &name) {
             Ok(node) => {
@@ -170,9 +177,9 @@ impl Graph {
                 .iter()
                 .filter(|link| !self.nodes.contains_key(*link))
             {
-                self.problems.push(Problem {
+                self.skipped.push(Problem {
                     node: node.name.clone(),
-                    reason: format!("links to {link}, which does not exist"),
+                    reason: format!("links to {link}, which is not there; skipped"),
                 });
             }
         }
