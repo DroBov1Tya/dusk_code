@@ -40,10 +40,12 @@ pub struct App {
     pub tokens: ThreadTokens,
     /// The largest request, until the core reports its own.
     pub limit: u64,
-    /// Lines scrolled up from the bottom; 0 follows new output.
+    /// Lines scrolled up from the bottom; near 0 it follows new output.
     pub scroll: usize,
     /// Largest transcript offset on the last drawn frame.
     pub max_scroll: usize,
+    /// The transcript's line count and width on the last frame, to tell new output.
+    pub drawn_size: (usize, usize),
     /// Height of the transcript on the last frame, for paging.
     pub viewport: usize,
     pub transcript_area: Option<Rect>,
@@ -182,6 +184,7 @@ impl App {
             limit,
             scroll: 0,
             max_scroll: 0,
+            drawn_size: (0, 0),
             viewport: 0,
             transcript_area: None,
             frame: 0,
@@ -291,6 +294,7 @@ impl App {
         self.tokens = ThreadTokens::default();
         self.scroll = 0;
         self.max_scroll = 0;
+        self.drawn_size = (0, 0);
         self.transcript_area = None;
         self.transcript_hits.clear();
         self.button_hits.clear();
