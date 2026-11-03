@@ -3,6 +3,7 @@ name = "dusk_evals"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
+license.workspace = true
 
 [[bin]]
 name = "dusk-evals"

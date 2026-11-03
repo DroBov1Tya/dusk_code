@@ -1,7 +1,8 @@
 ---
 name: ad-security-assessment
 description: Map Active Directory trust and permission paths and validate assigned identity-control hypotheses.
-source: Dusk Code
+source: "dusk_code"
+license: MIT
 tags: [security, assessment]
 ---
 

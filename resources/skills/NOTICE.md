@@ -1,10 +1,9 @@
 # Built-in skills
 
-dusk_code ships these skills and installs any that are missing into `skills/` next to the
-config. Each was written by someone else and is shared under its own license, kept in the
-skill's folder as `LICENSE.txt` (and `NOTICE.txt` where the upstream has one). The front
-matter of each `SKILL.md` names its `source`, `author`, `license`, `upstream` and the
-`changes` dusk_code made.
+dusk_code ships these skills into `skills/` next to the config. Those from others below
+keep their own licenses, in each skill's folder as `LICENSE.txt` (and `NOTICE.txt` where
+the upstream has one). The front matter of each `SKILL.md` names its `source`, `author`,
+`license`, `upstream` and the `changes` dusk_code made.
 
 | Skill | Source | Author | License | Changes |
 |---|---|---|---|---|
@@ -25,5 +24,7 @@ matter of each `SKILL.md` names its `source`, `author`, `license`, `upstream` an
 Upstreams: https://github.com/anthropics/skills, https://github.com/openai/skills,
 https://github.com/NousResearch/hermes-agent.
 
-`duskcode`, `project-tree`, `skill-improve` and `skill-from-practice` are part of
-dusk_code itself and share its MIT license.
+`duskcode`, `project-tree`, `skill-improve`, `skill-from-practice`, `design-patterns`,
+`security-assessment` and its `web-`, `api-`, `mobile-`, `ad-` and
+`infrastructure-security-assessment` are dusk_code's own and share its MIT license, as do
+the agents in `agents/`.
