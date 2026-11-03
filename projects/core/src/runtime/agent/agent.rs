@@ -18,6 +18,7 @@ use crate::runtime::{
         model_choice::{Choice, ModelChoice},
     },
 };
+use crate::state::artifacts::ArtifactStore;
 use crate::{
     chat::{
         goal,
@@ -63,6 +64,7 @@ pub struct Agent {
     pub fork_prompt: PathBuf,
     /// The prompts of the chat's modes.
     pub modes_dir: PathBuf,
+    pub artifacts: ArtifactStore,
     /// How many agents are above this thread; 0 for a chat.
     pub depth: usize,
     pub events: mpsc::UnboundedSender<ThreadEvent>,
@@ -327,6 +329,12 @@ impl Agent {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config.current();
         let mut tools = self.tools.specs(&self.scope, &config);
+        let screen = |spec: &ToolSpec| {
+            self.tools.kind_of(&spec.name) == Some(crate::tools::ToolKind::Computer)
+        };
+        if tools.iter().any(screen) && !self.sees_pictures().await {
+            tools.retain(|spec| !screen(spec));
+        }
         let standing = if self.depth == 0 {
             self.state.goal(&self.thread_id).await?
         } else {
@@ -353,6 +361,9 @@ impl Agent {
             return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
         }
         let mut messages = conversation.chat_messages();
+        if with_pictures {
+            self.attach_tool_pictures(&conversation, &mut messages);
+        }
         let after_prompt = messages
             .iter()
             .position(|message| !matches!(message, ChatMessage::System(_)))
@@ -624,6 +635,66 @@ impl Agent {
             })
     }
 
+    /// The pictures of the newest step's tool results, such as a screenshot, go with
+    /// them. Older ones stay out: each would cost the context again in every request,
+    /// and the model looks again when it needs to.
+    fn attach_tool_pictures(&self, conversation: &Conversation, messages: &mut [ChatMessage]) {
+        let Some(newest) = conversation
+            .messages
+            .iter()
+            .rposition(|message| message.role == MessageRole::Assistant)
+        else {
+            return;
+        };
+        for message in &conversation.messages[newest + 1..] {
+            let Some(call) = message.tool_call_id.as_ref() else {
+                continue;
+            };
+            let pictures: Vec<_> = message
+                .artifacts
+                .iter()
+                .filter(|artifact| artifact.for_model)
+                .filter_map(|artifact| self.artifacts.read(artifact).ok())
+                .filter_map(|bytes| sources::picture(&bytes))
+                .collect();
+            if pictures.is_empty() {
+                continue;
+            }
+            let slot = messages.iter_mut().find_map(|chat| match chat {
+                ChatMessage::Tool {
+                    call_id, pictures, ..
+                } if call_id == call => Some(pictures),
+                _ => None,
+            });
+            if let Some(slot) = slot {
+                *slot = pictures;
+            }
+        }
+    }
+
+    /// Whether the current model sees pictures: asked once, then remembered. A model
+    /// that refused pictures does not.
+    async fn sees_pictures(&self) -> bool {
+        let Some(choice) = self.model.current() else {
+            return false;
+        };
+        if !self.takes_pictures() {
+            return false;
+        }
+        let name = choice.name();
+        if let Some(sees) = self.model.vision(&name) {
+            return sees;
+        }
+        match super::vision::sees_pictures(&choice).await {
+            Some(sees) => {
+                info!("model {name} sees pictures: {sees}");
+                self.model.set_vision(name, sees);
+                sees
+            }
+            None => false,
+        }
+    }
+
     fn takes_pictures(&self) -> bool {
         let refused = self.pictures_refused.lock();
         let current = self.model.current();
@@ -638,9 +709,18 @@ impl Agent {
             model: model.to_owned(),
         });
         for message in messages {
-            if let ChatMessage::UserWithPictures { text, .. } = message {
-                let said = format!("{text}[this model refused the pictures named above]\n");
-                *message = ChatMessage::User(said);
+            match message {
+                ChatMessage::UserWithPictures { text, .. } => {
+                    let said = format!("{text}[this model refused the pictures named above]\n");
+                    *message = ChatMessage::User(said);
+                }
+                ChatMessage::Tool {
+                    content, pictures, ..
+                } if !pictures.is_empty() => {
+                    pictures.clear();
+                    content.push_str("\n[this model refused the picture of this result]");
+                }
+                _ => {}
             }
         }
     }

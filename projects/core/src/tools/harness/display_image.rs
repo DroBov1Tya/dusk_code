@@ -99,6 +99,7 @@ impl DisplayImage {
                 height: decoded.height,
                 byte_len: 0,
                 sha256: String::new(),
+                for_model: false,
             },
             &decoded.original,
             &decoded.thumbnail,

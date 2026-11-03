@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 use crate::{
     config::Effort,
     providers::{
-        chat::{ChatMessage, ChatRequest, ToolSpec},
+        chat::{ChatMessage, ChatRequest, Picture, ToolSpec},
         model_output::ToolCall,
     },
 };
@@ -92,16 +92,7 @@ fn wire_messages(messages: &[ChatMessage]) -> (String, Vec<WireMessage>) {
             ChatMessage::User(text) => ("user", text_block(text)),
             ChatMessage::UserWithPictures { text, pictures } => {
                 let mut blocks = text_block(text);
-                blocks.extend(pictures.iter().map(|picture| {
-                    json!({
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": picture.mime_type,
-                            "data": picture.base64,
-                        },
-                    })
-                }));
+                blocks.extend(pictures.iter().map(image_block));
                 ("user", blocks)
             }
             ChatMessage::Assistant { text, tool_calls } => {
@@ -109,14 +100,29 @@ fn wire_messages(messages: &[ChatMessage]) -> (String, Vec<WireMessage>) {
                 blocks.extend(tool_calls.iter().map(tool_use_block));
                 ("assistant", blocks)
             }
-            ChatMessage::Tool { call_id, content } => (
-                "user",
-                vec![json!({
-                    "type": "tool_result",
-                    "tool_use_id": call_id,
-                    "content": content,
-                })],
-            ),
+            ChatMessage::Tool {
+                call_id,
+                content,
+                pictures,
+            } => {
+                // A result with pictures carries them as blocks after its text.
+                let content = match pictures.is_empty() {
+                    true => json!(content),
+                    false => {
+                        let text = json!({"type": "text", "text": content});
+                        let images = pictures.iter().map(image_block);
+                        Value::Array([text].into_iter().chain(images).collect())
+                    }
+                };
+                (
+                    "user",
+                    vec![json!({
+                        "type": "tool_result",
+                        "tool_use_id": call_id,
+                        "content": content,
+                    })],
+                )
+            }
         };
         if blocks.is_empty() {
             continue;
@@ -130,6 +136,17 @@ fn wire_messages(messages: &[ChatMessage]) -> (String, Vec<WireMessage>) {
         }
     }
     (system.join("\n\n"), wire)
+}
+
+fn image_block(picture: &Picture) -> Value {
+    json!({
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": picture.mime_type,
+            "data": picture.base64,
+        },
+    })
 }
 
 /// The API refuses empty text blocks.
@@ -181,6 +198,7 @@ mod tests {
             ChatMessage::Tool {
                 call_id: "toolu_1".into(),
                 content: "text".into(),
+                pictures: Vec::new(),
             },
             ChatMessage::UserWithPictures {
                 text: "[sources]".into(),

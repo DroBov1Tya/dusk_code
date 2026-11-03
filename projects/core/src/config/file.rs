@@ -161,14 +161,20 @@ impl Config {
 
     /// A tool's switch in a mode: the user's, else the mode's default, else MAIN's.
     pub fn mode_tool_enabled(&self, mode: &str, name: &str, kind: ToolKind) -> bool {
+        let main = || {
+            self.tools
+                .get(name)
+                .copied()
+                .unwrap_or(kind.on_by_default())
+        };
         if mode == modes::MAIN {
-            return self.tool_enabled(name);
+            return main();
         }
         let switched = self.modes.get(mode).and_then(|tools| tools.get(name));
         switched
             .copied()
             .or_else(|| modes::default_tool(mode, name, kind))
-            .unwrap_or_else(|| self.tool_enabled(name))
+            .unwrap_or_else(main)
     }
 
     pub fn set_mode_tool_enabled(&mut self, mode: &str, name: &str, enabled: bool) {

@@ -8,6 +8,7 @@ mod compaction;
 pub mod generation;
 mod inbox;
 mod mailboxes;
+mod vision;
 
 pub use agent::Agent;
 pub use compaction::AUTO_COMPACT_PERCENT;

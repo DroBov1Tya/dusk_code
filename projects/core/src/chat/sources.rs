@@ -362,7 +362,7 @@ fn is_picture(bytes: &[u8]) -> bool {
 }
 
 /// A PNG or JPEG as it is when small enough, else made smaller as a JPEG.
-fn picture(bytes: &[u8]) -> Option<Picture> {
+pub(crate) fn picture(bytes: &[u8]) -> Option<Picture> {
     let format = image::guess_format(bytes).ok()?;
     let mime_type = match format {
         ImageFormat::Png => "image/png",
