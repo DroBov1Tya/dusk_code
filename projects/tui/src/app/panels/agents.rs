@@ -10,12 +10,12 @@ use std::{
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{
     providers::ModelEvent,
-    runtime::ThreadEvent,
+    runtime::{ThreadEvent, system::arbiter::THREAD as ARBITER_THREAD},
     state::{AgentPhase, ThreadTokens},
 };
 use ratatui::layout::{Position, Rect};
 
-use crate::app::{Action, App, Entry, Panel, Selection, Transcript, TranscriptHit, now_ms};
+use crate::app::{Action, App, Entry, Panel, Selection, Tone, Transcript, TranscriptHit, now_ms};
 
 /// Output older than this no longer counts toward tokens per second.
 pub const RATE_WINDOW: Duration = Duration::from_secs(3);
@@ -241,6 +241,11 @@ impl App {
                 self.ask_approval(request, agent.or_else(|| Some("an agent".into())));
             }
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),
+            ThreadEvent::ArbiterDecided {
+                what,
+                allow,
+                reason,
+            } => self.arbiter_decided(what, allow, reason),
             event => {
                 self.update_card(thread_id, &event);
                 if let Some(Panel::Agent(window)) = &mut self.panel
@@ -249,6 +254,24 @@ impl App {
                     window.apply(event);
                 }
             }
+        }
+    }
+
+    /// The arbiter answered in the user's place: a note in the chat, and its card, which
+    /// opens its thread of requests and verdicts, shows the latest.
+    pub fn arbiter_decided(&mut self, what: String, allow: bool, reason: String) {
+        let verdict = if allow { "allowed" } else { "denied" };
+        let tone = if allow { Tone::Info } else { Tone::Error };
+        self.transcript
+            .notice(format!("the arbiter {verdict} {what}: {reason}"), tone);
+        self.start_subagent(
+            ARBITER_THREAD.into(),
+            "arbiter".into(),
+            format!("{verdict} {what}"),
+            None,
+        );
+        if let Some(card) = self.subagents.last_mut() {
+            card.finished_at = Some(now_ms());
         }
     }
 

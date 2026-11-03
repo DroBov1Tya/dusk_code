@@ -147,7 +147,8 @@ impl State {
                 MAX(threads.created_at,
                 COALESCE((SELECT MAX(created_at) FROM messages WHERE thread_id = threads.id), threads.created_at),
                 COALESCE((SELECT MAX(created_at) FROM local_unsent WHERE thread_id = threads.id), threads.created_at)) AS active_at
-             FROM threads WHERE parent_thread_id IS NULL ORDER BY active_at DESC, id DESC",
+             FROM threads WHERE parent_thread_id IS NULL AND source != 'arbiter'
+             ORDER BY active_at DESC, id DESC",
         )
         .fetch_all(&self.pool)
         .await

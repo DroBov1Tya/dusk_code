@@ -96,8 +96,11 @@ pub enum SwitchKind {
 }
 
 /// The policies the access rows switch on, in their order; logs come after.
-pub const ACCESS_POLICIES: [ApprovalPolicy; 2] =
-    [ApprovalPolicy::FullAccess, ApprovalPolicy::Sandbox];
+pub const ACCESS_POLICIES: [ApprovalPolicy; 3] = [
+    ApprovalPolicy::FullAccess,
+    ApprovalPolicy::Sandbox,
+    ApprovalPolicy::Arbiter,
+];
 
 /// One row of the agent tree, with what is needed to draw the traces to it.
 pub struct AgentRow {

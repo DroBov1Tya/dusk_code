@@ -183,6 +183,12 @@ pub enum ThreadEvent {
     Question(Question),
     /// A tool waits for the user's yes; the client answers through the runtime.
     Approval(ApprovalRequest),
+    /// The arbiter answered a request of this thread in the user's place.
+    ArbiterDecided {
+        what: String,
+        allow: bool,
+        reason: String,
+    },
     /// The request is answered or its call is gone; the client stops showing it.
     ApprovalClosed {
         id: u64,

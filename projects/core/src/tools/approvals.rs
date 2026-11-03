@@ -55,7 +55,7 @@ impl Request {
         }
     }
 
-    fn what(&self) -> String {
+    pub fn what(&self) -> String {
         match self {
             Self::Path { path, write: true } => format!("writing {}", path.display()),
             Self::Path { path, write: false } => format!("reading {}", path.display()),
@@ -81,14 +81,30 @@ pub enum Decision {
     Deny,
 }
 
+/// What decides a request in the user's place, in arbiter mode.
+pub trait Judge: Send + Sync {
+    /// Never an error: a judge that cannot decide says no.
+    fn judge<'a>(&'a self, request: &'a Request) -> crate::BoxFuture<'a, Verdict>;
+}
+
+pub struct Verdict {
+    pub allow: bool,
+    pub reason: String,
+}
+
 #[derive(Default)]
 pub struct Approvals {
     next: AtomicU64,
     pending: Mutex<HashMap<u64, oneshot::Sender<Decision>>>,
     grants: Mutex<Grants>,
+    judge: std::sync::OnceLock<std::sync::Arc<dyn Judge>>,
 }
 
 impl Approvals {
+    pub fn set_judge(&self, judge: std::sync::Arc<dyn Judge>) {
+        let _ = self.judge.set(judge);
+    }
+
     /// Waits for the user's answer; an error unless it is yes. Without `progress` no
     /// client listens, so only full access or a session grant lets the request through.
     pub async fn ask(
@@ -102,6 +118,9 @@ impl Approvals {
             policy == ApprovalPolicy::Sandbox && matches!(request, Request::Command { .. });
         if policy == ApprovalPolicy::FullAccess || confined || self.grants.lock().covers(&request) {
             return Ok(());
+        }
+        if policy == ApprovalPolicy::Arbiter {
+            return self.arbitrate(request, progress).await;
         }
         let Some(progress) = progress else {
             bail!(
@@ -131,6 +150,36 @@ impl Approvals {
             Ok(Decision::Deny) | Err(_) => bail!(
                 "the user denied {}; do not try it another way: ask them, or go on without it",
                 request.what()
+            ),
+        }
+    }
+
+    /// The arbiter's verdict stands for the user's answer; the thread that asked hears it.
+    async fn arbitrate(&self, request: Request, progress: Option<Progress<'_>>) -> Result<()> {
+        let what = request.what();
+        let verdict = match self.judge.get() {
+            Some(judge) => judge.judge(&request).await.unwrap_or_else(|error| Verdict {
+                allow: false,
+                reason: format!("the arbiter could not decide: {error:#}"),
+            }),
+            None => Verdict {
+                allow: false,
+                reason: "no arbiter is running".into(),
+            },
+        };
+        if let Some(progress) = progress {
+            progress.emit(ThreadEvent::ArbiterDecided {
+                what: what.clone(),
+                allow: verdict.allow,
+                reason: verdict.reason.clone(),
+            });
+        }
+        match verdict.allow {
+            true => Ok(()),
+            false => bail!(
+                "the arbiter denied {what}: {}; do not try it another way: go on without \
+                 it or ask the user",
+                verdict.reason
             ),
         }
     }

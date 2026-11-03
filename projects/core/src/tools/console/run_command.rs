@@ -311,7 +311,9 @@ mod tests {
     async fn background_processes_do_not_outlive_the_command() {
         let scope = scope("shell_background");
         let started = std::time::Instant::now();
-        let output = run("sleep 30 & echo started", &scope, None, 10).await.unwrap();
+        let output = run("sleep 30 & echo started", &scope, None, 10)
+            .await
+            .unwrap();
         assert!(output.content.contains("started"));
         assert!(
             started.elapsed() < Duration::from_secs(5),

@@ -314,6 +314,11 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
             vec![
                 policy(ApprovalPolicy::FullAccess, full),
                 policy(ApprovalPolicy::Sandbox, sandbox),
+                policy(
+                    ApprovalPolicy::Arbiter,
+                    "    on: an agent decides each request in your place and keeps a thread \
+                     of its verdicts, open from the sidebar",
+                ),
                 described(
                     switch_row(vec![Span::raw("  logs")], view.logging, width),
                     logs,
