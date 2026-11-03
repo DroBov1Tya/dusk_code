@@ -11,7 +11,7 @@ use super::{
     approvals::{Approvals, Request},
     scope::{Place, ToolScope},
 };
-use crate::{config::Config, runtime::ThreadEvent};
+use crate::{config::Config, runtime::ThreadEvent, util::environment::Needs};
 
 /// Boxed so tools of different kinds, built-in or MCP, fit in one registry.
 pub type BoxFuture<'a, String> = Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;
@@ -108,6 +108,11 @@ pub trait Tool: Send + Sync {
 
     fn kind(&self) -> ToolKind {
         ToolKind::Harness
+    }
+
+    /// What the machine must offer; a tool it lacks is not offered nor switchable.
+    fn needs(&self) -> Needs {
+        Needs::Nothing
     }
 
     /// A tool with a setting of its own, such as memory, is not among the tool switches.

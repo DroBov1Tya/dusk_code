@@ -15,6 +15,7 @@ use crate::{
     config::Config,
     providers::{ToolCall, ToolSpec},
     state::artifacts::ImageArtifact,
+    util::environment::Environment,
 };
 
 /// The model reads every result; a runaway one must not flood its context.
@@ -31,6 +32,8 @@ pub struct ToolRegistry {
     root: bool,
     pub(crate) jobs: Option<Arc<super::JobManager>>,
     pub(crate) approvals: Option<Arc<super::Approvals>>,
+    /// What the machine offers; set by the launcher from what it found at start.
+    pub(crate) environment: Environment,
 }
 
 /// What the model gets back from a call.
@@ -112,7 +115,7 @@ impl ToolRegistry {
         let mut kinds: Vec<_> = self
             .tools
             .iter()
-            .filter(|(_, tool)| tool.switchable())
+            .filter(|(_, tool)| tool.switchable() && self.environment.provides(tool.needs()))
             .map(|(name, tool)| (name.clone(), tool.kind()))
             .collect();
         kinds.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
@@ -120,7 +123,7 @@ impl ToolRegistry {
     }
 
     fn enabled(&self, tool: &dyn Tool, config: &Config) -> bool {
-        if tool.root_only() && !self.root {
+        if tool.root_only() && !self.root || !self.environment.provides(tool.needs()) {
             return false;
         }
         if !tool.switchable() {
@@ -249,6 +252,48 @@ mod tests {
         testing::{temp_dir, temp_state},
         tools::{AgentState, AskUser, DisplayImage, GoalTool, ReadHistory, Remember, Tasks},
     };
+
+    struct NeedsScreen;
+
+    impl Tool for NeedsScreen {
+        fn name(&self) -> &str {
+            "screen"
+        }
+        fn needs(&self) -> crate::util::environment::Needs {
+            crate::util::environment::Needs::Gui
+        }
+        fn description(&self, _: &ToolContext<'_>) -> String {
+            String::new()
+        }
+        fn parameters(&self) -> Value {
+            serde_json::json!({"type": "object"})
+        }
+        fn call<'a>(&'a self, _: Value, _: ToolContext<'a>) -> crate::BoxFuture<'a, String> {
+            Box::pin(async { Ok(String::new()) })
+        }
+    }
+
+    /// Without a screen, a tool that needs one is neither offered nor switchable.
+    #[test]
+    fn a_tool_needing_a_screen_exists_only_with_one() {
+        let dir = temp_dir("registry_needs");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = ToolScope::new(&dir, &dir).unwrap();
+        let context = crate::testing::tool_context(&scope);
+        let mut registry = ToolRegistry::default();
+        registry.add(Box::new(NeedsScreen));
+        let offered = |registry: &ToolRegistry| {
+            registry
+                .specs(&scope, context.config)
+                .iter()
+                .any(|spec| spec.name == "screen")
+        };
+        assert!(!offered(&registry));
+        assert!(registry.kinds().is_empty());
+        registry.environment.gui = true;
+        assert!(offered(&registry));
+        assert_eq!(registry.kinds().len(), 1);
+    }
 
     /// Providers reject a schema that is not one plain object at the top.
     #[tokio::test]
