@@ -292,7 +292,7 @@ mod tests {
             "mine"
         );
         assert_eq!(
-            fs::read_to_string(paths.memory_file()).unwrap(),
+            fs::read_to_string(paths.rules_root().join("MEMORY.md")).unwrap(),
             "remembered"
         );
         for gone in [
@@ -317,10 +317,13 @@ mod tests {
     fn a_file_already_in_rules_is_not_replaced() {
         let paths = temp_paths("rules_keep");
         fs::create_dir_all(paths.rules_root()).unwrap();
-        fs::write(paths.memory_file(), "newer").unwrap();
+        fs::write(paths.rules_root().join("MEMORY.md"), "newer").unwrap();
         fs::write(paths.config_root().join("MEMORY.md"), "older").unwrap();
         initialize(&paths).unwrap();
-        assert_eq!(fs::read_to_string(paths.memory_file()).unwrap(), "newer");
+        assert_eq!(
+            fs::read_to_string(paths.rules_root().join("MEMORY.md")).unwrap(),
+            "newer"
+        );
         assert!(paths.config_root().join("MEMORY.md").exists());
     }
 

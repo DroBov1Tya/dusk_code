@@ -36,6 +36,7 @@ pub enum Action {
     SetGoalRounds(u32),
     SetIdleMinutes(u32),
     SetMemoryChars(usize),
+    SetWorkHistoryChars(usize),
     SetInputTokens(u64),
     SetOutputTokens(u64),
     PinSource {

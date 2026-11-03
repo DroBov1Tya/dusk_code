@@ -17,7 +17,7 @@ use crate::{catalog::modes, release::update::Channel, tools::ToolKind};
 use super::sections::{is_zero, yes};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, McpServerConfig, Memory,
-    ProviderConfig, ThreadConfig,
+    ProviderConfig, ThreadConfig, WorkHistory,
 };
 
 /// MCP server names are this long at most.
@@ -67,6 +67,9 @@ pub struct Config {
     /// What the agent remembers about the user, in MEMORY.md.
     #[serde(default, skip_serializing_if = "Memory::is_default")]
     memory: Memory,
+    /// What the agent remembers about the project in the working directory.
+    #[serde(default, skip_serializing_if = "WorkHistory::is_default")]
+    work_history: WorkHistory,
     /// Which releases /update offers; stable when left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     update_channel: Option<Channel>,
@@ -205,6 +208,18 @@ impl Config {
         self.memory.max_chars = chars;
     }
 
+    pub fn work_history(&self) -> WorkHistory {
+        self.work_history
+    }
+
+    pub fn set_work_history_enabled(&mut self, enabled: bool) {
+        self.work_history.enabled = enabled;
+    }
+
+    pub fn set_work_history_chars(&mut self, chars: usize) {
+        self.work_history.max_chars = chars;
+    }
+
     pub fn update_channel(&self) -> Channel {
         self.update_channel.unwrap_or_default()
     }
@@ -340,6 +355,10 @@ impl Config {
         ensure!(
             self.memory.max_chars > 0,
             "memory.max_chars must be above zero"
+        );
+        ensure!(
+            self.work_history.max_chars > 0,
+            "work_history.max_chars must be above zero"
         );
         ensure!(
             self.limits.max_goal_rounds > 0,

@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use crate::{
     catalog::agents::AgentTree, catalog::skills::SkillInfo, config::ApprovalPolicy, config::Memory,
-    mcp::McpInfo, release::update::Channel, runtime::Runtime, tools::ToolKind,
+    config::WorkHistory, mcp::McpInfo, release::update::Channel, runtime::Runtime, tools::ToolKind,
 };
 
 pub struct Settings {
@@ -15,6 +15,7 @@ pub struct Settings {
     pub max_output_tokens: u64,
     pub idle_screen_minutes: u32,
     pub memory: Memory,
+    pub work_history: WorkHistory,
     pub update_channel: Channel,
     pub full_access: bool,
     /// Log files and traces; off writes and sends nothing.
@@ -54,6 +55,7 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         idle_screen_minutes: config.appearance().idle_screen_minutes,
         mode: config.mode().to_owned(),
         memory: config.memory(),
+        work_history: config.work_history(),
         update_channel: config.update_channel(),
         full_access: config.approvals() == ApprovalPolicy::FullAccess,
         logging: config.logging().enabled,

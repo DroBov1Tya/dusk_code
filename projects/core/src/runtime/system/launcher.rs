@@ -116,7 +116,8 @@ impl Launcher {
             Arc::clone(&self.state),
             thread_id.to_owned(),
         )));
-        tools.add(Box::new(Remember::new(self.paths.memory_file())));
+        tools.add(Box::new(Remember::user(self.paths.rules_root())));
+        tools.add(Box::new(Remember::project(self.paths.rules_root())));
         #[cfg(target_os = "macos")]
         {
             use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};

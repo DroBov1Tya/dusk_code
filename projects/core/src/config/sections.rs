@@ -47,6 +47,31 @@ impl Memory {
     }
 }
 
+/// Compact facts about the current project, kept separately from user memory.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct WorkHistory {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_memory_chars")]
+    pub max_chars: usize,
+}
+
+impl Default for WorkHistory {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            max_chars: default_memory_chars(),
+        }
+    }
+}
+
+impl WorkHistory {
+    pub(super) fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
 fn default_memory_chars() -> usize {
     2000
 }

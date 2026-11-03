@@ -111,15 +111,12 @@ fn hints(view: &SettingsView) -> &'static str {
         (Some(SettingCategory::Models), _) => {
             " up/down choose  enter/click apply  manual opens token count  esc back "
         }
-        (
-            Some(
-                SettingCategory::Tools
-                | SettingCategory::Personalize
-                | SettingCategory::Updates
-                | SettingCategory::Access,
-            ),
-            _,
-        ) => " up/down choose  space/click switch  esc back ",
+        (Some(SettingCategory::Personalize), _) => {
+            " up/down choose  space/click switch  left/right or click +/- size  esc back "
+        }
+        (Some(SettingCategory::Tools | SettingCategory::Updates | SettingCategory::Access), _) => {
+            " up/down choose  space/click switch  esc back "
+        }
         (Some(_), Some(_)) => " Ctrl+S save  Ctrl+R revert  Esc close  click another one ",
         (Some(SettingCategory::Agents), None) => {
             " up/down choose  enter edit  space switch  left/right limit  r reload  esc back "
@@ -154,6 +151,35 @@ fn list(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
         }
         let selectable = index < view.len();
         let first = area.y + (lines.len() + row.lead) as u16;
+        if view.category == Some(SettingCategory::Personalize) && matches!(index, 1 | 3) {
+            let (label, chars) = if index == 1 {
+                ("  memory size, characters", view.memory.max_chars)
+            } else {
+                (
+                    "  project memory size, characters",
+                    view.work_history.max_chars,
+                )
+            };
+            let end = format!("− {chars} +  ");
+            let start = area
+                .width
+                .saturating_sub(end.width() as u16)
+                .max(label.width() as u16);
+            for (offset, more) in [(0, false), (end.width() as u16 - 3, true)] {
+                let left = area.x.saturating_add(start).saturating_add(offset);
+                if left < area.right() {
+                    view.hits.insert(
+                        0,
+                        SettingsHit {
+                            row: first,
+                            left,
+                            right: (left + 1).min(area.right()),
+                            target: HitTarget::MemorySize { row: index, more },
+                        },
+                    );
+                }
+            }
+        }
         if let Some((from, to)) = row.switch {
             // First, so a click on the switch wins over the row under it.
             view.hits.insert(
@@ -192,6 +218,18 @@ fn list(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
     frame.render_widget(Paragraph::new(lines), area);
 }
 
+fn memory_size_row(label: &'static str, chars: usize, width: usize) -> Row {
+    Row {
+        lines: vec![right(
+            vec![Span::raw(label)],
+            Span::styled(format!("− {chars} +  "), fg(TEXT)),
+            width,
+        )],
+        switch: None,
+        lead: 0,
+    }
+}
+
 fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
     match view.category {
         None => SettingCategory::ALL
@@ -218,15 +256,21 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
                     about,
                     width,
                 ),
-                Row {
-                    lines: vec![right(
-                        vec![Span::raw("  memory size, characters")],
-                        Span::styled(format!("\u{2212} {} +  ", view.memory.max_chars), fg(TEXT)),
+                memory_size_row("  memory size, characters", view.memory.max_chars, width),
+                described(
+                    switch_row(
+                        vec![Span::raw("  project memory")],
+                        view.work_history.enabled,
                         width,
-                    )],
-                    switch: None,
-                    lead: 0,
-                },
+                    ),
+                    "    facts of the project in this folder, apart from your own memory",
+                    width,
+                ),
+                memory_size_row(
+                    "  project memory size, characters",
+                    view.work_history.max_chars,
+                    width,
+                ),
             ]
         }
         Some(SettingCategory::Limits) => limit_rows(view, width),

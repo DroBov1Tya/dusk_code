@@ -11,13 +11,14 @@ use anyhow::{Context, Result, bail, ensure};
 use crate::{init::create_private_dir, release::update::VERSION};
 
 const CATEGORIES: [&str; 4] = ["agents", "skills", "internal", "modes"];
-const REQUIRED: [&str; 9] = [
+const REQUIRED: [&str; 10] = [
     "internal/AGENT.md",
     "internal/AGENT_LEAF.md",
     "internal/AGENT_LINKS.md",
     "internal/COMPACT.md",
     "internal/FORK.md",
     "internal/MEMORY.md",
+    "internal/WORK_MEMORY.md",
     "modes/MAIN.md",
     "modes/PLAN.md",
     "modes/ORCHESTRATOR.md",

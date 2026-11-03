@@ -310,7 +310,7 @@ mod tests {
         tools.push(Box::new(Tasks::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(GoalTool::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(ReadHistory::new(Arc::clone(&state), "t".into())));
-        tools.push(Box::new(Remember::new(dir.join("MEMORY.md"))));
+        tools.push(Box::new(Remember::user(dir.clone())));
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));

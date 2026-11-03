@@ -13,7 +13,7 @@ use dusk_core::{
     catalog::graph::Problem,
     catalog::skills::SkillInfo,
     chat::commands::{Command, Settings, ToolInfo},
-    config::{ContextPolicy, ContextPreset, Effort, Memory},
+    config::{ContextPolicy, ContextPreset, Effort, Memory, WorkHistory},
     mcp::{McpInfo, McpState, McpToolInfo},
     release::update::Channel,
     runtime::SystemReport,
@@ -86,6 +86,7 @@ pub enum SwitchKind {
     Skill,
     Mcp,
     Memory,
+    WorkHistory,
     /// On is the dev channel, off the stable one.
     DevChannel,
     /// On answers every approval request with yes.
@@ -125,6 +126,7 @@ pub struct SettingsView {
     pub max_input_tokens: u64,
     pub max_output_tokens: u64,
     pub memory: Memory,
+    pub work_history: WorkHistory,
     pub update_channel: Channel,
     pub full_access: bool,
     pub logging: bool,
@@ -198,6 +200,10 @@ pub enum HitTarget {
     /// The switch on a row.
     Switch(usize),
     Button(FileButton),
+    MemorySize {
+        row: usize,
+        more: bool,
+    },
 }
 
 pub struct SettingsHit {
@@ -239,6 +245,7 @@ impl SettingsView {
             max_output_tokens: settings.max_output_tokens,
             mode: settings.mode,
             memory: settings.memory,
+            work_history: settings.work_history,
             update_channel: settings.update_channel,
             full_access: settings.full_access,
             logging: settings.logging,
@@ -281,7 +288,7 @@ impl SettingsView {
             Some(SettingCategory::Models) => 7,
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
-            Some(SettingCategory::Personalize) => 2,
+            Some(SettingCategory::Personalize) => 4,
             Some(SettingCategory::Limits) => 4,
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
@@ -384,6 +391,30 @@ impl SettingsView {
         }
     }
 
+    fn memory_size_action(&self, row: usize, more: bool) -> Action {
+        let current = match row {
+            1 => self.memory.max_chars,
+            3 => self.work_history.max_chars,
+            _ => return Action::None,
+        };
+        let chars = current - current % MEMORY_STEP;
+        let chars = if more {
+            chars.saturating_add(MEMORY_STEP)
+        } else if chars == current {
+            chars.saturating_sub(MEMORY_STEP)
+        } else {
+            chars
+        };
+        let chars = chars.clamp(*MEMORY_CHARS.start(), *MEMORY_CHARS.end());
+        if chars == current {
+            return Action::None;
+        }
+        match row {
+            1 => Action::SetMemoryChars(chars),
+            _ => Action::SetWorkHistoryChars(chars),
+        }
+    }
+
     /// What switching `row` asks of the core.
     fn switch(&self, row: usize) -> Option<Action> {
         let (kind, name, on) = match self.category? {
@@ -407,7 +438,12 @@ impl SettingsView {
                 }
                 McpRow::Tool(_, tool) => (SwitchKind::Tool, tool.name.clone(), tool.enabled),
             },
-            SettingCategory::Personalize if row > 0 => return None,
+            SettingCategory::Personalize if row == 2 => (
+                SwitchKind::WorkHistory,
+                "project memory".into(),
+                self.work_history.enabled,
+            ),
+            SettingCategory::Personalize if row != 0 => return None,
             SettingCategory::Limits | SettingCategory::Appearance => return None,
             SettingCategory::Personalize => {
                 (SwitchKind::Memory, "memory".into(), self.memory.enabled)
@@ -638,7 +674,8 @@ impl App {
                     && (category == SettingCategory::Limits
                         || category == SettingCategory::Appearance
                         || category == SettingCategory::Agents && view.selected < LIMIT_ROWS
-                        || category == SettingCategory::Personalize && view.selected == 1)) =>
+                        || category == SettingCategory::Personalize
+                            && matches!(view.selected, 1 | 3))) =>
             {
                 view.selected = SettingCategory::ALL
                     .iter()
@@ -688,17 +725,9 @@ impl App {
             (
                 Some(SettingCategory::Personalize),
                 KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+'),
-            ) if view.selected == 1 => {
-                let chars = view.memory.max_chars - view.memory.max_chars % MEMORY_STEP;
-                let chars = if matches!(key.code, KeyCode::Right | KeyCode::Char('+')) {
-                    chars + MEMORY_STEP
-                } else if chars == view.memory.max_chars {
-                    chars.saturating_sub(MEMORY_STEP)
-                } else {
-                    chars
-                };
-                let chars = chars.clamp(*MEMORY_CHARS.start(), *MEMORY_CHARS.end());
-                return Action::SetMemoryChars(chars);
+            ) if matches!(view.selected, 1 | 3) => {
+                let more = matches!(key.code, KeyCode::Right | KeyCode::Char('+'));
+                return view.memory_size_action(view.selected, more);
             }
             (Some(SettingCategory::Agents), KeyCode::Enter)
                 if view.agent_file(view.selected).is_some() =>
@@ -796,6 +825,10 @@ impl App {
                     .map(|hit| hit.target);
                 match hit {
                     Some(HitTarget::Button(button)) => return press(view, button),
+                    Some(HitTarget::MemorySize { row, more }) => {
+                        view.selected = row;
+                        return view.memory_size_action(row, more);
+                    }
                     Some(HitTarget::Switch(row)) => {
                         view.selected = row;
                         return view.switch(row).unwrap_or(Action::None);
