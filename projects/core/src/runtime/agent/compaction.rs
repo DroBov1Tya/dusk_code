@@ -160,7 +160,7 @@ impl Agent {
             model: &choice.model.id,
             messages: &messages,
             tools: &[],
-            max_output_tokens: config.limits().max_output_tokens,
+            max_output_tokens: choice.model.max_output,
             effort: config.effort(),
         };
         let (output, generated) = match self.call_model(&choice, request, &config, inbox).await {

@@ -98,7 +98,7 @@ struct WireFunction {
 
 impl CompletionRequest {
     pub(super) fn new(request: ChatRequest<'_>, completion_tokens: bool) -> Self {
-        let limit = Some(request.max_output_tokens);
+        let limit = request.max_output_tokens;
         Self {
             model: request.model.to_owned(),
             messages: wire_messages(request.messages),

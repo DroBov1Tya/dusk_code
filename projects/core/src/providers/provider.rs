@@ -25,6 +25,8 @@ pub struct Model {
     pub id: String,
     /// Maximum input tokens, when the provider's catalogue reports it.
     pub context_window: Option<u64>,
+    /// Maximum output tokens of one call, when the catalogue reports it.
+    pub max_output: Option<u64>,
 }
 
 /// A failure that may pass if the same request is sent again: the network, a busy or

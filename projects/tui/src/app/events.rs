@@ -15,16 +15,10 @@ impl App {
                 self.sent.push(message.content);
             }
             ThreadEvent::UserMessage(_) => {}
-            ThreadEvent::ModelSelected {
-                name,
-                context_window,
-            } => {
+            ThreadEvent::ModelSelected { name, input_limit } => {
                 self.model = name;
                 self.provider_available = true;
-                self.limit = context_window
-                    .map_or(self.config.current().limits().max_input_tokens, |window| {
-                        window.min(self.config.current().limits().max_input_tokens)
-                    });
+                self.limit = input_limit;
             }
             ThreadEvent::LocalUnsent(message) => {
                 if self.local_unsent.iter().any(|item| item.id == message.id) {
@@ -104,8 +98,8 @@ impl App {
                 self.transcript.notice(text, Tone::Info);
             }
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
-            ThreadEvent::OutputLimitReached { limit } => {
-                let text = format!("the answer reached the output limit of {limit} tokens");
+            ThreadEvent::OutputLimitReached => {
+                let text = "the answer reached the model's output limit".to_owned();
                 self.transcript.notice(text, Tone::Info);
             }
             ThreadEvent::CompactionStarted => {

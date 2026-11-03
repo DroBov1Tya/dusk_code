@@ -123,8 +123,6 @@ pub struct SettingsView {
     pub max_goal_rounds: u32,
     /// 0 never starts the idle screen.
     pub idle_screen_minutes: u32,
-    pub max_input_tokens: u64,
-    pub max_output_tokens: u64,
     pub memory: Memory,
     pub work_history: WorkHistory,
     pub update_channel: Channel,
@@ -218,8 +216,6 @@ const LIMIT_ROWS: usize = 2;
 /// The memory's size moves in steps this large, within these bounds.
 const MEMORY_STEP: usize = 500;
 const MEMORY_CHARS: std::ops::RangeInclusive<usize> = 500..=20_000;
-/// Token limits move in steps this large.
-const TOKEN_STEP: u64 = 10_000;
 const PAGE: usize = 20;
 const WHEEL: usize = 3;
 
@@ -241,8 +237,6 @@ impl SettingsView {
             max_agents_at_work: settings.max_agents_at_work,
             max_goal_rounds: settings.max_goal_rounds,
             idle_screen_minutes: settings.idle_screen_minutes,
-            max_input_tokens: settings.max_input_tokens,
-            max_output_tokens: settings.max_output_tokens,
             mode: settings.mode,
             memory: settings.memory,
             work_history: settings.work_history,
@@ -289,7 +283,7 @@ impl SettingsView {
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize) => 4,
-            Some(SettingCategory::Limits) => 4,
+            Some(SettingCategory::Limits) => 2,
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::Access) => 2,
@@ -375,18 +369,12 @@ impl SettingsView {
 
     /// What moving the limit on the selected row asks of the core.
     fn limit_action(&self, more: bool) -> Action {
-        let stepped = |value: u64| match more {
-            true => value.saturating_add(TOKEN_STEP),
-            false => value.saturating_sub(TOKEN_STEP).max(TOKEN_STEP),
-        };
         let counted = |value: u64| match more {
             true => value.saturating_add(1),
             false => value.saturating_sub(1).max(1),
         };
         match self.selected {
-            0 => Action::SetInputTokens(stepped(self.max_input_tokens)),
-            1 => Action::SetOutputTokens(stepped(self.max_output_tokens)),
-            2 => Action::SetAgentLimit(counted(self.max_agents_at_work as u64) as usize),
+            0 => Action::SetAgentLimit(counted(self.max_agents_at_work as u64) as usize),
             _ => Action::SetGoalRounds(counted(u64::from(self.max_goal_rounds)) as u32),
         }
     }

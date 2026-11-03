@@ -10,7 +10,7 @@ mod mcp;
 mod providers;
 mod sections;
 
-pub use context::{ContextPolicy, ContextPreset};
+pub use context::{ContextPolicy, ContextPreset, UNKNOWN_WINDOW};
 pub use effort::Effort;
 pub use file::Config;
 pub use mcp::{

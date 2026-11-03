@@ -178,7 +178,7 @@ impl Launcher {
             let limit = self
                 .model
                 .current()
-                .map_or(config.limits().max_input_tokens, |choice| {
+                .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
                     choice.input_limit(&config)
                 });
             let tokens = estimate_tokens(content);

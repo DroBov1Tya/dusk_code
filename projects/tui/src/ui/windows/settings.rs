@@ -586,8 +586,7 @@ fn kind_color(kind: SkillKind) -> ratatui::style::Color {
     }
 }
 
-/// What every model and thread is held to; a model's own input budget, set under models,
-/// goes before the first of these.
+/// How many agents work at once and how far a goal goes by itself.
 fn limit_rows(view: &SettingsView, width: usize) -> Vec<Row> {
     let row = |name: &str, value: String, about: &str| {
         let line = right(
@@ -603,16 +602,6 @@ fn limit_rows(view: &SettingsView, width: usize) -> Vec<Row> {
         described(row, about, width)
     };
     vec![
-        row(
-            "input tokens",
-            view.max_input_tokens.to_string(),
-            "    for a model whose window is not known and has no budget under models",
-        ),
-        row(
-            "output tokens",
-            view.max_output_tokens.to_string(),
-            "    what the model may write in one call",
-        ),
         row(
             "concurrent agents",
             view.max_agents_at_work.to_string(),

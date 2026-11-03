@@ -112,7 +112,11 @@ impl OpenAiCompatible {
         }
         Ok(models
             .into_iter()
-            .map(|(id, context_window)| Model { id, context_window })
+            .map(|(id, context_window)| Model {
+                id,
+                context_window,
+                max_output: None,
+            })
             .collect())
     }
 
