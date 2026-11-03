@@ -30,7 +30,7 @@ pub struct ToolRegistry {
     pub chat: bool,
     /// Set only from trusted launcher depth, never from model/config identity.
     root: bool,
-    pub(crate) jobs: Option<Arc<super::JobManager>>,
+    pub(crate) jobs: Option<Arc<crate::runtime::jobs::JobManager>>,
     pub(crate) approvals: Option<Arc<super::Approvals>>,
     /// What the machine offers; set by the launcher from what it found at start.
     pub(crate) platform: Platform,

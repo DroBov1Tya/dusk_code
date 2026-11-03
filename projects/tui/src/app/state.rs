@@ -10,8 +10,8 @@ use dusk_core::{
     config::Effort,
     config::live::LiveConfig,
     mcp::McpStatus,
+    runtime::jobs::JobInfo,
     state::{Goal, LocalUnsent, Message, MessageRole, Task, ThreadTokens},
-    tools::JobInfo,
 };
 use ratatui::layout::Rect;
 

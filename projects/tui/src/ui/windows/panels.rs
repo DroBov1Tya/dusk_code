@@ -10,8 +10,8 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use dusk_core::{
-    message::commands::ContextReport, release::update::InstallStage, state::MessageRole,
-    tools::JobInfo,
+    message::commands::ContextReport, release::update::InstallStage, runtime::jobs::JobInfo,
+    state::MessageRole,
 };
 
 use super::{

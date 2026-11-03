@@ -1,9 +1,7 @@
-//! Console tools: commands in the working directory.
+//! Console tools: commands in the working directory, and the background ones.
 
-mod job_lease;
 mod jobs;
 mod run_command;
 
-pub use jobs::JobInfo;
-pub(crate) use jobs::{JobManager, JobOwner, Jobs};
-pub use run_command::RunCommand;
+pub use jobs::Jobs;
+pub use run_command::{ProcessGroup, RunCommand, spawn};

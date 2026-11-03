@@ -4,6 +4,7 @@
 
 pub mod agent;
 mod events;
+pub mod jobs;
 pub mod system;
 pub mod thread;
 

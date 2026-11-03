@@ -29,11 +29,11 @@ const MAX_STREAM_BYTES: usize = 32 * 1024;
 
 #[derive(Default)]
 pub struct RunCommand {
-    jobs: Option<super::jobs::JobOwner>,
+    jobs: Option<crate::runtime::jobs::JobOwner>,
 }
 
 impl RunCommand {
-    pub(crate) fn with_jobs(jobs: super::jobs::JobOwner) -> Self {
+    pub fn with_jobs(jobs: crate::runtime::jobs::JobOwner) -> Self {
         Self { jobs: Some(jobs) }
     }
 }
@@ -196,7 +196,7 @@ pub(super) fn confinement(context: &ToolContext<'_>) -> Option<Confinement> {
         .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))
 }
 
-pub(super) fn spawn(command: &str, cwd: &Path, confinement: Option<&Confinement>) -> Result<Child> {
+pub fn spawn(command: &str, cwd: &Path, confinement: Option<&Confinement>) -> Result<Child> {
     platform::shell(command, confinement)?
         .current_dir(cwd)
         .stdin(Stdio::null())
@@ -210,10 +210,10 @@ pub(super) fn spawn(command: &str, cwd: &Path, confinement: Option<&Confinement>
 
 /// Kills the whole group when dropped, so a cancelled or timed-out command leaves nothing
 /// behind. Kills at most once: a later kill could hit a new group that reused the ID.
-pub(super) struct ProcessGroup(pub(super) Option<u32>);
+pub struct ProcessGroup(pub Option<u32>);
 
 impl ProcessGroup {
-    pub(super) fn kill(&mut self) {
+    pub fn kill(&mut self) {
         let Some(id) = self.0.take() else {
             return;
         };

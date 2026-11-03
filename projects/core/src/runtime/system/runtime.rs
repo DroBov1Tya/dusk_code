@@ -3,6 +3,7 @@
 //! and gives each active thread its own task.
 
 use crate::runtime::ThreadEvent;
+use crate::runtime::jobs::{JobInfo, JobManager};
 use std::{
     path::{Path, PathBuf},
     sync::Arc,
@@ -39,7 +40,7 @@ use crate::{
     },
     runtime::thread::thread_start::{self, FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
-    tools::{Decision, JobInfo, JobManager, ToolKind, ToolScope},
+    tools::{Decision, ToolKind, ToolScope},
     util::usage::{self, ProcessUsage},
 };
 

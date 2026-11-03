@@ -11,13 +11,13 @@ use std::{
 use anyhow::{Context, Result};
 use uuid::Uuid;
 
-pub(super) struct JobLease {
+pub struct JobLease {
     pub id: String,
     pub path: PathBuf,
     _file: File,
 }
 
-pub(super) enum Owner {
+pub enum Owner {
     Live,
     Abandoned(JobLease),
     Unknown,

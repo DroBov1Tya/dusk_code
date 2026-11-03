@@ -4,6 +4,7 @@
 //! a message finds it stopped.
 
 use crate::runtime::ThreadEvent;
+use crate::runtime::jobs::{JobManager, JobOwner};
 use std::{
     future::Future,
     path::{Path, PathBuf},
@@ -32,9 +33,8 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, JobManager, JobOwner,
-        Jobs, McpTool, MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry,
-        ToolScope,
+        AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, Jobs, McpTool,
+        MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry, ToolScope,
     },
 };
 
