@@ -10,8 +10,8 @@ use serde_json::Value;
 
 use crate::{
     BoxFuture,
-    message::goal,
     runtime::ThreadEvent,
+    runtime::goal::action as goal,
     state::{GoalCriterion, GoalEvidence, State},
     tools::{Tool, ToolContext, schema, schema::parse_arguments},
 };
@@ -56,13 +56,13 @@ impl Tool for GoalTool {
     fn switchable(&self) -> bool {
         false
     }
-    fn description(&self, _: &ToolContext<'_>) -> String {
+    fn description(&self, _: &ToolContext) -> String {
         "Inspect the standing goal, its immutable user-approved acceptance contract, saved result IDs and verification gaps. show with result_id reads the saved output. Propose criteria only for an existing unapproved draft, using its revision. Semantic/subjective claims must use user_confirmation; command checks must name the exact command the user approves. request_verification submits the current revision plus one real saved result_id per criterion (tool:<result message ID> or job:<job ID>). It only requests runtime review after the turn and dependencies finish. You cannot approve/change an approved contract, pause/resume/clear a goal, confirm for the user or set done. Failed, cancelled, stale, foreign or untyped results cannot pass.".into()
     }
     fn parameters(&self) -> Value {
         schema::of::<Arguments>()
     }
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let args: Arguments = parse_arguments(arguments)?;
             if matches!(args.action, Action::Show) {
@@ -98,12 +98,12 @@ impl Tool for GoalTool {
                         args.criteria.is_none(),
                         "approved criteria cannot be changed"
                     );
-                    let call = context.progress.context("no recorded call")?;
+                    let call = context.progress.as_ref().context("no recorded call")?;
                     self.state
                         .request_goal_verification(
                             &self.thread_id,
                             &revision,
-                            call.call_id,
+                            &call.call_id,
                             args.evidence.context("evidence is required")?,
                         )
                         .await?

@@ -79,7 +79,7 @@ impl Remember {
         }
     }
 
-    fn settings(&self, context: &ToolContext<'_>) -> (bool, usize) {
+    fn settings(&self, context: &ToolContext) -> (bool, usize) {
         match self.kind {
             Kind::User => (
                 context.config.memory().enabled,
@@ -139,11 +139,11 @@ impl Tool for Remember {
         false
     }
 
-    fn available(&self, context: &ToolContext<'_>) -> bool {
+    fn available(&self, context: &ToolContext) -> bool {
         self.settings(context).0
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
+    fn description(&self, context: &ToolContext) -> String {
         let (_, max_chars) = self.settings(context);
         let memory = read(&self.file(context.scope.cwd()), max_chars);
         let memory = if memory.is_empty() {
@@ -171,7 +171,7 @@ impl Tool for Remember {
         schema::of::<RememberArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let (enabled, max_chars) = self.settings(&context);
             ensure!(enabled, "this memory is switched off in the settings");
@@ -195,6 +195,8 @@ impl Tool for Remember {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
+
     use crate::{config::Config, testing::temp_dir, tools::ToolScope};
     use serde_json::json;
 
@@ -203,27 +205,34 @@ mod tests {
         let directory = temp_dir("remember");
         fs::create_dir_all(&directory).unwrap();
         let tool = Remember::user(directory.clone());
-        let scope = ToolScope::new(&directory, &directory).unwrap();
-        let config = Config::parse(b"{}").unwrap();
+        let scope = Arc::new(ToolScope::new(&directory, &directory).unwrap());
+        let config = Arc::new(Config::parse(b"{}").unwrap());
         let context = ToolContext {
-            scope: &scope,
-            config: &config,
+            scope,
+            config: Arc::clone(&config),
             progress: None,
             approvals: None,
         };
         assert!(tool.description(&context).ends_with("(empty)"));
-        tool.call(json!({"memory": "- prefers Russian"}), context)
+        tool.call(json!({"memory": "- prefers Russian"}), context.clone())
             .await
             .unwrap();
-        tool.call(json!({"memory": "- prefers Russian\n- uses tmux"}), context)
-            .await
-            .unwrap();
+        tool.call(
+            json!({"memory": "- prefers Russian\n- uses tmux"}),
+            context.clone(),
+        )
+        .await
+        .unwrap();
         assert!(
             tool.description(&context)
                 .ends_with("- prefers Russian\n- uses tmux")
         );
         let long = "x".repeat(config.memory().max_chars + 1);
-        assert!(tool.call(json!({"memory": long}), context).await.is_err());
+        assert!(
+            tool.call(json!({"memory": long}), context.clone())
+                .await
+                .is_err()
+        );
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -243,15 +252,15 @@ mod tests {
             fs::create_dir_all(folder).unwrap();
         }
         let tool = Remember::project(rules.clone(), &root.join("workspace"));
-        let off = Config::parse(b"{}").unwrap();
-        let on = Config::parse(b"work_history:\n  enabled: true\n").unwrap();
+        let off = Arc::new(Config::parse(b"{}").unwrap());
+        let on = Arc::new(Config::parse(b"work_history:\n  enabled: true\n").unwrap());
         let (one, two) = (
-            ToolScope::new(&one, &one).unwrap(),
-            ToolScope::new(&two, &two).unwrap(),
+            Arc::new(ToolScope::new(&one, &one).unwrap()),
+            Arc::new(ToolScope::new(&two, &two).unwrap()),
         );
-        let context = |scope, config| ToolContext {
-            scope,
-            config,
+        let context = |scope: &Arc<ToolScope>, config: &Arc<Config>| ToolContext {
+            scope: Arc::clone(scope),
+            config: Arc::clone(config),
             progress: None,
             approvals: None,
         };

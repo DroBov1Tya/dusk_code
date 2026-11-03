@@ -40,8 +40,8 @@ impl Tool for EditFile {
         ToolKind::Files
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
-        let scope = context.scope;
+    fn description(&self, context: &ToolContext) -> String {
+        let scope = &*context.scope;
         format!(
             "Replace one exact occurrence of old_text with new_text in a file. old_text must \
              match exactly once; include surrounding lines to make it unique. \
@@ -54,9 +54,9 @@ impl Tool for EditFile {
         schema::of::<EditFileArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
-        let scope = context.scope;
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
+            let scope = &*context.scope;
             let arguments: EditFileArguments = parse_arguments(arguments)?;
             ensure!(!arguments.old_text.is_empty(), "old_text is empty");
             let path = context.resolve(&arguments.path, true).await?;

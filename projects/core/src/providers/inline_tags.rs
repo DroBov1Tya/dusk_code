@@ -6,8 +6,6 @@
 //! split between two chunks, is held back until the next chunk decides.
 
 use anyhow::{Context, Result, ensure};
-use serde::Deserialize;
-use serde_json::Value;
 
 use crate::providers::ModelEvent;
 
@@ -30,13 +28,6 @@ enum State {
     Text,
     Think,
     ToolCall,
-}
-
-#[derive(Deserialize)]
-struct InlineCall {
-    name: String,
-    #[serde(default)]
-    arguments: Value,
 }
 
 impl TagSplitter {
@@ -144,19 +135,19 @@ impl TagSplitter {
     }
 
     fn call_events(&mut self, body: &str) -> Result<[ModelEvent; 2]> {
-        let call: InlineCall =
-            serde_json::from_str(body.trim()).context("invalid inline tool call JSON")?;
+        let (name, arguments) =
+            super::text_calls::json(body.trim()).context("invalid inline tool call JSON")?;
         let index = self.calls;
         self.calls += 1;
         Ok([
             ModelEvent::ToolCall {
                 index,
                 id: format!("call_{index}"),
-                name: call.name,
+                name,
             },
             ModelEvent::ToolArguments {
                 index,
-                fragment: call.arguments.to_string(),
+                fragment: arguments.to_string(),
             },
         ])
     }

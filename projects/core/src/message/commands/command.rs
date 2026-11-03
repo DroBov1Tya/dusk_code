@@ -10,13 +10,13 @@ use crate::{
 };
 
 use crate::{
+    runtime::jobs::JobInfo,
     runtime::{
         Runtime,
         agent::{Agent, Inbox},
         model_choice::{Choice, ProviderStatus},
     },
     state::{Source, Thread, UndoPoint},
-    tools::JobInfo,
 };
 
 use super::{ContextReport, Settings, compact, goal, model, resume, settings, undo};

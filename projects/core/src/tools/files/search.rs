@@ -52,7 +52,7 @@ impl Tool for SearchFiles {
         ToolKind::Files
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
+    fn description(&self, context: &ToolContext) -> String {
         format!(
             "Find text in files, or files by name; use this rather than grep or find in a \
              shell. `pattern` is a regular expression matched line by line, `(?i)` for any \
@@ -67,7 +67,7 @@ impl Tool for SearchFiles {
         schema::of::<SearchArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         let scope = context.scope.clone();
         Box::pin(async move {
             let arguments: SearchArguments = parse_arguments(arguments)?;

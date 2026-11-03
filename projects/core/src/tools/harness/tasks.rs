@@ -128,7 +128,7 @@ impl Tool for Tasks {
         "tasks"
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         "Your board for this work: write down the tasks you set yourself, each with its \
          steps, and mark them done as you go. Plan with it before longer work, look at it \
          after a pause or a summary of the conversation, and mark a step done as soon as it \
@@ -144,7 +144,7 @@ impl Tool for Tasks {
         schema::of::<TasksArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments = parse_arguments(arguments)?;
             let tasks = self.run(arguments).await?;

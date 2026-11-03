@@ -47,7 +47,7 @@ impl Tool for AgentState {
         false
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         "Say where you are in your task: planning (reading and deciding how), executing \
          (doing the work), reviewing (checking what you did against the task), done, or \
          paused (waiting on something). Work goes planning, executing, reviewing, done; \
@@ -60,7 +60,7 @@ impl Tool for AgentState {
         schema::of::<AgentStateArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: AgentStateArguments = parse_arguments(arguments)?;
             let note = arguments.note.unwrap_or_default();

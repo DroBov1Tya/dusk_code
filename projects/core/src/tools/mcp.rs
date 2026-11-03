@@ -55,7 +55,7 @@ impl Tool for McpTool {
         ToolKind::Mcp
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         format!(
             "From the MCP server {}. {}",
             self.server.name, self.description
@@ -66,7 +66,7 @@ impl Tool for McpTool {
         self.schema.clone()
     }
 
-    fn call<'a>(&'a self, arguments: Value, _context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(self.server.client.call_tool(&self.remote, arguments))
     }
 }

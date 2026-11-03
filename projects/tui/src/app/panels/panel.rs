@@ -6,9 +6,9 @@ use dusk_core::{
     config::ProviderKind,
     message::commands::ContextReport,
     release::update::{InstallProgress, UpdateInfo},
+    runtime::jobs::JobInfo,
     runtime::model_choice::ProviderStatus,
     state::{Message, MessageRole, Source, Thread, UndoPoint},
-    tools::JobInfo,
 };
 
 use super::{AgentWindow, SettingsView};

@@ -100,7 +100,7 @@ impl Tool for AskUser {
         "ask_user"
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         format!(
             "Ask the user a question with options to choose from, when something missing \
              would change the result and you cannot find it out yourself; not at every step, \
@@ -116,7 +116,7 @@ impl Tool for AskUser {
         schema::of::<Question>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let question: Question = parse_arguments(arguments)?;
             question.check()?;

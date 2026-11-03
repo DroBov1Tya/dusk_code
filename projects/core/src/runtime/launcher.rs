@@ -4,6 +4,7 @@
 //! a message finds it stopped.
 
 use crate::runtime::ThreadEvent;
+use crate::runtime::jobs::{JobManager, JobOwner};
 use std::{
     future::Future,
     path::{Path, PathBuf},
@@ -32,9 +33,8 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, JobManager, JobOwner,
-        Jobs, McpTool, MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry,
-        ToolScope,
+        AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, Jobs, McpTool,
+        MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry, ToolScope,
     },
 };
 
@@ -80,11 +80,13 @@ impl Launcher {
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
-            scope: ToolScope::new(cwd, workspace)?
-                .protect(self.paths.config_root())
-                .share(&self.paths.skills_dir())
-                .with_skills(&self.paths.skills_dir())
-                .share(&self.paths.agents_dir()),
+            scope: Arc::new(
+                ToolScope::new(cwd, workspace)?
+                    .protect(self.paths.config_root())
+                    .share(&self.paths.skills_dir())
+                    .with_skills(&self.paths.skills_dir())
+                    .share(&self.paths.agents_dir()),
+            ),
             project: project::context(cwd),
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),

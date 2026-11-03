@@ -11,7 +11,7 @@ use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent,
 use dusk_core::{
     config::Effort,
     providers::ModelEvent,
-    runtime::{ThreadEvent, system::arbiter::THREAD as ARBITER_THREAD},
+    runtime::{ThreadEvent, arbiter::THREAD as ARBITER_THREAD},
     state::{AgentPhase, ThreadTokens},
 };
 use ratatui::layout::{Position, Rect};

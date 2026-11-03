@@ -53,7 +53,7 @@ impl Tool for ReadHistory {
         "read_history"
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         "Read earlier messages of this conversation, including those replaced by a summary. \
          Give `search` to find messages containing some text (at least 3 characters, best \
          matches first), or `from` to read in order from a message number. Each message \
@@ -65,7 +65,7 @@ impl Tool for ReadHistory {
         schema::of::<ReadHistoryArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, _context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ReadHistoryArguments = parse_arguments(arguments)?;
             let limit = arguments.limit.unwrap_or(DEFAULT_LIMIT);

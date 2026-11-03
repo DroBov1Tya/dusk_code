@@ -28,8 +28,8 @@ impl Tool for DeleteFile {
         ToolKind::Files
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
-        let scope = context.scope;
+    fn description(&self, context: &ToolContext) -> String {
+        let scope = &*context.scope;
         format!(
             "Delete a file. Directories are not deleted; use run_command for them. Relative \
              paths resolve against {}.",
@@ -41,7 +41,7 @@ impl Tool for DeleteFile {
         schema::of::<PathArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: PathArguments = parse_arguments(arguments)?;
             let path = context.resolve(&arguments.path, true).await?;

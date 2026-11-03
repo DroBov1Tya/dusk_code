@@ -15,21 +15,19 @@ use super::{Inbox, Stop, generation};
 use crate::plugins::{HookEvent, Hooks, hooks::Outcome};
 use crate::runtime::{
     ThreadEvent,
-    system::model_choice::{Choice, ModelChoice},
+    model_choice::{Choice, ModelChoice},
     thread::{Conversation, spec_tokens},
 };
 use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
     config::{Config, Effort},
-    message::{
-        goal,
-        sources::{self, SourceBlock},
-    },
+    message::sources::{self, SourceBlock},
     providers::{
         ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
         is_unsupported_effort, is_unsupported_pictures, text_calls,
     },
+    runtime::goal::action as goal,
     state::{
         AgentPhase, CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, PendingMessage, State,
         Turn, TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,
@@ -49,7 +47,7 @@ pub struct Agent {
     pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
     pub tools: ToolRegistry,
-    pub scope: ToolScope,
+    pub scope: Arc<ToolScope>,
     /// Comes right after the prompt in every request.
     pub project: String,
     /// The model that refused pictures; the others still get them.
@@ -562,7 +560,7 @@ impl Agent {
         &self,
         turn: &Turn,
         calls: &[ToolCall],
-        config: &Config,
+        config: &Arc<Config>,
         inbox: &mut Inbox,
     ) -> Result<Option<Stop>> {
         let mut stop = None;
@@ -598,8 +596,8 @@ impl Agent {
                 None => {
                     self.emit(ThreadEvent::ToolStarted(call.clone()));
                     let progress = Progress {
-                        call_id: &call.id,
-                        events: &self.events,
+                        call_id: call.id.clone(),
+                        events: self.events.clone(),
                     };
                     let called = self.tools.call(call, &self.scope, config, progress);
                     match inbox.race(called).await {

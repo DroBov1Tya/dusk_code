@@ -24,7 +24,7 @@ use crate::{
     catalog::skills,
     config::Effort,
     runtime::thread::thread_start::{self, display_name, read_prompt, start_agent_thread},
-    runtime::{ThreadEvent, system::Launcher},
+    runtime::{Launcher, ThreadEvent},
     state::Identity,
     state::Thread,
 };
@@ -97,7 +97,7 @@ impl AskAgent {
         &self,
         arguments: AskAgentArguments,
         cwd: &Path,
-        progress: Option<Progress<'_>>,
+        progress: Option<Progress>,
     ) -> Result<String> {
         ensure!(!arguments.task.trim().is_empty(), "task is empty");
         // Kept until the new agent is delivered its task, which gives it its slot.
@@ -207,7 +207,7 @@ impl Tool for AskAgent {
         ToolKind::Agents
     }
 
-    fn description(&self, _context: &ToolContext<'_>) -> String {
+    fn description(&self, _context: &ToolContext) -> String {
         let reachable = self.reachable();
         let mut agents: Vec<String> = reachable
             .iter()
@@ -248,7 +248,7 @@ impl Tool for AskAgent {
         schema::of::<AskAgentArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         let cwd = context.scope.cwd().to_owned();
         Box::pin(async move {
             let arguments: AskAgentArguments =

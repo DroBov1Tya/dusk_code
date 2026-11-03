@@ -24,8 +24,8 @@ impl Tool for ReadFile {
         ToolKind::Files
     }
 
-    fn description(&self, context: &ToolContext<'_>) -> String {
-        let scope = context.scope;
+    fn description(&self, context: &ToolContext) -> String {
+        let scope = &*context.scope;
         format!(
             "Read a UTF-8 text file up to 1 MiB. Relative paths resolve against {}.",
             scope.cwd().display()
@@ -36,7 +36,7 @@ impl Tool for ReadFile {
         schema::of::<PathArguments>()
     }
 
-    fn call<'a>(&'a self, arguments: Value, context: ToolContext<'a>) -> BoxFuture<'a, String> {
+    fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: PathArguments = parse_arguments(arguments)?;
             read_text(&context.resolve(&arguments.path, false).await?).await
