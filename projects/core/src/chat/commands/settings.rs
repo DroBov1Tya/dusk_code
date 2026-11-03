@@ -17,6 +17,8 @@ pub struct Settings {
     pub memory: Memory,
     pub update_channel: Channel,
     pub full_access: bool,
+    /// Log files and traces; off writes and sends nothing.
+    pub logging: bool,
     /// The chat's mode, whose switches `tools` shows.
     pub mode: String,
     /// Every tool by kind and then by name.
@@ -54,6 +56,7 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         memory: config.memory(),
         update_channel: config.update_channel(),
         full_access: config.approvals() == ApprovalPolicy::FullAccess,
+        logging: config.logging().enabled,
         tools,
         skills: runtime.skills(),
         agents: runtime.agent_tree(),

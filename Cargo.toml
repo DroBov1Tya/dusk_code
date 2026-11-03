@@ -37,6 +37,10 @@ jsonschema = { version = "0.60", default-features = false }
 image = { version = "0.25.10", default-features = false, features = ["png", "jpeg"] }
 sha2 = "0.11"
 async-trait = "0.1"
+opentelemetry = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.33", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.33", default-features = false, features = ["http-proto", "reqwest-blocking-client", "trace"] }
+tracing-opentelemetry = { version = "0.34", default-features = false }
 sha1 = "0.11"
 unicode-width = "0.2"
 dusk_core = { path = "projects/core" }

@@ -553,6 +553,14 @@ impl Runtime {
         Ok(())
     }
 
+    /// Turns every log and trace of the process off or on again, at once.
+    pub fn set_logging_enabled(&self, enabled: bool) -> Result<()> {
+        self.config()
+            .update(|config| config.set_logging_enabled(enabled))?;
+        crate::init::logs::set_enabled(enabled);
+        Ok(())
+    }
+
     pub fn set_idle_screen_minutes(&self, minutes: u32) -> Result<()> {
         self.config()
             .update(|config| config.set_idle_screen_minutes(minutes))?;

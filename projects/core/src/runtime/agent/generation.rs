@@ -15,6 +15,17 @@ const MAX_ANSWER_TIME: Duration = Duration::from_secs(30 * 60);
 ///
 /// Past `max_output_tokens` by its own count the stream is dropped, which closes the
 /// connection, in case the provider ignores the limit it was sent.
+#[tracing::instrument(
+    name = "model_call",
+    skip_all,
+    fields(
+        model = request.model,
+        messages = request.messages.len(),
+        tools = request.tools.len(),
+        input_tokens = tracing::field::Empty,
+        output_tokens = tracing::field::Empty,
+    )
+)]
 pub async fn generate(
     provider: &dyn ModelProvider,
     request: ChatRequest<'_>,
@@ -41,5 +52,10 @@ pub async fn generate(
                 MAX_ANSWER_TIME.as_secs() / 60
             )
         })??;
+    if let Some(usage) = output.usage {
+        let span = tracing::Span::current();
+        span.record("input_tokens", usage.prompt_tokens);
+        span.record("output_tokens", usage.completion_tokens);
+    }
     output.finish()
 }

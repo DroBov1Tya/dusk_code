@@ -453,6 +453,7 @@ pub async fn run(
                         true => ApprovalPolicy::FullAccess,
                         false => ApprovalPolicy::Ask,
                     }),
+                    SwitchKind::Logging => runtime.set_logging_enabled(on),
                 };
                 match saved {
                     Ok(()) => answer(runtime, &mut app, &mut open, Command::Settings).await,

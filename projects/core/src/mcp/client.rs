@@ -109,6 +109,7 @@ impl McpClient {
     }
 
     /// The text of the result; a result the server marks as an error is an error.
+    #[tracing::instrument(name = "mcp_call", skip_all, fields(tool = name))]
     pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<String> {
         let Value::Object(arguments) = arguments else {
             bail!("arguments must be a JSON object");
