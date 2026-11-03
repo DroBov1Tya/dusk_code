@@ -21,8 +21,8 @@ const BAYER: [[u8; 8]; 8] = [
     [63, 31, 55, 23, 61, 29, 53, 21],
 ];
 /// How much of the picture's own colour shows between the dots, and how dark.
-const TONE: f32 = 0.5;
-const TONE_DEPTH: f32 = 0.42;
+const TONE: f32 = 0.35;
+const TONE_DEPTH: f32 = 0.3;
 
 pub struct Cell {
     pub symbol: char,
@@ -64,8 +64,9 @@ pub fn render(width: u16, height: u16, background: Rgb, paint: impl Fn(Pt) -> Rg
             let bg = background.mix(all.scale(TONE_DEPTH), TONE);
             let fg = if count > 0.0 {
                 let lit = lit.scale(1.0 / count);
-                // Dots carry the hue at full strength; how many are lit carries the light.
-                lit.scale((0.6 + 0.4 * lit.max()) / lit.max().max(1e-3))
+                // Dense dots in the picture's own hue, dim ones lifted so colour still
+                // shows in the dark.
+                lit.scale((1.0 / lit.max().max(0.04)).powf(0.6))
             } else {
                 bg
             };
