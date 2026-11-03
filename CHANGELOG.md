@@ -8,6 +8,10 @@ testing.
 
 ### Added
 
+- Remote MCP servers sign in with OAuth: l on one in the MCP tab of /settings opens
+  its sign-in page in the browser. The tokens are kept private in the config folder
+  and refreshed by themselves.
+
 - /connect offers Anthropic and OpenAI next to a custom OpenAI-compatible server:
   pick the provider and paste an API key, the URL and name fill themselves in.
   Anthropic goes through its own Messages API, with adaptive thinking, effort and
