@@ -1,5 +1,6 @@
-//! The command line: its arguments, and `remove`, which runs without the screen.
+//! The command line: its arguments, `remove`, and what runs before the screen is up.
 
 pub mod args;
 pub mod remove;
+pub mod resources;
 pub mod restore;

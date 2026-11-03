@@ -57,6 +57,7 @@ async fn main() -> Result<()> {
     };
     log_panics();
     info!("duskcode {} starts", env!("CARGO_PKG_VERSION"));
+    cli::resources::ensure().await;
     // Started before the screen is taken, so a first-start message stays readable.
     let runtime = Runtime::start(paths, state_db).await?;
     let terminal = host::terminal::enter()?;
