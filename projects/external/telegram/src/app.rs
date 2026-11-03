@@ -9,10 +9,10 @@ pub mod workers;
 use std::sync::{Arc, atomic::Ordering};
 
 use anyhow::{Result, anyhow};
-use teloxide::{dispatching::ShutdownToken, prelude::*};
+use teloxide::{dispatching::ShutdownToken, prelude::*, utils::command::BotCommands};
 use tokio::{sync::mpsc, task::JoinHandle};
 
-use crate::config::LIMITS;
+use crate::config::{Command, LIMITS};
 use bridge::{BotEvent, ToBot};
 use context::Shared;
 
@@ -25,7 +25,8 @@ pub struct TelegramBot {
 }
 
 impl TelegramBot {
-    /// Checks the token with Telegram; nothing is sent until [`TelegramBot::start`].
+    /// Checks the token with Telegram and lists the commands there; nothing is sent to
+    /// anyone until [`TelegramBot::start`].
     pub async fn connect(token: String, id: usize) -> Result<Self> {
         let bot = Bot::new(token);
         // The error would name the request; the token in it is redacted, but the
@@ -34,6 +35,8 @@ impl TelegramBot {
             .get_me()
             .await
             .map_err(|_| anyhow!("Telegram did not accept the token"))?;
+        // The menu of commands shows in Telegram from the first look at the bot.
+        let _ = bot.set_my_commands(Command::bot_commands()).await;
         Ok(Self {
             bot,
             shared: Arc::new(Shared::new(id, me.username().to_owned())),

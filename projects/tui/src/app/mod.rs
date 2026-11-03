@@ -12,7 +12,7 @@ mod state;
 mod submit;
 mod thread;
 
-pub use action::{Action, commands};
+pub use action::{Action, BotMenu, commands};
 pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 pub use hits::{

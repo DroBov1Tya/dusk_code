@@ -28,6 +28,13 @@ pub struct OpenQuestion {
     pub message: MessageId,
 }
 
+/// A menu sent with buttons: what its command sets and the message holding it.
+pub struct OpenMenu {
+    pub command: String,
+    pub options: Vec<String>,
+    pub message: MessageId,
+}
+
 pub struct Shared {
     pub id: usize,
     pub username: String,
@@ -42,6 +49,7 @@ pub struct Shared {
     pub stopping: AtomicBool,
     pub owner: Mutex<Option<Owner>>,
     pub question: Mutex<Option<OpenQuestion>>,
+    pub menu: Mutex<Option<OpenMenu>>,
     pub working: AtomicBool,
     pub events: Mutex<Option<mpsc::UnboundedSender<(usize, BotEvent)>>>,
 }
@@ -58,6 +66,7 @@ impl Shared {
             stopping: AtomicBool::new(false),
             owner: Mutex::new(None),
             question: Mutex::new(None),
+            menu: Mutex::new(None),
             working: AtomicBool::new(false),
             events: Mutex::new(None),
         }

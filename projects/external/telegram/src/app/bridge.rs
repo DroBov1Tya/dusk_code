@@ -23,11 +23,22 @@ pub enum BotCommand {
     /// Allows the request the agent waits on, if it waits on one.
     Approve,
     Deny,
-    /// The next mode, as Tab in the client.
-    Mode,
+    /// A menu of the modes, or a switch to the one named.
+    Mode(Option<String>),
     Model(Option<String>),
     Compact(Option<String>),
     Goal(Option<String>),
+}
+
+impl BotCommand {
+    /// The command an option picked from a menu of `/command` stands for.
+    pub fn picked(command: &str, option: String) -> Option<Self> {
+        match command {
+            "mode" => Some(Self::Mode(Some(option))),
+            "model" => Some(Self::Model(Some(option))),
+            _ => None,
+        }
+    }
 }
 
 /// From the client to the owner.
@@ -44,6 +55,12 @@ pub enum ToBot {
     Approval { id: u64, text: String },
     /// A short plain answer to a command.
     Reply(String),
+    /// What `/command` can be set to: buttons for a few, a list to type from for many.
+    Menu {
+        command: String,
+        title: String,
+        options: Vec<String>,
+    },
     /// The agent started or stopped working; while it works the owner hears that the
     /// bot is alive every few minutes.
     Working(bool),

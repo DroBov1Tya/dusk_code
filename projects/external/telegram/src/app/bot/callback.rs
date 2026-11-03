@@ -13,6 +13,8 @@ pub enum Callback {
     Send,
     Allow(u64),
     Deny(u64),
+    /// An option of the open menu.
+    Pick(usize),
 }
 
 impl Callback {
@@ -23,6 +25,7 @@ impl Callback {
             Self::Send => "s".into(),
             Self::Allow(id) => format!("y:{id}"),
             Self::Deny(id) => format!("n:{id}"),
+            Self::Pick(index) => format!("p:{index}"),
         };
         format!("{nonce}|{body}")
     }
@@ -40,6 +43,7 @@ impl Callback {
             "s" if value.is_empty() => Self::Send,
             "y" => Self::Allow(value.parse().ok()?),
             "n" => Self::Deny(value.parse().ok()?),
+            "p" => Self::Pick(value.parse().ok()?),
             _ => return None,
         })
     }
@@ -57,6 +61,7 @@ mod tests {
             Callback::Send,
             Callback::Allow(7),
             Callback::Deny(7),
+            Callback::Pick(3),
         ] {
             assert_eq!(
                 Callback::parse(&callback.data("123"), "123"),

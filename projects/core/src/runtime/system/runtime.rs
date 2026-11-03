@@ -410,6 +410,17 @@ impl Runtime {
         Ok(next)
     }
 
+    /// Moves the chat to the mode named, one of [`Runtime::modes`].
+    pub fn set_mode(&self, name: &str) -> Result<()> {
+        anyhow::ensure!(
+            self.modes().iter().any(|mode| mode == name),
+            "no mode is named {name}; /mode lists them"
+        );
+        self.config()
+            .update(|config| config.set_mode(name.to_owned()))?;
+        Ok(())
+    }
+
     /// An agent's AGENT.md as it is on disk; reading it again throws edits away.
     pub fn agent(&self, name: &str) -> Result<NodeText> {
         read_node_text(&self.launcher.paths.agents_dir(), AGENT_FILE, name)
