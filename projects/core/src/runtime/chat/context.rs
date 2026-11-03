@@ -191,6 +191,7 @@ fn chat_message(message: &Message, senders: &HashMap<String, String>) -> Option<
         MessageRole::Tool => Some(ChatMessage::Tool {
             call_id: message.tool_call_id.clone()?,
             content,
+            pictures: Vec::new(),
         }),
     }
 }

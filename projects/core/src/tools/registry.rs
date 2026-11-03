@@ -106,6 +106,10 @@ impl ToolRegistry {
         self.checks.retain(|name, _| tools.contains_key(name));
     }
 
+    pub fn kind_of(&self, name: &str) -> Option<ToolKind> {
+        self.tools.get(name).map(|tool| tool.kind())
+    }
+
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.tools.keys().map(String::as_str)
     }
@@ -131,7 +135,9 @@ impl ToolRegistry {
         }
         match self.chat {
             true => config.mode_tool_enabled(config.mode(), tool.name(), tool.kind()),
-            false => config.tool_enabled(tool.name()),
+            false => {
+                config.mode_tool_enabled(crate::catalog::modes::MAIN, tool.name(), tool.kind())
+            }
         }
     }
 
@@ -308,6 +314,16 @@ mod tests {
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
+        #[cfg(target_os = "macos")]
+        {
+            use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
+            let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
+            tools.push(Box::new(Screenshot(Arc::clone(&screen))));
+            tools.push(Box::new(Click(Arc::clone(&screen))));
+            tools.push(Box::new(Scroll(screen)));
+            tools.push(Box::new(TypeText));
+            tools.push(Box::new(PressKeys));
+        }
         for tool in tools {
             let schema = tool.parameters();
             let name = tool.name();

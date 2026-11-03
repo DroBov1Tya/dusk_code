@@ -98,7 +98,7 @@ pub fn default_tool(mode: &str, name: &str, kind: ToolKind) -> Option<bool> {
         ORCHESTRATOR => &ORCHESTRATOR_TOOLS,
         _ => return None,
     };
-    Some(kind != ToolKind::Mcp && allowed.contains(&name))
+    Some(!matches!(kind, ToolKind::Mcp | ToolKind::Computer) && allowed.contains(&name))
 }
 
 #[cfg(test)]

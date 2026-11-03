@@ -80,6 +80,7 @@ impl Launcher {
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),
             modes_dir: self.paths.modes_dir(),
+            artifacts: ArtifactStore::new(self.paths.artifacts_dir()),
             depth,
             mailboxes: Arc::clone(&self.mailboxes),
             ends_when_idle: false,
@@ -116,6 +117,16 @@ impl Launcher {
             thread_id.to_owned(),
         )));
         tools.add(Box::new(Remember::new(self.paths.memory_file())));
+        #[cfg(target_os = "macos")]
+        {
+            use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
+            let screen = Arc::new(Screen::new(ArtifactStore::new(self.paths.artifacts_dir())));
+            tools.add(Box::new(Screenshot(Arc::clone(&screen))));
+            tools.add(Box::new(Click(Arc::clone(&screen))));
+            tools.add(Box::new(Scroll(screen)));
+            tools.add(Box::new(TypeText));
+            tools.add(Box::new(PressKeys));
+        }
         if depth < MAX_AGENT_DEPTH {
             let asker = agent.map(|agent| agent.name.clone());
             let ask = AskAgent::new(self.clone(), thread_id.to_owned(), asker);

@@ -24,6 +24,10 @@ pub struct ImageArtifact {
     pub height: u32,
     pub byte_len: u64,
     pub sha256: String,
+    /// The model sees it with the tool result that made it, such as a screenshot; other
+    /// cards are for the user only.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub for_model: bool,
 }
 
 #[derive(Debug, Clone)]
