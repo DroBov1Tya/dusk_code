@@ -660,7 +660,8 @@ impl Agent {
             if pictures.is_empty() {
                 continue;
             }
-            let slot = messages.iter_mut().find_map(|chat| match chat {
+            // From the end: a server may reuse call IDs across steps.
+            let slot = messages.iter_mut().rev().find_map(|chat| match chat {
                 ChatMessage::Tool {
                     call_id, pictures, ..
                 } if call_id == call => Some(pictures),
@@ -685,13 +686,19 @@ impl Agent {
         if let Some(sees) = self.model.vision(&name) {
             return sees;
         }
+        if !self.model.may_ask_vision(&name) {
+            return false;
+        }
         match super::vision::sees_pictures(&choice).await {
             Some(sees) => {
                 info!("model {name} sees pictures: {sees}");
                 self.model.set_vision(name, sees);
                 sees
             }
-            None => false,
+            None => {
+                self.model.vision_failed(name);
+                false
+            }
         }
     }
 

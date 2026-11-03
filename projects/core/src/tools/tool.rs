@@ -46,13 +46,16 @@ impl ToolContext<'_> {
         Ok(resolved)
     }
 
-    /// The screen needs the user's yes once a session, unless full access gives it.
-    pub async fn approve_screen(&self, action: &str) -> Result<()> {
+    /// The screen needs the user's yes once a session, the keyboard every time, unless
+    /// full access gives it.
+    pub async fn approve_screen(&self, action: &str, keyboard: bool) -> Result<()> {
         let Some(approvals) = self.approvals else {
             return Ok(());
         };
-        let request = Request::Screen {
-            action: action.to_owned(),
+        let action = action.to_owned();
+        let request = match keyboard {
+            true => Request::Keyboard { action },
+            false => Request::Screen { action },
         };
         approvals
             .ask(request, self.progress, self.config.approvals())

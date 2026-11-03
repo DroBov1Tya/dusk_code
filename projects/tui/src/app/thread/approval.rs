@@ -23,7 +23,8 @@ impl Asked {
                 Request::Path { write: true, .. } => format!("allow writing in {grant}"),
                 Request::Path { write: false, .. } => format!("allow reading in {grant}"),
                 Request::Command { .. } => format!("allow `{grant}` commands"),
-                Request::Screen { .. } => "allow the screen for this session".into(),
+                Request::Screen { .. } => "allow the screen".into(),
+                Request::Keyboard { .. } => String::new(),
             };
             choices.push((Decision::Session, format!("{what} for this session")));
         }
@@ -43,6 +44,7 @@ impl Asked {
             }
             Request::Command { command } => format!("{who} wants to run: {command}"),
             Request::Screen { action } => format!("{who} wants to use the screen: {action}"),
+            Request::Keyboard { action } => format!("{who} wants to use the keyboard: {action}"),
         }
     }
 }
