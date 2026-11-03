@@ -35,8 +35,12 @@ pub enum Request {
     Path { path: PathBuf, write: bool },
     /// A shell command line.
     Command { command: String },
-    /// Seeing the screen and driving its mouse and keyboard; `action` is the first one.
+    /// Seeing the screen and driving its mouse; `action` says what. A yes for the
+    /// session covers these.
     Screen { action: String },
+    /// Typing or pressing keys, which can do anything a shell can: asked every time,
+    /// with what it sends.
+    Keyboard { action: String },
 }
 
 impl Request {
@@ -47,6 +51,7 @@ impl Request {
             Self::Path { path, .. } => Some(folder_of(path).display().to_string()),
             Self::Command { command } => program(command).map(str::to_owned),
             Self::Screen { .. } => Some("the screen".into()),
+            Self::Keyboard { .. } => None,
         }
     }
 
@@ -56,6 +61,7 @@ impl Request {
             Self::Path { path, write: false } => format!("reading {}", path.display()),
             Self::Command { command } => format!("running `{command}`"),
             Self::Screen { action } => format!("using the screen: {action}"),
+            Self::Keyboard { action } => format!("using the keyboard: {action}"),
         }
     }
 }
@@ -170,6 +176,7 @@ impl Grants {
                 program(command).is_some_and(|name| self.programs.iter().any(|p| p == name))
             }
             Request::Screen { .. } => self.screen,
+            Request::Keyboard { .. } => false,
         }
     }
 
@@ -180,6 +187,7 @@ impl Grants {
                 self.programs.extend(program(command).map(str::to_owned))
             }
             Request::Screen { .. } => self.screen = true,
+            Request::Keyboard { .. } => {}
         }
     }
 }
