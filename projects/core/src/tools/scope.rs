@@ -64,6 +64,11 @@ impl ToolScope {
         )
     }
 
+    /// The folder no tool may touch, the config folder with the keys.
+    pub fn protected(&self) -> Option<&Path> {
+        self.protected.as_deref()
+    }
+
     /// Commands run here and relative paths are resolved against it.
     pub fn cwd(&self) -> &Path {
         &self.cwd

@@ -72,8 +72,8 @@ fn queue_rows(app: &App) -> u16 {
 }
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
-    let full_access = app.config.current().approvals() == ApprovalPolicy::FullAccess;
-    draw_footer(frame, area, app.git.as_ref(), &app.folder, full_access);
+    let approvals = app.config.current().approvals();
+    draw_footer(frame, area, app.git.as_ref(), &app.folder, approvals);
     let area = Rect {
         height: area.height.saturating_sub(1),
         ..area
@@ -229,7 +229,7 @@ fn draw_footer(
     area: Rect,
     git: Option<&GitSummary>,
     folder: &str,
-    full_access: bool,
+    approvals: ApprovalPolicy,
 ) {
     if area.is_empty() {
         return;
@@ -261,9 +261,14 @@ fn draw_footer(
         ]),
     };
     // First, so a narrow terminal cuts the folder rather than the warning.
-    if full_access {
-        line.spans
-            .insert(0, Span::styled(" full access ", bold(NEGATIVE)));
+    let color = match approvals {
+        ApprovalPolicy::Ask => None,
+        ApprovalPolicy::FullAccess => Some(NEGATIVE),
+        _ => Some(ACCENT),
+    };
+    if let Some(color) = color {
+        let label = format!(" {} ", approvals.name());
+        line.spans.insert(0, Span::styled(label, bold(color)));
     }
     frame.render_widget(
         Paragraph::new(line),

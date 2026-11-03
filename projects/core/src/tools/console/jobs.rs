@@ -189,6 +189,7 @@ impl JobManager {
         owner: &str,
         command: &str,
         cwd: &std::path::Path,
+        confinement: Option<&crate::platform::Confinement>,
         timeout_seconds: u64,
         call_id: Option<&str>,
     ) -> Result<String> {
@@ -224,7 +225,7 @@ impl JobManager {
             )
             .await?;
         ensure!(!self.mailboxes.is_closed(), "the runtime is shutting down");
-        let child = match spawn(command, cwd) {
+        let child = match spawn(command, cwd, confinement) {
             Ok(child) => child,
             Err(error) => {
                 self.state
@@ -587,7 +588,7 @@ mod tests {
         let (state, database) = open("job-once").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start("thread", "echo hi", Path::new("."), 10, None)
+            .start("thread", "echo hi", Path::new("."), None, 10, None)
             .await
             .unwrap();
         let job = finished(&state, &id).await;
@@ -607,7 +608,14 @@ mod tests {
         let (state, database) = open("job-exit").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start("thread", "echo bad >&2; exit 3", Path::new("."), 10, None)
+            .start(
+                "thread",
+                "echo bad >&2; exit 3",
+                Path::new("."),
+                None,
+                10,
+                None,
+            )
             .await
             .unwrap();
         let job = finished(&state, &id).await;
@@ -620,7 +628,7 @@ mod tests {
         let (state, database) = open("job-cancel").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start("thread", "sleep 30", Path::new("."), 60, None)
+            .start("thread", "sleep 30", Path::new("."), None, 60, None)
             .await
             .unwrap();
         manager.cancel("thread", &id).await.unwrap();
@@ -679,7 +687,14 @@ mod tests {
         let (state, database) = open("job-list").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start("thread", "echo first; sleep 30", Path::new("."), 60, None)
+            .start(
+                "thread",
+                "echo first; sleep 30",
+                Path::new("."),
+                None,
+                60,
+                None,
+            )
             .await
             .unwrap();
         let mut output = String::new();

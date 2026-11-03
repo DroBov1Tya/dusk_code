@@ -5,17 +5,27 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Ask is the default; full access answers every request with yes. The config folder
-/// stays closed either way.
+/// Ask is the default. Sandbox runs commands without asking, confined by the system to
+/// the working folders; paths outside them and the screen are still asked. Full access
+/// answers every request with yes. The config folder stays closed either way.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ApprovalPolicy {
     #[default]
     Ask,
+    Sandbox,
     FullAccess,
 }
 
 impl ApprovalPolicy {
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Sandbox => "sandbox",
+            Self::FullAccess => "full access",
+        }
+    }
+
     pub(super) fn is_ask(&self) -> bool {
         *self == Self::Ask
     }

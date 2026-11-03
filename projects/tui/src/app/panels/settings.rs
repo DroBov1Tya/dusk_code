@@ -13,7 +13,7 @@ use dusk_core::{
     catalog::graph::Problem,
     catalog::skills::SkillInfo,
     chat::commands::{Command, Settings, ToolInfo},
-    config::{ContextPolicy, ContextPreset, Effort, Memory, WorkHistory},
+    config::{ApprovalPolicy, ContextPolicy, ContextPreset, Effort, Memory, WorkHistory},
     mcp::{McpInfo, McpState, McpToolInfo},
     release::update::Channel,
     runtime::SystemReport,
@@ -89,11 +89,15 @@ pub enum SwitchKind {
     WorkHistory,
     /// On is the dev channel, off the stable one.
     DevChannel,
-    /// On answers every approval request with yes.
-    FullAccess,
+    /// On sets this approval policy, off goes back to asking.
+    Approvals(ApprovalPolicy),
     /// Off writes no logs and sends no traces.
     Logging,
 }
+
+/// The policies the access rows switch on, in their order; logs come after.
+pub const ACCESS_POLICIES: [ApprovalPolicy; 2] =
+    [ApprovalPolicy::FullAccess, ApprovalPolicy::Sandbox];
 
 /// One row of the agent tree, with what is needed to draw the traces to it.
 pub struct AgentRow {
@@ -126,7 +130,8 @@ pub struct SettingsView {
     pub memory: Memory,
     pub work_history: WorkHistory,
     pub update_channel: Channel,
-    pub full_access: bool,
+    pub approvals: ApprovalPolicy,
+    pub sandbox: bool,
     pub logging: bool,
     /// The mode whose tools are shown.
     pub mode: String,
@@ -241,7 +246,8 @@ impl SettingsView {
             memory: settings.memory,
             work_history: settings.work_history,
             update_channel: settings.update_channel,
-            full_access: settings.full_access,
+            approvals: settings.approvals,
+            sandbox: settings.sandbox,
             logging: settings.logging,
             tools: settings.tools,
             skills: settings.skills,
@@ -286,7 +292,7 @@ impl SettingsView {
             Some(SettingCategory::Limits) => 2,
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
-            Some(SettingCategory::Access) => 2,
+            Some(SettingCategory::Access) => ACCESS_POLICIES.len() + 1,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp_rows().len(),
@@ -440,11 +446,14 @@ impl SettingsView {
                 let dev = self.update_channel == Channel::Dev;
                 (SwitchKind::DevChannel, "dev".into(), dev)
             }
-            SettingCategory::Access if row == 0 => (
-                SwitchKind::FullAccess,
-                "full access".into(),
-                self.full_access,
-            ),
+            SettingCategory::Access if row < ACCESS_POLICIES.len() => {
+                let policy = ACCESS_POLICIES[row];
+                (
+                    SwitchKind::Approvals(policy),
+                    policy.name().into(),
+                    self.approvals == policy,
+                )
+            }
             SettingCategory::Access => (SwitchKind::Logging, "logs".into(), self.logging),
             SettingCategory::System => return None,
         };

@@ -1,6 +1,7 @@
-//! What the machine offers the tools, found once when the core starts: the system, and
-//! whether a graphical session is there to see and drive. Built-in tools that need what
-//! is missing are neither offered to the model nor switchable.
+//! What the machine offers the tools, found once when the core starts: the system,
+//! whether a graphical session is there to see and drive, and whether commands can run
+//! confined. Built-in tools that need what is missing are neither offered to the model
+//! nor switchable, and a sandbox that is not there is not offered either.
 
 use std::process::Command;
 
@@ -11,13 +12,15 @@ pub enum Os {
     Other,
 }
 
-/// Assumes nothing: no screen until one is found.
+/// Assumes nothing: no screen and no sandbox until they are found.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Environment {
+pub struct Platform {
     pub os: Os,
     /// A screen the user sits at: an Aqua session on macOS, an X11 or Wayland display
     /// on Linux. Not over SSH, in a container or on a server without one.
     pub gui: bool,
+    /// Commands can run confined: Seatbelt on macOS, Landlock on Linux.
+    pub sandbox: bool,
 }
 
 /// What a tool needs from the machine beyond a shell.
@@ -27,16 +30,17 @@ pub enum Needs {
     Gui,
 }
 
-impl Default for Environment {
+impl Default for Platform {
     fn default() -> Self {
         Self {
             os: Os::Other,
             gui: false,
+            sandbox: false,
         }
     }
 }
 
-impl Environment {
+impl Platform {
     pub fn detect() -> Self {
         let os = if cfg!(target_os = "macos") {
             Os::MacOs
@@ -52,7 +56,11 @@ impl Environment {
                 .any(|name| std::env::var_os(name).is_some_and(|value| !value.is_empty())),
             Os::Other => false,
         };
-        Self { os, gui }
+        Self {
+            os,
+            gui,
+            sandbox: super::sandbox::available(),
+        }
     }
 
     pub fn provides(self, needs: Needs) -> bool {

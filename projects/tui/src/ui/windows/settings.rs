@@ -4,7 +4,7 @@
 
 use dusk_core::{
     catalog::skills::{SkillInfo, SkillKind},
-    config::{ContextPolicy, ContextPreset},
+    config::{ApprovalPolicy, ContextPolicy, ContextPreset},
     mcp::{McpInfo, McpState, McpToolInfo},
     release::update::Channel,
 };
@@ -294,14 +294,26 @@ fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
         }
         Some(SettingCategory::System) => system_rows(view, width),
         Some(SettingCategory::Access) => {
-            let about = "    on: no questions; off: asks before outside paths and commands";
+            let full = "    on: no questions; off: asks before outside paths and commands";
+            let sandbox = match view.sandbox {
+                true => {
+                    "    on: commands run without asking, writing only in the working \
+                     folders; outside paths are still asked"
+                }
+                false => "    this system has no sandbox for commands",
+            };
             let logs = "    off: no log files and no traces are written or sent, from now on";
-            vec![
+            let policy = |policy: ApprovalPolicy, about: &'static str| {
+                let label = format!("  {}", policy.name());
                 described(
-                    switch_row(vec![Span::raw("  full access")], view.full_access, width),
+                    switch_row(vec![Span::raw(label)], view.approvals == policy, width),
                     about,
                     width,
-                ),
+                )
+            };
+            vec![
+                policy(ApprovalPolicy::FullAccess, full),
+                policy(ApprovalPolicy::Sandbox, sandbox),
                 described(
                     switch_row(vec![Span::raw("  logs")], view.logging, width),
                     logs,

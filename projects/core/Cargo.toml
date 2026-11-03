@@ -37,6 +37,9 @@ sqlx.workspace = true
 core-foundation = "0.10"
 core-graphics = { version = "0.25", features = ["highsierra"] }
 
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock = "0.4"
+
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
 
