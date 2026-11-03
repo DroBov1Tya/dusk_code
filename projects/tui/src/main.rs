@@ -11,6 +11,7 @@ mod app;
 mod cli;
 mod host;
 mod session;
+mod telegram;
 mod ui;
 
 use anyhow::Result;
