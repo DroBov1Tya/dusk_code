@@ -1042,6 +1042,8 @@ version = "0.70.1"
 dependencies = [
  "anyhow",
  "parking_lot",
+ "serde",
+ "serde_json",
  "teloxide",
  "tokio",
  "tracing",

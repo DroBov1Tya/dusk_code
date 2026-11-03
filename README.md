@@ -37,6 +37,9 @@ cargo build --release
 - MAIN, ORCHESTRATOR, and PLAN modes for direct work, delegation, and planning.
 - Specialist agent definitions, skills, modes, and prompts stored as editable Markdown.
 - MCP server connections and configurable tools and agents through `/settings`.
+- Plugins that bring skills, agents, MCP tools, providers, hooks and platforms such
+  as the built-in Telegram bot, found at runtime and switched on in `/plugins`; see
+  [docs/plugins.md](docs/plugins.md).
 - A transcript of responses, reasoning, and tool calls, with context and token usage.
 - Background shell commands with status and output in `/jobs`.
 - Task tracking, plus goals with acceptance criteria through `/goal`.
@@ -55,6 +58,7 @@ duskcode TUI
  dusk_core
      ├── Model providers: OpenAI-compatible / Anthropic
      ├── Agent runtime and tools: files / shell / MCP
+     ├── Plugins: skills / agents / MCP / providers / hooks / platforms
      └── Local state and configuration: SQLite / YAML / Markdown
 ```
 
@@ -62,15 +66,17 @@ duskcode TUI
 | --- | --- |
 | `projects/core` | Configuration, providers, agents, tools, runtime, and state |
 | `projects/tui` | Terminal interface, input, navigation, and images |
+| `projects/external/telegram` | The Telegram bot of the built-in `telegram` plugin |
 | `projects/evals` | Evaluation runner for coding tasks |
-| `resources/` | Bundled modes, agents, skills, and prompts |
+| `resources/` | Bundled modes, agents, skills, plugins, and prompts |
 
 ## Configuration and data
 
 | Location | Contents |
 | --- | --- |
 | `~/.config/duskcode/config.yml` | Providers, model, limits, tools, agents, skills, MCP servers, appearance, and logging |
-| `~/.config/duskcode/rules/` | Agents, skills, modes, prompts, and user memory |
+| `~/.config/duskcode/rules/` | Agents, skills, modes, prompts, plugins, and user memory |
+| `~/.config/duskcode/plugin-data/` | What plugins keep, such as a paired Telegram owner |
 | `~/.config/duskcode/session/` | Session database and artifacts |
 | `~/.config/duskcode/logs/` | Application logs |
 | `~/.config/duskcode/mcp-auth/` | MCP OAuth tokens |

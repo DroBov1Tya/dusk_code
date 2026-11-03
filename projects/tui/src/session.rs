@@ -26,12 +26,10 @@ use ratatui::DefaultTerminal;
 
 use crate::{
     app::{
-        Action, AgentWindow, App, BotMenu, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel,
-        Preview, SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
+        Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel, Preview,
+        SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
-    screensaver,
-    telegram::{self, Telegram},
-    ui,
+    screensaver, ui,
 };
 
 const THREAD_SOURCE: &str = "tui";
@@ -149,7 +147,6 @@ pub async fn run(
         );
     }
     let mut keys = EventStream::new();
-    let mut telegram = Telegram::default();
     let mut clock = tokio::time::interval(FRAME);
     // The clock sleeps while idle; missed frames must not play back in a burst.
     clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -191,6 +188,20 @@ pub async fn run(
         // Read before the statuses: a server that settles in between still gets a frame.
         let mcp_starting = runtime.mcp_starting();
         app.mcp = runtime.mcp_statuses();
+        if matches!(app.panel, Some(Panel::Plugins { .. })) {
+            app.plugins = runtime
+                .plugins()
+                .into_iter()
+                .map(|plugin| crate::app::PluginRow {
+                    name: plugin.name,
+                    version: plugin.version,
+                    description: plugin.description,
+                    enabled: plugin.enabled,
+                    parts: plugin.parts,
+                    note: plugin.problem,
+                })
+                .collect();
+        }
         // Servers start in the background; the settings show them as they settle.
         if let Some(Panel::Settings(view)) = &mut app.panel
             && view.category == Some(SettingCategory::Mcp)
@@ -304,27 +315,20 @@ pub async fn run(
             ), if app.pressed.is_some() => Action::None,
             _ = tokio::time::sleep(app.screensaver.as_ref().map_or(FRAME, |playing| playing.frame_period())),
                 if app.screensaver.is_some() => Action::None,
-            bot = telegram.next() => match bot {
-                Some((id, event)) => telegram::handle(&mut telegram, &mut app, id, event),
-                None => Action::None,
-            },
             event = next_event(&mut open) => {
                 match event {
                     Some(event) => {
                         // Everything that has arrived meanwhile is drawn in one frame, so
                         // fast streams do not cost a frame per token.
                         if let Some(thread) = &mut open {
-                            telegram.observe(&event);
                             thread.apply(&mut app, event);
                             for _ in 0..MAX_EVENTS_PER_FRAME {
                                 let Some(event) = thread.handle.output.ready_event() else {
                                     break;
                                 };
-                                telegram.observe(&event);
-                                thread.apply(&mut app, event);
+                                    thread.apply(&mut app, event);
                             }
                         }
-                        telegram.sync(&app);
                     }
                     None => {
                         app.error("the thread stopped; the next message opens it again");
@@ -356,28 +360,13 @@ pub async fn run(
                 app.flash = Some("the update is still installing; wait before closing".into());
             }
             Action::Quit => break,
-            Action::StartBot(token) => match telegram.add(token).await {
-                Ok((name, code)) => {
-                    app.bots = telegram.rows();
-                    app.transcript.notice(
-                        format!(
-                            "Telegram bot @{name} is on. Send it /start {code} within 10 \
-                             minutes to pair; it answers no one else."
-                        ),
-                        Tone::Info,
-                    );
-                }
-                Err(error) => app.error(format!("cannot start the bot: {error:#}")),
-            },
-            Action::ToggleBot(id) => {
-                telegram.toggle(id);
-                app.bots = telegram.rows();
-            }
-            Action::RemoveBot(id) => {
-                telegram.remove(id);
-                app.bots = telegram.rows();
-                if let Some(Panel::Bots { selected }) = &mut app.panel {
-                    *selected = (*selected).min(app.bots.len().saturating_sub(1));
+            Action::TogglePlugin(name) => {
+                let enabled = app
+                    .plugins
+                    .iter()
+                    .any(|plugin| plugin.name == name && plugin.enabled);
+                if let Err(error) = runtime.set_plugin_enabled(&name, !enabled) {
+                    app.error(format!("cannot switch the plugin: {error:#}"));
                 }
             }
             Action::Send(text) => send(runtime, &mut app, &mut open, text, false).await,
@@ -742,14 +731,6 @@ pub async fn run(
                 Ok(mode) => app.mode = mode,
                 Err(error) => app.error(format!("cannot switch the mode: {error:#}")),
             },
-            Action::SetMode { bot, name } => match runtime.set_mode(&name) {
-                Ok(()) => {
-                    telegram.reply(bot, format!("Mode: {name}"));
-                    app.mode = name;
-                }
-                Err(error) => telegram.reply(bot, format!("{error:#}")),
-            },
-            Action::BotMenu { bot, menu } => bot_menu(runtime, &app, &telegram, bot, menu).await,
             Action::StopAgent(thread_id) => match runtime.stop_agent(&thread_id).await {
                 Ok(()) => app.flash = Some("stopping the agent".into()),
                 Err(error) => app.error(format!("cannot stop the agent: {error:#}")),
@@ -848,36 +829,6 @@ fn connect(
     })?;
     ensure!(!taken, "a provider with this name exists");
     Ok(())
-}
-
-/// What a bot's command can be set to: the modes, or the models every provider has now.
-async fn bot_menu(runtime: &Runtime, app: &App, telegram: &Telegram, bot: usize, menu: BotMenu) {
-    let (command, title, options) = match menu {
-        BotMenu::Modes => ("mode", format!("Mode: {}", app.mode), runtime.modes()),
-        BotMenu::Models => {
-            let providers = match (Command::Model { name: None }).answer(runtime).await {
-                Ok(Answer::Providers { providers, .. }) => providers,
-                Ok(_) => Vec::new(),
-                Err(error) => {
-                    telegram.reply(bot, format!("cannot list the models: {error:#}"));
-                    return;
-                }
-            };
-            let models = providers
-                .into_iter()
-                .flat_map(|provider| {
-                    let name = provider.name;
-                    provider
-                        .models
-                        .unwrap_or_default()
-                        .into_iter()
-                        .map(move |model| format!("{name}/{}", model.id))
-                })
-                .collect();
-            ("model", format!("Model: {}", app.model), models)
-        }
-    };
-    telegram.menu(bot, command, title, options);
 }
 
 /// Shows what the core answered to a command that does not run in the thread.

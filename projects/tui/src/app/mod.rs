@@ -12,7 +12,7 @@ mod state;
 mod submit;
 mod thread;
 
-pub use action::{Action, BotMenu, commands};
+pub use action::{Action, commands};
 pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 pub use hits::{
@@ -21,9 +21,9 @@ pub use hits::{
 };
 pub use keys::EFFORTS;
 pub use panels::{
-    AgentRow, AgentWindow, BotRow, Connection, FileButton, FileEditor, HitTarget, JobsView, McpRow,
-    ModelList, Panel, Preset, Preview, SettingCategory, SettingsHit, SettingsView, SubagentView,
-    SwitchKind, ThreadList,
+    AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, JobsView, McpRow,
+    ModelList, Panel, PluginRow, Preset, Preview, SettingCategory, SettingsHit, SettingsView,
+    SubagentView, SwitchKind, ThreadList,
 };
 pub use state::{App, compact_number, now_ms};
 pub use thread::approval::{ApprovalHit, Asked};

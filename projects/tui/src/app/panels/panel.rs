@@ -22,8 +22,8 @@ pub enum Panel {
     Models(ModelList),
     Agent(AgentWindow),
     Connect(Connection),
-    /// The Telegram bots of this session.
-    Bots {
+    /// The plugins found, to switch on or off.
+    Plugins {
         selected: usize,
     },
     Unsent {
@@ -151,14 +151,16 @@ impl Preview {
     }
 }
 
-/// A Telegram bot as the bots panel shows it.
-pub struct BotRow {
-    pub id: usize,
-    pub username: String,
-    /// Who paired with it; `None` while it waits for its code.
-    pub owner: Option<String>,
-    pub code: String,
-    pub running: bool,
+/// A plugin as the plugins panel shows it.
+pub struct PluginRow {
+    pub name: String,
+    pub version: String,
+    pub description: String,
+    pub enabled: bool,
+    /// What it brings, such as `mcp` or `platform`.
+    pub parts: Vec<&'static str>,
+    /// Why it does not load or what its platform says, such as a code to pair with.
+    pub note: Option<String>,
 }
 
 /// Where /connect starts: the providers to pick from, each with what it needs.

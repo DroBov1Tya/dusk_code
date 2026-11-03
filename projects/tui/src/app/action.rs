@@ -20,11 +20,8 @@ pub enum Action {
         id: u64,
         decision: Decision,
     },
-    /// Checks a Telegram bot token and starts the bot; the token stays in memory.
-    StartBot(String),
-    /// Stops a running bot or starts a stopped one again, by its id.
-    ToggleBot(usize),
-    RemoveBot(usize),
+    /// Switches the plugin named on or off.
+    TogglePlugin(String),
     Connect {
         kind: ProviderKind,
         /// `None` takes the next free `provider-N`.
@@ -83,16 +80,6 @@ pub enum Action {
     OpenLink(String),
     /// Move the chat to its next mode.
     NextMode,
-    /// Move the chat to the mode named, as a Telegram bot asked.
-    SetMode {
-        bot: usize,
-        name: String,
-    },
-    /// Send a Telegram bot the menu of what its command can be set to.
-    BotMenu {
-        bot: usize,
-        menu: BotMenu,
-    },
     /// Stop one subagent and the agents it asked.
     StopAgent(String),
     Copy(String),
@@ -114,16 +101,9 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "view local unsent messages and explicitly send one",
         ),
         (
-            "/tgbot",
-            "mirror this chat in a Telegram bot: /tgbot <token>; alone, the bots",
+            "/plugins",
+            "the plugins found, to switch on or off; they live in rules/plugins/",
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())
-}
-
-/// What a Telegram bot's menu lists.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum BotMenu {
-    Modes,
-    Models,
 }
