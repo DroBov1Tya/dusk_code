@@ -184,17 +184,40 @@ impl McpServers {
         Ok(page)
     }
 
-    /// The servers that started, for building a thread's tools.
+    /// The servers that started and are still there, for building a thread's tools.
     pub fn ready(&self) -> Vec<Arc<McpServer>> {
+        self.drop_closed();
         self.ready.read().clone()
     }
 
     pub fn statuses(&self) -> Vec<McpStatus> {
+        self.drop_closed();
         self.statuses.read().clone()
+    }
+
+    /// A server that went away after it was ready shows as failed, not ready, and its
+    /// tools leave new threads; a restart from the settings brings it back.
+    fn drop_closed(&self) {
+        let closed: Vec<String> = self
+            .ready
+            .read()
+            .iter()
+            .filter(|server| server.client.is_closed())
+            .map(|server| server.name.clone())
+            .collect();
+        if closed.is_empty() {
+            return;
+        }
+        self.ready.write().retain(|server| !closed.contains(&server.name));
+        for name in closed {
+            warn!("MCP server {name} stopped");
+            self.set_state(&name, McpState::Failed("the server stopped".into()));
+        }
     }
 
     /// Every server in `config`, with how it stands.
     pub fn infos(&self, config: &Config) -> Vec<McpInfo> {
+        self.drop_closed();
         let statuses = self.statuses.read();
         config
             .all_mcp()
