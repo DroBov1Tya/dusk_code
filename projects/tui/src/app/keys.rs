@@ -7,11 +7,11 @@ use crossterm::event::{
 };
 use std::time::{Duration, Instant};
 
-use dusk_core::release::update::InstallStage;
+use dusk_core::{chat::commands::Command, release::update::InstallStage};
 use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
 use super::{
-    Action, App, Button, Command, Entry, Focus, Panel, Pressed, Selection, TEXT_COLUMN, commands,
+    Action, App, Button, Entry, Focus, Panel, Pressed, Selection, TEXT_COLUMN, commands,
     panels::{Connection, step},
 };
 
