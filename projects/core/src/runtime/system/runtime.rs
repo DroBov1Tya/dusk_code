@@ -131,6 +131,7 @@ impl Runtime {
         let agents_check = tokio::spawn(Arc::clone(&agents).watch(CONFIG_CHECK_PERIOD));
         let updates = Arc::new(UpdateWatch::default());
         let update_check = tokio::spawn(Arc::clone(&updates).run(Arc::clone(&config)));
+        let mcp = McpServers::start(&config.current(), paths.mcp_tokens_dir());
         let launcher = Launcher {
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
@@ -139,7 +140,7 @@ impl Runtime {
             mailboxes,
             jobs,
             approvals: Arc::default(),
-            mcp: McpServers::start(&config.current()),
+            mcp,
             agents,
         };
         let model_discovery = if !config.current().providers().is_empty() {
@@ -677,6 +678,17 @@ impl Runtime {
         self.launcher
             .mcp
             .restart(name, config.mcp().get(name).cloned());
+    }
+
+    /// Starts signing in to a remote MCP server: the page to open in the browser. The
+    /// server starts again once the user comes back from it.
+    pub async fn sign_in_mcp(&self, name: &str) -> Result<reqwest::Url> {
+        let config = self.launcher.config.current();
+        let server = config
+            .mcp()
+            .get(name)
+            .with_context(|| format!("no MCP server {name}"))?;
+        self.launcher.mcp.sign_in(name, server.clone()).await
     }
 
     /// Whether an MCP server is still starting.
