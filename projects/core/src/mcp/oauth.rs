@@ -119,6 +119,26 @@ impl CredentialStore for TokenFile {
     }
 }
 
+/// The SDK's error with its causes, which say what went wrong. Its guard against
+/// internal addresses refuses the 198.18.0.0/15 range that VPNs with fake-IP DNS hand
+/// out for every name; that case is named, since nothing in it says so.
+fn oauth_error(error: AuthError) -> anyhow::Error {
+    let mut text = error.to_string();
+    let mut cause = std::error::Error::source(&error);
+    while let Some(next) = cause {
+        text.push_str(&format!(": {next}"));
+        cause = next.source();
+    }
+    if text.contains("is allowed for OAuth requests") {
+        return anyhow!(
+            "the sign-in server resolves to an address OAuth may not reach, such as the \
+             198.18.x.x a VPN with fake-IP DNS gives; turn fake-IP off for it or reach it \
+             through the VPN's HTTP proxy (HTTPS_PROXY)"
+        );
+    }
+    anyhow!("OAuth: {text}")
+}
+
 /// A client that sends the saved token, or `None` when the server was never signed in to.
 pub async fn authorized(
     tokens: TokenFile,
@@ -130,12 +150,9 @@ pub async fn authorized(
     }
     let mut manager = AuthorizationManager::new(url.as_str())
         .await
-        .map_err(|error| anyhow!("OAuth: {error}"))?;
+        .map_err(oauth_error)?;
     manager.set_credential_store(tokens);
-    let signed_in = manager
-        .initialize_from_store()
-        .await
-        .map_err(|error| anyhow!("OAuth: {error}"))?;
+    let signed_in = manager.initialize_from_store().await.map_err(oauth_error)?;
     Ok(signed_in.then(|| AuthClient::new(http, manager)))
 }
 
@@ -152,18 +169,15 @@ pub async fn sign_in(
     let redirect = format!("http://127.0.0.1:{port}/callback");
     let mut state = OAuthState::new(url.as_str(), None)
         .await
-        .map_err(|error| anyhow!("OAuth: {error}"))?;
+        .map_err(oauth_error)?;
     if let OAuthState::Unauthorized(manager) = &mut state {
         manager.set_credential_store(tokens);
     }
     state
         .start_authorization(AuthorizationRequest::new(&redirect).with_client_name(CLIENT_NAME))
         .await
-        .map_err(|error| anyhow!("OAuth: {error}"))?;
-    let page = state
-        .get_authorization_url()
-        .await
-        .map_err(|error| anyhow!("OAuth: {error}"))?;
+        .map_err(oauth_error)?;
+    let page = state.get_authorization_url().await.map_err(oauth_error)?;
     let page = Url::parse(&page).context("the authorization page is not a URL")?;
     // The user types a password there: cleartext only to this machine.
     ensure!(
@@ -183,7 +197,7 @@ pub async fn sign_in(
         state
             .handle_callback_url(&callback)
             .await
-            .map_err(|error| anyhow!("OAuth: {error}"))?;
+            .map_err(oauth_error)?;
         Ok(())
     };
     Ok((page, finish))
