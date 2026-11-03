@@ -14,4 +14,4 @@ mod thread_runner;
 pub use launcher::Launcher;
 pub use runtime::{Runtime, SystemReport, ThreadHandle};
 pub use thread_lock::ThreadLock;
-pub use thread_runner::{ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup};
+pub use thread_runner::{ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup};

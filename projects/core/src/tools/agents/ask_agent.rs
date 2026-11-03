@@ -23,7 +23,7 @@ use crate::{
     catalog::agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
     catalog::skills,
     config::Effort,
-    runtime::chat::thread_start::{self, display_name, read_prompt, start_agent_thread},
+    runtime::thread::thread_start::{self, display_name, read_prompt, start_agent_thread},
     runtime::{ThreadEvent, system::Launcher},
     state::Identity,
     state::Thread,

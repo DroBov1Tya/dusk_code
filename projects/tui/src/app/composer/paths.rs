@@ -4,7 +4,7 @@
 
 use std::env;
 
-use dusk_core::chat::path_completion::{self, PathCompletion};
+use dusk_core::message::path_completion::{self, PathCompletion};
 
 use super::App;
 

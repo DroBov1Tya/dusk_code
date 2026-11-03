@@ -15,9 +15,11 @@ use ratatui::{
 };
 
 use super::{
-    chat::transcript::one_line,
     loader::{Loader, agent_name, identity},
-    text::wrap,
+    text::{
+        format::{format_duration, one_line},
+        wrap,
+    },
     theme::{
         ACCENT, DEEP, DONE, DOT, FAILED, FOLDED, HAIRLINE, NEGATIVE, OFF, ON, POSITIVE, TEXT,
         TEXT_SOFT, UNFOLDED, bold, dusk, fg,
@@ -560,15 +562,5 @@ fn scroll_limit(line_count: usize, area: Rect) -> usize {
         0
     } else {
         line_count.saturating_sub(visible).min(u16::MAX as usize)
-    }
-}
-
-pub fn format_duration(ms: u64) -> String {
-    let seconds = ms / 1_000;
-    let minutes = seconds / 60;
-    if minutes >= 60 {
-        format!("{}:{:02}:{:02}", minutes / 60, minutes % 60, seconds % 60)
-    } else {
-        format!("{minutes:02}:{:02}", seconds % 60)
     }
 }

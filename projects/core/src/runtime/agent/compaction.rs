@@ -9,11 +9,11 @@ use anyhow::{Context, Result, bail};
 use tracing::warn;
 
 use super::{Agent, Inbox, Stop};
-use crate::runtime::{chat::Conversation, system::ThreadEvent};
+use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
     catalog::modes,
     providers::{ChatMessage, ChatRequest},
-    runtime::chat::thread_start::{NO_PROMPT, read_prompt},
+    runtime::thread::thread_start::{NO_PROMPT, read_prompt},
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
 

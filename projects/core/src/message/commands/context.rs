@@ -9,7 +9,7 @@ use anyhow::Result;
 
 use crate::{
     providers::ToolSpec,
-    runtime::chat::{Conversation, spec_tokens},
+    runtime::thread::{Conversation, spec_tokens},
     state::{MessageRole, State, estimate_tokens},
 };
 

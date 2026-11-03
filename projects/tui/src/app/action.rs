@@ -1,8 +1,8 @@
 //! What the app asks the session to do, and the commands the box offers.
 
 use dusk_core::{
-    chat::commands::{COMMANDS, Command},
     config::{ContextPolicy, ProviderKind},
+    message::commands::{COMMANDS, Command},
     tools::Decision,
 };
 
