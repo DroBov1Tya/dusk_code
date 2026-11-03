@@ -15,7 +15,7 @@ use super::{Inbox, Stop, generation};
 use crate::plugins::{HookEvent, Hooks, hooks::Outcome};
 use crate::runtime::{
     ThreadEvent,
-    system::model_choice::{Choice, ModelChoice},
+    model_choice::{Choice, ModelChoice},
     thread::{Conversation, spec_tokens},
 };
 use crate::state::artifacts::ArtifactStore;

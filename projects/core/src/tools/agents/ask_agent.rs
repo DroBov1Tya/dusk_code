@@ -24,7 +24,7 @@ use crate::{
     catalog::skills,
     config::Effort,
     runtime::thread::thread_start::{self, display_name, read_prompt, start_agent_thread},
-    runtime::{ThreadEvent, system::Launcher},
+    runtime::{Launcher, ThreadEvent},
     state::Identity,
     state::Thread,
 };
