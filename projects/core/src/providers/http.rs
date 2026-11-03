@@ -65,6 +65,18 @@ pub fn is_retryable(status: StatusCode) -> bool {
     matches!(status.as_u16(), 408 | 409 | 429) || status.is_server_error()
 }
 
+/// What a refused request tells the user; a bad key says so, with where to fix it.
+pub fn refused(what: &str, status: StatusCode) -> String {
+    let code = status.as_u16();
+    match code {
+        401 => "the provider rejected the API key (HTTP 401); /connect sets another".into(),
+        402 => "the provider account has no credit left (HTTP 402)".into(),
+        403 => "the API key may not do this (HTTP 403)".into(),
+        404 => "the provider has no such model or address (HTTP 404)".into(),
+        _ => format!("provider {what} request returned HTTP {code}"),
+    }
+}
+
 pub fn is_event_stream(response: &Response) -> bool {
     response
         .headers()
