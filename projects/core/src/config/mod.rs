@@ -85,6 +85,9 @@ pub struct Config {
     /// Whether tools ask before a path outside their folders and before every command.
     #[serde(default, skip_serializing_if = "ApprovalPolicy::is_ask")]
     approvals: ApprovalPolicy,
+    /// Log files, and traces for an OpenTelemetry collector.
+    #[serde(default, skip_serializing_if = "Logging::is_default")]
+    logging: Logging,
 }
 
 /// Ask is the default; full access answers every request with yes. The config folder
@@ -453,6 +456,43 @@ fn default_max_goal_rounds() -> u32 {
     10
 }
 
+/// What the core records about its work. Off, nothing is written or sent at all.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Logging {
+    #[serde(default = "yes")]
+    pub enabled: bool,
+    /// Sends spans of turns, model calls and tool calls over OTLP/HTTP.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub traces: Option<Traces>,
+}
+
+impl Default for Logging {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            traces: None,
+        }
+    }
+}
+
+impl Logging {
+    fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+}
+
+/// An OpenTelemetry collector. `headers` may hold an API key, so they are never logged.
+#[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Traces {
+    /// The collector's OTLP/HTTP address, such as `http://127.0.0.1:4318`; spans go to
+    /// `/v1/traces` under it.
+    pub endpoint: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub headers: BTreeMap<String, String>,
+}
+
 /// How the client looks and behaves on screen.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -613,6 +653,14 @@ impl Config {
         self.approvals
     }
 
+    pub fn logging(&self) -> &Logging {
+        &self.logging
+    }
+
+    pub fn set_logging_enabled(&mut self, enabled: bool) {
+        self.logging.enabled = enabled;
+    }
+
     pub fn set_approvals(&mut self, policy: ApprovalPolicy) {
         self.approvals = policy;
     }
@@ -742,6 +790,20 @@ impl Config {
             self.previous_effort != Some(Effort::Off),
             "previous effort cannot be off"
         );
+        if let Some(traces) = &self.logging.traces {
+            // Spans name files and commands; they travel encrypted or stay on this machine.
+            let url = reqwest::Url::parse(&traces.endpoint)
+                .map_err(|_| anyhow!("logging.traces.endpoint is not a URL"))?;
+            ensure!(
+                url.scheme() == "https" && url.host_str().is_some()
+                    || crate::providers::is_loopback(&url),
+                "logging.traces.endpoint must use HTTPS, or HTTP to 127.0.0.1 or [::1]"
+            );
+            ensure!(
+                url.username().is_empty() && url.password().is_none() && url.query().is_none(),
+                "logging.traces.endpoint must not contain credentials or a query"
+            );
+        }
         for (name, policy) in &self.model_contexts {
             let valid = name.split_once('/').is_some_and(|(provider, model)| {
                 !provider.trim().is_empty() && !model.trim().is_empty()
@@ -814,6 +876,7 @@ impl fmt::Debug for Config {
             .field("agents", &self.agents)
             .field("model", &self.model)
             .field("mcp", &self.mcp.keys().collect::<Vec<_>>())
+            .field("logging", &self.logging.enabled)
             .finish()
     }
 }
@@ -933,6 +996,26 @@ mod tests {
         assert!(!again.enabled() && again.target() == "docs-server --stdio");
         assert!(parse_mcp_server("a:\n  command: x\nb:\n  command: y\n").is_err());
         assert!(parse_mcp_server("docs:\n  command: x\n  extra: 1\n").is_err());
+    }
+
+    #[test]
+    fn traces_go_encrypted_or_stay_on_this_machine() {
+        let traces = |endpoint: &str| {
+            parse(&format!(
+                "logging:\n  traces:\n    endpoint: '{endpoint}'\n"
+            ))
+        };
+        assert!(traces("https://otel.example.com").is_ok());
+        assert!(traces("http://127.0.0.1:4318").is_ok());
+        for wrong in [
+            "http://otel.example.com",
+            "https://k:s@otel.example.com",
+            "otel",
+        ] {
+            assert!(traces(wrong).is_err(), "{wrong}");
+        }
+        let off = parse("logging:\n  enabled: false\n").unwrap();
+        assert!(!off.logging().enabled);
     }
 
     #[test]

@@ -153,6 +153,11 @@ impl ToolRegistry {
 
     /// Never fails: an unknown, switched-off or failed call becomes an error result for
     /// the model. A model may call a tool it was not offered, so the switch is checked here.
+    #[tracing::instrument(
+        name = "tool_call",
+        skip_all,
+        fields(tool = %call.name, failed = tracing::field::Empty)
+    )]
     pub async fn call(
         &self,
         call: &ToolCall,
@@ -193,6 +198,8 @@ impl ToolRegistry {
         }
         let result = tool.call_result(arguments, context).await;
         let took = started.elapsed().as_millis();
+        let failed = result.as_ref().map_or(true, |result| result.is_error);
+        tracing::Span::current().record("failed", failed);
         match result {
             Ok(mut result) => {
                 info!("tool {} done in {took} ms", call.name);

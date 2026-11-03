@@ -66,6 +66,7 @@ impl Agent {
 
     /// Summarizes everything that is not queued. A failure is reported to the client and
     /// leaves the context as it was.
+    #[tracing::instrument(name = "compaction", skip_all, fields(thread = %self.thread_id))]
     pub async fn compact(
         &self,
         instructions: Option<&str>,
