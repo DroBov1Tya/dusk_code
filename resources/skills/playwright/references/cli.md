@@ -1,19 +1,15 @@
 # Playwright CLI Reference
 
-Use the wrapper script unless the CLI is already installed globally:
+Use an installed CLI and inspect its current help before relying on command options:
 
 ```bash
-export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-export PWCLI="$CODEX_HOME/skills/playwright/scripts/playwright_cli.sh"
-"$PWCLI" --help
+playwright-cli --help
 ```
 
-User-scoped skills install under `$CODEX_HOME/skills` (default: `~/.codex/skills`).
-
-Optional convenience alias:
+Optional convenience alias for the examples below:
 
 ```bash
-alias pwcli="$PWCLI"
+alias pwcli=playwright-cli
 ```
 
 ## Core

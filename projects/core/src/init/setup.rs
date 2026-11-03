@@ -68,10 +68,27 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     // Shipped files out of date only make the agent know less; they never stop the start.
     let builtin = match builtin::sync(paths) {
         Ok(synced) => {
-            for (what, files) in [("added", &synced.written), ("updated", &synced.updated)] {
+            for (what, files) in [
+                ("added", &synced.written),
+                ("updated", &synced.updated),
+                ("retired", &synced.removed),
+            ] {
                 if !files.is_empty() {
                     info!("shipped files {what}: {}", files.join(", "));
                 }
+            }
+            if !synced.archived.is_empty() {
+                info!(
+                    "retired skill recovery files under {}: {}",
+                    paths.rules_root().display(),
+                    synced.archived.join(", ")
+                );
+            }
+            if !synced.preserved.is_empty() {
+                warn!(
+                    "retired skill files preserved because they differ or are unsafe: {}",
+                    synced.preserved.join(", ")
+                );
             }
             synced
         }
