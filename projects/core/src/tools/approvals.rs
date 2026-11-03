@@ -97,7 +97,10 @@ impl Approvals {
         progress: Option<Progress<'_>>,
         policy: ApprovalPolicy,
     ) -> Result<()> {
-        if policy == ApprovalPolicy::FullAccess || self.grants.lock().covers(&request) {
+        // In sandbox mode a command needs no yes: the system confines it when it runs.
+        let confined =
+            policy == ApprovalPolicy::Sandbox && matches!(request, Request::Command { .. });
+        if policy == ApprovalPolicy::FullAccess || confined || self.grants.lock().covers(&request) {
             return Ok(());
         }
         let Some(progress) = progress else {
@@ -298,6 +301,22 @@ mod tests {
                 .ask(command("ls"), None, ApprovalPolicy::FullAccess)
                 .await
                 .is_ok()
+        );
+        // The sandbox confines commands, so they pass; nothing else does.
+        assert!(
+            approvals
+                .ask(command("ls"), None, ApprovalPolicy::Sandbox)
+                .await
+                .is_ok()
+        );
+        let screen = Request::Screen {
+            action: "click".into(),
+        };
+        assert!(
+            approvals
+                .ask(screen, None, ApprovalPolicy::Sandbox)
+                .await
+                .is_err()
         );
     }
 }

@@ -18,8 +18,8 @@ use super::{
     Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner,
     model_choice::{self, Choice, ModelChoice},
 };
+use crate::platform::Platform;
 use crate::runtime::agent::{Input, Mailboxes};
-use crate::util::environment::Environment;
 use crate::{
     catalog::agents::{AgentTree, Agents},
     catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
@@ -141,10 +141,10 @@ impl Runtime {
         let updates = Arc::new(UpdateWatch::default());
         let update_check = tokio::spawn(Arc::clone(&updates).run(Arc::clone(&config)));
         let mcp = McpServers::start(&config.current(), paths.mcp_tokens_dir());
-        let environment = Environment::detect();
+        let platform = Platform::detect();
         info!(
-            "environment: {:?}, screen: {}",
-            environment.os, environment.gui
+            "platform: {:?}, screen: {}, sandbox: {}",
+            platform.os, platform.gui, platform.sandbox
         );
         let launcher = Launcher {
             state,
@@ -154,7 +154,7 @@ impl Runtime {
             mailboxes,
             jobs,
             approvals: Arc::default(),
-            environment,
+            platform,
             mcp,
             agents,
         };
@@ -394,6 +394,11 @@ impl Runtime {
                 choice.input_limit(&config)
             });
         context_report(&launcher.state, thread_id, &mode, prompt, &specs, limit).await
+    }
+
+    /// The machine as the core found it at start.
+    pub fn platform(&self) -> Platform {
+        self.launcher.platform
     }
 
     /// Every mode of the chat, in the order Tab walks them.

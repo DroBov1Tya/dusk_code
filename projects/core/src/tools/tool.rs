@@ -11,7 +11,7 @@ use super::{
     approvals::{Approvals, Request},
     scope::{Place, ToolScope},
 };
-use crate::{config::Config, runtime::ThreadEvent, util::environment::Needs};
+use crate::{config::Config, platform::Needs, runtime::ThreadEvent};
 
 /// Boxed so tools of different kinds, built-in or MCP, fit in one registry.
 pub type BoxFuture<'a, String> = Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;

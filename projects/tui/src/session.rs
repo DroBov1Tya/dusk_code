@@ -492,8 +492,13 @@ pub async fn run(
                         true => Channel::Dev,
                         false => Channel::Stable,
                     }),
-                    SwitchKind::FullAccess => runtime.set_approvals(match on {
-                        true => ApprovalPolicy::FullAccess,
+                    SwitchKind::Approvals(ApprovalPolicy::Sandbox)
+                        if on && !runtime.platform().sandbox =>
+                    {
+                        Err(anyhow::anyhow!("this system has no sandbox for commands"))
+                    }
+                    SwitchKind::Approvals(policy) => runtime.set_approvals(match on {
+                        true => policy,
                         false => ApprovalPolicy::Ask,
                     }),
                     SwitchKind::Logging => runtime.set_logging_enabled(on),

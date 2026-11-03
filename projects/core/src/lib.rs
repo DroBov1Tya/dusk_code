@@ -1,6 +1,7 @@
 //! dusk_core: all application logic. Front ends (CLI, TUI, GUI) are thin clients over it.
 //!
 //! The tree follows the subsystems, as a kernel does:
+//! - `platform`: the machine, found first: its system, its screen and its sandbox;
 //! - `init`: paths, logs and the first start of the config folder;
 //! - `config`: the settings file and its live copy;
 //! - `catalog`: what the user edits as files: skills, agents and mode prompts;
@@ -14,6 +15,7 @@ pub mod chat;
 pub mod config;
 pub mod init;
 pub mod mcp;
+pub mod platform;
 pub mod providers;
 pub mod release;
 pub mod runtime;

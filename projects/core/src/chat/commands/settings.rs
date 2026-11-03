@@ -15,7 +15,9 @@ pub struct Settings {
     pub memory: Memory,
     pub work_history: WorkHistory,
     pub update_channel: Channel,
-    pub full_access: bool,
+    pub approvals: ApprovalPolicy,
+    /// Commands can run confined on this machine.
+    pub sandbox: bool,
     /// Log files and traces; off writes and sends nothing.
     pub logging: bool,
     /// The chat's mode, whose switches `tools` shows.
@@ -53,7 +55,8 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         memory: config.memory(),
         work_history: config.work_history(),
         update_channel: config.update_channel(),
-        full_access: config.approvals() == ApprovalPolicy::FullAccess,
+        approvals: config.approvals(),
+        sandbox: runtime.platform().sandbox,
         logging: config.logging().enabled,
         tools,
         skills: runtime.skills(),

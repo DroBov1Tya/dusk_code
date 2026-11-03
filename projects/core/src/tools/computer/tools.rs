@@ -14,13 +14,13 @@ use super::{
 };
 use crate::{
     BoxFuture,
+    platform::Needs,
     tools::{
         ToolResult,
         builtin::parse_arguments,
         schema,
         tool::{Tool, ToolContext, ToolKind},
     },
-    util::environment::Needs,
 };
 
 /// Text typed in one call at most.

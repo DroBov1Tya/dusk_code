@@ -10,10 +10,12 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
-    process::{Child, Command},
+    process::Child,
 };
 
 use crate::BoxFuture;
+use crate::config::ApprovalPolicy;
+use crate::platform::{self, Confinement};
 use crate::tools::{
     builtin::parse_arguments,
     schema,
@@ -100,13 +102,19 @@ impl Tool for RunCommand {
                         &owner.thread_id,
                         &arguments.command,
                         scope.cwd(),
+                        confinement(&context).as_ref(),
                         timeout,
                         context.progress.map(|progress| progress.call_id),
                     )
                     .await?;
                 return Ok(format!("background job started: job_id={id}"));
             }
-            Ok(run(&arguments.command, scope, timeout).await?.content)
+            let confinement = confinement(&context);
+            Ok(
+                run(&arguments.command, scope, confinement.as_ref(), timeout)
+                    .await?
+                    .content,
+            )
         })
     }
     fn call_result<'a>(
@@ -128,7 +136,14 @@ impl Tool for RunCommand {
                 ));
             }
             context.approve_command(&parsed.command).await?;
-            run(&parsed.command, context.scope, timeout).await
+            let confinement = confinement(&context);
+            run(
+                &parsed.command,
+                context.scope,
+                confinement.as_ref(),
+                timeout,
+            )
+            .await
         })
     }
 }
@@ -136,9 +151,10 @@ impl Tool for RunCommand {
 async fn run(
     command: &str,
     scope: &ToolScope,
+    confinement: Option<&Confinement>,
     timeout_seconds: u64,
 ) -> Result<crate::tools::ToolResult> {
-    let mut child = spawn(command, scope.cwd())?;
+    let mut child = spawn(command, scope.cwd(), confinement)?;
     let mut group = ProcessGroup(child.id());
     ensure!(group.0.is_some(), "command exited before it started");
     let stdout = child.stdout.take().context("stdout is not captured")?;
@@ -173,10 +189,15 @@ async fn run(
     })
 }
 
-pub(super) fn spawn(command: &str, cwd: &Path) -> Result<Child> {
-    Command::new("sh")
-        .arg("-c")
-        .arg(command)
+/// How the command is confined in sandbox mode, by the scope it runs in.
+pub(super) fn confinement(context: &ToolContext<'_>) -> Option<Confinement> {
+    let scope = context.scope;
+    (context.config.approvals() == ApprovalPolicy::Sandbox)
+        .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))
+}
+
+pub(super) fn spawn(command: &str, cwd: &Path, confinement: Option<&Confinement>) -> Result<Child> {
+    platform::shell(command, confinement)?
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -290,7 +311,7 @@ mod tests {
     async fn background_processes_do_not_outlive_the_command() {
         let scope = scope("shell_background");
         let started = std::time::Instant::now();
-        let output = run("sleep 30 & echo started", &scope, 10).await.unwrap();
+        let output = run("sleep 30 & echo started", &scope, None, 10).await.unwrap();
         assert!(output.content.contains("started"));
         assert!(
             started.elapsed() < Duration::from_secs(5),

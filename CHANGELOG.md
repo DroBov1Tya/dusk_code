@@ -32,6 +32,12 @@ testing.
   marks where the agent last clicked or scrolled; it lets the mouse through and stays
   out of screenshots.
 
+- Sandbox mode, in /settings > access: commands run without asking, confined by the
+  system to the working folder, the thread's workspace and the temporary folders, with
+  the config folder closed to them. macOS uses Seatbelt, Linux Landlock, which cannot
+  hide a folder from reading but still keeps writes out of it. Paths outside the folders
+  and the screen are still asked; the footer shows the mode.
+
 ### Changed
 
 - The token counters are gone from the sidebar, and the input and output token limits

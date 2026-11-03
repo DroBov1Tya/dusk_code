@@ -13,9 +13,9 @@ use super::{
 };
 use crate::{
     config::Config,
+    platform::Platform,
     providers::{ToolCall, ToolSpec},
     state::artifacts::ImageArtifact,
-    util::environment::Environment,
 };
 
 /// The model reads every result; a runaway one must not flood its context.
@@ -33,7 +33,7 @@ pub struct ToolRegistry {
     pub(crate) jobs: Option<Arc<super::JobManager>>,
     pub(crate) approvals: Option<Arc<super::Approvals>>,
     /// What the machine offers; set by the launcher from what it found at start.
-    pub(crate) environment: Environment,
+    pub(crate) platform: Platform,
 }
 
 /// What the model gets back from a call.
@@ -119,7 +119,7 @@ impl ToolRegistry {
         let mut kinds: Vec<_> = self
             .tools
             .iter()
-            .filter(|(_, tool)| tool.switchable() && self.environment.provides(tool.needs()))
+            .filter(|(_, tool)| tool.switchable() && self.platform.provides(tool.needs()))
             .map(|(name, tool)| (name.clone(), tool.kind()))
             .collect();
         kinds.sort_by(|a, b| (a.1, &a.0).cmp(&(b.1, &b.0)));
@@ -127,7 +127,7 @@ impl ToolRegistry {
     }
 
     fn enabled(&self, tool: &dyn Tool, config: &Config) -> bool {
-        if tool.root_only() && !self.root || !self.environment.provides(tool.needs()) {
+        if tool.root_only() && !self.root || !self.platform.provides(tool.needs()) {
             return false;
         }
         if !tool.switchable() {
@@ -265,8 +265,8 @@ mod tests {
         fn name(&self) -> &str {
             "screen"
         }
-        fn needs(&self) -> crate::util::environment::Needs {
-            crate::util::environment::Needs::Gui
+        fn needs(&self) -> crate::platform::Needs {
+            crate::platform::Needs::Gui
         }
         fn description(&self, _: &ToolContext<'_>) -> String {
             String::new()
@@ -296,7 +296,7 @@ mod tests {
         };
         assert!(!offered(&registry));
         assert!(registry.kinds().is_empty());
-        registry.environment.gui = true;
+        registry.platform.gui = true;
         assert!(offered(&registry));
         assert_eq!(registry.kinds().len(), 1);
     }
