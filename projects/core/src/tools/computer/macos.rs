@@ -4,6 +4,12 @@
 use std::{path::Path, process::Command, thread, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
+use core_foundation::{
+    base::{CFType, TCFType},
+    dictionary::{CFDictionary, CFDictionaryRef},
+    number::CFNumber,
+    string::{CFString, CFStringRef},
+};
 use core_graphics::{
     display::CGDisplay,
     event::{
@@ -12,6 +18,11 @@ use core_graphics::{
     },
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::{CGPoint, CGRect},
+    window::{
+        copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
+        kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, kCGWindowName,
+        kCGWindowNumber, kCGWindowOwnerName,
+    },
 };
 
 /// Between the events of one action, so apps see them as a person's.
@@ -36,8 +47,61 @@ pub fn display() -> CGRect {
     CGDisplay::main().bounds()
 }
 
+/// An app's window on screen, front to back as the system lists them.
+pub struct Window {
+    pub id: u32,
+    pub app: String,
+    pub title: String,
+    /// In display points.
+    pub bounds: CGRect,
+}
+
+/// The ordinary windows on screen, frontmost first; menus, docks and overlays left out.
+pub fn windows() -> Vec<Window> {
+    let options = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements;
+    let Some(list) = copy_window_info(options, kCGNullWindowID) else {
+        return Vec::new();
+    };
+    list.iter()
+        .filter_map(|entry| {
+            // SAFETY: every entry of the window list is a dictionary the list owns.
+            let info: CFDictionary<CFString, CFType> =
+                unsafe { CFDictionary::wrap_under_get_rule(*entry as CFDictionaryRef) };
+            // SAFETY: the keys are constant strings the framework exports.
+            let field = |key: CFStringRef| info.find(unsafe { CFString::wrap_under_get_rule(key) });
+            let number = |key| field(key)?.downcast::<CFNumber>()?.to_i64();
+            let text = |key| {
+                field(key)
+                    .and_then(|value| value.downcast::<CFString>())
+                    .map(|value| value.to_string())
+            };
+            (number(unsafe { kCGWindowLayer })? == 0).then_some(())?;
+            let bounds = field(unsafe { kCGWindowBounds })?.downcast::<CFDictionary>()?;
+            Some(Window {
+                id: u32::try_from(number(unsafe { kCGWindowNumber })?).ok()?,
+                app: text(unsafe { kCGWindowOwnerName }).unwrap_or_default(),
+                title: text(unsafe { kCGWindowName }).unwrap_or_default(),
+                bounds: CGRect::from_dict_representation(&bounds)?,
+            })
+        })
+        .collect()
+}
+
 /// Captures `rect` of the screen, in points, as a PNG at `file`.
 pub fn capture(rect: CGRect, file: &Path) -> Result<()> {
+    let region = format!(
+        "{},{},{},{}",
+        rect.origin.x, rect.origin.y, rect.size.width, rect.size.height
+    );
+    screencapture(&["-R", &region], file)
+}
+
+/// Captures one window as it is, even under others, without its shadow.
+pub fn capture_window(id: u32, file: &Path) -> Result<()> {
+    screencapture(&["-o", "-l", &id.to_string()], file)
+}
+
+fn screencapture(target: &[&str], file: &Path) -> Result<()> {
     // Without the permission the capture shows only the wallpaper; asking opens the
     // system prompt the first time.
     // SAFETY: both functions take no arguments and only read or request a permission.
@@ -48,12 +112,9 @@ pub fn capture(rect: CGRect, file: &Path) -> Result<()> {
              Settings > Privacy & Security > Screen Recording, then start it again"
         );
     }
-    let region = format!(
-        "{},{},{},{}",
-        rect.origin.x, rect.origin.y, rect.size.width, rect.size.height
-    );
     let status = Command::new("screencapture")
-        .args(["-x", "-t", "png", "-R", &region])
+        .args(["-x", "-t", "png"])
+        .args(target)
         .arg(file)
         .status()
         .context("cannot run screencapture")?;

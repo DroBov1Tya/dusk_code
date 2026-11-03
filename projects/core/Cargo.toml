@@ -34,6 +34,7 @@ uuid.workspace = true
 sqlx.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"
 core-graphics = { version = "0.25", features = ["highsierra"] }
 
 [target.'cfg(unix)'.dependencies]
