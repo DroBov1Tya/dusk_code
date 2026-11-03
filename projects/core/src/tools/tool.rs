@@ -1,7 +1,7 @@
 //! The tool interface: what the model reads about a tool, and the call that turns JSON
 //! arguments into text for the model.
 
-use std::{future::Future, path::PathBuf, pin::Pin};
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -11,10 +11,7 @@ use super::{
     approvals::{Approvals, Request},
     scope::{Place, ToolScope},
 };
-use crate::{config::Config, platform::Needs, runtime::ThreadEvent};
-
-/// Boxed so tools of different kinds, built-in or MCP, fit in one registry.
-pub type BoxFuture<'a, String> = Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;
+use crate::{BoxFuture, config::Config, platform::Needs, runtime::ThreadEvent};
 
 /// What a tool sees: where it may act and the settings of the current step.
 #[derive(Clone, Copy)]

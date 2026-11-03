@@ -7,12 +7,12 @@
 //! again, which keeps it a short summary rather than a log.
 
 use std::{
-    fs::{self, OpenOptions},
-    io::{ErrorKind, Write},
+    fs,
+    io::ErrorKind,
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
@@ -21,8 +21,8 @@ use sha2::{Digest, Sha256};
 use crate::BoxFuture;
 use crate::init::create_private_dir;
 use crate::tools::{
-    builtin::parse_arguments,
     schema,
+    schema::parse_arguments,
     tool::{Tool, ToolContext},
 };
 
@@ -124,22 +124,7 @@ fn write(file: &Path, memory: &str) -> Result<()> {
     if let Some(folder) = file.parent() {
         create_private_dir(folder)?;
     }
-    let temporary = file.with_extension("md.saving");
-    let mut options = OpenOptions::new();
-    options.write(true).create(true).truncate(true);
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        options.mode(0o600);
-    }
-    let mut saving = options
-        .open(&temporary)
-        .context("cannot write the memory")?;
-    saving
-        .write_all(memory.as_bytes())
-        .and_then(|()| saving.sync_all())
-        .context("cannot write the memory")?;
-    fs::rename(&temporary, file).context("cannot replace the memory")
+    crate::util::atomic::write_private(file, memory.as_bytes())
 }
 
 impl Tool for Remember {

@@ -10,7 +10,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::tools::{Tool, ToolContext, builtin::parse_arguments, schema};
+use crate::tools::{Tool, ToolContext, schema, schema::parse_arguments};
 use crate::{
     BoxFuture,
     runtime::ThreadEvent,

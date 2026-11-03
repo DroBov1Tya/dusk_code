@@ -6,7 +6,7 @@ use anyhow::{Context, Result, anyhow};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
-use crate::tools::builtin::{read_regular, write_regular};
+use crate::util::fs::{read_regular, write_regular};
 use crate::{
     catalog::{
         graph::check_node,

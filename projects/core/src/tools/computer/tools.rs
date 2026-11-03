@@ -16,9 +16,8 @@ use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        ToolResult,
-        builtin::parse_arguments,
-        schema,
+        ToolResult, schema,
+        schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
 };

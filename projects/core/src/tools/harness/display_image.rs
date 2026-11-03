@@ -17,11 +17,8 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::sync::Semaphore;
 
-use crate::tools::{
-    Tool, ToolContext, ToolResult,
-    builtin::{parse_arguments, printable},
-    schema,
-};
+use crate::tools::{Tool, ToolContext, ToolResult, schema, schema::parse_arguments};
+use crate::util::fs::printable;
 use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, ImageArtifact, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES},

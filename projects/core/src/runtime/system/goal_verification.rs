@@ -78,7 +78,7 @@ async fn finish_review(
                 status = CASE WHEN ? = 'passed' THEN 'done' ELSE status END, updated_at = ?
                 WHERE thread_id = ? AND revision = ? AND verification_id = ?
                     AND verification = 'checking' AND status = 'active' AND approved_at IS NOT NULL")
-                .bind(verification).bind(note).bind(verification).bind(crate::state::db_timestamp()?)
+                .bind(verification).bind(note).bind(verification).bind(crate::state::timestamp_ms()?)
                 .bind(thread_id).bind(&revision).bind(&attempt).execute(&mut *tx).await?;
             tx.commit().await?;
         }

@@ -29,7 +29,7 @@ use crate::{
     BoxFuture,
     runtime::agent::{Input, Mailboxes},
     state::{BackgroundJob, JobSummary, State},
-    tools::{Tool, ToolContext, ToolKind, builtin::parse_arguments, schema},
+    tools::{Tool, ToolContext, ToolKind, schema, schema::parse_arguments},
 };
 
 const MAX_RUNNING: usize = 64;

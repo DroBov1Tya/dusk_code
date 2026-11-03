@@ -42,6 +42,20 @@ const SWING_SECONDS: f64 = 0.9;
 /// How often the loop looks for a new position.
 const TICK_SECONDS: f64 = 1.0 / 30.0;
 
+/// In the cursor's helper process, draws the cursor until its parent goes and returns
+/// true; otherwise returns false at once. A client calls it first thing in `main`, on
+/// the main thread, which AppKit needs.
+pub fn run_overlay_if_asked() -> bool {
+    if std::env::args_os()
+        .nth(1)
+        .is_some_and(|arg| arg == super::cursor::OVERLAY_ARG)
+    {
+        run();
+        return true;
+    }
+    false
+}
+
 /// Runs until stdin closes: each line is "x y", the tip's place in display points with
 /// the origin at the top left of the main display.
 pub fn run() {

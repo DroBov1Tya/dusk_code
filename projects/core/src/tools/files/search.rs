@@ -14,12 +14,12 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
+use crate::util::fs::read_regular;
 use crate::{
     BoxFuture,
     tools::{
-        Place, ToolScope,
-        builtin::{parse_arguments, read_regular},
-        schema,
+        Place, ToolScope, schema,
+        schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
 };

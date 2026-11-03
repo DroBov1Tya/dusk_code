@@ -5,8 +5,8 @@ use serde_json::Value;
 use crate::{
     BoxFuture,
     tools::{
-        builtin::parse_arguments,
         schema,
+        schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
 };
