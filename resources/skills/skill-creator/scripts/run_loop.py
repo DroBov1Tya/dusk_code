@@ -12,10 +12,9 @@ import random
 import sys
 import tempfile
 import time
-import webbrowser
 from pathlib import Path
 
-from scripts.generate_report import generate_html
+from scripts.generate_report import generate_markdown
 from scripts.improve_description import improve_description
 from scripts.run_eval import find_project_root, run_eval
 from scripts.utils import parse_skill_md
@@ -148,7 +147,7 @@ def run_loop(
                 "test_size": len(test_set),
                 "history": history,
             }
-            live_report_path.write_text(generate_html(partial_output, auto_refresh=True, skill_name=name))
+            live_report_path.write_text(generate_markdown(partial_output, skill_name=name))
 
         if verbose:
             def print_eval_stats(label, results, elapsed):
@@ -254,8 +253,8 @@ def main():
     parser.add_argument("--holdout", type=float, default=0.4, help="Fraction of eval set to hold out for testing (0 to disable)")
     parser.add_argument("--model", required=True, help="Model for improvement")
     parser.add_argument("--verbose", action="store_true", help="Print progress to stderr")
-    parser.add_argument("--report", default="auto", help="Generate HTML report at this path (default: 'auto' for temp file, 'none' to disable)")
-    parser.add_argument("--results-dir", default=None, help="Save all outputs (results.json, report.html, log.txt) to a timestamped subdirectory here")
+    parser.add_argument("--report", default="auto", help="Generate Markdown report at this path (default: 'auto' for temp file, 'none' to disable)")
+    parser.add_argument("--results-dir", default=None, help="Save all outputs (results.json, report.md, log.txt) to a timestamped subdirectory here")
     args = parser.parse_args()
 
     eval_set = json.loads(Path(args.eval_set).read_text())
@@ -271,12 +270,12 @@ def main():
     if args.report != "none":
         if args.report == "auto":
             timestamp = time.strftime("%Y%m%d_%H%M%S")
-            live_report_path = Path(tempfile.gettempdir()) / f"skill_description_report_{skill_path.name}_{timestamp}.html"
+            live_report_path = Path(tempfile.gettempdir()) / f"skill_description_report_{skill_path.name}_{timestamp}.md"
         else:
             live_report_path = Path(args.report)
-        # Open the report immediately so the user can watch
-        live_report_path.write_text("<html><body><h1>Starting optimization loop...</h1><meta http-equiv='refresh' content='5'></body></html>")
-        webbrowser.open(str(live_report_path))
+        live_report_path.parent.mkdir(parents=True, exist_ok=True)
+        live_report_path.write_text("# Starting optimization loop...\n", encoding="utf-8")
+        print(f"Report (reopen for updates): {live_report_path}", file=sys.stderr)
     else:
         live_report_path = None
 
@@ -312,13 +311,13 @@ def main():
     if results_dir:
         (results_dir / "results.json").write_text(json_output)
 
-    # Write final HTML report (without auto-refresh)
+    # Write final Markdown report (without auto-refresh)
     if live_report_path:
-        live_report_path.write_text(generate_html(output, auto_refresh=False, skill_name=name))
+        live_report_path.write_text(generate_markdown(output, skill_name=name))
         print(f"\nReport: {live_report_path}", file=sys.stderr)
 
     if results_dir and live_report_path:
-        (results_dir / "report.html").write_text(generate_html(output, auto_refresh=False, skill_name=name))
+        (results_dir / "report.md").write_text(generate_markdown(output, skill_name=name))
 
     if results_dir:
         print(f"Results saved to: {results_dir}", file=sys.stderr)
