@@ -978,6 +978,7 @@ dependencies = [
  "chrono",
  "core-foundation",
  "core-graphics",
+ "futures",
  "ignore",
  "image",
  "jsonschema",
