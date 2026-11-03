@@ -138,6 +138,8 @@ pub struct SettingsView {
     /// The chat first, then every agent under it.
     pub agents: Vec<AgentRow>,
     pub problems: Vec<Problem>,
+    /// Links to agents that are not there; shown as notes, since the rest works.
+    pub skipped: Vec<Problem>,
     /// `None` is the category menu.
     pub category: Option<SettingCategory>,
     pub selected: usize,
@@ -219,7 +221,9 @@ impl SettingsView {
     pub fn new(settings: Settings) -> Self {
         let mut agents = Vec::new();
         flatten(&settings.agents.root, 0, &[], true, true, &mut agents);
-        let AgentTree { problems, .. } = settings.agents;
+        let AgentTree {
+            problems, skipped, ..
+        } = settings.agents;
         Self {
             system: None,
             selected_model: None,
@@ -244,6 +248,7 @@ impl SettingsView {
             mcp_open: BTreeSet::new(),
             agents,
             problems,
+            skipped,
             category: None,
             selected: 0,
             editor: None,
