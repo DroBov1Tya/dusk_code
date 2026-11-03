@@ -2,11 +2,9 @@
 //! response; when it calls tools, they run and the next step sends their results back,
 //! until the model answers without calling a tool.
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, Mutex},
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use parking_lot::Mutex;
 
 use anyhow::{Context, Result, anyhow};
 use tokio::sync::mpsc;
@@ -36,7 +34,6 @@ use crate::{
         Turn, TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,
     },
     tools::{Progress, ToolRegistry, ToolScope},
-    util::sync::lock,
 };
 
 /// Bounds a model that keeps calling tools.
@@ -229,13 +226,14 @@ impl Agent {
     }
 
     fn answers_question(&self, content: &str) -> bool {
-        lock(&self.asking)
+        self.asking
+            .lock()
             .as_ref()
             .is_some_and(|question| content.starts_with(&format!("QUESTION: {question}\n")))
     }
 
     async fn take_answer(&self, pending: &PendingMessage) -> Result<()> {
-        *lock(&self.asking) = None;
+        *self.asking.lock() = None;
         let message = self.state.admit_pending(&self.thread_id, pending).await?;
         sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
             .bind(&self.thread_id)
@@ -603,7 +601,7 @@ impl Agent {
                 && !result.is_error
                 && let Some(question) = call.arguments["question"].as_str()
             {
-                *lock(&self.asking) = Some(question.to_owned());
+                *self.asking.lock() = Some(question.to_owned());
             }
             // A visible result must already be available when the thread is reopened.
             if let Some(result) = finished {
@@ -627,14 +625,14 @@ impl Agent {
     }
 
     fn takes_pictures(&self) -> bool {
-        let refused = lock(&self.pictures_refused);
+        let refused = self.pictures_refused.lock();
         let current = self.model.current();
         current.is_none_or(|choice| refused.as_ref() != Some(&choice.model.id))
     }
 
     /// Takes the pictures out of the request, and sends none to this model from now on.
     fn refuse_pictures(&self, model: &str, messages: &mut [ChatMessage]) {
-        *lock(&self.pictures_refused) = Some(model.to_owned());
+        *self.pictures_refused.lock() = Some(model.to_owned());
         warn!("thread {} model {model} refused pictures", self.thread_id);
         self.emit(ThreadEvent::PicturesRefused {
             model: model.to_owned(),

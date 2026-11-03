@@ -3,9 +3,11 @@
 
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex, Weak},
+    sync::{Arc, Weak},
     time::Duration,
 };
+
+use parking_lot::Mutex;
 
 use anyhow::{Context, Result, ensure};
 use schemars::JsonSchema;
@@ -28,7 +30,6 @@ use crate::{
     runtime::agent::{Input, Mailboxes},
     state::{BackgroundJob, JobSummary, State},
     tools::{Tool, ToolContext, ToolKind, builtin::parse_arguments, schema},
-    util::sync::lock,
 };
 
 const MAX_RUNNING: usize = 64;
@@ -164,8 +165,8 @@ impl JobManager {
         match live.get(id).filter(|job| job.owner == thread_id) {
             Some(job) => format!(
                 "stdout:\n{}\nstderr:\n{}",
-                lock(&job.stdout).text(),
-                lock(&job.stderr).text()
+                job.stdout.lock().text(),
+                job.stderr.lock().text()
             ),
             None => job.output,
         }
@@ -407,7 +408,7 @@ async fn execute(
         ("stdout", &job.stdout, stdout),
         ("stderr", &job.stderr, stderr),
     ] {
-        let text = lock(captured).text();
+        let text = captured.lock().text();
         if !text.is_empty() {
             output.push_str(&format!("\n{name}:\n{text}"));
         }
@@ -447,7 +448,7 @@ async fn capture(
         if count == 0 {
             return Ok(());
         }
-        let mut saved = lock(saved);
+        let mut saved = saved.lock();
         let room = MAX_STREAM_BYTES - saved.bytes.len();
         saved.bytes.extend_from_slice(&buffer[..count.min(room)]);
         saved.truncated |= count > room;

@@ -2,10 +2,9 @@
 //! a model call that has started finishes with the model it started with. The choice is
 //! kept in the config as `model: provider/model`, so it outlives a restart.
 
-use std::{
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{sync::Arc, time::Duration};
+
+use parking_lot::RwLock;
 
 use anyhow::{Context, Result, anyhow};
 use tokio::task::JoinSet;
@@ -13,7 +12,6 @@ use tokio::task::JoinSet;
 use crate::{
     config::Config,
     providers::{Model, ModelProvider, ProviderRegistry},
-    util::sync::{read, write},
 };
 
 /// A provider that does not list its models within this time counts as down.
@@ -77,17 +75,17 @@ impl ModelChoice {
     }
 
     pub fn current(&self) -> Option<Choice> {
-        read(&self.current).choice.clone()
+        self.current.read().choice.clone()
     }
 
     pub fn set(&self, choice: Choice) {
-        let mut current = write(&self.current);
+        let mut current = self.current.write();
         current.choice = Some(choice);
         current.revision = Arc::new(());
     }
 
     pub fn set_if_empty(&self, choice: Choice) -> bool {
-        let mut current = write(&self.current);
+        let mut current = self.current.write();
         if current.choice.is_some() {
             return false;
         }
@@ -97,11 +95,11 @@ impl ModelChoice {
     }
 
     pub fn revision(&self) -> Arc<()> {
-        Arc::clone(&read(&self.current).revision)
+        Arc::clone(&self.current.read().revision)
     }
 
     pub fn set_if_empty_at_revision(&self, choice: Choice, revision: &Arc<()>) -> bool {
-        let mut current = write(&self.current);
+        let mut current = self.current.write();
         if current.choice.is_some() || !Arc::ptr_eq(&current.revision, revision) {
             return false;
         }
@@ -111,7 +109,7 @@ impl ModelChoice {
     }
 
     pub fn replace_provider(&self, name: &str, provider: Arc<dyn ModelProvider>) {
-        let mut current = write(&self.current);
+        let mut current = self.current.write();
         // Even an offline selection must reject discovery started before reconnect.
         current.revision = Arc::new(());
         if let Some(choice) = current
@@ -125,7 +123,7 @@ impl ModelChoice {
 
     /// A catalogue response applies only to the selection and adapter it checked.
     pub fn refresh_model(&self, expected: &Choice, model: Model) -> Option<Choice> {
-        let mut current = write(&self.current);
+        let mut current = self.current.write();
         let choice = current.choice.as_mut()?;
         if choice.provider_name != expected.provider_name
             || choice.model.id != expected.model.id

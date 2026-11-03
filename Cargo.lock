@@ -959,6 +959,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "opentelemetry_sdk",
+ "parking_lot",
  "proptest",
  "regex",
  "reqwest 0.13.5",

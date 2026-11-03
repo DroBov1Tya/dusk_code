@@ -5,11 +5,9 @@
 //! the agents it links to. The built-in general agent may be asked from anywhere.
 //! Switching an agent off in the config hides it from every thread.
 
-use std::{
-    path::PathBuf,
-    sync::{Arc, RwLock},
-    time::Duration,
-};
+use std::{path::PathBuf, sync::Arc, time::Duration};
+
+use parking_lot::RwLock;
 
 use anyhow::{Context, Result, ensure};
 use tracing::warn;
@@ -23,7 +21,6 @@ use crate::{
     release::resources,
     runtime::chat::thread_start::fnv1a,
     state::{Identity, State},
-    util::sync::{read, write},
 };
 
 /// The built-in agent, asked when none is named. An `agents/general` folder replaces it.
@@ -78,8 +75,8 @@ impl Agents {
             .await
             .context("cannot read the agents")?;
         let identities = self.state.sync_identities(&found).await?;
-        *write(&self.identities) = identities;
-        *write(&self.problems) = problems;
+        *self.identities.write() = identities;
+        *self.problems.write() = problems;
         Ok(())
     }
 
@@ -96,7 +93,8 @@ impl Agents {
     }
 
     pub fn get(&self, name: &str) -> Option<Identity> {
-        read(&self.identities)
+        self.identities
+            .read()
             .iter()
             .find(|identity| identity.name == name)
             .cloned()
@@ -105,7 +103,7 @@ impl Agents {
     /// Whom a thread may ask: the entries for a chat (`asker` is `None`), the links for an
     /// agent. Switched-off agents are left out.
     pub fn reachable(&self, asker: Option<&str>, config: &Config) -> Vec<Identity> {
-        let identities = read(&self.identities);
+        let identities = self.identities.read();
         let names: Vec<String> = match asker {
             None => identities
                 .iter()
@@ -163,7 +161,7 @@ impl Agents {
     /// chat may ask it, else under the nearest agent that links to it. `links` names
     /// whom each may ask, wherever those are drawn.
     pub fn tree(&self, config: &Config) -> AgentTree {
-        let identities = read(&self.identities).clone();
+        let identities = self.identities.read().clone();
         let mut placed: Vec<(&str, Option<&str>)> = Vec::new();
         let mut level: Vec<&str> = identities
             .iter()
@@ -204,7 +202,7 @@ impl Agents {
                 links: Vec::new(),
                 children,
             },
-            problems: read(&self.problems).clone(),
+            problems: self.problems.read().clone(),
         }
     }
 }

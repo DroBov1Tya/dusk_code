@@ -4,9 +4,11 @@
 
 use std::{
     path::{Path, PathBuf},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::Arc,
     time::{Duration, Instant},
 };
+
+use parking_lot::{Mutex, MutexGuard};
 
 use anyhow::{Context, Result, ensure};
 use tokio::task::{JoinHandle, JoinSet};
@@ -38,10 +40,7 @@ use crate::{
     runtime::chat::thread_start::{self, FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
     tools::{Decision, JobInfo, JobManager, ToolKind, ToolScope},
-    util::{
-        sync::lock,
-        usage::{self, ProcessUsage},
-    },
+    util::usage::{self, ProcessUsage},
 };
 
 /// Hand edits to config.yml are picked up within this time.
@@ -878,6 +877,6 @@ impl Runtime {
     }
 
     fn lock_threads(&self) -> MutexGuard<'_, JoinSet<()>> {
-        lock(&self.threads)
+        self.threads.lock()
     }
 }
