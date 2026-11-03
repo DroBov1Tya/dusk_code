@@ -26,8 +26,8 @@ use ratatui::DefaultTerminal;
 
 use crate::{
     app::{
-        Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel, Preview,
-        SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
+        Action, AgentWindow, App, BotMenu, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel,
+        Preview, SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
     screensaver,
     telegram::{self, Telegram},
@@ -151,7 +151,6 @@ pub async fn run(
     let mut keys = EventStream::new();
     let mut telegram = Telegram::default();
     // A /mode from a bot is answered with the mode it switched to.
-    let mut mode_reply: Option<usize> = None;
     let mut clock = tokio::time::interval(FRAME);
     // The clock sleeps while idle; missed frames must not play back in a burst.
     clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -307,13 +306,7 @@ pub async fn run(
             _ = tokio::time::sleep(app.screensaver.as_ref().map_or(FRAME, |playing| playing.frame_period())),
                 if app.screensaver.is_some() => Action::None,
             bot = telegram.next() => match bot {
-                Some((id, event)) => {
-                    let action = telegram::handle(&mut telegram, &mut app, id, event);
-                    if matches!(action, Action::NextMode) {
-                        mode_reply = Some(id);
-                    }
-                    action
-                }
+                Some((id, event)) => telegram::handle(&mut telegram, &mut app, id, event),
                 None => Action::None,
             },
             event = next_event(&mut open) => {
@@ -736,14 +729,17 @@ pub async fn run(
                 }
             }
             Action::NextMode => match runtime.next_mode() {
-                Ok(mode) => {
-                    if let Some(id) = mode_reply.take() {
-                        telegram.reply(id, format!("Mode: {mode}"));
-                    }
-                    app.mode = mode;
-                }
+                Ok(mode) => app.mode = mode,
                 Err(error) => app.error(format!("cannot switch the mode: {error:#}")),
             },
+            Action::SetMode { bot, name } => match runtime.set_mode(&name) {
+                Ok(()) => {
+                    telegram.reply(bot, format!("Mode: {name}"));
+                    app.mode = name;
+                }
+                Err(error) => telegram.reply(bot, format!("{error:#}")),
+            },
+            Action::BotMenu { bot, menu } => bot_menu(runtime, &app, &telegram, bot, menu).await,
             Action::StopAgent(thread_id) => match runtime.stop_agent(&thread_id).await {
                 Ok(()) => app.flash = Some("stopping the agent".into()),
                 Err(error) => app.error(format!("cannot stop the agent: {error:#}")),
@@ -845,6 +841,36 @@ fn connect(
 }
 
 /// Shows what the core answered to a command that does not run in the thread.
+/// What a bot's command can be set to: the modes, or the models every provider has now.
+async fn bot_menu(runtime: &Runtime, app: &App, telegram: &Telegram, bot: usize, menu: BotMenu) {
+    let (command, title, options) = match menu {
+        BotMenu::Modes => ("mode", format!("Mode: {}", app.mode), runtime.modes()),
+        BotMenu::Models => {
+            let providers = match (Command::Model { name: None }).answer(runtime).await {
+                Ok(Answer::Providers { providers, .. }) => providers,
+                Ok(_) => Vec::new(),
+                Err(error) => {
+                    telegram.reply(bot, format!("cannot list the models: {error:#}"));
+                    return;
+                }
+            };
+            let models = providers
+                .into_iter()
+                .flat_map(|provider| {
+                    let name = provider.name;
+                    provider
+                        .models
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(move |model| format!("{name}/{}", model.id))
+                })
+                .collect();
+            ("model", format!("Model: {}", app.model), models)
+        }
+    };
+    telegram.menu(bot, command, title, options);
+}
+
 async fn answer(runtime: &Runtime, app: &mut App, open: &mut Option<OpenThread>, command: Command) {
     let migrating = matches!(&command, Command::Migrate { .. });
     match command.answer(runtime).await {

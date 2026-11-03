@@ -58,5 +58,6 @@ async fn route_callback(bot: MyBot, query: CallbackQuery, shared: Arc<Shared>) -
         }
         Callback::Allow(id) => callbacks::approval::answer(&bot, &shared, &query, id, true).await,
         Callback::Deny(id) => callbacks::approval::answer(&bot, &shared, &query, id, false).await,
+        Callback::Pick(index) => callbacks::pick::press(&bot, &shared, owner.chat, index).await,
     }
 }

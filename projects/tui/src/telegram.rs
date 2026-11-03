@@ -10,7 +10,7 @@ use dusk_core::{
 use dusk_telegram::{BotCommand, BotEvent, FromBot, TelegramBot, ToBot};
 use tokio::sync::mpsc;
 
-use crate::app::{Action, App, BotRow, Tone};
+use crate::app::{Action, App, BotMenu, BotRow, Tone};
 
 pub struct Telegram {
     bots: Vec<TelegramBot>,
@@ -78,6 +78,16 @@ impl Telegram {
 
     pub async fn next(&mut self) -> Option<(usize, BotEvent)> {
         self.receiver.recv().await
+    }
+
+    pub fn menu(&self, id: usize, command: &str, title: String, options: Vec<String>) {
+        if let Some(bot) = self.bots.iter().find(|bot| bot.id() == id) {
+            bot.send(ToBot::Menu {
+                command: command.into(),
+                title,
+                options,
+            });
+        }
     }
 
     pub fn reply(&self, id: usize, text: impl Into<String>) {
@@ -269,13 +279,17 @@ fn command_action(telegram: &Telegram, app: &mut App, id: usize, command: BotCom
                 },
             }
         }
-        BotCommand::Mode => Action::NextMode,
+        BotCommand::Mode(None) => Action::BotMenu {
+            bot: id,
+            menu: BotMenu::Modes,
+        },
+        BotCommand::Mode(Some(name)) => Action::SetMode { bot: id, name },
         BotCommand::Model(None) => {
-            telegram.reply(
-                id,
-                format!("Model: {}. /model provider/model switches it.", app.model),
-            );
-            Action::None
+            telegram.reply(id, "Checking the providers.");
+            Action::BotMenu {
+                bot: id,
+                menu: BotMenu::Models,
+            }
         }
         BotCommand::Model(Some(name)) => {
             telegram.reply(id, format!("Switching to {name}; /status shows the model."));

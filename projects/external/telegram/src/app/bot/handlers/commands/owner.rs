@@ -66,7 +66,7 @@ fn bridge_command(command: Command) -> BotCommand {
         Command::Status => BotCommand::Status,
         Command::Approve => BotCommand::Approve,
         Command::Deny => BotCommand::Deny,
-        Command::Mode => BotCommand::Mode,
+        Command::Mode(name) => BotCommand::Mode(given(name)),
         Command::Model(name) => BotCommand::Model(given(name)),
         Command::Compact(text) => BotCommand::Compact(given(text)),
         Command::Goal(text) => BotCommand::Goal(given(text)),

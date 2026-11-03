@@ -81,6 +81,16 @@ pub enum Action {
     InstallUpdate(String),
     /// Move the chat to its next mode.
     NextMode,
+    /// Move the chat to the mode named, as a Telegram bot asked.
+    SetMode {
+        bot: usize,
+        name: String,
+    },
+    /// Send a Telegram bot the menu of what its command can be set to.
+    BotMenu {
+        bot: usize,
+        menu: BotMenu,
+    },
     /// Stop one subagent and the agents it asked.
     StopAgent(String),
     Copy(String),
@@ -107,4 +117,11 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())
+}
+
+/// What a Telegram bot's menu lists.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BotMenu {
+    Modes,
+    Models,
 }

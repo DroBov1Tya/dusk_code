@@ -18,6 +18,10 @@ testing.
   a neon sunset and the sea at sunset. They are drawn in dense coloured halftone dots,
   eight to a cell, and fit the whole window at any size, offline.
 
+- The Telegram bot lists its commands in Telegram's menu as soon as it is added. /mode
+  and /model without a name answer with buttons to pick from, or, past ten options, a
+  list to send `/model <name>` from.
+
 ### Changed
 
 - The input and output token limits are gone from /settings and the config. A request

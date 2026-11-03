@@ -34,6 +34,8 @@ pub const APPROVAL: &str = "The agent waits for your approval:";
 pub const SEND: &str = "Send";
 pub const ONLY_TEXT: &str = "Only text reaches the chat for now.";
 pub const ALLOW: &str = "Allow";
+/// A menu with more options than this is a list to type from instead of buttons.
+pub const MAX_MENU_BUTTONS: usize = 10;
 pub const DENY: &str = "Deny";
 
 #[derive(BotCommands, Clone, Debug, PartialEq, Eq)]
@@ -53,9 +55,9 @@ pub enum Command {
     Approve,
     #[command(description = "deny what the agent waits on")]
     Deny,
-    #[command(description = "switch to the next mode")]
-    Mode,
-    #[command(description = "show the model, or switch to provider/model")]
+    #[command(description = "pick a mode, or switch to the one named")]
+    Mode(String),
+    #[command(description = "pick a model, or switch to provider/model")]
     Model(String),
     #[command(description = "summarize the context")]
     Compact(String),

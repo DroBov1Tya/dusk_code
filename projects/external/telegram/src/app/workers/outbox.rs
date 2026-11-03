@@ -10,7 +10,7 @@ use crate::{
     app::{
         bot::{handlers::buttons, runner::MyBot, utils::text},
         bridge::ToBot,
-        context::{OpenQuestion, Shared},
+        context::{OpenMenu, OpenQuestion, Shared},
     },
     config,
 };
@@ -99,6 +99,31 @@ async fn deliver(bot: &MyBot, shared: &Shared, message: ToBot) -> anyhow::Result
                 .await?;
         }
         ToBot::Reply(text) => {
+            bot.send_message(chat, text).await?;
+        }
+        ToBot::Menu {
+            command,
+            title,
+            options,
+        } if options.len() <= config::MAX_MENU_BUTTONS => {
+            let sent = bot
+                .send_message(chat, title)
+                .reply_markup(buttons::pick::keyboard(&shared.nonce, &options))
+                .await?;
+            *shared.menu.lock() = Some(OpenMenu {
+                command,
+                options,
+                message: sent.id,
+            });
+        }
+        ToBot::Menu {
+            command,
+            title,
+            options,
+        } => {
+            let list: String = options.iter().map(|option| format!("\n{option}")).collect();
+            let text = format!("{title}\n{list}\n\nSend /{command} <name> to pick one.");
+            let text: String = text.chars().take(config::MAX_CHUNK_CHARS).collect();
             bot.send_message(chat, text).await?;
         }
         ToBot::Working(_) => {}
