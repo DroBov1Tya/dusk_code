@@ -29,6 +29,7 @@ use crate::{
         Action, AgentWindow, App, EFFORTS, FileEditor, JobsView, ModelList, PRESS, Panel, Preview,
         SettingCategory, SettingsView, SwitchKind, ThreadList, Tone, Transcript,
     },
+    telegram::{self, Telegram},
     ui::{self, screensaver},
 };
 
@@ -139,6 +140,9 @@ pub async fn run(
         );
     }
     let mut keys = EventStream::new();
+    let mut telegram = Telegram::default();
+    // A /mode from a bot is answered with the mode it switched to.
+    let mut mode_reply: Option<usize> = None;
     let mut clock = tokio::time::interval(FRAME);
     // The clock sleeps while idle; missed frames must not play back in a burst.
     clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -293,20 +297,33 @@ pub async fn run(
             ), if app.pressed.is_some() => Action::None,
             _ = tokio::time::sleep(app.screensaver.as_ref().map_or(FRAME, |playing| playing.frame_period())),
                 if app.screensaver.is_some() => Action::None,
+            bot = telegram.next() => match bot {
+                Some((id, event)) => {
+                    let action = telegram::handle(&mut telegram, &mut app, id, event);
+                    if matches!(action, Action::NextMode) {
+                        mode_reply = Some(id);
+                    }
+                    action
+                }
+                None => Action::None,
+            },
             event = next_event(&mut open) => {
                 match event {
                     Some(event) => {
                         // Everything that has arrived meanwhile is drawn in one frame, so
                         // fast streams do not cost a frame per token.
                         if let Some(thread) = &mut open {
+                            telegram.observe(&event);
                             thread.apply(&mut app, event);
                             for _ in 0..MAX_EVENTS_PER_FRAME {
                                 let Some(event) = thread.handle.output.ready_event() else {
                                     break;
                                 };
+                                telegram.observe(&event);
                                 thread.apply(&mut app, event);
                             }
                         }
+                        telegram.sync(&app);
                     }
                     None => {
                         app.error("the thread stopped; the next message opens it again");
@@ -338,6 +355,30 @@ pub async fn run(
                 app.flash = Some("the update is still installing; wait before closing".into());
             }
             Action::Quit => break,
+            Action::StartBot(token) => match telegram.add(token).await {
+                Ok((name, code)) => {
+                    app.bots = telegram.rows();
+                    app.transcript.notice(
+                        format!(
+                            "Telegram bot @{name} is on. Send it /start {code} within 10 \
+                             minutes to pair; it answers no one else."
+                        ),
+                        Tone::Info,
+                    );
+                }
+                Err(error) => app.error(format!("cannot start the bot: {error:#}")),
+            },
+            Action::ToggleBot(id) => {
+                telegram.toggle(id);
+                app.bots = telegram.rows();
+            }
+            Action::RemoveBot(id) => {
+                telegram.remove(id);
+                app.bots = telegram.rows();
+                if let Some(Panel::Bots { selected }) = &mut app.panel {
+                    *selected = (*selected).min(app.bots.len().saturating_sub(1));
+                }
+            }
             Action::Send(text) => send(runtime, &mut app, &mut open, text, false).await,
             Action::Approve { id, decision } => {
                 if !runtime.answer_approval(id, decision) {
@@ -686,7 +727,12 @@ pub async fn run(
                 }
             }
             Action::NextMode => match runtime.next_mode() {
-                Ok(mode) => app.mode = mode,
+                Ok(mode) => {
+                    if let Some(id) = mode_reply.take() {
+                        telegram.reply(id, format!("Mode: {mode}"));
+                    }
+                    app.mode = mode;
+                }
                 Err(error) => app.error(format!("cannot switch the mode: {error:#}")),
             },
             Action::StopAgent(thread_id) => match runtime.stop_agent(&thread_id).await {

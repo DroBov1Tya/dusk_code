@@ -105,6 +105,15 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 Some(selected),
             )
         }
+        Panel::Bots { selected } => {
+            let (lines, row) = bots(app, *selected, screen.width.saturating_sub(8) as usize);
+            (
+                "telegram bots",
+                "up/down choose  space stop/start  d remove  esc close",
+                lines,
+                Some(row),
+            )
+        }
         Panel::Unsent { selected } => {
             let (lines, row) = unsent(app, *selected, screen.width.saturating_sub(8) as usize);
             (
@@ -875,6 +884,47 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
         );
     }
     (lines, selected, rows)
+}
+
+fn bots(app: &App, selected: usize, width: usize) -> (Vec<Line<'static>>, usize) {
+    let width = width.clamp(1, 70);
+    let mut lines: Vec<Line<'static>> = wrap::words(
+        vec![Span::styled(
+            "Add one with /tgbot <token> from @BotFather. The token stays in memory; the bot \
+             answers only the one who pairs with it.",
+            dim(),
+        )],
+        width,
+        0,
+    )
+    .into_iter()
+    .map(Line::from)
+    .collect();
+    lines.push(Line::default());
+    if app.bots.is_empty() {
+        lines.push(Line::from(Span::styled(
+            " No bots in this session",
+            thought(),
+        )));
+        return (lines, 0);
+    }
+    let mut row = 0;
+    for (index, bot) in app.bots.iter().enumerate() {
+        if index == selected {
+            row = lines.len();
+        }
+        let state = match (bot.running, &bot.owner) {
+            (false, _) => "stopped".to_owned(),
+            (true, Some(owner)) => format!("on, paired with {owner}"),
+            (true, None) => format!("waits for /start {}", bot.code),
+        };
+        lines.push(selectable(
+            vec![Span::raw(format!(" @{}", bot.username))],
+            Span::styled(format!("{state} "), dim()),
+            index == selected,
+        ));
+    }
+    (lines, row)
 }
 
 fn unsent(app: &App, selected: usize, width: usize) -> (Vec<Line<'static>>, usize) {
