@@ -2,7 +2,7 @@
 //! a model call that has started finishes with the model it started with. The choice is
 //! kept in the config as `model: provider/model`, so it outlives a restart.
 
-use std::{sync::Arc, time::Duration};
+use std::{collections::HashMap, sync::Arc, time::Duration};
 
 use parking_lot::RwLock;
 
@@ -25,6 +25,8 @@ pub struct ProviderStatus {
 
 pub struct ModelChoice {
     current: RwLock<Selection>,
+    /// Whether each model, by `provider/model`, saw the test picture.
+    vision: RwLock<HashMap<String, bool>>,
 }
 
 struct Selection {
@@ -62,6 +64,7 @@ impl ModelChoice {
                 choice: Some(choice),
                 revision: Arc::new(()),
             }),
+            vision: RwLock::default(),
         }
     }
 
@@ -71,7 +74,17 @@ impl ModelChoice {
                 choice: None,
                 revision: Arc::new(()),
             }),
+            vision: RwLock::default(),
         }
+    }
+
+    /// `None` until the model was asked.
+    pub fn vision(&self, model: &str) -> Option<bool> {
+        self.vision.read().get(model).copied()
+    }
+
+    pub fn set_vision(&self, model: String, sees: bool) {
+        self.vision.write().insert(model, sees);
     }
 
     pub fn current(&self) -> Option<Choice> {

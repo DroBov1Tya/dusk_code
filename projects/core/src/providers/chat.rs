@@ -27,9 +27,11 @@ pub enum ChatMessage {
         text: String,
         tool_calls: Vec<ToolCall>,
     },
+    /// A tool result; `pictures` go with it to a model that takes pictures.
     Tool {
         call_id: String,
         content: String,
+        pictures: Vec<Picture>,
     },
 }
 
