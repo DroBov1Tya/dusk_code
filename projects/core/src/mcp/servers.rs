@@ -208,7 +208,9 @@ impl McpServers {
         if closed.is_empty() {
             return;
         }
-        self.ready.write().retain(|server| !closed.contains(&server.name));
+        self.ready
+            .write()
+            .retain(|server| !closed.contains(&server.name));
         for name in closed {
             warn!("MCP server {name} stopped");
             self.set_state(&name, McpState::Failed("the server stopped".into()));
