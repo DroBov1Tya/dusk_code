@@ -32,8 +32,11 @@ const MAX_TYPED_UNITS: usize = 20;
 
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
-    /// Returns a `Boolean`, an unsigned char.
-    fn AXIsProcessTrusted() -> u8;
+    /// Returns a `Boolean`, an unsigned char. With the prompt option it also puts the
+    /// app in the Accessibility list and asks the user once, as only an app that asked
+    /// is listed there.
+    fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> u8;
+    static kAXTrustedCheckOptionPrompt: CFStringRef;
 }
 
 #[link(name = "CoreGraphics", kind = "framework")]
@@ -123,15 +126,30 @@ fn screencapture(target: &[&str], file: &Path) -> Result<()> {
 }
 
 fn source() -> Result<CGEventSource> {
-    // SAFETY: takes no arguments; only reads whether this process may post events.
-    if unsafe { AXIsProcessTrusted() } == 0 {
+    if !accessibility_trusted() {
         bail!(
             "the terminal duskcode runs in needs Accessibility permission to click and \
-             type: System Settings > Privacy & Security > Accessibility"
+             type: macOS has asked and listed it under System Settings > Privacy & \
+             Security > Accessibility; switch it on there and restart duskcode"
         );
     }
     CGEventSource::new(CGEventSourceStateID::HIDSystemState)
         .map_err(|_| anyhow::anyhow!("cannot create an input event source"))
+}
+
+/// Whether this process may post input events. The first refusal of a process also asks
+/// the user; later ones only check, so the system's dialog does not come back each time.
+fn accessibility_trusted() -> bool {
+    static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    let ask = !ASKED.swap(true, std::sync::atomic::Ordering::SeqCst);
+    // SAFETY: the key is a constant of the framework; the dictionary lives across the call.
+    let key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
+    let options = CFDictionary::from_CFType_pairs(&[(
+        key.as_CFType(),
+        core_foundation::boolean::CFBoolean::from(ask).as_CFType(),
+    )]);
+    // SAFETY: reads the permission; the options dictionary is valid for the call.
+    unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) != 0 }
 }
 
 fn post(event: Result<CGEvent, ()>) -> Result<()> {
