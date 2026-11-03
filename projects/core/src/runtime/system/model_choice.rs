@@ -121,16 +121,6 @@ impl ModelChoice {
         current.revision = Arc::new(());
     }
 
-    pub fn set_if_empty(&self, choice: Choice) -> bool {
-        let mut current = self.current.write();
-        if current.choice.is_some() {
-            return false;
-        }
-        current.choice = Some(choice);
-        current.revision = Arc::new(());
-        true
-    }
-
     pub fn revision(&self) -> Arc<()> {
         Arc::clone(&self.current.read().revision)
     }
@@ -230,8 +220,7 @@ pub async fn pick(config: &Config, name: Option<&str>) -> Result<Choice> {
     let provider = registry
         .provider(provider_name)
         .with_context(|| format!("no provider {provider_name} in the config"))?;
-    let model = provider
-        .list_models()
+    let model = models(&*provider, provider_name)
         .await?
         .into_iter()
         .find(|model| model.id == id)
@@ -243,12 +232,19 @@ pub async fn pick(config: &Config, name: Option<&str>) -> Result<Choice> {
     })
 }
 
+/// A provider's catalogue, given up on when it does not answer soon: a dead server must
+/// not hold `/model` or the start's discovery until the transport gives up.
+async fn models(provider: &dyn ModelProvider, provider_name: &str) -> Result<Vec<Model>> {
+    tokio::time::timeout(CHECK_TIMEOUT, provider.list_models())
+        .await
+        .with_context(|| format!("provider {provider_name} did not answer in time"))?
+}
+
 async fn first_model(registry: &ProviderRegistry, provider_name: &str) -> Result<Choice> {
     let provider = registry
         .provider(provider_name)
         .context("provider is missing")?;
-    let model = provider
-        .list_models()
+    let model = models(&*provider, provider_name)
         .await?
         .into_iter()
         .next()
