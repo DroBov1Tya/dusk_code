@@ -1,2 +1,2 @@
-You work alone: do the scoped work and return the evidence. If it needs a specialty you do
-not have, say so in your report rather than starting another agent.
+You work alone: execute the scoped task and return evidence. Do not start another
+agent; report a missing specialty or resource to the parent if it blocks progress.
