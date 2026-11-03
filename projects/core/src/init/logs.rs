@@ -30,7 +30,14 @@ pub fn init(paths: &Paths, client: &'static str, file: &str) -> Result<()> {
     let own = open(&directory.join(format!("{file}.log")))?;
     let is_client =
         move |target: &str| target == client || target.starts_with(&format!("{client}::"));
-    let level = EnvFilter::try_from_env(LEVEL_VARIABLE).unwrap_or_else(|_| EnvFilter::new("info"));
+    let level = EnvFilter::try_from_env(LEVEL_VARIABLE)
+        .unwrap_or_else(|_| EnvFilter::new("info"))
+        // rmcp writes OAuth codes and tokens at debug.
+        .add_directive(
+            "rmcp::transport::auth=info"
+                .parse()
+                .expect("a valid directive"),
+        );
     tracing_subscriber::registry()
         .with(level)
         .with(

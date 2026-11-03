@@ -4,17 +4,23 @@
 //! failed, and says why, until it is restarted from a client or the core starts again.
 
 mod client;
+mod oauth;
 
 use std::{
     collections::BTreeMap,
+    path::PathBuf,
     sync::{Arc, RwLock},
     time::Duration,
 };
+
+use anyhow::{Context, Result};
+use reqwest::Url;
 
 use tokio::sync::watch;
 use tracing::{info, warn};
 
 pub use client::{McpClient, RemoteTool, check_headers, check_url};
+pub use oauth::TokenFile;
 
 use crate::{
     config::{Config, McpServerConfig},
@@ -74,16 +80,19 @@ pub struct McpServers {
     ready: RwLock<Vec<Arc<McpServer>>>,
     /// True once every server has started or failed.
     settled: watch::Sender<bool>,
+    /// Where the tokens of servers signed in to are kept.
+    tokens: PathBuf,
 }
 
 impl McpServers {
     /// Starts every server the config lists, side by side, without waiting for them.
-    pub fn start(config: &Config) -> Arc<Self> {
+    pub fn start(config: &Config, tokens: PathBuf) -> Arc<Self> {
         let this = Arc::new(Self {
             statuses: RwLock::default(),
             attempts: RwLock::default(),
             ready: RwLock::default(),
             settled: watch::Sender::new(true),
+            tokens,
         });
         for (name, server) in config.mcp() {
             this.restart(name, Some(server.clone()));
@@ -128,7 +137,7 @@ impl McpServers {
         let this = Arc::clone(self);
         let name = name.to_owned();
         tokio::spawn(async move {
-            let started = connect(&name, &server).await;
+            let started = connect(&name, &server, this.token_file(&name, &server)).await;
             // Held to the end, so a restart cannot slip in between the check and the update.
             let attempts = read(&this.attempts);
             if attempts.get(&name) != Some(&attempt) {
@@ -142,13 +151,50 @@ impl McpServers {
                     McpState::Ready(tools)
                 }
                 Err(error) => {
-                    warn!("MCP server {name} failed: {error:#}");
-                    McpState::Failed(format!("{error:#}"))
+                    let error = bounded(&format!("{error:#}"));
+                    warn!("MCP server {name} failed: {error}");
+                    McpState::Failed(error)
                 }
             };
             this.set_state(&name, state);
             drop(attempts);
         });
+    }
+
+    fn token_file(&self, name: &str, server: &McpServerConfig) -> Option<TokenFile> {
+        match server {
+            McpServerConfig::Http(http) => TokenFile::new(&self.tokens, name, &http.url),
+            McpServerConfig::Stdio(_) => None,
+        }
+    }
+
+    /// Opens the sign-in of the remote server `name`: returns the page for the user's
+    /// browser, and starts the server again once they come back from it.
+    pub async fn sign_in(self: &Arc<Self>, name: &str, server: McpServerConfig) -> Result<Url> {
+        let McpServerConfig::Http(http) = &server else {
+            anyhow::bail!("only a remote server signs in");
+        };
+        let url = check_url(&http.url)?;
+        let tokens = self
+            .token_file(name, &server)
+            .context("the server name cannot name a token file")?;
+        let (page, finish) = oauth::sign_in(tokens, &url).await?;
+        let this = Arc::clone(self);
+        let name = name.to_owned();
+        tokio::spawn(async move {
+            match finish.await {
+                Ok(()) => {
+                    info!("signed in to MCP server {name}");
+                    this.restart(&name, Some(server));
+                }
+                Err(error) => {
+                    let error = bounded(&format!("{error:#}"));
+                    warn!("sign-in to MCP server {name} failed: {error}");
+                    this.set_state(&name, McpState::Failed(format!("sign-in: {error}")));
+                }
+            }
+        });
+        Ok(page)
     }
 
     /// The servers that started, for building a thread's tools.
@@ -227,8 +273,21 @@ impl McpServers {
     }
 }
 
-async fn connect(name: &str, config: &McpServerConfig) -> anyhow::Result<McpServer> {
-    let client = McpClient::start(config).await?;
+/// Errors can carry a remote server's body; a status line keeps their start.
+fn bounded(error: &str) -> String {
+    const MAX_ERROR_CHARS: usize = 200;
+    match error.char_indices().nth(MAX_ERROR_CHARS) {
+        Some((end, _)) => format!("{}\u{2026}", &error[..end]),
+        None => error.to_owned(),
+    }
+}
+
+async fn connect(
+    name: &str,
+    config: &McpServerConfig,
+    tokens: Option<TokenFile>,
+) -> anyhow::Result<McpServer> {
+    let client = McpClient::start(config, tokens).await?;
     let tools = client.list_tools().await?;
     Ok(McpServer {
         name: name.to_owned(),

@@ -90,6 +90,11 @@ impl Paths {
         self.rules_root().join(MEMORY_FILE)
     }
 
+    /// Tokens of the MCP servers signed in to; inside the folder tools may not touch.
+    pub fn mcp_tokens_dir(&self) -> PathBuf {
+        self.config_root.join("mcp-auth")
+    }
+
     pub fn logs_dir(&self) -> PathBuf {
         self.config_root.join("logs")
     }
