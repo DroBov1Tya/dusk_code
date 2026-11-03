@@ -1,4 +1,4 @@
-//! Looks for a newer release in the background, once a minute, on the channel the
+//! Looks for a newer release in the background, every half hour, on the channel the
 //! config names. It asks with the ETag of the last answer, so an unchanged list costs
 //! GitHub little, and it pauses until the rate limit lifts when few requests are left:
 //! without a token GitHub allows 60 an hour for every program on this address.
@@ -14,7 +14,7 @@ use tracing::{debug, warn};
 use super::update::{self, Channel, Release};
 use crate::config::live::LiveConfig;
 
-const PERIOD: Duration = Duration::from_secs(60);
+const PERIOD: Duration = Duration::from_secs(30 * 60);
 /// Requests kept for /update and other programs before the watch pauses.
 const SPARE_REQUESTS: u64 = 10;
 

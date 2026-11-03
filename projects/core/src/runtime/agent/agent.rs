@@ -37,8 +37,8 @@ use crate::{
     tools::{Progress, ToolRegistry, ToolScope},
 };
 
-/// Bounds a model that keeps calling tools.
-const MAX_STEPS: usize = 50;
+/// Bounds a model that keeps calling tools; long tasks of small steps fit in it.
+const MAX_STEPS: usize = 150;
 /// A model call that fails before writing anything is tried this many times in all.
 const MAX_ATTEMPTS: u32 = 3;
 /// Doubles before each further attempt.
@@ -125,8 +125,9 @@ impl Agent {
         turn: &Turn,
         inbox: &mut Inbox,
     ) -> Result<(Option<Stop>, TurnStatus)> {
-        let mut outcome =
-            TurnOutcome::Failed(format!("the model made more than {MAX_STEPS} tool steps"));
+        let mut outcome = TurnOutcome::Failed(format!(
+            "stopped after {MAX_STEPS} tool steps; what was done is kept, write to go on"
+        ));
         let mut stop = None;
         for _ in 0..MAX_STEPS {
             // A failed step ends the turn as failed; the thread itself goes on.
@@ -525,7 +526,7 @@ impl Agent {
             }
             let error = match &generated {
                 Ok(Err(error))
-                    if attempt < MAX_ATTEMPTS && output.is_empty() && is_transient(error) =>
+                    if attempt < MAX_ATTEMPTS && !output.answered() && is_transient(error) =>
                 {
                     format!("{error:#}")
                 }

@@ -106,6 +106,15 @@ impl Runtime {
         let state_db =
             crate::util::archive::resolve_state_db(&state_db.unwrap_or_else(|| paths.state_db()))?;
         let restore_guard = crate::util::archive::startup_guard(&paths, Some(&state_db))?;
+        if crate::release::resources::root().is_err() {
+            let version = crate::release::update::VERSION;
+            match crate::release::complete::restore(version).await {
+                Ok(fetched) => {
+                    info!("resources for {version} restored from GitHub, {fetched} files")
+                }
+                Err(error) => warn!("cannot restore the resources for {version}: {error:#}"),
+            }
+        }
         let initialized = init::initialize(&paths)?;
         let state = Arc::new(State::open(&state_db).await?);
         let mailboxes = Arc::new(Mailboxes::default());

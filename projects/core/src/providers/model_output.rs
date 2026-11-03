@@ -7,6 +7,7 @@ use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+use super::provider::Transient;
 use crate::BoxFuture;
 
 /// Bounds memory for a provider that never finishes; every kind of output counts.
@@ -118,6 +119,11 @@ impl ModelOutput {
         self.size == 0 && self.calls.is_empty()
     }
 
+    /// Whether the model wrote any of its answer or a tool call; reasoning alone is not.
+    pub fn answered(&self) -> bool {
+        !self.text.trim().is_empty() || !self.calls.is_empty()
+    }
+
     pub fn apply(&mut self, event: &ModelEvent) -> Result<()> {
         match event {
             ModelEvent::Reasoning(text) => self.grow(text, |output| &mut output.reasoning)?,
@@ -188,10 +194,10 @@ impl ModelOutput {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
-        ensure!(
-            !self.text.trim().is_empty() || !calls.is_empty(),
-            "model returned an empty answer"
-        );
+        // Some servers end a stream with nothing after a long think; asking again helps.
+        if self.text.trim().is_empty() && calls.is_empty() {
+            return Err(Transient("model returned an empty answer".into()).into());
+        }
         Ok(calls)
     }
 

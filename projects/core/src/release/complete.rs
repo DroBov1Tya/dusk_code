@@ -87,6 +87,26 @@ pub async fn complete(source: &Path, version: &str) -> Result<usize> {
     Ok(fetched)
 }
 
+/// Builds the resources of `version` from its tag and installs them, for a binary that
+/// came without them, such as one copied into place by hand.
+pub async fn restore(version: &str) -> Result<usize> {
+    let resources = super::resources::data_root()?.join("resources");
+    let staging = resources.join(format!(".restore-{}", uuid::Uuid::now_v7()));
+    crate::init::create_private_dir(&staging)?;
+    let restored = async {
+        fs::write(staging.join("FORMAT"), "1\n").context("cannot write the resource format")?;
+        fs::write(staging.join("VERSION"), format!("{version}\n"))
+            .context("cannot write the resource version")?;
+        let fetched = complete(&staging, version).await?;
+        super::resources::install_snapshot(&staging, version)?;
+        Ok(fetched)
+    }
+    .await;
+    // The staging folder holds only what this call wrote.
+    let _ = fs::remove_dir_all(&staging);
+    restored
+}
+
 async fn fetch(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
     let response = client
         .get(url)
