@@ -31,6 +31,10 @@ pub enum Panel {
     Models(ModelList),
     Agent(AgentWindow),
     Connect(Connection),
+    /// The Telegram bots of this session.
+    Bots {
+        selected: usize,
+    },
     Unsent {
         selected: usize,
     },
@@ -154,6 +158,16 @@ impl Preview {
             tool_calls,
         }
     }
+}
+
+/// A Telegram bot as the bots panel shows it.
+pub struct BotRow {
+    pub id: usize,
+    pub username: String,
+    /// Who paired with it; `None` while it waits for its code.
+    pub owner: Option<String>,
+    pub code: String,
+    pub running: bool,
 }
 
 #[derive(Default)]
