@@ -30,7 +30,7 @@ pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
 use panels::agents;
 pub use panels::{
-    AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, JobsView, McpRow,
+    AgentRow, AgentWindow, BotRow, Connection, FileButton, FileEditor, HitTarget, JobsView, McpRow,
     ModelList, Panel, Preview, SettingCategory, SettingsHit, SettingsView, SubagentView,
     SwitchKind, ThreadList,
 };
@@ -52,6 +52,11 @@ pub enum Action {
         id: u64,
         decision: Decision,
     },
+    /// Checks a Telegram bot token and starts the bot; the token stays in memory.
+    StartBot(String),
+    /// Stops a running bot or starts a stopped one again, by its id.
+    ToggleBot(usize),
+    RemoveBot(usize),
     Connect {
         kind: ProviderKind,
         /// `None` takes the next free `provider-N`.
@@ -128,6 +133,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         (
             "/resend",
             "view local unsent messages and explicitly send one",
+        ),
+        (
+            "/tgbot",
+            "mirror this chat in a Telegram bot: /tgbot <token>; alone, the bots",
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())
@@ -236,6 +245,7 @@ pub struct App {
     pub effort: Option<Effort>,
     pub provider_available: bool,
     pub local_unsent: Vec<LocalUnsent>,
+    pub bots: Vec<BotRow>,
     pub thread_id: Option<String>,
     pub title: Option<String>,
     pub transcript: Transcript,
@@ -376,6 +386,7 @@ impl App {
             effort: None,
             mode: String::new(),
             local_unsent: Vec::new(),
+            bots: Vec::new(),
             thread_id: None,
             title: None,
             transcript: Transcript::default(),
@@ -813,6 +824,16 @@ impl App {
         }
     }
 
+    /// Text from elsewhere, such as a Telegram bot, taken as if it was typed and sent;
+    /// what is in the box stays there.
+    pub fn submit_text(&mut self, text: &str) -> Action {
+        let draft = std::mem::take(&mut self.input);
+        self.input.insert(text);
+        let action = self.submit(false);
+        self.input = draft;
+        action
+    }
+
     /// Takes the typed text for sending; commands show as notices, messages as the user's.
     fn submit(&mut self, now: bool) -> Action {
         if self.input.is_empty() {
@@ -831,7 +852,15 @@ impl App {
                 self.panel = Some(Panel::Unsent { selected: 0 });
                 return Action::None;
             }
+            "/tgbot" => {
+                self.panel = Some(Panel::Bots { selected: 0 });
+                return Action::None;
+            }
             _ => {}
+        }
+        // A bot token is a secret: it goes to the bot and nowhere else.
+        if let Some(token) = trimmed.strip_prefix("/tgbot ") {
+            return Action::StartBot(token.trim().to_owned());
         }
         // Connection secrets belong only in the masked form, never in recall/history.
         if trimmed.split_whitespace().next() == Some("/connect") {

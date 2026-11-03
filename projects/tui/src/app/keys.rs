@@ -581,6 +581,21 @@ impl App {
                 }
                 return Action::None;
             }
+            Panel::Bots { selected } => {
+                let bot = self.bots.get(*selected).map(|bot| bot.id);
+                match key.code {
+                    _ if up || down => step(selected, self.bots.len(), down),
+                    KeyCode::Char(' ') | KeyCode::Enter => {
+                        return bot.map_or(Action::None, Action::ToggleBot);
+                    }
+                    KeyCode::Char('d') | KeyCode::Delete => {
+                        return bot.map_or(Action::None, Action::RemoveBot);
+                    }
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
+                return Action::None;
+            }
             Panel::Unsent { selected } => {
                 match key.code {
                     _ if up || down => step(selected, self.local_unsent.len(), down),
