@@ -95,6 +95,8 @@ impl AskAgent {
         progress: Option<Progress<'_>>,
     ) -> Result<String> {
         ensure!(!arguments.task.trim().is_empty(), "task is empty");
+        // Kept until the new agent is delivered its task, which gives it its slot.
+        let mut admitted = None;
         let (thread_id, name, agent) = match &arguments.thread {
             Some(key) => {
                 let thread = self.own_agent(key).await?;
@@ -104,7 +106,10 @@ impl AskAgent {
                 }
                 (thread.id.clone(), display_name(&thread), agent)
             }
-            None => self.start(arguments.agent.as_deref()).await?,
+            None => {
+                admitted = Some(self.launcher.admit_agent().await?);
+                self.start(arguments.agent.as_deref()).await?
+            }
         };
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::SubagentStarted {
@@ -117,6 +122,7 @@ impl AskAgent {
         self.launcher
             .deliver(&thread_id, &self.thread_id, &arguments.task, cwd)
             .await?;
+        drop(admitted);
         Ok(format!(
             "{name} (agent {agent}, thread {thread_id}) works on it in the background. Call \
              it {name} when you talk about it. What it writes and its final answer will come \

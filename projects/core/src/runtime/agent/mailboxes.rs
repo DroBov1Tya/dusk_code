@@ -18,6 +18,9 @@ pub struct Mailboxes {
     /// A runner can leave before its final events have reached the asking thread.
     /// Count overlapping runners of the same agent until their reports are drained.
     agent_reports: Mutex<HashMap<String, usize>>,
+    /// Held from counting the agents at work to starting a new one, so agents asked
+    /// at once cannot all pass the limit.
+    pub new_agents: Mutex<()>,
     /// Set at shutdown: messages are still stored, but no agent starts.
     closed: AtomicBool,
 }
