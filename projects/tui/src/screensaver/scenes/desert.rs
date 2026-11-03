@@ -2,7 +2,7 @@
 //! caravan at dusk.
 
 use crate::screensaver::paint::{
-    Pt, Rgb, crossing, disk, fbm, glow, gradient, hash, noise, smooth, stars,
+    Pt, Rgb, crossing, disk, fbm, glow, gradient, grass, hash, mist, noise, smooth, stars,
 };
 
 /// A dune line at `base`, swelling by `height`, drifting with the wind.
@@ -47,6 +47,7 @@ pub fn milky_way_camp(p: Pt, t: f32) -> Rgb {
     if p.y > near {
         color = Rgb::hex(0x241a2a).add(Rgb::hex(0x6a3a1a).scale(lamp));
     }
+    color = mist(p, t, far, color, Rgb::hex(0x5a4c64), 0.15);
     // A tent lit from inside, its door open.
     let (dx, dy) = (p.x - tent.0, tent.1 - p.y);
     if dy > 0.0 && dy < 0.09 - dx.abs() * 0.9 {
@@ -112,6 +113,14 @@ pub fn dunes(p: Pt, t: f32) -> Rgb {
         let drift = smooth(0.6, 0.85, noise(p.x * 25.0 - t * 2.5, p.y * 50.0));
         side = side.mix(Rgb::hex(0xffe8c0), drift * smooth(0.02, 0.0, below) * 0.8);
         color = side.mix(Rgb::hex(0xa86a78), (1.0 - near) * 0.5);
+        color = mist(
+            p,
+            t,
+            crest + 0.015,
+            color,
+            Rgb::hex(0xc18b8a),
+            (1.0 - near) * 0.1,
+        );
     }
     color
 }
@@ -132,6 +141,20 @@ pub fn campfire(p: Pt, t: f32) -> Rgb {
     }
     if p.y > 0.78 {
         color = Rgb::hex(0x1a1410).add(Rgb::hex(0xa04a10).scale(light.powf(1.5)));
+        let blades = grass(p, t, 0.78);
+        let meadow = Rgb::hex(0x193132).add(Rgb::hex(0x9b642b).scale(light * 0.55));
+        color = color.mix(meadow, blades * 0.6);
+    }
+    color = mist(p, t, 0.66, color, Rgb::hex(0x34444b), 0.13);
+    // Smoke curls into the cold air behind the flames.
+    let up = fire.1 - p.y;
+    if up > 0.1 && up < 0.6 {
+        let sway = (up * 9.0 - t * 0.3).sin() * up * 0.08;
+        let plume = smooth(0.02 + up * 0.12, 0.0, (p.x - fire.0 - sway).abs());
+        color = color.mix(
+            Rgb::hex(0x48404b),
+            plume * noise(p.x * 25.0, up * 14.0 - t * 0.4) * 0.22,
+        );
     }
     // Logs, then flames rising from them, licking upwards.
     let (dx, dy) = (p.x - fire.0, fire.1 - p.y);
@@ -177,6 +200,7 @@ pub fn caravan(p: Pt, t: f32) -> Rgb {
     if p.y > horizon {
         color = Rgb::hex(0x3a1a2a).mix(Rgb::hex(0x5a2a30), smooth(horizon, 1.0, p.y));
     }
+    color = mist(p, t, horizon + 0.01, color, Rgb::hex(0x9d6867), 0.15);
     // Camels with riders along the crest, walking to the right.
     for i in 0..4 {
         let i = i as f32;

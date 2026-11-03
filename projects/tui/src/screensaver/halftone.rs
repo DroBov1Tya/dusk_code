@@ -23,6 +23,9 @@ const BAYER: [[u8; 8]; 8] = [
 /// How much of the picture's own colour shows between the dots, and how dark.
 const TONE: f32 = 0.35;
 const TONE_DEPTH: f32 = 0.3;
+/// Light roughly ten percent more dots without rescaling the picture or its colours.
+/// Highlights already filling a cell naturally stop at its eight dots.
+const DOT_DENSITY: f32 = 1.10;
 
 pub struct Cell {
     pub symbol: char,
@@ -53,7 +56,7 @@ pub fn render(width: u16, height: u16, background: Rgb, paint: impl Fn(Pt) -> Rg
                     all = all.add(color);
                     let rank = BAYER[(dot.1 % 8) as usize][(dot.0 % 8) as usize];
                     let threshold = (f32::from(rank) + 0.5) / 64.0;
-                    if brightness(color) > threshold {
+                    if (brightness(color) * DOT_DENSITY).min(1.0) > threshold {
                         bits |= bit;
                         lit = lit.add(color);
                         count += 1.0;
@@ -90,4 +93,56 @@ fn brightness(color: Rgb) -> f32 {
 fn terminal(color: Rgb) -> Color {
     let channel = |value: f32| (value.clamp(0.0, 1.0) * 255.0).round() as u8;
     Color::Rgb(channel(color.0), channel(color.1), channel(color.2))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn darkness_and_saturated_highlights_keep_their_limits() {
+        for (color, symbol) in [(Rgb::BLACK, '\u{2800}'), (Rgb(1.0, 1.0, 1.0), '\u{28ff}')] {
+            assert!(
+                render(8, 8, Rgb::BLACK, |_| color)
+                    .iter()
+                    .all(|cell| cell.symbol == symbol)
+            );
+        }
+        assert!(render(0, 20, Rgb::BLACK, |_| Rgb::BLACK).is_empty());
+        assert!(render(20, 0, Rgb::BLACK, |_| Rgb::BLACK).is_empty());
+    }
+
+    #[test]
+    fn a_round_subject_stays_round_when_the_terminal_resizes() {
+        for (width, height) in [(40, 40), (120, 40), (160, 50)] {
+            let radius = 0.18;
+            let cells = render(width, height, Rgb::BLACK, |p| {
+                if p.x.powi(2) + (p.y - 0.5).powi(2) < radius * radius {
+                    Rgb(1.0, 1.0, 1.0)
+                } else {
+                    Rgb::BLACK
+                }
+            });
+            let (mut left, mut top, mut right, mut bottom) = (u32::MAX, u32::MAX, 0, 0);
+            for (index, cell) in cells.iter().enumerate() {
+                let bits = cell.symbol as u32 - 0x2800;
+                for (dx, column) in DOTS.iter().enumerate() {
+                    for (dy, bit) in column.iter().enumerate() {
+                        if bits & bit == 0 {
+                            continue;
+                        }
+                        let x = (index as u32 % u32::from(width)) * 2 + dx as u32;
+                        let y = (index as u32 / u32::from(width)) * 4 + dy as u32;
+                        left = left.min(x);
+                        right = right.max(x);
+                        top = top.min(y);
+                        bottom = bottom.max(y);
+                    }
+                }
+            }
+            let diameter = 2.0 * radius * f32::from(height) * 4.0;
+            assert!(((right - left + 1) as f32 - diameter).abs() <= 1.0);
+            assert_eq!(right - left, bottom - top);
+        }
+    }
 }

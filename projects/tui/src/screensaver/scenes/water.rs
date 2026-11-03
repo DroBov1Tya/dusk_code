@@ -2,7 +2,7 @@
 //! sunset.
 
 use crate::screensaver::paint::{
-    Pt, Rgb, bird, crossing, disk, fbm, glow, gradient, hash, noise, smooth, stars,
+    Pt, Rgb, bird, crossing, disk, fbm, glow, gradient, hash, mist, noise, ripples, smooth, stars,
 };
 
 /// What lies under a horizon at `horizon` mirrors what is above it, rippled and tinted.
@@ -73,7 +73,7 @@ pub fn fuji_lake(p: Pt, t: f32) -> Rgb {
                 color = Rgb::hex(0x2a2140);
             }
         }
-        color
+        mist(p, t, HORIZON - 0.02, color, Rgb::hex(0x9b8cae), 0.16)
     };
     if p.y < HORIZON {
         return above(p);
@@ -81,6 +81,8 @@ pub fn fuji_lake(p: Pt, t: f32) -> Rgb {
     let mut color = mirror(p, t, HORIZON, Rgb::hex(0x2c3460), above);
     let glint = smooth(0.7, 0.9, noise(p.x * 40.0, p.y * 260.0 - t * 2.0));
     color = color.add(Rgb::hex(0xffc0a0).scale(glint * 0.15));
+    color = mist(p, t, HORIZON + 0.02, color, Rgb::hex(0x9b8cae), 0.12);
+    color = color.add(Rgb::hex(0xb9becb).scale(ripples(p, t, HORIZON) * 0.08));
     // A small boat poled across the lake.
     let boat = crossing(p, t, 90.0, 0.45);
     let (dx, dy) = (p.x - boat, p.y - 0.8);
@@ -138,7 +140,7 @@ pub fn river_dawn(p: Pt, t: f32) -> Rgb {
                 color = Rgb::hex(0x3a2238);
             }
         }
-        color
+        mist(p, t, HORIZON - 0.02, color, Rgb::hex(0xc5949b), 0.12)
     };
     if p.y < HORIZON {
         return above(p);
@@ -148,6 +150,8 @@ pub fn river_dawn(p: Pt, t: f32) -> Rgb {
     let road = smooth(0.08 + (p.y - HORIZON) * 0.4, 0.0, (p.x - sun.0).abs());
     let glint = smooth(0.6, 0.8, noise(p.x * 60.0, p.y * 200.0 - t * 3.0));
     color = color.mix(Rgb::hex(0xffe2a0), road * glint);
+    color = mist(p, t, HORIZON + 0.02, color, Rgb::hex(0xc5949b), 0.12);
+    color = color.add(Rgb::hex(0xe8b996).scale(ripples(p, t, HORIZON) * 0.07));
     for i in 0..2 {
         let i = i as f32;
         let x = crossing(p, t, 120.0, 0.5 + i * 0.45);
@@ -190,7 +194,7 @@ pub fn ocean_sunset(p: Pt, t: f32) -> Rgb {
                 color = Rgb::hex(0x2a1838);
             }
         }
-        return color;
+        return mist(p, t, HORIZON - 0.01, color, Rgb::hex(0xb17d95), 0.1);
     }
     let depth = (p.y - HORIZON) / (1.0 - HORIZON);
     let waves =
@@ -207,11 +211,22 @@ pub fn ocean_sunset(p: Pt, t: f32) -> Rgb {
         noise(p.x * 50.0 + t * 0.5, p.y * 160.0 - t * 2.0),
     );
     color = color.mix(Rgb::hex(0xffd59a), road * glint);
+    color = mist(p, t, HORIZON + 0.02, color, Rgb::hex(0xb17d95), 0.12);
     // Foam where the waves break on the sand in front.
     let shore = 0.93 + (p.x * 6.0 + t * 0.4).sin() * 0.015 + (t * 0.5).sin() * 0.01;
     if p.y > shore {
         color = Rgb::hex(0x6a4058).mix(Rgb::hex(0xffd7c4), smooth(shore + 0.02, shore, p.y));
     }
+    // Wind separates the breaking wave into small, short-lived flecks of foam.
+    let spray = smooth(
+        0.68,
+        0.9,
+        noise(p.x * 85.0 - t * 0.8, p.y * 140.0 - t * 1.4),
+    );
+    color = color.mix(
+        Rgb::hex(0xe7b9c6),
+        spray * smooth(0.03, 0.0, (p.y - shore).abs()) * 0.2,
+    );
     color
 }
 
@@ -260,5 +275,6 @@ pub fn neon_sunset(p: Pt, t: f32) -> Rgb {
     } else {
         floor
     };
-    color.mix(Rgb::hex(0xff4a8a), haze * 0.6)
+    let color = color.mix(Rgb::hex(0xff4a8a), haze * 0.6);
+    mist(p, t, HORIZON + 0.04, color, Rgb::hex(0x6b346c), 0.18)
 }

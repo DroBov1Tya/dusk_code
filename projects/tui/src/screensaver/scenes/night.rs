@@ -1,7 +1,7 @@
 //! Night scenes: lanterns on a river and the northern lights over a cabin in the snow.
 
 use crate::screensaver::paint::{
-    Pt, Rgb, falling, fbm, glow, gradient, hash, noise, smooth, stars,
+    Pt, Rgb, falling, fbm, glow, gradient, hash, mist, noise, ripples, smooth, stars,
 };
 
 pub fn lantern_river(p: Pt, t: f32) -> Rgb {
@@ -49,10 +49,12 @@ pub fn lantern_river(p: Pt, t: f32) -> Rgb {
                 Rgb::hex(0x1a1628)
             };
         }
-        return color;
+        return mist(p, t, HORIZON - 0.01, color, Rgb::hex(0x4b405c), 0.14);
     }
     let depth = (p.y - HORIZON) / (1.0 - HORIZON);
     let mut color = Rgb::hex(0x1a1630).mix(Rgb::hex(0x0c0c1c), depth);
+    color = mist(p, t, HORIZON + 0.03, color, Rgb::hex(0x4b405c), 0.18);
+    color = color.add(Rgb::hex(0x786985).scale(ripples(p, t, HORIZON) * 0.12));
     let ripple = noise(p.x * 20.0, p.y * 120.0 - t * 1.5);
     // Floating lanterns drift downstream, nearer ones larger, each with its reflection.
     for i in 0..26 {
@@ -139,6 +141,14 @@ pub fn aurora_cabin(p: Pt, t: f32) -> Rgb {
     }
     if pines {
         color = Rgb::hex(0x0a1420);
+    }
+    color = mist(p, t, hill + 0.03, color, Rgb::hex(0x8293a6), 0.1);
+    // A thin plume from the chimney bends with the same gentle wind as the snow.
+    let up = 0.68 - p.y;
+    if up > 0.0 && up < 0.24 {
+        let x = -0.085 + up * 0.25 + (up * 12.0 - t * 0.3).sin() * up * 0.1;
+        let plume = smooth(0.009 + up * 0.1, 0.0, (p.x - x).abs());
+        color = color.mix(Rgb::hex(0x8b9cae), plume * smooth(0.24, 0.0, up) * 0.23);
     }
     if let Some(cabin) = cabin(p, -0.12, 0.78) {
         color = cabin;

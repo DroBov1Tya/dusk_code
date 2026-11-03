@@ -1,7 +1,9 @@
 //! A weary knight at a small fire: bare autumn woods, the first snow, and cold
 //! moonlight on worn plate. The fire is the only warm light in the clearing.
 
-use crate::screensaver::paint::{Pt, Rgb, disk, falling, fbm, glow, gradient, hash, noise, smooth};
+use crate::screensaver::paint::{
+    Pt, Rgb, disk, falling, fbm, glow, gradient, grass, hash, noise, rain, ripples, smooth,
+};
 
 const GROUND: f32 = 0.8;
 const KNIGHT: (f32, f32) = (-0.23, 0.62);
@@ -25,6 +27,17 @@ pub fn knight_fire(p: Pt, t: f32) -> Rgb {
         } else if noise(p.x * 130.0, p.y * 170.0) > 0.77 {
             color = Rgb::hex(0x49321e).add(Rgb::hex(0x9a4716).scale(light * 0.5));
         }
+        // Wet grass catches the fire along its tips. Small pools reflect the moon
+        // between the tufts, without changing the knight's silhouette or ground line.
+        let blades = grass(p, t, ground_line(p.x));
+        let meadow = Rgb::hex(0x193438).add(Rgb::hex(0xb26b30).scale(light * 0.45));
+        color = color.mix(meadow, blades * 0.55);
+        let puddle = smooth(0.7, 0.85, noise(p.x * 13.0, p.y * 27.0));
+        let reflected =
+            glow(p, 0.48, 0.94, 0.19) * smooth(0.45, 0.8, noise(p.x * 22.0, p.y * 220.0 - t * 0.7));
+        color = color.add(
+            Rgb::hex(0x718490).scale((reflected * 0.14 + ripples(p, t, GROUND) * 0.1) * puddle),
+        );
     }
     color = fog(p, t, color);
     color = smoke(p, t, color);
@@ -37,7 +50,7 @@ pub fn knight_fire(p: Pt, t: f32) -> Rgb {
     if falling(p, t, 0.025, 0.003, 0.012, 91).is_some() {
         color = color.mix(Rgb::hex(0x9aaebc), 0.72);
     }
-    color
+    color.mix(Rgb::hex(0x8babbc), rain(p, t) * 0.38)
 }
 
 fn ground_line(x: f32) -> f32 {

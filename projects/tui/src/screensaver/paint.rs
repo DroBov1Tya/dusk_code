@@ -173,3 +173,82 @@ pub fn falling(p: Pt, t: f32, speed: f32, size: f32, share: f32, stream: u32) ->
     let inside = ((x - ox).powi(2) + (y - oy).powi(2)).sqrt() < size;
     inside.then_some(hash(cx, cy, stream + 3))
 }
+
+/// Thin wind-driven veils near a horizon. Two differently paced layers keep the air
+/// moving gently without moving the silhouettes behind it.
+pub fn mist(p: Pt, t: f32, height: f32, color: Rgb, tint: Rgb, strength: f32) -> Rgb {
+    let band = smooth(height - 0.09, height, p.y) * smooth(height + 0.13, height + 0.02, p.y);
+    if band == 0.0 {
+        return color;
+    }
+    let drift = noise(p.x * 3.0 - t * 0.012, p.y * 18.0) * 0.65
+        + noise(p.x * 7.0 + t * 0.018, p.y * 31.0) * 0.35;
+    color.mix(tint, band * smooth(0.28, 0.78, drift) * strength)
+}
+
+/// Small tufts rooted in the ground, leaning together in a slow gust. Positions and
+/// widths use the same units as scene geometry, independent of terminal size.
+pub fn grass(p: Pt, t: f32, ground: f32) -> f32 {
+    if p.y <= ground {
+        return 0.0;
+    }
+    let row = (p.y / 0.045).floor();
+    let column = (p.x / 0.018).floor();
+    let seed = hash(column, row, 101);
+    let root = (row + 0.7 + seed * 0.3) * 0.045;
+    let up = root - p.y;
+    let depth = smooth(ground, 1.0, p.y);
+    let height = (0.012 + seed * 0.023) * (0.5 + depth * 0.5);
+    if up <= 0.0 || up >= height {
+        return 0.0;
+    }
+    let gust = (t * 0.8 + p.x * 4.0 + row * 0.25).sin();
+    let lean = (0.2 + gust * 0.3) * up;
+    let x = (column + 0.2 + hash(column, row, 102) * 0.6) * 0.018;
+    let width = 0.0015 * (1.0 - up / height) + 0.0005;
+    (1.0 - smooth(width, width * 2.0, (p.x - x - lean).abs())) * (0.4 + depth * 0.6)
+}
+
+/// Sparse slanted rain, with a dim distant layer and a longer foreground layer.
+/// Each streak moves continuously; no frame-dependent random flashing.
+pub fn rain(p: Pt, t: f32) -> f32 {
+    let mut light: f32 = 0.0;
+    for (scale, speed, length, strength, stream) in [
+        (0.07, 0.11, 0.009, 0.35, 111),
+        (0.11, 0.18, 0.018, 0.65, 112),
+    ] {
+        let y = p.y - t * speed;
+        let x = p.x - p.y * 0.18;
+        let (cx, cy) = ((x / scale).floor(), (y / scale).floor());
+        if hash(cx, cy, stream) > 0.13 {
+            continue;
+        }
+        let dx = x - (cx + 0.2 + hash(cx, cy, stream + 10) * 0.6) * scale;
+        let dy = y - (cy + 0.2 + hash(cx, cy, stream + 20) * 0.6) * scale;
+        let streak = smooth(0.002, 0.0, dx.abs()) * smooth(length, 0.0, dy.abs());
+        light = light.max(streak * strength);
+    }
+    light
+}
+
+/// Brief expanding rings on water, flattened by perspective and faded before they
+/// restart. They share a continuous clock with the rain and reflections.
+pub fn ripples(p: Pt, t: f32, horizon: f32) -> f32 {
+    if p.y <= horizon + 0.025 {
+        return 0.0;
+    }
+    let (cx, cy) = ((p.x / 0.16).floor(), (p.y / 0.08).floor());
+    let seed = hash(cx, cy, 121);
+    if seed > 0.28 {
+        return 0.0;
+    }
+    let phase = (t * 0.23 + seed * 7.0).rem_euclid(1.0);
+    let x = (cx + 0.25 + hash(cx, cy, 122) * 0.5) * 0.16;
+    let y = (cy + 0.25 + hash(cx, cy, 123) * 0.5) * 0.08;
+    let depth = smooth(horizon, 1.0, p.y);
+    let radius = phase * (0.014 + depth * 0.025);
+    let distance = ((p.x - x).powi(2) + ((p.y - y) * 3.0).powi(2)).sqrt();
+    (1.0 - smooth(0.001, 0.004, (distance - radius).abs()))
+        * smooth(0.0, 0.15, phase)
+        * smooth(1.0, 0.35, phase)
+}
