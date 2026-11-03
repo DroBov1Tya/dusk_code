@@ -19,8 +19,10 @@ testing.
   repository.
 - /connect starts with a list of providers, Ollama included; each opens a form of only
   what it needs, and ctrl+o opens the page where OpenAI or Anthropic keys are made.
-- Computer use can capture one app's window, even under others, and shows a ring where
-  the agent clicks; the ring passes the mouse through and stays out of screenshots.
+- Computer use can capture one app's window, even under others, and shows a cursor of
+  its own where the agent clicks: an arrow with a glowing rim that rocks slightly,
+  passes the mouse through and stays out of screenshots.
+- `ask_agent` takes an `effort` for the subagent; its window shows the level it works at.
 - The Telegram bot sets its command menu when added; /mode and /model without a name
   answer with buttons, or a list past ten options.
 - Eleven new idle scenes in dense coloured halftone dots, a knight by his fire among
@@ -32,12 +34,20 @@ testing.
   config: requests follow the model's window or the size set under /settings > models,
   and answers the model's own output cap. Older configs still load.
 - skill-creator reviews its runs in Markdown instead of a browser page.
+- spike, systematic-debugging and test-driven-development are rewritten as dusk_code's
+  own skills.
+- A subagent past `max_agents_at_work` is refused instead of queued, so the asker knows
+  it is not at work.
 
 ### Fixed
 
 - The update check runs every half hour instead of every minute, so it no longer uses up
   GitHub's request limit.
-- A binary installed without its resources rebuilds them from the release on GitHub.
+- A binary installed without its resources rebuilds them from the release on GitHub.  It
+  fetches only files missing or changed since the installed snapshot, shows its progress
+  before the screen opens, and fails at once when the release lacks a file the build
+  needs.
+- Subagent cards in the sidebar are parted by a blank row when many are listed.
 - An empty answer after a long think is asked again instead of failing the turn, and a
   turn may take 150 tool steps instead of 50.
 
