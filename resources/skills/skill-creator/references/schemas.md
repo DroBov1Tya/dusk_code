@@ -293,8 +293,8 @@ Output from Benchmark mode. Located at `benchmarks/<timestamp>/benchmark.json`.
   - `runs_per_configuration`: Number of runs per config (e.g. 3)
 - `runs[]`: Individual run results
   - `eval_id`: Numeric eval identifier
-  - `eval_name`: Human-readable eval name (used as section header in the viewer)
-  - `configuration`: Must be `"with_skill"` or `"without_skill"` (the viewer uses this exact string for grouping and color coding)
+  - `eval_name`: Human-readable eval name (used to identify the eval in reports)
+  - `configuration`: Use `"with_skill"` or `"without_skill"` for skill-versus-baseline comparisons; the aggregator can also retain named configurations
   - `run_number`: Integer run number (1, 2, 3...)
   - `result`: Nested object with `pass_rate`, `passed`, `total`, `time_seconds`, `tokens`, `errors`
 - `run_summary`: Statistical aggregates per configuration
@@ -302,7 +302,7 @@ Output from Benchmark mode. Located at `benchmarks/<timestamp>/benchmark.json`.
   - `delta`: Difference strings like `"+0.50"`, `"+13.0"`, `"+1700"`
 - `notes`: Freeform observations from the analyzer
 
-**Important:** The viewer reads these field names exactly. Using `config` instead of `configuration`, or putting `pass_rate` at the top level of a run instead of nested under `result`, will cause the viewer to show empty/zero values. Always reference this schema when generating benchmark.json manually.
+**Important:** Preserve these field names when generating benchmark.json manually. Store run metrics under `result` and identify each configuration with `configuration`. The Markdown review includes the benchmark JSON without browser-specific rendering.
 
 ---
 

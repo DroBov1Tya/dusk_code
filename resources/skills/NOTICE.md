@@ -9,7 +9,7 @@ the upstream has one). The front matter of each `SKILL.md` names its `source`, `
 |---|---|---|---|---|
 | frontend-design | Anthropic | Anthropic | Apache-2.0 | front matter fields added |
 | mcp-builder | Anthropic | Anthropic | Apache-2.0 | front matter fields added |
-| skill-creator | Anthropic | Anthropic | Apache-2.0 | front matter fields added |
+| skill-creator | Anthropic | Anthropic | Apache-2.0 | front matter fields added, HTML review replaced with Markdown reports |
 | webapp-testing | Anthropic | Anthropic | Apache-2.0 | front matter fields added |
 | gh-address-comments | OpenAI | OpenAI | Apache-2.0 | front matter fields added, Codex icons removed |
 | gh-fix-ci | OpenAI | OpenAI | Apache-2.0 | front matter fields added, Codex icons removed |
