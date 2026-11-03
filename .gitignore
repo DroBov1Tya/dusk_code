@@ -2,3 +2,4 @@
 /evals/results/
 test/
 .DS_Store
+.tree/
