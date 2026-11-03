@@ -30,8 +30,8 @@ tags: [git, release]   # optional, shown in /settings
 links: [other-skill]   # optional, skills to load after this one
 entry: false           # optional; hides it from the first list, reached by links only
 ---
-Short imperative steps, each checked in practice. Scripts and references go in the
-same folder and are named by their path in it.
+Short imperative steps, each checked in practice. Only Markdown files belong in the skill folder. Put longer instructions in linked
+references/<topic>.md files; keep executable helpers and generated artifacts outside it.
 ```
 
 ## Agent

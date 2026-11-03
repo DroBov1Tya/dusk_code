@@ -1,61 +1,36 @@
 ---
 name: "playwright"
-description: "Use when the task requires automating a real browser from the terminal (navigation, form filling, snapshots, screenshots, data extraction, UI-flow debugging) via `playwright-cli` or the bundled wrapper script."
+description: "Use when the task requires automating a real browser from the terminal (navigation, form filling, snapshots, screenshots, data extraction, UI-flow debugging) via `playwright-cli`."
 source: "OpenAI"
 author: "OpenAI"
 license: Apache-2.0
 upstream: https://github.com/openai/skills/tree/main/skills/.curated/playwright
-changes: "dusk_code added the source, author, upstream and changes fields to this front matter; Codex icons removed"
+changes: "dusk_code: Markdown-only edition; removed wrapper, use installed playwright-cli"
 ---
 
 
 # Playwright CLI Skill
 
-Drive a real browser from the terminal using `playwright-cli`. Prefer the bundled wrapper script so the CLI works even when it is not globally installed.
+Drive a real browser from the terminal using `playwright-cli`. Use the project-installed `playwright-cli`; verify its availability and `--help` before use. No wrapper is bundled.
 Treat this skill as CLI-first automation. Do not pivot to `@playwright/test` unless the user explicitly asks for test files.
 
-## Prerequisite check (required)
+## Prerequisite check
 
-Before proposing commands, check whether `npx` is available (the wrapper depends on it):
-
-```bash
-command -v npx >/dev/null 2>&1
-```
-
-If it is not available, pause and ask the user to install Node.js/npm (which provides `npx`). Provide these steps verbatim:
-
-```bash
-# Verify Node/npm are installed
-node --version
-npm --version
-
-# If missing, install Node.js/npm, then:
-npm install -g @playwright/cli@latest
-playwright-cli --help
-```
-
-Once `npx` is present, proceed with the wrapper script. A global install of `playwright-cli` is optional.
-
-## Skill path (set once)
-
-```bash
-export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-export PWCLI="$CODEX_HOME/skills/playwright/scripts/playwright_cli.sh"
-```
-
-User-scoped skills install under `$CODEX_HOME/skills` (default: `~/.codex/skills`).
+Check `command -v playwright-cli` and inspect `playwright-cli --help` before use.
+If the CLI is unavailable, report the dependency and propose a project-appropriate
+installation. Do not install packages or assume a bundled wrapper is present.
 
 ## Quick start
 
-Use the wrapper script:
+With the installed CLI:
 
 ```bash
-"$PWCLI" open https://playwright.dev --headed
-"$PWCLI" snapshot
-"$PWCLI" click e15
-"$PWCLI" type "Playwright"
-"$PWCLI" press Enter
-"$PWCLI" screenshot
+playwright-cli open https://playwright.dev --headed
+playwright-cli snapshot
+playwright-cli click e15
+playwright-cli type "Playwright"
+playwright-cli press Enter
+playwright-cli screenshot
 ```
 
 If the user prefers a global install, this is also valid:
@@ -76,10 +51,10 @@ playwright-cli --help
 Minimal loop:
 
 ```bash
-"$PWCLI" open https://example.com
-"$PWCLI" snapshot
-"$PWCLI" click e3
-"$PWCLI" snapshot
+playwright-cli open https://example.com
+playwright-cli snapshot
+playwright-cli click e3
+playwright-cli snapshot
 ```
 
 ## When to snapshot again
@@ -98,41 +73,31 @@ Refs can go stale. When a command fails due to a missing ref, snapshot again.
 ### Form fill and submit
 
 ```bash
-"$PWCLI" open https://example.com/form
-"$PWCLI" snapshot
-"$PWCLI" fill e1 "user@example.com"
-"$PWCLI" fill e2 "password123"
-"$PWCLI" click e3
-"$PWCLI" snapshot
+playwright-cli open https://example.com/form
+playwright-cli snapshot
+playwright-cli fill e1 "user@example.com"
+playwright-cli fill e2 "password123"
+playwright-cli click e3
+playwright-cli snapshot
 ```
 
 ### Debug a UI flow with traces
 
 ```bash
-"$PWCLI" open https://example.com --headed
-"$PWCLI" tracing-start
+playwright-cli open https://example.com --headed
+playwright-cli tracing-start
 # ...interactions...
-"$PWCLI" tracing-stop
+playwright-cli tracing-stop
 ```
 
 ### Multi-tab work
 
 ```bash
-"$PWCLI" tab-new https://example.com
-"$PWCLI" tab-list
-"$PWCLI" tab-select 0
-"$PWCLI" snapshot
+playwright-cli tab-new https://example.com
+playwright-cli tab-list
+playwright-cli tab-select 0
+playwright-cli snapshot
 ```
-
-## Wrapper script
-
-The wrapper script uses `npx --package @playwright/cli playwright-cli` so the CLI can run without a global install:
-
-```bash
-"$PWCLI" --help
-```
-
-Prefer the wrapper unless the repository already standardizes on a global install.
 
 ## References
 

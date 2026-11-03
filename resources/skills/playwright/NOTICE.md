@@ -7,8 +7,8 @@ Source:
 Copyright (c) Microsoft Corporation.
 
 Licensed under the Apache License, Version 2.0.
-See LICENSE.txt in this directory.
+See LICENSE.md in this directory.
 
 Modifications:
 - Adapted for the Codex skill collection.
-- Added a wrapper script and local reference guides.
+- Added local reference guides; the former wrapper is not included in this Markdown-only edition.

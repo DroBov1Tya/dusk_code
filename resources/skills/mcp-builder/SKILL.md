@@ -5,7 +5,7 @@ source: "Anthropic"
 author: "Anthropic"
 license: Apache-2.0
 upstream: https://github.com/anthropics/skills/tree/main/skills/mcp-builder
-changes: "dusk_code added the source, author, upstream and changes fields to this front matter"
+changes: "dusk_code: Markdown-only edition; removed Python evaluation runner and dependency files"
 ---
 
 # MCP Server Development Guide
@@ -253,4 +253,4 @@ Load these resources as needed during development:
   - Answer verification strategies
   - XML format specifications
   - Example questions and answers
-  - Running an evaluation with the provided scripts
+  - Running evaluations with a project-provided MCP client or test harness

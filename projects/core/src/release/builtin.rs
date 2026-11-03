@@ -6,10 +6,10 @@
 use std::{
     fs::{self, OpenOptions},
     io::{ErrorKind, Write},
-    path::Path,
+    path::{Component, Path},
 };
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 
 use crate::{init::create_private_dir, init::paths::Paths, release::resources};
@@ -24,6 +24,12 @@ pub struct Synced {
     pub written: Vec<String>,
     /// Differed from this build, by an older build or a local edit, and were replaced.
     pub updated: Vec<String>,
+    /// Files moved out of active skills into recovery storage.
+    pub removed: Vec<String>,
+    /// Recovery paths relative to the rules root; retirement never deletes contents.
+    pub archived: Vec<String>,
+    /// Retired files with local changes or unsafe paths, left untouched.
+    pub preserved: Vec<String>,
 }
 
 pub fn sync(paths: &Paths) -> Result<Synced> {
@@ -56,7 +62,77 @@ pub fn sync(paths: &Paths) -> Result<Synced> {
             Some(_) => {}
         }
     }
+    retire(
+        root,
+        &resources::text("internal/RETIRED_SKILL_FILES.md")?,
+        &mut synced,
+    )?;
     Ok(synced)
+}
+
+/// Retire only named historical built-ins that match at inspection time. Keep their
+/// contents in recovery storage: a concurrent edit or replacement between the hash
+/// check and rename must not cause data loss. No recursive sweep or unlink occurs.
+fn retire(root: &Path, manifest: &str, synced: &mut Synced) -> Result<()> {
+    for line in manifest
+        .lines()
+        .filter(|line| line.starts_with("| skills/"))
+    {
+        let fields: Vec<_> = line.split('|').map(str::trim).collect();
+        ensure!(fields.len() == 4, "invalid retired skill entry");
+        let (relative, expected) = (Path::new(fields[1]), fields[2]);
+        ensure!(
+            relative
+                .components()
+                .all(|part| matches!(part, Component::Normal(_)))
+                && relative.starts_with("skills")
+                && expected.len() == 64
+                && expected.bytes().all(|byte| byte.is_ascii_hexdigit()),
+            "invalid retired skill path or hash"
+        );
+        let mut target = root.to_owned();
+        let mut present = true;
+        for part in relative.components() {
+            target.push(part);
+            match fs::symlink_metadata(&target) {
+                Ok(metadata) if metadata.file_type().is_symlink() => {
+                    synced.preserved.push(fields[1].to_owned());
+                    present = false;
+                    break;
+                }
+                Ok(_) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {
+                    present = false;
+                    break;
+                }
+                Err(error) => return Err(error).context("cannot inspect retired skill file"),
+            }
+        }
+        if !present {
+            continue;
+        }
+        let metadata = fs::symlink_metadata(&target)?;
+        if !metadata.is_file() {
+            synced.preserved.push(fields[1].to_owned());
+            continue;
+        }
+        let contents = crate::tools::read_regular(&target, metadata.len())?;
+        if hash(&contents) == expected {
+            let archived = Path::new("retired-skills")
+                .join(uuid::Uuid::now_v7().to_string())
+                .join(relative);
+            let recovery = root.join(&archived);
+            safe_parent(root, &recovery)?;
+            fs::rename(&target, &recovery).context("cannot archive a retired skill file")?;
+            synced.removed.push(fields[1].to_owned());
+            synced
+                .archived
+                .push(archived.to_string_lossy().into_owned());
+        } else {
+            synced.preserved.push(fields[1].to_owned());
+        }
+    }
+    Ok(())
 }
 
 /// Every shipped file by its path in the config folder, with its contents.
@@ -171,14 +247,123 @@ mod tests {
             listed.iter().all(|skill| skill.source.is_some()),
             "every one is credited"
         );
+        let files = resources::files(&paths.skills_dir()).unwrap();
+        assert!(
+            files
+                .iter()
+                .all(|path| path.extension().is_some_and(|ext| ext == "md"))
+        );
+        let creator =
+            fs::read_to_string(paths.skills_dir().join("skill-creator/SKILL.md")).unwrap();
+        assert!(creator.contains("source: \"dusk_code\""));
+    }
+
+    #[test]
+    fn sync_retires_known_old_license_and_preserves_local_helper() {
+        let paths = temp_paths("retired-sync");
+        let directory = paths.skills_dir().join("gh-fix-ci");
+        fs::create_dir_all(directory.join("scripts")).unwrap();
+        let license = resources::text("skills/gh-fix-ci/LICENSE.md").unwrap();
+        fs::write(directory.join("LICENSE.txt"), license).unwrap();
+        fs::write(
+            directory.join("scripts/inspect_pr_checks.py"),
+            "locally changed",
+        )
+        .unwrap();
+        let synced = sync(&paths).unwrap();
+        assert!(
+            synced
+                .removed
+                .contains(&"skills/gh-fix-ci/LICENSE.txt".to_owned())
+        );
+        assert!(
+            synced
+                .preserved
+                .contains(&"skills/gh-fix-ci/scripts/inspect_pr_checks.py".to_owned())
+        );
+        assert!(directory.join("LICENSE.md").is_file());
+        assert!(!directory.join("LICENSE.txt").exists());
+        assert_eq!(
+            fs::read_to_string(directory.join("scripts/inspect_pr_checks.py")).unwrap(),
+            "locally changed"
+        );
+    }
+
+    #[test]
+    fn retirement_keeps_data_written_through_an_existing_handle() {
+        let paths = temp_paths("retired-open-file");
+        let directory = paths.skills_dir().join("legacy");
+        fs::create_dir_all(&directory).unwrap();
+        let target = directory.join("old.py");
+        fs::write(&target, "bundled helper").unwrap();
+        let mut editor = OpenOptions::new().append(true).open(&target).unwrap();
+        let manifest = format!("| skills/legacy/old.py | {} |\n", hash(b"bundled helper"));
+        let mut synced = Synced::default();
+        retire(&paths.rules_root(), &manifest, &mut synced).unwrap();
+        editor.write_all(b" with concurrent changes").unwrap();
+        assert!(!target.exists());
+        let recovery = paths.rules_root().join(&synced.archived[0]);
+        assert_eq!(
+            fs::read_to_string(recovery).unwrap(),
+            "bundled helper with concurrent changes"
+        );
+    }
+
+    #[test]
+    fn retirement_preserves_modified_added_and_symlinked_files() {
+        let paths = temp_paths("retired-skills");
+        let root = paths.rules_root();
+        let directory = paths.skills_dir().join("legacy");
+        fs::create_dir_all(&directory).unwrap();
+        let original = b"original bundled helper";
+        fs::write(directory.join("old.py"), original).unwrap();
+        fs::write(directory.join("edited.py"), "user changes").unwrap();
+        fs::write(directory.join("mine.py"), "user helper").unwrap();
+        let digest = hash(original);
+        let mut manifest = format!(
+            "| skills/legacy/old.py | {digest} |\n| skills/legacy/edited.py | {digest} |\n"
+        );
         #[cfg(unix)]
         {
-            use std::os::unix::fs::PermissionsExt;
-            let script = paths
-                .skills_dir()
-                .join("gh-fix-ci/scripts/inspect_pr_checks.py");
-            let mode = fs::metadata(script).unwrap().permissions().mode();
-            assert_ne!(mode & 0o111, 0);
+            std::os::unix::fs::symlink(directory.join("mine.py"), directory.join("link.py"))
+                .unwrap();
+            std::os::unix::fs::symlink(&directory, paths.skills_dir().join("linked")).unwrap();
+            manifest.push_str(&format!(
+                "| skills/legacy/link.py | {digest} |\n| skills/linked/mine.py | {} |\n",
+                hash(b"user helper")
+            ));
         }
+        let mut synced = Synced::default();
+        retire(&root, &manifest, &mut synced).unwrap();
+        assert_eq!(synced.removed, ["skills/legacy/old.py"]);
+        assert_eq!(synced.archived.len(), 1);
+        assert_eq!(fs::read(root.join(&synced.archived[0])).unwrap(), original);
+        assert!(
+            synced
+                .preserved
+                .contains(&"skills/legacy/edited.py".to_owned())
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("edited.py")).unwrap(),
+            "user changes"
+        );
+        assert_eq!(
+            fs::read_to_string(directory.join("mine.py")).unwrap(),
+            "user helper"
+        );
+        #[cfg(unix)]
+        assert_eq!(synced.preserved.len(), 3);
+        let mut second = Synced::default();
+        retire(&root, &manifest, &mut second).unwrap();
+        assert!(second.removed.is_empty());
+        assert_eq!(second.preserved, synced.preserved);
+        assert!(
+            retire(
+                &root,
+                &format!("| skills/../escape.py | {digest} |"),
+                &mut second
+            )
+            .is_err()
+        );
     }
 }

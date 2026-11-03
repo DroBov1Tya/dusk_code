@@ -1,11 +1,11 @@
 ---
 name: "jupyter-notebook"
-description: "Use when the user asks to create, scaffold, or edit Jupyter notebooks (`.ipynb`) for experiments, explorations, or tutorials; prefer the bundled templates and run the helper script `new_notebook.py` to generate a clean starting notebook."
+description: "Use when the user asks to create, scaffold, or edit Jupyter notebooks (`.ipynb`) for experiments, explorations, or tutorials."
 source: "OpenAI"
 author: "OpenAI"
 license: Apache-2.0
 upstream: https://github.com/openai/skills/tree/main/skills/.curated/jupyter-notebook
-changes: "dusk_code added the source, author, upstream and changes fields to this front matter; Codex icons removed"
+changes: "dusk_code: Markdown-only edition; replaced bundled scaffold and templates with installed nbformat workflow"
 ---
 
 
@@ -16,7 +16,7 @@ Create clean, reproducible Jupyter notebooks for two primary modes:
 - Experiments and exploratory analysis
 - Tutorials and teaching-oriented walkthroughs
 
-Prefer the bundled templates and the helper script for consistent structure and fewer JSON mistakes.
+Use an installed notebook library such as `nbformat` to create valid notebook documents; no scaffold helper or notebook templates are bundled.
 
 ## When to use
 - Create a new `.ipynb` notebook from scratch.
@@ -29,84 +29,20 @@ Prefer the bundled templates and the helper script for consistent structure and 
 - If the request is instructional, step-by-step, or audience-specific, choose `tutorial`.
 - If editing an existing notebook, treat it as a refactor: preserve intent and improve structure.
 
-## Skill path (set once)
-
-```bash
-export CODEX_HOME="${CODEX_HOME:-$HOME/.codex}"
-export JUPYTER_NOTEBOOK_CLI="$CODEX_HOME/skills/jupyter-notebook/scripts/new_notebook.py"
-```
-
-User-scoped skills install under `$CODEX_HOME/skills` (default: `~/.codex/skills`).
-
 ## Workflow
-1. Lock the intent.
-Identify the notebook kind: `experiment` or `tutorial`.
-Capture the objective, audience, and what "done" looks like.
 
-2. Scaffold from the template.
-Use the helper script to avoid hand-authoring raw notebook JSON.
+1. Identify experiment or tutorial intent, audience, and expected result.
+2. Check whether the target project already provides notebook tooling. If `nbformat`
+   is installed, use `nbformat.v4.new_notebook`, `new_markdown_cell`, and `new_code_cell`,
+   then `nbformat.write` to create the requested `.ipynb` outside the skill directory.
+   If unavailable, report the dependency before proposing an installation.
+3. Keep code cells small and add Markdown cells explaining the purpose and result.
+4. Follow `references/experiment-patterns.md` or `references/tutorial-patterns.md`.
+5. Preserve existing notebook metadata and ordering during edits. Read
+   `references/notebook-structure.md` before changing raw notebook JSON.
+6. Validate document structure with the installed notebook library, then execute
+   top-to-bottom when the environment supports the required dependencies and data.
+   Use `references/quality-checklist.md`; distinguish format validation from execution.
 
-```bash
-uv run --python 3.12 python "$JUPYTER_NOTEBOOK_CLI" \
-  --kind experiment \
-  --title "Compare prompt variants" \
-  --out output/jupyter-notebook/compare-prompt-variants.ipynb
-```
-
-```bash
-uv run --python 3.12 python "$JUPYTER_NOTEBOOK_CLI" \
-  --kind tutorial \
-  --title "Intro to embeddings" \
-  --out output/jupyter-notebook/intro-to-embeddings.ipynb
-```
-
-3. Fill the notebook with small, runnable steps.
-Keep each code cell focused on one step.
-Add short markdown cells that explain the purpose and expected result.
-Avoid large, noisy outputs when a short summary works.
-
-4. Apply the right pattern.
-For experiments, follow `references/experiment-patterns.md`.
-For tutorials, follow `references/tutorial-patterns.md`.
-
-5. Edit safely when working with existing notebooks.
-Preserve the notebook structure; avoid reordering cells unless it improves the top-to-bottom story.
-Prefer targeted edits over full rewrites.
-If you must edit raw JSON, review `references/notebook-structure.md` first.
-
-6. Validate the result.
-Run the notebook top-to-bottom when the environment allows.
-If execution is not possible, say so explicitly and call out how to validate locally.
-Use the final pass checklist in `references/quality-checklist.md`.
-
-## Templates and helper script
-- Templates live in `assets/experiment-template.ipynb` and `assets/tutorial-template.ipynb`.
-- The helper script loads a template, updates the title cell, and writes a notebook.
-
-Script path:
-- `$JUPYTER_NOTEBOOK_CLI` (installed default: `$CODEX_HOME/skills/jupyter-notebook/scripts/new_notebook.py`)
-
-## Temp and output conventions
-- Use `tmp/jupyter-notebook/` for intermediate files; delete when done.
-- Write final artifacts under `output/jupyter-notebook/` when working in this repo.
-- Use stable, descriptive filenames (for example, `ablation-temperature.ipynb`).
-
-## Dependencies (install only when needed)
-Prefer `uv` for dependency management.
-
-Optional Python packages for local notebook execution:
-
-```bash
-uv pip install jupyterlab ipykernel
-```
-
-The bundled scaffold script uses only the Python standard library and does not require extra dependencies.
-
-## Environment
-No required environment variables.
-
-## Reference map
-- `references/experiment-patterns.md`: experiment structure and heuristics.
-- `references/tutorial-patterns.md`: tutorial structure and teaching flow.
-- `references/notebook-structure.md`: notebook JSON shape and safe editing rules.
-- `references/quality-checklist.md`: final validation checklist.
+No scripts or templates are bundled. Keep user notebooks and intermediate artifacts
+in the target project's chosen output directory, outside this skill folder.
