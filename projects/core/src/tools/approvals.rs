@@ -44,6 +44,17 @@ pub enum Request {
 }
 
 impl Request {
+    /// What `who` asks for, in a line, for any client to show.
+    pub fn describe(&self, who: &str) -> String {
+        match self {
+            Self::Path { path, write: true } => format!("{who} wants to write {}", path.display()),
+            Self::Path { path, write: false } => format!("{who} wants to read {}", path.display()),
+            Self::Command { command } => format!("{who} wants to run: {command}"),
+            Self::Screen { action } => format!("{who} wants to use the screen: {action}"),
+            Self::Keyboard { action } => format!("{who} wants to use the keyboard: {action}"),
+        }
+    }
+
     /// What a yes for the session covers, for the client to name: the folder of the path,
     /// or the program of a plain command. `None` when the session cannot be offered.
     pub fn session_grant(&self) -> Option<String> {

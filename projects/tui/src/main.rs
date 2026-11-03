@@ -12,7 +12,6 @@ mod cli;
 mod host;
 mod screensaver;
 mod session;
-mod telegram;
 mod ui;
 
 use anyhow::Result;
@@ -25,6 +24,14 @@ async fn main() -> Result<()> {
     #[cfg(target_os = "macos")]
     if dusk_core::tools::run_overlay_if_asked() {
         return Ok(());
+    }
+    // The built-in telegram plugin's platform: this binary, run by the core.
+    let mut arguments = std::env::args().skip(1);
+    if arguments.next().as_deref() == Some("--platform") {
+        return match arguments.next().as_deref() {
+            Some("telegram") => dusk_telegram::platform::run().await,
+            other => anyhow::bail!("no built-in platform {}", other.unwrap_or("named")),
+        };
     }
     let (paths, state_db, thread) = match args::parse_args() {
         Args::Run { state_db, thread } => (Paths::from_home()?, state_db, thread),

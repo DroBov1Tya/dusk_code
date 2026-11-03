@@ -63,6 +63,22 @@ impl TelegramBot {
         self.shared.owner().map(|owner| owner.name)
     }
 
+    /// The paired owner as `(user, chat, name)`, to keep across runs.
+    pub fn owner_ids(&self) -> Option<(u64, i64, String)> {
+        self.shared
+            .owner()
+            .map(|owner| (owner.user.0, owner.chat.0, owner.name))
+    }
+
+    /// Pairs with an owner kept from an earlier run, without the code.
+    pub fn restore_owner(&self, user: u64, chat: i64, name: String) {
+        *self.shared.owner.lock() = Some(context::Owner {
+            user: teloxide::types::UserId(user),
+            chat: teloxide::types::ChatId(chat),
+            name,
+        });
+    }
+
     pub fn running(&self) -> bool {
         self.tasks.iter().any(|task| !task.is_finished())
     }

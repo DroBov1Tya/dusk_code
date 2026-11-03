@@ -594,15 +594,15 @@ impl App {
                 }
                 return Action::None;
             }
-            Panel::Bots { selected } => {
-                let bot = self.bots.get(*selected).map(|bot| bot.id);
+            Panel::Plugins { selected } => {
+                let plugin = self
+                    .plugins
+                    .get(*selected)
+                    .map(|plugin| plugin.name.clone());
                 match key.code {
-                    _ if up || down => step(selected, self.bots.len(), down),
+                    _ if up || down => step(selected, self.plugins.len(), down),
                     KeyCode::Char(' ') | KeyCode::Enter => {
-                        return bot.map_or(Action::None, Action::ToggleBot);
-                    }
-                    KeyCode::Char('d') | KeyCode::Delete => {
-                        return bot.map_or(Action::None, Action::RemoveBot);
+                        return plugin.map_or(Action::None, Action::TogglePlugin);
                     }
                     KeyCode::Esc => self.panel = None,
                     _ => {}

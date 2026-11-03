@@ -8,14 +8,12 @@ use std::{
     time::{Duration, Instant},
 };
 
-use parking_lot::{Mutex, MutexGuard};
-
 use anyhow::{Context, Result, ensure};
-use tokio::task::{JoinHandle, JoinSet};
+use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
 use super::{
-    Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner,
+    Launcher, ThreadEvent, ThreadInput, ThreadOutput,
     model_choice::{self, Choice, ModelChoice},
 };
 use crate::platform::Platform;
@@ -30,8 +28,8 @@ use crate::{
     config::live::LiveConfig,
     config::{ApiKey, ApprovalPolicy, ContextPolicy, ProviderConfig, ProviderKind},
     config::{mcp_server_yaml, parse_mcp_server},
+    init,
     init::paths::Paths,
-    init::{self, create_private_dir},
     mcp::{McpInfo, McpServers, McpStatus},
     providers::Provider,
     release::{
@@ -48,17 +46,17 @@ use crate::{
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);
 /// How long shutdown waits for stopped subagents to end.
 const AGENTS_STOP_WAIT: Duration = Duration::from_secs(5);
-/// How long the first chat waits for MCP servers still starting.
-const MCP_START_WAIT: Duration = Duration::from_secs(10);
 
 pub struct Runtime {
     launcher: Launcher,
     config_check: JoinHandle<()>,
     agents_check: JoinHandle<()>,
+    plugins: Arc<crate::plugins::Plugins>,
+    plugins_check: JoinHandle<()>,
+    platforms: Arc<crate::plugins::Platforms>,
     update_check: JoinHandle<()>,
     updates: Arc<UpdateWatch>,
     model_discovery: Option<JoinHandle<()>>,
-    threads: Mutex<JoinSet<()>>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
     updated_builtin: Vec<String>,
     state_db: PathBuf,
@@ -146,7 +144,11 @@ impl Runtime {
             "platform: {:?}, screen: {}, sandbox: {}",
             platform.os, platform.gui, platform.sandbox
         );
+        let hooks = Arc::new(crate::plugins::Hooks::default());
+        let platforms = Arc::new(crate::plugins::Platforms::default());
         let launcher = Launcher {
+            threads: Arc::default(),
+            hooks: Arc::clone(&hooks),
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
             config: Arc::clone(&config),
@@ -164,7 +166,18 @@ impl Runtime {
                 Arc::clone(&launcher.state),
                 Arc::clone(&launcher.model),
             )));
-        let model_discovery = if !config.current().providers().is_empty() {
+        platforms.attach(launcher.clone());
+        // Read before model discovery, so a plugin's provider can be the first that answers.
+        let plugins = crate::plugins::Plugins::new(
+            launcher.paths.clone(),
+            Arc::clone(&config),
+            Arc::clone(&launcher.mcp),
+            hooks,
+            Arc::clone(&platforms),
+        );
+        plugins.scan();
+        let plugins_check = tokio::spawn(Arc::clone(&plugins).watch(CONFIG_CHECK_PERIOD));
+        let model_discovery = if !config.current().all_providers().is_empty() {
             let config = Arc::clone(&config);
             let model = Arc::clone(&launcher.model);
             let mailboxes = Arc::clone(&launcher.mailboxes);
@@ -207,10 +220,12 @@ impl Runtime {
             launcher,
             config_check,
             agents_check,
+            plugins,
+            plugins_check,
+            platforms,
             update_check,
             updates,
             model_discovery,
-            threads: Mutex::new(JoinSet::new()),
             updated_builtin: initialized.builtin.updated,
             state_db,
         })
@@ -500,6 +515,20 @@ impl Runtime {
         save_node_text(&self.launcher.paths.skills_dir(), SKILL_FILE, name, text)
     }
 
+    /// The plugins found, with whether each is on and what keeps one from loading.
+    pub fn plugins(&self) -> Vec<crate::plugins::PluginInfo> {
+        self.plugins.list()
+    }
+
+    /// Switches a plugin on or off; it applies at once.
+    pub fn set_plugin_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        self.config()
+            .update(|config| config.set_plugin_enabled(name, enabled))?;
+        let plugins = Arc::clone(&self.plugins);
+        tokio::task::spawn_blocking(move || plugins.scan());
+        Ok(())
+    }
+
     pub fn set_max_agents_at_work(&self, limit: usize) -> Result<()> {
         self.launcher
             .config
@@ -776,22 +805,7 @@ impl Runtime {
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
     /// ends once the client drops every `ThreadInput` and the queue is done.
     pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
-        let mode = self.config().current().mode().to_owned();
-        let thread = start_thread(
-            &self.launcher.state,
-            &self.launcher.paths,
-            source,
-            &mode,
-            cwd,
-        )
-        .await?;
-        info!(
-            "thread {} started in {}",
-            thread.thread_id,
-            thread.workspace.display()
-        );
-        self.run_thread(thread.thread_id, &thread.workspace, cwd)
-            .await
+        self.launcher.new_thread(source, cwd).await
     }
 
     /// A new chat thread that starts from a /fork summary of another, after its prompt.
@@ -816,7 +830,8 @@ impl Runtime {
             .add_system_message(&thread.thread_id, &summary)
             .await?;
         info!("thread {} forked", thread.thread_id);
-        self.run_thread(thread.thread_id, &thread.workspace, cwd)
+        self.launcher
+            .run_thread(thread.thread_id, &thread.workspace, cwd)
             .await
     }
 
@@ -824,63 +839,15 @@ impl Runtime {
     /// unfinished is closed first: a running turn ends as interrupted, and messages sent
     /// before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
-        let thread = self
-            .launcher
-            .state
-            .load_thread(thread_id)
-            .await?
-            .with_context(|| format!("thread {thread_id} does not exist"))?;
-        // An agent's thread runs as that agent, started by the core when it is written to.
-        ensure!(
-            thread.parent_thread_id.is_none(),
-            "thread {thread_id} belongs to an agent"
-        );
-        let workspace =
-            thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
-        create_private_dir(&workspace)?;
-        self.launcher
-            .state
-            .adopt_thread(thread_id, &project_dir(cwd))
-            .await?;
-        info!("thread {thread_id} resumed in {}", workspace.display());
-        self.run_thread(thread_id.to_owned(), &workspace, cwd).await
-    }
-
-    /// One task per thread: two would answer the same messages twice.
-    async fn run_thread(
-        &self,
-        thread_id: String,
-        workspace: &Path,
-        cwd: &Path,
-    ) -> Result<ThreadHandle> {
-        // A chat opened right after the start still gets the tools of MCP servers.
-        self.launcher.mcp.wait(MCP_START_WAIT).await;
-        let mailboxes = Arc::clone(&self.launcher.mailboxes);
-        let mut live = mailboxes.lock().await;
-        ensure!(
-            !live.contains_key(&thread_id),
-            "thread {thread_id} is already open"
-        );
-        let setup = self.launcher.setup(&thread_id, cwd, workspace, None, 0)?;
-        let (runner, input, output) = ThreadRunner::new(setup);
-        live.insert(thread_id.clone(), runner.mailbox(&input));
-        drop(live);
-        let id = thread_id.clone();
-        self.lock_threads().spawn(async move {
-            runner.run().await;
-            mailboxes.remove(&id).await;
-        });
-        Ok(ThreadHandle {
-            thread_id,
-            input,
-            output,
-        })
+        self.launcher.resume_thread(thread_id, cwd).await
     }
 
     /// Lets every chat finish its queue, stops the agents still at work, stops the
     /// config check and closes the database.
     pub async fn shutdown(self) {
-        let mut threads = std::mem::take(&mut *self.lock_threads());
+        // A platform would keep its thread open, so it goes before the threads end.
+        self.platforms.stop_all();
+        let mut threads = std::mem::take(&mut *self.launcher.threads.lock());
         while threads.join_next().await.is_some() {}
         // No agent starts from here on; those at work are stopped until none is left,
         // since one may have started a moment before the stop.
@@ -901,14 +868,11 @@ impl Runtime {
         }
         self.config_check.abort();
         self.agents_check.abort();
+        self.plugins_check.abort();
         self.update_check.abort();
         if let Some(discovery) = self.model_discovery {
             discovery.abort();
         }
         self.launcher.state.close().await;
-    }
-
-    fn lock_threads(&self) -> MutexGuard<'_, JoinSet<()>> {
-        self.threads.lock()
     }
 }

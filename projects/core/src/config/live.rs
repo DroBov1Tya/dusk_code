@@ -15,11 +15,13 @@ use parking_lot::{Mutex, MutexGuard, RwLock};
 use anyhow::{Context, Result};
 use tracing::warn;
 
-use crate::config::Config;
+use crate::config::{Config, Plugged};
 
 pub struct LiveConfig {
     path: PathBuf,
     current: RwLock<Arc<Config>>,
+    /// What the plugins add; laid over every version of the file.
+    plugged: RwLock<Plugged>,
     /// Serializes reloads and writes, and remembers which file version is loaded.
     loaded: Mutex<FileStamp>,
 }
@@ -39,6 +41,7 @@ impl LiveConfig {
         Ok(Self {
             path,
             current: RwLock::new(Arc::new(config)),
+            plugged: RwLock::default(),
             loaded: Mutex::new(stamp),
         })
     }
@@ -66,9 +69,19 @@ impl LiveConfig {
         Config::parse(yaml.as_bytes())?;
         crate::util::atomic::write_private(&self.path, yaml.as_bytes())?;
         *loaded = FileStamp::of(&self.path)?;
+        config.set_plugged(self.plugged.read().clone());
         let config = Arc::new(config);
         *self.current.write() = Arc::clone(&config);
         Ok(config)
+    }
+
+    /// Replaces what the plugins add, in memory only.
+    pub fn set_plugged(&self, plugged: Plugged) {
+        let _loaded = self.lock_loaded();
+        let mut config = Config::clone(&self.current());
+        config.set_plugged(plugged.clone());
+        *self.plugged.write() = plugged;
+        *self.current.write() = Arc::new(config);
     }
 
     /// Re-reads the file whenever it changes. A broken file is reported and the last
@@ -96,7 +109,8 @@ impl LiveConfig {
 
     fn read_from_disk(&self, loaded: &mut FileStamp) -> Result<()> {
         let stamp = FileStamp::of(&self.path)?;
-        let config = Config::load_from(&self.path)?;
+        let mut config = Config::load_from(&self.path)?;
+        config.set_plugged(self.plugged.read().clone());
         *self.current.write() = Arc::new(config);
         *loaded = stamp;
         Ok(())

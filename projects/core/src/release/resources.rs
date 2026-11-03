@@ -10,7 +10,8 @@ use anyhow::{Context, Result, bail, ensure};
 
 use crate::{init::create_private_dir, release::update::VERSION};
 
-const CATEGORIES: [&str; 4] = ["agents", "skills", "internal", "modes"];
+/// Folders of resources, each shipped into the rules folder; `internal` goes to `prompts`.
+pub const CATEGORIES: [&str; 5] = ["agents", "skills", "internal", "modes", "plugins"];
 pub const REQUIRED: [&str; 12] = [
     "internal/AGENT.md",
     "internal/ARBITER.md",

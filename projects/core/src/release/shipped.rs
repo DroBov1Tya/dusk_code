@@ -139,7 +139,7 @@ fn retire(root: &Path, manifest: &str, synced: &mut Synced) -> Result<()> {
 fn shipped() -> Result<Vec<(String, Vec<u8>)>> {
     let root = resources::root()?;
     let mut files = Vec::new();
-    for category in ["agents", "skills", "internal", "modes"] {
+    for category in resources::CATEGORIES {
         for relative in resources::files(&root.join(category))? {
             let source = root.join(category).join(&relative);
             let path = match (category, relative.to_str()) {

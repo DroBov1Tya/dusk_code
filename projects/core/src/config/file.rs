@@ -17,7 +17,7 @@ use crate::{catalog::modes, release::update::Channel, tools::ToolKind};
 use super::sections::{is_zero, yes};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, McpServerConfig, Memory,
-    ProviderConfig, ThreadConfig, WorkHistory,
+    Plugged, PluginConfig, ProviderConfig, ThreadConfig, WorkHistory,
 };
 
 /// MCP server names are this long at most.
@@ -94,6 +94,12 @@ pub struct Config {
     /// Log files, and traces for an OpenTelemetry collector.
     #[serde(default, skip_serializing_if = "Logging::is_default")]
     logging: Logging,
+    /// Plugins by name: whether each is on, and its settings.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    plugins: BTreeMap<String, PluginConfig>,
+    /// What the plugins that are on add; never saved.
+    #[serde(skip)]
+    plugged: Plugged,
 }
 
 impl Config {
@@ -104,12 +110,48 @@ impl Config {
         Self::parse(&bytes)
     }
 
+    /// The providers of the file; [`Config::all_providers`] adds the plugins' ones.
     pub fn providers(&self) -> &BTreeMap<String, ProviderConfig> {
         &self.providers
     }
 
+    /// The MCP servers of the file; [`Config::all_mcp`] adds the plugins' ones.
     pub fn mcp(&self) -> &BTreeMap<String, McpServerConfig> {
         &self.mcp
+    }
+
+    /// The file's providers and those of the plugins that are on.
+    pub fn all_providers(&self) -> BTreeMap<String, ProviderConfig> {
+        let mut all = self.plugged.providers.clone();
+        all.extend(self.providers.clone());
+        all
+    }
+
+    /// The file's MCP servers and those of the plugins that are on.
+    pub fn all_mcp(&self) -> BTreeMap<String, McpServerConfig> {
+        let mut all = self.plugged.mcp.clone();
+        all.extend(self.mcp.clone());
+        all
+    }
+
+    pub fn plugins(&self) -> &BTreeMap<String, PluginConfig> {
+        &self.plugins
+    }
+
+    pub fn plugin(&self, name: &str) -> PluginConfig {
+        self.plugins.get(name).cloned().unwrap_or_default()
+    }
+
+    pub fn set_plugin_enabled(&mut self, name: &str, enabled: bool) {
+        self.plugins.entry(name.to_owned()).or_default().enabled = enabled;
+    }
+
+    pub fn set_plugged(&mut self, plugged: Plugged) {
+        self.plugged = plugged;
+    }
+
+    pub fn plugged(&self) -> &Plugged {
+        &self.plugged
     }
 
     /// Adds, replaces or, with `None`, removes an MCP server.

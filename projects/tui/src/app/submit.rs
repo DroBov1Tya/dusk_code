@@ -5,16 +5,6 @@ use dusk_core::chat::commands::{self, Command};
 use super::{Action, Activity, App, Connection, Panel, Tone};
 
 impl App {
-    /// Text from elsewhere, such as a Telegram bot, taken as if it was typed and sent;
-    /// what is in the box stays there.
-    pub fn submit_text(&mut self, text: &str) -> Action {
-        let draft = std::mem::take(&mut self.input);
-        self.input.insert(text);
-        let action = self.submit(false);
-        self.input = draft;
-        action
-    }
-
     /// Takes the typed text for sending; commands show as notices, messages as the user's.
     pub(super) fn submit(&mut self, now: bool) -> Action {
         if self.input.is_empty() {
@@ -33,15 +23,11 @@ impl App {
                 self.panel = Some(Panel::Unsent { selected: 0 });
                 return Action::None;
             }
-            "/tgbot" => {
-                self.panel = Some(Panel::Bots { selected: 0 });
+            "/plugins" => {
+                self.panel = Some(Panel::Plugins { selected: 0 });
                 return Action::None;
             }
             _ => {}
-        }
-        // A bot token is a secret: it goes to the bot and nowhere else.
-        if let Some(token) = trimmed.strip_prefix("/tgbot ") {
-            return Action::StartBot(token.trim().to_owned());
         }
         // Connection secrets belong only in the masked form, never in recall/history.
         if trimmed.split_whitespace().next() == Some("/connect") {

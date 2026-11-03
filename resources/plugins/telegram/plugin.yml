@@ -1,0 +1,12 @@
+name: telegram
+version: 1.0.0
+description: Talk to duskcode from Telegram: messages, answers, questions and approvals.
+# A bot token from @BotFather, given under plugins: in config.yml:
+#   plugins:
+#     telegram:
+#       enabled: true
+#       settings:
+#         token: "123456:ABC..."
+settings: [token]
+platform:
+  command: [duskcode, --platform, telegram]

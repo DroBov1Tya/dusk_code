@@ -16,9 +16,9 @@ use dusk_core::{
 use ratatui::layout::Rect;
 
 use super::{
-    Activity, ApprovalHit, Asked, BotRow, ButtonHit, ChipHit, EditorHit, Entry, Focus, GoalHit,
-    Input, InputRow, Layout, Panel, PathPopup, Poll, Pressed, QueueHit, Selection, ShownPreview,
-    SubagentView, Tone, Transcript, TranscriptHit, panels::agents,
+    Activity, ApprovalHit, Asked, ButtonHit, ChipHit, EditorHit, Entry, Focus, GoalHit, Input,
+    InputRow, Layout, Panel, PathPopup, PluginRow, Poll, Pressed, QueueHit, Selection,
+    ShownPreview, SubagentView, Tone, Transcript, TranscriptHit, panels::agents,
 };
 
 pub struct App {
@@ -29,7 +29,7 @@ pub struct App {
     pub effort: Option<Effort>,
     pub provider_available: bool,
     pub local_unsent: Vec<LocalUnsent>,
-    pub bots: Vec<BotRow>,
+    pub plugins: Vec<PluginRow>,
     pub thread_id: Option<String>,
     pub title: Option<String>,
     pub transcript: Transcript,
@@ -172,7 +172,7 @@ impl App {
             effort: None,
             mode: String::new(),
             local_unsent: Vec::new(),
-            bots: Vec::new(),
+            plugins: Vec::new(),
             thread_id: None,
             title: None,
             transcript: Transcript::default(),

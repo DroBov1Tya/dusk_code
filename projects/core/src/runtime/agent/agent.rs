@@ -7,10 +7,12 @@ use std::{path::PathBuf, sync::Arc, time::Duration};
 use parking_lot::Mutex;
 
 use anyhow::{Context, Result, anyhow};
+use serde_json::{Value, json};
 use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::{Inbox, Stop, generation};
+use crate::plugins::{HookEvent, Hooks, hooks::Outcome};
 use crate::runtime::{
     chat::{Conversation, spec_tokens},
     system::{
@@ -68,6 +70,8 @@ pub struct Agent {
     /// How many agents are above this thread; 0 for a chat.
     pub depth: usize,
     pub events: mpsc::UnboundedSender<ThreadEvent>,
+    /// What plugins run when something happens here.
+    pub hooks: Arc<Hooks>,
 }
 
 /// How one step ended.
@@ -103,6 +107,7 @@ impl Agent {
         if let Some(turn) = &turn {
             info!("thread {} turn {} starts", self.thread_id, turn.turn_id);
             self.emit(ThreadEvent::TurnStarted(turn.clone()));
+            self.hook_notes(HookEvent::TurnStart, json!({})).await?;
             // A new task starts with planning; a paused one goes on.
             match self.phase().await {
                 None | Some(AgentPhase::Done) => self.runtime_phase(AgentPhase::Planning).await,
@@ -186,8 +191,10 @@ impl Agent {
         {
             self.runtime_phase(phase).await;
         }
+        let details = json!({ "status": format!("{status:?}").to_lowercase() });
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;
+        self.hook_notes(HookEvent::TurnEnd, details).await?;
         Ok((stop, status))
     }
 
@@ -572,11 +579,23 @@ impl Agent {
                     .goal(&self.thread_id)
                     .await?
                     .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
-            let content = match stop {
+            let denied = match stop {
+                None if !self.hooks.is_empty() => {
+                    let details = json!({ "tool": call.name, "arguments": call.arguments });
+                    let checked = self.run_hooks(HookEvent::BeforeTool, Some(&call.name), details);
+                    checked.await.denied
+                }
+                _ => None,
+            };
+            let mut content = match stop {
                 Some(_) => "not run: the user interrupted the turn".to_owned(),
                 None if draft && call.name != "goal" => {
                     outcome = "failed";
                     "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned()
+                }
+                None if let Some(denied) = &denied => {
+                    outcome = "failed";
+                    format!("error: {denied}")
                 }
                 None => {
                     self.emit(ThreadEvent::ToolStarted(call.clone()));
@@ -605,6 +624,14 @@ impl Agent {
                     }
                 }
             };
+            if finished.is_some() && !self.hooks.is_empty() {
+                let details =
+                    json!({ "tool": call.name, "arguments": call.arguments, "result": content });
+                let notes = self.run_hooks(HookEvent::AfterTool, Some(&call.name), details);
+                for note in notes.await.context {
+                    content.push_str(&format!("\n\n{note}"));
+                }
+            }
             let stored = self.state.record_tool_result_with_outcome(
                 &turn.turn_id,
                 &call.id,
@@ -630,6 +657,31 @@ impl Agent {
             }
         }
         Ok(stop)
+    }
+
+    /// Runs the plugins' hooks of `event` with what every hook is told about the thread.
+    pub async fn run_hooks(
+        &self,
+        event: HookEvent,
+        tool: Option<&str>,
+        mut details: Value,
+    ) -> Outcome {
+        details["thread"] = json!(self.thread_id);
+        details["depth"] = json!(self.depth);
+        self.hooks.run(event, tool, details).await
+    }
+
+    /// Runs the hooks of `event` and keeps the notes they give for the model to read.
+    pub async fn hook_notes(&self, event: HookEvent, details: Value) -> Result<()> {
+        if self.hooks.is_empty() {
+            return Ok(());
+        }
+        for note in self.run_hooks(event, None, details).await.context {
+            self.state
+                .add_system_message(&self.thread_id, &note)
+                .await?;
+        }
+        Ok(())
     }
 
     /// The largest request under the selected model policy and its known window.

@@ -35,17 +35,7 @@ impl Asked {
     /// What the tool asks for, in a line.
     pub fn title(&self) -> String {
         let who = self.agent.as_deref().unwrap_or("the agent");
-        match &self.request.request {
-            Request::Path { path, write: true } => {
-                format!("{who} wants to write {}", path.display())
-            }
-            Request::Path { path, write: false } => {
-                format!("{who} wants to read {}", path.display())
-            }
-            Request::Command { command } => format!("{who} wants to run: {command}"),
-            Request::Screen { action } => format!("{who} wants to use the screen: {action}"),
-            Request::Keyboard { action } => format!("{who} wants to use the keyboard: {action}"),
-        }
+        self.request.request.describe(who)
     }
 }
 

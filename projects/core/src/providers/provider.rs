@@ -111,7 +111,7 @@ impl ProviderRegistry {
     /// Builds adapters without making any network requests.
     pub fn from_config(config: &Config) -> Result<Self> {
         let mut providers = BTreeMap::new();
-        for (name, settings) in config.providers() {
+        for (name, settings) in &config.all_providers() {
             providers.insert(name.clone(), Arc::new(Provider::new(settings)?));
         }
         Ok(Self { providers })
