@@ -80,8 +80,7 @@ impl OpenAiCompatible {
             .map_err(|_| anyhow!("provider model request failed"))?;
         ensure!(
             response.status().is_success(),
-            "provider model request returned HTTP {}",
-            response.status().as_u16()
+            http::refused("model", response.status())
         );
         ensure!(
             response
@@ -133,10 +132,7 @@ impl OpenAiCompatible {
             .map_err(|_| Transient("provider completion request failed".into()))?;
         let status = response.status();
         if !status.is_success() {
-            let message = format!(
-                "provider completion request returned HTTP {}",
-                status.as_u16()
-            );
+            let message = http::refused("completion", status);
             if http::is_retryable(status) {
                 bail!(Transient(message));
             }
