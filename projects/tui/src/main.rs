@@ -22,6 +22,10 @@ use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    #[cfg(target_os = "macos")]
+    if dusk_core::tools::run_overlay_if_asked() {
+        return Ok(());
+    }
     let (paths, state_db, thread) = match args::parse_args() {
         Args::Run { state_db, thread } => (Paths::from_home()?, state_db, thread),
         Args::Restore { archive } => return cli::restore::run(&archive),
