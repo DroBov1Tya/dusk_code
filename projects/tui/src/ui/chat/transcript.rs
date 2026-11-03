@@ -32,6 +32,8 @@ use crate::app::{
 const CARD_INDENT: &str = "   ";
 /// Lines of a tool result shown when it is open.
 const MAX_RESULT_LINES: usize = 40;
+/// Scrolled up no further than this, the view follows new output to the bottom.
+const FOLLOW_ROWS: usize = 3;
 
 pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     app.viewport = area.height as usize;
@@ -77,6 +79,12 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
     } else {
         total.saturating_sub(height)
     };
+    // Scrolled up to read, the view stays on those lines while output grows below.
+    let (drawn_total, drawn_width) = app.drawn_size;
+    if app.scroll > FOLLOW_ROWS && width == drawn_width {
+        app.scroll += total.saturating_sub(drawn_total);
+    }
+    app.drawn_size = (total, width);
     if let Focus::Browse(selected) = app.focus {
         keep_in_view(app, starts[selected], total, height);
     }
