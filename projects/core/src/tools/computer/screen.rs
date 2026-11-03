@@ -52,7 +52,6 @@ pub enum Target {
 pub struct Screen {
     view: Mutex<Option<View>>,
     artifacts: ArtifactStore,
-    cursor: Cursor,
 }
 
 impl Screen {
@@ -60,13 +59,12 @@ impl Screen {
         Self {
             view: Mutex::new(None),
             artifacts,
-            cursor: Cursor::new(),
         }
     }
 
     /// Shows the user where the agent acts now, in display points.
     pub fn mark(&self, at: CGPoint) {
-        self.cursor.show(at);
+        Cursor::shared().show(at);
     }
 
     /// The display, a region of the last screenshot or one window, as a picture for
