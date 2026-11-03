@@ -22,6 +22,7 @@ use crate::{
     BoxFuture,
     catalog::agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
     catalog::skills,
+    config::Effort,
     runtime::chat::thread_start::{self, display_name, read_prompt, start_agent_thread},
     runtime::{ThreadEvent, system::Launcher},
     state::Identity,
@@ -55,6 +56,10 @@ struct AskAgentArguments {
     /// The name of an agent asked before, such as Fable-3a, or its thread, to write to it
     /// again.
     thread: Option<String>,
+    /// How hard the agent reasons: low for lookups and plain edits, medium when left out,
+    /// high or above for hard design, debugging or review. It keeps the level until
+    /// asked with another.
+    effort: Option<Effort>,
 }
 
 impl AskAgent {
@@ -95,6 +100,8 @@ impl AskAgent {
         progress: Option<Progress<'_>>,
     ) -> Result<String> {
         ensure!(!arguments.task.trim().is_empty(), "task is empty");
+        // Kept until the new agent is delivered its task, which gives it its slot.
+        let mut admitted = None;
         let (thread_id, name, agent) = match &arguments.thread {
             Some(key) => {
                 let thread = self.own_agent(key).await?;
@@ -104,24 +111,38 @@ impl AskAgent {
                 }
                 (thread.id.clone(), display_name(&thread), agent)
             }
-            None => self.start(arguments.agent.as_deref()).await?,
+            None => {
+                admitted = Some(self.launcher.admit_agent().await?);
+                self.start(arguments.agent.as_deref()).await?
+            }
         };
+        let state = &self.launcher.state;
+        if let Some(effort) = arguments.effort {
+            state.set_agent_effort(&thread_id, effort).await?;
+        }
+        let effort = Effort::for_subagent(
+            self.launcher.config.current().effort(),
+            state.agent_effort(&thread_id).await?,
+        );
         if let Some(progress) = progress {
             progress.emit(ThreadEvent::SubagentStarted {
                 call_id: progress.call_id.to_owned(),
                 thread_id: thread_id.clone(),
                 agent: agent.clone(),
                 task: arguments.task.clone(),
+                effort,
             });
         }
         self.launcher
             .deliver(&thread_id, &self.thread_id, &arguments.task, cwd)
             .await?;
+        drop(admitted);
+        let effort = effort.map_or("the provider's default", Effort::name);
         Ok(format!(
-            "{name} (agent {agent}, thread {thread_id}) works on it in the background. Call \
-             it {name} when you talk about it. What it writes and its final answer will come \
-             to you as messages from {name}; to send it more, call ask_agent with thread \
-             {name}."
+            "{name} (agent {agent}, thread {thread_id}, effort {effort}) works on it in the \
+             background. Call it {name} when you talk about it. What it writes and its final \
+             answer will come to you as messages from {name}; to send it more, call \
+             ask_agent with thread {name}."
         ))
     }
 

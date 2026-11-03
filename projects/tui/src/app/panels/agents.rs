@@ -9,6 +9,7 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_core::{
+    config::Effort,
     providers::ModelEvent,
     runtime::{ThreadEvent, system::arbiter::THREAD as ARBITER_THREAD},
     state::{AgentPhase, ThreadTokens},
@@ -29,6 +30,8 @@ pub struct SubagentView {
     /// The agent it works as, from `agents/`.
     pub agent: String,
     pub task: String,
+    /// How hard it reasons; `None` is the provider's default.
+    pub effort: Option<Effort>,
     /// The thread that asked it.
     pub parent: Option<String>,
     pub started_at: i64,
@@ -226,8 +229,9 @@ impl App {
                 thread_id: child,
                 agent,
                 task,
+                effort,
                 ..
-            } => self.start_subagent(child, agent, task, Some(thread_id.to_owned())),
+            } => self.start_subagent(child, agent, task, effort, Some(thread_id.to_owned())),
             ThreadEvent::Subagent {
                 thread_id: child,
                 event,
@@ -269,6 +273,7 @@ impl App {
             "arbiter".into(),
             format!("{verdict} {what}"),
             None,
+            None,
         );
         if let Some(card) = self.subagents.last_mut() {
             card.finished_at = Some(now_ms());
@@ -281,6 +286,7 @@ impl App {
         thread_id: String,
         agent: String,
         task: String,
+        effort: Option<Effort>,
         parent: Option<String>,
     ) {
         let earlier = self
@@ -295,6 +301,7 @@ impl App {
             thread_id,
             agent,
             task,
+            effort,
             parent,
             started_at: now_ms(),
             finished_at: None,

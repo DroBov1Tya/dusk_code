@@ -204,6 +204,38 @@ impl Launcher {
         })
     }
 
+    /// Agents at work and agents waiting for a slot. A new agent is refused while they
+    /// reach the limit: past it, it would only wait, and the asker would believe it works.
+    pub async fn admit_agent(&self) -> Result<tokio::sync::MutexGuard<'_, ()>> {
+        let gate = self.mailboxes.new_agents.lock().await;
+        let live: Vec<String> = self
+            .mailboxes
+            .lock()
+            .await
+            .iter()
+            .filter(|(_, mailbox)| mailbox.agent && mailbox.is_live())
+            .map(|(id, _)| id.clone())
+            .collect();
+        let mut busy = live.len();
+        for thread_id in self.state.threads_with_pending().await? {
+            if live.contains(&thread_id) {
+                continue;
+            }
+            let thread = self.state.load_thread(&thread_id).await?;
+            if thread.is_some_and(|thread| thread.parent_thread_id.is_some()) {
+                busy += 1;
+            }
+        }
+        let limit = self.config.current().limits().max_agents_at_work;
+        ensure!(
+            busy < limit,
+            "{busy} agents are at work or waiting, the limit is {limit}; wait for one to \
+             finish (its answer arrives as a message), give the task to one of them with \
+             `thread`, or do it yourself"
+        );
+        Ok(gate)
+    }
+
     /// Makes sure a thread with stored messages reads them: a running one is woken, a
     /// stopped agent thread is started while fewer than the limit are at work. A chat that
     /// is not open reads them when it is opened again.

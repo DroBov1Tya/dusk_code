@@ -23,7 +23,7 @@ use crate::runtime::agent::{Agent, Inbox, Input, Mailbox, Mailboxes, Stop};
 use crate::state::artifacts::ArtifactStore;
 use crate::{
     chat::{commands, goal},
-    config::live::LiveConfig,
+    config::{Effort, live::LiveConfig},
     providers::{ModelEvent, ToolCall},
     state::{
         AgentPhase, Compaction, Goal, GoalStatus, LocalUnsent, Message, PendingMessage, State,
@@ -160,12 +160,14 @@ pub enum ThreadEvent {
         tokens: u64,
         limit: u64,
     },
-    /// The tool call `call_id` gave `task` to `agent`, which works in thread `thread_id`.
+    /// The tool call `call_id` gave `task` to `agent`, which works in thread `thread_id`
+    /// and reasons at `effort`; `None` is the provider's default.
     SubagentStarted {
         call_id: String,
         thread_id: String,
         agent: String,
         task: String,
+        effort: Option<Effort>,
     },
     /// An event of a subagent's thread. A subagent's own subagents come wrapped once more.
     Subagent {

@@ -279,13 +279,19 @@ impl Agent {
         });
     }
 
-    /// Subagents think at medium for now: deep effort times many agents costs more than
-    /// it gives. The chat keeps the user's level; off and the provider's default stay.
-    fn effort(&self, config: &Config) -> Option<Effort> {
-        match config.effort() {
-            Some(effort) if self.depth > 0 && effort != Effort::Off => Some(Effort::Medium),
-            effort => effort,
+    /// The chat keeps the user's level; a subagent thinks at what its asker chose.
+    async fn effort(&self, config: &Config) -> Option<Effort> {
+        if self.depth == 0 {
+            return config.effort();
         }
+        let asked = match self.state.agent_effort(&self.thread_id).await {
+            Ok(asked) => asked,
+            Err(error) => {
+                warn!("thread {}: {error:#}", self.thread_id);
+                None
+            }
+        };
+        Effort::for_subagent(config.effort(), asked)
     }
 
     /// Counting is for the client to see; a failure here does not touch the thread.
@@ -387,12 +393,13 @@ impl Agent {
             messages.push(ChatMessage::System(note));
         }
         let choice = self.model.current().context("provider is unavailable")?;
+        let effort = self.effort(&config).await;
         let request = ChatRequest {
             model: &choice.model.id,
             messages: &messages,
             tools: &tools,
             max_output_tokens: choice.model.max_output,
-            effort: self.effort(&config),
+            effort,
         };
         let mut called = self.call_model(&choice, request, &config, inbox).await;
         if matches!(&called, Ok((_, Ok(Err(error)))) if is_unsupported_pictures(error)) {
@@ -402,7 +409,7 @@ impl Agent {
                 messages: &messages,
                 tools: &tools,
                 max_output_tokens: choice.model.max_output,
-                effort: self.effort(&config),
+                effort,
             };
             called = self.call_model(&choice, request, &config, inbox).await;
         }

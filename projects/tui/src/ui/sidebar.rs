@@ -385,7 +385,7 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
     let mut lines = Vec::new();
     let width = area.width.saturating_sub(8 + 2 * PAD) as usize;
     // When every agent does not fit in full, each takes two rows, so the last ones
-    // still show what they work on.
+    // still show what they work on. A blank row parts any two, or they run together.
     let full_rows = app.subagents.len() * 4 - 1;
     let compact = full_rows > area.height.saturating_sub(1) as usize;
     for (index, agent) in app.subagents.iter().enumerate() {
@@ -424,6 +424,9 @@ fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
                 ]
                 .concat(),
             ));
+            if index + 1 < app.subagents.len() {
+                lines.push(Line::default());
+            }
             continue;
         }
         // The random name stands out; the agent it works as and the task stay quiet.

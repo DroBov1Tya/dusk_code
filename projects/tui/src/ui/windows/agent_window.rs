@@ -154,6 +154,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
         Some(parent) => agent_name(parent),
         None => "this chat".into(),
     };
+    let effort = card.effort.map_or("default", |effort| effort.name());
     let tokens = card.tokens;
     let fill = if card.limit == 0 {
         0.0
@@ -172,8 +173,10 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
     [
         vec![
             state,
+            Span::styled(format!("  {DOT}  effort "), fg(TEXT_SOFT)),
+            Span::styled(effort, bold(TEXT)),
             Span::styled(format!("  {DOT}  asked by "), fg(TEXT_SOFT)),
-            Span::raw(wrap::clip(&parent, width.saturating_sub(30))),
+            Span::raw(wrap::clip(&parent, width.saturating_sub(48))),
         ],
         vec![
             Span::styled(format!("context {percent:.0}%"), bold(share_color)),
