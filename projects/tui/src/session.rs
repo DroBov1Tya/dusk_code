@@ -728,6 +728,12 @@ pub async fn run(
                     }
                 }
             }
+            Action::OpenLink(url) => {
+                app.flash = Some(match open_in_browser(&url) {
+                    true => format!("opened {url}"),
+                    false => format!("open {url} in a browser"),
+                });
+            }
             Action::NextMode => match runtime.next_mode() {
                 Ok(mode) => app.mode = mode,
                 Err(error) => app.error(format!("cannot switch the mode: {error:#}")),

@@ -12,8 +12,8 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use dusk_core::{
-    chat::commands::ContextReport, config::ProviderKind, release::update::InstallStage,
-    state::MessageRole, tools::JobInfo,
+    chat::commands::ContextReport, release::update::InstallStage, state::MessageRole,
+    tools::JobInfo,
 };
 
 use super::{
@@ -27,8 +27,8 @@ use super::{
     wrap,
 };
 use crate::app::{
-    App, Connection, EFFORTS, EditorButton, EditorHit, JobsView, ModelList, Panel, ThreadList,
-    compact_number, paste,
+    App, Connection, EFFORTS, EditorButton, EditorHit, JobsView, ModelList, Panel, Preset,
+    ThreadList, compact_number, paste,
 };
 
 const KEYS: [(&str, &str); 30] = [
@@ -98,12 +98,14 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         Panel::Connect(form) => {
             let (lines, selected, rows) = connection(form, screen.width.saturating_sub(8) as usize);
             connection_rows = rows;
-            (
-                "connect provider",
-                "up/down/tab focus  left/right provider  enter continue/save  esc cancel",
-                lines,
-                Some(selected),
-            )
+            let hints = match form.preset {
+                None => "up/down choose  enter pick  esc cancel",
+                Some(preset) if preset.needs_key() => {
+                    "up/down/tab focus  enter next/save  ctrl+o key page  esc back"
+                }
+                Some(_) => "up/down/tab focus  enter next/save  esc back",
+            };
+            ("connect provider", hints, lines, Some(selected))
         }
         Panel::Bots { selected } => {
             let (lines, row) = bots(app, *selected, screen.width.saturating_sub(8) as usize);
@@ -792,40 +794,59 @@ fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
 /// Connection details stay in this form and are never echoed into the transcript.
 fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Vec<usize>) {
     let field_width = width.saturating_sub(4).clamp(1, 68);
-    let intro = match form.kind {
-        ProviderKind::Anthropic => {
-            "An API key from console.anthropic.com. A Claude subscription works only in \
-             Anthropic's own apps."
-        }
-        ProviderKind::OpenAi => "An API key from platform.openai.com.",
-        _ => "HTTPS URL is required. Name and API key are optional.",
-    };
-    let mut lines: Vec<Line<'static>> =
-        wrap::words(vec![Span::styled(intro, dim())], field_width, 0)
+    let words = |text: &str, style: Style| -> Vec<Line<'static>> {
+        wrap::words(vec![Span::styled(text.to_owned(), style)], field_width, 0)
             .into_iter()
             .map(Line::from)
-            .collect();
-    lines.push(Line::default());
-    let mut rows = vec![lines.len()];
-    lines.push(Line::from(Span::styled(" provider", dim())));
-    let style = if form.selected == 0 {
-        fg(ACCENT).bg(RAISED)
-    } else {
-        Style::new()
+            .collect()
     };
-    lines.push(Line::from(Span::styled(
-        format!(" \u{2039} {} \u{203A}", form.kind.label()),
-        style,
-    )));
+    let Some(preset) = form.preset else {
+        // The providers first; each opens a form of only what it needs.
+        let mut lines = words("Pick a provider.", dim());
+        lines.push(Line::default());
+        let (mut rows, mut selected) = (Vec::new(), 0);
+        for (index, preset) in Preset::ALL.into_iter().enumerate() {
+            rows.push(lines.len());
+            let style = if index == form.choice {
+                selected = lines.len();
+                fg(ACCENT).bg(RAISED)
+            } else {
+                Style::new()
+            };
+            lines.push(Line::from(Span::styled(
+                format!(" {}", preset.label()),
+                style,
+            )));
+            let about = format!(" {}", preset.about());
+            lines.extend(
+                wrap::words(vec![Span::styled(about, dim())], field_width, 1)
+                    .into_iter()
+                    .map(Line::from),
+            );
+            lines.push(Line::default());
+        }
+        return (lines, selected, rows);
+    };
+    let mut lines = vec![Line::from(Span::styled(
+        format!(" {}", preset.label()),
+        bold(DUSK),
+    ))];
+    lines.extend(words(preset.about(), dim()));
+    if let Some(page) = preset.key_page() {
+        lines.extend(words(
+            &format!("Make a key at {page}; ctrl+o opens it."),
+            dim(),
+        ));
+    }
     lines.push(Line::default());
-    let key_label = match form.kind.base_url() {
-        Some(_) => "API key",
-        None => "API key (optional)",
+    let key_label = match preset.needs_key() {
+        true => "API key",
+        false => "API key (optional)",
     };
     let labels = ["name (optional)", "base URL", key_label];
-    let mut selected = rows[0] + 1;
+    let mut rows = Vec::new();
+    let mut selected = 0;
     for (index, field) in form.fields.iter().enumerate() {
-        let row = index + 1;
         rows.push(lines.len());
         lines.push(Line::from(Span::styled(
             format!(" {}", labels[index]),
@@ -843,7 +864,7 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
             value.push('\u{2026}');
         }
         for position in start..=chars.len() {
-            if position == at && row == form.selected {
+            if position == at && index == form.selected {
                 value.push('\u{258F}');
             }
             if let Some(c) = chars.get(position) {
@@ -854,14 +875,14 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
             value.push_str(match index {
                 0 => "provider-N when left blank",
                 1 => "required",
-                _ if form.kind.base_url().is_some() => "required",
+                _ if preset.needs_key() => "required",
                 _ => "leave blank if not needed",
             });
         }
-        if row == form.selected {
+        if index == form.selected {
             selected = lines.len();
         }
-        let style = if row == form.selected {
+        let style = if index == form.selected {
             fg(ACCENT).bg(RAISED)
         } else {
             Style::new()
@@ -873,15 +894,7 @@ fn connection(form: &Connection, width: usize) -> (Vec<Line<'static>>, usize, Ve
         lines.push(Line::default());
     }
     if let Some(error) = &form.error {
-        lines.extend(
-            wrap::words(
-                vec![Span::styled(error.clone(), fg(NEGATIVE))],
-                field_width,
-                0,
-            )
-            .into_iter()
-            .map(Line::from),
-        );
+        lines.extend(words(error, fg(NEGATIVE)));
     }
     (lines, selected, rows)
 }

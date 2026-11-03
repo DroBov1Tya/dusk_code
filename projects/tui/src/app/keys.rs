@@ -12,7 +12,7 @@ use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
 use super::{
     Action, App, Button, Entry, Focus, Panel, Pressed, Selection, TEXT_COLUMN, commands,
-    panels::{Connection, step},
+    panels::{Connection, Preset, step},
 };
 
 /// What /effort offers, as the core names them.
@@ -79,7 +79,11 @@ impl App {
                         area.is_some_and(|area| inside(area, mouse.column, mouse.row))
                     })
                 {
-                    form.selected = index;
+                    match form.preset {
+                        None if index < Preset::ALL.len() => form.pick(Preset::ALL[index]),
+                        None => {}
+                        Some(_) => form.selected = index.min(Connection::FIELDS - 1),
+                    }
                 }
                 Action::None
             }
@@ -403,46 +407,55 @@ impl App {
         let down = matches!(key.code, KeyCode::Down | KeyCode::Char('j'));
         let up = matches!(key.code, KeyCode::Up | KeyCode::Char('k'));
         match panel {
+            Panel::Connect(form) if form.preset.is_none() => match key.code {
+                KeyCode::Esc => self.panel = None,
+                KeyCode::Enter => form.pick(Preset::ALL[form.choice]),
+                _ if up || down => step(&mut form.choice, Preset::ALL.len(), down),
+                _ => {}
+            },
             Panel::Connect(form) => {
                 let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                let preset = form.preset.unwrap_or(Preset::Custom);
                 match key.code {
-                    KeyCode::Esc => self.panel = None,
+                    KeyCode::Esc => form.back(),
+                    KeyCode::Char('o') if ctrl => {
+                        if let Some(page) = preset.key_page() {
+                            return Action::OpenLink(page.into());
+                        }
+                    }
                     KeyCode::Up | KeyCode::Down => {
                         step(
                             &mut form.selected,
-                            Connection::ROWS,
+                            Connection::FIELDS,
                             key.code == KeyCode::Down,
                         );
                     }
                     KeyCode::Tab | KeyCode::BackTab => {
                         let back = key.code == KeyCode::BackTab
                             || key.modifiers.contains(KeyModifiers::SHIFT);
-                        let count = Connection::ROWS;
+                        let count = Connection::FIELDS;
                         form.selected = if back {
                             (form.selected + count - 1) % count
                         } else {
                             (form.selected + 1) % count
                         };
                     }
-                    KeyCode::Left | KeyCode::Right | KeyCode::Char(' ') if form.selected == 0 => {
-                        form.switch_kind(key.code != KeyCode::Left);
-                    }
-                    KeyCode::Enter if form.selected + 1 < Connection::ROWS => form.selected += 1,
+                    KeyCode::Enter if form.selected + 1 < Connection::FIELDS => form.selected += 1,
                     KeyCode::Enter => {
                         let base_url = form.fields[1].text.trim().to_owned();
                         if base_url.is_empty() {
                             form.error = Some("Provider URL is required".into());
-                            form.selected = 2;
-                        } else if form.kind.base_url().is_some() && form.fields[2].is_empty() {
+                            form.selected = 1;
+                        } else if preset.needs_key() && form.fields[2].is_empty() {
                             form.error = Some("This provider needs an API key".into());
-                            form.selected = 3;
+                            form.selected = 2;
                         } else {
                             let given = |index: usize| {
                                 let text = form.fields[index].text.trim();
                                 (!text.is_empty()).then(|| text.to_owned())
                             };
                             return Action::Connect {
-                                kind: form.kind,
+                                kind: preset.kind(),
                                 name: given(0),
                                 base_url,
                                 api_key: given(2),
