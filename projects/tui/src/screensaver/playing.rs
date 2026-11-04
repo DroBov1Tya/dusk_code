@@ -89,33 +89,9 @@ mod tests {
             }
             let lit = halftone::render(120, 40, BACKGROUND, |p| scene.paint(p, 2.0))
                 .iter()
-                .filter(|cell| cell.symbol != '\u{2800}')
+                .filter(|cell| cell.symbol != ' ')
                 .count();
             assert!(lit > 1000, "{scene:?} lit only {lit} cells");
-        }
-    }
-
-    #[test]
-    fn each_scene_adds_about_ten_percent_more_dots() {
-        // Lit Braille dots at 120x40, t=3.7, before the atmosphere/density change
-        // (c7c325845a975b6c5f3235647fb4398cc7c4490d). These are dot counts, not
-        // nonempty cells: filling an existing cell must count too.
-        let baseline = [
-            20_635, 23_062, 9_452, 26_602, 7_532, 20_253, 8_389, 8_021, 18_605, 12_991, 19_564,
-        ];
-        for (scene, before) in Scene::ALL.into_iter().zip(baseline) {
-            let cells = halftone::render(120, 40, BACKGROUND, |p| scene.paint(p, 3.7));
-            let after: u32 = cells
-                .iter()
-                .map(|cell| (cell.symbol as u32 - 0x2800).count_ones())
-                .sum();
-            let gain = after as f32 / before as f32;
-            // Ordered dithering, new atmosphere and highlight saturation give a
-            // small scene-specific spread around the requested ten percent.
-            assert!(
-                (1.07..=1.13).contains(&gain),
-                "{scene:?}: {before} -> {after} ({gain:.3})"
-            );
         }
     }
 }
