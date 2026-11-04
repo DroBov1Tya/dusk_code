@@ -12,7 +12,11 @@ use std::{
 use anyhow::{Context, Result, anyhow, ensure};
 use serde::{Deserialize, Serialize};
 
-use crate::{catalog::modes, release::update::Channel, tools::ToolKind};
+use crate::{
+    catalog::modes::{self, Modes},
+    release::update::Channel,
+    tools::ToolKind,
+};
 
 use super::sections::{is_zero, yes};
 use super::{
@@ -218,7 +222,7 @@ impl Config {
         let switched = self.modes.get(mode).and_then(|tools| tools.get(name));
         switched
             .copied()
-            .or_else(|| modes::default_tool(mode, name, kind))
+            .or_else(|| Modes::default_tool(mode, name, kind))
             .unwrap_or_else(main)
     }
 

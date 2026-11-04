@@ -78,6 +78,17 @@ pub struct Node {
     file: PathBuf,
 }
 
+impl Node {
+    /// Whether `text` would read as the node `name`: its front matter and description.
+    pub fn check(text: &str, name: &str) -> Result<()> {
+        ensure!(
+            text.len() as u64 <= MAX_NODE_BYTES,
+            "the text is over {MAX_NODE_BYTES} bytes"
+        );
+        parse_node(text, name, PathBuf::new()).map(drop)
+    }
+}
+
 /// A node that could not be read, or a link to a node that is not there.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Problem {
@@ -242,15 +253,6 @@ fn read_node(file: &Path, name: &str) -> Result<Node> {
     parse_node(&text, name, file.to_owned())
 }
 
-/// Whether `text` would read as the node `name`: its front matter and description.
-pub fn check_node(text: &str, name: &str) -> Result<()> {
-    ensure!(
-        text.len() as u64 <= MAX_NODE_BYTES,
-        "the text is over {MAX_NODE_BYTES} bytes"
-    );
-    parse_node(text, name, PathBuf::new()).map(drop)
-}
-
 fn parse_node(text: &str, name: &str, file: PathBuf) -> Result<Node> {
     let (front, _) = split_front_matter(text)?;
     let front: FrontMatter =
@@ -306,24 +308,26 @@ pub struct NodeText {
     pub text: String,
 }
 
-/// The node's file, `file` in the folder `name` under `directory`, as it is on disk now.
-pub fn read_node_text(directory: &Path, file: &str, name: &str) -> Result<NodeText> {
-    let text = read_text(&node_file(directory, file, name)?)?;
-    Ok(NodeText {
-        name: name.to_owned(),
-        metadata: metadata(&text),
-        text,
-    })
-}
+impl NodeText {
+    /// The node's file, `file` in the folder `name` under `directory`, as it is on disk now.
+    pub fn read(directory: &Path, file: &str, name: &str) -> Result<Self> {
+        let text = read_text(&node_file(directory, file, name)?)?;
+        Ok(Self {
+            name: name.to_owned(),
+            metadata: metadata(&text),
+            text,
+        })
+    }
 
-/// Replaces the node's file with `text` once it reads as a node. The file is written
-/// beside the old one and moved over it, so a failed write leaves the old one whole.
-pub fn save_node_text(directory: &Path, file: &str, name: &str, text: &str) -> Result<NodeText> {
-    let path = node_file(directory, file, name)?;
-    ensure!(path.is_file(), "{name} does not exist");
-    check_node(text, name)?;
-    crate::util::atomic::write_private(&path, text.as_bytes())?;
-    read_node_text(directory, file, name)
+    /// Replaces the node's file with `text` once it reads as a node. The file is written
+    /// beside the old one and moved over it, so a failed write leaves the old one whole.
+    pub fn save(directory: &Path, file: &str, name: &str, text: &str) -> Result<Self> {
+        let path = node_file(directory, file, name)?;
+        ensure!(path.is_file(), "{name} does not exist");
+        Node::check(text, name)?;
+        crate::util::atomic::write_private(&path, text.as_bytes())?;
+        Self::read(directory, file, name)
+    }
 }
 
 /// The node's file by name; the name is folder names joined by `/`, never a way out of
@@ -401,19 +405,19 @@ mod tests {
         let good = "---\nname: notes\ndescription: Taking notes\nlicense: MIT\n---\nWrite.\n";
         fs::write(directory.join("notes").join(SKILL_FILE), good).unwrap();
 
-        let node = read_node_text(&directory, SKILL_FILE, "notes").unwrap();
+        let node = NodeText::read(&directory, SKILL_FILE, "notes").unwrap();
         assert!(node.metadata.contains(&("license".into(), "MIT".into())));
-        assert!(save_node_text(&directory, SKILL_FILE, "notes", "no front matter").is_err());
+        assert!(NodeText::save(&directory, SKILL_FILE, "notes", "no front matter").is_err());
         assert_eq!(
-            read_node_text(&directory, SKILL_FILE, "notes")
+            NodeText::read(&directory, SKILL_FILE, "notes")
                 .unwrap()
                 .text,
             good,
             "a refused save keeps it"
         );
-        assert!(read_node_text(&directory, SKILL_FILE, "../notes").is_err());
+        assert!(NodeText::read(&directory, SKILL_FILE, "../notes").is_err());
         let edited = good.replace("Write.", "Write more.");
-        let saved = save_node_text(&directory, SKILL_FILE, "notes", &edited).unwrap();
+        let saved = NodeText::save(&directory, SKILL_FILE, "notes", &edited).unwrap();
         assert_eq!(saved.text, edited);
     }
 }

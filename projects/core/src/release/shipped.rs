@@ -405,7 +405,11 @@ mod tests {
         let mut updated = sync(&paths).unwrap().updated;
         updated.sort();
         assert_eq!(updated, ["modes/MAIN.md", "modes/PLAN.md"]);
-        let shipped = |name| crate::catalog::modes::template(name).unwrap().unwrap();
+        let shipped = |name| {
+            crate::catalog::modes::Modes::template(name)
+                .unwrap()
+                .unwrap()
+        };
         assert_eq!(
             fs::read_to_string(&plan).unwrap(),
             shipped(crate::catalog::modes::PLAN)

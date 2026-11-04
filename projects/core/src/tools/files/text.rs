@@ -9,7 +9,7 @@ use serde::Deserialize;
 use crate::util::fs::{read_regular, write_regular};
 use crate::{
     catalog::{
-        graph::check_node,
+        graph::Node,
         skills::{SkillSave, SkillSaveAction},
     },
     tools::ToolScope,
@@ -45,7 +45,7 @@ pub async fn write_text(path: &Path, text: String) -> Result<()> {
 /// Unreadable/oversized old files and invalid skill text do not establish a skill update.
 pub(super) async fn skill_save(scope: &ToolScope, path: &Path, text: &str) -> Option<SkillSave> {
     let name = scope.skill_name(path)?;
-    check_node(text, &name).ok()?;
+    Node::check(text, &name).ok()?;
     let action = match tokio::fs::symlink_metadata(path).await {
         Ok(_) => {
             let old = read_text(path).await.ok()?;

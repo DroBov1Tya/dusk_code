@@ -11,7 +11,7 @@ use tracing::warn;
 use super::{Agent, Inbox, Stop};
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
-    catalog::modes,
+    catalog::modes::Modes,
     providers::{ChatMessage, ChatRequest},
     runtime::thread::thread_start::{NO_PROMPT, read_prompt},
     state::{CallPurpose, Compaction, ModelCall, Turn},
@@ -108,7 +108,7 @@ impl Agent {
         // The context starts over here, so a chat takes up the prompt of its mode now.
         if self.depth == 0 {
             let mode = self.config.current().mode().to_owned();
-            let prompt = modes::prompt(&self.modes_dir, &mode)?;
+            let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
             let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
             self.state
                 .add_system_message(&self.thread_id, prompt)

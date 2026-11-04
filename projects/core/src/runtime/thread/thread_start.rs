@@ -12,7 +12,7 @@ use anyhow::{Result, bail};
 use uuid::Uuid;
 
 use crate::{
-    catalog::modes,
+    catalog::modes::Modes,
     init::create_private_dir,
     init::paths::Paths,
     state::{State, Thread},
@@ -90,7 +90,7 @@ pub async fn start_thread(
     mode: &str,
     cwd: &Path,
 ) -> Result<StartedThread> {
-    let prompt = modes::prompt(&paths.modes_dir(), mode)?;
+    let prompt = Modes::new(&paths.modes_dir()).prompt(mode)?;
     let thread_id = Uuid::now_v7().to_string();
     let (folder, workspace) = new_chat_folder(paths)?;
     state.create_thread(&thread_id, source).await?;

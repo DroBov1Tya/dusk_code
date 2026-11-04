@@ -22,8 +22,8 @@ use crate::platform::Platform;
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     catalog::agents::{AgentTree, Agents},
-    catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
-    catalog::modes,
+    catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE},
+    catalog::modes::Modes,
     catalog::skills::{self, SkillInfo},
     config::live::LiveConfig,
     config::{ApiKey, ApprovalPolicy, ContextPolicy, ProviderConfig, ProviderKind},
@@ -425,7 +425,7 @@ impl Runtime {
             .tools(thread_id.unwrap_or_default(), None, 0)
             .specs(&scope, &config);
         let mode = config.mode().to_owned();
-        let prompt = modes::prompt(&launcher.paths.modes_dir(), &mode)?;
+        let prompt = Modes::new(&launcher.paths.modes_dir()).prompt(&mode)?;
         let limit = self
             .model()
             .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
@@ -441,13 +441,13 @@ impl Runtime {
 
     /// Every mode of the chat, in the order Tab walks them.
     pub fn modes(&self) -> Vec<String> {
-        modes::list(&self.launcher.paths.modes_dir())
+        Modes::new(&self.launcher.paths.modes_dir()).list()
     }
 
     /// Moves the chat to the next mode; its prompt and tools apply from the next step.
     pub fn next_mode(&self) -> Result<String> {
         let current = self.config().current().mode().to_owned();
-        let next = modes::next(&self.launcher.paths.modes_dir(), &current);
+        let next = Modes::new(&self.launcher.paths.modes_dir()).next(&current);
         self.config()
             .update(|config| config.set_mode(next.clone()))?;
         Ok(next)
@@ -466,13 +466,13 @@ impl Runtime {
 
     /// An agent's AGENT.md as it is on disk; reading it again throws edits away.
     pub fn agent(&self, name: &str) -> Result<NodeText> {
-        read_node_text(&self.launcher.paths.agents_dir(), AGENT_FILE, name)
+        NodeText::read(&self.launcher.paths.agents_dir(), AGENT_FILE, name)
     }
 
     /// Saves an agent's AGENT.md once the text reads as an agent, and reads the agents
     /// again so the new version applies now.
     pub async fn save_agent(&self, name: &str, text: &str) -> Result<NodeText> {
-        let saved = save_node_text(&self.launcher.paths.agents_dir(), AGENT_FILE, name, text)?;
+        let saved = NodeText::save(&self.launcher.paths.agents_dir(), AGENT_FILE, name, text)?;
         self.read_agents().await?;
         Ok(saved)
     }
@@ -531,12 +531,12 @@ impl Runtime {
 
     /// A skill's file as it is on disk; reading it again throws edits away.
     pub fn skill(&self, name: &str) -> Result<NodeText> {
-        read_node_text(&self.launcher.paths.skills_dir(), SKILL_FILE, name)
+        NodeText::read(&self.launcher.paths.skills_dir(), SKILL_FILE, name)
     }
 
     /// Saves a skill's file once the text reads as a skill.
     pub fn save_skill(&self, name: &str, text: &str) -> Result<NodeText> {
-        save_node_text(&self.launcher.paths.skills_dir(), SKILL_FILE, name, text)
+        NodeText::save(&self.launcher.paths.skills_dir(), SKILL_FILE, name, text)
     }
 
     /// The plugins found, with whether each is on and what keeps one from loading.

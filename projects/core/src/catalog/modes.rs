@@ -41,64 +41,75 @@ const ORCHESTRATOR_TOOLS: [&str; 5] = [
     "ask_user",
 ];
 
-/// The file of a mode's prompt.
-pub fn file(directory: &Path, mode: &str) -> PathBuf {
-    directory.join(format!("{mode}.md"))
+/// The modes in one folder.
+pub struct Modes<'a> {
+    directory: &'a Path,
 }
 
-/// Every mode: the built-in ones first, then the user's own by name.
-pub fn list(directory: &Path) -> Vec<String> {
-    let mut own: Vec<String> = fs::read_dir(directory)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().into_string().ok()?;
-            let mode = name.strip_suffix(".md")?;
-            let own = is_plain_folder_name(mode) && !BUILTIN.contains(&mode);
-            (own && entry.path().is_file()).then(|| mode.to_owned())
-        })
-        .collect();
-    own.sort();
-    BUILTIN
-        .iter()
-        .map(|mode| (*mode).to_owned())
-        .chain(own)
-        .collect()
-}
-
-/// The mode after `mode`, round to the first.
-pub fn next(directory: &Path, mode: &str) -> String {
-    let modes = list(directory);
-    let at = modes.iter().position(|known| known == mode);
-    let next = at.map_or(0, |at| (at + 1) % modes.len());
-    modes[next].clone()
-}
-
-/// The prompt of a mode; a missing file of a built-in mode is its template.
-pub fn prompt(directory: &Path, mode: &str) -> Result<Option<String>> {
-    if let Some(prompt) = read_prompt(&file(directory, mode))? {
-        return Ok(Some(prompt));
+impl<'a> Modes<'a> {
+    pub fn new(directory: &'a Path) -> Self {
+        Self { directory }
     }
-    template(mode)
-}
 
-pub fn template(mode: &str) -> Result<Option<String>> {
-    if !BUILTIN.contains(&mode) {
-        return Ok(None);
+    /// The file of a mode's prompt.
+    pub fn file(&self, mode: &str) -> PathBuf {
+        self.directory.join(format!("{mode}.md"))
     }
-    crate::release::resources::text(&format!("modes/{mode}.md")).map(Some)
-}
 
-/// Whether a tool is on in a mode before the user switches it. `None` follows MAIN's
-/// switches, as the user's own modes do.
-pub fn default_tool(mode: &str, name: &str, kind: ToolKind) -> Option<bool> {
-    let allowed: &[&str] = match mode {
-        PLAN => &PLAN_TOOLS,
-        ORCHESTRATOR => &ORCHESTRATOR_TOOLS,
-        _ => return None,
-    };
-    Some(!matches!(kind, ToolKind::Mcp | ToolKind::Computer) && allowed.contains(&name))
+    /// Every mode: the built-in ones first, then the user's own by name.
+    pub fn list(&self) -> Vec<String> {
+        let mut own: Vec<String> = fs::read_dir(self.directory)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|entry| {
+                let name = entry.file_name().into_string().ok()?;
+                let mode = name.strip_suffix(".md")?;
+                let own = is_plain_folder_name(mode) && !BUILTIN.contains(&mode);
+                (own && entry.path().is_file()).then(|| mode.to_owned())
+            })
+            .collect();
+        own.sort();
+        BUILTIN
+            .iter()
+            .map(|mode| (*mode).to_owned())
+            .chain(own)
+            .collect()
+    }
+
+    /// The mode after `mode`, round to the first.
+    pub fn next(&self, mode: &str) -> String {
+        let modes = self.list();
+        let at = modes.iter().position(|known| known == mode);
+        let next = at.map_or(0, |at| (at + 1) % modes.len());
+        modes[next].clone()
+    }
+
+    /// The prompt of a mode; a missing file of a built-in mode is its template.
+    pub fn prompt(&self, mode: &str) -> Result<Option<String>> {
+        if let Some(prompt) = read_prompt(&self.file(mode))? {
+            return Ok(Some(prompt));
+        }
+        Self::template(mode)
+    }
+
+    pub fn template(mode: &str) -> Result<Option<String>> {
+        if !BUILTIN.contains(&mode) {
+            return Ok(None);
+        }
+        crate::release::resources::text(&format!("modes/{mode}.md")).map(Some)
+    }
+
+    /// Whether a tool is on in a mode before the user switches it. `None` follows MAIN's
+    /// switches, as the user's own modes do.
+    pub fn default_tool(mode: &str, name: &str, kind: ToolKind) -> Option<bool> {
+        let allowed: &[&str] = match mode {
+            PLAN => &PLAN_TOOLS,
+            ORCHESTRATOR => &ORCHESTRATOR_TOOLS,
+            _ => return None,
+        };
+        Some(!matches!(kind, ToolKind::Mcp | ToolKind::Computer) && allowed.contains(&name))
+    }
 }
 
 #[cfg(test)]
@@ -110,22 +121,28 @@ mod tests {
     fn built_in_modes_come_first_and_tab_goes_round() {
         let directory = temp_dir("modes");
         fs::create_dir_all(&directory).unwrap();
-        fs::write(file(&directory, "REVIEW"), "Review only.").unwrap();
+        fs::write(Modes::new(&directory).file("REVIEW"), "Review only.").unwrap();
         fs::write(directory.join("notes.txt"), "not a mode").unwrap();
-        assert_eq!(list(&directory), [MAIN, PLAN, ORCHESTRATOR, "REVIEW"]);
-        assert_eq!(next(&directory, "REVIEW"), MAIN);
-        assert_eq!(next(&directory, "gone"), MAIN);
         assert_eq!(
-            prompt(&directory, PLAN).unwrap().as_deref(),
-            template(PLAN).unwrap().as_deref()
+            Modes::new(&directory).list(),
+            [MAIN, PLAN, ORCHESTRATOR, "REVIEW"]
+        );
+        assert_eq!(Modes::new(&directory).next("REVIEW"), MAIN);
+        assert_eq!(Modes::new(&directory).next("gone"), MAIN);
+        assert_eq!(
+            Modes::new(&directory).prompt(PLAN).unwrap().as_deref(),
+            Modes::template(PLAN).unwrap().as_deref()
         );
         assert_eq!(
-            default_tool(PLAN, "run_command", ToolKind::Console),
+            Modes::default_tool(PLAN, "run_command", ToolKind::Console),
             Some(false)
         );
-        assert_eq!(default_tool(PLAN, "read_file", ToolKind::Files), Some(true));
         assert_eq!(
-            default_tool("REVIEW", "run_command", ToolKind::Console),
+            Modes::default_tool(PLAN, "read_file", ToolKind::Files),
+            Some(true)
+        );
+        assert_eq!(
+            Modes::default_tool("REVIEW", "run_command", ToolKind::Console),
             None
         );
     }
