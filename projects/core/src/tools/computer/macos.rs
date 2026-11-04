@@ -187,12 +187,57 @@ pub fn require_accessibility() -> Result<()> {
 /// Whether this process may post input events. The first refusal of a process also asks
 /// the user; later ones only check, so the system's dialog does not come back each time.
 fn accessibility_trusted() -> bool {
-    static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
-    if accessibility_trusted_with_prompt(false) {
+    static ASKED: std::sync::Mutex<bool> = std::sync::Mutex::new(false);
+    // Serialize checks and prompts so concurrent calls cannot show duplicate dialogs.
+    let mut asked = ASKED
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    let trusted = accessibility_trusted_with_prompt(false);
+    if !should_prompt(&mut asked, trusted) {
+        return trusted;
+    }
+    if accessibility_trusted_with_prompt(true) {
+        // The user may have granted access between the two checks.
+        *asked = false;
         return true;
     }
-    let ask = !ASKED.swap(true, std::sync::atomic::Ordering::SeqCst);
-    ask && accessibility_trusted_with_prompt(true)
+    false
+}
+
+/// Ask once per continuous untrusted period; a subsequent grant resets the state.
+fn should_prompt(asked: &mut bool, trusted: bool) -> bool {
+    if trusted {
+        *asked = false;
+        return false;
+    }
+    if *asked {
+        return false;
+    }
+    *asked = true;
+    true
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::should_prompt;
+
+    #[test]
+    fn prompts_once_per_untrusted_period_including_after_revocation() {
+        let mut asked = false;
+        assert!(!should_prompt(&mut asked, true));
+        assert!(should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, true));
+        assert!(should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, false));
+    }
+
+    #[test]
+    fn initially_untrusted_requests_permission_once() {
+        let mut asked = false;
+        assert!(should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, false));
+    }
 }
 
 fn accessibility_trusted_with_prompt(ask: bool) -> bool {
