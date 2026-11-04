@@ -4,11 +4,13 @@
 
 use std::{
     collections::BTreeMap,
+    fmt,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
 };
 
+use anyhow::{Result, ensure};
 use parking_lot::{Mutex, RwLock};
 use serde_json::json;
 use tracing::{info, warn};
@@ -28,6 +30,17 @@ use crate::{
 const PLUGINS_DIR: &str = "plugins";
 /// Beside the rules, so updates that replace shipped plugins never touch it.
 const DATA_DIR: &str = "plugin-data";
+const MAX_SECRET_BYTES: usize = 1024;
+
+/// A secret setting, held in memory only and never printed.
+#[derive(Clone)]
+struct Secret(String);
+
+impl fmt::Debug for Secret {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str("[REDACTED]")
+    }
+}
 
 /// A plugin as `/settings` shows it.
 #[derive(Debug, Clone)]
@@ -40,6 +53,8 @@ pub struct PluginInfo {
     pub parts: Vec<&'static str>,
     /// Settings it asks for that the config does not give.
     pub missing_settings: Vec<String>,
+    /// Its secret settings and whether each is set for this session.
+    pub secrets: Vec<(String, bool)>,
     /// Why it cannot load, when it cannot.
     pub problem: Option<String>,
 }
@@ -51,6 +66,8 @@ pub struct Plugins {
     hooks: Arc<Hooks>,
     platforms: Arc<Platforms>,
     found: RwLock<Vec<PluginInfo>>,
+    /// Secret settings by (plugin, key), typed in this session; never saved.
+    secrets: Mutex<BTreeMap<(String, String), Secret>>,
     /// The MCP servers plugins started, as last applied, to tell what changed.
     started_mcp: Mutex<BTreeMap<String, String>>,
 }
@@ -75,6 +92,7 @@ impl Plugins {
             hooks,
             platforms,
             found: RwLock::default(),
+            secrets: Mutex::default(),
             started_mcp: Mutex::default(),
         })
     }
@@ -91,9 +109,21 @@ impl Plugins {
         list
     }
 
+    /// Keeps a secret setting of `plugin` for this session. Call `scan` after, to apply it.
+    pub fn set_secret(&self, plugin: &str, key: &str, value: &str) -> Result<()> {
+        ensure!(is_plain_folder_name(plugin), "invalid plugin name");
+        let manifest = Manifest::load(&folder(&self.paths).join(plugin))?;
+        let value = check_secret(&manifest, key, value)?;
+        self.secrets
+            .lock()
+            .insert((plugin.to_owned(), key.to_owned()), Secret(value));
+        Ok(())
+    }
+
     /// Reads the folder and applies the plugins that are on.
     pub fn scan(&self) {
         let config = self.config.current();
+        let secrets = self.secrets.lock().clone();
         let mut found = Vec::new();
         let mut plugged = Plugged::default();
         let mut hooks = Vec::new();
@@ -108,14 +138,29 @@ impl Plugins {
                     continue;
                 }
             };
+            let secret_of = |key: &String| secrets.get(&(name.clone(), key.clone()));
+            let mut values = settings.settings.clone();
+            // A secret in the file is not read: it is typed in, never saved.
+            for key in &manifest.secrets {
+                values.remove(key);
+                if let Some(secret) = secret_of(key) {
+                    values.insert(key.clone(), secret.0.clone());
+                }
+            }
             let missing_settings: Vec<String> = manifest
                 .settings
                 .iter()
-                .filter(|key| !settings.settings.contains_key(*key))
+                .chain(&manifest.secrets)
+                .filter(|key| !values.contains_key(*key))
                 .cloned()
                 .collect();
+            let secret_state: Vec<(String, bool)> = manifest
+                .secrets
+                .iter()
+                .map(|key| (key.clone(), secret_of(key).is_some()))
+                .collect();
             let enabled = settings.enabled && missing_settings.is_empty();
-            let env = env(&self.paths, &folder, &settings.settings);
+            let env = env(&self.paths, &folder, &values);
             if let Err(error) = install::sync(&self.paths, &name, enabled.then_some(&*folder)) {
                 warn!("cannot install the files of plugin {name}: {error:#}");
             }
@@ -142,7 +187,13 @@ impl Plugins {
                     });
                 }
             }
-            found.push(info(&manifest, &folder, enabled, missing_settings));
+            found.push(info(
+                &manifest,
+                &folder,
+                enabled,
+                missing_settings,
+                secret_state,
+            ));
         }
         self.apply_mcp(&plugged.mcp);
         self.config.set_plugged(plugged);
@@ -271,6 +322,7 @@ fn info(
     folder: &Path,
     enabled: bool,
     missing_settings: Vec<String>,
+    secrets: Vec<(String, bool)>,
 ) -> PluginInfo {
     let mut parts = Vec::new();
     for (has, part) in [
@@ -294,7 +346,25 @@ fn info(
         problem: (!missing_settings.is_empty())
             .then(|| format!("needs settings: {}", missing_settings.join(", "))),
         missing_settings,
+        secrets,
     }
+}
+
+/// The value to keep for `key`, when the plugin declares it a secret and the value is
+/// one line of printable text. Errors never carry the value.
+fn check_secret(manifest: &Manifest, key: &str, value: &str) -> Result<String> {
+    ensure!(
+        manifest.secrets.iter().any(|secret| secret == key),
+        "plugin {} has no secret {key}",
+        manifest.name
+    );
+    let value = value.trim();
+    ensure!(!value.is_empty(), "the value is empty");
+    ensure!(
+        value.len() <= MAX_SECRET_BYTES && !value.chars().any(char::is_control),
+        "the value is over {MAX_SECRET_BYTES} bytes or has control characters"
+    );
+    Ok(value.to_owned())
 }
 
 fn broken(name: String, enabled: bool, error: &anyhow::Error) -> PluginInfo {
@@ -305,6 +375,40 @@ fn broken(name: String, enabled: bool, error: &anyhow::Error) -> PluginInfo {
         enabled,
         parts: Vec::new(),
         missing_settings: Vec::new(),
+        secrets: Vec::new(),
         problem: Some(format!("{error:#}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn manifest() -> Manifest {
+        serde_saphyr::from_str("name: bot\nsecrets: [token]\nsettings: [chat]\n").unwrap()
+    }
+
+    #[test]
+    fn only_a_declared_secret_takes_a_clean_value() {
+        let manifest = manifest();
+        assert_eq!(
+            check_secret(&manifest, "token", "  123:abc ").unwrap(),
+            "123:abc"
+        );
+        assert!(
+            check_secret(&manifest, "chat", "1").is_err(),
+            "not a secret"
+        );
+        assert!(check_secret(&manifest, "other", "1").is_err());
+        assert!(check_secret(&manifest, "token", "  ").is_err());
+        assert!(check_secret(&manifest, "token", "a\nb").is_err());
+        assert!(check_secret(&manifest, "token", &"x".repeat(MAX_SECRET_BYTES + 1)).is_err());
+    }
+
+    #[test]
+    fn errors_and_debug_hide_the_value() {
+        let error = check_secret(&manifest(), "token", "sk\u{7}-secret").unwrap_err();
+        assert!(!format!("{error:#}").contains("secret"));
+        assert_eq!(format!("{:?}", Secret("sk-secret".into())), "[REDACTED]");
     }
 }

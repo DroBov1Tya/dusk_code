@@ -134,6 +134,7 @@ pub async fn run(
                     enabled: plugin.enabled,
                     parts: plugin.parts,
                     note: plugin.problem,
+                    secrets: plugin.secrets,
                 })
                 .collect();
         }

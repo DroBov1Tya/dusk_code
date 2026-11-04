@@ -24,7 +24,10 @@ impl App {
                 return Action::None;
             }
             "/plugins" => {
-                self.panel = Some(Panel::Plugins { selected: 0 });
+                self.panel = Some(Panel::Plugins {
+                    selected: 0,
+                    entry: None,
+                });
                 return Action::None;
             }
             _ => {}

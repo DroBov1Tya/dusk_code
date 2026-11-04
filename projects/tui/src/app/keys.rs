@@ -12,7 +12,7 @@ use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
 use super::{
     Action, App, Button, Entry, Focus, Panel, Pressed, Selection, TEXT_COLUMN, commands,
-    panels::{Connection, Preset, step},
+    panels::{Connection, Preset, SecretEntry, step},
 };
 
 /// What /effort offers, as the core names them.
@@ -34,6 +34,19 @@ impl App {
                         field.insert(&single_line);
                     }
                     form.error = None;
+                }
+                Action::None
+            }
+            Event::Paste(text)
+                if matches!(self.panel, Some(Panel::Plugins { entry: Some(_), .. })) =>
+            {
+                if let Some(Panel::Plugins {
+                    entry: Some(entry), ..
+                }) = &mut self.panel
+                {
+                    let single_line: String = text.chars().filter(|c| !c.is_control()).collect();
+                    entry.input.insert(&single_line);
+                    entry.error = None;
                 }
                 Action::None
             }
@@ -612,13 +625,60 @@ impl App {
                 }
                 return Action::None;
             }
-            Panel::Plugins { selected } => {
+            Panel::Plugins {
+                entry: Some(entry), ..
+            } => {
+                let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+                let alt = key.modifiers.contains(KeyModifiers::ALT);
+                match key.code {
+                    KeyCode::Esc => {
+                        if let Panel::Plugins { entry, .. } = panel {
+                            *entry = None;
+                        }
+                    }
+                    KeyCode::Enter => {
+                        return Action::SetPluginSecret {
+                            plugin: entry.plugin.clone(),
+                            key: entry.key.clone(),
+                            value: entry.input.text.clone(),
+                        };
+                    }
+                    KeyCode::Char(c) if !ctrl && !alt => {
+                        entry.input.insert(c.encode_utf8(&mut [0; 4]));
+                        entry.error = None;
+                    }
+                    KeyCode::Backspace => entry.input.backspace(),
+                    KeyCode::Delete => entry.input.delete(),
+                    KeyCode::Left => entry.input.left(),
+                    KeyCode::Right => entry.input.right(),
+                    KeyCode::Home => entry.input.home(),
+                    KeyCode::End => entry.input.end(),
+                    _ => {}
+                }
+                return Action::None;
+            }
+            Panel::Plugins { selected, entry } => {
                 let plugin = self
                     .plugins
                     .get(*selected)
                     .map(|plugin| plugin.name.clone());
                 match key.code {
                     _ if up || down => step(selected, self.plugins.len(), down),
+                    KeyCode::Char('s') => {
+                        let secret = self.plugins.get(*selected).and_then(|plugin| {
+                            let (key, _) = plugin.secrets.first()?;
+                            Some(SecretEntry {
+                                plugin: plugin.name.clone(),
+                                key: key.clone(),
+                                input: super::Input::default(),
+                                error: None,
+                            })
+                        });
+                        match secret {
+                            Some(secret) => *entry = Some(secret),
+                            None => self.flash = Some("this plugin has no secret setting".into()),
+                        }
+                    }
                     KeyCode::Char(' ') | KeyCode::Enter => {
                         return plugin.map_or(Action::None, Action::TogglePlugin);
                     }

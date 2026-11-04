@@ -25,6 +25,8 @@ pub enum Panel {
     /// The plugins found, to switch on or off.
     Plugins {
         selected: usize,
+        /// The masked form for a secret setting, while one is being typed.
+        entry: Option<SecretEntry>,
     },
     Unsent {
         selected: usize,
@@ -161,6 +163,17 @@ pub struct PluginRow {
     pub parts: Vec<&'static str>,
     /// Why it does not load or what its platform says, such as a code to pair with.
     pub note: Option<String>,
+    /// Its secret settings and whether each is set for this session.
+    pub secrets: Vec<(String, bool)>,
+}
+
+/// A plugin's secret being typed. It is shown as stars, kept in memory only and never
+/// reaches the transcript, the history or a file.
+pub struct SecretEntry {
+    pub plugin: String,
+    pub key: String,
+    pub input: Input,
+    pub error: Option<String>,
 }
 
 /// Where /connect starts: the providers to pick from, each with what it needs.

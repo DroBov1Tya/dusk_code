@@ -25,6 +25,10 @@ pub struct Manifest {
     /// Settings the user gives it under `plugins:` in the config, such as a token.
     #[serde(default)]
     pub settings: Vec<String>,
+    /// Settings that are secrets, such as a token: the user types them in each session,
+    /// and they are never written to the config or any other file.
+    #[serde(default)]
+    pub secrets: Vec<String>,
     /// Providers on the protocols the core speaks, under names of their own.
     #[serde(default)]
     pub providers: BTreeMap<String, ProviderConfig>,
@@ -92,6 +96,13 @@ impl Manifest {
             crate::init::paths::is_plain_folder_name(&manifest.name),
             "invalid plugin name {}",
             manifest.name
+        );
+        ensure!(
+            manifest
+                .secrets
+                .iter()
+                .all(|key| !manifest.settings.contains(key)),
+            "a setting cannot also be a secret"
         );
         for hook in &manifest.hooks {
             ensure!(!hook.command.is_empty(), "a hook has no command");

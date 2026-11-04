@@ -22,8 +22,8 @@ pub use hits::{
 pub use keys::EFFORTS;
 pub use panels::{
     AgentRow, AgentWindow, Connection, FileButton, FileEditor, HitTarget, JobsView, McpRow,
-    ModelList, Panel, PluginRow, Preset, Preview, SettingCategory, SettingsHit, SettingsView,
-    SubagentView, SwitchKind, ThreadList,
+    ModelList, Panel, PluginRow, Preset, Preview, SecretEntry, SettingCategory, SettingsHit,
+    SettingsView, SubagentView, SwitchKind, ThreadList,
 };
 pub use state::{App, compact_number, now_ms};
 pub use thread::approval::{ApprovalHit, Asked};

@@ -553,6 +553,15 @@ impl Runtime {
         Ok(())
     }
 
+    /// Keeps a plugin's secret setting, such as a bot token, for this session only: it
+    /// is never written to a file. Applies at once.
+    pub fn set_plugin_secret(&self, name: &str, key: &str, value: &str) -> Result<()> {
+        self.plugins.set_secret(name, key, value)?;
+        let plugins = Arc::clone(&self.plugins);
+        tokio::task::spawn_blocking(move || plugins.scan());
+        Ok(())
+    }
+
     pub fn set_max_agents_at_work(&self, limit: usize) -> Result<()> {
         self.launcher
             .config
