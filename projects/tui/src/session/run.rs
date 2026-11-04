@@ -32,6 +32,8 @@ pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 pub const FRAME: Duration = Duration::from_millis(80);
 /// How often the git line is read again; edits made outside show within it.
 pub const GIT_PERIOD: Duration = Duration::from_secs(5);
+/// How often the process's memory is written to the log, to see a slow growth.
+pub const MEMORY_LOG_PERIOD: Duration = Duration::from_secs(10 * 60);
 /// How often the system tab reads its numbers again.
 pub const SYSTEM_PERIOD: Duration = Duration::from_secs(2);
 /// How often the jobs are read again while one runs or their window is open.
@@ -88,6 +90,10 @@ pub async fn run(
     let mut git_clock = tokio::time::interval(GIT_PERIOD);
     let mut system_clock = tokio::time::interval(SYSTEM_PERIOD);
     let mut jobs_clock = tokio::time::interval(JOBS_PERIOD);
+    let mut memory_clock = tokio::time::interval_at(
+        tokio::time::Instant::now() + MEMORY_LOG_PERIOD,
+        MEMORY_LOG_PERIOD,
+    );
     let cwd = env::current_dir()?;
     let mut shown_title = String::new();
     let mut terminal_status = crate::host::terminal::TerminalStatus::new();
@@ -276,6 +282,16 @@ pub async fn run(
             // While the core looks for a model, the clock redraws what it finds.
             _ = system_clock.tick(), if system_open(&app) => Action::None,
             _ = jobs_clock.tick(), if jobs_wanted(&app) => Action::None,
+            _ = memory_clock.tick() => {
+                if let Ok(Some(usage)) = tokio::task::spawn_blocking(dusk_core::util::usage::process).await {
+                    tracing::info!(
+                        "memory {} MB, {} transcript entries",
+                        usage.resident_bytes / (1024 * 1024),
+                        app.transcript.entries.len()
+                    );
+                }
+                Action::None
+            }
             _ = git_clock.tick() => {
                 app.git = crate::host::git::summary(&cwd).await;
                 Action::None
