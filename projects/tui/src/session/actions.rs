@@ -51,6 +51,24 @@ pub async fn apply<'a>(
                 app.error(format!("cannot switch the plugin: {error:#}"));
             }
         }
+        Action::SetPluginSecret { plugin, key, value } => {
+            match runtime.set_plugin_secret(&plugin, &key, &value) {
+                Ok(()) => {
+                    if let Some(Panel::Plugins { entry, .. }) = &mut app.panel {
+                        *entry = None;
+                    }
+                    app.flash = Some(format!("{key} set for this session only, not saved"));
+                }
+                Err(error) => {
+                    if let Some(Panel::Plugins {
+                        entry: Some(entry), ..
+                    }) = &mut app.panel
+                    {
+                        entry.error = Some(format!("not kept: {error:#}"));
+                    }
+                }
+            }
+        }
         Action::Send(text) => send(runtime, app, open, text, false).await,
         Action::Approve { id, decision } => {
             if !runtime.answer_approval(id, decision) {

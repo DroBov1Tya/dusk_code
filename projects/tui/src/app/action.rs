@@ -22,6 +22,12 @@ pub enum Action {
     },
     /// Switches the plugin named on or off.
     TogglePlugin(String),
+    /// Keeps a plugin's secret setting for this session; it is never saved.
+    SetPluginSecret {
+        plugin: String,
+        key: String,
+        value: String,
+    },
     Connect {
         kind: ProviderKind,
         /// `None` takes the next free `provider-N`.

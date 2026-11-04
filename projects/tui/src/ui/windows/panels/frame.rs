@@ -57,11 +57,20 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             };
             ("connect provider", hints, lines, Some(selected))
         }
-        Panel::Plugins { selected } => {
-            let (lines, row) = plugins(app, *selected, screen.width.saturating_sub(8) as usize);
+        Panel::Plugins { selected, entry } => {
+            let (lines, row) = plugins(
+                app,
+                *selected,
+                entry.as_ref(),
+                screen.width.saturating_sub(8) as usize,
+            );
             (
                 "plugins",
-                "up/down choose  enter switch on/off  esc close",
+                if entry.is_some() {
+                    "enter keep for this session  esc cancel"
+                } else {
+                    "up/down choose  enter switch on/off  s enter a secret  esc close"
+                },
                 lines,
                 Some(row),
             )
