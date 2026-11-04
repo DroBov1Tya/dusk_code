@@ -115,6 +115,7 @@ From the core to the platform:
 | `{"type": "approval", "id": 3, "text": "…"}` | a tool waits for a yes |
 | `{"type": "reply", "text": "…"}` | a short answer to a command, or a note |
 | `{"type": "menu", "command": "mode", "title": "…", "options": […]}` | what a command can be set to |
+| `{"type": "image", "path": "/…", "mime_type": "image/png", "caption": "…"}` | an image card the agent showed, by its file |
 | `{"type": "working", "on": true}` | the agent started or stopped working |
 
 From the platform to the core:

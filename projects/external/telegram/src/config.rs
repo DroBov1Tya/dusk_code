@@ -15,6 +15,8 @@ pub const MAX_ANSWER_MESSAGES: usize = 10;
 pub const CUT: &str = "(The answer goes on in duskcode.)";
 /// Telegram takes up to 4096 characters a message; HTML tags count too.
 pub const MAX_CHUNK_CHARS: usize = 3500;
+/// A photo's caption takes up to 1024.
+pub const MAX_CAPTION_CHARS: usize = 1024;
 
 pub const LIMITS: Limits = Limits {
     messages_per_sec_chat: 1,
