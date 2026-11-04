@@ -71,24 +71,11 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
             for (what, files) in [
                 ("added", &synced.written),
                 ("updated", &synced.updated),
-                ("retired", &synced.removed),
+                ("removed", &synced.removed),
             ] {
                 if !files.is_empty() {
                     info!("shipped files {what}: {}", files.join(", "));
                 }
-            }
-            if !synced.archived.is_empty() {
-                info!(
-                    "retired skill recovery files under {}: {}",
-                    paths.rules_root().display(),
-                    synced.archived.join(", ")
-                );
-            }
-            if !synced.preserved.is_empty() {
-                warn!(
-                    "retired skill files preserved because they differ or are unsafe: {}",
-                    synced.preserved.join(", ")
-                );
             }
             synced
         }
