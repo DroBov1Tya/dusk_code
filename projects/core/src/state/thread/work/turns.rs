@@ -219,7 +219,7 @@ impl State {
             .await
     }
 
-    pub(crate) async fn record_tool_result_with_outcome(
+    pub async fn record_tool_result_with_outcome(
         &self,
         turn_id: &str,
         call_id: &str,

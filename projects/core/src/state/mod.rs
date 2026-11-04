@@ -1,17 +1,18 @@
 //! SQLite records, in three parts: `db` opens the database and keeps its schema current,
 //! old databases included; `thread` holds what a thread is made of, from its messages and
-//! turns to its token usage and task board; `agents` holds the agent identities.
+//! turns to its token usage and task board; `agents` holds the agent identities and what
+//! each agent's thread keeps of its own.
 
 mod agents;
 pub mod artifacts;
 mod db;
 mod thread;
 
-pub use agents::Identity;
+pub use agents::{AgentPhase, Identity};
 pub use db::State;
 pub use thread::{
-    AgentPhase, BackgroundJob, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion,
-    GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
+    BackgroundJob, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion, GoalEvidence,
+    GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
     PendingMessage, Source, Task, TaskItem, Thread, ThreadTokens, TokenCounts, Turn, TurnAnswer,
     TurnOutcome, TurnStatus, UndoPoint, estimate_tokens,
 };
