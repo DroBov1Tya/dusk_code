@@ -145,7 +145,7 @@ impl AgentWindow {
         if selection.anchor == selection.cursor {
             return None;
         }
-        let text = super::super::keys::selected_lines(selection, self.body.x, |line| {
+        let text = super::super::mouse::selected_lines(selection, self.body.x, |line| {
             self.drawn_text.get(line).map(String::as_str)
         });
         (!text.trim().is_empty()).then_some(text)
