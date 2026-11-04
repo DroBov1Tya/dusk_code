@@ -2,7 +2,6 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
-    fmt,
     sync::Arc,
 };
 
@@ -10,14 +9,14 @@ use anyhow::Result;
 
 use super::{
     anthropic::{Anthropic, MessageStream},
-    chat::ChatRequest,
-    model_output::{ChatStream, ModelEvent},
     openai::{CompletionStream, OpenAiCompatible},
+    output::{ChatStream, ModelEvent},
+    request::ChatRequest,
 };
 use crate::{
     BoxFuture,
     config::{Config, ProviderConfig, ProviderKind},
-    providers::inline_tags::TagSplitter,
+    providers::output::inline_tags::TagSplitter,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -27,50 +26,6 @@ pub struct Model {
     pub context_window: Option<u64>,
     /// Maximum output tokens of one call, when the catalogue reports it.
     pub max_output: Option<u64>,
-}
-
-/// A failure that may pass if the same request is sent again: the network, a busy or
-/// failing server, a cut stream.
-#[derive(Debug)]
-pub struct Transient(pub String);
-
-/// The provider explicitly rejected `reasoning_effort: none`. This is permanent for
-/// this request and must never trigger a resend with a different effort.
-#[derive(Debug)]
-pub struct UnsupportedEffort;
-
-impl fmt::Display for UnsupportedEffort {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .write_str("provider does not support reasoning effort off; request was not resent")
-    }
-}
-
-impl std::error::Error for UnsupportedEffort {}
-
-pub fn is_unsupported_effort(error: &anyhow::Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.downcast_ref::<UnsupportedEffort>().is_some())
-}
-
-/// The provider refused a request that carried pictures. It may say nothing about why,
-/// so the same request without them tells.
-#[derive(Debug)]
-pub struct UnsupportedPictures;
-
-impl fmt::Display for UnsupportedPictures {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("provider refused a request with pictures")
-    }
-}
-
-impl std::error::Error for UnsupportedPictures {}
-
-pub fn is_unsupported_pictures(error: &anyhow::Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.downcast_ref::<UnsupportedPictures>().is_some())
 }
 
 /// What the agent needs from a model provider. Tests put a scripted model behind it.
@@ -144,21 +99,6 @@ impl Provider {
             inline_tags: settings.inline_tags,
         })
     }
-}
-
-impl fmt::Display for Transient {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str(&self.0)
-    }
-}
-
-impl std::error::Error for Transient {}
-
-/// Whether `error` or anything it wraps is a `Transient` failure.
-pub fn is_transient(error: &anyhow::Error) -> bool {
-    error
-        .chain()
-        .any(|cause| cause.downcast_ref::<Transient>().is_some())
 }
 
 impl ModelProvider for Provider {

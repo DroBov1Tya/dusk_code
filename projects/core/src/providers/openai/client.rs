@@ -13,9 +13,10 @@ use serde_json::Value;
 use crate::{
     config::{Effort, ProviderConfig, ProviderKind},
     providers::{
-        chat::{ChatMessage, ChatRequest},
-        http,
-        provider::{Model, Transient, UnsupportedEffort, UnsupportedPictures},
+        errors::{Transient, UnsupportedEffort, UnsupportedPictures},
+        registry::Model,
+        request::{ChatMessage, ChatRequest},
+        transport::http,
     },
 };
 
@@ -194,7 +195,7 @@ async fn rejects_effort_off(mut response: Response) -> bool {
 
 /// Only an explicit unsupported parameter/value verdict qualifies. Authentication,
 /// generic invalid requests, network failures and server errors never change settings.
-pub(super) fn error_rejects_effort_off(error: &Value) -> bool {
+pub fn error_rejects_effort_off(error: &Value) -> bool {
     let parameter = error
         .get("param")
         .and_then(Value::as_str)

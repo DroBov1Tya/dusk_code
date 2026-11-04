@@ -42,7 +42,7 @@ impl State {
 
     /// The launch inherits the recorded call's epoch, including its position in a
     /// batch. Reading the goal's newest epoch could bless a check before a later edit.
-    pub(crate) async fn create_job_for_call(
+    pub async fn create_job_for_call(
         &self,
         thread_id: &str,
         job_id: &str,

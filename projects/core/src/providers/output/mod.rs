@@ -1,13 +1,15 @@
 //! What the model sends back. Every provider turns its stream into `ModelEvent`s;
-//! `ModelOutput` assembles them into text, reasoning and tool calls.
+//! `ModelOutput` assembles them into text, reasoning and tool calls. Some servers leave
+//! reasoning and calls in the text: `inline_tags` and `text_calls` take them out.
 
-use std::fmt;
+pub mod inline_tags;
+pub mod text_calls;
 
 use anyhow::{Context, Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::provider::Transient;
+use super::errors::{OutputLimit, Transient};
 use crate::BoxFuture;
 
 /// Bounds memory for a provider that never finishes; every kind of output counts.
@@ -65,23 +67,6 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: Value,
-}
-
-/// The model wrote as much as it may: the provider cut it at `max_tokens`, or the core
-/// stopped the stream at its own count.
-#[derive(Debug)]
-pub struct OutputLimit;
-
-impl fmt::Display for OutputLimit {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter.write_str("the answer reached the output token limit")
-    }
-}
-
-impl std::error::Error for OutputLimit {}
-
-pub fn is_output_limit(error: &anyhow::Error) -> bool {
-    error.downcast_ref::<OutputLimit>().is_some()
 }
 
 /// A streamed model response.

@@ -2,7 +2,7 @@
 
 use serde_json::Value;
 
-use super::model_output::ToolCall;
+use super::output::ToolCall;
 use crate::config::Effort;
 
 /// A picture as the model gets it.

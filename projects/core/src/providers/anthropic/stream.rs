@@ -8,9 +8,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
-    model_output::{FinishReason, ModelEvent, Usage},
-    provider::Transient,
-    sse::SseDecoder,
+    errors::Transient,
+    output::{FinishReason, ModelEvent, Usage},
+    transport::sse::SseDecoder,
 };
 
 /// Events of one streamed response, read lazily from the network.
@@ -22,7 +22,7 @@ pub struct MessageStream {
 }
 
 impl MessageStream {
-    pub(super) fn new(response: Response) -> Self {
+    pub fn new(response: Response) -> Self {
         Self {
             response,
             parser: MessageParser::default(),

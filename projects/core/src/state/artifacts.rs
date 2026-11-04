@@ -76,7 +76,7 @@ impl ArtifactStore {
         )
     }
 
-    pub(crate) fn save(
+    pub fn save(
         &self,
         mut artifact: ImageArtifact,
         bytes: &[u8],

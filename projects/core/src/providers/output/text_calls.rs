@@ -9,7 +9,8 @@
 
 use serde_json::{Map, Value};
 
-use super::{ToolCall, ToolSpec};
+use super::ToolCall;
+use crate::providers::ToolSpec;
 
 const OPEN: &str = "<tool_call>";
 const CLOSE: &str = "</tool_call>";
