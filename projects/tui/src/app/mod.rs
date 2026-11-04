@@ -27,7 +27,7 @@ pub use panels::{
 };
 pub use state::{App, compact_number, now_ms};
 pub use thread::approval::{ApprovalHit, Asked};
-pub use thread::goal::{GoalButton, GoalHit};
+pub use thread::goal::{GoalButton, GoalHit, buttons as goal_buttons};
 pub use thread::poll::{Poll, PollHit, PollTarget};
 pub use thread::queue::{QueueButton, QueueHit};
 pub use thread::transcript::{Entry, ImageSpot, Layout, ShownPreview, Tone, Transcript};
