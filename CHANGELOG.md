@@ -4,6 +4,26 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## 0.70.6 - 2026-11-04
+
+### Added
+
+- Computer use on macOS can work in one app's window: the window is chosen once, its
+  screenshots and clicks stay inside it even when another app covers it, and the
+  window list, capture and control are approved apart.
+- A click in a window session shows the agent's cursor where it presses.
+
+### Fixed
+
+- A revoked Accessibility permission is asked for again, and a click that finds no
+  control inside the app's visible window retries before it fails, with a clearer error.
+
+### Changed
+
+- More of the code is grouped around types with methods: the archive code in one
+  folder, the input, transcript and settings views, and the shipped-file sync. Behaviour
+  is the same.
+
 ## 0.70.5 - 2026-11-04
 
 ### Added
