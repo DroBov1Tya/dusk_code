@@ -5,7 +5,10 @@ mod knight;
 mod night;
 mod water;
 
-use super::paint::{Pt, Rgb};
+use super::{
+    cell::Look,
+    paint::{Pt, Rgb},
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Scene {
@@ -50,6 +53,16 @@ impl Scene {
             Self::AuroraCabin => "northern lights over a cabin",
             Self::NeonSunset => "neon sunset",
             Self::OceanSunset => "ocean sunset",
+        }
+    }
+
+    /// The way each scene looks best in cells.
+    pub fn look(self) -> Look {
+        match self {
+            // Dark skies with small lights keep their depth in a fine grain.
+            Self::MilkyWayCamp | Self::Campfire => Look::Braille,
+            Self::Dunes => Look::Ascii,
+            _ => Look::Blocks,
         }
     }
 

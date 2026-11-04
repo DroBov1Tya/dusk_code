@@ -1,4 +1,4 @@
-//! A weary knight at a small fire: bare autumn woods, the first snow, and cold
+//! A weary knight at a small fire: broad dark trees, the first frost, and cold
 //! moonlight on worn plate. The fire is the only warm light in the clearing.
 
 use crate::screensaver::paint::{
@@ -15,7 +15,7 @@ pub fn knight_fire(p: Pt, t: f32) -> Rgb {
     let mut color = sky(p, t);
     color = ruins(p, color);
     color = forest(p, color);
-    color = dead_trees(p, color, light);
+    color = trees(p, color, light);
     if p.y > ground_line(p.x) {
         let earth = Rgb::hex(0x0b0a0c).mix(Rgb::hex(0x16120f), noise(p.x * 30.0, p.y * 40.0));
         color = earth.add(Rgb::hex(0x9a3a0c).scale(light.powf(1.6) * 0.65));
@@ -112,7 +112,7 @@ fn ruins(p: Pt, color: Rgb) -> Rgb {
     color
 }
 
-/// Thin distant trunks fade into the mist instead of forming a flat skyline.
+/// Distant trees fade into the mist: thin trunks under round crowns, not a flat skyline.
 fn forest(p: Pt, color: Rgb) -> Rgb {
     let mut color = color;
     for layer in 0..2 {
@@ -122,9 +122,11 @@ fn forest(p: Pt, color: Rgb) -> Rgb {
         let base = 0.68 + layer as f32 * 0.08;
         let bend = (p.y * 6.0 + column).sin() * 0.008;
         let width = 0.006 + layer as f32 * 0.007;
-        let trunk = (p.x - x - bend).abs() < width * (0.5 + p.y);
-        let limb = segment(p, (x, base - 0.32), (x + 0.075, base - 0.45)) < width * 0.35;
-        if p.y < base && (trunk || limb) {
+        let trunk = (p.x - x - bend).abs() < width * (0.5 + p.y) && p.y > base - 0.3;
+        let (rx, ry) = (0.07 + layer as f32 * 0.02, 0.085 + layer as f32 * 0.015);
+        let crown = ((p.x - x) / rx).powi(2) + ((p.y - (base - 0.33)) / ry).powi(2)
+            < 1.0 + (noise(p.x * 55.0, p.y * 55.0) - 0.5) * 0.7;
+        if p.y < base && (trunk || crown) {
             color = if layer == 0 {
                 Rgb::hex(0x162630)
             } else {
@@ -135,81 +137,56 @@ fn forest(p: Pt, color: Rgb) -> Rgb {
     color
 }
 
-/// Bare trees of forking branches, black against the sky, warmed by the fire's light.
-fn dead_trees(p: Pt, color: Rgb, light: f32) -> Rgb {
-    for (index, (x, height)) in [(-0.66, 0.95), (0.68, 1.05), (1.05, 0.85)]
+/// Broad trees at the edges of the clearing, black against the sky: a trunk flaring into
+/// roots under a crown of leaf clumps, the ones facing the moon catching its light.
+fn trees(p: Pt, color: Rgb, light: f32) -> Rgb {
+    for (index, (x, height)) in [(-0.66, 0.82), (0.7, 0.9), (1.1, 0.78)]
         .into_iter()
         .enumerate()
     {
-        if branch(
-            p,
-            x,
-            ground_line(x),
-            -std::f32::consts::FRAC_PI_2,
-            height * 0.55,
-            0.025,
-            4,
-            index as u32,
-        ) {
-            return Rgb::hex(0x07070a).add(Rgb::hex(0x5a2008).scale(light * 0.6));
+        if let Some(tree) = tree(p, x, ground_line(x), height, index as f32, light) {
+            return tree;
         }
     }
     color
 }
 
-/// One branch and the two it forks into, `depth` times over.
-#[allow(clippy::too_many_arguments)]
-fn branch(
-    p: Pt,
-    x: f32,
-    y: f32,
-    angle: f32,
-    length: f32,
-    width: f32,
-    depth: u32,
-    seed: u32,
-) -> bool {
-    let (ex, ey) = (x + angle.cos() * length, y + angle.sin() * length);
-    if segment(p, (x, y), (ex, ey)) < width {
-        return true;
+fn tree(p: Pt, x: f32, base: f32, height: f32, seed: f32, light: f32) -> Option<Rgb> {
+    let up = base - p.y;
+    let (crown_x, crown_y, radius) = (x, base - height * 0.62, height * 0.36);
+    // The trunk narrows upwards and spreads at the foot into roots.
+    let roots = smooth(0.1, 0.0, up) * 0.03;
+    let half = 0.02 * (1.0 - up / height * 0.4) + roots;
+    if up > -0.01 && up < height * 0.6 && (p.x - x).abs() < half {
+        let bark = noise(p.x * 160.0, p.y * 30.0);
+        return Some(Rgb::hex(0x0a0908).add(Rgb::hex(0x3a3228).scale(bark * 0.16 + light * 0.5)));
     }
-    if depth == 0 {
-        return false;
+    if (p.x - crown_x).abs() > radius * 1.5 || (p.y - crown_y).abs() > radius * 1.2 {
+        return None;
     }
-    // Skip whole subtrees the point cannot be in.
-    let reach = length * 2.2;
-    if (p.x - ex).abs() > reach || (p.y - ey).abs() > reach {
-        return false;
+    // The crown is a few overlapping masses with a ragged, leafy edge.
+    let mut mass: f32 = -1.0;
+    for blob in 0..7 {
+        let k = blob as f32 + seed * 9.0;
+        let (cx, cy) = (
+            crown_x + (hash(k, 1.0, 85) - 0.5) * radius * 1.3,
+            crown_y + (hash(k, 2.0, 85) - 0.5) * radius * 0.8,
+        );
+        let size = radius * (0.5 + hash(k, 3.0, 85) * 0.35);
+        let distance = ((p.x - cx).powi(2) + ((p.y - cy) * 1.15).powi(2)).sqrt() / size;
+        mass = mass.max(1.0 - distance);
     }
-    let k = depth as f32 + seed as f32 * 7.0;
-    let spread = 0.35 + hash(k, 1.0, 81) * 0.35;
-    let shrink = 0.62 + hash(k, 2.0, 81) * 0.15;
-    branch(
-        p,
-        ex,
-        ey,
-        angle - spread,
-        length * shrink,
-        width * 0.68,
-        depth - 1,
-        seed * 2 + 1,
-    ) || branch(
-        p,
-        ex,
-        ey,
-        angle + spread * 0.8,
-        length * shrink * 0.9,
-        width * 0.68,
-        depth - 1,
-        seed * 2 + 2,
-    )
-}
-
-/// Distance from the point to a segment.
-fn segment(p: Pt, a: (f32, f32), b: (f32, f32)) -> f32 {
-    let (vx, vy) = (b.0 - a.0, b.1 - a.1);
-    let k = (((p.x - a.0) * vx + (p.y - a.1) * vy) / (vx * vx + vy * vy)).clamp(0.0, 1.0);
-    ((p.x - a.0 - vx * k).powi(2) + (p.y - a.1 - vy * k).powi(2)).sqrt()
+    let leaves = noise(p.x * 75.0, p.y * 75.0) - 0.5;
+    if mass + leaves * 0.45 < 0.0 {
+        return None;
+    }
+    // Clumps on the upper side, towards the moon, show a cold green.
+    let clump = smooth(0.5, 0.75, noise(p.x * 26.0 + seed, p.y * 26.0));
+    let facing = smooth(-0.1, 0.5, (crown_y - p.y) / radius);
+    let leaf = Rgb::hex(0x040807)
+        .mix(Rgb::hex(0x2a6650), clump * facing)
+        .add(Rgb::hex(0x5a2008).scale(light * 0.5));
+    Some(leaf)
 }
 
 fn fog(p: Pt, t: f32, color: Rgb) -> Rgb {

@@ -9,15 +9,13 @@ use ratatui::{
     widgets::{Block, BorderType, Clear},
 };
 
-use super::{halftone, paint::Rgb, scenes::Scene};
+use super::scenes::Scene;
 use crate::ui::theme;
 
 /// What stays of the app around the window, in cells.
 const MARGIN_X: u16 = 3;
 const MARGIN_Y: u16 = 1;
 const FPS: u32 = 12;
-/// The window's own colour, `theme::SURFACE`, between the dots.
-const BACKGROUND: Rgb = Rgb::hex(0x161a23);
 
 pub struct Playing {
     scene: Scene,
@@ -62,7 +60,9 @@ impl Playing {
         frame.render_widget(window, area);
         let t = self.started.elapsed().as_secs_f32();
         let scene = self.scene;
-        let cells = halftone::render(inner.width, inner.height, BACKGROUND, |p| scene.paint(p, t));
+        let cells = scene
+            .look()
+            .render(inner.width, inner.height, |p| scene.paint(p, t));
         let buffer = frame.buffer_mut();
         for (index, cell) in cells.into_iter().enumerate() {
             let x = inner.x + (index % usize::from(inner.width)) as u16;
@@ -79,19 +79,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_scene_lights_dots_at_any_size() {
+    fn every_scene_fills_any_size() {
         for scene in Scene::ALL {
             for (width, height) in [(1, 1), (7, 3), (120, 40)] {
                 for t in [0.0, 3.7, 600.0] {
-                    let cells = halftone::render(width, height, BACKGROUND, |p| scene.paint(p, t));
+                    let cells = scene.look().render(width, height, |p| scene.paint(p, t));
                     assert_eq!(cells.len(), usize::from(width) * usize::from(height));
                 }
             }
-            let lit = halftone::render(120, 40, BACKGROUND, |p| scene.paint(p, 2.0))
-                .iter()
-                .filter(|cell| cell.symbol != ' ')
-                .count();
-            assert!(lit > 1000, "{scene:?} lit only {lit} cells");
         }
     }
 }

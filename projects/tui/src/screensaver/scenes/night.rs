@@ -80,6 +80,9 @@ pub fn lantern_river(p: Pt, t: f32) -> Rgb {
     color
 }
 
+/// Where the cabin stands, as the middle of its foot, and its size against the picture.
+const CABIN: (f32, f32, f32) = (-0.14, 0.9, 2.4);
+
 pub fn aurora_cabin(p: Pt, t: f32) -> Rgb {
     let mut color = gradient(
         &[
@@ -132,7 +135,7 @@ pub fn aurora_cabin(p: Pt, t: f32) -> Rgb {
         up > 0.0 && up < height && half < (height - up) * 0.28
     });
     if p.y > hill {
-        let lit = glow(p, -0.12, 0.78, 0.3);
+        let lit = glow(p, CABIN.0, CABIN.1 - 0.04 * CABIN.2, 0.45);
         let drift = fbm(p.x * 6.0, p.y * 14.0);
         color = Rgb::hex(0x46587a)
             .mix(Rgb::hex(0xb8c8e8), smooth(0.3, 0.75, drift))
@@ -144,13 +147,14 @@ pub fn aurora_cabin(p: Pt, t: f32) -> Rgb {
     }
     color = mist(p, t, hill + 0.03, color, Rgb::hex(0x8293a6), 0.1);
     // A thin plume from the chimney bends with the same gentle wind as the snow.
-    let up = 0.68 - p.y;
-    if up > 0.0 && up < 0.24 {
-        let x = -0.085 + up * 0.25 + (up * 12.0 - t * 0.3).sin() * up * 0.1;
-        let plume = smooth(0.009 + up * 0.1, 0.0, (p.x - x).abs());
-        color = color.mix(Rgb::hex(0x8b9cae), plume * smooth(0.24, 0.0, up) * 0.23);
+    let (chimney_x, chimney_top) = (CABIN.0 + 0.035 * CABIN.2, CABIN.1 - 0.1 * CABIN.2);
+    let up = chimney_top - p.y;
+    if up > 0.0 && up < 0.3 {
+        let x = chimney_x + up * 0.25 + (up * 12.0 - t * 0.3).sin() * up * 0.1;
+        let plume = smooth(0.016 + up * 0.1, 0.0, (p.x - x).abs());
+        color = color.mix(Rgb::hex(0x8b9cae), plume * smooth(0.3, 0.0, up) * 0.28);
     }
-    if let Some(cabin) = cabin(p, -0.12, 0.78) {
+    if let Some(cabin) = cabin(p) {
         color = cabin;
     }
     match falling(p, t, 0.03, 0.0035, 0.3, 72) {
@@ -159,18 +163,36 @@ pub fn aurora_cabin(p: Pt, t: f32) -> Rgb {
     }
 }
 
-fn cabin(p: Pt, x: f32, ground: f32) -> Option<Rgb> {
-    let (dx, dy) = (p.x - x, ground - p.y);
-    let wall = dx.abs() < 0.06 && dy > 0.0 && dy < 0.05;
-    let roof = dy >= 0.05 && dy < 0.05 + (0.08 - dx.abs()).max(0.0) * 0.6;
-    let snow = roof && dy > 0.05 + (0.08 - dx.abs()).max(0.0) * 0.6 - 0.008;
+/// A log cabin under a snowy roof, with a chimney, a door and a lit window.
+fn cabin(p: Pt) -> Option<Rgb> {
+    let (x, ground, size) = CABIN;
+    let (dx, dy) = ((p.x - x) / size, (ground - p.y) / size);
+    let eave = (0.08 - dx.abs()).max(0.0) * 0.6;
+    let wall = dx.abs() < 0.06 && (0.0..0.05).contains(&dy);
+    let roof = dy >= 0.05 && dy < 0.05 + eave;
+    let snow = roof && dy > 0.05 + eave - 0.014;
     let chimney = (dx - 0.035).abs() < 0.008 && dy > 0.06 && dy < 0.1;
-    let window = (dx + 0.02).abs() < 0.013 && (dy - 0.025).abs() < 0.012;
+    let window = (dx + 0.025).abs() < 0.014 && (dy - 0.027).abs() < 0.013;
+    let door = (dx - 0.032).abs() < 0.011 && (0.0..0.034).contains(&dy);
     if window {
-        Some(Rgb::hex(0xffc060))
+        let frame = (dx + 0.025).abs() < 0.002 || (dy - 0.027).abs() < 0.002;
+        Some(if frame {
+            Rgb::hex(0x4a2a14)
+        } else {
+            Rgb::hex(0xffc060)
+        })
+    } else if door {
+        Some(Rgb::hex(0x1e120e))
     } else if snow {
-        Some(Rgb::hex(0xe8f0ff))
-    } else if wall || roof || chimney {
+        Some(Rgb::hex(0xf2f6ff))
+    } else if wall {
+        let gap = (dy / 0.0085).rem_euclid(1.0) < 0.14;
+        Some(if gap {
+            Rgb::hex(0x24160f)
+        } else {
+            Rgb::hex(0x6a4128)
+        })
+    } else if roof || chimney {
         Some(Rgb::hex(0x2a1a18))
     } else {
         None
