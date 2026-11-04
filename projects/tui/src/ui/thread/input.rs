@@ -308,6 +308,7 @@ impl InputView<'_> {
 
     /// The question the agent asked: options to choose, the user's own answer, and buttons.
     fn draw_poll(&mut self, frame: &mut Frame, area: Rect) {
+        let cursor_allowed = self.app.screensaver.is_none();
         let Some(poll) = &mut self.app.poll else {
             return;
         };
@@ -389,7 +390,7 @@ impl InputView<'_> {
             Span::styled(format!("  {hint}"), dim()),
         ]));
         frame.render_widget(Paragraph::new(lines), inner);
-        if poll.active && poll.cursor == own_row && own_row < visible_rows {
+        if poll.active && poll.cursor == own_row && own_row < visible_rows && cursor_allowed {
             let column = 6 + poll.own.text[..poll.own.cursor].width();
             let x = (inner.x as usize + column).min(inner.right().saturating_sub(1) as usize);
             frame.set_cursor_position(Position::new(x as u16, inner.y + 1 + own_row as u16));
@@ -775,7 +776,7 @@ fn status(app: &App) -> (Vec<Span<'static>>, String) {
 
 fn show_cursor(frame: &mut Frame, app: &App, area: Rect, (column, row): (usize, usize)) {
     let polling = app.poll.as_ref().is_some_and(|poll| poll.active);
-    if app.panel.is_none() && app.focus == Focus::Input && !polling {
+    if app.panel.is_none() && app.focus == Focus::Input && !polling && app.screensaver.is_none() {
         let x = area.x + PROMPT.width() as u16 + column as u16;
         frame.set_cursor_position(Position::new(x, area.y + row as u16));
     }

@@ -17,6 +17,7 @@ use crate::ui::windows::{
 
 /// A pasted text in a window over most of the screen, with its buttons on the last row.
 pub fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
+    let cursor_allowed = app.screensaver.is_none();
     let Some(Panel::Paste(editor)) = &mut app.panel else {
         return;
     };
@@ -68,7 +69,9 @@ pub fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
         ]
     } else {
         let y = text_area.y + (row - editor.scroll) as u16;
-        frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
+        if cursor_allowed {
+            frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
+        }
         vec![
             (EditorButton::Save, " save  Ctrl+S ", ACCENT),
             (EditorButton::Close, " close  Esc ", TEXT_SOFT),
