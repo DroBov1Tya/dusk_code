@@ -132,10 +132,12 @@ impl Tool for Screenshot {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PointerMode {
-    /// Presses the control through Accessibility; the user's pointer stays put.
-    #[default]
+    /// Presses the control through Accessibility; the user's pointer stays put. Only
+    /// macOS has it.
+    #[cfg_attr(target_os = "macos", default)]
     Independent,
     /// Posts mouse events, moving the user's pointer.
+    #[cfg_attr(not(target_os = "macos"), default)]
     System,
 }
 
@@ -174,13 +176,18 @@ impl Tool for Click {
     computer_tool!("click");
 
     fn description(&self, _: &ToolContext) -> String {
-        "Click at x, y of the newest screenshot. By default it presses the control there \
+        if cfg!(target_os = "macos") {
+            "Click at x, y of the newest screenshot. By default it presses the control there \
              through Accessibility and leaves the user's pointer alone: a single left click \
              on a button, link or checkbox, which may not focus a field or the app. A control \
              that cannot be pressed so, or a window that moved since the screenshot, is an \
              error. mode system clicks with the real pointer, right and double too, and \
              asks the user first since it takes the pointer from them."
-            .into()
+        } else {
+            "Click at x, y of the newest screenshot, left by default, right or double when \
+             asked. It moves the user's pointer there, so it asks the user first."
+        }
+        .into()
     }
 
     fn parameters(&self) -> Value {
@@ -367,6 +374,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn existing_click_arguments_default_to_independent_activation() {
         let args: ClickArguments = parse_arguments(json!({"x": 12, "y": 34})).unwrap();

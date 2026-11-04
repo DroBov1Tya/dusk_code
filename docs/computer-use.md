@@ -6,7 +6,7 @@ graphical session, to a model that sees pictures, and the first use in a session
 the user. A cursor of duskcode's own marks where the agent last acted; it glides to
 each point, rocks a little and hides after ten seconds at rest.
 
-## Clicks that leave the pointer alone
+## Clicks that leave the pointer alone (macOS)
 
 A `click` presses the control under the point through macOS Accessibility (`AXPress`)
 and posts no mouse events, so the user keeps their pointer:
@@ -34,7 +34,22 @@ the session does not allow it.
 
 `type_text` and `press_keys` go to whatever has the keyboard focus and ask every time.
 
-## Permissions
+## Linux
+
+Linux has no press without the pointer: a click always moves it, so it asks like
+`mode: "system"` does on macOS, and no cursor of duskcode's own is drawn. The tools
+drive the desktop through programs it has:
+
+| Session | Clicks, keys, typing | Screenshots |
+| --- | --- | --- |
+| X11 | `xdotool` | `maim`, `scrot` or ImageMagick's `import` |
+| Wayland | `ydotool`, with `ydotoold` running | `grim`, `gnome-screenshot` or `spectacle` |
+
+Wayland is chosen when `WAYLAND_DISPLAY` is set. It does not show other apps' windows,
+so there a screenshot is of the display or a region of it, not of one window. Shortcuts
+take `cmd` as the Super key.
+
+## Permissions (macOS)
 
 Clicks and keys need Accessibility, screenshots need Screen Recording, both in System
 Settings > Privacy & Security, for the terminal duskcode runs in. A pressed control

@@ -2,15 +2,19 @@
 //! types, presses keys and scrolls by the coordinates of that picture. Offered only with
 //! a screen, to a model that sees pictures, after one yes from the user a session.
 //!
-//! `screen` and `tools` know no system; the desktop they drive is `macos`. A click
-//! presses the control through Accessibility and leaves the user's pointer alone; only
-//! system mode, with a yes of its own, moves the pointer. A screenshot can be of one
-//! window, and a cursor of dusk's own marks where the agent last acted.
+//! `screen` and `tools` are the same everywhere; the desktop they drive is `macos` or
+//! `linux`. On macOS a click presses the control through Accessibility and leaves the
+//! user's pointer alone; only system mode, with a yes of its own, moves the pointer. A
+//! screenshot can be of one window, and a cursor of dusk's own marks where the agent
+//! last acted. On Linux every click moves the pointer, through the X11 or Wayland tools
+//! the desktop has.
 
 #[cfg(target_os = "macos")]
 mod accessibility;
 #[cfg(target_os = "macos")]
 mod cursor;
+#[cfg(target_os = "linux")]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
@@ -18,6 +22,8 @@ mod overlay;
 mod screen;
 mod tools;
 
+#[cfg(target_os = "linux")]
+use linux as desktop;
 #[cfg(target_os = "macos")]
 use macos as desktop;
 
