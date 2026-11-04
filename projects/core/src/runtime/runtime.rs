@@ -32,7 +32,7 @@ use crate::{
     init::paths::Paths,
     mcp::{McpInfo, McpServers, McpStatus},
     message::commands::{ContextReport, context_report},
-    message::sources,
+    message::sources::ThreadSources,
     providers::Provider,
     release::{
         update::{self, Channel, InstallProgress, UpdateInfo},
@@ -592,7 +592,13 @@ impl Runtime {
         let workspace =
             thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
         let state = &self.launcher.state;
-        sources::keep_pastes(state, &workspace, thread_id, message).await
+        ThreadSources {
+            state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .keep_pastes(message)
+        .await
     }
 
     pub async fn sources(&self, thread_id: &str) -> Result<Vec<Source>> {
@@ -603,7 +609,13 @@ impl Runtime {
     pub async fn add_source(&self, thread_id: &str, path: &Path) -> Result<Source> {
         let workspace =
             thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
-        sources::add_file(&self.launcher.state, &workspace, thread_id, path).await
+        ThreadSources {
+            state: &self.launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .add_file(path)
+        .await
     }
 
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
@@ -614,7 +626,13 @@ impl Runtime {
     pub async fn remove_source(&self, thread_id: &str, id: &str) -> Result<()> {
         let workspace =
             thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
-        sources::remove(&self.launcher.state, &workspace, thread_id, id).await
+        ThreadSources {
+            state: &self.launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .remove(id)
+        .await
     }
 
     /// The background jobs of a thread, oldest first.
