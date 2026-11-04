@@ -284,13 +284,17 @@ fn knight(p: Pt, light: f32) -> Option<Rgb> {
         Part::Polished => Rgb::hex(0x435766),
         Part::Cloak => Rgb::hex(0x15151c),
         Part::Leather => Rgb::hex(0x120c0a),
-        Part::Stone => Rgb::hex(0x0e0e10),
+        Part::Stone { top } => {
+            let grain = noise(p.x * 80.0, p.y * 90.0);
+            let face = Rgb::hex(0x28282a).mix(Rgb::hex(0x414043), grain);
+            face.mix(Rgb::hex(0x5c5652), if top { 0.7 } else { 0.0 })
+        }
         Part::Visor => Rgb::hex(0x020203),
     };
     let sheen = match part {
         Part::Steel => 0.8,
         Part::Polished => 1.0,
-        Part::Stone => 0.35,
+        Part::Stone { .. } => 0.35,
         Part::Visor => 0.0,
         _ => 0.5,
     };
@@ -305,7 +309,7 @@ enum Part {
     Polished,
     Cloak,
     Leather,
-    Stone,
+    Stone { top: bool },
     Visor,
 }
 
@@ -398,14 +402,23 @@ fn figure(p: Pt) -> Option<Part> {
             Part::Steel
         });
     }
+    // A low boulder behind the legs. Its top meets the hip and its base
+    // sinks into the earth. The chipped shoulders expose the top plane.
+    let seat_top = 0.31 - ((-0.26 - u).max(0.0) * 0.9).max((u - 0.03).max(0.0) * 0.6);
+    if v > -0.02
+        && v < seat_top
+        && u > -0.42 + (0.06 - v).max(0.0)
+        && u < 0.19 - (0.045 - v).max(0.0)
+    {
+        return Some(Part::Stone {
+            top: v > seat_top - 0.045 + u * 0.03,
+        });
+    }
     // Heavy charcoal cloak, ragged at the hem, falling behind the seat.
     let hem = 0.035 + (u * 40.0).sin().abs() * 0.025;
     let back = -0.12 - (0.7 - v) * 0.25;
     if v > hem && v < 0.74 && u > back && u < 0.06 {
         return Some(Part::Cloak);
-    }
-    if round(-0.04, 0.19, 0.23, 0.19) && v > 0.0 {
-        return Some(Part::Stone);
     }
     None
 }
