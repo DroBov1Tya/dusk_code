@@ -6,14 +6,14 @@ use serde_json::Value;
 use crate::{
     config::Effort,
     providers::{
-        chat::{ChatMessage, ChatRequest, Picture, ToolSpec},
-        model_output::ToolCall,
+        output::ToolCall,
+        request::{ChatMessage, ChatRequest, Picture, ToolSpec},
     },
 };
 
 /// copying costs nothing next to the network call.
 #[derive(Serialize)]
-pub(super) struct CompletionRequest {
+pub struct CompletionRequest {
     model: String,
     messages: Vec<WireMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -97,7 +97,7 @@ struct WireFunction {
 }
 
 impl CompletionRequest {
-    pub(super) fn new(request: ChatRequest<'_>, completion_tokens: bool) -> Self {
+    pub fn new(request: ChatRequest<'_>, completion_tokens: bool) -> Self {
         let limit = request.max_output_tokens;
         Self {
             model: request.model.to_owned(),

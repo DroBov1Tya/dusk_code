@@ -8,9 +8,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
-    model_output::{FinishReason, ModelEvent, Usage},
-    provider::{Transient, UnsupportedEffort},
-    sse::SseDecoder,
+    errors::{Transient, UnsupportedEffort},
+    output::{FinishReason, ModelEvent, Usage},
+    transport::sse::SseDecoder,
 };
 
 use super::client::error_rejects_effort_off;
@@ -25,7 +25,7 @@ pub struct CompletionStream {
 }
 
 impl CompletionStream {
-    pub(super) fn new(response: Response, effort_off: bool) -> Self {
+    pub fn new(response: Response, effort_off: bool) -> Self {
         Self {
             response,
             parser: CompletionParser {

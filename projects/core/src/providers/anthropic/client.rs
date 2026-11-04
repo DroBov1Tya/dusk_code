@@ -13,9 +13,10 @@ use serde_json::Value;
 use crate::{
     config::{Effort, ProviderConfig},
     providers::{
-        chat::{ChatMessage, ChatRequest},
-        http,
-        provider::{Model, Transient, UnsupportedEffort, UnsupportedPictures},
+        errors::{Transient, UnsupportedEffort, UnsupportedPictures},
+        registry::Model,
+        request::{ChatMessage, ChatRequest},
+        transport::http,
     },
 };
 

@@ -6,8 +6,8 @@ use serde_json::{Value, json};
 use crate::{
     config::Effort,
     providers::{
-        chat::{ChatMessage, ChatRequest, Picture, ToolSpec},
-        model_output::ToolCall,
+        output::ToolCall,
+        request::{ChatMessage, ChatRequest, Picture, ToolSpec},
     },
 };
 
@@ -16,7 +16,7 @@ use crate::{
 const DEFAULT_MAX_TOKENS: u64 = 32_000;
 
 #[derive(Serialize)]
-pub(super) struct MessagesRequest {
+pub struct MessagesRequest {
     model: String,
     max_tokens: u64,
     #[serde(skip_serializing_if = "String::is_empty")]
@@ -46,7 +46,7 @@ struct WireTool {
 }
 
 impl MessagesRequest {
-    pub(super) fn new(request: ChatRequest<'_>) -> Self {
+    pub fn new(request: ChatRequest<'_>) -> Self {
         let (system, messages) = wire_messages(request.messages);
         // Off is the only level without thinking; the rest set how much of it.
         let (thinking, effort) = match request.effort {
