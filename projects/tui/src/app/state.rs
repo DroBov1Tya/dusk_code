@@ -328,7 +328,6 @@ impl App {
     pub fn tick(&mut self) {
         self.frame = self.frame.wrapping_add(1);
         self.trim_output_samples();
-        self.task_scroll = 0;
     }
 
     /// Recent visible output divided by four bytes per estimated token.
