@@ -24,6 +24,10 @@ testing.
 
 - The goal bar shows approve and change for a draft, resume only for a paused goal.
 - The core's state and providers are grouped into folders by what they hold.
+- The idle scenes draw dots of three sizes: fine ones in the dark, larger toward lights
+  and highlights.
+- Skill helper files older builds shipped are removed when unchanged, and the
+  `retired-skills` folder they were moved to goes with them.
 
 ### Fixed
 
