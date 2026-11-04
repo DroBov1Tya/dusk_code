@@ -4,6 +4,28 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## 0.70.5 - 2026-11-04
+
+### Added
+
+- A plugin's secret settings, such as the Telegram token, are entered in `/plugins` with
+  s, in a masked field. They are kept in memory for the session and never reach the
+  config file.
+- The idle scenes are drawn with block, braille or ascii glyphs instead of one dot per
+  cell, which is finer on a terminal. The aurora cabin is larger and the knight's woods
+  have leafy crowns.
+
+### Fixed
+
+- Unpacking an update no longer depends on the archive's file times, and when `tar`
+  fails its message is shown.
+
+### Changed
+
+- The code is regrouped around types with methods: one file per computer tool, a
+  `Desktop` type for the macOS and Linux backends, `Modes`, `ThreadSources`, `Sidebar`
+  and a separate mouse module. Behaviour is the same.
+
 ## 0.70.4 - 2026-11-04
 
 ### Fixed
