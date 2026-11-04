@@ -55,6 +55,18 @@ impl ArtifactStore {
         Ok(bytes)
     }
 
+    /// The original of the image `id`, for a new card of it; the decoder checks it again.
+    pub fn read_by_id(&self, id: &str) -> Result<Vec<u8>> {
+        let parsed = Uuid::parse_str(id).context("invalid image ID")?;
+        let path = self.root.join(parsed.to_string()).join("image");
+        read_regular(&path, MAX_IMAGE_BYTES as u64).context("no image has this ID")
+    }
+
+    /// Where the original of `artifact` lies, for a platform to send it on.
+    pub fn path(&self, artifact: &ImageArtifact) -> Result<PathBuf> {
+        self.file(artifact, "image")
+    }
+
     /// A small PNG suitable for terminal rendering. The original remains available
     /// through `read`, but a client need not decode a full-resolution image again.
     pub fn read_thumbnail(&self, artifact: &ImageArtifact) -> Result<Vec<u8>> {

@@ -106,3 +106,18 @@ impl Manifest {
         Ok(manifest)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shipped_plugins_load() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/plugins");
+        for entry in std::fs::read_dir(root).unwrap() {
+            let folder = entry.unwrap().path();
+            Manifest::load(&folder)
+                .unwrap_or_else(|error| panic!("{}: {error:#}", folder.display()));
+        }
+    }
+}

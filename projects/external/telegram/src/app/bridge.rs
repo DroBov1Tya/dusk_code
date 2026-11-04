@@ -1,5 +1,7 @@
 //! What passes between the bot and the client that owns the chat.
 
+use std::path::PathBuf;
+
 /// From the owner in Telegram to the client.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FromBot {
@@ -60,6 +62,12 @@ pub enum ToBot {
         command: String,
         title: String,
         options: Vec<String>,
+    },
+    /// An image the agent showed: its file, of `mime_type`.
+    Image {
+        path: PathBuf,
+        mime_type: String,
+        caption: Option<String>,
     },
     /// The agent started or stopped working; while it works the owner hears that the
     /// bot is alive every few minutes.

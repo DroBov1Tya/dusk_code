@@ -3,7 +3,10 @@
 
 use std::sync::{Arc, atomic::Ordering};
 
-use teloxide::{prelude::*, types::ParseMode};
+use teloxide::{
+    prelude::*,
+    types::{InputFile, ParseMode},
+};
 use tokio::{sync::mpsc, time::Instant};
 
 use crate::{
@@ -125,6 +128,29 @@ async fn deliver(bot: &MyBot, shared: &Shared, message: ToBot) -> anyhow::Result
             let text = format!("{title}\n{list}\n\nSend /{command} <name> to pick one.");
             let text: String = text.chars().take(config::MAX_CHUNK_CHARS).collect();
             bot.send_message(chat, text).await?;
+        }
+        ToBot::Image {
+            path,
+            mime_type,
+            caption,
+        } => {
+            // The core keeps its images without an extension; Telegram goes by the name.
+            let name = if mime_type == "image/png" {
+                "image.png"
+            } else {
+                "image.jpg"
+            };
+            let bytes = tokio::fs::read(&path).await?;
+            let mut photo = bot.send_photo(chat, InputFile::memory(bytes).file_name(name));
+            if let Some(caption) = caption {
+                photo = photo.caption(
+                    caption
+                        .chars()
+                        .take(config::MAX_CAPTION_CHARS)
+                        .collect::<String>(),
+                );
+            }
+            photo.await?;
         }
         ToBot::Working(_) => {}
     }

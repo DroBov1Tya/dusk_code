@@ -39,6 +39,11 @@ enum FromCore {
         title: String,
         options: Vec<String>,
     },
+    Image {
+        path: PathBuf,
+        mime_type: String,
+        caption: Option<String>,
+    },
     Working {
         on: bool,
     },
@@ -143,6 +148,15 @@ fn to_bot(message: FromCore) -> ToBot {
             command,
             title,
             options,
+        },
+        FromCore::Image {
+            path,
+            mime_type,
+            caption,
+        } => ToBot::Image {
+            path,
+            mime_type,
+            caption,
         },
         FromCore::Working { on } => ToBot::Working(on),
     }

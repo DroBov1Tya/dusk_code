@@ -1,4 +1,6 @@
-//! Deliberate, root-only image fetching. No message parser or URL detector calls this.
+//! Deliberate, root-only image cards for the user, from a public URL, a file or an
+//! earlier screenshot. No message parser or URL detector calls this. A platform, such as
+//! the Telegram bot, sends each card on as a photo.
 
 use std::{
     io::Cursor,
@@ -18,7 +20,7 @@ use serde_json::Value;
 use tokio::sync::Semaphore;
 
 use crate::tools::{Tool, ToolContext, ToolResult, schema, schema::parse_arguments};
-use crate::util::fs::printable;
+use crate::util::fs::{printable, read_regular};
 use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, ImageArtifact, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES},
@@ -44,11 +46,21 @@ pub struct DisplayImage {
 struct Arguments {
     /// Public HTTPS image URL.
     #[schemars(length(max = 8192))]
-    url: String,
+    url: Option<String>,
+    /// A PNG or JPEG file.
+    path: Option<String>,
+    /// The ID of an earlier screenshot or image card.
+    image_id: Option<String>,
     #[schemars(length(max = 160))]
     title: Option<String>,
     #[schemars(length(max = 2000))]
     description: Option<String>,
+}
+
+enum Source {
+    Url(String),
+    File(std::path::PathBuf),
+    Card(String),
 }
 
 struct Decoded {
@@ -64,16 +76,28 @@ impl DisplayImage {
         Self { store }
     }
 
-    async fn display(&self, arguments: Arguments) -> Result<ToolResult> {
-        ensure!(arguments.url.len() <= 8192, "image URL is too long");
+    async fn display(&self, arguments: Arguments, context: ToolContext) -> Result<ToolResult> {
         let title = card_text(arguments.title, 160)?;
         let description = card_text(arguments.description, 2000)?;
+        let source = match (arguments.url, arguments.path, arguments.image_id) {
+            (Some(url), None, None) => {
+                ensure!(url.len() <= 8192, "image URL is too long");
+                Source::Url(url)
+            }
+            (None, Some(path), None) => Source::File(context.resolve(&path, false).await?),
+            (None, None, Some(id)) => Source::Card(id),
+            _ => bail!("give exactly one of url, path and image_id"),
+        };
         let work = async {
             let permit = IMAGE_WORK
                 .acquire()
                 .await
                 .context("image decoder unavailable")?;
-            let bytes = fetch(&arguments.url).await?;
+            let bytes = match source {
+                Source::Url(url) => fetch(&url).await?,
+                Source::File(path) => read_file(path).await?,
+                Source::Card(id) => self.store.read_by_id(&id)?,
+            };
             tokio::task::spawn_blocking(move || {
                 let _permit = permit;
                 decode(bytes)
@@ -123,10 +147,13 @@ impl Tool for DisplayImage {
     }
 
     fn description(&self, _context: &ToolContext) -> String {
-        "Fetch a public HTTPS PNG or JPEG image and display a persistent image card. \
-         Call deliberately when an image helps the user. Ordinary URLs in messages remain text \
-         and are never fetched automatically. Optional title and description label the card. \
-         Do not use private or authenticated URLs. Only the root agent has this tool."
+        "Show the user a PNG or JPEG image as a persistent card: from a public HTTPS url, \
+         a file at path, or an earlier screenshot or card by its image_id; give exactly \
+         one. Call deliberately when an image helps the user. When the user talks from a \
+         platform such as Telegram, the card is sent there as a photo. Ordinary URLs in \
+         messages remain text and are never fetched automatically. Optional title and \
+         description label the card. Do not use private or authenticated URLs. Only the \
+         root agent has this tool."
             .into()
     }
 
@@ -141,9 +168,9 @@ impl Tool for DisplayImage {
     fn call_result<'a>(
         &'a self,
         arguments: Value,
-        _context: ToolContext,
+        context: ToolContext,
     ) -> BoxFuture<'a, ToolResult> {
-        Box::pin(async move { self.display(parse_arguments(arguments)?).await })
+        Box::pin(async move { self.display(parse_arguments(arguments)?, context).await })
     }
 }
 
@@ -271,6 +298,13 @@ async fn fetch(raw: &str) -> Result<Vec<u8>> {
     bail!("image redirect limit exceeded")
 }
 
+async fn read_file(path: std::path::PathBuf) -> Result<Vec<u8>> {
+    tokio::task::spawn_blocking(move || read_regular(&path, MAX_IMAGE_BYTES as u64))
+        .await
+        .context("image reader failed")?
+        .context("cannot read the image file")
+}
+
 /// Conservative allowlist of global address space. Reject special-purpose ranges,
 /// including IPv4-mapped IPv6, transition tunnels, documentation and reserved blocks.
 fn public_ip(ip: IpAddr) -> bool {
@@ -350,6 +384,31 @@ fn decode(original: Vec<u8>) -> Result<Decoded> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        testing::{temp_dir, tool_context},
+        tools::ToolScope,
+    };
+    use serde_json::json;
+
+    /// A file and an earlier card make cards too, and only one source is taken.
+    #[tokio::test]
+    async fn a_file_or_an_earlier_card_becomes_a_card() {
+        let root = temp_dir("display-image-file");
+        std::fs::create_dir_all(&root).unwrap();
+        let scope = ToolScope::new(&root, &root).unwrap();
+        DynamicImage::new_rgb8(4, 3)
+            .save(root.join("picture.png"))
+            .unwrap();
+        let tool = DisplayImage::new(ArtifactStore::new(root.join("artifacts")));
+        let call = |arguments| tool.call_result(arguments, tool_context(&scope));
+        let card = call(json!({"path": "picture.png"})).await.unwrap().artifacts;
+        assert_eq!((card[0].width, card[0].height), (4, 3));
+        let again = call(json!({"image_id": card[0].id})).await.unwrap().artifacts;
+        assert_ne!(again[0].id, card[0].id);
+        let both = json!({"path": "picture.png", "image_id": card[0].id});
+        assert!(call(both).await.is_err());
+        assert!(call(json!({})).await.is_err());
+    }
 
     /// Only a name a fake-ip resolver answered may use that range; the address itself
     /// stays private.

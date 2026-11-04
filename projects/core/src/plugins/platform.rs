@@ -9,6 +9,8 @@
 //! - `{"type": "approval", "id": 3, "text": "the agent wants to run: …"}`;
 //! - `{"type": "reply", "text": "…"}` — a short answer to a command, or a note;
 //! - `{"type": "menu", "command": "mode", "title": "…", "options": […]}`;
+//! - `{"type": "image", "path": "/…", "mime_type": "image/png", "caption": "…"}` — an
+//!   image card the agent showed, its file to send on;
 //! - `{"type": "working", "on": true}`.
 //!
 //! The platform sends what the user did:
@@ -38,7 +40,7 @@ use tracing::{info, warn};
 use crate::{
     providers::ModelEvent,
     runtime::{Launcher, ThreadEvent},
-    state::{Goal, GoalStatus, TurnStatus},
+    state::{Goal, GoalStatus, TurnStatus, artifacts::ArtifactStore},
     tools::{ApprovalRequest, Decision, Question},
 };
 
@@ -86,6 +88,11 @@ enum ToPlatform<'a> {
         command: &'a str,
         title: String,
         options: Vec<String>,
+    },
+    Image {
+        path: String,
+        mime_type: &'a str,
+        caption: Option<String>,
     },
     Working {
         on: bool,
@@ -290,6 +297,25 @@ impl<'a> Session<'a> {
             }
             ThreadEvent::ToolStarted(_) => {
                 self.answer.clear();
+                Ok(())
+            }
+            ThreadEvent::ToolFinished { result, .. } => {
+                let store = ArtifactStore::new(self.launcher.paths.artifacts_dir());
+                // Pictures for the model, such as screenshots, stay in the thread.
+                for card in result.artifacts.iter().filter(|card| !card.for_model) {
+                    let caption = [&card.title, &card.description]
+                        .into_iter()
+                        .flatten()
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join("\n");
+                    self.send(ToPlatform::Image {
+                        path: store.path(card)?.display().to_string(),
+                        mime_type: &card.mime_type,
+                        caption: (!caption.is_empty()).then_some(caption),
+                    })
+                    .await?;
+                }
                 Ok(())
             }
             ThreadEvent::TurnFinished(turn) => {
