@@ -21,6 +21,25 @@ pub struct OpenThread {
 }
 
 impl OpenThread {
+    /// Opens the thread again with its history, tasks and unsent messages shown.
+    pub async fn resume(runtime: &Runtime, app: &mut App, thread_id: &str) -> Result<Self> {
+        let history = runtime.thread_messages(thread_id).await?;
+        let threads = runtime.list_threads().await?;
+        let title = threads
+            .into_iter()
+            .find(|thread| thread.id == thread_id)
+            .and_then(|thread| thread.title);
+        let handle = runtime
+            .resume_thread(thread_id, &env::current_dir()?)
+            .await?;
+        app.open(Some(thread_id.to_owned()), title, &history);
+        app.tasks = runtime.thread_tasks(thread_id).await?;
+        for message in runtime.local_unsent(thread_id).await? {
+            app.show_local_unsent(message);
+        }
+        Ok(Self::new(handle))
+    }
+
     pub fn new(handle: ThreadHandle) -> Self {
         Self {
             handle,
@@ -142,24 +161,6 @@ pub async fn ensure_open(
         }
     }
     Ok(())
-}
-
-pub async fn resume(runtime: &Runtime, app: &mut App, thread_id: &str) -> Result<OpenThread> {
-    let history = runtime.thread_messages(thread_id).await?;
-    let threads = runtime.list_threads().await?;
-    let title = threads
-        .into_iter()
-        .find(|thread| thread.id == thread_id)
-        .and_then(|thread| thread.title);
-    let handle = runtime
-        .resume_thread(thread_id, &env::current_dir()?)
-        .await?;
-    app.open(Some(thread_id.to_owned()), title, &history);
-    app.tasks = runtime.thread_tasks(thread_id).await?;
-    for message in runtime.local_unsent(thread_id).await? {
-        app.show_local_unsent(message);
-    }
-    Ok(OpenThread::new(handle))
 }
 
 /// Stops the thread's turn and waits for its task to end, so it can be opened again.

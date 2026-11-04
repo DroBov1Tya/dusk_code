@@ -14,7 +14,7 @@ use ratatui::DefaultTerminal;
 use super::{
     answers::{answer, preview},
     run::InstallingUpdate,
-    thread::{OpenThread, close, ensure_open, resume, send},
+    thread::{OpenThread, close, ensure_open, send},
 };
 use crate::{
     app::{Action, AgentWindow, App, FileEditor, ModelList, Panel, SwitchKind, Tone, Transcript},
@@ -433,7 +433,7 @@ pub async fn apply<'a>(
         Action::OpenThread(thread_id) if app.thread_id.as_deref() == Some(&thread_id) => {}
         Action::OpenThread(thread_id) => {
             close(open.take()).await;
-            match resume(runtime, app, &thread_id).await {
+            match OpenThread::resume(runtime, app, &thread_id).await {
                 Ok(thread) => *open = Some(thread),
                 Err(error) => {
                     app.open(None, None, &[]);

@@ -19,7 +19,7 @@ use ratatui::DefaultTerminal;
 use super::{
     actions::{Flow, apply, set_update_note},
     answers::{jobs_wanted, refresh_jobs, refresh_system, system_open},
-    thread::{OpenThread, close, next_event, resume, send},
+    thread::{OpenThread, close, next_event, send},
 };
 use crate::{
     app::{Action, App, PRESS, Panel, SettingCategory, Tone},
@@ -59,7 +59,7 @@ pub async fn run(
         ));
     let mut open = None;
     if let Some(thread_id) = thread {
-        open = Some(resume(runtime, &mut app, &thread_id).await?);
+        open = Some(OpenThread::resume(runtime, &mut app, &thread_id).await?);
     }
     // Shipped files follow the build; a local edit to one is replaced, so say which.
     let updated = runtime.updated_builtin();
