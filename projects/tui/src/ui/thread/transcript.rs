@@ -254,6 +254,35 @@ fn buttons(frame: &mut Frame, area: Rect, app: &mut App) {
         });
         right = left;
     }
+    // Under the buttons, when the entry came.
+    let below = row + 1;
+    if let Some(at) = app.transcript.time(index)
+        && below < area.bottom()
+        && let Some(button) = app.button_hits.first()
+    {
+        let label = format!(" {} ", clock(at));
+        let width = label.width() as u16;
+        let left = button.right.saturating_sub(width).max(area.x);
+        let place = Rect::new(left, below, width.min(area.right() - left), 1);
+        let shown = Span::styled(label, fg(TEXT_MUTED).bg(RAISED));
+        frame.render_widget(Paragraph::new(Line::from(shown)), place);
+    }
+}
+
+/// `at` as the local time of day, with the date when it was not today.
+fn clock(at: i64) -> String {
+    use chrono::{Datelike, Local, TimeZone};
+    let Some(time) = Local.timestamp_millis_opt(at).single() else {
+        return String::new();
+    };
+    let now = Local::now();
+    if time.date_naive() == now.date_naive() {
+        time.format("%H:%M").to_string()
+    } else if time.year() == now.year() {
+        time.format("%-d %b %H:%M").to_string()
+    } else {
+        time.format("%-d %b %Y %H:%M").to_string()
+    }
 }
 
 /// Lays out every entry but the last again, when the transcript, the width or the browsed
