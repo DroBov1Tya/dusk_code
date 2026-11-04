@@ -50,6 +50,8 @@ struct Row {
 /// The settings window: its category list, the rows of each category and the file editor.
 pub struct SettingsWindow<'a> {
     pub view: &'a mut SettingsView,
+    /// Off while the idle screen plays over the window.
+    pub cursor: bool,
 }
 
 impl SettingsWindow<'_> {
@@ -636,7 +638,9 @@ impl SettingsWindow<'_> {
             .collect();
         frame.render_widget(Paragraph::new(lines), text_area);
         let y = text_area.y + (row - editor.scroll) as u16;
-        frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
+        if self.cursor {
+            frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
+        }
         let bar = area.bottom() - 1;
         if let Some(error) = editor.error.as_ref().filter(|_| error_rows == 0) {
             let room = area.width.saturating_sub(46) as usize;
@@ -720,10 +724,11 @@ impl SettingsWindow<'_> {
 }
 
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
+    let cursor = app.screensaver.is_none();
     let Some(Panel::Settings(view)) = &mut app.panel else {
         return;
     };
-    SettingsWindow { view }.draw(frame, screen);
+    SettingsWindow { view, cursor }.draw(frame, screen);
 }
 
 fn memory_size_row(label: &'static str, chars: usize, width: usize) -> Row {
