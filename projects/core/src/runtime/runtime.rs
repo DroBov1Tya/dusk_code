@@ -108,7 +108,7 @@ impl Runtime {
         let state_db = crate::backup::archive::resolve_state_db(
             &state_db.unwrap_or_else(|| paths.state_db()),
         )?;
-        let restore_guard = crate::backup::archive::startup_guard(&paths, Some(&state_db))?;
+        let restore_guard = crate::backup::archive::RestoreGuard::startup(&paths, Some(&state_db))?;
         // A client that shows the restore calls this first; then it is not tried again.
         let version = crate::release::update::VERSION;
         match crate::release::complete::ensure_installed(&|_| {}).await {

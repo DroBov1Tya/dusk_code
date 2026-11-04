@@ -13,7 +13,7 @@ use dusk_core::{backup::archive, init::paths::Paths, release::resources};
 const BINARY: &str = "duskcode";
 
 pub fn run(paths: &Paths) -> Result<()> {
-    let removal = archive::removal_guard()?;
+    let removal = archive::RemovalGuard::acquire()?;
     let home = PathBuf::from(env::var_os("HOME").context("HOME is not set")?);
     let exe = env::current_exe().context("cannot find this binary")?;
     let exe = fs::canonicalize(&exe).unwrap_or(exe);
