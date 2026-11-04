@@ -213,83 +213,85 @@ pub struct Synced {
     pub removed: Vec<String>,
 }
 
-pub fn sync(paths: &Paths) -> Result<Synced> {
-    let root = paths.rules_root();
-    let root = root.as_path();
-    // Left by builds that kept edited shipped files; nothing reads it now.
-    let _ = fs::remove_file(root.join(LOCK_FILE));
-    let mut synced = Synced::default();
-    for (path, contents) in shipped()? {
-        let target = root.join(&path);
-        safe_parent(root, &target)?;
-        // A copy those builds put beside an edited file.
-        let _ = fs::remove_file(format!("{}{OLD_NEW_SUFFIX}", target.display()));
-        let on_disk = match fs::symlink_metadata(&target) {
-            // A link was put there by hand; dusk does not write through it.
-            Ok(metadata) if !metadata.is_file() => continue,
-            Ok(_) => Some(fs::read(&target).context("cannot read a shipped file")?),
-            Err(error) if error.kind() == ErrorKind::NotFound => None,
-            Err(_) => continue,
-        };
-        match on_disk {
-            None => {
-                write(&target, &contents)?;
-                synced.written.push(path);
-            }
-            Some(disk) if hash(&disk) != hash(&contents) => {
-                write(&target, &contents)?;
-                synced.updated.push(path);
-            }
-            Some(_) => {}
-        }
-    }
-    drop_old(root, &DROPPED, &mut synced)?;
-    Ok(synced)
-}
-
-/// Removes the files of `dropped` that are still as shipped, in the rules folder and
-/// in the recovery folder older builds moved them to, then the folders left empty.
-fn drop_old(root: &Path, dropped: &[(&str, &str)], synced: &mut Synced) -> Result<()> {
-    let recovery = root.join(OLD_RECOVERY);
-    let moved: Vec<_> = match fs::read_dir(&recovery) {
-        Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
-        Err(_) => Vec::new(),
-    };
-    for &(relative, shipped_hash) in dropped {
-        let relative = Path::new(relative);
-        ensure!(
-            relative
-                .components()
-                .all(|part| matches!(part, Component::Normal(_))),
-            "invalid dropped file path"
-        );
-        for base in std::iter::once(root).chain(moved.iter().map(|path| path.as_path())) {
-            let Some(file) = regular_file(base, relative) else {
-                continue;
+impl Synced {
+    pub fn sync(paths: &Paths) -> Result<Self> {
+        let root = paths.rules_root();
+        let root = root.as_path();
+        // Left by builds that kept edited shipped files; nothing reads it now.
+        let _ = fs::remove_file(root.join(LOCK_FILE));
+        let mut synced = Self::default();
+        for (path, contents) in shipped()? {
+            let target = root.join(&path);
+            safe_parent(root, &target)?;
+            // A copy those builds put beside an edited file.
+            let _ = fs::remove_file(format!("{}{OLD_NEW_SUFFIX}", target.display()));
+            let on_disk = match fs::symlink_metadata(&target) {
+                // A link was put there by hand; dusk does not write through it.
+                Ok(metadata) if !metadata.is_file() => continue,
+                Ok(_) => Some(fs::read(&target).context("cannot read a shipped file")?),
+                Err(error) if error.kind() == ErrorKind::NotFound => None,
+                Err(_) => continue,
             };
-            let metadata = fs::symlink_metadata(&file)?;
-            let contents = crate::util::fs::read_regular(&file, metadata.len())?;
-            if hash(&contents) != shipped_hash {
-                continue;
-            }
-            fs::remove_file(&file).context("cannot remove an old shipped file")?;
-            synced.removed.push(
-                file.strip_prefix(root)
-                    .unwrap_or(&file)
-                    .to_string_lossy()
-                    .into_owned(),
-            );
-            // A folder that still holds anything stays.
-            let mut folder = file.parent();
-            while let Some(parent) = folder.filter(|parent| *parent != root) {
-                if fs::remove_dir(parent).is_err() {
-                    break;
+            match on_disk {
+                None => {
+                    write(&target, &contents)?;
+                    synced.written.push(path);
                 }
-                folder = parent.parent();
+                Some(disk) if hash(&disk) != hash(&contents) => {
+                    write(&target, &contents)?;
+                    synced.updated.push(path);
+                }
+                Some(_) => {}
             }
         }
+        synced.drop_old(root, &DROPPED)?;
+        Ok(synced)
     }
-    Ok(())
+
+    /// Removes the files of `dropped` that are still as shipped, in the rules folder and
+    /// in the recovery folder older builds moved them to, then the folders left empty.
+    fn drop_old(&mut self, root: &Path, dropped: &[(&str, &str)]) -> Result<()> {
+        let recovery = root.join(OLD_RECOVERY);
+        let moved: Vec<_> = match fs::read_dir(&recovery) {
+            Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
+            Err(_) => Vec::new(),
+        };
+        for &(relative, shipped_hash) in dropped {
+            let relative = Path::new(relative);
+            ensure!(
+                relative
+                    .components()
+                    .all(|part| matches!(part, Component::Normal(_))),
+                "invalid dropped file path"
+            );
+            for base in std::iter::once(root).chain(moved.iter().map(|path| path.as_path())) {
+                let Some(file) = regular_file(base, relative) else {
+                    continue;
+                };
+                let metadata = fs::symlink_metadata(&file)?;
+                let contents = crate::util::fs::read_regular(&file, metadata.len())?;
+                if hash(&contents) != shipped_hash {
+                    continue;
+                }
+                fs::remove_file(&file).context("cannot remove an old shipped file")?;
+                self.removed.push(
+                    file.strip_prefix(root)
+                        .unwrap_or(&file)
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+                // A folder that still holds anything stays.
+                let mut folder = file.parent();
+                while let Some(parent) = folder.filter(|parent| *parent != root) {
+                    if fs::remove_dir(parent).is_err() {
+                        break;
+                    }
+                    folder = parent.parent();
+                }
+            }
+        }
+        Ok(())
+    }
 }
 
 /// `relative` under `base` when it is a regular file reached through no link.
@@ -380,7 +382,7 @@ mod tests {
     fn shipped_files_follow_the_build_and_added_files_stay() {
         let paths = temp_paths("builtin");
         create_private_dir(&paths.rules_root()).unwrap();
-        let first = sync(&paths).unwrap();
+        let first = Synced::sync(&paths).unwrap();
         assert!(first.written.contains(&"modes/PLAN.md".to_owned()));
         assert!(
             !paths
@@ -389,7 +391,7 @@ mod tests {
                 .exists()
         );
         assert!(
-            sync(&paths).unwrap() == Synced::default(),
+            Synced::sync(&paths).unwrap() == Synced::default(),
             "nothing to do twice"
         );
 
@@ -402,7 +404,7 @@ mod tests {
         let mine = paths.modes_dir().join("MINE.md");
         fs::write(&mine, "my mode").unwrap();
 
-        let mut updated = sync(&paths).unwrap().updated;
+        let mut updated = Synced::sync(&paths).unwrap().updated;
         updated.sort();
         assert_eq!(updated, ["modes/MAIN.md", "modes/PLAN.md"]);
         let shipped = |name| {
@@ -469,7 +471,7 @@ mod tests {
             dropped.push(("skills/linked/old.py", digest.as_str()));
         }
         let mut synced = Synced::default();
-        drop_old(&root, &dropped, &mut synced).unwrap();
+        synced.drop_old(&root, &dropped).unwrap();
         assert!(!skill.join("old.py").exists());
         assert_eq!(
             fs::read_to_string(skill.join("edited.py")).unwrap(),
@@ -483,6 +485,10 @@ mod tests {
         assert_eq!(synced.removed.len(), 2);
         #[cfg(unix)]
         assert!(paths.skills_dir().join("linked/old.py").exists());
-        assert!(drop_old(&root, &[("skills/../escape.py", "")], &mut synced).is_err());
+        assert!(
+            synced
+                .drop_old(&root, &[("skills/../escape.py", "")])
+                .is_err()
+        );
     }
 }

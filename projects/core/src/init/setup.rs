@@ -66,7 +66,7 @@ pub fn initialize(paths: &Paths) -> Result<Initialization> {
     create_private_dir(&paths.modes_dir())?;
     move_legacy_main_prompt(paths)?;
     // Shipped files out of date only make the agent know less; they never stop the start.
-    let builtin = match shipped::sync(paths) {
+    let builtin = match shipped::Synced::sync(paths) {
         Ok(synced) => {
             for (what, files) in [
                 ("added", &synced.written),

@@ -247,7 +247,7 @@ impl Runtime {
             self.config()
                 .update(|config| config.set_update_channel(channel))?;
         }
-        update::check(self.config().current().update_channel()).await
+        update::UpdateInfo::check(self.config().current().update_channel()).await
     }
 
     /// Installs a release while publishing the latest stage and downloaded bytes.
