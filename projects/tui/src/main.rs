@@ -58,7 +58,8 @@ async fn main() -> Result<()> {
         .map(|path| dusk_core::backup::archive::resolve_state_db(&path))
         .transpose()?;
     // Keep a shared lock for the full process lifetime, including log initialization.
-    let _restore_guard = dusk_core::backup::archive::startup_guard(&paths, state_db.as_deref())?;
+    let _restore_guard =
+        dusk_core::backup::archive::RestoreGuard::startup(&paths, state_db.as_deref())?;
     let telemetry = match logs::init(&paths, env!("CARGO_CRATE_NAME"), "tui") {
         Ok(telemetry) => Some(telemetry),
         Err(error) => {
