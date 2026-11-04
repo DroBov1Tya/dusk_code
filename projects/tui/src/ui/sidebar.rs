@@ -38,163 +38,453 @@ const CONNECTORS_HEIGHT: u16 = 5;
 /// Columns of air on each side of the rail's text.
 const PAD: u16 = 2;
 const GAUGE: &str = "\u{2501}";
-pub fn draw(frame: &mut Frame, area: Rect, app: &mut App, overlay: bool) {
-    if overlay {
-        frame.render_widget(Clear, area);
-    }
-    frame.render_widget(Block::default().style(Style::new().bg(DEEP)), area);
-    if area.width < 4 || area.height < 3 {
-        return;
-    }
-    let stats_height = STATS_HEIGHT.min(area.height);
-    statistics(
-        frame,
-        Rect {
-            height: stats_height,
-            ..area
-        },
-        app,
-    );
-    let mut y = area.y + stats_height;
-    let remaining = area.bottom() - y;
-    // Dock connectors before allocating the content above them. Their geometry
-    // depends only on the rail, never on agents, tasks, or their folded state.
-    let mcp_section = if !app.mcp.is_empty() && remaining >= CONNECTORS_FOLDED {
-        let height = CONNECTORS_HEIGHT.min(remaining.div_ceil(2).max(CONNECTORS_FOLDED));
-        Some(Rect {
-            y: area.bottom() - height,
-            height,
-            ..area
-        })
-    } else {
-        None
-    };
-    // Leave one blank row above the dock when the rail has room for it.
-    let content_bottom = mcp_section
-        .map(|section| section.y.saturating_sub(1).max(y))
-        .unwrap_or(area.bottom());
-    if app.tasks.iter().any(|task| !task.done) && y < content_bottom {
-        let remaining = content_bottom - y;
-        // The tasks take what they need, up to half of what is left.
-        let room = remaining.div_ceil(2).max(3).min(remaining);
-        y += tasks(
-            frame,
-            Rect {
-                y,
-                height: room,
-                ..area
-            },
-            app,
-        );
-    }
-    let running_jobs = app.jobs.iter().filter(|job| job.running).count();
-    if running_jobs > 0 && y + 1 < content_bottom {
-        let wanted = 1 + running_jobs.min(MAX_JOB_ROWS + 1) as u16;
-        let height = wanted.min(content_bottom - y);
-        y += background(frame, Rect { y, height, ..area }, app) + 1;
-    }
-    if !app.subagents.is_empty() && y < content_bottom {
-        let section = Rect {
-            y,
-            height: content_bottom - y,
-            ..area
-        };
-        app.agent_area = Some(section);
-        agents(frame, section, app);
-    }
-    if let Some(section) = mcp_section {
-        app.mcp_area = Some(section);
-        mcp(frame, section, app);
-    }
+
+/// The rail beside the thread: statistics, tasks, background jobs, agents and connectors.
+pub struct Sidebar<'a> {
+    pub app: &'a mut App,
 }
 
-fn statistics(frame: &mut Frame, area: Rect, app: &App) {
-    let width = area.width.saturating_sub(2 * PAD) as usize;
-    let fill = if app.limit == 0 {
-        0.0
-    } else {
-        (app.tokens.context as f64 / app.limit as f64).clamp(0.0, 1.0)
-    };
-    let percent = fill * 100.0;
-    let near_compaction = percent >= AUTO_COMPACT_PERCENT as f64;
-    let ThreadTokens { model_calls, .. } = app.tokens;
-    let elapsed = app
-        .elapsed_ms()
-        .map(format_duration)
-        .unwrap_or_else(|| "--:--".into());
-    let time_label = if app.turn_started_at.is_some() {
-        "turn"
-    } else {
-        "last turn"
-    };
-    let calls = match model_calls {
-        1 => " \u{00B7} 1 call".to_owned(),
-        calls => format!(" \u{00B7} {calls} calls"),
-    };
-    let rate = app
-        .approximate_tokens_per_second()
-        .map(|value| format!("~{value:.1} tok/s"))
-        .unwrap_or_else(|| "--".into());
-    let context_color = if near_compaction {
-        NEGATIVE
-    } else {
-        dusk(fill)
-    };
-    let mode = match app.effort {
-        Some(effort) => format!(
-            "{} \u{00B7} effort {}",
-            app.mode.to_lowercase(),
-            effort.name()
-        ),
-        None => app.mode.to_lowercase(),
-    };
-    let filled = ((width as f64) * fill).round() as usize;
-    let lines = vec![
-        Line::default(),
-        Line::from(Span::styled(wrap::clip(&app.model, width), bold(TEXT))),
-        Line::from(Span::styled(wrap::clip(&mode, width), fg(TEXT_SOFT))),
-        Line::default(),
-        row(
-            vec![heading("Context")],
-            Span::styled(format!("{percent:.0}%"), bold(context_color)),
-            width,
-        ),
-        Line::from(vec![
-            Span::styled(GAUGE.repeat(filled), fg(context_color)),
-            Span::styled(GAUGE.repeat(width - filled), fg(HAIRLINE)),
-        ]),
-        Line::from(Span::styled(
-            format!(
-                "{} of {}{}",
-                compact_number(app.tokens.context),
-                compact_number(app.limit),
-                if near_compaction {
-                    "  compacting soon"
-                } else {
-                    ""
-                }
+impl Sidebar<'_> {
+    pub fn draw(&mut self, frame: &mut Frame, area: Rect, overlay: bool) {
+        if overlay {
+            frame.render_widget(Clear, area);
+        }
+        frame.render_widget(Block::default().style(Style::new().bg(DEEP)), area);
+        if area.width < 4 || area.height < 3 {
+            return;
+        }
+        let stats_height = STATS_HEIGHT.min(area.height);
+        self.statistics(
+            frame,
+            Rect {
+                height: stats_height,
+                ..area
+            },
+        );
+        let mut y = area.y + stats_height;
+        let remaining = area.bottom() - y;
+        // Dock connectors before allocating the content above them. Their geometry
+        // depends only on the rail, never on agents, tasks, or their folded state.
+        let mcp_section = if !self.app.mcp.is_empty() && remaining >= CONNECTORS_FOLDED {
+            let height = CONNECTORS_HEIGHT.min(remaining.div_ceil(2).max(CONNECTORS_FOLDED));
+            Some(Rect {
+                y: area.bottom() - height,
+                height,
+                ..area
+            })
+        } else {
+            None
+        };
+        // Leave one blank row above the dock when the rail has room for it.
+        let content_bottom = mcp_section
+            .map(|section| section.y.saturating_sub(1).max(y))
+            .unwrap_or(area.bottom());
+        if self.app.tasks.iter().any(|task| !task.done) && y < content_bottom {
+            let remaining = content_bottom - y;
+            // The tasks take what they need, up to half of what is left.
+            let room = remaining.div_ceil(2).max(3).min(remaining);
+            y += self.tasks(
+                frame,
+                Rect {
+                    y,
+                    height: room,
+                    ..area
+                },
+            );
+        }
+        let running_jobs = self.app.jobs.iter().filter(|job| job.running).count();
+        if running_jobs > 0 && y + 1 < content_bottom {
+            let wanted = 1 + running_jobs.min(MAX_JOB_ROWS + 1) as u16;
+            let height = wanted.min(content_bottom - y);
+            y += self.background(frame, Rect { y, height, ..area }) + 1;
+        }
+        if !self.app.subagents.is_empty() && y < content_bottom {
+            let section = Rect {
+                y,
+                height: content_bottom - y,
+                ..area
+            };
+            self.app.agent_area = Some(section);
+            self.agents(frame, section);
+        }
+        if let Some(section) = mcp_section {
+            self.app.mcp_area = Some(section);
+            self.mcp(frame, section);
+        }
+    }
+
+    fn statistics(&self, frame: &mut Frame, area: Rect) {
+        let width = area.width.saturating_sub(2 * PAD) as usize;
+        let fill = if self.app.limit == 0 {
+            0.0
+        } else {
+            (self.app.tokens.context as f64 / self.app.limit as f64).clamp(0.0, 1.0)
+        };
+        let percent = fill * 100.0;
+        let near_compaction = percent >= AUTO_COMPACT_PERCENT as f64;
+        let ThreadTokens { model_calls, .. } = self.app.tokens;
+        let elapsed = self
+            .app
+            .elapsed_ms()
+            .map(format_duration)
+            .unwrap_or_else(|| "--:--".into());
+        let time_label = if self.app.turn_started_at.is_some() {
+            "turn"
+        } else {
+            "last turn"
+        };
+        let calls = match model_calls {
+            1 => " \u{00B7} 1 call".to_owned(),
+            calls => format!(" \u{00B7} {calls} calls"),
+        };
+        let rate = self
+            .app
+            .approximate_tokens_per_second()
+            .map(|value| format!("~{value:.1} tok/s"))
+            .unwrap_or_else(|| "--".into());
+        let context_color = if near_compaction {
+            NEGATIVE
+        } else {
+            dusk(fill)
+        };
+        let mode = match self.app.effort {
+            Some(effort) => format!(
+                "{} \u{00B7} effort {}",
+                self.app.mode.to_lowercase(),
+                effort.name()
             ),
-            fg(TEXT_SOFT),
-        )),
-        Line::default(),
-        Line::from(heading("Activity")),
-        row(
-            vec![Span::styled(format!("{time_label}{calls}"), fg(TEXT_SOFT))],
-            Span::styled(elapsed, fg(ACCENT)),
-            width,
-        ),
-        row(
-            vec![Span::styled("output", fg(TEXT_SOFT))],
-            Span::styled(rate, fg(TEXT_SOFT)),
-            width,
-        ),
-    ];
-    frame.render_widget(
-        Paragraph::new(lines)
-            .style(Style::new().fg(TEXT).bg(DEEP))
-            .block(Block::new().padding(Padding::horizontal(PAD))),
-        area,
-    );
+            None => self.app.mode.to_lowercase(),
+        };
+        let filled = ((width as f64) * fill).round() as usize;
+        let lines = vec![
+            Line::default(),
+            Line::from(Span::styled(wrap::clip(&self.app.model, width), bold(TEXT))),
+            Line::from(Span::styled(wrap::clip(&mode, width), fg(TEXT_SOFT))),
+            Line::default(),
+            row(
+                vec![heading("Context")],
+                Span::styled(format!("{percent:.0}%"), bold(context_color)),
+                width,
+            ),
+            Line::from(vec![
+                Span::styled(GAUGE.repeat(filled), fg(context_color)),
+                Span::styled(GAUGE.repeat(width - filled), fg(HAIRLINE)),
+            ]),
+            Line::from(Span::styled(
+                format!(
+                    "{} of {}{}",
+                    compact_number(self.app.tokens.context),
+                    compact_number(self.app.limit),
+                    if near_compaction {
+                        "  compacting soon"
+                    } else {
+                        ""
+                    }
+                ),
+                fg(TEXT_SOFT),
+            )),
+            Line::default(),
+            Line::from(heading("Activity")),
+            row(
+                vec![Span::styled(format!("{time_label}{calls}"), fg(TEXT_SOFT))],
+                Span::styled(elapsed, fg(ACCENT)),
+                width,
+            ),
+            row(
+                vec![Span::styled("output", fg(TEXT_SOFT))],
+                Span::styled(rate, fg(TEXT_SOFT)),
+                width,
+            ),
+        ];
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(TEXT).bg(DEEP))
+                .block(Block::new().padding(Padding::horizontal(PAD))),
+            area,
+        );
+    }
+
+    /// The tasks still open, each in a small block of its own: what it is and how many steps
+    /// are done, and once unfolded its steps with how long each ran. Returns the rows used.
+    fn tasks(&mut self, frame: &mut Frame, area: Rect) -> u16 {
+        let width = area.width.saturating_sub(2 * PAD) as usize;
+        let now = now_ms();
+        // Every open task's rows, a blank row between tasks, each row with its task.
+        let mut rows: Vec<(Line<'static>, Option<String>)> = Vec::new();
+        for task in self.app.tasks.iter().filter(|task| !task.done) {
+            if !rows.is_empty() {
+                rows.push((Line::default(), None));
+            }
+            let unfolded = self.app.unfolded_tasks.contains(&task.task_id);
+            for line in task_lines(task, unfolded, width, now) {
+                rows.push((line, Some(task.task_id.clone())));
+            }
+        }
+        self.app.task_max_scroll = scroll_limit(rows.len(), area);
+        self.app.task_scroll = self.app.task_scroll.min(self.app.task_max_scroll);
+        self.app.task_area = Some(area);
+        let mut block = section(Line::from(heading("Tasks")));
+        let scrolls = self.app.task_max_scroll > 0 && area.height > 2;
+        if scrolls {
+            block =
+                block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
+        }
+        let inner = block.inner(area);
+        let shown = rows
+            .iter()
+            .skip(self.app.task_scroll)
+            .take(inner.height as usize);
+        self.app.task_hits = shown
+            .clone()
+            .enumerate()
+            .filter_map(|(row, (_, task_id))| {
+                let task_id = task_id.clone()?;
+                Some((
+                    Rect {
+                        y: inner.y + row as u16,
+                        height: 1,
+                        ..area
+                    },
+                    task_id,
+                ))
+            })
+            .collect();
+        let lines: Vec<Line> = shown.map(|(line, _)| line.clone()).collect();
+        let used = 1 + lines.len() as u16 + u16::from(scrolls);
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(TEXT).bg(DEEP))
+                .block(block),
+            Rect {
+                height: used.min(area.height),
+                ..area
+            },
+        );
+        // A blank row before the next section.
+        (used + 1).min(area.height)
+    }
+
+    /// The background jobs that run, with how long each has: the command and its time. The
+    /// rest are summed up, and `/jobs` opens them all. Returns the rows used.
+    fn background(&self, frame: &mut Frame, area: Rect) -> u16 {
+        let width = area.width.saturating_sub(2 * PAD) as usize;
+        let now = now_ms();
+        let running: Vec<_> = self.app.jobs.iter().filter(|job| job.running).collect();
+        let heading = Line::from(vec![
+            heading("Background"),
+            Span::styled("  /jobs", fg(TEXT_SOFT)),
+        ]);
+        frame.render_widget(section(heading), Rect { height: 1, ..area });
+        let mut lines: Vec<Line<'static>> = running
+            .iter()
+            .take(MAX_JOB_ROWS)
+            .map(|job| {
+                let time = format_duration(now.saturating_sub(job.started_at).max(0) as u64);
+                Line::from(vec![
+                    Span::styled(format!("{ON} "), fg(ACCENT)),
+                    Span::styled(
+                        fill(
+                            &one_line(&job.command),
+                            width.saturating_sub(time.len() + 3),
+                        ),
+                        fg(TEXT),
+                    ),
+                    Span::styled(format!(" {time}"), fg(ACCENT)),
+                ])
+            })
+            .collect();
+        if running.len() > MAX_JOB_ROWS {
+            lines.push(Line::from(Span::styled(
+                format!("+{} more", running.len() - MAX_JOB_ROWS),
+                fg(TEXT_SOFT),
+            )));
+        }
+        let rows = (lines.len() as u16).min(area.height.saturating_sub(1));
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(TEXT).bg(DEEP))
+                .block(Block::new().padding(Padding::horizontal(PAD))),
+            Rect {
+                y: area.y + 1,
+                height: rows,
+                ..area
+            },
+        );
+        1 + rows
+    }
+
+    fn agents(&mut self, frame: &mut Frame, area: Rect) {
+        let mut lines = Vec::new();
+        let width = area.width.saturating_sub(8 + 2 * PAD) as usize;
+        // When every agent does not fit in full, each takes two rows, so the last ones
+        // still show what they work on. A blank row parts any two, or they run together.
+        let full_rows = self.app.subagents.len() * 4 - 1;
+        let compact = full_rows > area.height.saturating_sub(1) as usize;
+        for (index, agent) in self.app.subagents.iter().enumerate() {
+            let seed = identity(&agent.thread_id);
+            let loader = Loader::new(seed);
+            let color = loader.color();
+            let running = agent.is_working();
+            let [top, middle, bottom] = loader.rows(running.then_some(self.app.frame));
+            let name = agent_name(&agent.thread_id);
+            let age = format_duration(agent.elapsed_ms());
+            // The phase the agent is in, as it said; without one, whether it is still at work.
+            let state = match (&agent.phase, agent.unavailable_at, running) {
+                (_, Some(_), _) => "unavailable",
+                (Some((phase, _)), _, _) => phase.name(),
+                (None, _, true) => "",
+                (None, _, false) => "done",
+            };
+            // Room left by the loader, the time and the status.
+            let room = (area.width as usize).saturating_sub(13 + state.len() + 2 * PAD as usize);
+            let named = vec![
+                Span::raw(" "),
+                Span::styled(wrap::clip(&name, room), bold(color)),
+                Span::styled(format!(" {age} "), fg(TEXT_SOFT)),
+                Span::styled(state, fg(ACCENT)),
+            ];
+            if compact {
+                lines.push(Line::from([middle, named].concat()));
+                let task = format!("{} \u{00B7} {}", agent.agent, one_line(&agent.task));
+                lines.push(Line::from(
+                    [
+                        bottom,
+                        vec![
+                            Span::raw(" "),
+                            Span::styled(wrap::clip(&task, width), fg(TEXT)),
+                        ],
+                    ]
+                    .concat(),
+                ));
+                if index + 1 < self.app.subagents.len() {
+                    lines.push(Line::default());
+                }
+                continue;
+            }
+            // The random name stands out; the agent it works as and the task stay quiet.
+            lines.push(Line::from(
+                [
+                    top,
+                    vec![Span::raw(" ")],
+                    vec![Span::styled(wrap::clip(&agent.agent, width), fg(TEXT_SOFT))],
+                ]
+                .concat(),
+            ));
+            lines.push(Line::from([middle, named].concat()));
+            lines.push(Line::from(
+                [
+                    bottom,
+                    vec![
+                        Span::raw(" "),
+                        Span::styled(wrap::clip(&one_line(&agent.task), width), fg(TEXT)),
+                    ],
+                ]
+                .concat(),
+            ));
+            if index + 1 < self.app.subagents.len() {
+                lines.push(Line::default());
+            }
+        }
+        self.app.agent_max_scroll = scroll_limit(lines.len(), area);
+        self.app.agent_scroll = self.app.agent_scroll.min(self.app.agent_max_scroll);
+        let mut block = section(Line::from(heading("Subagents")));
+        if self.app.agent_max_scroll > 0 && area.height > 2 {
+            block =
+                block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(TEXT).bg(DEEP))
+                .block(block)
+                .scroll((self.app.agent_scroll as u16, 0)),
+            area,
+        );
+    }
+
+    /// The MCP servers. Folded, one line sums them up; unfolded, each server shows how it
+    /// stands: its tools once ready, why it failed otherwise. A click folds and unfolds.
+    fn mcp(&mut self, frame: &mut Frame, area: Rect) {
+        let width = area.width.saturating_sub(2 * PAD) as usize;
+        let mut lines = Vec::new();
+        let mark = if self.app.connectors_open {
+            UNFOLDED
+        } else {
+            FOLDED
+        };
+        let title = Line::from(vec![
+            heading("Connectors"),
+            Span::styled(format!(" {mark}"), fg(TEXT_SOFT)),
+        ]);
+        if !self.app.connectors_open {
+            let ready = self
+                .app
+                .mcp
+                .iter()
+                .filter(|server| matches!(server.state, McpState::Ready(_)))
+                .count();
+            let failed = self
+                .app
+                .mcp
+                .iter()
+                .filter(|server| matches!(server.state, McpState::Failed(_)))
+                .count();
+            let mut summary = vec![Span::styled(format!("{ON} {ready} ready"), fg(POSITIVE))];
+            if failed > 0 {
+                summary.push(Span::styled(
+                    format!("  {FAILED} {failed} failed"),
+                    fg(NEGATIVE),
+                ));
+            }
+            let block = section(title);
+            frame.render_widget(
+                Paragraph::new(Line::from(summary))
+                    .style(Style::new().fg(TEXT).bg(DEEP))
+                    .block(block),
+                area,
+            );
+            return;
+        }
+        for server in &self.app.mcp {
+            let (mark, color, state) = match &server.state {
+                McpState::Off => (OFF, TEXT_SOFT, "off".to_owned()),
+                McpState::Starting => (OFF, ACCENT, "starting".to_owned()),
+                McpState::Ready(tools) => {
+                    let plural = if tools.len() == 1 { "" } else { "s" };
+                    (ON, POSITIVE, format!("{} tool{plural}", tools.len()))
+                }
+                McpState::Failed(_) => (FAILED, NEGATIVE, "failed".to_owned()),
+            };
+            let room = width.saturating_sub(state.len() + 3);
+            lines.push(Line::from(vec![
+                Span::styled(format!("{mark} "), fg(color)),
+                Span::styled(fill(&server.name, room), bold(TEXT)),
+                Span::styled(format!(" {state}"), fg(TEXT_SOFT)),
+            ]));
+            if let McpState::Failed(error) = &server.state {
+                lines.push(Line::from(Span::styled(
+                    format!(
+                        "   {}",
+                        wrap::clip(&one_line(error), width.saturating_sub(3))
+                    ),
+                    fg(TEXT_SOFT),
+                )));
+            }
+        }
+        self.app.mcp_max_scroll = scroll_limit(lines.len(), area);
+        self.app.mcp_scroll = self.app.mcp_scroll.min(self.app.mcp_max_scroll);
+        let mut block = section(title);
+        if self.app.mcp_max_scroll > 0 && area.height > 2 {
+            block =
+                block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
+        }
+        frame.render_widget(
+            Paragraph::new(lines)
+                .style(Style::new().fg(TEXT).bg(DEEP))
+                .block(block)
+                .scroll((self.app.mcp_scroll as u16, 0)),
+            area,
+        );
+    }
 }
 
 /// A section's name, quiet and in capitals, above what it holds.
@@ -222,114 +512,6 @@ fn section(title: Line<'static>) -> Block<'static> {
         .style(Style::new().bg(DEEP))
         .title(title)
         .padding(Padding::horizontal(PAD))
-}
-
-/// The tasks still open, each in a small block of its own: what it is and how many steps
-/// are done, and once unfolded its steps with how long each ran. Returns the rows used.
-fn tasks(frame: &mut Frame, area: Rect, app: &mut App) -> u16 {
-    let width = area.width.saturating_sub(2 * PAD) as usize;
-    let now = now_ms();
-    // Every open task's rows, a blank row between tasks, each row with its task.
-    let mut rows: Vec<(Line<'static>, Option<String>)> = Vec::new();
-    for task in app.tasks.iter().filter(|task| !task.done) {
-        if !rows.is_empty() {
-            rows.push((Line::default(), None));
-        }
-        let unfolded = app.unfolded_tasks.contains(&task.task_id);
-        for line in task_lines(task, unfolded, width, now) {
-            rows.push((line, Some(task.task_id.clone())));
-        }
-    }
-    app.task_max_scroll = scroll_limit(rows.len(), area);
-    app.task_scroll = app.task_scroll.min(app.task_max_scroll);
-    app.task_area = Some(area);
-    let mut block = section(Line::from(heading("Tasks")));
-    let scrolls = app.task_max_scroll > 0 && area.height > 2;
-    if scrolls {
-        block = block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
-    }
-    let inner = block.inner(area);
-    let shown = rows
-        .iter()
-        .skip(app.task_scroll)
-        .take(inner.height as usize);
-    app.task_hits = shown
-        .clone()
-        .enumerate()
-        .filter_map(|(row, (_, task_id))| {
-            let task_id = task_id.clone()?;
-            Some((
-                Rect {
-                    y: inner.y + row as u16,
-                    height: 1,
-                    ..area
-                },
-                task_id,
-            ))
-        })
-        .collect();
-    let lines: Vec<Line> = shown.map(|(line, _)| line.clone()).collect();
-    let used = 1 + lines.len() as u16 + u16::from(scrolls);
-    frame.render_widget(
-        Paragraph::new(lines)
-            .style(Style::new().fg(TEXT).bg(DEEP))
-            .block(block),
-        Rect {
-            height: used.min(area.height),
-            ..area
-        },
-    );
-    // A blank row before the next section.
-    (used + 1).min(area.height)
-}
-
-/// The background jobs that run, with how long each has: the command and its time. The
-/// rest are summed up, and `/jobs` opens them all. Returns the rows used.
-fn background(frame: &mut Frame, area: Rect, app: &App) -> u16 {
-    let width = area.width.saturating_sub(2 * PAD) as usize;
-    let now = now_ms();
-    let running: Vec<_> = app.jobs.iter().filter(|job| job.running).collect();
-    let heading = Line::from(vec![
-        heading("Background"),
-        Span::styled("  /jobs", fg(TEXT_SOFT)),
-    ]);
-    frame.render_widget(section(heading), Rect { height: 1, ..area });
-    let mut lines: Vec<Line<'static>> = running
-        .iter()
-        .take(MAX_JOB_ROWS)
-        .map(|job| {
-            let time = format_duration(now.saturating_sub(job.started_at).max(0) as u64);
-            Line::from(vec![
-                Span::styled(format!("{ON} "), fg(ACCENT)),
-                Span::styled(
-                    fill(
-                        &one_line(&job.command),
-                        width.saturating_sub(time.len() + 3),
-                    ),
-                    fg(TEXT),
-                ),
-                Span::styled(format!(" {time}"), fg(ACCENT)),
-            ])
-        })
-        .collect();
-    if running.len() > MAX_JOB_ROWS {
-        lines.push(Line::from(Span::styled(
-            format!("+{} more", running.len() - MAX_JOB_ROWS),
-            fg(TEXT_SOFT),
-        )));
-    }
-    let rows = (lines.len() as u16).min(area.height.saturating_sub(1));
-    frame.render_widget(
-        Paragraph::new(lines)
-            .style(Style::new().fg(TEXT).bg(DEEP))
-            .block(Block::new().padding(Padding::horizontal(PAD))),
-        Rect {
-            y: area.y + 1,
-            height: rows,
-            ..area
-        },
-    );
-    1 + rows
 }
 
 fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'static>> {
@@ -381,175 +563,6 @@ fn fill(text: &str, width: usize) -> String {
     let clipped = wrap::clip(text, width);
     let pad = width.saturating_sub(clipped.chars().count());
     format!("{clipped}{}", " ".repeat(pad))
-}
-
-fn agents(frame: &mut Frame, area: Rect, app: &mut App) {
-    let mut lines = Vec::new();
-    let width = area.width.saturating_sub(8 + 2 * PAD) as usize;
-    // When every agent does not fit in full, each takes two rows, so the last ones
-    // still show what they work on. A blank row parts any two, or they run together.
-    let full_rows = app.subagents.len() * 4 - 1;
-    let compact = full_rows > area.height.saturating_sub(1) as usize;
-    for (index, agent) in app.subagents.iter().enumerate() {
-        let seed = identity(&agent.thread_id);
-        let loader = Loader::new(seed);
-        let color = loader.color();
-        let running = agent.is_working();
-        let [top, middle, bottom] = loader.rows(running.then_some(app.frame));
-        let name = agent_name(&agent.thread_id);
-        let age = format_duration(agent.elapsed_ms());
-        // The phase the agent is in, as it said; without one, whether it is still at work.
-        let state = match (&agent.phase, agent.unavailable_at, running) {
-            (_, Some(_), _) => "unavailable",
-            (Some((phase, _)), _, _) => phase.name(),
-            (None, _, true) => "",
-            (None, _, false) => "done",
-        };
-        // Room left by the loader, the time and the status.
-        let room = (area.width as usize).saturating_sub(13 + state.len() + 2 * PAD as usize);
-        let named = vec![
-            Span::raw(" "),
-            Span::styled(wrap::clip(&name, room), bold(color)),
-            Span::styled(format!(" {age} "), fg(TEXT_SOFT)),
-            Span::styled(state, fg(ACCENT)),
-        ];
-        if compact {
-            lines.push(Line::from([middle, named].concat()));
-            let task = format!("{} \u{00B7} {}", agent.agent, one_line(&agent.task));
-            lines.push(Line::from(
-                [
-                    bottom,
-                    vec![
-                        Span::raw(" "),
-                        Span::styled(wrap::clip(&task, width), fg(TEXT)),
-                    ],
-                ]
-                .concat(),
-            ));
-            if index + 1 < app.subagents.len() {
-                lines.push(Line::default());
-            }
-            continue;
-        }
-        // The random name stands out; the agent it works as and the task stay quiet.
-        lines.push(Line::from(
-            [
-                top,
-                vec![Span::raw(" ")],
-                vec![Span::styled(wrap::clip(&agent.agent, width), fg(TEXT_SOFT))],
-            ]
-            .concat(),
-        ));
-        lines.push(Line::from([middle, named].concat()));
-        lines.push(Line::from(
-            [
-                bottom,
-                vec![
-                    Span::raw(" "),
-                    Span::styled(wrap::clip(&one_line(&agent.task), width), fg(TEXT)),
-                ],
-            ]
-            .concat(),
-        ));
-        if index + 1 < app.subagents.len() {
-            lines.push(Line::default());
-        }
-    }
-    app.agent_max_scroll = scroll_limit(lines.len(), area);
-    app.agent_scroll = app.agent_scroll.min(app.agent_max_scroll);
-    let mut block = section(Line::from(heading("Subagents")));
-    if app.agent_max_scroll > 0 && area.height > 2 {
-        block = block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
-    }
-    frame.render_widget(
-        Paragraph::new(lines)
-            .style(Style::new().fg(TEXT).bg(DEEP))
-            .block(block)
-            .scroll((app.agent_scroll as u16, 0)),
-        area,
-    );
-}
-
-/// The MCP servers. Folded, one line sums them up; unfolded, each server shows how it
-/// stands: its tools once ready, why it failed otherwise. A click folds and unfolds.
-fn mcp(frame: &mut Frame, area: Rect, app: &mut App) {
-    let width = area.width.saturating_sub(2 * PAD) as usize;
-    let mut lines = Vec::new();
-    let mark = if app.connectors_open {
-        UNFOLDED
-    } else {
-        FOLDED
-    };
-    let title = Line::from(vec![
-        heading("Connectors"),
-        Span::styled(format!(" {mark}"), fg(TEXT_SOFT)),
-    ]);
-    if !app.connectors_open {
-        let ready = app
-            .mcp
-            .iter()
-            .filter(|server| matches!(server.state, McpState::Ready(_)))
-            .count();
-        let failed = app
-            .mcp
-            .iter()
-            .filter(|server| matches!(server.state, McpState::Failed(_)))
-            .count();
-        let mut summary = vec![Span::styled(format!("{ON} {ready} ready"), fg(POSITIVE))];
-        if failed > 0 {
-            summary.push(Span::styled(
-                format!("  {FAILED} {failed} failed"),
-                fg(NEGATIVE),
-            ));
-        }
-        let block = section(title);
-        frame.render_widget(
-            Paragraph::new(Line::from(summary))
-                .style(Style::new().fg(TEXT).bg(DEEP))
-                .block(block),
-            area,
-        );
-        return;
-    }
-    for server in &app.mcp {
-        let (mark, color, state) = match &server.state {
-            McpState::Off => (OFF, TEXT_SOFT, "off".to_owned()),
-            McpState::Starting => (OFF, ACCENT, "starting".to_owned()),
-            McpState::Ready(tools) => {
-                let plural = if tools.len() == 1 { "" } else { "s" };
-                (ON, POSITIVE, format!("{} tool{plural}", tools.len()))
-            }
-            McpState::Failed(_) => (FAILED, NEGATIVE, "failed".to_owned()),
-        };
-        let room = width.saturating_sub(state.len() + 3);
-        lines.push(Line::from(vec![
-            Span::styled(format!("{mark} "), fg(color)),
-            Span::styled(fill(&server.name, room), bold(TEXT)),
-            Span::styled(format!(" {state}"), fg(TEXT_SOFT)),
-        ]));
-        if let McpState::Failed(error) = &server.state {
-            lines.push(Line::from(Span::styled(
-                format!(
-                    "   {}",
-                    wrap::clip(&one_line(error), width.saturating_sub(3))
-                ),
-                fg(TEXT_SOFT),
-            )));
-        }
-    }
-    app.mcp_max_scroll = scroll_limit(lines.len(), area);
-    app.mcp_scroll = app.mcp_scroll.min(app.mcp_max_scroll);
-    let mut block = section(title);
-    if app.mcp_max_scroll > 0 && area.height > 2 {
-        block = block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
-    }
-    frame.render_widget(
-        Paragraph::new(lines)
-            .style(Style::new().fg(TEXT).bg(DEEP))
-            .block(block)
-            .scroll((app.mcp_scroll as u16, 0)),
-        area,
-    );
 }
 
 /// Lines past the heading and, on overflow, the scroll hint below the body.

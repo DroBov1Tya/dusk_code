@@ -84,7 +84,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
             ..screen
         };
         app.sidebar_area = Some(sidebar_area);
-        sidebar::draw(frame, sidebar_area, app, false);
+        sidebar::Sidebar { app }.draw(frame, sidebar_area, false);
     }
     transcript::draw(frame, body, app);
     if app.compact_layout && app.sidebar_overlay_open {
@@ -94,7 +94,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         };
         app.sidebar_overlay = Some(overlay);
         app.sidebar_area = Some(overlay);
-        sidebar::draw(frame, overlay, app, true);
+        sidebar::Sidebar { app }.draw(frame, overlay, true);
     }
     input::draw(
         frame,
