@@ -16,7 +16,7 @@ use tracing::{info, warn};
 
 use super::{
     Launcher, ThreadInput, ThreadOutput,
-    model_choice::{self, Choice, ModelChoice},
+    model_choice::{Choice, ModelChoice},
 };
 use crate::platform::Platform;
 use crate::runtime::agent::{Input, Mailboxes};
@@ -123,7 +123,7 @@ impl Runtime {
         let mailboxes = Arc::new(Mailboxes::default());
         let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes), &state_db).await?;
         let config = Arc::new(LiveConfig::load(paths.config_file())?);
-        let choice = match model_choice::configured(&config.current()) {
+        let choice = match Choice::configured(&config.current()) {
             Ok(choice) => choice,
             Err(error) => {
                 warn!("configured provider is unavailable: {error:#}");
@@ -189,19 +189,18 @@ impl Runtime {
             Some(tokio::spawn(async move {
                 let revision = model.revision();
                 let selected = if let Some(saved) = model.current() {
-                    model_choice::refresh(&saved)
+                    saved
+                        .refresh()
                         .await
                         .map(|metadata| model.refresh_model(&saved, metadata))
                 } else {
-                    model_choice::pick(&config.current(), None)
-                        .await
-                        .map(|choice| {
-                            if model.set_if_empty_at_revision(choice, &revision) {
-                                model.current()
-                            } else {
-                                None
-                            }
-                        })
+                    Choice::pick(&config.current(), None).await.map(|choice| {
+                        if model.set_if_empty_at_revision(choice, &revision) {
+                            model.current()
+                        } else {
+                            None
+                        }
+                    })
                 };
                 match selected {
                     Ok(Some(selected)) => {
