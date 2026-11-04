@@ -71,8 +71,9 @@ impl Tool for Click {
             "Click at x, y of the newest screenshot. By default it presses the control there \
              through Accessibility and leaves the user's pointer alone: a single left click \
              on a button, link or checkbox, which may not focus a field or the app. A control \
-             that cannot be pressed so, or a window that moved since the screenshot, is an \
-             error. mode system clicks with the real pointer, right and double too, and \
+             that cannot be pressed so, a window that moved since the screenshot, or an \
+             ambiguous window match is an error. mode system clicks with the real pointer, \
+             right and double too, and \
              asks the user first since it takes the pointer from them."
         } else {
             "Click at x, y of the newest screenshot, left by default, right or double when \
@@ -106,14 +107,14 @@ impl Tool for Click {
             }
             let screen = Arc::clone(&self.0);
             blocking(move || {
-                let at = match arguments.mode {
+                let (at, expected_window) = match arguments.mode {
                     PointerMode::Independent => {
                         screen.independent_point(arguments.x, arguments.y)?
                     }
-                    PointerMode::System => screen.point(arguments.x, arguments.y)?,
+                    PointerMode::System => (screen.point(arguments.x, arguments.y)?, None),
                 };
                 screen.mark(at);
-                Desktop.click(at, arguments.right, count, arguments.mode)
+                Desktop.click(at, arguments.right, count, arguments.mode, expected_window)
             })
             .await?;
             match arguments.mode {
@@ -172,14 +173,14 @@ mod tests {
         let at = super::super::Point { x: 0.0, y: 0.0 };
         assert!(
             Desktop
-                .click(at, true, 1, PointerMode::Independent)
+                .click(at, true, 1, PointerMode::Independent, None)
                 .unwrap_err()
                 .to_string()
                 .contains("single left")
         );
         assert!(
             Desktop
-                .click(at, false, 2, PointerMode::Independent)
+                .click(at, false, 2, PointerMode::Independent, None)
                 .is_err()
         );
     }

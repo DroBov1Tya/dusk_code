@@ -150,7 +150,7 @@ impl Screen {
 
     /// Independent activation of a captured window must not hit a covering window,
     /// or use coordinates left behind when the captured window moved or resized.
-    pub fn independent_point(&self, x: f64, y: f64) -> Result<Point> {
+    pub fn independent_point(&self, x: f64, y: f64) -> Result<(Point, Option<(u32, Rect)>)> {
         let view = self.view()?;
         let at = view.point(x, y)?;
         ensure!(
@@ -160,7 +160,7 @@ impl Screen {
         if let Some((id, bounds)) = view.window {
             Desktop.ensure_window_at(at, id, bounds)?;
         }
-        Ok(at)
+        Ok((at, view.window))
     }
 
     fn view(&self) -> Result<View> {

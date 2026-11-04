@@ -334,7 +334,15 @@ impl Desktop {
         self.capture(window.bounds, file)
     }
 
-    pub fn click(&self, at: Point, right: bool, count: i64, mode: PointerMode) -> Result<()> {
+    pub fn click(
+        &self,
+        at: Point,
+        right: bool,
+        count: i64,
+        mode: PointerMode,
+        expected_window: Option<(u32, Rect)>,
+    ) -> Result<()> {
+        let _ = expected_window;
         mode.validate_click(right, count)?;
         ensure!(
             mode == PointerMode::System,

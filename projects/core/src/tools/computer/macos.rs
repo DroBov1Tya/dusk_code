@@ -63,6 +63,31 @@ fn front_window_at(at: Point) -> Option<Window> {
         .map(|listed| listed.window)
 }
 
+/// Resolve the topmost visual window and require its owner and geometry to be unique.
+/// AX does not expose a public CGWindowID, so ambiguous mappings are unsafe to press.
+pub(super) fn independent_window(at: Point) -> Result<(u32, i32, Rect)> {
+    let overlay = Cursor::shared().pid().map(i64::from);
+    let windows = visible_windows();
+    let front = windows
+        .iter()
+        .find(|entry| Some(entry.pid) != overlay && covers(entry.window.bounds, at))
+        .context("no visible window at the click point")?;
+    let bounds = front.window.bounds;
+    ensure!(
+        windows
+            .iter()
+            .filter(|entry| entry.pid == front.pid && entry.window.bounds == bounds)
+            .count()
+            == 1,
+        "the target window cannot be identified unambiguously; no action was sent"
+    );
+    Ok((
+        front.window.id,
+        i32::try_from(front.pid).context("invalid window owner")?,
+        bounds,
+    ))
+}
+
 fn covers(bounds: Rect, at: Point) -> bool {
     (bounds.x..bounds.x + bounds.width).contains(&at.x)
         && (bounds.y..bounds.y + bounds.height).contains(&at.y)
@@ -325,10 +350,17 @@ impl Desktop {
         screencapture(&["-o", "-l", &window.id.to_string()], file)
     }
 
-    pub fn click(&self, at: Point, right: bool, count: i64, mode: PointerMode) -> Result<()> {
+    pub fn click(
+        &self,
+        at: Point,
+        right: bool,
+        count: i64,
+        mode: PointerMode,
+        expected_window: Option<(u32, Rect)>,
+    ) -> Result<()> {
         mode.validate_click(right, count)?;
         if mode == PointerMode::Independent {
-            return super::accessibility::press(at);
+            return super::accessibility::press(at, expected_window);
         }
         let at = cg(at);
         let (down, up, button) = match right {

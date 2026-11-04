@@ -2,11 +2,14 @@
 
 use anyhow::{Context, Result, bail, ensure};
 use core_foundation::{
+    array::CFArray,
     base::{CFType, CFTypeRef, TCFType},
     string::{CFString, CFStringRef},
 };
 
-use super::Point;
+use core_graphics::geometry::{CGPoint, CGSize};
+
+use super::{Point, Rect};
 
 // AXUIElement is an opaque Core Foundation object. Each Create/Copy result below is
 // owned by a CFType and released on every exit path, on the blocking worker thread.
@@ -24,12 +27,27 @@ unsafe extern "C" {
     ) -> i32;
     fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, seconds: f32) -> i32;
     fn AXUIElementPerformAction(element: AXUIElementRef, action: CFStringRef) -> i32;
+    fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
+    fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> i32;
+    fn AXUIElementCopyAttributeValue(
+        element: AXUIElementRef,
+        attribute: CFStringRef,
+        value: *mut CFTypeRef,
+    ) -> i32;
+    fn AXValueGetType(value: CFTypeRef) -> u32;
+    fn AXValueGetValue(value: CFTypeRef, kind: u32, result: *mut std::ffi::c_void) -> bool;
+    fn AXValueGetTypeID() -> usize;
+}
+
+#[link(name = "CoreFoundation", kind = "framework")]
+unsafe extern "C" {
+    fn CFEqual(a: CFTypeRef, b: CFTypeRef) -> u8;
 }
 
 /// Press the exact accessible element at a global, top-left-relative display point.
 /// No ancestor search, application activation, event injection or fallback: a failure
 /// must not turn into a physical click, and an uncertain action must never be retried.
-pub fn press(at: Point) -> Result<()> {
+pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
     ensure!(
         [at.x, at.y]
             .into_iter()
@@ -62,12 +80,119 @@ pub fn press(at: Point) -> Result<()> {
         unsafe { AXUIElementSetMessagingTimeout(element.as_CFTypeRef(), AX_TIMEOUT_SECONDS) },
         false,
     )?;
+    verify_target(element.as_CFTypeRef(), at, expected_window)?;
     let action = CFString::new("AXPress");
     // SAFETY: both the element and the action string outlive this call.
     check(
         unsafe { AXUIElementPerformAction(element.as_CFTypeRef(), action.as_concrete_TypeRef()) },
         true,
     )
+}
+
+/// A visual window and the AX hit-test can disagree, especially for click-through
+/// windows. Match the frontmost CG window to exactly one AX window, then require the
+/// hit's AXWindow to be that object. Refuse incomplete or ambiguous metadata.
+fn verify_target(
+    element: AXUIElementRef,
+    at: Point,
+    expected_window: Option<(u32, Rect)>,
+) -> Result<()> {
+    let (window_id, pid, bounds) = super::macos::independent_window(at)?;
+    if let Some(expected) = expected_window {
+        ensure!(
+            (window_id, bounds) == expected,
+            "the captured window changed or is covered; no action was sent"
+        );
+    }
+    let mut target_pid = 0;
+    // SAFETY: element and output are valid.
+    check(
+        unsafe { AXUIElementGetPid(element, &mut target_pid) },
+        false,
+    )?;
+    ensure!(
+        target_pid == pid,
+        "the accessible control belongs to a different window; no action was sent"
+    );
+    let target_window = attribute(element, "AXWindow")?;
+    // SAFETY: Create returns a retained application element.
+    let app = owned(unsafe { AXUIElementCreateApplication(pid) })
+        .context("cannot inspect the target application")?;
+    check(
+        unsafe { AXUIElementSetMessagingTimeout(app.as_CFTypeRef(), AX_TIMEOUT_SECONDS) },
+        false,
+    )?;
+    let list = attribute(app.as_CFTypeRef(), "AXWindows")?;
+    let windows = list
+        .downcast::<CFArray>()
+        .context("cannot identify the target window; no action was sent")?;
+    let mut matching = 0;
+    let mut target_matches = false;
+    for window in windows.iter() {
+        let window = *window as CFTypeRef;
+        // All listed windows must have inspectable geometry: otherwise uniqueness
+        // cannot be established even if a different one happened to match.
+        let window_bounds = window_rect(window)?;
+        if window_bounds == bounds {
+            matching += 1;
+            // SAFETY: both objects remain retained by their owner for this comparison.
+            target_matches |= unsafe { CFEqual(window, target_window.as_CFTypeRef()) != 0 };
+        }
+    }
+    ensure_unique_match(matching, target_matches)?;
+    // Recheck frontmost geometry after the AX queries, not only before them.
+    ensure!(
+        super::macos::independent_window(at)? == (window_id, pid, bounds),
+        "the window changed during the click; no action was sent"
+    );
+    Ok(())
+}
+
+fn ensure_unique_match(matching: usize, target_matches: bool) -> Result<()> {
+    ensure!(
+        matching == 1 && target_matches,
+        "the visible window and accessible control cannot be matched uniquely; no action was sent"
+    );
+    Ok(())
+}
+
+fn attribute(element: AXUIElementRef, name: &str) -> Result<CFType> {
+    let name = CFString::new(name);
+    let mut value = std::ptr::null();
+    // SAFETY: element and output pointer are valid, name lives for the call.
+    let result =
+        unsafe { AXUIElementCopyAttributeValue(element, name.as_concrete_TypeRef(), &mut value) };
+    let value = owned(value);
+    check(result, false).context("cannot identify the target window; no action was sent")?;
+    value.context("cannot identify the target window; no action was sent")
+}
+
+fn window_rect(window: AXUIElementRef) -> Result<Rect> {
+    let position = attribute(window, "AXPosition")?;
+    let size = attribute(window, "AXSize")?;
+    ensure!(
+        position.type_of() == unsafe { AXValueGetTypeID() }
+            && size.type_of() == unsafe { AXValueGetTypeID() },
+        "window geometry is unavailable; no action was sent"
+    );
+    // AXValueType: CGPoint = 1, CGSize = 2.
+    let mut point = CGPoint::new(0.0, 0.0);
+    let mut dimensions = CGSize::new(0.0, 0.0);
+    ensure!(
+        unsafe {
+            AXValueGetType(position.as_CFTypeRef()) == 1
+                && AXValueGetValue(position.as_CFTypeRef(), 1, &mut point as *mut _ as *mut _)
+                && AXValueGetType(size.as_CFTypeRef()) == 2
+                && AXValueGetValue(size.as_CFTypeRef(), 2, &mut dimensions as *mut _ as *mut _)
+        },
+        "window geometry is unavailable; no action was sent"
+    );
+    Ok(Rect {
+        x: point.x,
+        y: point.y,
+        width: dimensions.width,
+        height: dimensions.height,
+    })
 }
 
 fn owned(reference: CFTypeRef) -> Option<CFType> {
@@ -106,17 +231,25 @@ mod tests {
     fn invalid_coordinates_are_rejected_before_any_accessibility_access() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::MAX] {
             assert!(
-                press(Point { x: value, y: 0.0 })
+                press(Point { x: value, y: 0.0 }, None)
                     .unwrap_err()
                     .to_string()
                     .contains("coordinates")
             );
             assert!(
-                press(Point { x: 0.0, y: value })
+                press(Point { x: 0.0, y: value }, None)
                     .unwrap_err()
                     .to_string()
                     .contains("coordinates")
             );
+        }
+    }
+
+    #[test]
+    fn window_identity_requires_one_matching_window_and_the_actual_hit() {
+        assert!(ensure_unique_match(1, true).is_ok());
+        for (count, hit) in [(0, false), (1, false), (2, true), (2, false)] {
+            assert!(ensure_unique_match(count, hit).is_err());
         }
     }
 
