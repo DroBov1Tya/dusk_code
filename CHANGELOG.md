@@ -6,7 +6,29 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- Computer use on Linux: X11 through xdotool with maim, scrot or import, Wayland through
+  ydotool with grim, gnome-screenshot or spectacle. A missing program is named.
+- On macOS a click presses the control through Accessibility and leaves the user's
+  pointer alone; clicking with the real pointer, and scrolling, take mode system and a
+  yes of their own.
+- The agent's cursor glides to each point and hides after ten seconds at rest.
+- `display_image` shows a file or an earlier screenshot as well as a public URL, and
+  the Telegram plugin sends such cards to the owner as photos.
+- Hovering a message shows when it came, under its buttons.
+- A goal's proposed criteria are approved or sent back from buttons, in the TUI and in
+  Telegram, instead of `/goal approve` with a revision copied by hand.
+
+### Changed
+
+- The goal bar shows approve and change for a draft, resume only for a paused goal.
+- The core's state and providers are grouped into folders by what they hold.
+
 ### Fixed
+
+- The shipped Telegram plugin's `plugin.yml` failed to parse.
+- The Tasks list jumped back to its top while the agent worked.
 
 - An MCP server that stops after it was ready shows as failed instead of ready, and its
   tools leave new threads until it is restarted from /settings.
