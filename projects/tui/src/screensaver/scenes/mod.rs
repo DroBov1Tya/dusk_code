@@ -2,6 +2,7 @@
 
 mod desert;
 mod knight;
+mod lighthouse;
 mod night;
 mod water;
 
@@ -23,10 +24,11 @@ pub enum Scene {
     AuroraCabin,
     NeonSunset,
     OceanSunset,
+    StormLighthouse,
 }
 
 impl Scene {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::FujiLake,
         Self::RiverDawn,
         Self::MilkyWayCamp,
@@ -38,6 +40,7 @@ impl Scene {
         Self::AuroraCabin,
         Self::NeonSunset,
         Self::OceanSunset,
+        Self::StormLighthouse,
     ];
 
     pub fn name(self) -> &'static str {
@@ -53,6 +56,7 @@ impl Scene {
             Self::AuroraCabin => "northern lights over a cabin",
             Self::NeonSunset => "neon sunset",
             Self::OceanSunset => "ocean sunset",
+            Self::StormLighthouse => "lighthouse in a storm",
         }
     }
 
@@ -79,6 +83,7 @@ impl Scene {
             Self::AuroraCabin => night::aurora_cabin(p, t),
             Self::NeonSunset => water::neon_sunset(p, t),
             Self::OceanSunset => water::ocean_sunset(p, t),
+            Self::StormLighthouse => lighthouse::storm_lighthouse(p, t),
         }
     }
 }
