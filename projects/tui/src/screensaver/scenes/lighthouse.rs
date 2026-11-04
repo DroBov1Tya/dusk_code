@@ -6,12 +6,15 @@ use crate::screensaver::paint::{Pt, Rgb, glow, gradient, noise, smooth};
 
 const HORIZON: f32 = 0.68;
 const LANTERN_Y: f32 = 0.316;
+const BALCONY_HALF_WIDTH: f32 = 0.069;
 const SWEEP_PERIOD: f32 = 17.0;
 const AMBER: Rgb = Rgb::hex(0xffcc83);
 
 pub fn storm_lighthouse(p: Pt, t: f32) -> Rgb {
     // Keep the tower in the window on tall terminals without stretching it.
-    let coast = p.at(p.x + (p.aspect * 0.19).min(0.25), p.y);
+    let room = (p.aspect * 0.5 - BALCONY_HALF_WIDTH).max(0.0);
+    let shift = (p.aspect * 0.19).min(0.25).min(room);
+    let coast = p.at(p.x + shift, p.y);
     if let Some(color) = tower(coast) {
         return color;
     }
@@ -120,7 +123,7 @@ fn tower(p: Pt) -> Option<Rgb> {
             AMBER.mix(Rgb::hex(0xfff6d3), lamp)
         });
     }
-    if x < 0.069 && (0.337..0.358).contains(&y) {
+    if x < BALCONY_HALF_WIDTH && (0.337..0.358).contains(&y) {
         let rail = y > 0.349 || y < 0.341 || (x * 75.0).fract() < 0.22;
         return rail.then_some(Rgb::hex(0x252732));
     }
@@ -146,6 +149,21 @@ fn tower(p: Pt) -> Option<Rgb> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn both_ends_of_the_balcony_are_visible_on_a_narrow_screen() {
+        for (aspect, left, right) in [(0.136, -0.066, 0.066), (0.16, -0.078, 0.056)] {
+            let edge = Pt {
+                x: left,
+                y: 0.355,
+                aspect,
+                dot: (0, 0),
+            };
+            let railing = Rgb::hex(0x252732);
+            assert_eq!(storm_lighthouse(edge, 0.0), railing);
+            assert_eq!(storm_lighthouse(edge.at(right, edge.y), 0.0), railing);
+        }
+    }
 
     #[test]
     fn the_beam_sweeps_while_the_tower_stays_put() {
