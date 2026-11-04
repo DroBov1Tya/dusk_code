@@ -17,6 +17,189 @@ use crate::{init::create_private_dir, init::paths::Paths, release::resources};
 /// Kept edited shipped files by their hash in older builds.
 pub const LOCK_FILE: &str = "builtin.lock";
 const OLD_NEW_SUFFIX: &str = ".new";
+/// Files older builds shipped and this one does not, by path in the rules folder, with
+/// the SHA-256 they were shipped with. One still as shipped is removed at start; one the
+/// user changed is theirs and stays.
+const DROPPED: [(&str, &str); 44] = [
+    (
+        "skills/frontend-design/LICENSE.txt",
+        "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
+    ),
+    (
+        "skills/gh-address-comments/LICENSE.txt",
+        "58d1e17ffe5109a7ae296caafcadfdbe6a7d176f0bc4ab01e12a689b0499d8bd",
+    ),
+    (
+        "skills/gh-address-comments/scripts/fetch_comments.py",
+        "d7bc64f6b26f7482f9ca9dd7c923a5b8b20e1ef13491ae2d9052cd208a7c1ad1",
+    ),
+    (
+        "skills/gh-fix-ci/LICENSE.txt",
+        "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
+    ),
+    (
+        "skills/gh-fix-ci/scripts/inspect_pr_checks.py",
+        "9459e5b03f86785d184a83e5cd8d621b832e918ec04158a2962d867785812c6c",
+    ),
+    (
+        "skills/jupyter-notebook/LICENSE.txt",
+        "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
+    ),
+    (
+        "skills/jupyter-notebook/assets/experiment-template.ipynb",
+        "25f85914103cd84244e20ef378f59097479c72481cd18d3a931354d107c3f300",
+    ),
+    (
+        "skills/jupyter-notebook/assets/tutorial-template.ipynb",
+        "704a809c09c7c9e6e5c437860df95524412b50c58571a14204610d73e0744765",
+    ),
+    (
+        "skills/jupyter-notebook/scripts/new_notebook.py",
+        "a004e2ea3115edb24313928be0be6d1dc07e571d7ca6c1b24375f0569c616d2f",
+    ),
+    (
+        "skills/mcp-builder/LICENSE.txt",
+        "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+    ),
+    (
+        "skills/mcp-builder/scripts/connections.py",
+        "9403668a2041568772082a8b334122c1f88daf0541fb393af4522d0094a47a6e",
+    ),
+    (
+        "skills/mcp-builder/scripts/evaluation.py",
+        "49ed1d17cdce5da101b210197740713f49b935c29d4f339542a14b132658e6f7",
+    ),
+    (
+        "skills/mcp-builder/scripts/example_evaluation.xml",
+        "9272b348ddcc4b06ba562367ccd0770e018158c0068ac5116d5e34aaeff8777a",
+    ),
+    (
+        "skills/mcp-builder/scripts/requirements.txt",
+        "d5d7558b2368ecea9dfeed7d1fbc71ee9e0750bebd1282faa527d528a344c3c7",
+    ),
+    (
+        "skills/playwright/LICENSE.txt",
+        "9a7110fc2d2f964038e5dc49128f908f29f47a574c961cba16085914e879cbda",
+    ),
+    (
+        "skills/playwright/NOTICE.txt",
+        "417d5d3372914ecfd9fe102ac1d7dc2119253209f9718d6c222f616876c1904b",
+    ),
+    (
+        "skills/playwright/scripts/playwright_cli.sh",
+        "aa3fdff5d0e4556177f4dfd5f04117e772aa54f94b6a2e34b6c0edf629c6b9b5",
+    ),
+    (
+        "skills/security-best-practices/LICENSE.txt",
+        "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
+    ),
+    (
+        "skills/security-threat-model/LICENSE.txt",
+        "4dd13869245e356246a5b770723247bbb80a8f07a181d1d3d873a1734297cdb9",
+    ),
+    (
+        "skills/skill-creator/LICENSE.txt",
+        "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+    ),
+    (
+        "skills/skill-creator/agents/analyzer.md",
+        "bf68f4cac5a56c673a928c2e6d619586c5b93ea364026ab37547772cb45a663a",
+    ),
+    (
+        "skills/skill-creator/agents/comparator.md",
+        "fe1fc9787c495d864c5d6eada47396478572325fde1b33a96d78bf4b849b7a3e",
+    ),
+    (
+        "skills/skill-creator/agents/grader.md",
+        "57134da0c1a4eea33fbd74a1c9c44aa814f07d6bc64de303edb586f941e5d21a",
+    ),
+    (
+        "skills/skill-creator/assets/eval_review.md",
+        "1c07e65eecc07e63bac14a5a2f8e963fde1dd1bad27c5cc16eb80821fa61f9d2",
+    ),
+    (
+        "skills/skill-creator/eval-viewer/generate_review.py",
+        "38c8018e6df847d4d6a5b342a6d74d3c5d17bfcb3e2e838941434838422d126b",
+    ),
+    (
+        "skills/skill-creator/references/schemas.md",
+        "3f35325f9292c32bc04ff3eeb340a59cd4d9143ba395337f03c883ee400c2d84",
+    ),
+    (
+        "skills/skill-creator/scripts/__init__.py",
+        "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ),
+    (
+        "skills/skill-creator/scripts/aggregate_benchmark.py",
+        "6d1644d65d556bc01cce8f2c95af56929f77b2dd9ee37c5c9cbed021c6224ef6",
+    ),
+    (
+        "skills/skill-creator/scripts/generate_report.py",
+        "7cb37323b521f3479d86c9dcc83e73580f9198d9d5a9cd2e726b64c9384b22f8",
+    ),
+    (
+        "skills/skill-creator/scripts/improve_description.py",
+        "87d864570220b699fac52da309d2d6efdb060647bfebc74f768128e646accf80",
+    ),
+    (
+        "skills/skill-creator/scripts/package_skill.py",
+        "1a33059b0db1ef73375d46d513e5ea81369d2e8838c970597b0d52ddef8d1c0f",
+    ),
+    (
+        "skills/skill-creator/scripts/quick_validate.py",
+        "67cf5703402013936c8fb75ad6a1afecd8841d45cc5e606b634eb05825fde365",
+    ),
+    (
+        "skills/skill-creator/scripts/run_eval.py",
+        "43e3b8f80dbf69c343967ba77e268fae991d9fa3ed68b32a0ff02532cd48657f",
+    ),
+    (
+        "skills/skill-creator/scripts/run_loop.py",
+        "648d1e0dccd9f919b43c54bb4caf119c5f75cf495df71369fba5f27880f21d09",
+    ),
+    (
+        "skills/skill-creator/scripts/utils.py",
+        "3af8ae62c40c73ab712207436a0d9a981e845f25c5a7040229eb189cc8e45bb1",
+    ),
+    (
+        "skills/spike/LICENSE.txt",
+        "f27db279e3df709293a13070ccfe12e63cd0bc579be9d4fe3bde57d7c9bd5868",
+    ),
+    (
+        "skills/systematic-debugging/LICENSE.txt",
+        "833ebec48ae8af8dd890d4ba9ce95880cf1235e1063ac0fc12237777829032be",
+    ),
+    (
+        "skills/test-driven-development/LICENSE.txt",
+        "833ebec48ae8af8dd890d4ba9ce95880cf1235e1063ac0fc12237777829032be",
+    ),
+    (
+        "skills/webapp-testing/LICENSE.txt",
+        "bc6b3af2f331cbc7fb0da1344efb2cbe5877a31498b4d70dbc7000f3405a1362",
+    ),
+    (
+        "skills/webapp-testing/examples/console_logging.py",
+        "ea46877289acb82da7e7ce59d0bc37c8977cd57e2a006d0c88d7a1c625bf95da",
+    ),
+    (
+        "skills/webapp-testing/examples/element_discovery.py",
+        "d63c89604a22f8845d724e95dda45db49b1bf57c25ce0a83afbb7b8da3d402f0",
+    ),
+    (
+        "skills/webapp-testing/examples/static_html_automation.py",
+        "9d533aafb875ee3ab8b8ebf8f5b9003ac8d999da3d09b285cce252e623140064",
+    ),
+    (
+        "skills/webapp-testing/scripts/with_server.py",
+        "b0dcf4918935b795f4eda9821579b9902119235ff4447f687a30286e7d0925fd",
+    ),
+    (
+        "prompts/RETIRED_SKILL_FILES.md",
+        "373c98debfc2c6dd9220d1b405160ab21b706113e1c9e317b615d565abf9bccf",
+    ),
+];
+/// Where builds before this one moved such files instead of removing them.
+const OLD_RECOVERY: &str = "retired-skills";
 
 /// What a start did to the shipped files, by their path in the config folder.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -24,12 +207,8 @@ pub struct Synced {
     pub written: Vec<String>,
     /// Differed from this build, by an older build or a local edit, and were replaced.
     pub updated: Vec<String>,
-    /// Files moved out of active skills into recovery storage.
+    /// Shipped by an older build, no longer by this one, and removed.
     pub removed: Vec<String>,
-    /// Recovery paths relative to the rules root; retirement never deletes contents.
-    pub archived: Vec<String>,
-    /// Retired files with local changes or unsafe paths, left untouched.
-    pub preserved: Vec<String>,
 }
 
 pub fn sync(paths: &Paths) -> Result<Synced> {
@@ -62,77 +241,65 @@ pub fn sync(paths: &Paths) -> Result<Synced> {
             Some(_) => {}
         }
     }
-    retire(
-        root,
-        &resources::text("internal/RETIRED_SKILL_FILES.md")?,
-        &mut synced,
-    )?;
+    drop_old(root, &DROPPED, &mut synced)?;
     Ok(synced)
 }
 
-/// Retire only named historical built-ins that match at inspection time. Keep their
-/// contents in recovery storage: a concurrent edit or replacement between the hash
-/// check and rename must not cause data loss. No recursive sweep or unlink occurs.
-fn retire(root: &Path, manifest: &str, synced: &mut Synced) -> Result<()> {
-    for line in manifest
-        .lines()
-        .filter(|line| line.starts_with("| skills/"))
-    {
-        let fields: Vec<_> = line.split('|').map(str::trim).collect();
-        ensure!(fields.len() == 4, "invalid retired skill entry");
-        let (relative, expected) = (Path::new(fields[1]), fields[2]);
+/// Removes the files of `dropped` that are still as shipped, in the rules folder and
+/// in the recovery folder older builds moved them to, then the folders left empty.
+fn drop_old(root: &Path, dropped: &[(&str, &str)], synced: &mut Synced) -> Result<()> {
+    let recovery = root.join(OLD_RECOVERY);
+    let moved: Vec<_> = match fs::read_dir(&recovery) {
+        Ok(entries) => entries.flatten().map(|entry| entry.path()).collect(),
+        Err(_) => Vec::new(),
+    };
+    for &(relative, shipped_hash) in dropped {
+        let relative = Path::new(relative);
         ensure!(
             relative
                 .components()
-                .all(|part| matches!(part, Component::Normal(_)))
-                && relative.starts_with("skills")
-                && expected.len() == 64
-                && expected.bytes().all(|byte| byte.is_ascii_hexdigit()),
-            "invalid retired skill path or hash"
+                .all(|part| matches!(part, Component::Normal(_))),
+            "invalid dropped file path"
         );
-        let mut target = root.to_owned();
-        let mut present = true;
-        for part in relative.components() {
-            target.push(part);
-            match fs::symlink_metadata(&target) {
-                Ok(metadata) if metadata.file_type().is_symlink() => {
-                    synced.preserved.push(fields[1].to_owned());
-                    present = false;
-                    break;
-                }
-                Ok(_) => {}
-                Err(error) if error.kind() == ErrorKind::NotFound => {
-                    present = false;
-                    break;
-                }
-                Err(error) => return Err(error).context("cannot inspect retired skill file"),
+        for base in std::iter::once(root).chain(moved.iter().map(|path| path.as_path())) {
+            let Some(file) = regular_file(base, relative) else {
+                continue;
+            };
+            let metadata = fs::symlink_metadata(&file)?;
+            let contents = crate::util::fs::read_regular(&file, metadata.len())?;
+            if hash(&contents) != shipped_hash {
+                continue;
             }
-        }
-        if !present {
-            continue;
-        }
-        let metadata = fs::symlink_metadata(&target)?;
-        if !metadata.is_file() {
-            synced.preserved.push(fields[1].to_owned());
-            continue;
-        }
-        let contents = crate::util::fs::read_regular(&target, metadata.len())?;
-        if hash(&contents) == expected {
-            let archived = Path::new("retired-skills")
-                .join(uuid::Uuid::now_v7().to_string())
-                .join(relative);
-            let recovery = root.join(&archived);
-            safe_parent(root, &recovery)?;
-            fs::rename(&target, &recovery).context("cannot archive a retired skill file")?;
-            synced.removed.push(fields[1].to_owned());
-            synced
-                .archived
-                .push(archived.to_string_lossy().into_owned());
-        } else {
-            synced.preserved.push(fields[1].to_owned());
+            fs::remove_file(&file).context("cannot remove an old shipped file")?;
+            synced.removed.push(
+                file.strip_prefix(root)
+                    .unwrap_or(&file)
+                    .to_string_lossy()
+                    .into_owned(),
+            );
+            // A folder that still holds anything stays.
+            let mut folder = file.parent();
+            while let Some(parent) = folder.filter(|parent| *parent != root) {
+                if fs::remove_dir(parent).is_err() {
+                    break;
+                }
+                folder = parent.parent();
+            }
         }
     }
     Ok(())
+}
+
+/// `relative` under `base` when it is a regular file reached through no link.
+fn regular_file(base: &Path, relative: &Path) -> Option<std::path::PathBuf> {
+    let mut path = base.to_owned();
+    for part in relative.components() {
+        path.push(part);
+        if fs::symlink_metadata(&path).ok()?.file_type().is_symlink() {
+            return None;
+        }
+    }
+    fs::symlink_metadata(&path).ok()?.is_file().then_some(path)
 }
 
 /// Every shipped file by its path in the config folder, with its contents.
@@ -259,111 +426,46 @@ mod tests {
     }
 
     #[test]
-    fn sync_retires_known_old_license_and_preserves_local_helper() {
-        let paths = temp_paths("retired-sync");
-        let directory = paths.skills_dir().join("gh-fix-ci");
-        fs::create_dir_all(directory.join("scripts")).unwrap();
-        let license = resources::text("skills/gh-fix-ci/LICENSE.md").unwrap();
-        fs::write(directory.join("LICENSE.txt"), license).unwrap();
-        fs::write(
-            directory.join("scripts/inspect_pr_checks.py"),
-            "locally changed",
-        )
-        .unwrap();
-        let synced = sync(&paths).unwrap();
-        assert!(
-            synced
-                .removed
-                .contains(&"skills/gh-fix-ci/LICENSE.txt".to_owned())
-        );
-        assert!(
-            synced
-                .preserved
-                .contains(&"skills/gh-fix-ci/scripts/inspect_pr_checks.py".to_owned())
-        );
-        assert!(directory.join("LICENSE.md").is_file());
-        assert!(!directory.join("LICENSE.txt").exists());
-        assert_eq!(
-            fs::read_to_string(directory.join("scripts/inspect_pr_checks.py")).unwrap(),
-            "locally changed"
-        );
-    }
-
-    #[test]
-    fn retirement_keeps_data_written_through_an_existing_handle() {
-        let paths = temp_paths("retired-open-file");
-        let directory = paths.skills_dir().join("legacy");
-        fs::create_dir_all(&directory).unwrap();
-        let target = directory.join("old.py");
-        fs::write(&target, "bundled helper").unwrap();
-        let mut editor = OpenOptions::new().append(true).open(&target).unwrap();
-        let manifest = format!("| skills/legacy/old.py | {} |\n", hash(b"bundled helper"));
-        let mut synced = Synced::default();
-        retire(&paths.rules_root(), &manifest, &mut synced).unwrap();
-        editor.write_all(b" with concurrent changes").unwrap();
-        assert!(!target.exists());
-        let recovery = paths.rules_root().join(&synced.archived[0]);
-        assert_eq!(
-            fs::read_to_string(recovery).unwrap(),
-            "bundled helper with concurrent changes"
-        );
-    }
-
-    #[test]
-    fn retirement_preserves_modified_added_and_symlinked_files() {
-        let paths = temp_paths("retired-skills");
+    fn old_shipped_files_go_and_changed_ones_stay() {
+        let paths = temp_paths("dropped");
         let root = paths.rules_root();
-        let directory = paths.skills_dir().join("legacy");
-        fs::create_dir_all(&directory).unwrap();
-        let original = b"original bundled helper";
-        fs::write(directory.join("old.py"), original).unwrap();
-        fs::write(directory.join("edited.py"), "user changes").unwrap();
-        fs::write(directory.join("mine.py"), "user helper").unwrap();
-        let digest = hash(original);
-        let mut manifest = format!(
-            "| skills/legacy/old.py | {digest} |\n| skills/legacy/edited.py | {digest} |\n"
-        );
+        let skill = paths.skills_dir().join("legacy");
+        let moved = root.join(OLD_RECOVERY).join("0190").join("skills/legacy");
+        fs::create_dir_all(&skill).unwrap();
+        fs::create_dir_all(&moved).unwrap();
+        let shipped = b"bundled helper";
+        fs::write(skill.join("old.py"), shipped).unwrap();
+        fs::write(skill.join("edited.py"), "user changes").unwrap();
+        fs::write(skill.join("SKILL.md"), "the skill").unwrap();
+        fs::write(moved.join("old.py"), shipped).unwrap();
+        let digest = hash(shipped);
+        let mut dropped = vec![
+            ("skills/legacy/old.py", digest.as_str()),
+            ("skills/legacy/edited.py", digest.as_str()),
+        ];
         #[cfg(unix)]
         {
-            std::os::unix::fs::symlink(directory.join("mine.py"), directory.join("link.py"))
-                .unwrap();
-            std::os::unix::fs::symlink(&directory, paths.skills_dir().join("linked")).unwrap();
-            manifest.push_str(&format!(
-                "| skills/legacy/link.py | {digest} |\n| skills/linked/mine.py | {} |\n",
-                hash(b"user helper")
-            ));
+            let outside = temp_paths("dropped-outside").rules_root();
+            fs::create_dir_all(&outside).unwrap();
+            fs::write(outside.join("old.py"), shipped).unwrap();
+            std::os::unix::fs::symlink(&outside, paths.skills_dir().join("linked")).unwrap();
+            dropped.push(("skills/linked/old.py", digest.as_str()));
         }
         let mut synced = Synced::default();
-        retire(&root, &manifest, &mut synced).unwrap();
-        assert_eq!(synced.removed, ["skills/legacy/old.py"]);
-        assert_eq!(synced.archived.len(), 1);
-        assert_eq!(fs::read(root.join(&synced.archived[0])).unwrap(), original);
-        assert!(
-            synced
-                .preserved
-                .contains(&"skills/legacy/edited.py".to_owned())
-        );
+        drop_old(&root, &dropped, &mut synced).unwrap();
+        assert!(!skill.join("old.py").exists());
         assert_eq!(
-            fs::read_to_string(directory.join("edited.py")).unwrap(),
+            fs::read_to_string(skill.join("edited.py")).unwrap(),
             "user changes"
         );
-        assert_eq!(
-            fs::read_to_string(directory.join("mine.py")).unwrap(),
-            "user helper"
-        );
-        #[cfg(unix)]
-        assert_eq!(synced.preserved.len(), 3);
-        let mut second = Synced::default();
-        retire(&root, &manifest, &mut second).unwrap();
-        assert!(second.removed.is_empty());
-        assert_eq!(second.preserved, synced.preserved);
+        assert!(skill.join("SKILL.md").exists());
         assert!(
-            retire(
-                &root,
-                &format!("| skills/../escape.py | {digest} |"),
-                &mut second
-            )
-            .is_err()
+            !root.join(OLD_RECOVERY).exists(),
+            "the emptied recovery goes"
         );
+        assert_eq!(synced.removed.len(), 2);
+        #[cfg(unix)]
+        assert!(paths.skills_dir().join("linked/old.py").exists());
+        assert!(drop_old(&root, &[("skills/../escape.py", "")], &mut synced).is_err());
     }
 }
