@@ -166,6 +166,7 @@ impl Screen {
             let (_, bounds) = view
                 .window
                 .context("take a screenshot of the selected window first")?;
+            self.mark(at);
             return session.press(at, bounds);
         }
         let (at, expected_window) = match mode {
