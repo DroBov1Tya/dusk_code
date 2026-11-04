@@ -47,175 +47,683 @@ struct Row {
     lead: usize,
 }
 
+/// The settings window: its category list, the rows of each category and the file editor.
+pub struct SettingsWindow<'a> {
+    pub view: &'a mut SettingsView,
+}
+
+impl SettingsWindow<'_> {
+    fn hints(&self) -> &'static str {
+        match (self.view.category, &self.view.editor) {
+            (None, _) => " up/down choose  enter open  esc close ",
+            (Some(SettingCategory::Models), _) if self.view.manual_context.is_some() => {
+                " digits enter token count  Ctrl+A select all  enter save  esc cancel "
+            }
+            (Some(SettingCategory::System), _) => " read every 2 s while open  esc back ",
+            (Some(SettingCategory::Limits | SettingCategory::Appearance), _) => {
+                " up/down choose  left/right change  esc back "
+            }
+            (Some(SettingCategory::Models), _) => {
+                " up/down choose  enter/click apply  manual opens token count  esc back "
+            }
+            (Some(SettingCategory::Personalize), _) => {
+                " up/down choose  space/click switch  left/right or click +/- size  esc back "
+            }
+            (
+                Some(SettingCategory::Tools | SettingCategory::Updates | SettingCategory::Access),
+                _,
+            ) => " up/down choose  space/click switch  esc back ",
+            (Some(_), Some(_)) => " Ctrl+S save  Ctrl+R revert  Esc close  click another one ",
+            (Some(SettingCategory::Agents), None) => {
+                " up/down choose  enter edit  space switch  left/right limit  r reload  esc back "
+            }
+            (Some(SettingCategory::Skills), None) => {
+                " up/down choose  enter open  space switch  r reload  esc back "
+            }
+            (Some(SettingCategory::Mcp), None) => {
+                " up/down choose  enter edit  t tools  n new  c reconnect  l sign in  space switch  esc back "
+            }
+        }
+    }
+
+    /// The items of the list, scrolled so the selected one shows whole, with their hits.
+    fn list(&mut self, frame: &mut Frame, area: Rect) {
+        let rows = self.rows(area.width as usize);
+        let height = area.height as usize;
+        let shown = |from: usize, to: usize| -> usize {
+            rows[from..=to.min(rows.len().saturating_sub(1))]
+                .iter()
+                .map(|row| row.lines.len())
+                .sum()
+        };
+        self.view.top = self.view.top.min(self.view.selected);
+        while self.view.top < self.view.selected
+            && shown(self.view.top, self.view.selected) > height
+        {
+            self.view.top += 1;
+        }
+        let mut lines = Vec::new();
+        for (index, row) in rows.into_iter().enumerate().skip(self.view.top) {
+            if lines.len() >= height {
+                break;
+            }
+            let selectable = index < self.view.len();
+            let first = area.y + (lines.len() + row.lead) as u16;
+            if self.view.category == Some(SettingCategory::Personalize) && matches!(index, 1 | 3) {
+                let (label, chars) = if index == 1 {
+                    ("  memory size, characters", self.view.memory.max_chars)
+                } else {
+                    (
+                        "  project memory size, characters",
+                        self.view.work_history.max_chars,
+                    )
+                };
+                let end = format!("− {chars} +  ");
+                let start = area
+                    .width
+                    .saturating_sub(end.width() as u16)
+                    .max(label.width() as u16);
+                for (offset, more) in [(0, false), (end.width() as u16 - 3, true)] {
+                    let left = area.x.saturating_add(start).saturating_add(offset);
+                    if left < area.right() {
+                        self.view.hits.insert(
+                            0,
+                            SettingsHit {
+                                row: first,
+                                left,
+                                right: (left + 1).min(area.right()),
+                                target: HitTarget::MemorySize { row: index, more },
+                            },
+                        );
+                    }
+                }
+            }
+            if let Some((from, to)) = row.switch {
+                // First, so a click on the switch wins over the row under it.
+                self.view.hits.insert(
+                    0,
+                    SettingsHit {
+                        row: first,
+                        left: area.x + from,
+                        right: area.x + to,
+                        target: HitTarget::Switch(index),
+                    },
+                );
+            }
+            for (at, line) in row.lines.into_iter().enumerate() {
+                if lines.len() >= height {
+                    break;
+                }
+                if at < row.lead {
+                    lines.push(line);
+                    continue;
+                }
+                if selectable {
+                    self.view.hits.push(SettingsHit {
+                        row: area.y + lines.len() as u16,
+                        left: area.x,
+                        right: area.right(),
+                        target: HitTarget::Row(index),
+                    });
+                }
+                lines.push(if selectable && index == self.view.selected {
+                    line.style(Style::new().bg(RAISED))
+                } else {
+                    line
+                });
+            }
+        }
+        frame.render_widget(Paragraph::new(lines), area);
+    }
+
+    fn rows(&self, width: usize) -> Vec<Row> {
+        match self.view.category {
+            None => SettingCategory::ALL
+                .iter()
+                .map(|category| Row {
+                    lines: vec![right(
+                        vec![Span::raw(format!("  {}", category.name()))],
+                        Span::styled("open > ", dim()),
+                        width,
+                    )],
+                    switch: None,
+                    lead: 0,
+                })
+                .collect(),
+            Some(SettingCategory::Models) => self.model_rows(width),
+            Some(SettingCategory::Agents) => self.agent_rows(width),
+            Some(SettingCategory::Tools) => self.tool_rows(width),
+            Some(SettingCategory::Personalize) => {
+                let about = "    keeps what you ask it to remember in MEMORY.md; the size is \
+                             memory.max_chars in config.yml";
+                vec![
+                    described(
+                        switch_row(vec![Span::raw("  memory")], self.view.memory.enabled, width),
+                        about,
+                        width,
+                    ),
+                    memory_size_row(
+                        "  memory size, characters",
+                        self.view.memory.max_chars,
+                        width,
+                    ),
+                    described(
+                        switch_row(
+                            vec![Span::raw("  project memory")],
+                            self.view.work_history.enabled,
+                            width,
+                        ),
+                        "    facts of the project in this folder, apart from your own memory",
+                        width,
+                    ),
+                    memory_size_row(
+                        "  project memory size, characters",
+                        self.view.work_history.max_chars,
+                        width,
+                    ),
+                ]
+            }
+            Some(SettingCategory::Limits) => self.limit_rows(width),
+            Some(SettingCategory::Appearance) => {
+                let minutes = match self.view.idle_screen_minutes {
+                    0 => "off".to_owned(),
+                    minutes => format!("{minutes} min"),
+                };
+                let line = right(
+                    vec![Span::raw("  idle screen")],
+                    Span::styled(format!("\u{2212} {minutes} +  "), fg(TEXT)),
+                    width,
+                );
+                let row = Row {
+                    lines: vec![line],
+                    switch: None,
+                    lead: 0,
+                };
+                let about = "    an animation after this long with no input and no work; 0 is off";
+                vec![described(row, about, width)]
+            }
+            Some(SettingCategory::System) => self.system_rows(width),
+            Some(SettingCategory::Access) => {
+                let full = "    on: no questions; off: asks before outside paths and commands";
+                let sandbox = match self.view.sandbox {
+                    true => {
+                        "    on: commands run without asking, writing only in the working \
+                         folders; outside paths are still asked"
+                    }
+                    false => "    this system has no sandbox for commands",
+                };
+                let logs = "    off: no log files and no traces are written or sent, from now on";
+                let policy = |policy: ApprovalPolicy, about: &'static str| {
+                    let label = format!("  {}", policy.name());
+                    described(
+                        switch_row(vec![Span::raw(label)], self.view.approvals == policy, width),
+                        about,
+                        width,
+                    )
+                };
+                vec![
+                    policy(ApprovalPolicy::FullAccess, full),
+                    policy(ApprovalPolicy::Sandbox, sandbox),
+                    policy(
+                        ApprovalPolicy::Arbiter,
+                        "    on: an agent decides each request in your place and keeps a thread \
+                         of its verdicts, open from the sidebar",
+                    ),
+                    described(
+                        switch_row(vec![Span::raw("  logs")], self.view.logging, width),
+                        logs,
+                        width,
+                    ),
+                ]
+            }
+            Some(SettingCategory::Updates) => {
+                let dev = self.view.update_channel == Channel::Dev;
+                let about = "    on: every tag, pre-releases too; off: full releases only. \
+                             /update and duskcode --update follow it";
+                vec![described(
+                    switch_row(vec![Span::raw("  dev channel")], dev, width),
+                    about,
+                    width,
+                )]
+            }
+            Some(SettingCategory::Skills) => {
+                let mut rows: Vec<Row> = self
+                    .view
+                    .skills
+                    .iter()
+                    .map(|skill| skill_row(skill, self.view.editor.is_none(), width))
+                    .collect();
+                if rows.is_empty() {
+                    rows.push(note("  no skills: add folders with a SKILL.md to skills/"));
+                }
+                rows
+            }
+            Some(SettingCategory::Mcp) => {
+                let mut rows: Vec<Row> = self
+                    .view
+                    .mcp_rows()
+                    .into_iter()
+                    .map(|row| match row {
+                        McpRow::Server(server) => {
+                            mcp_row(server, self.view.mcp_open.contains(&server.name), width)
+                        }
+                        McpRow::Tool(_, tool) => mcp_tool_row(tool, width),
+                    })
+                    .collect();
+                if rows.is_empty() {
+                    rows.push(note("  no MCP servers: press n to add one"));
+                }
+                rows
+            }
+        }
+    }
+
+    /// Context choices are saved for this provider/model pair; effort uses the shared setting.
+    fn model_rows(&self, width: usize) -> Vec<Row> {
+        let policies = [
+            ContextPolicy::Auto,
+            ContextPolicy::Fixed(ContextPreset::K128),
+            ContextPolicy::Fixed(ContextPreset::K256),
+            ContextPolicy::Fixed(ContextPreset::K512),
+            ContextPolicy::Fixed(ContextPreset::M1),
+        ];
+        let names = ["Auto (the model's window)", "128k", "256k", "512k", "1M"];
+        let mut rows: Vec<Row> = policies
+            .into_iter()
+            .zip(names)
+            .map(|(policy, name)| {
+                let active = self.view.context_policy == Some(policy);
+                Row {
+                    lines: vec![Line::from(vec![
+                        Span::styled(
+                            format!("  {} ", if active { ON } else { OFF }),
+                            fg(if active { ACCENT } else { HAIRLINE }),
+                        ),
+                        Span::styled(
+                            format!("context {name}"),
+                            if active { fg(TEXT) } else { Style::new() },
+                        ),
+                    ])],
+                    switch: None,
+                    lead: 0,
+                }
+            })
+            .collect();
+        let manual = match &self.view.manual_context {
+            Some(_) => "manual tokens:".into(),
+            None => match self.view.context_policy {
+                Some(ContextPolicy::Manual(tokens)) => format!("manual: {tokens} tokens"),
+                _ => "manual token count...".into(),
+            },
+        };
+        let active = matches!(self.view.context_policy, Some(ContextPolicy::Manual(_)));
+        let mut manual_lines = vec![Line::from(vec![
+            Span::styled(
+                format!("  {} ", if active { ON } else { OFF }),
+                fg(if active { ACCENT } else { HAIRLINE }),
+            ),
+            Span::styled(
+                format!("context {manual}"),
+                fg(if self.view.manual_context.is_some() {
+                    ACCENT
+                } else {
+                    TEXT_SOFT
+                }),
+            ),
+        ])];
+        if let Some(input) = &self.view.manual_context {
+            manual_lines.push(manual_context_line(input, width));
+        }
+        rows.push(Row {
+            lines: manual_lines,
+            switch: None,
+            lead: 0,
+        });
+        rows.push(Row {
+            lines: vec![Line::from(vec![
+                Span::raw("  reasoning effort  "),
+                Span::styled(
+                    self.view.effort.map_or("default", |effort| effort.name()),
+                    fg(TEXT),
+                ),
+                Span::styled("  open > (shared across models)", dim()),
+            ])],
+            switch: None,
+            lead: 0,
+        });
+        let model = self
+            .view
+            .selected_model
+            .as_deref()
+            .unwrap_or("no model selected; use /model");
+        let mut heading = vec![
+            Line::from(Span::styled(
+                format!("  {}", wrap::clip(model, width.saturating_sub(2))),
+                bold(TEXT),
+            )),
+            Line::from(Span::styled(
+                format!(
+                    "  effective input limit: {} tokens (model window is the ceiling)",
+                    self.view.effective_limit
+                ),
+                fg(TEXT_SOFT),
+            )),
+        ];
+        if let Some(error) = &self.view.model_error {
+            heading.extend(indented(error, fg(NEGATIVE), "  ", width));
+        }
+        heading.push(Line::default());
+        rows[0].lead = heading.len();
+        heading.append(&mut rows[0].lines);
+        rows[0].lines = heading;
+        rows
+    }
+
+    /// How many agents work at once and how far a goal goes by itself.
+    fn limit_rows(&self, width: usize) -> Vec<Row> {
+        let row = |name: &str, value: String, about: &str| {
+            let line = right(
+                vec![Span::raw(format!("  {name}"))],
+                Span::styled(format!("\u{2212} {value} +  "), fg(TEXT)),
+                width,
+            );
+            let row = Row {
+                lines: vec![line],
+                switch: None,
+                lead: 0,
+            };
+            described(row, about, width)
+        };
+        vec![
+            row(
+                "concurrent agents",
+                self.view.max_agents_at_work.to_string(),
+                "    subagents at work across all threads",
+            ),
+            row(
+                "goal rounds",
+                self.view.max_goal_rounds.to_string(),
+                "    turns a goal starts by itself before it pauses",
+            ),
+        ]
+    }
+
+    /// The limit first, then the tree, then what is wrong with the agents folder.
+    fn agent_rows(&self, width: usize) -> Vec<Row> {
+        let mut rows = vec![Row {
+            lines: vec![right(
+                vec![Span::raw("  concurrent agents")],
+                Span::styled(
+                    format!("\u{2212} {} +  ", self.view.max_agents_at_work),
+                    fg(TEXT),
+                ),
+                width,
+            )],
+            switch: None,
+            lead: 0,
+        }];
+        rows.push(Row {
+            lines: vec![right(
+                vec![Span::raw("  goal rounds before a pause")],
+                Span::styled(
+                    format!("\u{2212} {} +  ", self.view.max_goal_rounds),
+                    fg(TEXT),
+                ),
+                width,
+            )],
+            switch: None,
+            lead: 0,
+        });
+        rows.extend(self.view.agents.iter().map(|agent| agent_row(agent, width)));
+        for problem in &self.view.problems {
+            rows.push(Row {
+                lines: vec![Line::from(Span::styled(
+                    format!("  {FAILED} {}: {}", problem.node, problem.reason),
+                    fg(NEGATIVE),
+                ))],
+                switch: None,
+                lead: 0,
+            });
+        }
+        for skipped in &self.view.skipped {
+            rows.push(note(&format!("  {}: {}", skipped.node, skipped.reason)));
+        }
+        if self.view.agents.len() <= 2 {
+            rows.push(note(
+                "  add folders with an AGENT.md to agents/ for expert agents",
+            ));
+        }
+        rows
+    }
+
+    /// `left`, clipped to leave room for an on/off switch at the right edge.
+    /// Tools grouped by kind, each group under its name.
+    fn tool_rows(&self, width: usize) -> Vec<Row> {
+        let mut rows = Vec::new();
+        let mut kind = None;
+        for tool in &self.view.tools {
+            let mut row = switch_row(
+                vec![Span::raw(format!("    {}", tool.name))],
+                tool.enabled,
+                width,
+            );
+            if kind != Some(tool.kind) {
+                kind = Some(tool.kind);
+                let gap = if rows.is_empty() {
+                    vec![]
+                } else {
+                    vec![Line::default()]
+                };
+                row.lead = gap.len() + 1;
+                let heading =
+                    Line::from(Span::styled(format!("  {}", tool.kind.name()), bold(DUSK)));
+                row.lines = [gap, vec![heading], row.lines].concat();
+            }
+            rows.push(row);
+        }
+        rows
+    }
+
+    /// The process first, then what the records take on disk.
+    fn system_rows(&self, width: usize) -> Vec<Row> {
+        let Some((report, _)) = &self.view.system else {
+            return vec![note("  reading...")];
+        };
+        let value = |left: &str, value: String| Row {
+            lines: vec![right(
+                vec![Span::raw(format!("    {left}"))],
+                Span::styled(format!("{value}  "), fg(TEXT)),
+                width,
+            )],
+            switch: None,
+            lead: 0,
+        };
+        let heading = |text: &str| Row {
+            lines: vec![
+                Line::default(),
+                Line::from(Span::styled(format!("  {text}"), bold(DUSK))),
+            ],
+            switch: None,
+            lead: 0,
+        };
+        let mut rows = vec![heading("application")];
+        match report.process {
+            Some(process) => {
+                rows.push(value("memory in use", bytes(process.resident_bytes)));
+                rows.push(value(
+                    "processor",
+                    format!("{:.1}% of a core", process.cpu_percent),
+                ));
+            }
+            None => rows.push(note("    ps is not available here")),
+        }
+        let database = report.database_bytes + report.wal_bytes;
+        rows.push(heading("records on disk"));
+        rows.push(value("database", bytes(database)));
+        rows.push(value("  of it, write-ahead log", bytes(report.wal_bytes)));
+        rows.push(value("image cards", bytes(report.artifacts_bytes)));
+        rows.push(value("logs", bytes(report.logs_bytes)));
+        rows.push(value(
+            "threads / messages",
+            format!("{} / {}", report.threads, report.messages),
+        ));
+        rows
+    }
+
+    /// The open skill: its front matter as fields, then the file to edit, then the buttons.
+    fn editor(&mut self, frame: &mut Frame, area: Rect) {
+        let Some(editor) = &mut self.view.editor else {
+            return;
+        };
+        let width = area.width.saturating_sub(2) as usize;
+        let fields = metadata(editor, width);
+        let top = (fields.len() as u16 + 2)
+            .min(METADATA_ROWS)
+            .min(area.height / 2);
+        let mut title = vec![Span::styled(format!(" {} ", editor.title()), bold(DUSK))];
+        if editor.changed() {
+            title.push(Span::styled("changed ", fg(ACCENT)));
+        }
+        let header = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(fg(HAIRLINE))
+            .title(Line::from(title));
+        frame.render_widget(
+            Paragraph::new(fields).block(header),
+            Rect {
+                height: top,
+                ..area
+            },
+        );
+        if area.height <= top + 2 {
+            return;
+        }
+        // An error longer than the room beside the buttons takes rows of its own above them.
+        let error_lines = match &editor.error {
+            Some(error) if error.width() > area.width.saturating_sub(46) as usize => {
+                indented(error, fg(NEGATIVE), " ", area.width as usize)
+            }
+            _ => Vec::new(),
+        };
+        let error_rows = (error_lines.len() as u16).min(area.height.saturating_sub(top + 3) / 2);
+        let text_area = Rect {
+            y: area.y + top,
+            height: area.height - top - 1 - error_rows,
+            ..area
+        };
+        if error_rows > 0 {
+            frame.render_widget(
+                Paragraph::new(error_lines),
+                Rect {
+                    y: text_area.bottom(),
+                    height: error_rows,
+                    ..area
+                },
+            );
+        }
+        let (rows, (column, row)) = input::layout(&editor.text, text_area.width as usize);
+        let height = text_area.height as usize;
+        if row < editor.scroll {
+            editor.scroll = row;
+        } else if row >= editor.scroll + height {
+            editor.scroll = row + 1 - height;
+        }
+        let lines: Vec<Line> = rows
+            .into_iter()
+            .skip(editor.scroll)
+            .take(height)
+            .map(|row| Line::from(row.spans))
+            .collect();
+        frame.render_widget(Paragraph::new(lines), text_area);
+        let y = text_area.y + (row - editor.scroll) as u16;
+        frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
+        let bar = area.bottom() - 1;
+        if let Some(error) = editor.error.as_ref().filter(|_| error_rows == 0) {
+            let room = area.width.saturating_sub(46) as usize;
+            let line = Line::from(Span::styled(wrap::clip(error, room), fg(NEGATIVE)));
+            frame.render_widget(Paragraph::new(line), Rect::new(area.x, bar, area.width, 1));
+        }
+        let buttons = [
+            (FileButton::Save, " save ", ACCENT),
+            (FileButton::Revert, " revert ", ACCENT),
+            (FileButton::Close, " close ", TEXT_SOFT),
+        ];
+        let mut right = area.right();
+        for &(button, label, color) in buttons.iter().rev() {
+            let width = label.width() as u16;
+            let Some(left) = right.checked_sub(width + 1).filter(|&left| left >= area.x) else {
+                break;
+            };
+            let shown = Line::from(Span::styled(label, bold(color).bg(RAISED)));
+            frame.render_widget(Paragraph::new(shown), Rect::new(left, bar, width, 1));
+            self.view.hits.insert(
+                0,
+                SettingsHit {
+                    row: bar,
+                    left,
+                    right: left + width,
+                    target: HitTarget::Button(button),
+                },
+            );
+            right = left;
+        }
+    }
+
+    pub fn draw(&mut self, frame: &mut Frame, screen: Rect) {
+        self.view.hits.clear();
+        let area = window(screen, 150);
+        let title = match self.view.category {
+            None => " settings ".to_owned(),
+            Some(SettingCategory::Tools) => {
+                format!(" settings / tools in {} mode ", self.view.mode)
+            }
+            Some(category) => format!(" settings / {} ", category.name()),
+        };
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(fg(HAIRLINE))
+            .title(Line::from(Span::styled(title, bold(DUSK))))
+            .title_bottom(Line::from(Span::styled(self.hints(), dim())).right_aligned());
+        let inner = block.inner(area);
+        frame.render_widget(Clear, area);
+        frame.render_widget(block, area);
+        if inner.width < 10 || inner.height < 3 {
+            return;
+        }
+        let editable = matches!(
+            self.view.category,
+            Some(SettingCategory::Agents | SettingCategory::Skills | SettingCategory::Mcp)
+        );
+        if self.view.editor.is_none() || !editable {
+            return self.list(frame, inner);
+        }
+        let list_width = (inner.width * 3 / 10).max(24).min(inner.width / 2);
+        self.list(
+            frame,
+            Rect {
+                width: list_width,
+                ..inner
+            },
+        );
+        let divider = Rect::new(inner.x + list_width, inner.y, 1, inner.height);
+        let line: Vec<Line> = (0..inner.height)
+            .map(|_| Line::from(Span::styled("\u{2502}", fg(HAIRLINE))))
+            .collect();
+        frame.render_widget(Paragraph::new(line), divider);
+        let pane = Rect {
+            x: inner.x + list_width + 2,
+            width: inner.width.saturating_sub(list_width + 2),
+            ..inner
+        };
+        self.editor(frame, pane);
+    }
+}
+
 pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let Some(Panel::Settings(view)) = &mut app.panel else {
         return;
     };
-    view.hits.clear();
-    let area = window(screen, 150);
-    let title = match view.category {
-        None => " settings ".to_owned(),
-        Some(SettingCategory::Tools) => format!(" settings / tools in {} mode ", view.mode),
-        Some(category) => format!(" settings / {} ", category.name()),
-    };
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(fg(HAIRLINE))
-        .title(Line::from(Span::styled(title, bold(DUSK))))
-        .title_bottom(Line::from(Span::styled(hints(view), dim())).right_aligned());
-    let inner = block.inner(area);
-    frame.render_widget(Clear, area);
-    frame.render_widget(block, area);
-    if inner.width < 10 || inner.height < 3 {
-        return;
-    }
-    let editable = matches!(
-        view.category,
-        Some(SettingCategory::Agents | SettingCategory::Skills | SettingCategory::Mcp)
-    );
-    if view.editor.is_none() || !editable {
-        return list(frame, inner, view);
-    }
-    let list_width = (inner.width * 3 / 10).max(24).min(inner.width / 2);
-    list(
-        frame,
-        Rect {
-            width: list_width,
-            ..inner
-        },
-        view,
-    );
-    let divider = Rect::new(inner.x + list_width, inner.y, 1, inner.height);
-    let line: Vec<Line> = (0..inner.height)
-        .map(|_| Line::from(Span::styled("\u{2502}", fg(HAIRLINE))))
-        .collect();
-    frame.render_widget(Paragraph::new(line), divider);
-    let pane = Rect {
-        x: inner.x + list_width + 2,
-        width: inner.width.saturating_sub(list_width + 2),
-        ..inner
-    };
-    editor(frame, pane, view);
-}
-
-fn hints(view: &SettingsView) -> &'static str {
-    match (view.category, &view.editor) {
-        (None, _) => " up/down choose  enter open  esc close ",
-        (Some(SettingCategory::Models), _) if view.manual_context.is_some() => {
-            " digits enter token count  Ctrl+A select all  enter save  esc cancel "
-        }
-        (Some(SettingCategory::System), _) => " read every 2 s while open  esc back ",
-        (Some(SettingCategory::Limits | SettingCategory::Appearance), _) => {
-            " up/down choose  left/right change  esc back "
-        }
-        (Some(SettingCategory::Models), _) => {
-            " up/down choose  enter/click apply  manual opens token count  esc back "
-        }
-        (Some(SettingCategory::Personalize), _) => {
-            " up/down choose  space/click switch  left/right or click +/- size  esc back "
-        }
-        (Some(SettingCategory::Tools | SettingCategory::Updates | SettingCategory::Access), _) => {
-            " up/down choose  space/click switch  esc back "
-        }
-        (Some(_), Some(_)) => " Ctrl+S save  Ctrl+R revert  Esc close  click another one ",
-        (Some(SettingCategory::Agents), None) => {
-            " up/down choose  enter edit  space switch  left/right limit  r reload  esc back "
-        }
-        (Some(SettingCategory::Skills), None) => {
-            " up/down choose  enter open  space switch  r reload  esc back "
-        }
-        (Some(SettingCategory::Mcp), None) => {
-            " up/down choose  enter edit  t tools  n new  c reconnect  l sign in  space switch  esc back "
-        }
-    }
-}
-
-/// The items of the list, scrolled so the selected one shows whole, with their hits.
-fn list(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
-    let rows = rows(view, area.width as usize);
-    let height = area.height as usize;
-    let shown = |from: usize, to: usize| -> usize {
-        rows[from..=to.min(rows.len().saturating_sub(1))]
-            .iter()
-            .map(|row| row.lines.len())
-            .sum()
-    };
-    view.top = view.top.min(view.selected);
-    while view.top < view.selected && shown(view.top, view.selected) > height {
-        view.top += 1;
-    }
-    let mut lines = Vec::new();
-    for (index, row) in rows.into_iter().enumerate().skip(view.top) {
-        if lines.len() >= height {
-            break;
-        }
-        let selectable = index < view.len();
-        let first = area.y + (lines.len() + row.lead) as u16;
-        if view.category == Some(SettingCategory::Personalize) && matches!(index, 1 | 3) {
-            let (label, chars) = if index == 1 {
-                ("  memory size, characters", view.memory.max_chars)
-            } else {
-                (
-                    "  project memory size, characters",
-                    view.work_history.max_chars,
-                )
-            };
-            let end = format!("− {chars} +  ");
-            let start = area
-                .width
-                .saturating_sub(end.width() as u16)
-                .max(label.width() as u16);
-            for (offset, more) in [(0, false), (end.width() as u16 - 3, true)] {
-                let left = area.x.saturating_add(start).saturating_add(offset);
-                if left < area.right() {
-                    view.hits.insert(
-                        0,
-                        SettingsHit {
-                            row: first,
-                            left,
-                            right: (left + 1).min(area.right()),
-                            target: HitTarget::MemorySize { row: index, more },
-                        },
-                    );
-                }
-            }
-        }
-        if let Some((from, to)) = row.switch {
-            // First, so a click on the switch wins over the row under it.
-            view.hits.insert(
-                0,
-                SettingsHit {
-                    row: first,
-                    left: area.x + from,
-                    right: area.x + to,
-                    target: HitTarget::Switch(index),
-                },
-            );
-        }
-        for (at, line) in row.lines.into_iter().enumerate() {
-            if lines.len() >= height {
-                break;
-            }
-            if at < row.lead {
-                lines.push(line);
-                continue;
-            }
-            if selectable {
-                view.hits.push(SettingsHit {
-                    row: area.y + lines.len() as u16,
-                    left: area.x,
-                    right: area.right(),
-                    target: HitTarget::Row(index),
-                });
-            }
-            lines.push(if selectable && index == view.selected {
-                line.style(Style::new().bg(RAISED))
-            } else {
-                line
-            });
-        }
-    }
-    frame.render_widget(Paragraph::new(lines), area);
+    SettingsWindow { view }.draw(frame, screen);
 }
 
 fn memory_size_row(label: &'static str, chars: usize, width: usize) -> Row {
@@ -228,242 +736,6 @@ fn memory_size_row(label: &'static str, chars: usize, width: usize) -> Row {
         switch: None,
         lead: 0,
     }
-}
-
-fn rows(view: &SettingsView, width: usize) -> Vec<Row> {
-    match view.category {
-        None => SettingCategory::ALL
-            .iter()
-            .map(|category| Row {
-                lines: vec![right(
-                    vec![Span::raw(format!("  {}", category.name()))],
-                    Span::styled("open > ", dim()),
-                    width,
-                )],
-                switch: None,
-                lead: 0,
-            })
-            .collect(),
-        Some(SettingCategory::Models) => model_rows(view, width),
-        Some(SettingCategory::Agents) => agent_rows(view, width),
-        Some(SettingCategory::Tools) => tool_rows(view, width),
-        Some(SettingCategory::Personalize) => {
-            let about = "    keeps what you ask it to remember in MEMORY.md; the size is \
-                         memory.max_chars in config.yml";
-            vec![
-                described(
-                    switch_row(vec![Span::raw("  memory")], view.memory.enabled, width),
-                    about,
-                    width,
-                ),
-                memory_size_row("  memory size, characters", view.memory.max_chars, width),
-                described(
-                    switch_row(
-                        vec![Span::raw("  project memory")],
-                        view.work_history.enabled,
-                        width,
-                    ),
-                    "    facts of the project in this folder, apart from your own memory",
-                    width,
-                ),
-                memory_size_row(
-                    "  project memory size, characters",
-                    view.work_history.max_chars,
-                    width,
-                ),
-            ]
-        }
-        Some(SettingCategory::Limits) => limit_rows(view, width),
-        Some(SettingCategory::Appearance) => {
-            let minutes = match view.idle_screen_minutes {
-                0 => "off".to_owned(),
-                minutes => format!("{minutes} min"),
-            };
-            let line = right(
-                vec![Span::raw("  idle screen")],
-                Span::styled(format!("\u{2212} {minutes} +  "), fg(TEXT)),
-                width,
-            );
-            let row = Row {
-                lines: vec![line],
-                switch: None,
-                lead: 0,
-            };
-            let about = "    an animation after this long with no input and no work; 0 is off";
-            vec![described(row, about, width)]
-        }
-        Some(SettingCategory::System) => system_rows(view, width),
-        Some(SettingCategory::Access) => {
-            let full = "    on: no questions; off: asks before outside paths and commands";
-            let sandbox = match view.sandbox {
-                true => {
-                    "    on: commands run without asking, writing only in the working \
-                     folders; outside paths are still asked"
-                }
-                false => "    this system has no sandbox for commands",
-            };
-            let logs = "    off: no log files and no traces are written or sent, from now on";
-            let policy = |policy: ApprovalPolicy, about: &'static str| {
-                let label = format!("  {}", policy.name());
-                described(
-                    switch_row(vec![Span::raw(label)], view.approvals == policy, width),
-                    about,
-                    width,
-                )
-            };
-            vec![
-                policy(ApprovalPolicy::FullAccess, full),
-                policy(ApprovalPolicy::Sandbox, sandbox),
-                policy(
-                    ApprovalPolicy::Arbiter,
-                    "    on: an agent decides each request in your place and keeps a thread \
-                     of its verdicts, open from the sidebar",
-                ),
-                described(
-                    switch_row(vec![Span::raw("  logs")], view.logging, width),
-                    logs,
-                    width,
-                ),
-            ]
-        }
-        Some(SettingCategory::Updates) => {
-            let dev = view.update_channel == Channel::Dev;
-            let about = "    on: every tag, pre-releases too; off: full releases only. \
-                         /update and duskcode --update follow it";
-            vec![described(
-                switch_row(vec![Span::raw("  dev channel")], dev, width),
-                about,
-                width,
-            )]
-        }
-        Some(SettingCategory::Skills) => {
-            let mut rows: Vec<Row> = view
-                .skills
-                .iter()
-                .map(|skill| skill_row(skill, view.editor.is_none(), width))
-                .collect();
-            if rows.is_empty() {
-                rows.push(note("  no skills: add folders with a SKILL.md to skills/"));
-            }
-            rows
-        }
-        Some(SettingCategory::Mcp) => {
-            let mut rows: Vec<Row> = view
-                .mcp_rows()
-                .into_iter()
-                .map(|row| match row {
-                    McpRow::Server(server) => {
-                        mcp_row(server, view.mcp_open.contains(&server.name), width)
-                    }
-                    McpRow::Tool(_, tool) => mcp_tool_row(tool, width),
-                })
-                .collect();
-            if rows.is_empty() {
-                rows.push(note("  no MCP servers: press n to add one"));
-            }
-            rows
-        }
-    }
-}
-
-/// Context choices are saved for this provider/model pair; effort uses the shared setting.
-fn model_rows(view: &SettingsView, width: usize) -> Vec<Row> {
-    let policies = [
-        ContextPolicy::Auto,
-        ContextPolicy::Fixed(ContextPreset::K128),
-        ContextPolicy::Fixed(ContextPreset::K256),
-        ContextPolicy::Fixed(ContextPreset::K512),
-        ContextPolicy::Fixed(ContextPreset::M1),
-    ];
-    let names = ["Auto (the model's window)", "128k", "256k", "512k", "1M"];
-    let mut rows: Vec<Row> = policies
-        .into_iter()
-        .zip(names)
-        .map(|(policy, name)| {
-            let active = view.context_policy == Some(policy);
-            Row {
-                lines: vec![Line::from(vec![
-                    Span::styled(
-                        format!("  {} ", if active { ON } else { OFF }),
-                        fg(if active { ACCENT } else { HAIRLINE }),
-                    ),
-                    Span::styled(
-                        format!("context {name}"),
-                        if active { fg(TEXT) } else { Style::new() },
-                    ),
-                ])],
-                switch: None,
-                lead: 0,
-            }
-        })
-        .collect();
-    let manual = match &view.manual_context {
-        Some(_) => "manual tokens:".into(),
-        None => match view.context_policy {
-            Some(ContextPolicy::Manual(tokens)) => format!("manual: {tokens} tokens"),
-            _ => "manual token count...".into(),
-        },
-    };
-    let active = matches!(view.context_policy, Some(ContextPolicy::Manual(_)));
-    let mut manual_lines = vec![Line::from(vec![
-        Span::styled(
-            format!("  {} ", if active { ON } else { OFF }),
-            fg(if active { ACCENT } else { HAIRLINE }),
-        ),
-        Span::styled(
-            format!("context {manual}"),
-            fg(if view.manual_context.is_some() {
-                ACCENT
-            } else {
-                TEXT_SOFT
-            }),
-        ),
-    ])];
-    if let Some(input) = &view.manual_context {
-        manual_lines.push(manual_context_line(input, width));
-    }
-    rows.push(Row {
-        lines: manual_lines,
-        switch: None,
-        lead: 0,
-    });
-    rows.push(Row {
-        lines: vec![Line::from(vec![
-            Span::raw("  reasoning effort  "),
-            Span::styled(
-                view.effort.map_or("default", |effort| effort.name()),
-                fg(TEXT),
-            ),
-            Span::styled("  open > (shared across models)", dim()),
-        ])],
-        switch: None,
-        lead: 0,
-    });
-    let model = view
-        .selected_model
-        .as_deref()
-        .unwrap_or("no model selected; use /model");
-    let mut heading = vec![
-        Line::from(Span::styled(
-            format!("  {}", wrap::clip(model, width.saturating_sub(2))),
-            bold(TEXT),
-        )),
-        Line::from(Span::styled(
-            format!(
-                "  effective input limit: {} tokens (model window is the ceiling)",
-                view.effective_limit
-            ),
-            fg(TEXT_SOFT),
-        )),
-    ];
-    if let Some(error) = &view.model_error {
-        heading.extend(indented(error, fg(NEGATIVE), "  ", width));
-    }
-    heading.push(Line::default());
-    rows[0].lead = heading.len();
-    heading.append(&mut rows[0].lines);
-    rows[0].lines = heading;
-    rows
 }
 
 /// The manual value has its own row so the caret remains visible in narrow windows.
@@ -603,80 +875,6 @@ fn kind_color(kind: SkillKind) -> ratatui::style::Color {
     }
 }
 
-/// How many agents work at once and how far a goal goes by itself.
-fn limit_rows(view: &SettingsView, width: usize) -> Vec<Row> {
-    let row = |name: &str, value: String, about: &str| {
-        let line = right(
-            vec![Span::raw(format!("  {name}"))],
-            Span::styled(format!("\u{2212} {value} +  "), fg(TEXT)),
-            width,
-        );
-        let row = Row {
-            lines: vec![line],
-            switch: None,
-            lead: 0,
-        };
-        described(row, about, width)
-    };
-    vec![
-        row(
-            "concurrent agents",
-            view.max_agents_at_work.to_string(),
-            "    subagents at work across all threads",
-        ),
-        row(
-            "goal rounds",
-            view.max_goal_rounds.to_string(),
-            "    turns a goal starts by itself before it pauses",
-        ),
-    ]
-}
-
-/// The limit first, then the tree, then what is wrong with the agents folder.
-fn agent_rows(view: &SettingsView, width: usize) -> Vec<Row> {
-    let mut rows = vec![Row {
-        lines: vec![right(
-            vec![Span::raw("  concurrent agents")],
-            Span::styled(
-                format!("\u{2212} {} +  ", view.max_agents_at_work),
-                fg(TEXT),
-            ),
-            width,
-        )],
-        switch: None,
-        lead: 0,
-    }];
-    rows.push(Row {
-        lines: vec![right(
-            vec![Span::raw("  goal rounds before a pause")],
-            Span::styled(format!("\u{2212} {} +  ", view.max_goal_rounds), fg(TEXT)),
-            width,
-        )],
-        switch: None,
-        lead: 0,
-    });
-    rows.extend(view.agents.iter().map(|agent| agent_row(agent, width)));
-    for problem in &view.problems {
-        rows.push(Row {
-            lines: vec![Line::from(Span::styled(
-                format!("  {FAILED} {}: {}", problem.node, problem.reason),
-                fg(NEGATIVE),
-            ))],
-            switch: None,
-            lead: 0,
-        });
-    }
-    for skipped in &view.skipped {
-        rows.push(note(&format!("  {}: {}", skipped.node, skipped.reason)));
-    }
-    if view.agents.len() <= 2 {
-        rows.push(note(
-            "  add folders with an AGENT.md to agents/ for expert agents",
-        ));
-    }
-    rows
-}
-
 fn agent_row(agent: &AgentRow, width: usize) -> Row {
     if agent.depth == 0 {
         return Row {
@@ -722,33 +920,6 @@ fn agent_row(agent: &AgentRow, width: usize) -> Row {
     switch_row(left, agent.enabled, width)
 }
 
-/// `left`, clipped to leave room for an on/off switch at the right edge.
-/// Tools grouped by kind, each group under its name.
-fn tool_rows(view: &SettingsView, width: usize) -> Vec<Row> {
-    let mut rows = Vec::new();
-    let mut kind = None;
-    for tool in &view.tools {
-        let mut row = switch_row(
-            vec![Span::raw(format!("    {}", tool.name))],
-            tool.enabled,
-            width,
-        );
-        if kind != Some(tool.kind) {
-            kind = Some(tool.kind);
-            let gap = if rows.is_empty() {
-                vec![]
-            } else {
-                vec![Line::default()]
-            };
-            row.lead = gap.len() + 1;
-            let heading = Line::from(Span::styled(format!("  {}", tool.kind.name()), bold(DUSK)));
-            row.lines = [gap, vec![heading], row.lines].concat();
-        }
-        rows.push(row);
-    }
-    rows
-}
-
 /// A row with a dim line under it that says what it does.
 fn described(mut row: Row, about: &str, width: usize) -> Row {
     row.lines
@@ -774,52 +945,6 @@ fn switch_row(left: Vec<Span<'static>>, on: bool, width: usize) -> Row {
         switch: Some((to.saturating_sub(label.len() as u16), to)),
         lead: 0,
     }
-}
-
-/// The process first, then what the records take on disk.
-fn system_rows(view: &SettingsView, width: usize) -> Vec<Row> {
-    let Some((report, _)) = &view.system else {
-        return vec![note("  reading...")];
-    };
-    let value = |left: &str, value: String| Row {
-        lines: vec![right(
-            vec![Span::raw(format!("    {left}"))],
-            Span::styled(format!("{value}  "), fg(TEXT)),
-            width,
-        )],
-        switch: None,
-        lead: 0,
-    };
-    let heading = |text: &str| Row {
-        lines: vec![
-            Line::default(),
-            Line::from(Span::styled(format!("  {text}"), bold(DUSK))),
-        ],
-        switch: None,
-        lead: 0,
-    };
-    let mut rows = vec![heading("application")];
-    match report.process {
-        Some(process) => {
-            rows.push(value("memory in use", bytes(process.resident_bytes)));
-            rows.push(value(
-                "processor",
-                format!("{:.1}% of a core", process.cpu_percent),
-            ));
-        }
-        None => rows.push(note("    ps is not available here")),
-    }
-    let database = report.database_bytes + report.wal_bytes;
-    rows.push(heading("records on disk"));
-    rows.push(value("database", bytes(database)));
-    rows.push(value("  of it, write-ahead log", bytes(report.wal_bytes)));
-    rows.push(value("image cards", bytes(report.artifacts_bytes)));
-    rows.push(value("logs", bytes(report.logs_bytes)));
-    rows.push(value(
-        "threads / messages",
-        format!("{} / {}", report.threads, report.messages),
-    ));
-    rows
 }
 
 /// Bytes in the largest unit that keeps the number at least 1.
@@ -867,105 +992,6 @@ fn clip_spans(spans: Vec<Span<'static>>, width: usize) -> Vec<Span<'static>> {
         clipped.push(Span::styled(text, span.style));
     }
     clipped
-}
-
-/// The open skill: its front matter as fields, then the file to edit, then the buttons.
-fn editor(frame: &mut Frame, area: Rect, view: &mut SettingsView) {
-    let Some(editor) = &mut view.editor else {
-        return;
-    };
-    let width = area.width.saturating_sub(2) as usize;
-    let fields = metadata(editor, width);
-    let top = (fields.len() as u16 + 2)
-        .min(METADATA_ROWS)
-        .min(area.height / 2);
-    let mut title = vec![Span::styled(format!(" {} ", editor.title()), bold(DUSK))];
-    if editor.changed() {
-        title.push(Span::styled("changed ", fg(ACCENT)));
-    }
-    let header = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(fg(HAIRLINE))
-        .title(Line::from(title));
-    frame.render_widget(
-        Paragraph::new(fields).block(header),
-        Rect {
-            height: top,
-            ..area
-        },
-    );
-    if area.height <= top + 2 {
-        return;
-    }
-    // An error longer than the room beside the buttons takes rows of its own above them.
-    let error_lines = match &editor.error {
-        Some(error) if error.width() > area.width.saturating_sub(46) as usize => {
-            indented(error, fg(NEGATIVE), " ", area.width as usize)
-        }
-        _ => Vec::new(),
-    };
-    let error_rows = (error_lines.len() as u16).min(area.height.saturating_sub(top + 3) / 2);
-    let text_area = Rect {
-        y: area.y + top,
-        height: area.height - top - 1 - error_rows,
-        ..area
-    };
-    if error_rows > 0 {
-        frame.render_widget(
-            Paragraph::new(error_lines),
-            Rect {
-                y: text_area.bottom(),
-                height: error_rows,
-                ..area
-            },
-        );
-    }
-    let (rows, (column, row)) = input::layout(&editor.text, text_area.width as usize);
-    let height = text_area.height as usize;
-    if row < editor.scroll {
-        editor.scroll = row;
-    } else if row >= editor.scroll + height {
-        editor.scroll = row + 1 - height;
-    }
-    let lines: Vec<Line> = rows
-        .into_iter()
-        .skip(editor.scroll)
-        .take(height)
-        .map(|row| Line::from(row.spans))
-        .collect();
-    frame.render_widget(Paragraph::new(lines), text_area);
-    let y = text_area.y + (row - editor.scroll) as u16;
-    frame.set_cursor_position(Position::new(text_area.x + column as u16, y));
-    let bar = area.bottom() - 1;
-    if let Some(error) = editor.error.as_ref().filter(|_| error_rows == 0) {
-        let room = area.width.saturating_sub(46) as usize;
-        let line = Line::from(Span::styled(wrap::clip(error, room), fg(NEGATIVE)));
-        frame.render_widget(Paragraph::new(line), Rect::new(area.x, bar, area.width, 1));
-    }
-    let buttons = [
-        (FileButton::Save, " save ", ACCENT),
-        (FileButton::Revert, " revert ", ACCENT),
-        (FileButton::Close, " close ", TEXT_SOFT),
-    ];
-    let mut right = area.right();
-    for &(button, label, color) in buttons.iter().rev() {
-        let width = label.width() as u16;
-        let Some(left) = right.checked_sub(width + 1).filter(|&left| left >= area.x) else {
-            break;
-        };
-        let shown = Line::from(Span::styled(label, bold(color).bg(RAISED)));
-        frame.render_widget(Paragraph::new(shown), Rect::new(left, bar, width, 1));
-        view.hits.insert(
-            0,
-            SettingsHit {
-                row: bar,
-                left,
-                right: left + width,
-                target: HitTarget::Button(button),
-            },
-        );
-        right = left;
-    }
 }
 
 /// The description in full, then every other plain field on a line of its own.

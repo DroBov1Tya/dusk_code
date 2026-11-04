@@ -86,7 +86,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         app.sidebar_area = Some(sidebar_area);
         sidebar::Sidebar { app }.draw(frame, sidebar_area, false);
     }
-    transcript::draw(frame, body, app);
+    transcript::TranscriptView { app }.draw(frame, body);
     if app.compact_layout && app.sidebar_overlay_open {
         let overlay = Rect {
             width: SIDEBAR_WIDTH.min(body.width.saturating_sub(2)),
@@ -96,17 +96,16 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
         app.sidebar_area = Some(overlay);
         sidebar::Sidebar { app }.draw(frame, overlay, true);
     }
-    input::draw(
+    input::InputView { app }.draw(
         frame,
         Rect {
             x: card.x,
             width: card.width,
             ..bottom
         },
-        app,
     );
-    input::draw_commands(frame, body, app);
-    input::draw_paths(frame, body, app);
+    input::InputView { app }.draw_commands(frame, body);
+    input::InputView { app }.draw_paths(frame, body);
     panels::draw(frame, screen, app);
     pressed(frame, app);
     // Over everything, pictures too: the terminal would paint those above the window.
