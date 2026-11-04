@@ -64,6 +64,99 @@ impl Choice {
     pub fn name(&self) -> String {
         format!("{}/{}", self.provider_name, self.model.id)
     }
+
+    /// Reloads metadata for a saved selection without replacing its adapter.
+    pub async fn refresh(&self) -> Result<Model> {
+        tokio::time::timeout(CHECK_TIMEOUT, self.provider.list_models())
+            .await
+            .context("model metadata refresh timed out")??
+            .into_iter()
+            .find(|model| model.id == self.model.id)
+            .context("saved model is missing from the provider catalogue")
+    }
+
+    /// Constructs a saved model without asking the provider for its catalogue. This keeps
+    /// local history available while the provider is down.
+    pub fn configured(config: &Config) -> Result<Option<Choice>> {
+        let Some(name) = config.model() else {
+            return Ok(None);
+        };
+        let Some((provider_name, id)) = name.split_once('/') else {
+            return Ok(None);
+        };
+        if provider_name.is_empty() || id.trim().is_empty() {
+            return Ok(None);
+        }
+        let registry = ProviderRegistry::from_config(config)?;
+        let Some(provider) = registry.provider(provider_name) else {
+            return Ok(None);
+        };
+        Ok(Some(Choice {
+            provider_name: provider_name.to_owned(),
+            provider,
+            model: Model {
+                id: id.to_owned(),
+                context_window: None,
+                max_output: None,
+            },
+        }))
+    }
+
+    /// `name` as `provider/model`, or when `None` the first model of the first provider that
+    /// answers.
+    pub async fn pick(config: &Config, name: Option<&str>) -> Result<Choice> {
+        let registry = ProviderRegistry::from_config(config)?;
+        let Some(name) = name else {
+            let mut last_error = None;
+            for provider_name in registry.names() {
+                match Self::first_of(&registry, provider_name).await {
+                    Ok(choice) => return Ok(choice),
+                    Err(error) => last_error = Some(error),
+                }
+            }
+            return Err(last_error.unwrap_or_else(|| anyhow!("no provider configured")));
+        };
+        let (provider_name, id) = name
+            .split_once('/')
+            .with_context(|| format!("{name} is not provider/model"))?;
+        let provider = registry
+            .provider(provider_name)
+            .with_context(|| format!("no provider {provider_name} in the config"))?;
+        let model = Self::models(&*provider, provider_name)
+            .await?
+            .into_iter()
+            .find(|model| model.id == id)
+            .with_context(|| format!("provider {provider_name} offers no model {id}"))?;
+        Ok(Choice {
+            provider_name: provider_name.to_owned(),
+            provider,
+            model,
+        })
+    }
+
+    /// A provider's catalogue, given up on when it does not answer soon: a dead server must
+    /// not hold `/model` or the start's discovery until the transport gives up.
+    async fn models(provider: &dyn ModelProvider, provider_name: &str) -> Result<Vec<Model>> {
+        tokio::time::timeout(CHECK_TIMEOUT, provider.list_models())
+            .await
+            .with_context(|| format!("provider {provider_name} did not answer in time"))?
+    }
+
+    async fn first_of(registry: &ProviderRegistry, provider_name: &str) -> Result<Choice> {
+        let provider = registry
+            .provider(provider_name)
+            .context("provider is missing")?;
+        let model = Self::models(&*provider, provider_name)
+            .await?
+            .into_iter()
+            .next()
+            .with_context(|| format!("provider {provider_name} offers no models"))?;
+        Ok(Choice {
+            provider_name: provider_name.to_owned(),
+            provider,
+            model,
+        })
+    }
 }
 
 impl ModelChoice {
@@ -163,119 +256,28 @@ impl ModelChoice {
     }
 }
 
-/// Reloads metadata for a saved selection without replacing its adapter.
-pub async fn refresh(choice: &Choice) -> Result<Model> {
-    tokio::time::timeout(CHECK_TIMEOUT, choice.provider.list_models())
-        .await
-        .context("model metadata refresh timed out")??
-        .into_iter()
-        .find(|model| model.id == choice.model.id)
-        .context("saved model is missing from the provider catalogue")
-}
-
-/// Constructs a saved model without asking the provider for its catalogue. This keeps
-/// local history available while the provider is down.
-pub fn configured(config: &Config) -> Result<Option<Choice>> {
-    let Some(name) = config.model() else {
-        return Ok(None);
-    };
-    let Some((provider_name, id)) = name.split_once('/') else {
-        return Ok(None);
-    };
-    if provider_name.is_empty() || id.trim().is_empty() {
-        return Ok(None);
-    }
-    let registry = ProviderRegistry::from_config(config)?;
-    let Some(provider) = registry.provider(provider_name) else {
-        return Ok(None);
-    };
-    Ok(Some(Choice {
-        provider_name: provider_name.to_owned(),
-        provider,
-        model: Model {
-            id: id.to_owned(),
-            context_window: None,
-            max_output: None,
-        },
-    }))
-}
-
-/// `name` as `provider/model`, or when `None` the first model of the first provider that
-/// answers.
-pub async fn pick(config: &Config, name: Option<&str>) -> Result<Choice> {
-    let registry = ProviderRegistry::from_config(config)?;
-    let Some(name) = name else {
-        let mut last_error = None;
-        for provider_name in registry.names() {
-            match first_model(&registry, provider_name).await {
-                Ok(choice) => return Ok(choice),
-                Err(error) => last_error = Some(error),
-            }
-        }
-        return Err(last_error.unwrap_or_else(|| anyhow!("no provider configured")));
-    };
-    let (provider_name, id) = name
-        .split_once('/')
-        .with_context(|| format!("{name} is not provider/model"))?;
-    let provider = registry
-        .provider(provider_name)
-        .with_context(|| format!("no provider {provider_name} in the config"))?;
-    let model = models(&*provider, provider_name)
-        .await?
-        .into_iter()
-        .find(|model| model.id == id)
-        .with_context(|| format!("provider {provider_name} offers no model {id}"))?;
-    Ok(Choice {
-        provider_name: provider_name.to_owned(),
-        provider,
-        model,
-    })
-}
-
-/// A provider's catalogue, given up on when it does not answer soon: a dead server must
-/// not hold `/model` or the start's discovery until the transport gives up.
-async fn models(provider: &dyn ModelProvider, provider_name: &str) -> Result<Vec<Model>> {
-    tokio::time::timeout(CHECK_TIMEOUT, provider.list_models())
-        .await
-        .with_context(|| format!("provider {provider_name} did not answer in time"))?
-}
-
-async fn first_model(registry: &ProviderRegistry, provider_name: &str) -> Result<Choice> {
-    let provider = registry
-        .provider(provider_name)
-        .context("provider is missing")?;
-    let model = models(&*provider, provider_name)
-        .await?
-        .into_iter()
-        .next()
-        .with_context(|| format!("provider {provider_name} offers no models"))?;
-    Ok(Choice {
-        provider_name: provider_name.to_owned(),
-        provider,
-        model,
-    })
-}
-
-/// Asks every configured provider for its models at once.
-pub async fn check_providers(config: &Config) -> Result<Vec<ProviderStatus>> {
-    let registry = ProviderRegistry::from_config(config)?;
-    let mut checks = JoinSet::new();
-    for name in registry.names() {
-        let name = name.to_owned();
-        let Some(provider) = registry.provider(&name) else {
-            continue;
-        };
-        checks.spawn(async move {
-            let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models()).await;
-            let models = match listed {
-                Ok(Ok(models)) => Ok(models),
-                Ok(Err(error)) => Err(format!("{error:#}")),
-                Err(_) => Err("no answer in time".into()),
+impl ProviderStatus {
+    /// Asks every configured provider for its models at once.
+    pub async fn check_all(config: &Config) -> Result<Vec<ProviderStatus>> {
+        let registry = ProviderRegistry::from_config(config)?;
+        let mut checks = JoinSet::new();
+        for name in registry.names() {
+            let name = name.to_owned();
+            let Some(provider) = registry.provider(&name) else {
+                continue;
             };
-            ProviderStatus { name, models }
-        });
+            checks.spawn(async move {
+                let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models()).await;
+                let models = match listed {
+                    Ok(Ok(models)) => Ok(models),
+                    Ok(Err(error)) => Err(format!("{error:#}")),
+                    Err(_) => Err("no answer in time".into()),
+                };
+                ProviderStatus { name, models }
+            });
+        }
+        let mut statuses = checks.join_all().await;
+        statuses.sort_by(|a, b| a.name.cmp(&b.name));
+        Ok(statuses)
     }
-    let mut statuses = checks.join_all().await;
-    statuses.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(statuses)
 }

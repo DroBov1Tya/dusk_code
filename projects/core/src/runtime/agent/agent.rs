@@ -744,7 +744,7 @@ impl Agent {
         if !self.model.may_ask_vision(&name) {
             return false;
         }
-        match super::vision::sees_pictures(&choice).await {
+        match choice.sees_pictures().await {
             Some(sees) => {
                 info!("model {name} sees pictures: {sees}");
                 self.model.set_vision(name, sees);

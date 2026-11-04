@@ -22,38 +22,40 @@ const COLOURS: [(&str, [u8; 3]); 3] = [
     ("blue", [20, 60, 220]),
 ];
 
-/// `None` when the model could not be asked, such as on a network failure.
-pub async fn sees_pictures(choice: &Choice) -> Option<bool> {
-    let pick = uuid::Uuid::new_v4().as_bytes()[0] as usize % COLOURS.len();
-    let (colour, rgb) = COLOURS[pick];
-    let messages = [
-        ChatMessage::System("Answer with one word.".into()),
-        ChatMessage::UserWithPictures {
-            text: "What colour is this square?".into(),
-            pictures: vec![square(rgb)?],
-        },
-    ];
-    let request = ChatRequest {
-        model: &choice.model.id,
-        messages: &messages,
-        tools: &[],
-        max_output_tokens: Some(MAX_ANSWER_TOKENS),
-        effort: None,
-    };
-    let mut output = ModelOutput::default();
-    let asked = generate(choice.provider.as_ref(), request, &mut output, |_| {});
-    match tokio::time::timeout(ASK_TIMEOUT, asked).await.ok()? {
-        Ok(_) => {
-            let answer = output.text.to_ascii_lowercase();
-            let named: Vec<&str> = COLOURS
-                .iter()
-                .map(|(name, _)| *name)
-                .filter(|name| answer.contains(name))
-                .collect();
-            Some(named == [colour])
+impl Choice {
+    /// `None` when the model could not be asked, such as on a network failure.
+    pub async fn sees_pictures(&self) -> Option<bool> {
+        let pick = uuid::Uuid::new_v4().as_bytes()[0] as usize % COLOURS.len();
+        let (colour, rgb) = COLOURS[pick];
+        let messages = [
+            ChatMessage::System("Answer with one word.".into()),
+            ChatMessage::UserWithPictures {
+                text: "What colour is this square?".into(),
+                pictures: vec![square(rgb)?],
+            },
+        ];
+        let request = ChatRequest {
+            model: &self.model.id,
+            messages: &messages,
+            tools: &[],
+            max_output_tokens: Some(MAX_ANSWER_TOKENS),
+            effort: None,
+        };
+        let mut output = ModelOutput::default();
+        let asked = generate(self.provider.as_ref(), request, &mut output, |_| {});
+        match tokio::time::timeout(ASK_TIMEOUT, asked).await.ok()? {
+            Ok(_) => {
+                let answer = output.text.to_ascii_lowercase();
+                let named: Vec<&str> = COLOURS
+                    .iter()
+                    .map(|(name, _)| *name)
+                    .filter(|name| answer.contains(name))
+                    .collect();
+                Some(named == [colour])
+            }
+            Err(error) if is_unsupported_pictures(&error) => Some(false),
+            Err(_) => None,
         }
-        Err(error) if is_unsupported_pictures(&error) => Some(false),
-        Err(_) => None,
     }
 }
 
