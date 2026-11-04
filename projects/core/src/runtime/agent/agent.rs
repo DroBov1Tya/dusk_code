@@ -22,7 +22,7 @@ use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
     config::{Config, Effort},
-    message::sources::{self, SourceBlock},
+    message::sources::{self, SourceBlock, ThreadSources},
     providers::{
         ChatMessage, ChatRequest, ModelOutput, ToolCall, ToolSpec, is_output_limit, is_transient,
         is_unsupported_effort, is_unsupported_pictures, text_calls,
@@ -358,8 +358,13 @@ impl Agent {
         }
         let workspace = self.scope.workspace();
         let with_pictures = self.takes_pictures();
-        let sources =
-            sources::block(&self.state, workspace, &self.thread_id, with_pictures).await?;
+        let sources = ThreadSources {
+            state: &self.state,
+            workspace,
+            thread_id: &self.thread_id,
+        }
+        .block(with_pictures)
+        .await?;
         // The provider's last count already holds the project text.
         let project = match conversation.last_prompt {
             Some(_) => 0,
