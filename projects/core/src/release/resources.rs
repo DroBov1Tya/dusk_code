@@ -120,7 +120,10 @@ pub fn validate(root: &Path, version: Option<&str>) -> Result<()> {
         );
         files(&root.join(category))?;
     }
-    for relative in REQUIRED {
+    // The files a build needs are that build's to check: an update installs the
+    // snapshot of a newer version, which may have dropped or added some.
+    let ours = version.is_none_or(|version| version == VERSION);
+    for relative in REQUIRED.iter().filter(|_| ours) {
         let text = fs::read_to_string(root.join(relative))
             .with_context(|| format!("resource {relative} is missing"))?;
         ensure!(

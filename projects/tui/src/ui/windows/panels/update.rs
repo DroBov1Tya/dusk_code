@@ -165,9 +165,9 @@ pub fn draw_update(frame: &mut Frame, screen: Rect, app: &mut App) {
         ));
     }
     let help = match progress.as_ref().map(|progress| progress.stage) {
-        Some(InstallStage::Complete) => " c channel  esc close ",
+        Some(InstallStage::Complete) => " y copy  c channel  esc close ",
         Some(_) => " update in progress; please wait ",
-        None => " enter update  c channel  esc close ",
+        None => " enter update  y copy  c channel  esc close ",
     };
     let block = Block::bordered()
         .border_type(BorderType::Rounded)

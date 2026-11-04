@@ -483,7 +483,12 @@ impl App {
                 }
                 return Action::None;
             }
-            Panel::Update { info, progress, .. } => {
+            Panel::Update {
+                info,
+                note,
+                progress,
+                ..
+            } => {
                 // Once replacement starts there is no safe cancellation contract.
                 if progress.is_some_and(|progress| progress.stage != InstallStage::Complete) {
                     return Action::None;
@@ -492,6 +497,19 @@ impl App {
                     KeyCode::Enter if progress.is_none() => {
                         if let Some(info) = info.as_ref().filter(|info| info.newer && info.ready) {
                             return Action::InstallUpdate(info.latest.clone());
+                        }
+                    }
+                    // What the window says, an error above all, to paste elsewhere.
+                    KeyCode::Char('y') => {
+                        let mut text = info
+                            .as_ref()
+                            .map(|info| {
+                                format!("running {}\nnewest {}\n", info.current, info.latest)
+                            })
+                            .unwrap_or_default();
+                        text.extend(note.iter().map(|note| format!("{note}\n")));
+                        if !text.is_empty() {
+                            return Action::Copy(text.trim_end().to_owned());
                         }
                     }
                     KeyCode::Tab | KeyCode::Char('c') => {

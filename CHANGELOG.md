@@ -4,6 +4,15 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Fixed
+
+- 0.70.2 could not update to 0.70.3, as it wanted a resource file 0.70.3 dropped. The
+  file is back for it, and an update no longer holds a newer version to the running
+  build's list of files.
+- y copies what the update window says, an error included.
+
 ## 0.70.3 - 2026-11-04
 
 ### Added

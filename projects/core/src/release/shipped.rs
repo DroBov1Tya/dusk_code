@@ -198,6 +198,8 @@ const DROPPED: [(&str, &str); 44] = [
         "373c98debfc2c6dd9220d1b405160ab21b706113e1c9e317b615d565abf9bccf",
     ),
 ];
+/// In the release only so that 0.70.2, which wants it there, can update; never shipped.
+const FOR_OLD_UPDATERS: [&str; 1] = ["internal/RETIRED_SKILL_FILES.md"];
 /// Where builds before this one moved such files instead of removing them.
 const OLD_RECOVERY: &str = "retired-skills";
 
@@ -308,6 +310,11 @@ fn shipped() -> Result<Vec<(String, Vec<u8>)>> {
     let mut files = Vec::new();
     for category in resources::CATEGORIES {
         for relative in resources::files(&root.join(category))? {
+            if FOR_OLD_UPDATERS
+                .contains(&Path::new(category).join(&relative).to_str().unwrap_or(""))
+            {
+                continue;
+            }
             let source = root.join(category).join(&relative);
             let path = match (category, relative.to_str()) {
                 ("internal", _) => Path::new("prompts").join(&relative),
@@ -375,6 +382,12 @@ mod tests {
         create_private_dir(&paths.rules_root()).unwrap();
         let first = sync(&paths).unwrap();
         assert!(first.written.contains(&"modes/PLAN.md".to_owned()));
+        assert!(
+            !paths
+                .rules_root()
+                .join("prompts/RETIRED_SKILL_FILES.md")
+                .exists()
+        );
         assert!(
             sync(&paths).unwrap() == Synced::default(),
             "nothing to do twice"
