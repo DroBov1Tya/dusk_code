@@ -343,6 +343,11 @@ impl Desktop {
         Cursor::shared().show(at);
     }
 
+    /// Marks a completed Accessibility press without posting any pointer events.
+    pub fn mark_click(&self, at: Point) {
+        Cursor::shared().click(at);
+    }
+
     /// Keeps dusk's cursor up while the agent types, without moving it.
     pub fn touch(&self) {
         Cursor::shared().touch();
@@ -390,7 +395,9 @@ impl Desktop {
     ) -> Result<()> {
         mode.validate_click(right, count)?;
         if mode == PointerMode::Independent {
-            return super::accessibility::press(at, expected_window);
+            super::accessibility::press(at, expected_window)?;
+            self.mark_click(at);
+            return Ok(());
         }
         let at = cg(at);
         let (down, up, button) = match right {

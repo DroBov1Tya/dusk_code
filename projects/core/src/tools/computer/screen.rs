@@ -166,14 +166,17 @@ impl Screen {
             let (_, bounds) = view
                 .window
                 .context("take a screenshot of the selected window first")?;
-            self.mark(at);
-            return session.press(at, bounds);
+            session.press(at, bounds)?;
+            Desktop.mark_click(at);
+            return Ok(());
         }
         let (at, expected_window) = match mode {
             super::click::PointerMode::Independent => self.independent_point(x, y)?,
             super::click::PointerMode::System => (self.point(x, y)?, None),
         };
-        self.mark(at);
+        if mode == super::click::PointerMode::System {
+            self.mark(at);
+        }
         Desktop.click(at, right, count, mode, expected_window)
     }
 

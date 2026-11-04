@@ -1,9 +1,6 @@
-//! The helper side of the cursor: dusk's own arrow, drawn in a window over the whole
-//! main display, which the mouse passes through and screenshots leave out. A line on
-//! stdin is the tip's place in display points, and Core Animation glides it there; a
-//! `t` says the agent is at work without moving the tip. After ten seconds of silence
-//! the arrow fades and goes away, and the next line brings it back. The window and its
-//! layers are made once; the rocking runs from the first line to the last.
+//! The helper side of the cursor: dusk's own arrow in a click-through window over the
+//! target display. Core Animation glides the arrow to each point and pulses a ring
+//! at a completed independent click. After ten seconds of silence the overlay hides.
 
 use std::{
     io::BufRead,
@@ -11,7 +8,11 @@ use std::{
     time::{Duration, Instant},
 };
 
-use objc2::{MainThreadMarker, MainThreadOnly, rc::Retained, runtime::AnyObject};
+use objc2::{
+    MainThreadMarker, MainThreadOnly,
+    rc::{Retained, autoreleasepool},
+    runtime::AnyObject,
+};
 use objc2_app_kit::{
     NSApplication, NSApplicationActivationPolicy, NSBackingStoreType, NSColor, NSScreen,
     NSScreenSaverWindowLevel, NSWindow, NSWindowCollectionBehavior, NSWindowSharingType,
@@ -21,7 +22,7 @@ use objc2_core_foundation::{CGFloat, CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGColor, CGMutablePath};
 use objc2_foundation::{NSDate, NSNumber, NSRunLoop, NSString, NSValue};
 use objc2_quartz_core::{
-    CABasicAnimation, CALayer, CAMediaTiming, CAMediaTimingFunction, CAShapeLayer,
+    CABasicAnimation, CALayer, CAMediaTiming, CAMediaTimingFunction, CAShapeLayer, CATransaction,
     kCAMediaTimingFunctionEaseInEaseOut, kCAMediaTimingFunctionEaseOut,
 };
 
@@ -53,6 +54,8 @@ const IDLE_SECONDS: f64 = 10.0;
 /// The fades out and in.
 const FADE_OUT_SECONDS: f64 = 0.30;
 const FADE_IN_SECONDS: f64 = 0.15;
+/// How long the ring around a successful press fades at the click point.
+const PULSE_SECONDS: f64 = 1.2;
 /// A glide's duration in milliseconds: a little per point, clamped both ways.
 const TRAVEL_BASE_MS: CGFloat = 40.0;
 const TRAVEL_MS_PER_POINT: CGFloat = 0.11;
@@ -94,11 +97,11 @@ fn shape() -> Vec<Segment> {
     ]
 }
 
-/// What one line of stdin asks for: put the tip at display points, or the keepalive,
-/// which only says the agent is at work.
+/// The tip's place in global display points, optionally with a click pulse.
+/// Keepalive only extends the visibility of the last position.
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum Command {
-    Move { x: CGFloat, y: CGFloat },
+    Move { at: Point, clicked: bool },
     Keepalive,
 }
 
@@ -116,17 +119,18 @@ pub fn run_overlay_if_asked() -> bool {
     false
 }
 
-/// Runs until stdin closes: each line is "x y", the tip's place in display points with
-/// the origin at the top left of the main display, or "t", the keepalive.
+/// Runs until stdin closes. Coordinates start at the top left of the primary display.
 pub fn run() {
     let Some(mtm) = MainThreadMarker::new() else {
         return;
     };
     let app = NSApplication::sharedApplication(mtm);
     app.setActivationPolicy(NSApplicationActivationPolicy::Accessory);
-    let (window, square) = window(mtm);
+    let (window, canvas) = window(mtm);
+    let ring = ring();
     let arrow = arrow();
-    square.addSublayer(&arrow);
+    canvas.addSublayer(&ring);
+    canvas.addSublayer(&arrow);
     let (commands, received) = mpsc::channel();
     std::thread::spawn(move || {
         for line in std::io::stdin().lock().lines() {
@@ -138,9 +142,8 @@ pub fn run() {
             }
         }
     });
-    // Where the tip is now, in the square's points; kept here so each glide knows how
-    // far it goes, and so a glide after a hide starts from where the arrow last was.
-    let mut at = (0.0, 0.0);
+    let mut at: Option<Point> = None;
+    let mut frame = None;
     let mut shown = false;
     let mut last_line = Instant::now();
     let mut gone_at: Option<Instant> = None;
@@ -150,46 +153,85 @@ pub fn run() {
             match received.try_recv() {
                 Ok(command) => {
                     last_line = Instant::now();
-                    latest = Some(command);
+                    if latest.is_none() || matches!(command, Command::Move { .. }) {
+                        latest = Some(command);
+                    }
                 }
                 Err(TryRecvError::Empty) => break,
                 Err(TryRecvError::Disconnected) => return,
             }
         }
-        if let Some(command) = latest {
-            gone_at = None;
-            if !shown {
-                window.orderFrontRegardless();
-                fade(&square, 1.0, FADE_IN_SECONDS);
-                square.setOpacity(1.0);
-                shown = true;
+        autoreleasepool(|_| {
+            CATransaction::begin();
+            CATransaction::setDisableActions(true);
+            if let Some(Command::Move {
+                at: target,
+                clicked,
+            }) = latest
+            {
+                if let Some((display, to, scale)) = display_point(mtm, target) {
+                    let display_changed = frame != Some(display);
+                    if display_changed {
+                        window.setFrame_display(display, false);
+                        canvas.setFrame(CGRect::new(CGPoint::new(0.0, 0.0), display.size));
+                        canvas.setContentsScale(scale);
+                        arrow.setContentsScale(scale);
+                        ring.setContentsScale(scale);
+                        frame = Some(display);
+                    }
+                    if let Some(from) = at.filter(|_| shown && !display_changed) {
+                        let distance = (to.0 - from.0).hypot(to.1 - from.1);
+                        glide(&arrow, from, to, travel_ms(distance));
+                    } else {
+                        arrow.removeAnimationForKey(&NSString::from_str("position"));
+                        arrow.setPosition(CGPoint::new(to.0, to.1));
+                    }
+                    if clicked {
+                        ring.setPosition(CGPoint::new(to.0, to.1));
+                        animate(
+                            &ring,
+                            "opacity",
+                            &NSNumber::numberWithDouble(1.0),
+                            &NSNumber::numberWithDouble(0.0),
+                            PULSE_SECONDS,
+                        );
+                    } else {
+                        ring.removeAnimationForKey(&NSString::from_str("opacity"));
+                    }
+                    at = Some(to);
+                } else {
+                    // A visible window can extend past the edge of a display.
+                    window.orderOut(None);
+                    shown = false;
+                    at = None;
+                }
             }
-            if let Command::Move { x, y } = command {
-                // AppKit counts from the bottom of the main display.
-                let height = NSScreen::screens(mtm)
-                    .firstObject()
-                    .map_or(0.0, |screen| screen.frame().size.height);
-                let to = (x, height - y);
-                let distance = (to.0 - at.0).hypot(to.1 - at.1);
-                glide(&arrow, at, to, travel_ms(distance));
-                at = to;
+            if latest.is_some() && at.is_some() {
+                let fading = gone_at.take().is_some();
+                if !shown {
+                    window.orderFrontRegardless();
+                    shown = true;
+                }
+                if canvas.opacity() == 0.0 || fading {
+                    fade(&canvas, 1.0, FADE_IN_SECONDS);
+                }
             }
-        }
-        if shown
-            && gone_at.is_none()
-            && last_line.elapsed() >= Duration::from_secs_f64(IDLE_SECONDS)
-        {
-            fade(&square, 0.0, FADE_OUT_SECONDS);
-            square.setOpacity(0.0);
-            gone_at = Some(Instant::now() + Duration::from_secs_f64(FADE_OUT_SECONDS));
-        }
-        if shown && gone_at.is_some_and(|gone| Instant::now() >= gone) {
-            window.orderOut(None);
-            gone_at = None;
-            shown = false;
-        }
-        NSRunLoop::currentRunLoop()
-            .runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(TICK_SECONDS));
+            if shown
+                && gone_at.is_none()
+                && last_line.elapsed() >= Duration::from_secs_f64(IDLE_SECONDS)
+            {
+                fade(&canvas, 0.0, FADE_OUT_SECONDS);
+                gone_at = Some(Instant::now() + Duration::from_secs_f64(FADE_OUT_SECONDS));
+            }
+            if shown && gone_at.is_some_and(|gone| Instant::now() >= gone) {
+                window.orderOut(None);
+                gone_at = None;
+                shown = false;
+            }
+            CATransaction::commit();
+            NSRunLoop::currentRunLoop()
+                .runUntilDate(&NSDate::dateWithTimeIntervalSinceNow(TICK_SECONDS));
+        });
     }
 }
 
@@ -197,20 +239,42 @@ fn parse(line: &str) -> Option<Command> {
     if line == "t" {
         return Some(Command::Keepalive);
     }
-    let mut numbers = line.split_whitespace().map(str::parse::<CGFloat>);
+    let (clicked, coords) = match line.strip_prefix("c ") {
+        Some(coords) => (true, coords),
+        None => (false, line),
+    };
+    let mut numbers = coords.split_whitespace().map(str::parse::<CGFloat>);
     match (numbers.next()?, numbers.next()?, numbers.next()) {
-        (Ok(x), Ok(y), None) if x.is_finite() && y.is_finite() => Some(Command::Move { x, y }),
+        (Ok(x), Ok(y), None) if x.is_finite() && y.is_finite() => Some(Command::Move {
+            at: (x, y),
+            clicked,
+        }),
         _ => None,
     }
 }
 
-/// The window over the whole main display, and the square the arrow hangs on: made
-/// once, ordered in and out as the cursor shows and hides.
+/// AppKit starts at the bottom left of the primary display, even on a second display.
+/// The canvas starts at the bottom left of whichever display contains the point.
+fn display_point(mtm: MainThreadMarker, at: Point) -> Option<(CGRect, Point, CGFloat)> {
+    let screens = NSScreen::screens(mtm);
+    let primary_height = screens.firstObject()?.frame().size.height;
+    (0..screens.count()).find_map(|index| {
+        let screen = screens.objectAtIndex(index);
+        let frame = screen.frame();
+        let point = local_point(frame, primary_height, at)?;
+        Some((frame, point, screen.backingScaleFactor()))
+    })
+}
+
+fn local_point(frame: CGRect, primary_height: CGFloat, (x, y): Point) -> Option<Point> {
+    let (x, y) = (x - frame.origin.x, primary_height - y - frame.origin.y);
+    // In Quartz the top edge belongs to the screen and the bottom edge does not.
+    (x >= 0.0 && x < frame.size.width && y > 0.0 && y <= frame.size.height).then_some((x, y))
+}
+
+/// One reusable overlay. Its frame is moved to the display containing the next point.
 fn window(mtm: MainThreadMarker) -> (Retained<NSWindow>, Retained<CALayer>) {
-    let frame = NSScreen::screens(mtm).firstObject().map_or(
-        CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(SIZE, SIZE)),
-        |screen| screen.frame(),
-    );
+    let frame = CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(SIZE, SIZE));
     // SAFETY: a plain borderless window, made and used on the main thread.
     let window = unsafe {
         NSWindow::initWithContentRect_styleMask_backing_defer(
@@ -230,15 +294,40 @@ fn window(mtm: MainThreadMarker) -> (Retained<NSWindow>, Retained<CALayer>) {
     window.setLevel(NSScreenSaverWindowLevel);
     window.setSharingType(NSWindowSharingType::None);
     window.setCollectionBehavior(
-        NSWindowCollectionBehavior::CanJoinAllSpaces | NSWindowCollectionBehavior::Stationary,
+        NSWindowCollectionBehavior::CanJoinAllSpaces
+            | NSWindowCollectionBehavior::Stationary
+            | NSWindowCollectionBehavior::FullScreenAuxiliary,
     );
-    let square = CALayer::new();
-    square.setFrame(CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(SIZE, SIZE)));
+    let canvas = CALayer::new();
+    canvas.setOpacity(0.0);
     if let Some(view) = window.contentView() {
+        view.setLayer(Some(&canvas));
         view.setWantsLayer(true);
-        view.setLayer(Some(&square));
     }
-    (window, square)
+    (window, canvas)
+}
+
+fn ring() -> Retained<CAShapeLayer> {
+    let path = CGMutablePath::new();
+    // SAFETY: the path is ours and a null transform means none.
+    unsafe {
+        CGMutablePath::add_ellipse_in_rect(
+            Some(&path),
+            std::ptr::null(),
+            CGRect::new(CGPoint::new(1.0, 1.0), CGSize::new(26.0, 26.0)),
+        );
+    }
+    let ring = CAShapeLayer::new();
+    ring.setBounds(CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(28.0, 28.0)));
+    ring.setPath(Some(&path));
+    ring.setFillColor(None);
+    ring.setStrokeColor(Some(&CGColor::new_srgb(1.0, 0.74, 0.34, 1.0)));
+    ring.setLineWidth(2.0);
+    ring.setShadowColor(Some(&CGColor::new_srgb(0.1, 0.08, 0.06, 1.0)));
+    ring.setShadowOpacity(1.0);
+    ring.setShadowRadius(2.0);
+    ring.setOpacity(0.0);
+    ring
 }
 
 /// The arrow layer, anchored at its tip so the rocking turns about the point it marks
@@ -346,7 +435,7 @@ fn animate(layer: &CALayer, key_path: &str, from: &AnyObject, to: &AnyObject, se
     // SAFETY: a named function from Core Animation's own list.
     let ease = CAMediaTimingFunction::functionWithName(unsafe { kCAMediaTimingFunctionEaseOut });
     animation.setTimingFunction(Some(&ease));
-    layer.addAnimation_forKey(&animation, None);
+    layer.addAnimation_forKey(&animation, Some(&NSString::from_str(key_path)));
 }
 
 #[cfg(test)]
@@ -452,12 +541,44 @@ mod tests {
     fn a_line_is_a_move_a_keepalive_or_ignored() {
         assert_eq!(
             parse("120.5 -44"),
-            Some(Command::Move { x: 120.5, y: -44.0 })
+            Some(Command::Move {
+                at: (120.5, -44.0),
+                clicked: false
+            })
+        );
+        assert_eq!(
+            parse("c -20 42"),
+            Some(Command::Move {
+                at: (-20.0, 42.0),
+                clicked: true
+            })
         );
         assert_eq!(parse("t"), Some(Command::Keepalive));
-        for ignored in ["", "T", "t t", "x y", "1 2 3", "nope"] {
+        for ignored in ["", "T", "t t", "x y", "1 2 3", "nope", "c 1", "c NaN 1"] {
             assert_eq!(parse(ignored), None, "{ignored}");
         }
+    }
+
+    #[test]
+    fn global_click_points_map_to_their_display_canvas() {
+        let primary = CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(1512.0, 982.0));
+        let left = CGRect::new(CGPoint::new(-1280.0, 100.0), CGSize::new(1280.0, 720.0));
+        let above = CGRect::new(CGPoint::new(0.0, 982.0), CGSize::new(1920.0, 1080.0));
+        assert_eq!(
+            local_point(primary, 982.0, (500.0, 400.0)),
+            Some((500.0, 582.0))
+        );
+        assert_eq!(
+            local_point(left, 982.0, (-1200.0, 182.0)),
+            Some((80.0, 700.0))
+        );
+        assert_eq!(
+            local_point(above, 982.0, (600.0, -200.0)),
+            Some((600.0, 200.0))
+        );
+        assert_eq!(local_point(primary, 982.0, (0.0, 0.0)), Some((0.0, 982.0)));
+        assert_eq!(local_point(primary, 982.0, (0.0, 982.0)), None);
+        assert_eq!(local_point(primary, 982.0, (-1.0, 0.0)), None);
     }
 
     #[test]

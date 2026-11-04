@@ -3,13 +3,12 @@
 The model takes a screenshot when it needs to look, then clicks, types, presses keys
 and scrolls by the coordinates of that picture. The tools are offered only in a
 graphical session, to a model that sees pictures, and the first use in a session asks
-the user. A cursor of duskcode's own marks where the agent last acted; it glides to
-each point, rocks a little and hides after ten seconds at rest.
+the user.
 
 ## Clicks that leave the pointer alone (macOS)
 
 A `click` presses the control under the point through macOS Accessibility (`AXPress`)
-and posts no mouse events, so the user keeps their pointer:
+and posts no mouse events, so the user keeps their pointer.
 
 ```json
 {"x": 320, "y": 180}
@@ -18,9 +17,13 @@ and posts no mouse events, so the user keeps their pointer:
 It is a single left click on something that can be pressed: a button, a link, a
 checkbox. It does not click a canvas, hover, drag, or always focus a text field, so
 the agent checks the focus before it types. A control that cannot be pressed this way
-is an error, never a silent fallback to the real pointer. When the screenshot was of
-one window, the click is refused if that window moved, changed size or got covered at
-the point since: take a new screenshot then.
+returns an error. Take a new screenshot if the captured window moved or changed size.
+Outside a window session, a covering window also causes the click to be refused.
+
+After a confirmed press, duskcode draws an amber ring at the target's screen
+coordinates and leaves its own cursor there for ten seconds. The overlay passes
+mouse input through and works in a selected window session too. If another window
+covers the target, the ring marks the point over the visible window.
 
 ## The real pointer
 
