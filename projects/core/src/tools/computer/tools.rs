@@ -9,8 +9,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{
-    cursor::Cursor,
-    macos,
+    desktop,
     screen::{Region, Screen, Target, keys},
 };
 use crate::{
@@ -133,10 +132,12 @@ impl Tool for Screenshot {
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum PointerMode {
-    /// Presses the control through Accessibility; the user's pointer stays put.
-    #[default]
+    /// Presses the control through Accessibility; the user's pointer stays put. Only
+    /// macOS has it.
+    #[cfg_attr(target_os = "macos", default)]
     Independent,
     /// Posts mouse events, moving the user's pointer.
+    #[cfg_attr(not(target_os = "macos"), default)]
     System,
 }
 
@@ -175,13 +176,18 @@ impl Tool for Click {
     computer_tool!("click");
 
     fn description(&self, _: &ToolContext) -> String {
-        "Click at x, y of the newest screenshot. By default it presses the control there \
-         through Accessibility and leaves the user's pointer alone: a single left click \
-         on a button, link or checkbox, which may not focus a field or the app. A control \
-         that cannot be pressed so, or a window that moved since the screenshot, is an \
-         error. mode system clicks with the real pointer, right and double too, and \
-         asks the user first since it takes the pointer from them."
-            .into()
+        if cfg!(target_os = "macos") {
+            "Click at x, y of the newest screenshot. By default it presses the control there \
+             through Accessibility and leaves the user's pointer alone: a single left click \
+             on a button, link or checkbox, which may not focus a field or the app. A control \
+             that cannot be pressed so, or a window that moved since the screenshot, is an \
+             error. mode system clicks with the real pointer, right and double too, and \
+             asks the user first since it takes the pointer from them."
+        } else {
+            "Click at x, y of the newest screenshot, left by default, right or double when \
+             asked. It moves the user's pointer there, so it asks the user first."
+        }
+        .into()
     }
 
     fn parameters(&self) -> Value {
@@ -216,7 +222,7 @@ impl Tool for Click {
                     PointerMode::System => screen.point(arguments.x, arguments.y)?,
                 };
                 screen.mark(at);
-                macos::click(at, arguments.right, count, arguments.mode)
+                desktop::click(at, arguments.right, count, arguments.mode)
             })
             .await?;
             match arguments.mode {
@@ -272,8 +278,8 @@ impl Tool for TypeText {
             let more = if count > SHOWN_CHARS { "..." } else { "" };
             let action = format!("type \"{}{more}\"", shown.escape_debug());
             context.approve_screen(&action, true).await?;
-            blocking(move || macos::type_text(&arguments.text)).await?;
-            Cursor::shared().touch();
+            blocking(move || desktop::type_text(&arguments.text)).await?;
+            desktop::touch();
             Ok(format!("typed {count} characters"))
         })
     }
@@ -305,12 +311,12 @@ impl Tool for PressKeys {
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: PressKeysArguments = parse_arguments(arguments)?;
-            let (key, flags) = keys(&arguments.keys)?;
+            let combo = keys(&arguments.keys)?;
             context
                 .approve_screen(&format!("press {}", arguments.keys), true)
                 .await?;
-            blocking(move || macos::press(key, flags)).await?;
-            Cursor::shared().touch();
+            blocking(move || desktop::press(&combo)).await?;
+            desktop::touch();
             Ok(format!("pressed {}", arguments.keys))
         })
     }
@@ -357,7 +363,7 @@ impl Tool for Scroll {
                 .await?;
             let at = self.0.point(arguments.x, arguments.y)?;
             self.0.mark(at);
-            blocking(move || macos::scroll(at, down, right)).await?;
+            blocking(move || desktop::scroll(at, down, right)).await?;
             Ok(format!("scrolled {down} down and {right} right"))
         })
     }
@@ -368,6 +374,7 @@ mod tests {
     use super::*;
     use serde_json::json;
 
+    #[cfg(target_os = "macos")]
     #[test]
     fn existing_click_arguments_default_to_independent_activation() {
         let args: ClickArguments = parse_arguments(json!({"x": 12, "y": 34})).unwrap();
@@ -402,13 +409,13 @@ mod tests {
 
     #[test]
     fn unsupported_backend_actions_fail_before_permission_or_event_access() {
-        let at = core_graphics::geometry::CGPoint::new(0.0, 0.0);
+        let at = super::super::Point { x: 0.0, y: 0.0 };
         assert!(
-            macos::click(at, true, 1, PointerMode::Independent)
+            desktop::click(at, true, 1, PointerMode::Independent)
                 .unwrap_err()
                 .to_string()
                 .contains("single left")
         );
-        assert!(macos::click(at, false, 2, PointerMode::Independent).is_err());
+        assert!(desktop::click(at, false, 2, PointerMode::Independent).is_err());
     }
 }

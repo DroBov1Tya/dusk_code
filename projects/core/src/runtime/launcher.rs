@@ -133,7 +133,7 @@ impl Launcher {
             self.paths.rules_root(),
             self.paths.workspace_root(),
         )));
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
             let screen = Arc::new(Screen::new(ArtifactStore::new(self.paths.artifacts_dir())));

@@ -314,7 +314,7 @@ mod tests {
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
-        #[cfg(target_os = "macos")]
+        #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
             let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));

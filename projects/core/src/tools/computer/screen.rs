@@ -4,15 +4,11 @@
 use std::io;
 
 use anyhow::{Context, Result, bail, ensure};
-use core_graphics::{
-    event::{CGEventFlags, CGKeyCode, KeyCode},
-    geometry::{CGPoint, CGRect, CGSize},
-};
 use image::{DynamicImage, ImageFormat, codecs::jpeg::JpegEncoder};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use super::{cursor::Cursor, macos};
+use super::{Keys, Point, Rect, Window, desktop};
 use crate::state::artifacts::{ArtifactStore, ImageArtifact};
 
 /// Windows named in a failed lookup at most.
@@ -25,12 +21,12 @@ const JPEG_QUALITY: u8 = 80;
 /// How a picture's pixel maps to the display: `origin + pixel * scale` in points.
 #[derive(Debug, Clone, Copy)]
 struct View {
-    origin: CGPoint,
+    origin: Point,
     scale: f64,
     width: f64,
     height: f64,
     /// A window capture (or its crop) must still address the same visible window.
-    window: Option<(u32, CGRect)>,
+    window: Option<(u32, Rect)>,
 }
 
 /// A part of the last screenshot, in its pixels.
@@ -65,8 +61,8 @@ impl Screen {
     }
 
     /// Shows the user where the agent acts now, in display points.
-    pub fn mark(&self, at: CGPoint) {
-        Cursor::shared().show(at);
+    pub fn mark(&self, at: Point) {
+        desktop::mark(at);
     }
 
     /// The display, a region of the last screenshot or one window, as a picture for
@@ -75,7 +71,7 @@ impl Screen {
         let mut window = None;
         let mut captured_window = None;
         let rect = match &target {
-            Target::Display => macos::display(),
+            Target::Display => desktop::display()?,
             Target::Window(name) => {
                 let found = find_window(name)?;
                 let bounds = found.bounds;
@@ -89,29 +85,31 @@ impl Screen {
                 self.point(region.x + region.width, region.y + region.height)?;
                 let view = self.view()?;
                 captured_window = view.window;
-                CGRect::new(
-                    &from,
-                    &CGSize::new(region.width * view.scale, region.height * view.scale),
-                )
+                Rect {
+                    x: from.x,
+                    y: from.y,
+                    width: region.width * view.scale,
+                    height: region.height * view.scale,
+                }
             }
         };
         ensure!(
-            rect.size.width >= 1.0 && rect.size.height >= 1.0,
+            rect.width >= 1.0 && rect.height >= 1.0,
             "the region is empty"
         );
         let file = std::env::temp_dir().join(format!("duskcode-{}.png", Uuid::new_v4()));
         let taken = match &window {
-            Some(window) => macos::capture_window(window.id, &file),
-            None => macos::capture(rect, &file),
+            Some(window) => desktop::capture_window(window, &file),
+            None => desktop::capture(rect, &file),
         };
         let captured =
             taken.and_then(|()| std::fs::read(&file).context("cannot read the screenshot"));
         let _ = std::fs::remove_file(&file);
         let image = image::load_from_memory(&captured?).context("invalid screenshot")?;
         // A Retina capture has two pixels a point; no picture is larger than the points.
-        let fit = (MAX_EDGE / rect.size.width.max(rect.size.height)).min(1.0);
-        let width = (rect.size.width * fit).round().max(1.0);
-        let height = (rect.size.height * fit).round().max(1.0);
+        let fit = (MAX_EDGE / rect.width.max(rect.height)).min(1.0);
+        let width = (rect.width * fit).round().max(1.0);
+        let height = (rect.height * fit).round().max(1.0);
         let picture = image.resize_exact(
             width as u32,
             height as u32,
@@ -119,13 +117,19 @@ impl Screen {
         );
         let artifact = self.save(&picture)?;
         *self.view.lock() = Some(View {
-            origin: rect.origin,
-            scale: rect.size.width / width,
+            origin: Point {
+                x: rect.x,
+                y: rect.y,
+            },
+            scale: rect.width / width,
             width,
             height,
             window: captured_window,
         });
         let what = match (&target, &window) {
+            (_, Some(window)) if window.app.is_empty() => {
+                format!("the window \"{}\"", window.title)
+            }
             (_, Some(window)) => format!("the {} window \"{}\"", window.app, window.title),
             (Target::Region(_), None) => "the region".into(),
             _ => "the main display".into(),
@@ -139,14 +143,14 @@ impl Screen {
     }
 
     /// The display point under the pixel `x`, `y` of the last screenshot.
-    pub fn point(&self, x: f64, y: f64) -> Result<CGPoint> {
+    pub fn point(&self, x: f64, y: f64) -> Result<Point> {
         let view = self.view()?;
         view.point(x, y)
     }
 
     /// Independent activation of a captured window must not hit a covering window,
     /// or use coordinates left behind when the captured window moved or resized.
-    pub fn independent_point(&self, x: f64, y: f64) -> Result<CGPoint> {
+    pub fn independent_point(&self, x: f64, y: f64) -> Result<Point> {
         let view = self.view()?;
         let at = view.point(x, y)?;
         ensure!(
@@ -154,7 +158,7 @@ impl Screen {
             "click coordinates must be inside the screenshot, not its far edge"
         );
         if let Some((id, bounds)) = view.window {
-            macos::ensure_window_at(at, id, bounds)?;
+            desktop::ensure_window_at(at, id, bounds)?;
         }
         Ok(at)
     }
@@ -192,29 +196,29 @@ impl Screen {
 }
 
 impl View {
-    fn point(self, x: f64, y: f64) -> Result<CGPoint> {
+    fn point(self, x: f64, y: f64) -> Result<Point> {
         ensure!(
             (0.0..=self.width).contains(&x) && (0.0..=self.height).contains(&y),
             "x and y must lie in the last screenshot, {}x{}",
             self.width,
             self.height
         );
-        Ok(CGPoint::new(
-            self.origin.x + x * self.scale,
-            self.origin.y + y * self.scale,
-        ))
+        Ok(Point {
+            x: self.origin.x + x * self.scale,
+            y: self.origin.y + y * self.scale,
+        })
     }
 }
 
 /// The largest window of the app named `name`, else the largest whose app or title holds
 /// it, so a toolbar strip never wins over the window itself; a miss names the windows
 /// there are.
-fn find_window(name: &str) -> Result<macos::Window> {
+fn find_window(name: &str) -> Result<Window> {
     let wanted = name.trim().to_lowercase();
     ensure!(!wanted.is_empty(), "name the app or window to capture");
-    let windows = macos::windows();
-    let area = |window: &macos::Window| window.bounds.size.width * window.bounds.size.height;
-    let largest = |matches: &dyn Fn(&macos::Window) -> bool| {
+    let windows = desktop::windows()?;
+    let area = |window: &Window| window.bounds.width * window.bounds.height;
+    let largest = |matches: &dyn Fn(&Window) -> bool| {
         windows
             .iter()
             .enumerate()
@@ -245,110 +249,85 @@ fn find_window(name: &str) -> Result<macos::Window> {
     bail!("no window matches {name:?}; open ones: {}", open.join("; "))
 }
 
-/// `cmd+shift+t`, `enter` or `f5` as a key with its modifiers.
-pub fn keys(combo: &str) -> Result<(CGKeyCode, CGEventFlags)> {
-    let mut flags = CGEventFlags::CGEventFlagNull;
-    let mut key = None;
+/// The keys besides letters and digits that every desktop presses by these names.
+pub const KEY_NAMES: [&str; 27] = [
+    "enter",
+    "tab",
+    "space",
+    "backspace",
+    "delete",
+    "esc",
+    "left",
+    "right",
+    "up",
+    "down",
+    "home",
+    "end",
+    "pageup",
+    "pagedown",
+    "f1",
+    "f2",
+    "f3",
+    "f4",
+    "f5",
+    "f6",
+    "f7",
+    "f8",
+    "f9",
+    "f10",
+    "f11",
+    "f12",
+    "forwarddelete",
+];
+
+/// `cmd+shift+t`, `enter` or `f5` as a key with its modifiers. The key comes out by its
+/// one name: a lowercase letter, a digit or one of [`KEY_NAMES`].
+pub fn keys(combo: &str) -> Result<Keys> {
+    let mut keys = Keys {
+        key: String::new(),
+        cmd: false,
+        shift: false,
+        ctrl: false,
+        alt: false,
+    };
     for part in combo
         .split('+')
         .map(|part| part.trim().to_ascii_lowercase())
     {
         match part.as_str() {
-            "cmd" | "command" | "meta" | "super" => flags |= CGEventFlags::CGEventFlagCommand,
-            "shift" => flags |= CGEventFlags::CGEventFlagShift,
-            "ctrl" | "control" => flags |= CGEventFlags::CGEventFlagControl,
-            "alt" | "option" | "opt" => flags |= CGEventFlags::CGEventFlagAlternate,
+            "cmd" | "command" | "meta" | "super" | "win" => keys.cmd = true,
+            "shift" => keys.shift = true,
+            "ctrl" | "control" => keys.ctrl = true,
+            "alt" | "option" | "opt" => keys.alt = true,
             name => {
-                ensure!(key.is_none(), "one key at a time, with modifiers: {combo}");
-                key = Some(code(name).with_context(|| format!("unknown key {name:?}"))?);
+                ensure!(
+                    keys.key.is_empty(),
+                    "one key at a time, with modifiers: {combo}"
+                );
+                keys.key = key_name(name).with_context(|| format!("unknown key {name:?}"))?;
             }
         }
     }
-    match key {
-        Some(key) => Ok((key, flags)),
-        None => bail!("name a key, not only modifiers: {combo}"),
-    }
+    ensure!(
+        !keys.key.is_empty(),
+        "name a key, not only modifiers: {combo}"
+    );
+    Ok(keys)
 }
 
-fn code(name: &str) -> Option<CGKeyCode> {
-    const LETTERS: [CGKeyCode; 26] = [
-        KeyCode::ANSI_A,
-        KeyCode::ANSI_B,
-        KeyCode::ANSI_C,
-        KeyCode::ANSI_D,
-        KeyCode::ANSI_E,
-        KeyCode::ANSI_F,
-        KeyCode::ANSI_G,
-        KeyCode::ANSI_H,
-        KeyCode::ANSI_I,
-        KeyCode::ANSI_J,
-        KeyCode::ANSI_K,
-        KeyCode::ANSI_L,
-        KeyCode::ANSI_M,
-        KeyCode::ANSI_N,
-        KeyCode::ANSI_O,
-        KeyCode::ANSI_P,
-        KeyCode::ANSI_Q,
-        KeyCode::ANSI_R,
-        KeyCode::ANSI_S,
-        KeyCode::ANSI_T,
-        KeyCode::ANSI_U,
-        KeyCode::ANSI_V,
-        KeyCode::ANSI_W,
-        KeyCode::ANSI_X,
-        KeyCode::ANSI_Y,
-        KeyCode::ANSI_Z,
-    ];
-    const DIGITS: [CGKeyCode; 10] = [
-        KeyCode::ANSI_0,
-        KeyCode::ANSI_1,
-        KeyCode::ANSI_2,
-        KeyCode::ANSI_3,
-        KeyCode::ANSI_4,
-        KeyCode::ANSI_5,
-        KeyCode::ANSI_6,
-        KeyCode::ANSI_7,
-        KeyCode::ANSI_8,
-        KeyCode::ANSI_9,
-    ];
+fn key_name(name: &str) -> Option<String> {
     let mut chars = name.chars();
-    if let (Some(c), None) = (chars.next(), chars.next()) {
-        if c.is_ascii_lowercase() {
-            return Some(LETTERS[(c as u8 - b'a') as usize]);
-        }
-        if c.is_ascii_digit() {
-            return Some(DIGITS[(c as u8 - b'0') as usize]);
-        }
+    if let (Some(c), None) = (chars.next(), chars.next())
+        && c.is_ascii_alphanumeric()
+    {
+        return Some(name.to_owned());
     }
-    Some(match name {
-        "enter" | "return" => KeyCode::RETURN,
-        "tab" => KeyCode::TAB,
-        "space" => KeyCode::SPACE,
-        "delete" | "backspace" => KeyCode::DELETE,
-        "forwarddelete" => KeyCode::FORWARD_DELETE,
-        "esc" | "escape" => KeyCode::ESCAPE,
-        "left" => KeyCode::LEFT_ARROW,
-        "right" => KeyCode::RIGHT_ARROW,
-        "up" => KeyCode::UP_ARROW,
-        "down" => KeyCode::DOWN_ARROW,
-        "home" => KeyCode::HOME,
-        "end" => KeyCode::END,
-        "pageup" => KeyCode::PAGE_UP,
-        "pagedown" => KeyCode::PAGE_DOWN,
-        "f1" => KeyCode::F1,
-        "f2" => KeyCode::F2,
-        "f3" => KeyCode::F3,
-        "f4" => KeyCode::F4,
-        "f5" => KeyCode::F5,
-        "f6" => KeyCode::F6,
-        "f7" => KeyCode::F7,
-        "f8" => KeyCode::F8,
-        "f9" => KeyCode::F9,
-        "f10" => KeyCode::F10,
-        "f11" => KeyCode::F11,
-        "f12" => KeyCode::F12,
-        _ => return None,
-    })
+    let name = match name {
+        "return" => "enter",
+        "escape" => "esc",
+        _ => name,
+    };
+    KEY_NAMES.contains(&name).then(|| name.to_owned())
 }
 
 #[cfg(test)]
@@ -357,14 +336,17 @@ mod tests {
 
     #[test]
     fn combos_name_one_key_and_its_modifiers() {
-        let (key, flags) = keys("cmd+shift+t").unwrap();
-        assert_eq!(key, KeyCode::ANSI_T);
-        assert!(flags.contains(CGEventFlags::CGEventFlagCommand));
-        assert!(flags.contains(CGEventFlags::CGEventFlagShift));
-        assert_eq!(keys("Enter").unwrap().0, KeyCode::RETURN);
-        assert_eq!(keys("5").unwrap().0, KeyCode::ANSI_5);
-        for wrong in ["cmd", "a+b", "cmd+nope", ""] {
+        let combo = keys("cmd+shift+T").unwrap();
+        assert_eq!(combo.key, "t");
+        assert!(combo.cmd && combo.shift && !combo.ctrl && !combo.alt);
+        assert_eq!(keys("Return").unwrap().key, "enter");
+        assert_eq!(keys("5").unwrap().key, "5");
+        for wrong in ["cmd", "a+b", "cmd+nope", "", "é"] {
             assert!(keys(wrong).is_err(), "{wrong}");
+        }
+        // Every name the parser lets through, the desktop can press.
+        for name in KEY_NAMES.iter().copied().chain(["a", "z", "0", "9"]) {
+            assert!(desktop::knows_key(name), "{name}");
         }
     }
 
@@ -373,7 +355,7 @@ mod tests {
         let screen = Screen::new(ArtifactStore::new(std::env::temp_dir()));
         assert!(screen.point(1.0, 1.0).is_err(), "no screenshot yet");
         *screen.view.lock() = Some(View {
-            origin: CGPoint::new(100.0, 50.0),
+            origin: Point { x: 100.0, y: 50.0 },
             scale: 2.0,
             width: 800.0,
             height: 500.0,
@@ -392,7 +374,10 @@ mod tests {
     #[test]
     fn window_crops_preserve_global_negative_display_coordinates() {
         let view = View {
-            origin: CGPoint::new(-1600.0, -900.0),
+            origin: Point {
+                x: -1600.0,
+                y: -900.0,
+            },
             scale: 1.5,
             width: 800.0,
             height: 500.0,

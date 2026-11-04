@@ -5,7 +5,8 @@ use core_foundation::{
     base::{CFType, CFTypeRef, TCFType},
     string::{CFString, CFStringRef},
 };
-use core_graphics::geometry::CGPoint;
+
+use super::Point;
 
 // AXUIElement is an opaque Core Foundation object. Each Create/Copy result below is
 // owned by a CFType and released on every exit path, on the blocking worker thread.
@@ -28,7 +29,7 @@ unsafe extern "C" {
 /// Press the exact accessible element at a global, top-left-relative display point.
 /// No ancestor search, application activation, event injection or fallback: a failure
 /// must not turn into a physical click, and an uncertain action must never be retried.
-pub fn press(at: CGPoint) -> Result<()> {
+pub fn press(at: Point) -> Result<()> {
     ensure!(
         [at.x, at.y]
             .into_iter()
@@ -105,13 +106,13 @@ mod tests {
     fn invalid_coordinates_are_rejected_before_any_accessibility_access() {
         for value in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, f64::MAX] {
             assert!(
-                press(CGPoint::new(value, 0.0))
+                press(Point { x: value, y: 0.0 })
                     .unwrap_err()
                     .to_string()
                     .contains("coordinates")
             );
             assert!(
-                press(CGPoint::new(0.0, value))
+                press(Point { x: 0.0, y: value })
                     .unwrap_err()
                     .to_string()
                     .contains("coordinates")
