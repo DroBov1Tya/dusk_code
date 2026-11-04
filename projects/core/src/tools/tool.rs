@@ -61,6 +61,27 @@ impl ToolContext {
             .await
     }
 
+    /// A screen grant never permits physical pointer takeover. Without an approval
+    /// service only the explicitly selected full-access policy allows it.
+    pub async fn approve_system_pointer(&self, action: &str) -> Result<()> {
+        let Some(approvals) = &self.approvals else {
+            anyhow::ensure!(
+                self.config.approvals() == crate::config::ApprovalPolicy::FullAccess,
+                "system pointer control needs a separate approval service or explicit full access"
+            );
+            return Ok(());
+        };
+        approvals
+            .ask(
+                Request::SystemPointer {
+                    action: action.to_owned(),
+                },
+                self.progress.clone(),
+                self.config.approvals(),
+            )
+            .await
+    }
+
     /// Every command needs the user's yes, unless full access or the session gives it.
     pub async fn approve_command(&self, command: &str) -> Result<()> {
         let Some(approvals) = &self.approvals else {

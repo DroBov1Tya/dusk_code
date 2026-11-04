@@ -29,9 +29,26 @@ impl Cursor {
         })
     }
 
+    /// The only window owner skipped by the captured-window visibility guard.
+    pub fn pid(&self) -> Option<u32> {
+        let mut helper = self.helper.lock();
+        let (child, _) = helper.as_mut()?;
+        matches!(child.try_wait(), Ok(None)).then(|| child.id())
+    }
+
     /// Puts the cursor's tip at `at`, in display points. It only shows the user where the
     /// agent acts, so a helper that cannot start is no failure.
     pub fn show(&self, at: CGPoint) {
+        self.line(&format!("{} {}", at.x, at.y));
+    }
+
+    /// Tells the helper the agent is at work, without moving the tip: a keyboard action
+    /// has no point, and the cursor may be hiding on the timer.
+    pub fn touch(&self) {
+        self.line("t");
+    }
+
+    fn line(&self, line: &str) {
         let mut helper = self.helper.lock();
         let running = helper
             .as_mut()
@@ -42,7 +59,7 @@ impl Cursor {
         let Some((_, stdin)) = helper.as_mut() else {
             return;
         };
-        if let Err(error) = writeln!(stdin, "{} {}", at.x, at.y).and_then(|()| stdin.flush()) {
+        if let Err(error) = writeln!(stdin, "{line}").and_then(|()| stdin.flush()) {
             debug!("cannot place the cursor: {error}");
             *helper = None;
         }

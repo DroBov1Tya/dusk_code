@@ -9,6 +9,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{
+    cursor::Cursor,
     macos,
     screen::{Region, Screen, Target, keys},
 };
@@ -43,7 +44,7 @@ macro_rules! computer_tool {
             Needs::Gui
         }
 
-        /// One pointer and keyboard: the chat drives them, never its agents.
+        /// One desktop and shared keyboard: the chat drives them, never its agents.
         fn root_only(&self) -> bool {
             true
         }
@@ -128,6 +129,29 @@ impl Tool for Screenshot {
     }
 }
 
+/// How a click reaches the screen. A click never falls back from one to the other.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum PointerMode {
+    /// Presses the control through Accessibility; the user's pointer stays put.
+    #[default]
+    Independent,
+    /// Posts mouse events, moving the user's pointer.
+    System,
+}
+
+impl PointerMode {
+    pub fn validate_click(self, right: bool, count: i64) -> Result<()> {
+        ensure!((1..=2).contains(&count), "a click count must be one or two");
+        ensure!(
+            self == Self::System || (!right && count == 1),
+            "a click without the pointer is a single left one; right and double clicks \
+             need mode system, which moves the user's pointer"
+        );
+        Ok(())
+    }
+}
+
 pub struct Click(pub Arc<Screen>);
 
 #[derive(Deserialize, JsonSchema)]
@@ -141,14 +165,22 @@ struct ClickArguments {
     /// A double click.
     #[serde(default)]
     double: bool,
+    /// Independent (default) activates an accessible control with AXPress without
+    /// moving the pointer. System posts a real click and moves the user's pointer.
+    #[serde(default)]
+    mode: PointerMode,
 }
 
 impl Tool for Click {
     computer_tool!("click");
 
     fn description(&self, _: &ToolContext) -> String {
-        "Click at x, y of the newest screenshot: left by default, right or double when \
-         asked. Moves the user's pointer there."
+        "Click at x, y of the newest screenshot. By default it presses the control there \
+         through Accessibility and leaves the user's pointer alone: a single left click \
+         on a button, link or checkbox, which may not focus a field or the app. A control \
+         that cannot be pressed so, or a window that moved since the screenshot, is an \
+         error. mode system clicks with the real pointer, right and double too, and \
+         asks the user first since it takes the pointer from them."
             .into()
     }
 
@@ -159,13 +191,44 @@ impl Tool for Click {
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ClickArguments = parse_arguments(arguments)?;
-            let action = format!("click at {}, {}", arguments.x, arguments.y);
-            context.approve_screen(&action, false).await?;
-            let at = self.0.point(arguments.x, arguments.y)?;
-            self.0.mark(at);
             let count = if arguments.double { 2 } else { 1 };
-            blocking(move || macos::click(at, arguments.right, count)).await?;
-            Ok(format!("clicked at {}, {}", arguments.x, arguments.y))
+            arguments.mode.validate_click(arguments.right, count)?;
+            let action = match arguments.mode {
+                PointerMode::Independent => format!(
+                    "activate the control at {}, {} without moving the pointer",
+                    arguments.x, arguments.y
+                ),
+                PointerMode::System => format!(
+                    "move the user's pointer and click at {}, {}",
+                    arguments.x, arguments.y
+                ),
+            };
+            match arguments.mode {
+                PointerMode::Independent => context.approve_screen(&action, false).await?,
+                PointerMode::System => context.approve_system_pointer(&action).await?,
+            }
+            let screen = Arc::clone(&self.0);
+            blocking(move || {
+                let at = match arguments.mode {
+                    PointerMode::Independent => {
+                        screen.independent_point(arguments.x, arguments.y)?
+                    }
+                    PointerMode::System => screen.point(arguments.x, arguments.y)?,
+                };
+                screen.mark(at);
+                macos::click(at, arguments.right, count, arguments.mode)
+            })
+            .await?;
+            match arguments.mode {
+                PointerMode::Independent => Ok(format!(
+                    "pressed the control at {}, {}; the keyboard focus may not have moved",
+                    arguments.x, arguments.y
+                )),
+                PointerMode::System => Ok(format!(
+                    "clicked at {}, {} with the pointer",
+                    arguments.x, arguments.y
+                )),
+            }
         })
     }
 }
@@ -184,8 +247,9 @@ impl Tool for TypeText {
 
     fn description(&self, _: &ToolContext) -> String {
         format!(
-            "Type text into whatever has the keyboard focus, as a person would; click the \
-             field first. Up to {MAX_TYPED_CHARS} characters. For Enter, shortcuts and \
+            "Type text into whatever has the shared system keyboard focus, as a person \
+             would. Independent AXPress does not guarantee focus: verify the focused \
+             field and app first. Up to {MAX_TYPED_CHARS} characters. For Enter, shortcuts and \
              other keys use press_keys."
         )
     }
@@ -209,6 +273,7 @@ impl Tool for TypeText {
             let action = format!("type \"{}{more}\"", shown.escape_debug());
             context.approve_screen(&action, true).await?;
             blocking(move || macos::type_text(&arguments.text)).await?;
+            Cursor::shared().touch();
             Ok(format!("typed {count} characters"))
         })
     }
@@ -227,9 +292,9 @@ impl Tool for PressKeys {
     computer_tool!("press_keys");
 
     fn description(&self, _: &ToolContext) -> String {
-        "Press a key or a shortcut: a letter, digit, enter, tab, space, esc, delete, the \
-         arrows, home, end, pageup, pagedown or f1 to f12, with cmd, shift, ctrl and alt \
-         joined by +."
+        "Press a key or a shortcut in whatever has the keyboard focus: a letter, digit, \
+         enter, tab, space, esc, delete, the arrows, home, end, pageup, pagedown or f1 to \
+         f12, with cmd, shift, ctrl and alt joined by +."
             .into()
     }
 
@@ -245,6 +310,7 @@ impl Tool for PressKeys {
                 .approve_screen(&format!("press {}", arguments.keys), true)
                 .await?;
             blocking(move || macos::press(key, flags)).await?;
+            Cursor::shared().touch();
             Ok(format!("pressed {}", arguments.keys))
         })
     }
@@ -271,7 +337,8 @@ impl Tool for Scroll {
 
     fn description(&self, _: &ToolContext) -> String {
         "Scroll what is under x, y of the newest screenshot by pixels down or right; \
-         negative goes up or left."
+         negative goes up or left. It moves the user's pointer there, so it asks the user \
+         first."
             .into()
     }
 
@@ -285,11 +352,63 @@ impl Tool for Scroll {
             let bounded = |pixels: i32| pixels.clamp(-MAX_SCROLL_PIXELS, MAX_SCROLL_PIXELS);
             let (down, right) = (bounded(arguments.down), bounded(arguments.right));
             ensure!(down != 0 || right != 0, "say how far to scroll");
-            context.approve_screen("scroll", false).await?;
+            context
+                .approve_system_pointer("move the user's pointer and scroll")
+                .await?;
             let at = self.0.point(arguments.x, arguments.y)?;
             self.0.mark(at);
             blocking(move || macos::scroll(at, down, right)).await?;
             Ok(format!("scrolled {down} down and {right} right"))
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn existing_click_arguments_default_to_independent_activation() {
+        let args: ClickArguments = parse_arguments(json!({"x": 12, "y": 34})).unwrap();
+        assert_eq!(args.mode, PointerMode::Independent);
+        assert!(!args.right && !args.double);
+        assert!(args.mode.validate_click(args.right, 1).is_ok());
+    }
+
+    #[test]
+    fn pointer_movement_requires_explicit_system_mode() {
+        for (right, count) in [(true, 1), (false, 2), (true, 2)] {
+            assert!(
+                PointerMode::Independent
+                    .validate_click(right, count)
+                    .is_err()
+            );
+            assert!(PointerMode::System.validate_click(right, count).is_ok());
+        }
+        for count in [0, 3, -1] {
+            assert!(PointerMode::System.validate_click(false, count).is_err());
+        }
+        let args: ClickArguments = parse_arguments(
+            json!({"x": 12, "y": 34, "right": true, "double": true, "mode": "system"}),
+        )
+        .unwrap();
+        assert_eq!(args.mode, PointerMode::System);
+        assert!(args.right && args.double);
+        assert!(
+            parse_arguments::<ClickArguments>(json!({"x": 12, "y": 34, "mode": "auto"})).is_err()
+        );
+    }
+
+    #[test]
+    fn unsupported_backend_actions_fail_before_permission_or_event_access() {
+        let at = core_graphics::geometry::CGPoint::new(0.0, 0.0);
+        assert!(
+            macos::click(at, true, 1, PointerMode::Independent)
+                .unwrap_err()
+                .to_string()
+                .contains("single left")
+        );
+        assert!(macos::click(at, false, 2, PointerMode::Independent).is_err());
     }
 }

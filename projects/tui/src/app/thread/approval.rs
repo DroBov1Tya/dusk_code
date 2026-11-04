@@ -24,6 +24,7 @@ impl Asked {
                 Request::Path { write: false, .. } => format!("allow reading in {grant}"),
                 Request::Command { .. } => format!("allow `{grant}` commands"),
                 Request::Screen { .. } => "allow the screen".into(),
+                Request::SystemPointer { .. } => "allow control of the system pointer".into(),
                 Request::Keyboard { .. } => String::new(),
             };
             choices.push((Decision::Session, format!("{what} for this session")));
