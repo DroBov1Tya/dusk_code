@@ -8,7 +8,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     time::Duration,
 };
 
@@ -307,13 +307,18 @@ fn unpack_into(
     let file = work.join("archive.tar.gz");
     fs::write(&file, archive).context("cannot write the download")?;
     let unpacked = Command::new("tar")
-        .arg("-xzf")
+        .arg("-xzmf")
         .arg(&file)
         .arg("-C")
         .arg(work)
-        .status()
+        .stdin(Stdio::null())
+        .output()
         .context("tar is needed to unpack the update")?;
-    ensure!(unpacked.success(), "cannot unpack the download");
+    ensure!(
+        unpacked.status.success(),
+        "cannot unpack the download: {}",
+        String::from_utf8_lossy(&unpacked.stderr).trim()
+    );
     let new = work.join(name).join("duskcode");
     ensure!(new.is_file(), "the download has no duskcode binary");
     #[cfg(unix)]
