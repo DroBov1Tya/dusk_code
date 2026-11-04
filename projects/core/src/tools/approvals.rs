@@ -28,6 +28,14 @@ const RUNNERS: &[&str] = &[
     "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
 ];
 
+/// Window inventory or one kind of access to a retained window selection.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum WindowAccess {
+    List,
+    Capture(String),
+    Activate(String),
+}
+
 /// What a tool asks to do.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Request {
@@ -41,9 +49,9 @@ pub enum Request {
     /// Moving and clicking/scrolling with the shared system pointer. This needs its
     /// own session grant, separate from screen access and independent activation.
     SystemPointer { action: String },
-    /// One pinned window selection. None is an explicit request to end confinement.
+    /// Window metadata, capture or activation. None is a request to end confinement.
     Window {
-        session: Option<String>,
+        grant: Option<WindowAccess>,
         action: String,
     },
     /// Typing or pressing keys, which can do anything a shell can: asked every time,
@@ -64,7 +72,7 @@ impl Request {
             }
             Self::Keyboard { action } => format!("{who} wants to use the keyboard: {action}"),
             Self::Window { action, .. } => {
-                format!("{who} wants to use a selected window: {action}")
+                format!("{who} wants to use window tools: {action}")
             }
         }
     }
@@ -78,7 +86,14 @@ impl Request {
             Self::Screen { .. } => Some("the screen".into()),
             Self::SystemPointer { .. } => Some("the system pointer".into()),
             Self::Keyboard { .. } => None,
-            Self::Window { session, .. } => session.as_ref().map(|_| "the selected window".into()),
+            Self::Window { grant, .. } => match grant {
+                Some(WindowAccess::List) => Some("listing window names and IDs".into()),
+                Some(WindowAccess::Capture(_)) => Some("capture of this selected window".into()),
+                Some(WindowAccess::Activate(_)) => {
+                    Some("control activation in this selected window".into())
+                }
+                None => None,
+            },
         }
     }
 
@@ -90,7 +105,7 @@ impl Request {
             Self::Screen { action } => format!("using the screen: {action}"),
             Self::SystemPointer { action } => format!("controlling the system pointer: {action}"),
             Self::Keyboard { action } => format!("using the keyboard: {action}"),
-            Self::Window { action, .. } => format!("using the selected window: {action}"),
+            Self::Window { action, .. } => format!("using window tools: {action}"),
         }
     }
 }
@@ -245,7 +260,7 @@ struct Grants {
     programs: Vec<String>,
     screen: bool,
     system_pointer: bool,
-    windows: Vec<String>,
+    windows: Vec<WindowAccess>,
 }
 
 impl Grants {
@@ -261,9 +276,9 @@ impl Grants {
             Request::Screen { .. } => self.screen,
             Request::SystemPointer { .. } => self.system_pointer,
             Request::Keyboard { .. } => false,
-            Request::Window { session, .. } => {
-                session.as_ref().is_some_and(|id| self.windows.contains(id))
-            }
+            Request::Window { grant, .. } => grant
+                .as_ref()
+                .is_some_and(|access| self.windows.contains(access)),
         }
     }
 
@@ -276,7 +291,7 @@ impl Grants {
             Request::Screen { .. } => self.screen = true,
             Request::SystemPointer { .. } => self.system_pointer = true,
             Request::Keyboard { .. } => {}
-            Request::Window { session, .. } => self.windows.extend(session.clone()),
+            Request::Window { grant, .. } => self.windows.extend(grant.clone()),
         }
     }
 }
@@ -392,40 +407,124 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn window_grant_stays_with_one_selection_and_never_releases_it() {
+    async fn window_grants_are_separate_by_access_and_selection() {
         let approvals = Approvals::default();
-        let selected = Request::Window {
-            session: Some("window-1".into()),
-            action: "select one window".into(),
+        let select = Request::Window {
+            grant: Some(WindowAccess::Capture("window-1".into())),
+            action: "select one window for capture".into(),
         };
         let capture = Request::Window {
-            session: Some("window-1".into()),
+            grant: Some(WindowAccess::Capture("window-1".into())),
             action: "capture the selected window".into(),
         };
-        decide(&approvals, selected, Decision::Session)
+        let press = Request::Window {
+            grant: Some(WindowAccess::Activate("window-1".into())),
+            action: "activate a control in the selected window".into(),
+        };
+        let release = Request::Window {
+            grant: None,
+            action: "release".into(),
+        };
+        assert_ne!(capture.session_grant(), press.session_grant());
+        assert_eq!(release.session_grant(), None);
+        decide(&approvals, select, Decision::Session).await.unwrap();
+        approvals
+            .ask(capture.clone(), None, ApprovalPolicy::Ask)
+            .await
+            .unwrap();
+        assert!(
+            approvals
+                .ask(press.clone(), None, ApprovalPolicy::Ask)
+                .await
+                .is_err()
+        );
+
+        let action_only = Approvals::default();
+        decide(&action_only, press.clone(), Decision::Session)
+            .await
+            .unwrap();
+        action_only
+            .ask(press, None, ApprovalPolicy::Ask)
+            .await
+            .unwrap();
+        assert!(
+            action_only
+                .ask(capture, None, ApprovalPolicy::Ask)
+                .await
+                .is_err()
+        );
+
+        for approvals in [&approvals, &action_only] {
+            for request in [
+                Request::Window {
+                    grant: Some(WindowAccess::Capture("window-2".into())),
+                    action: "capture a different selection".into(),
+                },
+                Request::Window {
+                    grant: Some(WindowAccess::Activate("window-2".into())),
+                    action: "activate a control in a different selection".into(),
+                },
+                release.clone(),
+                Request::Window {
+                    grant: Some(WindowAccess::List),
+                    action: "list windows".into(),
+                },
+                Request::Screen {
+                    action: "capture the desktop".into(),
+                },
+                Request::SystemPointer {
+                    action: "scroll".into(),
+                },
+                Request::Keyboard {
+                    action: "type".into(),
+                },
+            ] {
+                assert!(
+                    approvals
+                        .ask(request, None, ApprovalPolicy::Ask)
+                        .await
+                        .is_err()
+                );
+            }
+        }
+        approvals
+            .ask(release, None, ApprovalPolicy::FullAccess)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn window_inventory_does_not_grant_desktop_capture_or_input() {
+        let list = Request::Window {
+            grant: Some(WindowAccess::List),
+            action: "list window names and IDs".into(),
+        };
+        let screen = Request::Screen {
+            action: "capture the desktop".into(),
+        };
+        let approvals = Approvals::default();
+        decide(&approvals, list.clone(), Decision::Session)
             .await
             .unwrap();
         approvals
-            .ask(capture, None, ApprovalPolicy::Ask)
+            .ask(list.clone(), None, ApprovalPolicy::Ask)
             .await
             .unwrap();
         for request in [
-            Request::Window {
-                session: Some("window-2".into()),
-                action: "select again".into(),
-            },
-            Request::Window {
-                session: None,
-                action: "release".into(),
-            },
-            Request::Screen {
-                action: "capture the desktop".into(),
-            },
+            screen.clone(),
             Request::SystemPointer {
                 action: "scroll".into(),
             },
             Request::Keyboard {
                 action: "type".into(),
+            },
+            Request::Window {
+                grant: Some(WindowAccess::Capture("window-1".into())),
+                action: "capture a window".into(),
+            },
+            Request::Window {
+                grant: Some(WindowAccess::Activate("window-1".into())),
+                action: "activate a window control".into(),
             },
         ] {
             assert!(
@@ -435,6 +534,16 @@ mod tests {
                     .is_err()
             );
         }
+        let desktop_only = Approvals::default();
+        decide(&desktop_only, screen, Decision::Session)
+            .await
+            .unwrap();
+        assert!(
+            desktop_only
+                .ask(list, None, ApprovalPolicy::Ask)
+                .await
+                .is_err()
+        );
     }
 
     #[test]

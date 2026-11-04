@@ -19,7 +19,7 @@ mod scope;
 mod tool;
 
 pub use agents::{AgentState, AskAgent, MessageParent};
-pub use approvals::{ApprovalRequest, Approvals, Decision, Judge, Request, Verdict};
+pub use approvals::{ApprovalRequest, Approvals, Decision, Judge, Request, Verdict, WindowAccess};
 #[cfg(target_os = "macos")]
 pub use computer::WindowSession;
 #[cfg(target_os = "macos")]

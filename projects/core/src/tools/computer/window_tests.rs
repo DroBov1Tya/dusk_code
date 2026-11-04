@@ -197,8 +197,9 @@ fn covered_window_session_preserves_pointer_focus_and_rejects_siblings_and_stale
     screen
         .click(x, y, false, 1, PointerMode::Independent, Some(&token))
         .unwrap();
-    let after = cover.command("snapshot");
+    let after_press = cover.command("snapshot");
     assert_eq!(target.command("snapshot")["state"], 1);
+    let after_callback = cover.command("snapshot");
     target.command("sibling");
     let error = screen
         .click(x, y, false, 1, PointerMode::Independent, Some(&token))
@@ -268,17 +269,19 @@ fn covered_window_session_preserves_pointer_focus_and_rejects_siblings_and_stale
         before["front_pid"], ready["pid"],
         "target was already foreground"
     );
-    assert_ne!(
-        after["front_pid"], ready["pid"],
-        "AXPress activated the target"
-    );
-    assert!(
-        before["front_pid"] == after["front_pid"],
-        "foreground changed between non-target apps (cover before={}, after={})",
-        before["front_pid"] == cover_ready["pid"],
-        after["front_pid"] == cover_ready["pid"]
-    );
-    assert_eq!(before["pointer_x"], after["pointer_x"]);
-    assert_eq!(before["pointer_y"], after["pointer_y"]);
+    for after in [after_press, after_callback] {
+        assert_ne!(
+            after["front_pid"], ready["pid"],
+            "AXPress activated the target"
+        );
+        assert!(
+            before["front_pid"] == after["front_pid"],
+            "foreground changed between non-target apps (cover before={}, after={})",
+            before["front_pid"] == cover_ready["pid"],
+            after["front_pid"] == cover_ready["pid"]
+        );
+        assert_eq!(before["pointer_x"], after["pointer_x"]);
+        assert_eq!(before["pointer_y"], after["pointer_y"]);
+    }
     println!("PASS actual Rust AXPress: focus and pointer preserved.");
 }

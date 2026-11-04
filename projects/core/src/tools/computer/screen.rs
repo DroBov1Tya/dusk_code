@@ -199,7 +199,7 @@ impl Screen {
         } else {
             *self.view.lock()
         };
-        let mut window = None;
+        let mut window: Option<Window> = None;
         #[cfg(target_os = "macos")]
         let session = self.session.lock().clone();
         #[cfg(target_os = "macos")]

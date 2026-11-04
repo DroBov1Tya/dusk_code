@@ -15,7 +15,7 @@ use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        schema,
+        WindowAccess, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -76,9 +76,8 @@ impl Tool for Click {
              through Accessibility and leaves the user's pointer alone: a single left click \
              on a button, link or checkbox, which may not focus a field or the app. A control \
              that cannot be pressed so, a window that moved since the screenshot, or an \
-             ambiguous window match is an error. mode system clicks with the real pointer, \
-             right and double too, and \
-             asks the user first since it takes the pointer from them."
+             ambiguous window match is an error. Outside a window session, mode system clicks \
+             with the real pointer and supports right and double clicks. It asks separately."
         } else {
             "Click at x, y of the newest screenshot, left by default, right or double when \
              asked. It moves the user's pointer there, so it asks the user first."
@@ -110,7 +109,7 @@ impl Tool for Click {
                 (Some((id, label)), PointerMode::Independent) => {
                     context
                         .approve_window(
-                            Some(id.clone()),
+                            Some(WindowAccess::Activate(id.clone())),
                             &format!(
                                 "{action} in {label}; the target app may come to the foreground"
                             ),

@@ -8,7 +8,7 @@ use serde_json::Value;
 use tokio::sync::mpsc;
 
 use super::{
-    approvals::{Approvals, Request},
+    approvals::{Approvals, Request, WindowAccess},
     scope::{Place, ToolScope},
 };
 use crate::{BoxFuture, config::Config, platform::Needs, runtime::ThreadEvent};
@@ -82,9 +82,9 @@ impl ToolContext {
             .await
     }
 
-    /// Approval belongs to one retained window session, never a title, PID or the
-    /// entire screen. Ending confinement (None) is always a separate decision.
-    pub async fn approve_window(&self, session: Option<String>, action: &str) -> Result<()> {
+    /// Capture and activation are separate approvals on one retained window.
+    /// Ending confinement does not inherit either session grant.
+    pub async fn approve_window(&self, grant: Option<WindowAccess>, action: &str) -> Result<()> {
         let Some(approvals) = &self.approvals else {
             anyhow::ensure!(
                 self.config.approvals() == crate::config::ApprovalPolicy::FullAccess,
@@ -95,7 +95,7 @@ impl ToolContext {
         approvals
             .ask(
                 Request::Window {
-                    session,
+                    grant,
                     action: action.to_owned(),
                 },
                 self.progress.clone(),

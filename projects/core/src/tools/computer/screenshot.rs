@@ -14,7 +14,7 @@ use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        ToolResult, schema,
+        ToolResult, WindowAccess, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -74,7 +74,10 @@ impl Tool for Screenshot {
             match &scope {
                 Some((id, label)) => {
                     context
-                        .approve_window(Some(id.clone()), &format!("capture only {label}"))
+                        .approve_window(
+                            Some(WindowAccess::Capture(id.clone())),
+                            &format!("capture only {label}"),
+                        )
                         .await?
                 }
                 None => context.approve_screen("take a screenshot", false).await?,

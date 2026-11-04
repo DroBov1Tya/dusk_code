@@ -12,7 +12,7 @@ use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        schema,
+        WindowAccess, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -46,7 +46,8 @@ impl Tool for WindowSession {
          arguments and its regions capture only that window; independent click may AXPress \
          its controls while another app covers it. AXPress can bring the target app to \
          the foreground. System clicks, scroll, type_text and \
-         press_keys are disabled. Selection and release use separate approval requests."
+         press_keys are disabled. Listing, capture and control activation use separate grants. \
+         Release uses its own approval request."
             .into()
     }
 
@@ -66,7 +67,7 @@ impl Tool for WindowSession {
                         "list takes no IDs"
                     );
                     context
-                        .approve_screen("list app window names and IDs", false)
+                        .approve_window(Some(WindowAccess::List), "list app window names and IDs")
                         .await?;
                     blocking(|| {
                         let windows = Desktop.windows()?;
@@ -84,8 +85,12 @@ impl Tool for WindowSession {
                     let pid = arguments.pid.context("select requires pid from list")?;
                     let selected = blocking(move || NativeWindow::select(id, pid)).await?;
                     let label = selected.label.clone();
-                    context.approve_window(Some(selected.token.clone()),
-                        &format!("capture and activate controls only in {label}; AXPress can bring it to the foreground")).await?;
+                    context
+                        .approve_window(
+                            Some(WindowAccess::Capture(selected.token.clone())),
+                            &format!("select {label} for window-only capture; control activation uses a separate approval"),
+                        )
+                        .await?;
                     let check = selected.clone();
                     blocking(move || check.inspect()).await?;
                     self.0.select(selected, expected.as_deref())?;
