@@ -1,16 +1,47 @@
 //! The open thread's standing goal, shown above the box with buttons that send the
-//! same `/goal` commands the user can type.
+//! same `/goal` commands the user can type. A draft with proposed criteria is approved
+//! or sent back for changes from there.
 
 use dusk_core::state::{Goal, GoalStatus};
 
-use super::{Action, App, Tone};
+use super::{Action, App, Focus, Tone};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum GoalButton {
-    /// Pauses an active goal, resumes a paused one.
-    Toggle,
+    /// Approves the proposed criteria as they are shown, and starts the work.
+    Approve,
+    /// Puts the start of a message asking for other criteria in the box.
+    Change,
+    Pause,
+    Resume,
     Clear,
 }
+
+/// What can be done with `goal` now, by its buttons.
+pub fn buttons(goal: &Goal) -> &'static [GoalButton] {
+    use GoalButton::*;
+    match goal.status {
+        _ if !goal.approved && goal.criteria.is_empty() => &[Clear],
+        _ if !goal.approved => &[Approve, Change, Clear],
+        GoalStatus::Active => &[Pause, Clear],
+        GoalStatus::Paused => &[Resume, Clear],
+        GoalStatus::Done => &[Clear],
+    }
+}
+
+impl GoalButton {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Approve => " approve ",
+            Self::Change => " change ",
+            Self::Pause => " pause ",
+            Self::Resume => " resume ",
+            Self::Clear => " \u{00D7} ",
+        }
+    }
+}
+
+const CHANGE: &str = "Change the goal's criteria: ";
 
 /// A goal button on the last drawn frame.
 pub struct GoalHit {
@@ -38,12 +69,18 @@ impl App {
         let Some(goal) = &self.goal else {
             return Action::None;
         };
-        let command = match (button, goal.status) {
-            (GoalButton::Toggle, _) if !goal.approved => "/goal",
-            (GoalButton::Clear, _) => "/goal clear",
-            (GoalButton::Toggle, GoalStatus::Active) => "/goal pause",
-            (GoalButton::Toggle, GoalStatus::Paused | GoalStatus::Done) => "/goal resume",
+        let command = match button {
+            // The revision on screen, so criteria the agent changed since are not approved.
+            GoalButton::Approve => format!("/goal approve {}", goal.revision),
+            GoalButton::Change => {
+                self.input.set(CHANGE.to_owned());
+                self.focus = Focus::Input;
+                return Action::None;
+            }
+            GoalButton::Pause => "/goal pause".into(),
+            GoalButton::Resume => "/goal resume".into(),
+            GoalButton::Clear => "/goal clear".into(),
         };
-        Action::Send(command.to_owned())
+        Action::Send(command)
     }
 }

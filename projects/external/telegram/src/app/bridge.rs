@@ -37,6 +37,7 @@ impl BotCommand {
     pub fn picked(command: &str, option: String) -> Option<Self> {
         match command {
             "mode" => Some(Self::Mode(Some(option))),
+            "goal" => Some(Self::Goal(Some(option))),
             "model" => Some(Self::Model(Some(option))),
             _ => None,
         }

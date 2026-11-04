@@ -13,8 +13,8 @@ use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use super::{
     theme::{
-        ACCENT, DEEP, DUSK, HAIRLINE, NEGATIVE, RAISED, SELECTED, SURFACE, TEXT, TEXT_MUTED,
-        TEXT_SOFT, bold, dim, fg, thought,
+        ACCENT, DEEP, DUSK, HAIRLINE, NEGATIVE, POSITIVE, RAISED, SELECTED, SURFACE, TEXT,
+        TEXT_MUTED, TEXT_SOFT, bold, dim, fg, thought,
     },
     transcript::spinner,
     wrap,
@@ -470,50 +470,57 @@ fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
     let Some(goal) = &app.goal else {
         return;
     };
-    let (color, toggle) = match goal.status {
-        _ if !goal.approved => (ACCENT, " review "),
-        GoalStatus::Active => (TEXT_SOFT, " pause "),
-        GoalStatus::Paused => (ACCENT, " resume "),
-        GoalStatus::Done => (TEXT_SOFT, " resume "),
+    let color = match goal.status {
+        _ if !goal.approved => ACCENT,
+        GoalStatus::Paused => ACCENT,
+        GoalStatus::Active | GoalStatus::Done => TEXT_SOFT,
     };
-    const CLEAR: &str = " \u{00D7} ";
+    let state = match goal.status {
+        _ if !goal.approved && goal.criteria.is_empty() => "drafting criteria",
+        _ if !goal.approved => "waiting for approval",
+        _ => goal.verification.as_str(),
+    };
+    let name = if goal.approved {
+        goal.status.name()
+    } else {
+        "draft"
+    };
     let head = format!(
-        "   \u{25CE} goal {} [{}]  {}/{}  ",
-        goal.status.name(),
-        if goal.approved || goal.status == GoalStatus::Done {
-            goal.verification.as_str()
-        } else {
-            "unapproved"
-        },
-        goal.rounds,
-        app.goal_rounds
+        "   \u{25CE} goal {name} [{state}]  {}/{}  ",
+        goal.rounds, app.goal_rounds
     );
-    let buttons = toggle.width() + CLEAR.width() + 1;
+    let offered = crate::app::goal_buttons(goal);
+    let buttons: usize = offered
+        .iter()
+        .map(|button| button.label().width() + 1)
+        .sum();
     let room = (area.width as usize).saturating_sub(head.width() + buttons + 1);
     let text = wrap::clip(&goal.text.replace('\n', " "), room);
     let gap = room.saturating_sub(text.width()) + 1;
-    let toggle_left = area.x + (head.width() + text.width() + gap) as u16;
-    let clear_left = toggle_left + toggle.width() as u16 + 1;
-    app.goal_hits.push(GoalHit {
-        row: area.y,
-        left: toggle_left,
-        right: toggle_left + toggle.width() as u16,
-        button: GoalButton::Toggle,
-    });
-    app.goal_hits.push(GoalHit {
-        row: area.y,
-        left: clear_left,
-        right: clear_left + CLEAR.width() as u16,
-        button: GoalButton::Clear,
-    });
-    let line = Line::from(vec![
+    let mut left = area.x + (head.width() + text.width() + gap) as u16;
+    let mut spans = vec![
         Span::styled(head, bold(color)),
         Span::raw(text),
         Span::raw(" ".repeat(gap)),
-        Span::styled(toggle, fg(color).bg(RAISED)),
-        Span::raw(" "),
-        Span::styled(CLEAR, fg(NEGATIVE).bg(RAISED)),
-    ]);
+    ];
+    for &button in offered {
+        let label = button.label();
+        let tint = match button {
+            GoalButton::Clear => NEGATIVE,
+            GoalButton::Approve => POSITIVE,
+            _ => color,
+        };
+        app.goal_hits.push(GoalHit {
+            row: area.y,
+            left,
+            right: left + label.width() as u16,
+            button,
+        });
+        spans.push(Span::styled(label, fg(tint).bg(RAISED)));
+        spans.push(Span::raw(" "));
+        left += label.width() as u16 + 1;
+    }
+    let line = Line::from(spans);
     frame.render_widget(Paragraph::new(line), area);
 }
 

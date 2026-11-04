@@ -109,6 +109,7 @@ async fn deliver(bot: &MyBot, shared: &Shared, message: ToBot) -> anyhow::Result
             title,
             options,
         } if options.len() <= config::MAX_MENU_BUTTONS => {
+            let title: String = title.chars().take(config::MAX_CHUNK_CHARS).collect();
             let sent = bot
                 .send_message(chat, title)
                 .reply_markup(buttons::pick::keyboard(&shared.nonce, &options))
