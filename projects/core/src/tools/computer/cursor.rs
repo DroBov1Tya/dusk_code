@@ -9,7 +9,6 @@ use std::{
     sync::OnceLock,
 };
 
-use core_graphics::geometry::CGPoint;
 use parking_lot::Mutex;
 use tracing::debug;
 
@@ -38,7 +37,7 @@ impl Cursor {
 
     /// Puts the cursor's tip at `at`, in display points. It only shows the user where the
     /// agent acts, so a helper that cannot start is no failure.
-    pub fn show(&self, at: CGPoint) {
+    pub fn show(&self, at: super::Point) {
         self.line(&format!("{} {}", at.x, at.y));
     }
 

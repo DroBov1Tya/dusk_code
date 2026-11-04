@@ -14,7 +14,7 @@ use core_graphics::{
     display::CGDisplay,
     event::{
         CGEvent, CGEventFlags, CGEventTapLocation, CGEventType, CGKeyCode, CGMouseButton,
-        EventField, ScrollEventUnit,
+        EventField, KeyCode, ScrollEventUnit,
     },
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::{CGPoint, CGRect},
@@ -25,7 +25,7 @@ use core_graphics::{
     },
 };
 
-use super::tools::PointerMode;
+use super::{Keys, Point, Rect, Window, cursor::Cursor, tools::PointerMode};
 
 /// Between the events of one action, so apps see them as a person's.
 const PAUSE: Duration = Duration::from_millis(30);
@@ -48,52 +48,76 @@ unsafe extern "C" {
 }
 
 /// The main display in points, which input events use.
-pub fn display() -> CGRect {
-    CGDisplay::main().bounds()
+pub fn display() -> Result<Rect> {
+    Ok(rect(CGDisplay::main().bounds()))
 }
 
-/// An app's window on screen, front to back as the system lists them.
-pub struct Window {
-    pub id: u32,
-    pub app: String,
-    pub title: String,
-    /// In display points.
-    pub bounds: CGRect,
-    pub pid: i64,
+/// Shows the user where the agent acts now, by dusk's own cursor.
+pub fn mark(at: Point) {
+    Cursor::shared().show(at);
+}
+
+/// Keeps dusk's cursor up while the agent types, without moving it.
+pub fn touch() {
+    Cursor::shared().touch();
+}
+
+/// A window as the system lists it, with what tells menus and overlays apart.
+struct Listed {
+    window: Window,
+    pid: i64,
     layer: i64,
 }
 
 /// The ordinary windows on screen, frontmost first; menus, docks and overlays left out.
-pub fn windows() -> Vec<Window> {
-    visible_windows()
+pub fn windows() -> Result<Vec<Window>> {
+    Ok(visible_windows()
         .into_iter()
-        .filter(|window| window.layer == 0)
-        .collect()
+        .filter(|listed| listed.layer == 0)
+        .map(|listed| listed.window)
+        .collect())
 }
 
 /// Includes menus and panels, but ignores our mouse-transparent cursor helper.
-pub fn front_window_at(at: CGPoint) -> Option<Window> {
-    let overlay_pid = super::cursor::Cursor::shared().pid().map(i64::from);
+fn front_window_at(at: Point) -> Option<Window> {
+    let overlay_pid = Cursor::shared().pid().map(i64::from);
     visible_windows()
         .into_iter()
-        .find(|window| Some(window.pid) != overlay_pid && window.bounds.contains(&at))
+        .find(|listed| Some(listed.pid) != overlay_pid && covers(listed.window.bounds, at))
+        .map(|listed| listed.window)
 }
 
-pub fn ensure_window_at(at: CGPoint, id: u32, bounds: CGRect) -> Result<()> {
+/// Refuses a click into a window screenshot once that window moved, changed size or is
+/// covered at `at`.
+pub fn ensure_window_at(at: Point, id: u32, bounds: Rect) -> Result<()> {
     let front = front_window_at(at)
         .context("the captured window is no longer visible here; take a new screenshot")?;
     ensure!(
-        front.id == id
-            && front.bounds.origin.x == bounds.origin.x
-            && front.bounds.origin.y == bounds.origin.y
-            && front.bounds.size.width == bounds.size.width
-            && front.bounds.size.height == bounds.size.height,
+        front.id == id && front.bounds == bounds,
         "the captured window moved, resized or is covered here; take a new screenshot"
     );
     Ok(())
 }
 
-fn visible_windows() -> Vec<Window> {
+fn covers(bounds: Rect, at: Point) -> bool {
+    (bounds.x..bounds.x + bounds.width).contains(&at.x)
+        && (bounds.y..bounds.y + bounds.height).contains(&at.y)
+}
+
+fn rect(bounds: CGRect) -> Rect {
+    Rect {
+        x: bounds.origin.x,
+        y: bounds.origin.y,
+        width: bounds.size.width,
+        height: bounds.size.height,
+    }
+}
+
+fn cg(at: Point) -> CGPoint {
+    CGPoint::new(at.x, at.y)
+}
+
+fn visible_windows() -> Vec<Listed> {
     let options = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements;
     let Some(list) = copy_window_info(options, kCGNullWindowID) else {
         return Vec::new();
@@ -119,11 +143,13 @@ fn visible_windows() -> Vec<Window> {
                 return None;
             }
             let bounds = field(unsafe { kCGWindowBounds })?.downcast::<CFDictionary>()?;
-            Some(Window {
-                id: u32::try_from(number(unsafe { kCGWindowNumber })?).ok()?,
-                app: text(unsafe { kCGWindowOwnerName }).unwrap_or_default(),
-                title: text(unsafe { kCGWindowName }).unwrap_or_default(),
-                bounds: CGRect::from_dict_representation(&bounds)?,
+            Some(Listed {
+                window: Window {
+                    id: u32::try_from(number(unsafe { kCGWindowNumber })?).ok()?,
+                    app: text(unsafe { kCGWindowOwnerName }).unwrap_or_default(),
+                    title: text(unsafe { kCGWindowName }).unwrap_or_default(),
+                    bounds: rect(CGRect::from_dict_representation(&bounds)?),
+                },
                 pid: number(unsafe { kCGWindowOwnerPID })?,
                 layer: number(unsafe { kCGWindowLayer })?,
             })
@@ -132,17 +158,14 @@ fn visible_windows() -> Vec<Window> {
 }
 
 /// Captures `rect` of the screen, in points, as a PNG at `file`.
-pub fn capture(rect: CGRect, file: &Path) -> Result<()> {
-    let region = format!(
-        "{},{},{},{}",
-        rect.origin.x, rect.origin.y, rect.size.width, rect.size.height
-    );
+pub fn capture(rect: Rect, file: &Path) -> Result<()> {
+    let region = format!("{},{},{},{}", rect.x, rect.y, rect.width, rect.height);
     screencapture(&["-R", &region], file)
 }
 
 /// Captures one window as it is, even under others, without its shadow.
-pub fn capture_window(id: u32, file: &Path) -> Result<()> {
-    screencapture(&["-o", "-l", &id.to_string()], file)
+pub fn capture_window(window: &Window, file: &Path) -> Result<()> {
+    screencapture(&["-o", "-l", &window.id.to_string()], file)
 }
 
 fn screencapture(target: &[&str], file: &Path) -> Result<()> {
@@ -206,11 +229,12 @@ fn post(event: Result<CGEvent, ()>) -> Result<()> {
     Ok(())
 }
 
-pub fn click(at: CGPoint, right: bool, count: i64, mode: PointerMode) -> Result<()> {
+pub fn click(at: Point, right: bool, count: i64, mode: PointerMode) -> Result<()> {
     mode.validate_click(right, count)?;
     if mode == PointerMode::Independent {
         return super::accessibility::press(at);
     }
+    let at = cg(at);
     let (down, up, button) = match right {
         true => (
             CGEventType::RightMouseDown,
@@ -267,7 +291,19 @@ fn type_units(units: &[u16]) -> Result<()> {
     Ok(())
 }
 
-pub fn press(key: CGKeyCode, flags: CGEventFlags) -> Result<()> {
+pub fn press(keys: &Keys) -> Result<()> {
+    let key = code(&keys.key).context("unknown key")?;
+    let mut flags = CGEventFlags::CGEventFlagNull;
+    for (on, flag) in [
+        (keys.cmd, CGEventFlags::CGEventFlagCommand),
+        (keys.shift, CGEventFlags::CGEventFlagShift),
+        (keys.ctrl, CGEventFlags::CGEventFlagControl),
+        (keys.alt, CGEventFlags::CGEventFlagAlternate),
+    ] {
+        if on {
+            flags |= flag;
+        }
+    }
     for down in [true, false] {
         let event = CGEvent::new_keyboard_event(source()?, key, down)
             .map_err(|_| anyhow::anyhow!("cannot create a key event"))?;
@@ -278,11 +314,11 @@ pub fn press(key: CGKeyCode, flags: CGEventFlags) -> Result<()> {
 }
 
 /// `down` and `right` in pixels; positive scrolls the content down and right.
-pub fn scroll(at: CGPoint, down: i32, right: i32) -> Result<()> {
+pub fn scroll(at: Point, down: i32, right: i32) -> Result<()> {
     post(CGEvent::new_mouse_event(
         source()?,
         CGEventType::MouseMoved,
-        at,
+        cg(at),
         CGMouseButton::Left,
     ))?;
     post(CGEvent::new_scroll_event(
@@ -293,4 +329,91 @@ pub fn scroll(at: CGPoint, down: i32, right: i32) -> Result<()> {
         -right,
         0,
     ))
+}
+
+#[cfg(test)]
+pub fn knows_key(name: &str) -> bool {
+    code(name).is_some()
+}
+
+fn code(name: &str) -> Option<CGKeyCode> {
+    const LETTERS: [CGKeyCode; 26] = [
+        KeyCode::ANSI_A,
+        KeyCode::ANSI_B,
+        KeyCode::ANSI_C,
+        KeyCode::ANSI_D,
+        KeyCode::ANSI_E,
+        KeyCode::ANSI_F,
+        KeyCode::ANSI_G,
+        KeyCode::ANSI_H,
+        KeyCode::ANSI_I,
+        KeyCode::ANSI_J,
+        KeyCode::ANSI_K,
+        KeyCode::ANSI_L,
+        KeyCode::ANSI_M,
+        KeyCode::ANSI_N,
+        KeyCode::ANSI_O,
+        KeyCode::ANSI_P,
+        KeyCode::ANSI_Q,
+        KeyCode::ANSI_R,
+        KeyCode::ANSI_S,
+        KeyCode::ANSI_T,
+        KeyCode::ANSI_U,
+        KeyCode::ANSI_V,
+        KeyCode::ANSI_W,
+        KeyCode::ANSI_X,
+        KeyCode::ANSI_Y,
+        KeyCode::ANSI_Z,
+    ];
+    const DIGITS: [CGKeyCode; 10] = [
+        KeyCode::ANSI_0,
+        KeyCode::ANSI_1,
+        KeyCode::ANSI_2,
+        KeyCode::ANSI_3,
+        KeyCode::ANSI_4,
+        KeyCode::ANSI_5,
+        KeyCode::ANSI_6,
+        KeyCode::ANSI_7,
+        KeyCode::ANSI_8,
+        KeyCode::ANSI_9,
+    ];
+    let mut chars = name.chars();
+    if let (Some(c), None) = (chars.next(), chars.next()) {
+        if c.is_ascii_lowercase() {
+            return Some(LETTERS[(c as u8 - b'a') as usize]);
+        }
+        if c.is_ascii_digit() {
+            return Some(DIGITS[(c as u8 - b'0') as usize]);
+        }
+    }
+    Some(match name {
+        "enter" => KeyCode::RETURN,
+        "tab" => KeyCode::TAB,
+        "space" => KeyCode::SPACE,
+        // The key a Mac labels delete is backspace.
+        "delete" | "backspace" => KeyCode::DELETE,
+        "forwarddelete" => KeyCode::FORWARD_DELETE,
+        "esc" => KeyCode::ESCAPE,
+        "left" => KeyCode::LEFT_ARROW,
+        "right" => KeyCode::RIGHT_ARROW,
+        "up" => KeyCode::UP_ARROW,
+        "down" => KeyCode::DOWN_ARROW,
+        "home" => KeyCode::HOME,
+        "end" => KeyCode::END,
+        "pageup" => KeyCode::PAGE_UP,
+        "pagedown" => KeyCode::PAGE_DOWN,
+        "f1" => KeyCode::F1,
+        "f2" => KeyCode::F2,
+        "f3" => KeyCode::F3,
+        "f4" => KeyCode::F4,
+        "f5" => KeyCode::F5,
+        "f6" => KeyCode::F6,
+        "f7" => KeyCode::F7,
+        "f8" => KeyCode::F8,
+        "f9" => KeyCode::F9,
+        "f10" => KeyCode::F10,
+        "f11" => KeyCode::F11,
+        "f12" => KeyCode::F12,
+        _ => return None,
+    })
 }
