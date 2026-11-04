@@ -37,6 +37,606 @@ const FRAME_ROWS: u16 = 3;
 /// Columns between the card's edge and its text on each side: the edge and one blank.
 const SIDE: u16 = 2;
 
+/// The message box and what sits above it: approvals, polls, the goal, the queue and the popups.
+pub struct InputView<'a> {
+    pub app: &'a mut App,
+}
+
+impl InputView<'_> {
+    pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
+        let approvals = self.app.config.current().approvals();
+        self.draw_footer(
+            frame,
+            area,
+            self.app.git.as_ref(),
+            &self.app.folder,
+            approvals,
+        );
+        let area = Rect {
+            height: area.height.saturating_sub(1),
+            ..area
+        };
+        let approval = approval_rows(self.app).min(area.height);
+        self.draw_approval(
+            frame,
+            Rect {
+                height: approval,
+                ..area
+            },
+        );
+        let area = Rect {
+            y: area.y + approval,
+            height: area.height.saturating_sub(approval),
+            ..area
+        };
+        let polled = poll_rows(self.app).min(area.height);
+        self.draw_poll(
+            frame,
+            Rect {
+                height: polled,
+                ..area
+            },
+        );
+        let area = Rect {
+            y: area.y + polled,
+            height: area.height.saturating_sub(polled),
+            ..area
+        };
+        let goal = goal_rows(self.app).min(area.height);
+        self.draw_goal(
+            frame,
+            Rect {
+                height: goal,
+                ..area
+            },
+        );
+        let area = Rect {
+            y: area.y + goal,
+            height: area.height.saturating_sub(goal),
+            ..area
+        };
+        let queued = queue_rows(self.app).min(area.height);
+        self.draw_queue(
+            frame,
+            Rect {
+                height: queued,
+                ..area
+            },
+        );
+        let area = Rect {
+            y: area.y + queued,
+            height: area.height.saturating_sub(queued),
+            ..area
+        };
+        // The message is a card: what the agent does on its top edge, what is below on the
+        // right of it, and the text inside with a column of air on each side.
+        let box_area = Rect {
+            y: area.y + 1,
+            height: area.height.saturating_sub(1),
+            ..area
+        };
+        let (doing, below) = status(self.app);
+        let edge = if self.app.is_busy() {
+            SELECTED
+        } else {
+            HAIRLINE
+        };
+        let mut card = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(fg(edge))
+            .style(Style::new().bg(SURFACE))
+            .title(Line::from(doing));
+        if !below.is_empty() {
+            card = card
+                .title(Line::from(Span::styled(format!(" {below} "), fg(ACCENT))).right_aligned());
+        }
+        if let Some(tag) = &self.app.update_available {
+            let note = format!(" {tag} is out \u{00B7} /update ");
+            card = card.title_bottom(Line::from(Span::styled(note, fg(TEXT_SOFT))).right_aligned());
+        }
+        frame.render_widget(card, box_area);
+        let text_area = Rect {
+            x: box_area.x + SIDE,
+            y: box_area.y + 1,
+            width: box_area.width.saturating_sub(2 * SIDE),
+            height: box_area.height.saturating_sub(2),
+        };
+        self.app.input_chips.clear();
+        self.app.input_rows.clear();
+        self.app.input_area = Some(box_area);
+        let width = text_width(area.width);
+        let prompt = Span::styled(PROMPT, bold(ACCENT));
+        if self.app.input.text.is_empty() {
+            let hint = if !self.app.provider_available {
+                "provider unavailable; /connect or /model to choose a provider"
+            } else if self.app.is_busy() {
+                "write to queue it; Alt+Enter sends now, Esc stops"
+            } else {
+                "write, or / for commands"
+            };
+            let line = Line::from(vec![prompt, Span::styled(hint, thought())]);
+            frame.render_widget(Paragraph::new(line), text_area);
+            show_cursor(frame, self.app, text_area, (0, 0));
+            return;
+        }
+        let (rows, cursor) = layout(&self.app.input, width);
+        let skip = (cursor.1 + 1).saturating_sub(text_area.height as usize);
+        let left = text_area.x + PROMPT.width() as u16;
+        let mut lines = Vec::new();
+        for (row, shown) in rows.into_iter().enumerate().skip(skip) {
+            let y = text_area.y + (row - skip) as u16;
+            self.app.input_rows.push(InputRow {
+                row: y,
+                right: left + shown.width as u16,
+                cells: shown
+                    .cells
+                    .iter()
+                    .map(|&(column, offset)| (left + column as u16, offset))
+                    .collect(),
+                end: shown.end,
+            });
+            for &(from, to, index) in &shown.chips {
+                self.app.input_chips.push(ChipHit {
+                    row: y,
+                    left: left + from as u16,
+                    right: left + to as u16,
+                    index,
+                });
+            }
+            let lead = if row == 0 {
+                prompt.clone()
+            } else {
+                Span::raw("   ")
+            };
+            lines.push(Line::from([vec![lead], shown.spans].concat()));
+        }
+        frame.render_widget(Paragraph::new(lines), text_area);
+        show_cursor(frame, self.app, text_area, (cursor.0, cursor.1 - skip));
+    }
+
+    /// The repository summary and package version share a row below the message card.
+    fn draw_footer(
+        &self,
+        frame: &mut Frame,
+        area: Rect,
+        git: Option<&GitSummary>,
+        folder: &str,
+        approvals: ApprovalPolicy,
+    ) {
+        if area.is_empty() {
+            return;
+        }
+        let bottom = Rect {
+            y: area.bottom() - 1,
+            height: 1,
+            ..area
+        };
+        // A status bar of its own colour, so the row reads as one even with little on it.
+        frame.render_widget(Block::new().style(Style::new().bg(DEEP)), bottom);
+        const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
+        // Keep the version whole; an extremely narrow terminal has no room for it.
+        let version_width = VERSION.width() as u16;
+        let reserved = if bottom.width >= version_width {
+            frame.render_widget(
+                Paragraph::new(Span::styled(VERSION, dim())).right_aligned(),
+                bottom,
+            );
+            version_width.saturating_add(1)
+        } else {
+            0
+        };
+        let mut line = match git {
+            Some(summary) => git_line(summary),
+            None => Line::from(vec![
+                Span::styled(format!("  {folder}"), dim()),
+                Span::styled(" \u{00B7} not a git repository", dim()),
+            ]),
+        };
+        // First, so a narrow terminal cuts the folder rather than the warning.
+        let color = match approvals {
+            ApprovalPolicy::Ask => None,
+            ApprovalPolicy::FullAccess => Some(NEGATIVE),
+            _ => Some(ACCENT),
+        };
+        if let Some(color) = color {
+            let label = format!(" {} ", approvals.name());
+            line.spans.insert(0, Span::styled(label, bold(color)));
+        }
+        frame.render_widget(
+            Paragraph::new(line),
+            Rect {
+                width: bottom.width.saturating_sub(reserved),
+                ..bottom
+            },
+        );
+    }
+
+    /// The first request of a tool waiting for the user's yes, with its choices.
+    fn draw_approval(&mut self, frame: &mut Frame, area: Rect) {
+        self.app.approval_hits.clear();
+        let Some(asked) = self.app.approvals.first() else {
+            return;
+        };
+        if area.height < 4 || area.width < 20 {
+            return;
+        }
+        let waiting = self.app.approvals.len();
+        let title = match waiting {
+            1 => " approval ".to_owned(),
+            _ => format!(" approval 1 of {waiting} "),
+        };
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(fg(ACCENT))
+            .title(Span::styled(title, bold(DUSK)));
+        let inner = block.inner(area);
+        frame.render_widget(Clear, area);
+        frame.render_widget(block, area);
+        let width = inner.width as usize;
+        let mut lines = vec![Line::from(Span::styled(
+            wrap::clip(&format!(" {}", asked.title()), width),
+            bold(TEXT),
+        ))];
+        for (row, (decision, label)) in asked.choices().into_iter().enumerate() {
+            let here = asked.cursor == row;
+            let pointer = if here { " \u{203A} " } else { "   " };
+            let style = match (here, decision) {
+                (true, Decision::Deny) => bold(NEGATIVE),
+                (true, _) => bold(ACCENT),
+                (false, _) => Style::new(),
+            };
+            let y = inner.y + 1 + row as u16;
+            if y < inner.bottom() {
+                self.app.approval_hits.push(ApprovalHit {
+                    row: y,
+                    left: inner.x,
+                    right: inner.right(),
+                    choice: row,
+                });
+            }
+            lines.push(Line::from(Span::styled(
+                wrap::clip(&format!("{pointer}{label}"), width),
+                style,
+            )));
+        }
+        lines.push(Line::from(Span::styled(
+            "  up/down choose  enter answers  esc denies",
+            dim(),
+        )));
+        frame.render_widget(Paragraph::new(lines), inner);
+    }
+
+    /// The question the agent asked: options to choose, the user's own answer, and buttons.
+    fn draw_poll(&mut self, frame: &mut Frame, area: Rect) {
+        let Some(poll) = &mut self.app.poll else {
+            return;
+        };
+        poll.hits.clear();
+        if area.height < 4 || area.width < 20 {
+            return;
+        }
+        let border = if poll.active { ACCENT } else { HAIRLINE };
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(fg(border))
+            .title(Span::styled(" question ", bold(DUSK)));
+        let inner = block.inner(area);
+        frame.render_widget(Clear, area);
+        frame.render_widget(block, area);
+        let width = inner.width as usize;
+        let mut lines = vec![Line::from(Span::styled(
+            wrap::clip(&format!(" {}", poll.question.question), width),
+            bold(TEXT),
+        ))];
+        let own_row = poll.own_row();
+        let visible_rows = inner.height.saturating_sub(1) as usize;
+        for row in (0..=own_row).take(visible_rows) {
+            let here = poll.active && poll.cursor == row;
+            let pointer = if here { " \u{203A} " } else { "   " };
+            let (mark, text) = if row < own_row {
+                let mark = match (poll.question.multiple, poll.checked[row]) {
+                    (true, true) => "[x] ",
+                    (true, false) => "[ ] ",
+                    (false, _) if here => "(\u{2022}) ",
+                    (false, _) => "( ) ",
+                };
+                (mark, poll.question.options[row].clone())
+            } else {
+                let own = if poll.own.text.is_empty() && !here {
+                    "your own answer".to_owned()
+                } else {
+                    poll.own.text.clone()
+                };
+                ("\u{270E}  ", own)
+            };
+            let style = if here { bold(ACCENT) } else { Style::new() };
+            let label = wrap::clip(&format!("{pointer}{mark}{text}"), width);
+            poll.hits.push(PollHit {
+                row: inner.y + 1 + row as u16,
+                left: inner.x,
+                right: inner.right(),
+                target: PollTarget::Row(row),
+            });
+            lines.push(Line::from(Span::styled(label, style)));
+        }
+        let hint = if poll.question.multiple {
+            "space marks  enter sends  tab to the box  esc declines"
+        } else {
+            "enter sends  tab to the box  esc declines"
+        };
+        let buttons_row = inner.y + lines.len() as u16;
+        let send_left = inner.x + 1;
+        let decline_left = send_left + SEND.width() as u16 + 1;
+        if buttons_row < inner.bottom() {
+            poll.hits.push(PollHit {
+                row: buttons_row,
+                left: send_left,
+                right: send_left + SEND.width() as u16,
+                target: PollTarget::Send,
+            });
+            poll.hits.push(PollHit {
+                row: buttons_row,
+                left: decline_left,
+                right: decline_left + DECLINE.width() as u16,
+                target: PollTarget::Decline,
+            });
+        }
+        lines.push(Line::from(vec![
+            Span::raw(" "),
+            Span::styled(SEND, fg(ACCENT).bg(RAISED)),
+            Span::raw(" "),
+            Span::styled(DECLINE, fg(NEGATIVE).bg(RAISED)),
+            Span::styled(format!("  {hint}"), dim()),
+        ]));
+        frame.render_widget(Paragraph::new(lines), inner);
+        if poll.active && poll.cursor == own_row && own_row < visible_rows {
+            let column = 6 + poll.own.text[..poll.own.cursor].width();
+            let x = (inner.x as usize + column).min(inner.right().saturating_sub(1) as usize);
+            frame.set_cursor_position(Position::new(x as u16, inner.y + 1 + own_row as u16));
+        }
+    }
+
+    /// The messages waiting for the turn to end, each with its buttons; the newest are shown
+    /// when there are more than fit.
+    /// The standing goal in a line: its state, the round and the text, then its buttons.
+    fn draw_goal(&mut self, frame: &mut Frame, area: Rect) {
+        self.app.goal_hits.clear();
+        if area.is_empty() {
+            return;
+        }
+        let Some(goal) = &self.app.goal else {
+            return;
+        };
+        let color = match goal.status {
+            _ if !goal.approved => ACCENT,
+            GoalStatus::Paused => ACCENT,
+            GoalStatus::Active | GoalStatus::Done => TEXT_SOFT,
+        };
+        let state = match goal.status {
+            _ if !goal.approved && goal.criteria.is_empty() => "drafting criteria",
+            _ if !goal.approved => "waiting for approval",
+            _ => goal.verification.as_str(),
+        };
+        let name = if goal.approved {
+            goal.status.name()
+        } else {
+            "draft"
+        };
+        let head = format!(
+            "   \u{25CE} goal {name} [{state}]  {}/{}  ",
+            goal.rounds, self.app.goal_rounds
+        );
+        let offered = crate::app::goal_buttons(goal);
+        let buttons: usize = offered
+            .iter()
+            .map(|button| button.label().width() + 1)
+            .sum();
+        let room = (area.width as usize).saturating_sub(head.width() + buttons + 1);
+        let text = wrap::clip(&goal.text.replace('\n', " "), room);
+        let gap = room.saturating_sub(text.width()) + 1;
+        let mut left = area.x + (head.width() + text.width() + gap) as u16;
+        let mut spans = vec![
+            Span::styled(head, bold(color)),
+            Span::raw(text),
+            Span::raw(" ".repeat(gap)),
+        ];
+        for &button in offered {
+            let label = button.label();
+            let tint = match button {
+                GoalButton::Clear => NEGATIVE,
+                GoalButton::Approve => POSITIVE,
+                _ => color,
+            };
+            self.app.goal_hits.push(GoalHit {
+                row: area.y,
+                left,
+                right: left + label.width() as u16,
+                button,
+            });
+            spans.push(Span::styled(label, fg(tint).bg(RAISED)));
+            spans.push(Span::raw(" "));
+            left += label.width() as u16 + 1;
+        }
+        let line = Line::from(spans);
+        frame.render_widget(Paragraph::new(line), area);
+    }
+
+    fn draw_queue(&mut self, frame: &mut Frame, area: Rect) {
+        self.app.queue_hits.clear();
+        let skip = self.app.queued.len().saturating_sub(area.height as usize);
+        const SEND: &str = " send now ";
+        const REMOVE: &str = " \u{00D7} ";
+        let buttons = SEND.width() + REMOVE.width() + 1;
+        let mut lines = Vec::new();
+        for (index, text) in self.app.queued.iter().enumerate().skip(skip) {
+            let row = area.y + lines.len() as u16;
+            let label = format!("   \u{29D7} {}", paste::labelled(text).replace('\n', " "));
+            let room = (area.width as usize).saturating_sub(buttons);
+            let label = wrap::clip(&label, room);
+            let gap = room.saturating_sub(label.width());
+            let send_left = area.x + (label.width() + gap) as u16;
+            let remove_left = send_left + SEND.width() as u16 + 1;
+            let hits = [
+                (area.x, send_left, QueueButton::Edit),
+                (
+                    send_left,
+                    send_left + SEND.width() as u16,
+                    QueueButton::SendNow,
+                ),
+                (
+                    remove_left,
+                    remove_left + REMOVE.width() as u16,
+                    QueueButton::Remove,
+                ),
+            ];
+            for (left, right, button) in hits {
+                self.app.queue_hits.push(QueueHit {
+                    row,
+                    left,
+                    right,
+                    index,
+                    button,
+                });
+            }
+            lines.push(Line::from(vec![
+                Span::styled(label, thought()),
+                Span::raw(" ".repeat(gap)),
+                Span::styled(SEND, fg(ACCENT).bg(HAIRLINE)),
+                Span::raw(" "),
+                Span::styled(REMOVE, fg(NEGATIVE).bg(HAIRLINE)),
+            ]));
+        }
+        frame.render_widget(Paragraph::new(lines).style(Style::new().bg(RAISED)), area);
+    }
+
+    /// What the folder of the path being typed holds, folders first.
+    pub fn draw_paths(&mut self, frame: &mut Frame, above: Rect) {
+        let Some(popup) = &self.app.paths else {
+            return;
+        };
+        let entries = &popup.found.entries;
+        let selected = popup.selected.unwrap_or(0);
+        let skip = (selected + 1).saturating_sub(PATH_ROWS);
+        let more = entries.len().saturating_sub(skip + PATH_ROWS);
+        let mut lines: Vec<Line> = entries
+            .iter()
+            .enumerate()
+            .skip(skip)
+            .take(PATH_ROWS)
+            .map(|(index, entry)| {
+                let chosen = popup.selected == Some(index);
+                let slash = if entry.directory { "/" } else { "" };
+                let style = match (chosen, entry.directory) {
+                    (true, _) => bold(ACCENT).bg(RAISED),
+                    (false, true) => bold(TEXT),
+                    (false, false) => Style::new(),
+                };
+                Line::from(Span::styled(format!("  {}{slash}  ", entry.name), style))
+            })
+            .collect();
+        if more > 0 || popup.found.partial {
+            let note = match (popup.found.partial, more) {
+                (true, 0) => "  large folder; type to narrow  ".to_owned(),
+                (true, _) => format!("  {more}+ more; type to narrow  "),
+                (false, _) => format!("  {more} more  "),
+            };
+            lines.push(Line::from(Span::styled(note, dim())));
+        }
+        let width = lines
+            .iter()
+            .map(Line::width)
+            .max()
+            .unwrap_or(0)
+            .max(24)
+            .min(above.width.saturating_sub(2) as usize) as u16
+            + 2;
+        let height = (lines.len() as u16 + 2).min(above.height);
+        let area = Rect {
+            x: above.x + 1,
+            y: above.bottom().saturating_sub(height),
+            width,
+            height,
+        };
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(fg(HAIRLINE))
+            .title(Span::styled(" tab completes ", dim()));
+        frame.render_widget(Clear, area);
+        frame.render_widget(Paragraph::new(lines).block(block), area);
+    }
+
+    pub fn draw_commands(&mut self, frame: &mut Frame, above: Rect) {
+        self.app.command_popup = None;
+        let text = self
+            .app
+            .input
+            .command_cycle
+            .as_ref()
+            .map_or(self.app.input.text.as_str(), |(prefix, _)| prefix.as_str());
+        if !text.starts_with('/') || text.contains(char::is_whitespace) {
+            return;
+        }
+        let matching: Vec<_> = commands()
+            .filter(|(name, _)| name.starts_with(text))
+            .collect();
+        if matching.is_empty() {
+            return;
+        }
+        let width = matching
+            .iter()
+            .map(|(name, about)| name.width() + about.width() + 6)
+            .max()
+            .unwrap_or(0)
+            .min(above.width.saturating_sub(1) as usize) as u16;
+        let height = matching.len() as u16 + 2;
+        let area = Rect {
+            x: above.x + 1,
+            y: above.bottom().saturating_sub(height),
+            width,
+            height: height.min(above.height),
+        };
+        self.app.command_popup = Some(area);
+        let selected = self
+            .app
+            .input
+            .command_cycle
+            .as_ref()
+            .map_or(0, |(_, selected)| *selected);
+        let visible = area.height.saturating_sub(2) as usize;
+        let skip = (selected + 1).saturating_sub(visible);
+        let lines: Vec<Line> = matching
+            .iter()
+            .enumerate()
+            .skip(skip)
+            .take(visible)
+            .map(|(index, (name, about))| {
+                let selected = self
+                    .app
+                    .input
+                    .command_cycle
+                    .as_ref()
+                    .is_some_and(|(_, selected)| *selected == index);
+                Line::from(vec![
+                    Span::styled(
+                        format!(" {}{name}", if selected { "> " } else { "  " }),
+                        if selected {
+                            bold(ACCENT).bg(RAISED)
+                        } else {
+                            bold(TEXT)
+                        },
+                    ),
+                    Span::styled(format!("  {about}"), dim()),
+                ])
+            })
+            .collect();
+        let block = Block::bordered()
+            .border_type(BorderType::Rounded)
+            .border_style(fg(HAIRLINE));
+        frame.render_widget(Clear, area);
+        frame.render_widget(Paragraph::new(lines).block(block), area);
+    }
+}
+
 /// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
@@ -71,212 +671,11 @@ fn queue_rows(app: &App) -> u16 {
     app.queued.len().min(MAX_QUEUED) as u16
 }
 
-pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
-    let approvals = app.config.current().approvals();
-    draw_footer(frame, area, app.git.as_ref(), &app.folder, approvals);
-    let area = Rect {
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let approval = approval_rows(app).min(area.height);
-    draw_approval(
-        frame,
-        Rect {
-            height: approval,
-            ..area
-        },
-        app,
-    );
-    let area = Rect {
-        y: area.y + approval,
-        height: area.height.saturating_sub(approval),
-        ..area
-    };
-    let polled = poll_rows(app).min(area.height);
-    draw_poll(
-        frame,
-        Rect {
-            height: polled,
-            ..area
-        },
-        app,
-    );
-    let area = Rect {
-        y: area.y + polled,
-        height: area.height.saturating_sub(polled),
-        ..area
-    };
-    let goal = goal_rows(app).min(area.height);
-    draw_goal(
-        frame,
-        Rect {
-            height: goal,
-            ..area
-        },
-        app,
-    );
-    let area = Rect {
-        y: area.y + goal,
-        height: area.height.saturating_sub(goal),
-        ..area
-    };
-    let queued = queue_rows(app).min(area.height);
-    draw_queue(
-        frame,
-        Rect {
-            height: queued,
-            ..area
-        },
-        app,
-    );
-    let area = Rect {
-        y: area.y + queued,
-        height: area.height.saturating_sub(queued),
-        ..area
-    };
-    // The message is a card: what the agent does on its top edge, what is below on the
-    // right of it, and the text inside with a column of air on each side.
-    let box_area = Rect {
-        y: area.y + 1,
-        height: area.height.saturating_sub(1),
-        ..area
-    };
-    let (doing, below) = status(app);
-    let edge = if app.is_busy() { SELECTED } else { HAIRLINE };
-    let mut card = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(fg(edge))
-        .style(Style::new().bg(SURFACE))
-        .title(Line::from(doing));
-    if !below.is_empty() {
-        card =
-            card.title(Line::from(Span::styled(format!(" {below} "), fg(ACCENT))).right_aligned());
-    }
-    if let Some(tag) = &app.update_available {
-        let note = format!(" {tag} is out \u{00B7} /update ");
-        card = card.title_bottom(Line::from(Span::styled(note, fg(TEXT_SOFT))).right_aligned());
-    }
-    frame.render_widget(card, box_area);
-    let text_area = Rect {
-        x: box_area.x + SIDE,
-        y: box_area.y + 1,
-        width: box_area.width.saturating_sub(2 * SIDE),
-        height: box_area.height.saturating_sub(2),
-    };
-    app.input_chips.clear();
-    app.input_rows.clear();
-    app.input_area = Some(box_area);
-    let width = text_width(area.width);
-    let prompt = Span::styled(PROMPT, bold(ACCENT));
-    if app.input.text.is_empty() {
-        let hint = if !app.provider_available {
-            "provider unavailable; /connect or /model to choose a provider"
-        } else if app.is_busy() {
-            "write to queue it; Alt+Enter sends now, Esc stops"
-        } else {
-            "write, or / for commands"
-        };
-        let line = Line::from(vec![prompt, Span::styled(hint, thought())]);
-        frame.render_widget(Paragraph::new(line), text_area);
-        show_cursor(frame, app, text_area, (0, 0));
-        return;
-    }
-    let (rows, cursor) = layout(&app.input, width);
-    let skip = (cursor.1 + 1).saturating_sub(text_area.height as usize);
-    let left = text_area.x + PROMPT.width() as u16;
-    let mut lines = Vec::new();
-    for (row, shown) in rows.into_iter().enumerate().skip(skip) {
-        let y = text_area.y + (row - skip) as u16;
-        app.input_rows.push(InputRow {
-            row: y,
-            right: left + shown.width as u16,
-            cells: shown
-                .cells
-                .iter()
-                .map(|&(column, offset)| (left + column as u16, offset))
-                .collect(),
-            end: shown.end,
-        });
-        for &(from, to, index) in &shown.chips {
-            app.input_chips.push(ChipHit {
-                row: y,
-                left: left + from as u16,
-                right: left + to as u16,
-                index,
-            });
-        }
-        let lead = if row == 0 {
-            prompt.clone()
-        } else {
-            Span::raw("   ")
-        };
-        lines.push(Line::from([vec![lead], shown.spans].concat()));
-    }
-    frame.render_widget(Paragraph::new(lines), text_area);
-    show_cursor(frame, app, text_area, (cursor.0, cursor.1 - skip));
-}
-
 /// The chat's mode as a cell of its own colour, amber for MAIN and violet for the
 /// others; Tab switches it.
 fn mode_chip(mode: &str) -> Span<'static> {
     let color = if mode == "MAIN" { ACCENT } else { DUSK };
     Span::styled(format!(" {} ", mode.to_lowercase()), bold(DEEP).bg(color))
-}
-
-/// The repository summary and package version share a row below the message card.
-fn draw_footer(
-    frame: &mut Frame,
-    area: Rect,
-    git: Option<&GitSummary>,
-    folder: &str,
-    approvals: ApprovalPolicy,
-) {
-    if area.is_empty() {
-        return;
-    }
-    let bottom = Rect {
-        y: area.bottom() - 1,
-        height: 1,
-        ..area
-    };
-    // A status bar of its own colour, so the row reads as one even with little on it.
-    frame.render_widget(Block::new().style(Style::new().bg(DEEP)), bottom);
-    const VERSION: &str = concat!("v", env!("CARGO_PKG_VERSION"));
-    // Keep the version whole; an extremely narrow terminal has no room for it.
-    let version_width = VERSION.width() as u16;
-    let reserved = if bottom.width >= version_width {
-        frame.render_widget(
-            Paragraph::new(Span::styled(VERSION, dim())).right_aligned(),
-            bottom,
-        );
-        version_width.saturating_add(1)
-    } else {
-        0
-    };
-    let mut line = match git {
-        Some(summary) => git_line(summary),
-        None => Line::from(vec![
-            Span::styled(format!("  {folder}"), dim()),
-            Span::styled(" \u{00B7} not a git repository", dim()),
-        ]),
-    };
-    // First, so a narrow terminal cuts the folder rather than the warning.
-    let color = match approvals {
-        ApprovalPolicy::Ask => None,
-        ApprovalPolicy::FullAccess => Some(NEGATIVE),
-        _ => Some(ACCENT),
-    };
-    if let Some(color) = color {
-        let label = format!(" {} ", approvals.name());
-        line.spans.insert(0, Span::styled(label, bold(color)));
-    }
-    frame.render_widget(
-        Paragraph::new(line),
-        Rect {
-            width: bottom.width.saturating_sub(reserved),
-            ..bottom
-        },
-    );
 }
 
 /// The repository, branch, commits, changed files and the distance to the upstream.
@@ -311,394 +710,12 @@ fn git_line(summary: &GitSummary) -> Line<'static> {
     Line::from(spans)
 }
 
-/// The first request of a tool waiting for the user's yes, with its choices.
-fn draw_approval(frame: &mut Frame, area: Rect, app: &mut App) {
-    app.approval_hits.clear();
-    let Some(asked) = app.approvals.first() else {
-        return;
-    };
-    if area.height < 4 || area.width < 20 {
-        return;
-    }
-    let waiting = app.approvals.len();
-    let title = match waiting {
-        1 => " approval ".to_owned(),
-        _ => format!(" approval 1 of {waiting} "),
-    };
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(fg(ACCENT))
-        .title(Span::styled(title, bold(DUSK)));
-    let inner = block.inner(area);
-    frame.render_widget(Clear, area);
-    frame.render_widget(block, area);
-    let width = inner.width as usize;
-    let mut lines = vec![Line::from(Span::styled(
-        wrap::clip(&format!(" {}", asked.title()), width),
-        bold(TEXT),
-    ))];
-    for (row, (decision, label)) in asked.choices().into_iter().enumerate() {
-        let here = asked.cursor == row;
-        let pointer = if here { " \u{203A} " } else { "   " };
-        let style = match (here, decision) {
-            (true, Decision::Deny) => bold(NEGATIVE),
-            (true, _) => bold(ACCENT),
-            (false, _) => Style::new(),
-        };
-        let y = inner.y + 1 + row as u16;
-        if y < inner.bottom() {
-            app.approval_hits.push(ApprovalHit {
-                row: y,
-                left: inner.x,
-                right: inner.right(),
-                choice: row,
-            });
-        }
-        lines.push(Line::from(Span::styled(
-            wrap::clip(&format!("{pointer}{label}"), width),
-            style,
-        )));
-    }
-    lines.push(Line::from(Span::styled(
-        "  up/down choose  enter answers  esc denies",
-        dim(),
-    )));
-    frame.render_widget(Paragraph::new(lines), inner);
-}
-
 const SEND: &str = " send ";
 const DECLINE: &str = " decline ";
-
-/// The question the agent asked: options to choose, the user's own answer, and buttons.
-fn draw_poll(frame: &mut Frame, area: Rect, app: &mut App) {
-    let Some(poll) = &mut app.poll else {
-        return;
-    };
-    poll.hits.clear();
-    if area.height < 4 || area.width < 20 {
-        return;
-    }
-    let border = if poll.active { ACCENT } else { HAIRLINE };
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(fg(border))
-        .title(Span::styled(" question ", bold(DUSK)));
-    let inner = block.inner(area);
-    frame.render_widget(Clear, area);
-    frame.render_widget(block, area);
-    let width = inner.width as usize;
-    let mut lines = vec![Line::from(Span::styled(
-        wrap::clip(&format!(" {}", poll.question.question), width),
-        bold(TEXT),
-    ))];
-    let own_row = poll.own_row();
-    let visible_rows = inner.height.saturating_sub(1) as usize;
-    for row in (0..=own_row).take(visible_rows) {
-        let here = poll.active && poll.cursor == row;
-        let pointer = if here { " \u{203A} " } else { "   " };
-        let (mark, text) = if row < own_row {
-            let mark = match (poll.question.multiple, poll.checked[row]) {
-                (true, true) => "[x] ",
-                (true, false) => "[ ] ",
-                (false, _) if here => "(\u{2022}) ",
-                (false, _) => "( ) ",
-            };
-            (mark, poll.question.options[row].clone())
-        } else {
-            let own = if poll.own.text.is_empty() && !here {
-                "your own answer".to_owned()
-            } else {
-                poll.own.text.clone()
-            };
-            ("\u{270E}  ", own)
-        };
-        let style = if here { bold(ACCENT) } else { Style::new() };
-        let label = wrap::clip(&format!("{pointer}{mark}{text}"), width);
-        poll.hits.push(PollHit {
-            row: inner.y + 1 + row as u16,
-            left: inner.x,
-            right: inner.right(),
-            target: PollTarget::Row(row),
-        });
-        lines.push(Line::from(Span::styled(label, style)));
-    }
-    let hint = if poll.question.multiple {
-        "space marks  enter sends  tab to the box  esc declines"
-    } else {
-        "enter sends  tab to the box  esc declines"
-    };
-    let buttons_row = inner.y + lines.len() as u16;
-    let send_left = inner.x + 1;
-    let decline_left = send_left + SEND.width() as u16 + 1;
-    if buttons_row < inner.bottom() {
-        poll.hits.push(PollHit {
-            row: buttons_row,
-            left: send_left,
-            right: send_left + SEND.width() as u16,
-            target: PollTarget::Send,
-        });
-        poll.hits.push(PollHit {
-            row: buttons_row,
-            left: decline_left,
-            right: decline_left + DECLINE.width() as u16,
-            target: PollTarget::Decline,
-        });
-    }
-    lines.push(Line::from(vec![
-        Span::raw(" "),
-        Span::styled(SEND, fg(ACCENT).bg(RAISED)),
-        Span::raw(" "),
-        Span::styled(DECLINE, fg(NEGATIVE).bg(RAISED)),
-        Span::styled(format!("  {hint}"), dim()),
-    ]));
-    frame.render_widget(Paragraph::new(lines), inner);
-    if poll.active && poll.cursor == own_row && own_row < visible_rows {
-        let column = 6 + poll.own.text[..poll.own.cursor].width();
-        let x = (inner.x as usize + column).min(inner.right().saturating_sub(1) as usize);
-        frame.set_cursor_position(Position::new(x as u16, inner.y + 1 + own_row as u16));
-    }
-}
-
-/// The messages waiting for the turn to end, each with its buttons; the newest are shown
-/// when there are more than fit.
-/// The standing goal in a line: its state, the round and the text, then its buttons.
-fn draw_goal(frame: &mut Frame, area: Rect, app: &mut App) {
-    app.goal_hits.clear();
-    if area.is_empty() {
-        return;
-    }
-    let Some(goal) = &app.goal else {
-        return;
-    };
-    let color = match goal.status {
-        _ if !goal.approved => ACCENT,
-        GoalStatus::Paused => ACCENT,
-        GoalStatus::Active | GoalStatus::Done => TEXT_SOFT,
-    };
-    let state = match goal.status {
-        _ if !goal.approved && goal.criteria.is_empty() => "drafting criteria",
-        _ if !goal.approved => "waiting for approval",
-        _ => goal.verification.as_str(),
-    };
-    let name = if goal.approved {
-        goal.status.name()
-    } else {
-        "draft"
-    };
-    let head = format!(
-        "   \u{25CE} goal {name} [{state}]  {}/{}  ",
-        goal.rounds, app.goal_rounds
-    );
-    let offered = crate::app::goal_buttons(goal);
-    let buttons: usize = offered
-        .iter()
-        .map(|button| button.label().width() + 1)
-        .sum();
-    let room = (area.width as usize).saturating_sub(head.width() + buttons + 1);
-    let text = wrap::clip(&goal.text.replace('\n', " "), room);
-    let gap = room.saturating_sub(text.width()) + 1;
-    let mut left = area.x + (head.width() + text.width() + gap) as u16;
-    let mut spans = vec![
-        Span::styled(head, bold(color)),
-        Span::raw(text),
-        Span::raw(" ".repeat(gap)),
-    ];
-    for &button in offered {
-        let label = button.label();
-        let tint = match button {
-            GoalButton::Clear => NEGATIVE,
-            GoalButton::Approve => POSITIVE,
-            _ => color,
-        };
-        app.goal_hits.push(GoalHit {
-            row: area.y,
-            left,
-            right: left + label.width() as u16,
-            button,
-        });
-        spans.push(Span::styled(label, fg(tint).bg(RAISED)));
-        spans.push(Span::raw(" "));
-        left += label.width() as u16 + 1;
-    }
-    let line = Line::from(spans);
-    frame.render_widget(Paragraph::new(line), area);
-}
-
-fn draw_queue(frame: &mut Frame, area: Rect, app: &mut App) {
-    app.queue_hits.clear();
-    let skip = app.queued.len().saturating_sub(area.height as usize);
-    const SEND: &str = " send now ";
-    const REMOVE: &str = " \u{00D7} ";
-    let buttons = SEND.width() + REMOVE.width() + 1;
-    let mut lines = Vec::new();
-    for (index, text) in app.queued.iter().enumerate().skip(skip) {
-        let row = area.y + lines.len() as u16;
-        let label = format!("   \u{29D7} {}", paste::labelled(text).replace('\n', " "));
-        let room = (area.width as usize).saturating_sub(buttons);
-        let label = wrap::clip(&label, room);
-        let gap = room.saturating_sub(label.width());
-        let send_left = area.x + (label.width() + gap) as u16;
-        let remove_left = send_left + SEND.width() as u16 + 1;
-        let hits = [
-            (area.x, send_left, QueueButton::Edit),
-            (
-                send_left,
-                send_left + SEND.width() as u16,
-                QueueButton::SendNow,
-            ),
-            (
-                remove_left,
-                remove_left + REMOVE.width() as u16,
-                QueueButton::Remove,
-            ),
-        ];
-        for (left, right, button) in hits {
-            app.queue_hits.push(QueueHit {
-                row,
-                left,
-                right,
-                index,
-                button,
-            });
-        }
-        lines.push(Line::from(vec![
-            Span::styled(label, thought()),
-            Span::raw(" ".repeat(gap)),
-            Span::styled(SEND, fg(ACCENT).bg(HAIRLINE)),
-            Span::raw(" "),
-            Span::styled(REMOVE, fg(NEGATIVE).bg(HAIRLINE)),
-        ]));
-    }
-    frame.render_widget(Paragraph::new(lines).style(Style::new().bg(RAISED)), area);
-}
 
 /// The command list above the box while a command is being typed.
 /// Rows of a folder listing above the box; more wait behind the last one.
 const PATH_ROWS: usize = 8;
-
-/// What the folder of the path being typed holds, folders first.
-pub fn draw_paths(frame: &mut Frame, above: Rect, app: &mut App) {
-    let Some(popup) = &app.paths else {
-        return;
-    };
-    let entries = &popup.found.entries;
-    let selected = popup.selected.unwrap_or(0);
-    let skip = (selected + 1).saturating_sub(PATH_ROWS);
-    let more = entries.len().saturating_sub(skip + PATH_ROWS);
-    let mut lines: Vec<Line> = entries
-        .iter()
-        .enumerate()
-        .skip(skip)
-        .take(PATH_ROWS)
-        .map(|(index, entry)| {
-            let chosen = popup.selected == Some(index);
-            let slash = if entry.directory { "/" } else { "" };
-            let style = match (chosen, entry.directory) {
-                (true, _) => bold(ACCENT).bg(RAISED),
-                (false, true) => bold(TEXT),
-                (false, false) => Style::new(),
-            };
-            Line::from(Span::styled(format!("  {}{slash}  ", entry.name), style))
-        })
-        .collect();
-    if more > 0 || popup.found.partial {
-        let note = match (popup.found.partial, more) {
-            (true, 0) => "  large folder; type to narrow  ".to_owned(),
-            (true, _) => format!("  {more}+ more; type to narrow  "),
-            (false, _) => format!("  {more} more  "),
-        };
-        lines.push(Line::from(Span::styled(note, dim())));
-    }
-    let width = lines
-        .iter()
-        .map(Line::width)
-        .max()
-        .unwrap_or(0)
-        .max(24)
-        .min(above.width.saturating_sub(2) as usize) as u16
-        + 2;
-    let height = (lines.len() as u16 + 2).min(above.height);
-    let area = Rect {
-        x: above.x + 1,
-        y: above.bottom().saturating_sub(height),
-        width,
-        height,
-    };
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(fg(HAIRLINE))
-        .title(Span::styled(" tab completes ", dim()));
-    frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(lines).block(block), area);
-}
-
-pub fn draw_commands(frame: &mut Frame, above: Rect, app: &mut App) {
-    app.command_popup = None;
-    let text = app
-        .input
-        .command_cycle
-        .as_ref()
-        .map_or(app.input.text.as_str(), |(prefix, _)| prefix.as_str());
-    if !text.starts_with('/') || text.contains(char::is_whitespace) {
-        return;
-    }
-    let matching: Vec<_> = commands()
-        .filter(|(name, _)| name.starts_with(text))
-        .collect();
-    if matching.is_empty() {
-        return;
-    }
-    let width = matching
-        .iter()
-        .map(|(name, about)| name.width() + about.width() + 6)
-        .max()
-        .unwrap_or(0)
-        .min(above.width.saturating_sub(1) as usize) as u16;
-    let height = matching.len() as u16 + 2;
-    let area = Rect {
-        x: above.x + 1,
-        y: above.bottom().saturating_sub(height),
-        width,
-        height: height.min(above.height),
-    };
-    app.command_popup = Some(area);
-    let selected = app
-        .input
-        .command_cycle
-        .as_ref()
-        .map_or(0, |(_, selected)| *selected);
-    let visible = area.height.saturating_sub(2) as usize;
-    let skip = (selected + 1).saturating_sub(visible);
-    let lines: Vec<Line> = matching
-        .iter()
-        .enumerate()
-        .skip(skip)
-        .take(visible)
-        .map(|(index, (name, about))| {
-            let selected = app
-                .input
-                .command_cycle
-                .as_ref()
-                .is_some_and(|(_, selected)| *selected == index);
-            Line::from(vec![
-                Span::styled(
-                    format!(" {}{name}", if selected { "> " } else { "  " }),
-                    if selected {
-                        bold(ACCENT).bg(RAISED)
-                    } else {
-                        bold(TEXT)
-                    },
-                ),
-                Span::styled(format!("  {about}"), dim()),
-            ])
-        })
-        .collect();
-    let block = Block::bordered()
-        .border_type(BorderType::Rounded)
-        .border_style(fg(HAIRLINE));
-    frame.render_widget(Clear, area);
-    frame.render_widget(Paragraph::new(lines).block(block), area);
-}
 
 /// The rule: what the agent is doing and how far the transcript is scrolled.
 /// What goes on the card's top edge, and the note for its right end.
