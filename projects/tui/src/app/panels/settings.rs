@@ -623,9 +623,9 @@ impl App {
         if let Some(editor) = &mut view.editor {
             let text = &mut editor.text;
             match key.code {
-                KeyCode::Char('s') if ctrl => return press(view, FileButton::Save),
-                KeyCode::Char('r') if ctrl => return press(view, FileButton::Revert),
-                KeyCode::Esc => return press(view, FileButton::Close),
+                KeyCode::Char('s') if ctrl => return view.press(FileButton::Save),
+                KeyCode::Char('r') if ctrl => return view.press(FileButton::Revert),
+                KeyCode::Esc => return view.press(FileButton::Close),
                 KeyCode::Char(c) if !ctrl => text.insert(c.encode_utf8(&mut [0; 4])),
                 KeyCode::Enter => text.insert("\n"),
                 KeyCode::Tab => text.insert("  "),
@@ -824,7 +824,7 @@ impl App {
                     .find(|hit| y == hit.row && x >= hit.left && x < hit.right)
                     .map(|hit| hit.target);
                 match hit {
-                    Some(HitTarget::Button(button)) => return press(view, button),
+                    Some(HitTarget::Button(button)) => return view.press(button),
                     Some(HitTarget::MemorySize { row, more }) => {
                         view.selected = row;
                         return view.memory_size_action(row, more);
@@ -833,7 +833,7 @@ impl App {
                         view.selected = row;
                         return view.switch(row).unwrap_or(Action::None);
                     }
-                    Some(HitTarget::Row(row)) => return click_row(view, row),
+                    Some(HitTarget::Row(row)) => return view.click_row(row),
                     None => {}
                 }
             }
@@ -843,97 +843,99 @@ impl App {
     }
 }
 
-/// A click opens a category or a file, or selects a row; a second click on a selected
-/// row switches it.
-fn click_row(view: &mut SettingsView, row: usize) -> Action {
-    match view.category {
-        None => {
-            view.category = SettingCategory::ALL.get(row).copied();
-            view.selected = 0;
-            view.top = 0;
-        }
-        Some(SettingCategory::Models) => {
-            view.selected = row;
-            if row == 5 {
-                if view.manual_context.is_none() {
-                    view.edit_manual_context();
+impl SettingsView {
+    /// A click opens a category or a file, or selects a row; a second click on a selected
+    /// row switches it.
+    pub fn click_row(&mut self, row: usize) -> Action {
+        match self.category {
+            None => {
+                self.category = SettingCategory::ALL.get(row).copied();
+                self.selected = 0;
+                self.top = 0;
+            }
+            Some(SettingCategory::Models) => {
+                self.selected = row;
+                if row == 5 {
+                    if self.manual_context.is_none() {
+                        self.edit_manual_context();
+                    }
+                } else {
+                    self.manual_context = None;
+                    return self.model_action(row).unwrap_or(Action::None);
                 }
-            } else {
-                view.manual_context = None;
-                return view.model_action(row).unwrap_or(Action::None);
             }
+            Some(category) if self.opens_file(category, row) => {
+                self.selected = row;
+                let unsaved = self.editor.as_ref().is_some_and(FileEditor::changed);
+                if let Some(editor) = self.editor.as_mut().filter(|_| unsaved) {
+                    editor.error = Some("save or revert this one first".into());
+                    return Action::None;
+                }
+                return match category {
+                    SettingCategory::Agents => self.agent_file(row).map(Action::OpenAgentFile),
+                    SettingCategory::Skills => self
+                        .skills
+                        .get(row)
+                        .map(|skill| Action::OpenSkill(skill.name.clone())),
+                    _ => self
+                        .mcp_server(row)
+                        .map(|server| Action::OpenMcp(Some(server.name.clone()))),
+                }
+                .unwrap_or(Action::None);
+            }
+            Some(_) if self.selected == row => return self.switch(row).unwrap_or(Action::None),
+            Some(_) => self.selected = row,
         }
-        Some(category) if opens_file(view, category, row) => {
-            view.selected = row;
-            let unsaved = view.editor.as_ref().is_some_and(FileEditor::changed);
-            if let Some(editor) = view.editor.as_mut().filter(|_| unsaved) {
-                editor.error = Some("save or revert this one first".into());
-                return Action::None;
-            }
-            return match category {
-                SettingCategory::Agents => view.agent_file(row).map(Action::OpenAgentFile),
-                SettingCategory::Skills => view
-                    .skills
-                    .get(row)
-                    .map(|skill| Action::OpenSkill(skill.name.clone())),
-                _ => view
-                    .mcp_server(row)
-                    .map(|server| Action::OpenMcp(Some(server.name.clone()))),
-            }
-            .unwrap_or(Action::None);
-        }
-        Some(_) if view.selected == row => return view.switch(row).unwrap_or(Action::None),
-        Some(_) => view.selected = row,
+        Action::None
     }
-    Action::None
-}
 
-/// Whether a click on `row` opens a file beside the list rather than selecting it.
-fn opens_file(view: &SettingsView, category: SettingCategory, row: usize) -> bool {
-    match category {
-        SettingCategory::Agents => view.agent_file(row).is_some(),
-        SettingCategory::Skills => true,
-        SettingCategory::Mcp => matches!(view.mcp_rows().get(row), Some(McpRow::Server(_))),
-        SettingCategory::Models
-        | SettingCategory::Tools
-        | SettingCategory::Personalize
-        | SettingCategory::Limits
-        | SettingCategory::Appearance
-        | SettingCategory::Updates
-        | SettingCategory::Access
-        | SettingCategory::System => false,
-    }
-}
-
-fn press(view: &mut SettingsView, button: FileButton) -> Action {
-    let Some(editor) = &mut view.editor else {
-        return Action::None;
-    };
-    let text = editor.text.text.clone();
-    match (button, &editor.target) {
-        (FileButton::Save, EditTarget::Skill(name)) => Action::SaveSkill {
-            name: name.clone(),
-            text,
-        },
-        (FileButton::Save, EditTarget::Agent(name)) => Action::SaveAgentFile {
-            name: name.clone(),
-            text,
-        },
-        (FileButton::Save, EditTarget::Mcp(old)) => Action::SaveMcp {
-            old: old.clone(),
-            text,
-        },
-        // Reading the file again drops every change.
-        (FileButton::Revert, EditTarget::Skill(name)) => Action::OpenSkill(name.clone()),
-        (FileButton::Revert, EditTarget::Agent(name)) => Action::OpenAgentFile(name.clone()),
-        (FileButton::Revert, EditTarget::Mcp(name)) => Action::OpenMcp(name.clone()),
-        (FileButton::Close, _) if editor.changed() => {
-            editor.error = Some("unsaved: save with Ctrl+S or revert with Ctrl+R".into());
-            Action::None
+    /// Whether a click on `row` opens a file beside the list rather than selecting it.
+    fn opens_file(&self, category: SettingCategory, row: usize) -> bool {
+        match category {
+            SettingCategory::Agents => self.agent_file(row).is_some(),
+            SettingCategory::Skills => true,
+            SettingCategory::Mcp => matches!(self.mcp_rows().get(row), Some(McpRow::Server(_))),
+            SettingCategory::Models
+            | SettingCategory::Tools
+            | SettingCategory::Personalize
+            | SettingCategory::Limits
+            | SettingCategory::Appearance
+            | SettingCategory::Updates
+            | SettingCategory::Access
+            | SettingCategory::System => false,
         }
-        (FileButton::Close, _) => {
-            view.editor = None;
-            Action::None
+    }
+
+    pub fn press(&mut self, button: FileButton) -> Action {
+        let Some(editor) = &mut self.editor else {
+            return Action::None;
+        };
+        let text = editor.text.text.clone();
+        match (button, &editor.target) {
+            (FileButton::Save, EditTarget::Skill(name)) => Action::SaveSkill {
+                name: name.clone(),
+                text,
+            },
+            (FileButton::Save, EditTarget::Agent(name)) => Action::SaveAgentFile {
+                name: name.clone(),
+                text,
+            },
+            (FileButton::Save, EditTarget::Mcp(old)) => Action::SaveMcp {
+                old: old.clone(),
+                text,
+            },
+            // Reading the file again drops every change.
+            (FileButton::Revert, EditTarget::Skill(name)) => Action::OpenSkill(name.clone()),
+            (FileButton::Revert, EditTarget::Agent(name)) => Action::OpenAgentFile(name.clone()),
+            (FileButton::Revert, EditTarget::Mcp(name)) => Action::OpenMcp(name.clone()),
+            (FileButton::Close, _) if editor.changed() => {
+                editor.error = Some("unsaved: save with Ctrl+S or revert with Ctrl+R".into());
+                Action::None
+            }
+            (FileButton::Close, _) => {
+                self.editor = None;
+                Action::None
+            }
         }
     }
 }

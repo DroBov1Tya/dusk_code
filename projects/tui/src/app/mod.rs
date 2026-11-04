@@ -7,6 +7,7 @@ mod composer;
 mod events;
 mod hits;
 mod keys;
+mod mouse;
 mod panels;
 mod state;
 mod submit;
