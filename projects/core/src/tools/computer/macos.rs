@@ -188,7 +188,14 @@ pub fn require_accessibility() -> Result<()> {
 /// the user; later ones only check, so the system's dialog does not come back each time.
 fn accessibility_trusted() -> bool {
     static ASKED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if accessibility_trusted_with_prompt(false) {
+        return true;
+    }
     let ask = !ASKED.swap(true, std::sync::atomic::Ordering::SeqCst);
+    ask && accessibility_trusted_with_prompt(true)
+}
+
+fn accessibility_trusted_with_prompt(ask: bool) -> bool {
     // SAFETY: the key is a constant of the framework; the dictionary lives across the call.
     let key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
     let options = CFDictionary::from_CFType_pairs(&[(

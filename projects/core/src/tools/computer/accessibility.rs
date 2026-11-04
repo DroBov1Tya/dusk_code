@@ -65,16 +65,34 @@ pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
         unsafe { AXUIElementSetMessagingTimeout(system.as_CFTypeRef(), AX_TIMEOUT_SECONDS) },
         false,
     )?;
-    let mut hit = std::ptr::null();
     // AX uses global screen points with the origin at the main display's top left,
     // as do Screen's screenshot transforms, including negative secondary displays.
-    // SAFETY: system and the output pointer are valid; coordinates were checked.
-    let result = unsafe {
-        AXUIElementCopyElementAtPosition(system.as_CFTypeRef(), at.x as f32, at.y as f32, &mut hit)
-    };
-    let element = owned(hit);
-    check_hit_test(result)?;
-    let element = element.context("there is no accessible control at this point")?;
+    let (result, hit) = hit_test(system.as_CFTypeRef(), at);
+    let element = if result == -25200 {
+        // A system-wide lookup may fail even when an application exposes its own AX
+        // tree. Restrict the second lookup to the current frontmost window's PID;
+        // verify_target still binds the result to that exact window before AXPress.
+        let (window_id, pid, bounds) = super::macos::independent_window(at)?;
+        if let Some(expected) = expected_window {
+            ensure!(
+                (window_id, bounds) == expected,
+                "the captured window changed or is covered; no action was sent"
+            );
+        }
+        let app = owned(unsafe { AXUIElementCreateApplication(pid) })
+            .context("cannot inspect the target application; no action was sent")?;
+        check(
+            unsafe { AXUIElementSetMessagingTimeout(app.as_CFTypeRef(), AX_TIMEOUT_SECONDS) },
+            false,
+        )?;
+        let (result, element) = hit_test(app.as_CFTypeRef(), at);
+        check_hit_test(result).context("application-scoped accessibility lookup also failed")?;
+        element
+    } else {
+        check_hit_test(result)?;
+        hit
+    }
+    .context("there is no accessible control at this point")?;
     // SAFETY: the Copy result is a live AXUIElement, held until after the action.
     check(
         unsafe { AXUIElementSetMessagingTimeout(element.as_CFTypeRef(), AX_TIMEOUT_SECONDS) },
@@ -87,6 +105,14 @@ pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
         unsafe { AXUIElementPerformAction(element.as_CFTypeRef(), action.as_concrete_TypeRef()) },
         true,
     )
+}
+
+fn hit_test(scope: AXUIElementRef, at: Point) -> (i32, Option<CFType>) {
+    let mut hit = std::ptr::null();
+    // SAFETY: scope and output pointer are valid; coordinates are checked by press.
+    let result =
+        unsafe { AXUIElementCopyElementAtPosition(scope, at.x as f32, at.y as f32, &mut hit) };
+    (result, owned(hit))
 }
 
 fn check_hit_test(code: i32) -> Result<()> {
