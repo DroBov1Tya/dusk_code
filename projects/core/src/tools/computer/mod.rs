@@ -2,15 +2,19 @@
 //! types, presses keys and scrolls by the coordinates of that picture. Offered only with
 //! a screen, to a model that sees pictures, after one yes from the user a session.
 //!
-//! `screen` and `tools` are the same everywhere; the desktop they drive is `macos` or
+//! `screen` and the five tool modules are the same everywhere; the desktop they drive is `macos` or
 //! `linux`. On macOS a click presses the control through Accessibility and leaves the
 //! user's pointer alone; only system mode, with a yes of its own, moves the pointer. A
 //! screenshot can be of one window, and a cursor of dusk's own marks where the agent
 //! last acted. On Linux every click moves the pointer, through the X11 or Wayland tools
 //! the desktop has.
 
+#[macro_use]
+mod shared;
+
 #[cfg(target_os = "macos")]
 mod accessibility;
+mod click;
 #[cfg(target_os = "macos")]
 mod cursor;
 #[cfg(target_os = "linux")]
@@ -19,18 +23,25 @@ mod linux;
 mod macos;
 #[cfg(target_os = "macos")]
 mod overlay;
+mod press_keys;
 mod screen;
-mod tools;
+mod screenshot;
+mod scroll;
+mod type_text;
 
 #[cfg(target_os = "linux")]
-use linux as desktop;
+use linux::Desktop;
 #[cfg(target_os = "macos")]
-use macos as desktop;
+use macos::Desktop;
 
+pub use click::Click;
 #[cfg(target_os = "macos")]
 pub use overlay::run_overlay_if_asked;
+pub use press_keys::PressKeys;
 pub use screen::Screen;
-pub use tools::{Click, PressKeys, Screenshot, Scroll, TypeText};
+pub use screenshot::Screenshot;
+pub use scroll::Scroll;
+pub use type_text::TypeText;
 
 /// A place on the display in points, from the top left corner of the main display.
 #[derive(Debug, Clone, Copy, PartialEq)]
