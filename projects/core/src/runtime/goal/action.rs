@@ -177,8 +177,13 @@ pub fn describe(goal: &Goal) -> String {
     for note in [&goal.note, &goal.verification_note].into_iter().flatten() {
         line.push_str(&format!("\n{note}"));
     }
-    if !goal.approved {
-        line.push_str(&format!("\nReview the criteria and their check methods, then /goal approve {}.\nEdit with /goal <text> or /goal criteria <JSON array>; legacy goals need a new contract.", goal.revision));
+    if !goal.approved && goal.criteria.is_empty() {
+        line.push_str("\nThe agent proposes acceptance criteria next.");
+    } else if !goal.approved {
+        line.push_str(&format!(
+            "\nApprove the criteria to start (/goal approve {}), or say what to change.",
+            goal.revision
+        ));
     } else {
         line.push_str("\nInspect evidence with /goal result <result_id>; semantic approval: /goal confirm <revision> <criterion> <result_id>.");
     }
@@ -188,7 +193,7 @@ pub fn describe(goal: &Goal) -> String {
 pub fn reminder(goal: &Goal, max_rounds: u32) -> String {
     if !goal.approved {
         return format!(
-            "Draft goal; execution is blocked until user approval. Propose 1-20 mandatory acceptance criteria using the goal tool. Each criterion needs id, description and check: {{kind: command, command: exact shell command}} or {{kind: user_confirmation}}. Semantic requirements need user_confirmation. Do not perform the goal yet.\n{}",
+            "Draft goal; execution is blocked until user approval. Propose 1-20 mandatory acceptance criteria using the goal tool. Each criterion needs id, description and check: {{kind: command, command: exact shell command}} or {{kind: user_confirmation}}. Semantic requirements need user_confirmation. Do not perform the goal yet. After proposing, end the turn with the criteria in a few lines: the user approves them or says what to change, and a message of theirs asks for a new proposal.\n{}",
             describe(goal)
         );
     }

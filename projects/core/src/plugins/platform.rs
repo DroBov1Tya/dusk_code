@@ -363,7 +363,20 @@ impl<'a> Session<'a> {
                 _ => Ok(()),
             },
             ThreadEvent::Goal { goal, note, .. } => {
+                // Proposed criteria wait on the user: approved, or sent back to change.
+                let proposed = goal
+                    .as_ref()
+                    .is_some_and(|goal| !goal.approved && !goal.criteria.is_empty());
                 self.goal = goal;
+                if proposed {
+                    return self
+                        .send(ToPlatform::Menu {
+                            command: "goal",
+                            title: note,
+                            options: vec!["approve".into(), "change".into()],
+                        })
+                        .await;
+                }
                 if note.is_empty() {
                     return Ok(());
                 }
@@ -487,6 +500,16 @@ impl<'a> Session<'a> {
             ("goal", None) => {
                 let line = self.goal_line();
                 self.reply(&line).await
+            }
+            // What the menu of proposed criteria sends.
+            ("goal", Some(choice)) if choice == "approve" => match &self.goal {
+                Some(goal) if !goal.approved => {
+                    input.send(format!("/goal approve {}", goal.revision)).await
+                }
+                _ => self.reply("No criteria wait for approval.").await,
+            },
+            ("goal", Some(choice)) if choice == "change" => {
+                self.reply("Send what to change in the criteria.").await
             }
             ("goal", Some(text)) => input.send(format!("/goal {text}")).await,
             ("new", _) => {
