@@ -73,7 +73,7 @@ pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
         AXUIElementCopyElementAtPosition(system.as_CFTypeRef(), at.x as f32, at.y as f32, &mut hit)
     };
     let element = owned(hit);
-    check(result, false).context("cannot find the accessible control at this point")?;
+    check_hit_test(result)?;
     let element = element.context("there is no accessible control at this point")?;
     // SAFETY: the Copy result is a live AXUIElement, held until after the action.
     check(
@@ -87,6 +87,18 @@ pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
         unsafe { AXUIElementPerformAction(element.as_CFTypeRef(), action.as_concrete_TypeRef()) },
         true,
     )
+}
+
+fn check_hit_test(code: i32) -> Result<()> {
+    if code == -25200 {
+        bail!(
+            "macOS Accessibility hit-testing failed (kAXErrorFailure, -25200); \
+             the cause is unknown and no action was sent. Take a new screenshot and \
+             check the target window. Some apps or controls may not support Accessibility; \
+             mode system uses the user's pointer and requires separate approval"
+        );
+    }
+    check(code, false).context("macOS Accessibility hit-testing failed; no action was sent")
 }
 
 /// A visual window and the AX hit-test can disagree, especially for click-through
@@ -276,5 +288,15 @@ mod tests {
                 .to_string()
                 .contains("permission")
         );
+    }
+
+    #[test]
+    fn generic_hit_test_failure_does_not_claim_the_control_is_missing() {
+        let message = check_hit_test(-25200).unwrap_err().to_string();
+        assert!(message.contains("kAXErrorFailure"));
+        assert!(message.contains("cause is unknown"));
+        assert!(message.contains("no action was sent"));
+        assert!(message.contains("separate approval"));
+        assert!(!message.contains("cannot find"));
     }
 }
