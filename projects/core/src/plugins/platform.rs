@@ -464,7 +464,8 @@ impl<'a> Session<'a> {
             ("mode", None) => {
                 let config = self.launcher.config.current();
                 let title = format!("Mode: {}", config.mode());
-                let options = crate::catalog::modes::list(&self.launcher.paths.modes_dir());
+                let options =
+                    crate::catalog::modes::Modes::new(&self.launcher.paths.modes_dir()).list();
                 self.send(ToPlatform::Menu {
                     command: "mode",
                     title,
@@ -473,7 +474,8 @@ impl<'a> Session<'a> {
                 .await
             }
             ("mode", Some(mode)) => {
-                let modes = crate::catalog::modes::list(&self.launcher.paths.modes_dir());
+                let modes =
+                    crate::catalog::modes::Modes::new(&self.launcher.paths.modes_dir()).list();
                 if !modes.contains(&mode) {
                     return self.reply(&format!("No mode is named {mode}.")).await;
                 }

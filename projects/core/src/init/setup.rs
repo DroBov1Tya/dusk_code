@@ -12,7 +12,7 @@ use anyhow::{Context, Result, anyhow, bail, ensure};
 use tracing::{info, warn};
 
 use crate::{
-    catalog::modes,
+    catalog::modes::{self, Modes},
     init::paths::Paths,
     release::shipped::{self, LOCK_FILE, Synced},
 };
@@ -160,7 +160,7 @@ fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
     let Ok(text) = fs::read_to_string(&legacy) else {
         return Ok(());
     };
-    let template = match modes::template(modes::MAIN) {
+    let template = match Modes::template(modes::MAIN) {
         Ok(Some(template)) => template,
         _ => {
             warn!(
@@ -173,7 +173,7 @@ fn move_legacy_main_prompt(paths: &Paths) -> Result<()> {
         fs::remove_file(&legacy).context("cannot remove the old MAIN.md")?;
         return Ok(());
     }
-    let target = modes::file(&paths.modes_dir(), LEGACY_MODE);
+    let target = Modes::new(&paths.modes_dir()).file(LEGACY_MODE);
     let target = match fs::symlink_metadata(&target) {
         Ok(_) => target.with_extension("md.old"),
         Err(_) => target,
@@ -333,10 +333,10 @@ mod tests {
         fs::write(paths.legacy_main_prompt(), "Coordinate the agents.").unwrap();
         initialize(&paths).unwrap();
         assert!(!paths.legacy_main_prompt().exists());
-        let mine = modes::file(&paths.modes_dir(), LEGACY_MODE);
+        let mine = Modes::new(&paths.modes_dir()).file(LEGACY_MODE);
         assert_eq!(fs::read_to_string(mine).unwrap(), "Coordinate the agents.");
         let main = fs::read_to_string(paths.main_prompt()).unwrap();
-        assert_eq!(main, modes::template(modes::MAIN).unwrap().unwrap());
+        assert_eq!(main, Modes::template(modes::MAIN).unwrap().unwrap());
     }
 
     #[cfg(unix)]
