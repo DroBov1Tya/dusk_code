@@ -1055,6 +1055,7 @@ name = "dusk_tui"
 version = "0.70.2"
 dependencies = [
  "anyhow",
+ "chrono",
  "clap",
  "crossterm",
  "dusk_core",

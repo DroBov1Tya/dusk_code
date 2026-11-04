@@ -87,6 +87,10 @@ pub enum Tone {
 #[derive(Default)]
 pub struct Transcript {
     pub entries: Vec<Entry>,
+    /// When each entry came, in ms since the epoch, at the same index.
+    times: Vec<i64>,
+    /// The time of the stored message being read in; live entries take the clock's.
+    stamp: Option<i64>,
     /// Entries the user hid; each shows as one line until shown again.
     pub hidden: HashSet<usize>,
     /// What the agent does now, for the activity line of the run in progress.
@@ -209,6 +213,9 @@ impl Transcript {
             return;
         }
         self.entries.remove(index);
+        if index < self.times.len() {
+            self.times.remove(index);
+        }
         self.hidden = self
             .hidden
             .iter()
@@ -222,6 +229,7 @@ impl Transcript {
     pub fn from_history(messages: &[Message]) -> Self {
         let mut transcript = Self::default();
         for message in messages {
+            transcript.stamp = Some(message.created_at);
             match message.role {
                 MessageRole::User => transcript.push(match &message.from_thread_id {
                     Some(from) => Entry::from_agent(from.clone(), message.content.clone()),
@@ -259,7 +267,13 @@ impl Transcript {
                 _ => {}
             }
         }
+        transcript.stamp = None;
         transcript
+    }
+
+    /// When the entry at `index` came, in ms since the epoch.
+    pub fn time(&self, index: usize) -> Option<i64> {
+        self.times.get(index).copied()
     }
 
     pub fn push(&mut self, entry: Entry) {
@@ -271,6 +285,9 @@ impl Transcript {
             self.entries.push(Entry::Activity { open: false });
         }
         self.entries.push(entry);
+        // Also drops the times of entries popped through `entries_mut`.
+        let at = self.stamp.unwrap_or_else(crate::app::now_ms);
+        self.times.resize(self.entries.len(), at);
         self.changed();
     }
 
