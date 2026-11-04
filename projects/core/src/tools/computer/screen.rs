@@ -8,7 +8,7 @@ use image::{DynamicImage, ImageFormat, codecs::jpeg::JpegEncoder};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use super::{Keys, Point, Rect, Window, desktop};
+use super::{Desktop, Keys, Point, Rect, Window};
 use crate::state::artifacts::{ArtifactStore, ImageArtifact};
 
 /// Windows named in a failed lookup at most.
@@ -62,7 +62,7 @@ impl Screen {
 
     /// Shows the user where the agent acts now, in display points.
     pub fn mark(&self, at: Point) {
-        desktop::mark(at);
+        Desktop.mark(at);
     }
 
     /// The display, a region of the last screenshot or one window, as a picture for
@@ -71,7 +71,7 @@ impl Screen {
         let mut window = None;
         let mut captured_window = None;
         let rect = match &target {
-            Target::Display => desktop::display()?,
+            Target::Display => Desktop.display()?,
             Target::Window(name) => {
                 let found = find_window(name)?;
                 let bounds = found.bounds;
@@ -99,8 +99,8 @@ impl Screen {
         );
         let file = std::env::temp_dir().join(format!("duskcode-{}.png", Uuid::new_v4()));
         let taken = match &window {
-            Some(window) => desktop::capture_window(window, &file),
-            None => desktop::capture(rect, &file),
+            Some(window) => Desktop.capture_window(window, &file),
+            None => Desktop.capture(rect, &file),
         };
         let captured =
             taken.and_then(|()| std::fs::read(&file).context("cannot read the screenshot"));
@@ -158,7 +158,7 @@ impl Screen {
             "click coordinates must be inside the screenshot, not its far edge"
         );
         if let Some((id, bounds)) = view.window {
-            desktop::ensure_window_at(at, id, bounds)?;
+            Desktop.ensure_window_at(at, id, bounds)?;
         }
         Ok(at)
     }
@@ -216,7 +216,7 @@ impl View {
 fn find_window(name: &str) -> Result<Window> {
     let wanted = name.trim().to_lowercase();
     ensure!(!wanted.is_empty(), "name the app or window to capture");
-    let windows = desktop::windows()?;
+    let windows = Desktop.windows()?;
     let area = |window: &Window| window.bounds.width * window.bounds.height;
     let largest = |matches: &dyn Fn(&Window) -> bool| {
         windows
@@ -346,7 +346,7 @@ mod tests {
         }
         // Every name the parser lets through, the desktop can press.
         for name in KEY_NAMES.iter().copied().chain(["a", "z", "0", "9"]) {
-            assert!(desktop::knows_key(name), "{name}");
+            assert!(Desktop.knows_key(name), "{name}");
         }
     }
 

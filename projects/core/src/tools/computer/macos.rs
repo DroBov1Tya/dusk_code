@@ -25,7 +25,7 @@ use core_graphics::{
     },
 };
 
-use super::{Keys, Point, Rect, Window, cursor::Cursor, tools::PointerMode};
+use super::{Keys, Point, Rect, Window, click::PointerMode, cursor::Cursor};
 
 /// Between the events of one action, so apps see them as a person's.
 const PAUSE: Duration = Duration::from_millis(30);
@@ -47,35 +47,11 @@ unsafe extern "C" {
     fn CGRequestScreenCaptureAccess() -> bool;
 }
 
-/// The main display in points, which input events use.
-pub fn display() -> Result<Rect> {
-    Ok(rect(CGDisplay::main().bounds()))
-}
-
-/// Shows the user where the agent acts now, by dusk's own cursor.
-pub fn mark(at: Point) {
-    Cursor::shared().show(at);
-}
-
-/// Keeps dusk's cursor up while the agent types, without moving it.
-pub fn touch() {
-    Cursor::shared().touch();
-}
-
 /// A window as the system lists it, with what tells menus and overlays apart.
 struct Listed {
     window: Window,
     pid: i64,
     layer: i64,
-}
-
-/// The ordinary windows on screen, frontmost first; menus, docks and overlays left out.
-pub fn windows() -> Result<Vec<Window>> {
-    Ok(visible_windows()
-        .into_iter()
-        .filter(|listed| listed.layer == 0)
-        .map(|listed| listed.window)
-        .collect())
 }
 
 /// Includes menus and panels, but ignores our mouse-transparent cursor helper.
@@ -85,18 +61,6 @@ fn front_window_at(at: Point) -> Option<Window> {
         .into_iter()
         .find(|listed| Some(listed.pid) != overlay_pid && covers(listed.window.bounds, at))
         .map(|listed| listed.window)
-}
-
-/// Refuses a click into a window screenshot once that window moved, changed size or is
-/// covered at `at`.
-pub fn ensure_window_at(at: Point, id: u32, bounds: Rect) -> Result<()> {
-    let front = front_window_at(at)
-        .context("the captured window is no longer visible here; take a new screenshot")?;
-    ensure!(
-        front.id == id && front.bounds == bounds,
-        "the captured window moved, resized or is covered here; take a new screenshot"
-    );
-    Ok(())
 }
 
 fn covers(bounds: Rect, at: Point) -> bool {
@@ -155,17 +119,6 @@ fn visible_windows() -> Vec<Listed> {
             })
         })
         .collect()
-}
-
-/// Captures `rect` of the screen, in points, as a PNG at `file`.
-pub fn capture(rect: Rect, file: &Path) -> Result<()> {
-    let region = format!("{},{},{},{}", rect.x, rect.y, rect.width, rect.height);
-    screencapture(&["-R", &region], file)
-}
-
-/// Captures one window as it is, even under others, without its shadow.
-pub fn capture_window(window: &Window, file: &Path) -> Result<()> {
-    screencapture(&["-o", "-l", &window.id.to_string()], file)
 }
 
 fn screencapture(target: &[&str], file: &Path) -> Result<()> {
@@ -229,58 +182,6 @@ fn post(event: Result<CGEvent, ()>) -> Result<()> {
     Ok(())
 }
 
-pub fn click(at: Point, right: bool, count: i64, mode: PointerMode) -> Result<()> {
-    mode.validate_click(right, count)?;
-    if mode == PointerMode::Independent {
-        return super::accessibility::press(at);
-    }
-    let at = cg(at);
-    let (down, up, button) = match right {
-        true => (
-            CGEventType::RightMouseDown,
-            CGEventType::RightMouseUp,
-            CGMouseButton::Right,
-        ),
-        false => (
-            CGEventType::LeftMouseDown,
-            CGEventType::LeftMouseUp,
-            CGMouseButton::Left,
-        ),
-    };
-    post(CGEvent::new_mouse_event(
-        source()?,
-        CGEventType::MouseMoved,
-        at,
-        button,
-    ))?;
-    for click in 1..=count {
-        for kind in [down, up] {
-            let event = CGEvent::new_mouse_event(source()?, kind, at, button)
-                .map_err(|_| anyhow::anyhow!("cannot create a click"))?;
-            event.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click);
-            post(Ok(event))?;
-        }
-    }
-    Ok(())
-}
-
-pub fn type_text(text: &str) -> Result<()> {
-    // Cut between characters, so no surrogate pair is split.
-    let mut chunk: Vec<u16> = Vec::new();
-    for c in text.chars() {
-        let mut units = [0; 2];
-        let units = c.encode_utf16(&mut units);
-        if chunk.len() + units.len() > MAX_TYPED_UNITS {
-            type_units(&std::mem::take(&mut chunk))?;
-        }
-        chunk.extend_from_slice(units);
-    }
-    if !chunk.is_empty() {
-        type_units(&chunk)?;
-    }
-    Ok(())
-}
-
 fn type_units(units: &[u16]) -> Result<()> {
     for down in [true, false] {
         let event = CGEvent::new_keyboard_event(source()?, 0, down)
@@ -289,51 +190,6 @@ fn type_units(units: &[u16]) -> Result<()> {
         post(Ok(event))?;
     }
     Ok(())
-}
-
-pub fn press(keys: &Keys) -> Result<()> {
-    let key = code(&keys.key).context("unknown key")?;
-    let mut flags = CGEventFlags::CGEventFlagNull;
-    for (on, flag) in [
-        (keys.cmd, CGEventFlags::CGEventFlagCommand),
-        (keys.shift, CGEventFlags::CGEventFlagShift),
-        (keys.ctrl, CGEventFlags::CGEventFlagControl),
-        (keys.alt, CGEventFlags::CGEventFlagAlternate),
-    ] {
-        if on {
-            flags |= flag;
-        }
-    }
-    for down in [true, false] {
-        let event = CGEvent::new_keyboard_event(source()?, key, down)
-            .map_err(|_| anyhow::anyhow!("cannot create a key event"))?;
-        event.set_flags(flags);
-        post(Ok(event))?;
-    }
-    Ok(())
-}
-
-/// `down` and `right` in pixels; positive scrolls the content down and right.
-pub fn scroll(at: Point, down: i32, right: i32) -> Result<()> {
-    post(CGEvent::new_mouse_event(
-        source()?,
-        CGEventType::MouseMoved,
-        cg(at),
-        CGMouseButton::Left,
-    ))?;
-    post(CGEvent::new_scroll_event(
-        source()?,
-        ScrollEventUnit::PIXEL,
-        2,
-        -down,
-        -right,
-        0,
-    ))
-}
-
-#[cfg(test)]
-pub fn knows_key(name: &str) -> bool {
-    code(name).is_some()
 }
 
 fn code(name: &str) -> Option<CGKeyCode> {
@@ -416,4 +272,153 @@ fn code(name: &str) -> Option<CGKeyCode> {
         "f12" => KeyCode::F12,
         _ => return None,
     })
+}
+
+/// The desktop these tools drive.
+pub struct Desktop;
+
+impl Desktop {
+    /// The main display in points, which input events use.
+    pub fn display(&self) -> Result<Rect> {
+        Ok(rect(CGDisplay::main().bounds()))
+    }
+
+    /// Shows the user where the agent acts now, by dusk's own cursor.
+    pub fn mark(&self, at: Point) {
+        Cursor::shared().show(at);
+    }
+
+    /// Keeps dusk's cursor up while the agent types, without moving it.
+    pub fn touch(&self) {
+        Cursor::shared().touch();
+    }
+
+    /// The ordinary windows on screen, frontmost first; menus, docks and overlays left out.
+    pub fn windows(&self) -> Result<Vec<Window>> {
+        Ok(visible_windows()
+            .into_iter()
+            .filter(|listed| listed.layer == 0)
+            .map(|listed| listed.window)
+            .collect())
+    }
+
+    /// Refuses a click into a window screenshot once that window moved, changed size or is
+    /// covered at `at`.
+    pub fn ensure_window_at(&self, at: Point, id: u32, bounds: Rect) -> Result<()> {
+        let front = front_window_at(at)
+            .context("the captured window is no longer visible here; take a new screenshot")?;
+        ensure!(
+            front.id == id && front.bounds == bounds,
+            "the captured window moved, resized or is covered here; take a new screenshot"
+        );
+        Ok(())
+    }
+
+    /// Captures `rect` of the screen, in points, as a PNG at `file`.
+    pub fn capture(&self, rect: Rect, file: &Path) -> Result<()> {
+        let region = format!("{},{},{},{}", rect.x, rect.y, rect.width, rect.height);
+        screencapture(&["-R", &region], file)
+    }
+
+    /// Captures one window as it is, even under others, without its shadow.
+    pub fn capture_window(&self, window: &Window, file: &Path) -> Result<()> {
+        screencapture(&["-o", "-l", &window.id.to_string()], file)
+    }
+
+    pub fn click(&self, at: Point, right: bool, count: i64, mode: PointerMode) -> Result<()> {
+        mode.validate_click(right, count)?;
+        if mode == PointerMode::Independent {
+            return super::accessibility::press(at);
+        }
+        let at = cg(at);
+        let (down, up, button) = match right {
+            true => (
+                CGEventType::RightMouseDown,
+                CGEventType::RightMouseUp,
+                CGMouseButton::Right,
+            ),
+            false => (
+                CGEventType::LeftMouseDown,
+                CGEventType::LeftMouseUp,
+                CGMouseButton::Left,
+            ),
+        };
+        post(CGEvent::new_mouse_event(
+            source()?,
+            CGEventType::MouseMoved,
+            at,
+            button,
+        ))?;
+        for click in 1..=count {
+            for kind in [down, up] {
+                let event = CGEvent::new_mouse_event(source()?, kind, at, button)
+                    .map_err(|_| anyhow::anyhow!("cannot create a click"))?;
+                event.set_integer_value_field(EventField::MOUSE_EVENT_CLICK_STATE, click);
+                post(Ok(event))?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn type_text(&self, text: &str) -> Result<()> {
+        // Cut between characters, so no surrogate pair is split.
+        let mut chunk: Vec<u16> = Vec::new();
+        for c in text.chars() {
+            let mut units = [0; 2];
+            let units = c.encode_utf16(&mut units);
+            if chunk.len() + units.len() > MAX_TYPED_UNITS {
+                type_units(&std::mem::take(&mut chunk))?;
+            }
+            chunk.extend_from_slice(units);
+        }
+        if !chunk.is_empty() {
+            type_units(&chunk)?;
+        }
+        Ok(())
+    }
+
+    pub fn press(&self, keys: &Keys) -> Result<()> {
+        let key = code(&keys.key).context("unknown key")?;
+        let mut flags = CGEventFlags::CGEventFlagNull;
+        for (on, flag) in [
+            (keys.cmd, CGEventFlags::CGEventFlagCommand),
+            (keys.shift, CGEventFlags::CGEventFlagShift),
+            (keys.ctrl, CGEventFlags::CGEventFlagControl),
+            (keys.alt, CGEventFlags::CGEventFlagAlternate),
+        ] {
+            if on {
+                flags |= flag;
+            }
+        }
+        for down in [true, false] {
+            let event = CGEvent::new_keyboard_event(source()?, key, down)
+                .map_err(|_| anyhow::anyhow!("cannot create a key event"))?;
+            event.set_flags(flags);
+            post(Ok(event))?;
+        }
+        Ok(())
+    }
+
+    /// `down` and `right` in pixels; positive scrolls the content down and right.
+    pub fn scroll(&self, at: Point, down: i32, right: i32) -> Result<()> {
+        post(CGEvent::new_mouse_event(
+            source()?,
+            CGEventType::MouseMoved,
+            cg(at),
+            CGMouseButton::Left,
+        ))?;
+        post(CGEvent::new_scroll_event(
+            source()?,
+            ScrollEventUnit::PIXEL,
+            2,
+            -down,
+            -right,
+            0,
+        ))
+    }
+
+    #[cfg(test)]
+    pub fn knows_key(&self, name: &str) -> bool {
+        code(name).is_some()
+    }
 }

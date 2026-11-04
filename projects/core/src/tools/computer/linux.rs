@@ -14,7 +14,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::{Keys, Point, Rect, Window, tools::PointerMode};
+use super::{Keys, Point, Rect, Window, click::PointerMode};
 
 /// Windows looked at at most, so a crowded desktop stays quick to list.
 const MAX_WINDOWS: usize = 64;
@@ -40,80 +40,6 @@ fn session() -> Session {
     }
 }
 
-/// The main display. On X11 it comes from the X server; on Wayland from a picture of it.
-pub fn display() -> Result<Rect> {
-    match session() {
-        Session::X11 => {
-            let output = run("xdotool", &["getdisplaygeometry"])?;
-            let mut numbers = output.split_whitespace().map(str::parse::<f64>);
-            match (numbers.next(), numbers.next()) {
-                (Some(Ok(width)), Some(Ok(height))) => Ok(Rect {
-                    x: 0.0,
-                    y: 0.0,
-                    width,
-                    height,
-                }),
-                _ => bail!("xdotool gave no display size"),
-            }
-        }
-        Session::Wayland => {
-            let file = temp_file();
-            let taken = capture_display(&file);
-            let size = taken.and_then(|()| {
-                image::image_dimensions(&file).context("cannot read the screenshot")
-            });
-            let _ = std::fs::remove_file(&file);
-            let (width, height) = size?;
-            Ok(Rect {
-                x: 0.0,
-                y: 0.0,
-                width: f64::from(width),
-                height: f64::from(height),
-            })
-        }
-    }
-}
-
-/// No cursor of dusk's own is drawn on Linux; the pointer itself moves.
-pub fn mark(_at: Point) {}
-
-pub fn touch() {}
-
-/// The windows on screen that are large enough to be an app's.
-pub fn windows() -> Result<Vec<Window>> {
-    ensure!(
-        session() == Session::X11,
-        "Wayland does not list other apps' windows; capture the display or a region of it"
-    );
-    let ids = run("xdotool", &["search", "--onlyvisible", "--name", "."])?;
-    let mut windows = Vec::new();
-    for id in ids.lines().filter_map(|id| id.trim().parse::<u32>().ok()) {
-        if windows.len() == MAX_WINDOWS {
-            break;
-        }
-        let id_text = id.to_string();
-        // A window can close while it is looked at; it is then left out.
-        let Ok(geometry) = run("xdotool", &["getwindowgeometry", "--shell", &id_text]) else {
-            continue;
-        };
-        let Some(bounds) = parse_geometry(&geometry) else {
-            continue;
-        };
-        if bounds.width < MIN_WINDOW_EDGE || bounds.height < MIN_WINDOW_EDGE {
-            continue;
-        }
-        let title = run("xdotool", &["getwindowname", &id_text]).unwrap_or_default();
-        let app = run("xdotool", &["getwindowclassname", &id_text]).unwrap_or_default();
-        windows.push(Window {
-            id,
-            app: app.trim().to_owned(),
-            title: title.trim().to_owned(),
-            bounds,
-        });
-    }
-    Ok(windows)
-}
-
 /// `X=…`, `Y=…`, `WIDTH=…` and `HEIGHT=…` lines, as `getwindowgeometry --shell` prints.
 fn parse_geometry(text: &str) -> Option<Rect> {
     let value = |name: &str| {
@@ -129,34 +55,6 @@ fn parse_geometry(text: &str) -> Option<Rect> {
         width: value("WIDTH")?,
         height: value("HEIGHT")?,
     })
-}
-
-/// Only a press without the pointer checks the window under it, and Linux has none.
-pub fn ensure_window_at(_at: Point, _id: u32, _bounds: Rect) -> Result<()> {
-    bail!("a click without the pointer is not possible on Linux")
-}
-
-/// Captures `rect` of the display as a PNG at `file`: the whole display, then cut.
-pub fn capture(rect: Rect, file: &Path) -> Result<()> {
-    capture_display(file)?;
-    let picture = image::open(file).context("cannot read the screenshot")?;
-    let x = rect.x.max(0.0) as u32;
-    let y = rect.y.max(0.0) as u32;
-    ensure!(
-        x < picture.width() && y < picture.height(),
-        "the region is off the display"
-    );
-    let width = (rect.width as u32).min(picture.width() - x);
-    let height = (rect.height as u32).min(picture.height() - y);
-    picture
-        .crop_imm(x, y, width, height)
-        .save_with_format(file, image::ImageFormat::Png)
-        .context("cannot save the screenshot")
-}
-
-/// A window as it shows on the display, covered parts included.
-pub fn capture_window(window: &Window, file: &Path) -> Result<()> {
-    capture(window.bounds, file)
 }
 
 fn capture_display(file: &Path) -> Result<()> {
@@ -184,132 +82,6 @@ fn capture_display(file: &Path) -> Result<()> {
     all.push(path);
     run(program, &all)?;
     ensure!(file.exists(), "{program} saved no screenshot");
-    Ok(())
-}
-
-pub fn click(at: Point, right: bool, count: i64, mode: PointerMode) -> Result<()> {
-    mode.validate_click(right, count)?;
-    ensure!(
-        mode == PointerMode::System,
-        "on Linux a click always moves the pointer: use mode system"
-    );
-    let count = count.to_string();
-    match session() {
-        Session::X11 => {
-            let (x, y) = pixels(at);
-            let button = if right { "3" } else { "1" };
-            run(
-                "xdotool",
-                &[
-                    "mousemove",
-                    &x,
-                    &y,
-                    "click",
-                    "--repeat",
-                    &count,
-                    "--delay",
-                    CLICK_DELAY_MS,
-                    button,
-                ],
-            )?;
-        }
-        Session::Wayland => {
-            move_to(at)?;
-            // Down and up of the left or right button.
-            let button = if right { "0xC1" } else { "0xC0" };
-            run(
-                "ydotool",
-                &[
-                    "click",
-                    "--repeat",
-                    &count,
-                    "--next-delay",
-                    CLICK_DELAY_MS,
-                    button,
-                ],
-            )?;
-        }
-    }
-    Ok(())
-}
-
-pub fn type_text(text: &str) -> Result<()> {
-    match session() {
-        Session::X11 => run("xdotool", &["type", "--delay", "12", "--", text]).map(drop),
-        // From stdin, so text that starts with a dash is not read as an option.
-        Session::Wayland => run_with_input("ydotool", &["type", "--file", "-"], text),
-    }
-}
-
-pub fn press(keys: &Keys) -> Result<()> {
-    match session() {
-        Session::X11 => {
-            let mut combo: Vec<&str> = [
-                (keys.ctrl, "ctrl"),
-                (keys.shift, "shift"),
-                (keys.alt, "alt"),
-                (keys.cmd, "super"),
-            ]
-            .into_iter()
-            .filter_map(|(on, name)| on.then_some(name))
-            .collect();
-            let key = keysym(&keys.key).context("unknown key")?;
-            combo.push(&key);
-            run("xdotool", &["key", "--", &combo.join("+")]).map(drop)
-        }
-        Session::Wayland => {
-            let mut held: Vec<u16> = [
-                (keys.ctrl, 29),
-                (keys.shift, 42),
-                (keys.alt, 56),
-                (keys.cmd, 125),
-            ]
-            .into_iter()
-            .filter_map(|(on, code)| on.then_some(code))
-            .collect();
-            held.push(evdev(&keys.key).context("unknown key")?);
-            // Down in order, then up the other way round.
-            let events: Vec<String> = held
-                .iter()
-                .map(|code| format!("{code}:1"))
-                .chain(held.iter().rev().map(|code| format!("{code}:0")))
-                .collect();
-            let mut arguments = vec!["key"];
-            arguments.extend(events.iter().map(String::as_str));
-            run("ydotool", &arguments).map(drop)
-        }
-    }
-}
-
-/// `down` and `right` in pixels; positive scrolls the content down and right. The
-/// wheel goes by notches, so small amounts make at least one.
-pub fn scroll(at: Point, down: i32, right: i32) -> Result<()> {
-    let notches = |pixels: i32| match pixels {
-        0 => 0,
-        _ => (pixels.abs() / PIXELS_A_NOTCH).max(1),
-    };
-    match session() {
-        Session::X11 => {
-            let (x, y) = pixels(at);
-            run("xdotool", &["mousemove", &x, &y])?;
-            // Buttons 4 and 5 are the wheel up and down, 6 and 7 left and right.
-            for (pixels, forward, back) in [(down, "5", "4"), (right, "7", "6")] {
-                let count = notches(pixels);
-                if count > 0 {
-                    let button = if pixels > 0 { forward } else { back };
-                    let repeat = count.to_string();
-                    run("xdotool", &["click", "--repeat", &repeat, button])?;
-                }
-            }
-        }
-        Session::Wayland => {
-            move_to(at)?;
-            // The wheel turns up for positive steps, as REL_WHEEL counts.
-            let wheel = |pixels: i32| (-pixels.signum() * notches(pixels)).to_string();
-            let (x, y) = (wheel(-right), wheel(down));
-            run("ydotool", &["mousemove", "--wheel", "-x", &x, "-y", &y])?;
-        }
-    }
     Ok(())
 }
 
@@ -398,11 +170,6 @@ fn evdev(name: &str) -> Option<u16> {
     })
 }
 
-#[cfg(test)]
-pub fn knows_key(name: &str) -> bool {
-    keysym(name).is_some() && evdev(name).is_some()
-}
-
 fn temp_file() -> std::path::PathBuf {
     std::env::temp_dir().join(format!("duskcode-{}.png", uuid::Uuid::new_v4()))
 }
@@ -459,6 +226,244 @@ fn checked(program: &str, output: std::process::Output) -> Result<String> {
         bail!("{program} failed: {}", reason.trim());
     }
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
+/// The desktop these tools drive.
+pub struct Desktop;
+
+impl Desktop {
+    /// The main display. On X11 it comes from the X server; on Wayland from a picture of it.
+    pub fn display(&self) -> Result<Rect> {
+        match session() {
+            Session::X11 => {
+                let output = run("xdotool", &["getdisplaygeometry"])?;
+                let mut numbers = output.split_whitespace().map(str::parse::<f64>);
+                match (numbers.next(), numbers.next()) {
+                    (Some(Ok(width)), Some(Ok(height))) => Ok(Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width,
+                        height,
+                    }),
+                    _ => bail!("xdotool gave no display size"),
+                }
+            }
+            Session::Wayland => {
+                let file = temp_file();
+                let taken = capture_display(&file);
+                let size = taken.and_then(|()| {
+                    image::image_dimensions(&file).context("cannot read the screenshot")
+                });
+                let _ = std::fs::remove_file(&file);
+                let (width, height) = size?;
+                Ok(Rect {
+                    x: 0.0,
+                    y: 0.0,
+                    width: f64::from(width),
+                    height: f64::from(height),
+                })
+            }
+        }
+    }
+
+    /// No cursor of dusk's own is drawn on Linux; the pointer itself moves.
+    pub fn mark(&self, _at: Point) {}
+
+    pub fn touch(&self) {}
+
+    /// The windows on screen that are large enough to be an app's.
+    pub fn windows(&self) -> Result<Vec<Window>> {
+        ensure!(
+            session() == Session::X11,
+            "Wayland does not list other apps' windows; capture the display or a region of it"
+        );
+        let ids = run("xdotool", &["search", "--onlyvisible", "--name", "."])?;
+        let mut windows = Vec::new();
+        for id in ids.lines().filter_map(|id| id.trim().parse::<u32>().ok()) {
+            if windows.len() == MAX_WINDOWS {
+                break;
+            }
+            let id_text = id.to_string();
+            // A window can close while it is looked at; it is then left out.
+            let Ok(geometry) = run("xdotool", &["getwindowgeometry", "--shell", &id_text]) else {
+                continue;
+            };
+            let Some(bounds) = parse_geometry(&geometry) else {
+                continue;
+            };
+            if bounds.width < MIN_WINDOW_EDGE || bounds.height < MIN_WINDOW_EDGE {
+                continue;
+            }
+            let title = run("xdotool", &["getwindowname", &id_text]).unwrap_or_default();
+            let app = run("xdotool", &["getwindowclassname", &id_text]).unwrap_or_default();
+            windows.push(Window {
+                id,
+                app: app.trim().to_owned(),
+                title: title.trim().to_owned(),
+                bounds,
+            });
+        }
+        Ok(windows)
+    }
+
+    /// Only a press without the pointer checks the window under it, and Linux has none.
+    pub fn ensure_window_at(&self, _at: Point, _id: u32, _bounds: Rect) -> Result<()> {
+        bail!("a click without the pointer is not possible on Linux")
+    }
+
+    /// Captures `rect` of the display as a PNG at `file`: the whole display, then cut.
+    pub fn capture(&self, rect: Rect, file: &Path) -> Result<()> {
+        capture_display(file)?;
+        let picture = image::open(file).context("cannot read the screenshot")?;
+        let x = rect.x.max(0.0) as u32;
+        let y = rect.y.max(0.0) as u32;
+        ensure!(
+            x < picture.width() && y < picture.height(),
+            "the region is off the display"
+        );
+        let width = (rect.width as u32).min(picture.width() - x);
+        let height = (rect.height as u32).min(picture.height() - y);
+        picture
+            .crop_imm(x, y, width, height)
+            .save_with_format(file, image::ImageFormat::Png)
+            .context("cannot save the screenshot")
+    }
+
+    /// A window as it shows on the display, covered parts included.
+    pub fn capture_window(&self, window: &Window, file: &Path) -> Result<()> {
+        self.capture(window.bounds, file)
+    }
+
+    pub fn click(&self, at: Point, right: bool, count: i64, mode: PointerMode) -> Result<()> {
+        mode.validate_click(right, count)?;
+        ensure!(
+            mode == PointerMode::System,
+            "on Linux a click always moves the pointer: use mode system"
+        );
+        let count = count.to_string();
+        match session() {
+            Session::X11 => {
+                let (x, y) = pixels(at);
+                let button = if right { "3" } else { "1" };
+                run(
+                    "xdotool",
+                    &[
+                        "mousemove",
+                        &x,
+                        &y,
+                        "click",
+                        "--repeat",
+                        &count,
+                        "--delay",
+                        CLICK_DELAY_MS,
+                        button,
+                    ],
+                )?;
+            }
+            Session::Wayland => {
+                move_to(at)?;
+                // Down and up of the left or right button.
+                let button = if right { "0xC1" } else { "0xC0" };
+                run(
+                    "ydotool",
+                    &[
+                        "click",
+                        "--repeat",
+                        &count,
+                        "--next-delay",
+                        CLICK_DELAY_MS,
+                        button,
+                    ],
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    pub fn type_text(&self, text: &str) -> Result<()> {
+        match session() {
+            Session::X11 => run("xdotool", &["type", "--delay", "12", "--", text]).map(drop),
+            // From stdin, so text that starts with a dash is not read as an option.
+            Session::Wayland => run_with_input("ydotool", &["type", "--file", "-"], text),
+        }
+    }
+
+    pub fn press(&self, keys: &Keys) -> Result<()> {
+        match session() {
+            Session::X11 => {
+                let mut combo: Vec<&str> = [
+                    (keys.ctrl, "ctrl"),
+                    (keys.shift, "shift"),
+                    (keys.alt, "alt"),
+                    (keys.cmd, "super"),
+                ]
+                .into_iter()
+                .filter_map(|(on, name)| on.then_some(name))
+                .collect();
+                let key = keysym(&keys.key).context("unknown key")?;
+                combo.push(&key);
+                run("xdotool", &["key", "--", &combo.join("+")]).map(drop)
+            }
+            Session::Wayland => {
+                let mut held: Vec<u16> = [
+                    (keys.ctrl, 29),
+                    (keys.shift, 42),
+                    (keys.alt, 56),
+                    (keys.cmd, 125),
+                ]
+                .into_iter()
+                .filter_map(|(on, code)| on.then_some(code))
+                .collect();
+                held.push(evdev(&keys.key).context("unknown key")?);
+                // Down in order, then up the other way round.
+                let events: Vec<String> = held
+                    .iter()
+                    .map(|code| format!("{code}:1"))
+                    .chain(held.iter().rev().map(|code| format!("{code}:0")))
+                    .collect();
+                let mut arguments = vec!["key"];
+                arguments.extend(events.iter().map(String::as_str));
+                run("ydotool", &arguments).map(drop)
+            }
+        }
+    }
+
+    /// `down` and `right` in pixels; positive scrolls the content down and right. The
+    /// wheel goes by notches, so small amounts make at least one.
+    pub fn scroll(&self, at: Point, down: i32, right: i32) -> Result<()> {
+        let notches = |pixels: i32| match pixels {
+            0 => 0,
+            _ => (pixels.abs() / PIXELS_A_NOTCH).max(1),
+        };
+        match session() {
+            Session::X11 => {
+                let (x, y) = pixels(at);
+                run("xdotool", &["mousemove", &x, &y])?;
+                // Buttons 4 and 5 are the wheel up and down, 6 and 7 left and right.
+                for (pixels, forward, back) in [(down, "5", "4"), (right, "7", "6")] {
+                    let count = notches(pixels);
+                    if count > 0 {
+                        let button = if pixels > 0 { forward } else { back };
+                        let repeat = count.to_string();
+                        run("xdotool", &["click", "--repeat", &repeat, button])?;
+                    }
+                }
+            }
+            Session::Wayland => {
+                move_to(at)?;
+                // The wheel turns up for positive steps, as REL_WHEEL counts.
+                let wheel = |pixels: i32| (-pixels.signum() * notches(pixels)).to_string();
+                let (x, y) = (wheel(-right), wheel(down));
+                run("ydotool", &["mousemove", "--wheel", "-x", &x, "-y", &y])?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn knows_key(&self, name: &str) -> bool {
+        keysym(name).is_some() && evdev(name).is_some()
+    }
 }
 
 #[cfg(test)]
