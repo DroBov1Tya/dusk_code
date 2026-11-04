@@ -41,6 +41,11 @@ impl Cursor {
         self.line(&format!("{} {}", at.x, at.y));
     }
 
+    /// Marks the point of a completed independent click.
+    pub fn click(&self, at: super::Point) {
+        self.line(&format!("c {} {}", at.x, at.y));
+    }
+
     /// Tells the helper the agent is at work, without moving the tip: a keyboard action
     /// has no point, and the cursor may be hiding on the timer.
     pub fn touch(&self) {
