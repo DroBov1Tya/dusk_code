@@ -29,6 +29,8 @@ struct View {
     scale: f64,
     width: f64,
     height: f64,
+    /// A window capture (or its crop) must still address the same visible window.
+    window: Option<(u32, CGRect)>,
 }
 
 /// A part of the last screenshot, in its pixels.
@@ -71,11 +73,13 @@ impl Screen {
     /// the model, with what to tell it about the picture's size.
     pub fn capture(&self, target: Target) -> Result<(ImageArtifact, String)> {
         let mut window = None;
+        let mut captured_window = None;
         let rect = match &target {
             Target::Display => macos::display(),
             Target::Window(name) => {
                 let found = find_window(name)?;
                 let bounds = found.bounds;
+                captured_window = Some((found.id, bounds));
                 window = Some(found);
                 bounds
             }
@@ -84,6 +88,7 @@ impl Screen {
                 // The far corner must lie in the picture too.
                 self.point(region.x + region.width, region.y + region.height)?;
                 let view = self.view()?;
+                captured_window = view.window;
                 CGRect::new(
                     &from,
                     &CGSize::new(region.width * view.scale, region.height * view.scale),
@@ -118,6 +123,7 @@ impl Screen {
             scale: rect.size.width / width,
             width,
             height,
+            window: captured_window,
         });
         let what = match (&target, &window) {
             (_, Some(window)) => format!("the {} window \"{}\"", window.app, window.title),
@@ -135,16 +141,22 @@ impl Screen {
     /// The display point under the pixel `x`, `y` of the last screenshot.
     pub fn point(&self, x: f64, y: f64) -> Result<CGPoint> {
         let view = self.view()?;
+        view.point(x, y)
+    }
+
+    /// Independent activation of a captured window must not hit a covering window,
+    /// or use coordinates left behind when the captured window moved or resized.
+    pub fn independent_point(&self, x: f64, y: f64) -> Result<CGPoint> {
+        let view = self.view()?;
+        let at = view.point(x, y)?;
         ensure!(
-            (0.0..=view.width).contains(&x) && (0.0..=view.height).contains(&y),
-            "x and y must lie in the last screenshot, {}x{}",
-            view.width,
-            view.height
+            x < view.width && y < view.height,
+            "click coordinates must be inside the screenshot, not its far edge"
         );
-        Ok(CGPoint::new(
-            view.origin.x + x * view.scale,
-            view.origin.y + y * view.scale,
-        ))
+        if let Some((id, bounds)) = view.window {
+            macos::ensure_window_at(at, id, bounds)?;
+        }
+        Ok(at)
     }
 
     fn view(&self) -> Result<View> {
@@ -176,6 +188,21 @@ impl Screen {
             &jpeg,
             thumbnail.get_ref(),
         )
+    }
+}
+
+impl View {
+    fn point(self, x: f64, y: f64) -> Result<CGPoint> {
+        ensure!(
+            (0.0..=self.width).contains(&x) && (0.0..=self.height).contains(&y),
+            "x and y must lie in the last screenshot, {}x{}",
+            self.width,
+            self.height
+        );
+        Ok(CGPoint::new(
+            self.origin.x + x * self.scale,
+            self.origin.y + y * self.scale,
+        ))
     }
 }
 
@@ -350,10 +377,28 @@ mod tests {
             scale: 2.0,
             width: 800.0,
             height: 500.0,
+            window: None,
         });
         let point = screen.point(10.0, 20.0).unwrap();
         assert_eq!((point.x, point.y), (120.0, 90.0));
         assert!(screen.point(801.0, 0.0).is_err());
         assert!(screen.point(-1.0, 0.0).is_err());
+        assert!(screen.independent_point(800.0, 0.0).is_err());
+        assert!(screen.independent_point(0.0, 500.0).is_err());
+        assert!(screen.independent_point(f64::NAN, 0.0).is_err());
+        assert!(screen.independent_point(0.0, f64::INFINITY).is_err());
+    }
+
+    #[test]
+    fn window_crops_preserve_global_negative_display_coordinates() {
+        let view = View {
+            origin: CGPoint::new(-1600.0, -900.0),
+            scale: 1.5,
+            width: 800.0,
+            height: 500.0,
+            window: None,
+        };
+        let point = view.point(100.0, 200.0).unwrap();
+        assert_eq!((point.x, point.y), (-1450.0, -600.0));
     }
 }

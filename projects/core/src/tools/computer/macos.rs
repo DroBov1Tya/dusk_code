@@ -19,11 +19,13 @@ use core_graphics::{
     event_source::{CGEventSource, CGEventSourceStateID},
     geometry::{CGPoint, CGRect},
     window::{
-        copy_window_info, kCGNullWindowID, kCGWindowBounds, kCGWindowLayer,
+        copy_window_info, kCGNullWindowID, kCGWindowAlpha, kCGWindowBounds, kCGWindowLayer,
         kCGWindowListExcludeDesktopElements, kCGWindowListOptionOnScreenOnly, kCGWindowName,
-        kCGWindowNumber, kCGWindowOwnerName,
+        kCGWindowNumber, kCGWindowOwnerName, kCGWindowOwnerPID,
     },
 };
+
+use super::tools::PointerMode;
 
 /// Between the events of one action, so apps see them as a person's.
 const PAUSE: Duration = Duration::from_millis(30);
@@ -57,10 +59,41 @@ pub struct Window {
     pub title: String,
     /// In display points.
     pub bounds: CGRect,
+    pub pid: i64,
+    layer: i64,
 }
 
 /// The ordinary windows on screen, frontmost first; menus, docks and overlays left out.
 pub fn windows() -> Vec<Window> {
+    visible_windows()
+        .into_iter()
+        .filter(|window| window.layer == 0)
+        .collect()
+}
+
+/// Includes menus and panels, but ignores our mouse-transparent cursor helper.
+pub fn front_window_at(at: CGPoint) -> Option<Window> {
+    let overlay_pid = super::cursor::Cursor::shared().pid().map(i64::from);
+    visible_windows()
+        .into_iter()
+        .find(|window| Some(window.pid) != overlay_pid && window.bounds.contains(&at))
+}
+
+pub fn ensure_window_at(at: CGPoint, id: u32, bounds: CGRect) -> Result<()> {
+    let front = front_window_at(at)
+        .context("the captured window is no longer visible here; take a new screenshot")?;
+    ensure!(
+        front.id == id
+            && front.bounds.origin.x == bounds.origin.x
+            && front.bounds.origin.y == bounds.origin.y
+            && front.bounds.size.width == bounds.size.width
+            && front.bounds.size.height == bounds.size.height,
+        "the captured window moved, resized or is covered here; take a new screenshot"
+    );
+    Ok(())
+}
+
+fn visible_windows() -> Vec<Window> {
     let options = kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements;
     let Some(list) = copy_window_info(options, kCGNullWindowID) else {
         return Vec::new();
@@ -78,13 +111,21 @@ pub fn windows() -> Vec<Window> {
                     .and_then(|value| value.downcast::<CFString>())
                     .map(|value| value.to_string())
             };
-            (number(unsafe { kCGWindowLayer })? == 0).then_some(())?;
+            if field(unsafe { kCGWindowAlpha })?
+                .downcast::<CFNumber>()?
+                .to_f64()?
+                == 0.0
+            {
+                return None;
+            }
             let bounds = field(unsafe { kCGWindowBounds })?.downcast::<CFDictionary>()?;
             Some(Window {
                 id: u32::try_from(number(unsafe { kCGWindowNumber })?).ok()?,
                 app: text(unsafe { kCGWindowOwnerName }).unwrap_or_default(),
                 title: text(unsafe { kCGWindowName }).unwrap_or_default(),
                 bounds: CGRect::from_dict_representation(&bounds)?,
+                pid: number(unsafe { kCGWindowOwnerPID })?,
+                layer: number(unsafe { kCGWindowLayer })?,
             })
         })
         .collect()
@@ -126,6 +167,12 @@ fn screencapture(target: &[&str], file: &Path) -> Result<()> {
 }
 
 fn source() -> Result<CGEventSource> {
+    require_accessibility()?;
+    CGEventSource::new(CGEventSourceStateID::HIDSystemState)
+        .map_err(|_| anyhow::anyhow!("cannot create an input event source"))
+}
+
+pub fn require_accessibility() -> Result<()> {
     if !accessibility_trusted() {
         bail!(
             "the terminal duskcode runs in needs Accessibility permission to click and \
@@ -133,8 +180,7 @@ fn source() -> Result<CGEventSource> {
              Security > Accessibility; switch it on there and restart duskcode"
         );
     }
-    CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-        .map_err(|_| anyhow::anyhow!("cannot create an input event source"))
+    Ok(())
 }
 
 /// Whether this process may post input events. The first refusal of a process also asks
@@ -160,7 +206,11 @@ fn post(event: Result<CGEvent, ()>) -> Result<()> {
     Ok(())
 }
 
-pub fn click(at: CGPoint, right: bool, count: i64) -> Result<()> {
+pub fn click(at: CGPoint, right: bool, count: i64, mode: PointerMode) -> Result<()> {
+    mode.validate_click(right, count)?;
+    if mode == PointerMode::Independent {
+        return super::accessibility::press(at);
+    }
     let (down, up, button) = match right {
         true => (
             CGEventType::RightMouseDown,

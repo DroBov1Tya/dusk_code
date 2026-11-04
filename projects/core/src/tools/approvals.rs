@@ -35,9 +35,12 @@ pub enum Request {
     Path { path: PathBuf, write: bool },
     /// A shell command line.
     Command { command: String },
-    /// Seeing the screen and driving its mouse; `action` says what. A yes for the
-    /// session covers these.
+    /// Seeing the screen and independent accessibility activation. This never grants
+    /// control of the user's system pointer.
     Screen { action: String },
+    /// Moving and clicking/scrolling with the shared system pointer. This needs its
+    /// own session grant, separate from screen access and independent activation.
+    SystemPointer { action: String },
     /// Typing or pressing keys, which can do anything a shell can: asked every time,
     /// with what it sends.
     Keyboard { action: String },
@@ -51,6 +54,9 @@ impl Request {
             Self::Path { path, write: false } => format!("{who} wants to read {}", path.display()),
             Self::Command { command } => format!("{who} wants to run: {command}"),
             Self::Screen { action } => format!("{who} wants to use the screen: {action}"),
+            Self::SystemPointer { action } => {
+                format!("{who} wants to control your system pointer: {action}")
+            }
             Self::Keyboard { action } => format!("{who} wants to use the keyboard: {action}"),
         }
     }
@@ -62,6 +68,7 @@ impl Request {
             Self::Path { path, .. } => Some(folder_of(path).display().to_string()),
             Self::Command { command } => program(command).map(str::to_owned),
             Self::Screen { .. } => Some("the screen".into()),
+            Self::SystemPointer { .. } => Some("the system pointer".into()),
             Self::Keyboard { .. } => None,
         }
     }
@@ -72,6 +79,7 @@ impl Request {
             Self::Path { path, write: false } => format!("reading {}", path.display()),
             Self::Command { command } => format!("running `{command}`"),
             Self::Screen { action } => format!("using the screen: {action}"),
+            Self::SystemPointer { action } => format!("controlling the system pointer: {action}"),
             Self::Keyboard { action } => format!("using the keyboard: {action}"),
         }
     }
@@ -226,6 +234,7 @@ struct Grants {
     folders: Vec<(PathBuf, bool)>,
     programs: Vec<String>,
     screen: bool,
+    system_pointer: bool,
 }
 
 impl Grants {
@@ -239,6 +248,7 @@ impl Grants {
                 program(command).is_some_and(|name| self.programs.iter().any(|p| p == name))
             }
             Request::Screen { .. } => self.screen,
+            Request::SystemPointer { .. } => self.system_pointer,
             Request::Keyboard { .. } => false,
         }
     }
@@ -250,6 +260,7 @@ impl Grants {
                 self.programs.extend(program(command).map(str::to_owned))
             }
             Request::Screen { .. } => self.screen = true,
+            Request::SystemPointer { .. } => self.system_pointer = true,
             Request::Keyboard { .. } => {}
         }
     }
@@ -278,6 +289,108 @@ fn program(command: &str) -> Option<&str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    async fn decide(approvals: &Approvals, request: Request, decision: Decision) -> Result<()> {
+        let (events, mut seen) = mpsc::unbounded_channel();
+        let ask = approvals.ask(
+            request,
+            Some(Progress {
+                call_id: "pointer-test".into(),
+                events,
+            }),
+            ApprovalPolicy::Ask,
+        );
+        let answer = async {
+            let Some(ThreadEvent::Approval(asked)) = seen.recv().await else {
+                panic!("missing request");
+            };
+            assert!(approvals.answer(asked.id, decision));
+        };
+        let (result, ()) = tokio::join!(ask, answer);
+        result
+    }
+
+    #[tokio::test]
+    async fn screen_session_never_authorizes_system_pointer_control() {
+        let approvals = Approvals::default();
+        let screen = Request::Screen {
+            action: "activate without moving the pointer".into(),
+        };
+        let pointer = Request::SystemPointer {
+            action: "move the pointer and click".into(),
+        };
+        decide(&approvals, screen.clone(), Decision::Session)
+            .await
+            .unwrap();
+        assert!(
+            approvals
+                .ask(screen, None, ApprovalPolicy::Ask)
+                .await
+                .is_ok()
+        );
+        for policy in [
+            ApprovalPolicy::Ask,
+            ApprovalPolicy::Sandbox,
+            ApprovalPolicy::Arbiter,
+        ] {
+            assert!(
+                approvals.ask(pointer.clone(), None, policy).await.is_err(),
+                "{policy:?}"
+            );
+        }
+        assert!(
+            decide(&approvals, pointer.clone(), Decision::Deny)
+                .await
+                .is_err()
+        );
+        assert!(
+            approvals
+                .ask(pointer.clone(), None, ApprovalPolicy::Ask)
+                .await
+                .is_err()
+        );
+        decide(&approvals, pointer.clone(), Decision::Once)
+            .await
+            .unwrap();
+        assert!(
+            approvals
+                .ask(pointer.clone(), None, ApprovalPolicy::Ask)
+                .await
+                .is_err()
+        );
+        // FullAccess is an explicit global policy, not an inferred screen grant.
+        assert!(
+            approvals
+                .ask(pointer.clone(), None, ApprovalPolicy::FullAccess)
+                .await
+                .is_ok()
+        );
+        decide(&approvals, pointer.clone(), Decision::Session)
+            .await
+            .unwrap();
+        assert!(
+            approvals
+                .ask(pointer, None, ApprovalPolicy::Ask)
+                .await
+                .is_ok()
+        );
+    }
+
+    #[test]
+    fn pointer_session_is_separate_in_both_directions() {
+        let pointer = Request::SystemPointer {
+            action: "scroll".into(),
+        };
+        let screen = Request::Screen {
+            action: "screenshot".into(),
+        };
+        let mut grants = Grants::default();
+        grants.add(&pointer);
+        assert!(grants.covers(&pointer));
+        assert!(!grants.covers(&screen));
+        assert_ne!(pointer.session_grant(), screen.session_grant());
+        assert!(pointer.describe("agent").contains("system pointer"));
+    }
 
     fn command(line: &str) -> Request {
         Request::Command {

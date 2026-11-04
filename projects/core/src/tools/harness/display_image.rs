@@ -401,9 +401,15 @@ mod tests {
             .unwrap();
         let tool = DisplayImage::new(ArtifactStore::new(root.join("artifacts")));
         let call = |arguments| tool.call_result(arguments, tool_context(&scope));
-        let card = call(json!({"path": "picture.png"})).await.unwrap().artifacts;
+        let card = call(json!({"path": "picture.png"}))
+            .await
+            .unwrap()
+            .artifacts;
         assert_eq!((card[0].width, card[0].height), (4, 3));
-        let again = call(json!({"image_id": card[0].id})).await.unwrap().artifacts;
+        let again = call(json!({"image_id": card[0].id}))
+            .await
+            .unwrap()
+            .artifacts;
         assert_ne!(again[0].id, card[0].id);
         let both = json!({"path": "picture.png", "image_id": card[0].id});
         assert!(call(both).await.is_err());
