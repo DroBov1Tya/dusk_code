@@ -218,29 +218,6 @@ fn should_prompt(asked: &mut bool, trusted: bool) -> bool {
     true
 }
 
-#[cfg(test)]
-mod permission_tests {
-    use super::should_prompt;
-
-    #[test]
-    fn prompts_once_per_untrusted_period_including_after_revocation() {
-        let mut asked = false;
-        assert!(!should_prompt(&mut asked, true));
-        assert!(should_prompt(&mut asked, false));
-        assert!(!should_prompt(&mut asked, false));
-        assert!(!should_prompt(&mut asked, true));
-        assert!(should_prompt(&mut asked, false));
-        assert!(!should_prompt(&mut asked, false));
-    }
-
-    #[test]
-    fn initially_untrusted_requests_permission_once() {
-        let mut asked = false;
-        assert!(should_prompt(&mut asked, false));
-        assert!(!should_prompt(&mut asked, false));
-    }
-}
-
 fn accessibility_trusted_with_prompt(ask: bool) -> bool {
     // SAFETY: the key is a constant of the framework; the dictionary lives across the call.
     let key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
@@ -505,5 +482,28 @@ impl Desktop {
     #[cfg(test)]
     pub fn knows_key(&self, name: &str) -> bool {
         code(name).is_some()
+    }
+}
+
+#[cfg(test)]
+mod permission_tests {
+    use super::should_prompt;
+
+    #[test]
+    fn prompts_once_per_untrusted_period_including_after_revocation() {
+        let mut asked = false;
+        assert!(!should_prompt(&mut asked, true));
+        assert!(should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, true));
+        assert!(should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, false));
+    }
+
+    #[test]
+    fn initially_untrusted_requests_permission_once() {
+        let mut asked = false;
+        assert!(should_prompt(&mut asked, false));
+        assert!(!should_prompt(&mut asked, false));
     }
 }
