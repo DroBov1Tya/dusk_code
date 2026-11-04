@@ -51,5 +51,8 @@ landlock = "0.4"
 [target.'cfg(unix)'.dependencies]
 nix.workspace = true
 
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = ["NSButton", "NSCell", "NSControl", "NSWorkspace", "libc"] }
+
 [dev-dependencies]
 proptest.workspace = true

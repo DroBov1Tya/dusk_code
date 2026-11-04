@@ -1,9 +1,9 @@
-//! What the five computer tools share: how they are offered and how they leave the
+//! What the computer tools share: how they are offered and how they leave the
 //! async runtime.
 
 use anyhow::{Context, Result};
 
-/// What the five tools share: how they are offered.
+/// What the tools share: how they are offered.
 macro_rules! computer_tool {
     ($name:literal) => {
         fn name(&self) -> &str {

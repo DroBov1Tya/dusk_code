@@ -41,6 +41,11 @@ pub enum Request {
     /// Moving and clicking/scrolling with the shared system pointer. This needs its
     /// own session grant, separate from screen access and independent activation.
     SystemPointer { action: String },
+    /// One pinned window selection. None is an explicit request to end confinement.
+    Window {
+        session: Option<String>,
+        action: String,
+    },
     /// Typing or pressing keys, which can do anything a shell can: asked every time,
     /// with what it sends.
     Keyboard { action: String },
@@ -58,6 +63,9 @@ impl Request {
                 format!("{who} wants to control your system pointer: {action}")
             }
             Self::Keyboard { action } => format!("{who} wants to use the keyboard: {action}"),
+            Self::Window { action, .. } => {
+                format!("{who} wants to use a selected window: {action}")
+            }
         }
     }
 
@@ -70,6 +78,7 @@ impl Request {
             Self::Screen { .. } => Some("the screen".into()),
             Self::SystemPointer { .. } => Some("the system pointer".into()),
             Self::Keyboard { .. } => None,
+            Self::Window { session, .. } => session.as_ref().map(|_| "the selected window".into()),
         }
     }
 
@@ -81,6 +90,7 @@ impl Request {
             Self::Screen { action } => format!("using the screen: {action}"),
             Self::SystemPointer { action } => format!("controlling the system pointer: {action}"),
             Self::Keyboard { action } => format!("using the keyboard: {action}"),
+            Self::Window { action, .. } => format!("using the selected window: {action}"),
         }
     }
 }
@@ -235,6 +245,7 @@ struct Grants {
     programs: Vec<String>,
     screen: bool,
     system_pointer: bool,
+    windows: Vec<String>,
 }
 
 impl Grants {
@@ -250,6 +261,9 @@ impl Grants {
             Request::Screen { .. } => self.screen,
             Request::SystemPointer { .. } => self.system_pointer,
             Request::Keyboard { .. } => false,
+            Request::Window { session, .. } => {
+                session.as_ref().is_some_and(|id| self.windows.contains(id))
+            }
         }
     }
 
@@ -262,6 +276,7 @@ impl Grants {
             Request::Screen { .. } => self.screen = true,
             Request::SystemPointer { .. } => self.system_pointer = true,
             Request::Keyboard { .. } => {}
+            Request::Window { session, .. } => self.windows.extend(session.clone()),
         }
     }
 }
@@ -374,6 +389,52 @@ mod tests {
                 .await
                 .is_ok()
         );
+    }
+
+    #[tokio::test]
+    async fn window_grant_stays_with_one_selection_and_never_releases_it() {
+        let approvals = Approvals::default();
+        let selected = Request::Window {
+            session: Some("window-1".into()),
+            action: "select one window".into(),
+        };
+        let capture = Request::Window {
+            session: Some("window-1".into()),
+            action: "capture the selected window".into(),
+        };
+        decide(&approvals, selected, Decision::Session)
+            .await
+            .unwrap();
+        approvals
+            .ask(capture, None, ApprovalPolicy::Ask)
+            .await
+            .unwrap();
+        for request in [
+            Request::Window {
+                session: Some("window-2".into()),
+                action: "select again".into(),
+            },
+            Request::Window {
+                session: None,
+                action: "release".into(),
+            },
+            Request::Screen {
+                action: "capture the desktop".into(),
+            },
+            Request::SystemPointer {
+                action: "scroll".into(),
+            },
+            Request::Keyboard {
+                action: "type".into(),
+            },
+        ] {
+            assert!(
+                approvals
+                    .ask(request, None, ApprovalPolicy::Ask)
+                    .await
+                    .is_err()
+            );
+        }
     }
 
     #[test]

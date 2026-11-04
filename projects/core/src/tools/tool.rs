@@ -82,6 +82,28 @@ impl ToolContext {
             .await
     }
 
+    /// Approval belongs to one retained window session, never a title, PID or the
+    /// entire screen. Ending confinement (None) is always a separate decision.
+    pub async fn approve_window(&self, session: Option<String>, action: &str) -> Result<()> {
+        let Some(approvals) = &self.approvals else {
+            anyhow::ensure!(
+                self.config.approvals() == crate::config::ApprovalPolicy::FullAccess,
+                "window use needs an approval service or explicit full access"
+            );
+            return Ok(());
+        };
+        approvals
+            .ask(
+                Request::Window {
+                    session,
+                    action: action.to_owned(),
+                },
+                self.progress.clone(),
+                self.config.approvals(),
+            )
+            .await
+    }
+
     /// Every command needs the user's yes, unless full access or the session gives it.
     pub async fn approve_command(&self, command: &str) -> Result<()> {
         let Some(approvals) = &self.approvals else {

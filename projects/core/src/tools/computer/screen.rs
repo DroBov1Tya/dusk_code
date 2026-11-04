@@ -22,7 +22,8 @@ const JPEG_QUALITY: u8 = 80;
 #[derive(Debug, Clone, Copy)]
 struct View {
     origin: Point,
-    scale: f64,
+    scale_x: f64,
+    scale_y: f64,
     width: f64,
     height: f64,
     /// A window capture (or its crop) must still address the same visible window.
@@ -48,6 +49,9 @@ pub enum Target {
 }
 
 pub struct Screen {
+    operation: Mutex<()>,
+    #[cfg(target_os = "macos")]
+    session: Mutex<Option<super::native_window::NativeWindow>>,
     view: Mutex<Option<View>>,
     artifacts: ArtifactStore,
 }
@@ -55,9 +59,121 @@ pub struct Screen {
 impl Screen {
     pub fn new(artifacts: ArtifactStore) -> Self {
         Self {
+            operation: Mutex::new(()),
+            #[cfg(target_os = "macos")]
+            session: Mutex::new(None),
             view: Mutex::new(None),
             artifacts,
         }
+    }
+
+    pub fn scope(&self) -> Option<(String, String)> {
+        #[cfg(target_os = "macos")]
+        {
+            self.session
+                .lock()
+                .as_ref()
+                .map(|session| (session.token.clone(), session.label.clone()))
+        }
+        #[cfg(not(target_os = "macos"))]
+        {
+            None
+        }
+    }
+
+    fn ensure_scope(&self, expected: Option<&str>) -> Result<()> {
+        ensure!(
+            self.scope().as_ref().map(|(id, _)| id.as_str()) == expected,
+            "the window session changed while waiting; repeat the request in its new scope"
+        );
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn select(
+        &self,
+        session: super::native_window::NativeWindow,
+        expected: Option<&str>,
+    ) -> Result<()> {
+        let _operation = self
+            .operation
+            .try_lock()
+            .context("a screen action is still running")?;
+        self.ensure_scope(expected)?;
+        *self.session.lock() = Some(session);
+        *self.view.lock() = None;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    pub(super) fn release(&self, expected: &str) -> Result<()> {
+        let _operation = self
+            .operation
+            .try_lock()
+            .context("a screen action is still running")?;
+        self.ensure_scope(Some(expected))?;
+        *self.session.lock() = None;
+        *self.view.lock() = None;
+        Ok(())
+    }
+
+    pub fn require_unscoped(&self) -> Result<()> {
+        ensure!(
+            self.scope().is_none(),
+            "shared keyboard, system pointer and scrolling are disabled in a window session; release it explicitly first"
+        );
+        Ok(())
+    }
+
+    pub fn unscoped<T>(&self, action: impl FnOnce() -> Result<T>) -> Result<T> {
+        let _operation = self
+            .operation
+            .try_lock()
+            .context("a screen action is still running")?;
+        self.require_unscoped()?;
+        action()
+    }
+
+    pub fn click(
+        &self,
+        x: f64,
+        y: f64,
+        right: bool,
+        count: i64,
+        mode: super::click::PointerMode,
+        expected_scope: Option<&str>,
+    ) -> Result<()> {
+        let _operation = self
+            .operation
+            .try_lock()
+            .context("a screen action is still running")?;
+        self.ensure_scope(expected_scope)?;
+        #[cfg(target_os = "macos")]
+        let session = self.session.lock().clone();
+        #[cfg(target_os = "macos")]
+        if let Some(session) = session {
+            ensure!(
+                mode == super::click::PointerMode::Independent,
+                "system pointer is disabled in a window session"
+            );
+            mode.validate_click(right, count)?;
+            let view = self.view()?;
+            let at = view.point(x, y)?;
+            ensure!(
+                x < view.width && y < view.height,
+                "click coordinates must be inside the screenshot"
+            );
+            let (_, bounds) = view
+                .window
+                .context("take a screenshot of the selected window first")?;
+            return session.press(at, bounds);
+        }
+        let (at, expected_window) = match mode {
+            super::click::PointerMode::Independent => self.independent_point(x, y)?,
+            super::click::PointerMode::System => (self.point(x, y)?, None),
+        };
+        self.mark(at);
+        Desktop.click(at, right, count, mode, expected_window)
     }
 
     /// Shows the user where the agent acts now, in display points.
@@ -67,11 +183,42 @@ impl Screen {
 
     /// The display, a region of the last screenshot or one window, as a picture for
     /// the model, with what to tell it about the picture's size.
-    pub fn capture(&self, target: Target) -> Result<(ImageArtifact, String)> {
+    pub fn capture(
+        &self,
+        target: Target,
+        expected_scope: Option<&str>,
+    ) -> Result<(ImageArtifact, String)> {
+        let _operation = self
+            .operation
+            .try_lock()
+            .context("a screen action is still running")?;
+        self.ensure_scope(expected_scope)?;
+        let previous = if expected_scope.is_some() {
+            // A failed scoped capture must not retain stale coordinates.
+            self.view.lock().take()
+        } else {
+            *self.view.lock()
+        };
         let mut window = None;
+        #[cfg(target_os = "macos")]
+        let session = self.session.lock().clone();
+        #[cfg(target_os = "macos")]
+        if let Some(session) = &session {
+            ensure!(
+                !matches!(target, Target::Window(_)),
+                "a window session is pinned; omit window or release it explicitly"
+            );
+            window = Some(session.inspect()?);
+        }
         let mut captured_window = None;
         let rect = match &target {
-            Target::Display => Desktop.display()?,
+            Target::Display => match &window {
+                Some(window) => {
+                    captured_window = Some((window.id, window.bounds));
+                    window.bounds
+                }
+                None => Desktop.display()?,
+            },
             Target::Window(name) => {
                 let found = find_window(name)?;
                 let bounds = found.bounds;
@@ -80,16 +227,21 @@ impl Screen {
                 bounds
             }
             &Target::Region(region) => {
-                let from = self.point(region.x, region.y)?;
-                // The far corner must lie in the picture too.
-                self.point(region.x + region.width, region.y + region.height)?;
-                let view = self.view()?;
+                let view = previous.context("take a screenshot before requesting a region")?;
+                let from = view.point(region.x, region.y)?;
+                view.point(region.x + region.width, region.y + region.height)?;
                 captured_window = view.window;
+                if let Some(found) = &window {
+                    ensure!(
+                        view.window == Some((found.id, found.bounds)),
+                        "the captured window moved or resized; take a new screenshot"
+                    );
+                }
                 Rect {
                     x: from.x,
                     y: from.y,
-                    width: region.width * view.scale,
-                    height: region.height * view.scale,
+                    width: region.width * view.scale_x,
+                    height: region.height * view.scale_y,
                 }
             }
         };
@@ -106,6 +258,19 @@ impl Screen {
             taken.and_then(|()| std::fs::read(&file).context("cannot read the screenshot"));
         let _ = std::fs::remove_file(&file);
         let image = image::load_from_memory(&captured?).context("invalid screenshot")?;
+        #[cfg(target_os = "macos")]
+        let mut image = image;
+        #[cfg(target_os = "macos")]
+        if let (Some(session), Some(window)) = (&session, &window) {
+            let current = session.inspect()?;
+            ensure!(
+                current.bounds == window.bounds,
+                "the window moved during capture; take a new screenshot"
+            );
+            if matches!(target, Target::Region(_)) {
+                image = crop_window(&image, window.bounds, rect)?;
+            }
+        }
         // A Retina capture has two pixels a point; no picture is larger than the points.
         let fit = (MAX_EDGE / rect.width.max(rect.height)).min(1.0);
         let width = (rect.width * fit).round().max(1.0);
@@ -121,7 +286,8 @@ impl Screen {
                 x: rect.x,
                 y: rect.y,
             },
-            scale: rect.width / width,
+            scale_x: rect.width / width,
+            scale_y: rect.height / height,
             width,
             height,
             window: captured_window,
@@ -134,9 +300,14 @@ impl Screen {
             (Target::Region(_), None) => "the region".into(),
             _ => "the main display".into(),
         };
+        let tools = if expected_scope.is_some() {
+            "click and screenshot regions"
+        } else {
+            "click, scroll and screenshot regions"
+        };
         let text = format!(
-            "Screenshot {} of {what}, {width}x{height}. click, scroll and screenshot regions \
-             take x and y in this picture, from its top left corner.",
+            "Screenshot {} of {what}, {width}x{height}. {tools} take x and y in this picture, \
+             from its top left corner.",
             artifact.id
         );
         Ok((artifact, text))
@@ -195,6 +366,31 @@ impl Screen {
     }
 }
 
+/// Crop the captured window pixels, never the display behind/above it.
+#[cfg(target_os = "macos")]
+fn crop_window(image: &DynamicImage, bounds: Rect, crop: Rect) -> Result<DynamicImage> {
+    ensure!(
+        bounds.width > 0.0 && bounds.height > 0.0 && crop.width > 0.0 && crop.height > 0.0,
+        "invalid window crop"
+    );
+    let sx = f64::from(image.width()) / bounds.width;
+    let sy = f64::from(image.height()) / bounds.height;
+    let x = ((crop.x - bounds.x) * sx).round();
+    let y = ((crop.y - bounds.y) * sy).round();
+    let right = ((crop.x + crop.width - bounds.x) * sx).round();
+    let bottom = ((crop.y + crop.height - bounds.y) * sy).round();
+    ensure!(
+        x >= 0.0
+            && y >= 0.0
+            && right <= f64::from(image.width())
+            && bottom <= f64::from(image.height())
+            && right > x
+            && bottom > y,
+        "crop is outside the captured window"
+    );
+    Ok(image.crop_imm(x as u32, y as u32, (right - x) as u32, (bottom - y) as u32))
+}
+
 impl View {
     fn point(self, x: f64, y: f64) -> Result<Point> {
         ensure!(
@@ -204,8 +400,8 @@ impl View {
             self.height
         );
         Ok(Point {
-            x: self.origin.x + x * self.scale,
-            y: self.origin.y + y * self.scale,
+            x: self.origin.x + x * self.scale_x,
+            y: self.origin.y + y * self.scale_y,
         })
     }
 }
@@ -356,7 +552,8 @@ mod tests {
         assert!(screen.point(1.0, 1.0).is_err(), "no screenshot yet");
         *screen.view.lock() = Some(View {
             origin: Point { x: 100.0, y: 50.0 },
-            scale: 2.0,
+            scale_x: 2.0,
+            scale_y: 2.0,
             width: 800.0,
             height: 500.0,
             window: None,
@@ -371,6 +568,41 @@ mod tests {
         assert!(screen.independent_point(0.0, f64::INFINITY).is_err());
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn crop_uses_only_window_pixels_with_distinct_axis_scales() {
+        let bounds = Rect {
+            x: -500.0,
+            y: -100.0,
+            width: 4.0,
+            height: 4.0,
+        };
+        let source = DynamicImage::ImageRgb8(image::RgbImage::from_fn(8, 12, |x, y| {
+            image::Rgb([x as u8, y as u8, 0])
+        }));
+        let region = Rect {
+            x: -499.0,
+            y: -98.0,
+            width: 3.0,
+            height: 2.0,
+        };
+        let cropped = crop_window(&source, bounds, region).unwrap().into_rgb8();
+        assert_eq!(cropped.dimensions(), (6, 6));
+        assert_eq!(cropped.get_pixel(0, 0).0, [2, 6, 0]);
+        assert_eq!(cropped.get_pixel(5, 5).0, [7, 11, 0]);
+        assert!(
+            crop_window(
+                &source,
+                bounds,
+                Rect {
+                    width: 4.0,
+                    ..region
+                }
+            )
+            .is_err()
+        );
+    }
+
     #[test]
     fn window_crops_preserve_global_negative_display_coordinates() {
         let view = View {
@@ -378,7 +610,8 @@ mod tests {
                 x: -1600.0,
                 y: -900.0,
             },
-            scale: 1.5,
+            scale_x: 1.5,
+            scale_y: 1.5,
             width: 800.0,
             height: 500.0,
             window: None,
@@ -387,3 +620,7 @@ mod tests {
         assert_eq!((point.x, point.y), (-1450.0, -600.0));
     }
 }
+
+#[cfg(all(test, target_os = "macos"))]
+#[path = "window_tests.rs"]
+mod window_tests;

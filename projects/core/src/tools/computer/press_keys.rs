@@ -1,10 +1,12 @@
 //! `press_keys`: a key or a shortcut in whatever has the keyboard focus.
 
+use std::sync::Arc;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Desktop, screen::keys, shared::blocking};
+use super::{Desktop, Screen, screen::keys, shared::blocking};
 use crate::{
     BoxFuture,
     platform::Needs,
@@ -15,7 +17,7 @@ use crate::{
     },
 };
 
-pub struct PressKeys;
+pub struct PressKeys(pub Arc<Screen>);
 
 #[derive(Deserialize, JsonSchema)]
 #[serde(deny_unknown_fields)]
@@ -40,12 +42,14 @@ impl Tool for PressKeys {
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
+            self.0.require_unscoped()?;
             let arguments: PressKeysArguments = parse_arguments(arguments)?;
             let combo = keys(&arguments.keys)?;
             context
                 .approve_screen(&format!("press {}", arguments.keys), true)
                 .await?;
-            blocking(move || Desktop.press(&combo)).await?;
+            let screen = Arc::clone(&self.0);
+            blocking(move || screen.unscoped(|| Desktop.press(&combo))).await?;
             Desktop.touch();
             Ok(format!("pressed {}", arguments.keys))
         })

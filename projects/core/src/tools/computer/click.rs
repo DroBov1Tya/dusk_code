@@ -8,7 +8,9 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Desktop, screen::Screen, shared::blocking};
+#[cfg(test)]
+use super::Desktop;
+use super::{screen::Screen, shared::blocking};
 use crate::{
     BoxFuture,
     platform::Needs,
@@ -68,7 +70,9 @@ impl Tool for Click {
 
     fn description(&self, _: &ToolContext) -> String {
         if cfg!(target_os = "macos") {
-            "Click at x, y of the newest screenshot. By default it presses the control there \
+            "Click at x, y of the newest screenshot. A selected window session uses app-scoped \
+             Accessibility, even when another app covers the window. AXPress can bring the target \
+             app to the foreground. By default it presses the control there \
              through Accessibility and leaves the user's pointer alone: a single left click \
              on a button, link or checkbox, which may not focus a field or the app. A control \
              that cannot be pressed so, a window that moved since the screenshot, or an \
@@ -101,20 +105,34 @@ impl Tool for Click {
                     arguments.x, arguments.y
                 ),
             };
-            match arguments.mode {
-                PointerMode::Independent => context.approve_screen(&action, false).await?,
-                PointerMode::System => context.approve_system_pointer(&action).await?,
+            let scope = self.0.scope();
+            match (&scope, arguments.mode) {
+                (Some((id, label)), PointerMode::Independent) => {
+                    context
+                        .approve_window(
+                            Some(id.clone()),
+                            &format!(
+                                "{action} in {label}; the target app may come to the foreground"
+                            ),
+                        )
+                        .await?
+                }
+                (Some(_), PointerMode::System) => {
+                    anyhow::bail!("system pointer is disabled in a window session")
+                }
+                (None, PointerMode::Independent) => context.approve_screen(&action, false).await?,
+                (None, PointerMode::System) => context.approve_system_pointer(&action).await?,
             }
             let screen = Arc::clone(&self.0);
             blocking(move || {
-                let (at, expected_window) = match arguments.mode {
-                    PointerMode::Independent => {
-                        screen.independent_point(arguments.x, arguments.y)?
-                    }
-                    PointerMode::System => (screen.point(arguments.x, arguments.y)?, None),
-                };
-                screen.mark(at);
-                Desktop.click(at, arguments.right, count, arguments.mode, expected_window)
+                screen.click(
+                    arguments.x,
+                    arguments.y,
+                    arguments.right,
+                    count,
+                    arguments.mode,
+                    scope.as_ref().map(|(id, _)| id.as_str()),
+                )
             })
             .await?;
             match arguments.mode {

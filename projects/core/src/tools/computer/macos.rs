@@ -134,6 +134,7 @@ fn visible_windows() -> Vec<Listed> {
             let bounds = field(unsafe { kCGWindowBounds })?.downcast::<CFDictionary>()?;
             Some(Listed {
                 window: Window {
+                    pid: i32::try_from(number(unsafe { kCGWindowOwnerPID })?).ok()?,
                     id: u32::try_from(number(unsafe { kCGWindowNumber })?).ok()?,
                     app: text(unsafe { kCGWindowOwnerName }).unwrap_or_default(),
                     title: text(unsafe { kCGWindowName }).unwrap_or_default(),
@@ -399,7 +400,7 @@ impl Desktop {
 
     /// Captures one window as it is, even under others, without its shadow.
     pub fn capture_window(&self, window: &Window, file: &Path) -> Result<()> {
-        screencapture(&["-o", "-l", &window.id.to_string()], file)
+        screencapture(&["-a", "-o", "-l", &window.id.to_string()], file)
     }
 
     pub fn click(

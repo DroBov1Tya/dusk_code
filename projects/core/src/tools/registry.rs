@@ -320,9 +320,11 @@ mod tests {
             let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
             tools.push(Box::new(Screenshot(Arc::clone(&screen))));
             tools.push(Box::new(Click(Arc::clone(&screen))));
-            tools.push(Box::new(Scroll(screen)));
-            tools.push(Box::new(TypeText));
-            tools.push(Box::new(PressKeys));
+            tools.push(Box::new(Scroll(Arc::clone(&screen))));
+            tools.push(Box::new(TypeText(Arc::clone(&screen))));
+            tools.push(Box::new(PressKeys(Arc::clone(&screen))));
+            #[cfg(target_os = "macos")]
+            tools.push(Box::new(crate::tools::WindowSession(screen)));
         }
         for tool in tools {
             let schema = tool.parameters();

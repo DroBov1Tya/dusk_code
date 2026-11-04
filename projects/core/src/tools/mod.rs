@@ -21,6 +21,8 @@ mod tool;
 pub use agents::{AgentState, AskAgent, MessageParent};
 pub use approvals::{ApprovalRequest, Approvals, Decision, Judge, Request, Verdict};
 #[cfg(target_os = "macos")]
+pub use computer::WindowSession;
+#[cfg(target_os = "macos")]
 pub use computer::run_overlay_if_asked;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};

@@ -46,7 +46,8 @@ impl Tool for Screenshot {
     computer_tool!("screenshot");
 
     fn description(&self, _: &ToolContext) -> String {
-        "See the screen: a picture of the main display, of one app's window, or of a \
+        "See the screen: while window_session is selected, only that window (omit window). \
+         Otherwise a picture of the main display, of one app's window, or of a \
          region of the last screenshot to look closer. Take one before acting, and again only to check a \
          result or when the screen has changed; one picture is enough for several \
          actions. Coordinates of click and scroll are in the newest picture. What the \
@@ -69,7 +70,15 @@ impl Tool for Screenshot {
     ) -> BoxFuture<'a, ToolResult> {
         Box::pin(async move {
             let arguments: ScreenshotArguments = parse_arguments(arguments)?;
-            context.approve_screen("take a screenshot", false).await?;
+            let scope = self.0.scope();
+            match &scope {
+                Some((id, label)) => {
+                    context
+                        .approve_window(Some(id.clone()), &format!("capture only {label}"))
+                        .await?
+                }
+                None => context.approve_screen("take a screenshot", false).await?,
+            }
             let target = match (arguments.region, arguments.window) {
                 (Some(_), Some(_)) => anyhow::bail!("give a region or a window, not both"),
                 (Some(region), None) => Target::Region(Region {
@@ -82,7 +91,9 @@ impl Tool for Screenshot {
                 (None, None) => Target::Display,
             };
             let screen = Arc::clone(&self.0);
-            let (artifact, text) = blocking(move || screen.capture(target)).await?;
+            let (artifact, text) =
+                blocking(move || screen.capture(target, scope.as_ref().map(|(id, _)| id.as_str())))
+                    .await?;
             let mut result = ToolResult::text(text);
             result.artifacts.push(artifact);
             Ok(result)

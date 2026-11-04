@@ -2,8 +2,8 @@
 //! types, presses keys and scrolls by the coordinates of that picture. Offered only with
 //! a screen, to a model that sees pictures, after one yes from the user a session.
 //!
-//! `screen` and the five tool modules are the same everywhere; the desktop they drive is `macos` or
-//! `linux`. On macOS a click presses the control through Accessibility and leaves the
+//! The desktop is `macos` or `linux`. On macOS, `window_session` pins captures and
+//! semantic clicks to one app window. A macOS click presses the control and leaves the
 //! user's pointer alone; only system mode, with a yes of its own, moves the pointer. A
 //! screenshot can be of one window, and a cursor of dusk's own marks where the agent
 //! last acted. On Linux every click moves the pointer, through the X11 or Wayland tools
@@ -22,12 +22,16 @@ mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "macos")]
+mod native_window;
+#[cfg(target_os = "macos")]
 mod overlay;
 mod press_keys;
 mod screen;
 mod screenshot;
 mod scroll;
 mod type_text;
+#[cfg(target_os = "macos")]
+mod window_session;
 
 #[cfg(target_os = "linux")]
 use linux::Desktop;
@@ -42,6 +46,8 @@ pub use screen::Screen;
 pub use screenshot::Screenshot;
 pub use scroll::Scroll;
 pub use type_text::TypeText;
+#[cfg(target_os = "macos")]
+pub use window_session::WindowSession;
 
 /// A place on the display in points, from the top left corner of the main display.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -60,7 +66,10 @@ pub struct Rect {
 }
 
 /// An app's window on screen.
+#[derive(Debug, Clone, PartialEq)]
 pub struct Window {
+    #[cfg(target_os = "macos")]
+    pub pid: i32,
     pub id: u32,
     pub app: String,
     pub title: String,

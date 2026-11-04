@@ -52,6 +52,7 @@ impl Tool for Scroll {
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
+            self.0.require_unscoped()?;
             let arguments: ScrollArguments = parse_arguments(arguments)?;
             let bounded = |pixels: i32| pixels.clamp(-MAX_SCROLL_PIXELS, MAX_SCROLL_PIXELS);
             let (down, right) = (bounded(arguments.down), bounded(arguments.right));
@@ -59,9 +60,15 @@ impl Tool for Scroll {
             context
                 .approve_system_pointer("move the user's pointer and scroll")
                 .await?;
-            let at = self.0.point(arguments.x, arguments.y)?;
-            self.0.mark(at);
-            blocking(move || Desktop.scroll(at, down, right)).await?;
+            let screen = Arc::clone(&self.0);
+            blocking(move || {
+                screen.unscoped(|| {
+                    let at = screen.point(arguments.x, arguments.y)?;
+                    screen.mark(at);
+                    Desktop.scroll(at, down, right)
+                })
+            })
+            .await?;
             Ok(format!("scrolled {down} down and {right} right"))
         })
     }

@@ -25,10 +25,10 @@ unsafe extern "C" {
         y: f32,
         element: *mut AXUIElementRef,
     ) -> i32;
-    fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, seconds: f32) -> i32;
-    fn AXUIElementPerformAction(element: AXUIElementRef, action: CFStringRef) -> i32;
-    fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
-    fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> i32;
+    pub(super) fn AXUIElementSetMessagingTimeout(element: AXUIElementRef, seconds: f32) -> i32;
+    pub(super) fn AXUIElementPerformAction(element: AXUIElementRef, action: CFStringRef) -> i32;
+    pub(super) fn AXUIElementCreateApplication(pid: i32) -> AXUIElementRef;
+    pub(super) fn AXUIElementGetPid(element: AXUIElementRef, pid: *mut i32) -> i32;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
         attribute: CFStringRef,
@@ -107,7 +107,7 @@ pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
     )
 }
 
-fn hit_test(scope: AXUIElementRef, at: Point) -> (i32, Option<CFType>) {
+pub(super) fn hit_test(scope: AXUIElementRef, at: Point) -> (i32, Option<CFType>) {
     let mut hit = std::ptr::null();
     // SAFETY: scope and output pointer are valid; coordinates are checked by press.
     let result =
@@ -115,7 +115,7 @@ fn hit_test(scope: AXUIElementRef, at: Point) -> (i32, Option<CFType>) {
     (result, owned(hit))
 }
 
-fn check_hit_test(code: i32) -> Result<()> {
+pub(super) fn check_hit_test(code: i32) -> Result<()> {
     if code == -25200 {
         bail!(
             "macOS Accessibility hit-testing failed (kAXErrorFailure, -25200); \
@@ -194,7 +194,7 @@ fn ensure_unique_match(matching: usize, target_matches: bool) -> Result<()> {
     Ok(())
 }
 
-fn attribute(element: AXUIElementRef, name: &str) -> Result<CFType> {
+pub(super) fn attribute(element: AXUIElementRef, name: &str) -> Result<CFType> {
     let name = CFString::new(name);
     let mut value = std::ptr::null();
     // SAFETY: element and output pointer are valid, name lives for the call.
@@ -205,7 +205,7 @@ fn attribute(element: AXUIElementRef, name: &str) -> Result<CFType> {
     value.context("cannot identify the target window; no action was sent")
 }
 
-fn window_rect(window: AXUIElementRef) -> Result<Rect> {
+pub(super) fn window_rect(window: AXUIElementRef) -> Result<Rect> {
     let position = attribute(window, "AXPosition")?;
     let size = attribute(window, "AXSize")?;
     ensure!(
@@ -233,7 +233,7 @@ fn window_rect(window: AXUIElementRef) -> Result<Rect> {
     })
 }
 
-fn owned(reference: CFTypeRef) -> Option<CFType> {
+pub(super) fn owned(reference: CFTypeRef) -> Option<CFType> {
     if reference.is_null() {
         return None;
     }
@@ -241,7 +241,7 @@ fn owned(reference: CFTypeRef) -> Option<CFType> {
     Some(unsafe { CFType::wrap_under_create_rule(reference) })
 }
 
-fn check(code: i32, action: bool) -> Result<()> {
+pub(super) fn check(code: i32, action: bool) -> Result<()> {
     match code {
         0 => Ok(()),
         -25202 => bail!("the accessible control no longer exists; take a new screenshot"),

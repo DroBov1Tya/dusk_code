@@ -139,9 +139,11 @@ impl Launcher {
             let screen = Arc::new(Screen::new(ArtifactStore::new(self.paths.artifacts_dir())));
             tools.add(Box::new(Screenshot(Arc::clone(&screen))));
             tools.add(Box::new(Click(Arc::clone(&screen))));
-            tools.add(Box::new(Scroll(screen)));
-            tools.add(Box::new(TypeText));
-            tools.add(Box::new(PressKeys));
+            tools.add(Box::new(Scroll(Arc::clone(&screen))));
+            tools.add(Box::new(TypeText(Arc::clone(&screen))));
+            tools.add(Box::new(PressKeys(Arc::clone(&screen))));
+            #[cfg(target_os = "macos")]
+            tools.add(Box::new(crate::tools::WindowSession(screen)));
         }
         if depth < MAX_AGENT_DEPTH {
             let asker = agent.map(|agent| agent.name.clone());
