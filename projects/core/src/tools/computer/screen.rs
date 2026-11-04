@@ -124,13 +124,12 @@ impl Screen {
             (Target::Region(_), None) => "the region".into(),
             _ => "the main display".into(),
         };
-        Ok((
-            artifact,
-            format!(
-                "Screenshot of {what}, {width}x{height}. click, scroll and screenshot regions \
-                 take x and y in this picture, from its top left corner."
-            ),
-        ))
+        let text = format!(
+            "Screenshot {} of {what}, {width}x{height}. click, scroll and screenshot regions \
+             take x and y in this picture, from its top left corner.",
+            artifact.id
+        );
+        Ok((artifact, text))
     }
 
     /// The display point under the pixel `x`, `y` of the last screenshot.
