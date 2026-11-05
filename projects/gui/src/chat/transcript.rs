@@ -4,6 +4,7 @@
 use std::{collections::BTreeMap, path::PathBuf};
 
 use dusk_protocol::{
+    artifact::ImageArtifact,
     conversation::{Message, MessageRole},
     model::ModelEvent,
     thread::ThreadEvent,
@@ -19,9 +20,25 @@ pub enum Item {
     },
     Tool(Tool),
     /// A picture a tool or a message carries, by its ID in the pictures folder.
-    Image(String),
+    Image(Picture),
     Notice(String),
     Error(String),
+}
+
+pub struct Picture {
+    pub id: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+}
+
+impl From<&ImageArtifact> for Picture {
+    fn from(artifact: &ImageArtifact) -> Self {
+        Self {
+            id: artifact.id.clone(),
+            title: artifact.title.clone(),
+            description: artifact.description.clone(),
+        }
+    }
 }
 
 pub struct Tool {
@@ -119,7 +136,7 @@ impl Transcript {
             }
         }
         for artifact in &message.artifacts {
-            self.items.push(Item::Image(artifact.id.clone()));
+            self.items.push(Item::Image(artifact.into()));
         }
     }
 
@@ -153,8 +170,8 @@ impl Transcript {
                     };
                     tool.output = clip(&result.content);
                 }
-                for artifact in result.artifacts {
-                    self.items.push(Item::Image(artifact.id));
+                for artifact in &result.artifacts {
+                    self.items.push(Item::Image(artifact.into()));
                 }
             }
             ThreadEvent::Tokens { tokens, limit } => self.tokens = Some((context(&tokens), limit)),

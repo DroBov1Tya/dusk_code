@@ -32,7 +32,8 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
             .on_click(cx.listener(|ws, _, window, cx| ws.send(window, cx)))
     };
     let attach = ws.attach_open.then(|| attach_menu(cx));
-    let navigator = (ws.sent_rows.len() > 1).then(|| super::navigator::render(&ws.sent_rows, cx));
+    let navigator =
+        (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, cx));
     let muted = cx.theme().muted_foreground;
     let mut chips = div().flex().flex_row().flex_wrap().gap_1();
     for (index, path) in ws.attachments.iter().enumerate() {

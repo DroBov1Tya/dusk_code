@@ -109,6 +109,7 @@ pub struct Workspace {
     pub attachments: Vec<PathBuf>,
     /// The shown chat's sent messages, by transcript row, for the navigator.
     pub sent_rows: Vec<(usize, String)>,
+    pub navigator_open: bool,
     /// Fields for the settings a plugin lacks, in its detail window.
     pub secret_inputs: Vec<(String, Entity<InputState>)>,
     /// The agents graph's level: the names from the root down.
@@ -210,6 +211,7 @@ impl Workspace {
             right_hidden: false,
             attachments: Vec::new(),
             sent_rows: Vec::new(),
+            navigator_open: false,
             secret_inputs: Vec::new(),
             agent_path: Vec::new(),
             chat_menu: None,

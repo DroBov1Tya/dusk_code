@@ -18,6 +18,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         .bottom(px(40.))
         .left(px(160.))
         .w(px(360.))
+        .overflow_hidden()
         .p_1()
         .flex()
         .flex_col()
@@ -53,6 +54,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
                         .flex()
                         .flex_col()
                         .flex_1()
+                        .min_w_0()
+                        .overflow_hidden()
                         .gap_0p5()
                         .child(
                             div()

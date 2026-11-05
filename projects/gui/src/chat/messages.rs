@@ -11,7 +11,8 @@ use gpui_kit::{
 };
 
 use super::{
-    transcript::{Item, Tool, ToolState},
+    links,
+    transcript::{Item, Picture, Tool, ToolState},
     working,
 };
 use crate::{widgets, workspace::Workspace};
@@ -51,13 +52,21 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             while index < chat.items.len() && matches!(chat.items[index], Item::Tool(_)) {
                 index += 1;
             }
+            // A shown picture stands for the step that showed it.
             let tools: Vec<&Tool> = chat.items[start..index]
                 .iter()
                 .filter_map(|item| match item {
-                    Item::Tool(tool) => Some(tool),
+                    Item::Tool(tool)
+                        if !(tool.name == "display_image" && tool.state == ToolState::Done) =>
+                    {
+                        Some(tool)
+                    }
                     _ => None,
                 })
                 .collect();
+            if tools.is_empty() {
+                continue;
+            }
             rows.push(lane(run(ws, &shown, start, &tools, cx).into_any_element()));
             continue;
         }
@@ -111,7 +120,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 }
                 answer.into_any_element()
             }
-            Item::Image(id) => picture(&pictures, id),
+            Item::Image(image) => picture(&pictures, image, cx),
             Item::Notice(text) => div()
                 .text_xs()
                 .text_color(muted)
@@ -307,17 +316,56 @@ fn step(
     line
 }
 
-/// A picture from the pictures folder, drawn whole. Only an ID made of hex digits and
-/// dashes is taken, so it cannot name a path outside that folder.
-fn picture(folder: &Path, id: &str) -> AnyElement {
+/// A picture from the pictures folder as a card: the picture on the left, its title and
+/// description beside it, a hairline under it to part it from the next. Only an ID of
+/// hex digits and dashes is taken, so it cannot name a path outside that folder.
+fn picture(folder: &Path, image: &Picture, cx: &App) -> AnyElement {
+    let id = &image.id;
     if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
         return div().into_any_element();
     }
-    img(folder.join(id).join("image"))
-        .max_w_full()
-        .max_h(px(520.))
-        .rounded_lg()
-        .object_fit(ObjectFit::Contain)
+    let theme = cx.theme();
+    let (border, muted, surface) = (theme.border, theme.muted_foreground, theme.muted);
+    let mut text = div().flex().flex_col().gap_2().flex_1().min_w_0();
+    if let Some(title) = &image.title {
+        text = text.child(
+            div()
+                .text_lg()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(title.clone()),
+        );
+    }
+    if let Some(description) = &image.description {
+        text = text.child(links::markdown(
+            SharedString::from(format!("picture-{id}")),
+            description.clone(),
+        ));
+    }
+    if image.title.is_none() && image.description.is_none() {
+        text = text.child(div().text_xs().text_color(muted).child("Picture"));
+    }
+    div()
+        .flex()
+        .flex_row()
+        .gap_5()
+        .pb_4()
+        .border_b_1()
+        .border_color(border)
+        .child(
+            div()
+                .w(px(220.))
+                .flex_none()
+                .rounded_xl()
+                .overflow_hidden()
+                .bg(surface)
+                .child(
+                    img(folder.join(id).join("image"))
+                        .w_full()
+                        .max_h(px(320.))
+                        .object_fit(ObjectFit::Cover),
+                ),
+        )
+        .child(text)
         .into_any_element()
 }
 
