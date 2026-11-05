@@ -20,7 +20,7 @@ use crate::{
     state::{Source, State, estimate_tokens},
 };
 
-const FOLDER: &str = "sources";
+pub(crate) const FOLDER: &str = "sources";
 /// Larger files are refused; a chat folder is not a backup.
 const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
 /// What of one source a request carries; the agent can read the rest from its file.
@@ -36,7 +36,7 @@ const MAX_DECODE_BYTES: u64 = 256 * 1024 * 1024;
 const PICTURE_TOKENS: u64 = 1500;
 
 /// Letters, digits and `.-_` stay, so a name is safe in a path and in a tag.
-fn clean_name(name: &str) -> String {
+pub(crate) fn clean_name(name: &str) -> String {
     let clean: String = name
         .chars()
         .map(|c| {
