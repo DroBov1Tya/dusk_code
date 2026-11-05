@@ -144,6 +144,49 @@ watched windows, cron).
 - [ ] model menu: close on a click outside (`on_mouse_down_out`), keys 1-6 pick a model
 - [ ] Linux build in OrbStack (see memory `linux-checks`): needs Vulkan/X11/Wayland libs
 
+## Round 2 (user requests, 2026-11-05)
+
+Design rules (from heydamir/unslop, CC BY 4.0, credit Damir Sokolovsky): neutral
+surfaces tinted only slightly toward the theme's world; one accent used rarely
+(selection, primary action, one key figure); hairline borders = primary text at 6-10%;
+no glows, gradients or shadows on dark; 4px grid; nav rows 32-36 tall, 2-4 apart;
+section labels 24 above / 8 below, sentence case (no uppercase tracking); three text
+roles (primary, secondary, muted). The user stares at this for hours: calm, uncluttered.
+
+- [x] Dusk theme in the dark fantasy of Berserk / Dark Souls 1 (ash, iron, worn leather,
+      bonfire ember accent, parchment text), not evil or neon; tune every palette
+- [x] Larger default text; settings for a system font family and sizes (UI and mono)
+- [x] Settings as a page with its own category menu on the left (Appearance, Model,
+      Chat, Safety, Memory and context, Advanced...), like the Hermes settings screenshot
+- [x] Left: project rows not highlighted by default, hover only, a tone different from
+      chats, more space between a project and its chats
+- [x] Search opens a modal over the window, with recent chats under the field
+- [x] Artifacts tab on the left: files by category (text, images, documents such as
+      docx/pdf/csv, other) with a preview; needs a core API that lists the workspace
+      and artifacts folders and reads a file (size-capped, inside those roots only)
+- [x] New project as a large modal in the middle; a Browse button opens the system
+      folder picker (`cx.prompt_for_paths`); description is a real multi-line field
+- [x] A new chat without a project runs in the workspace root (~/Documents/duskcode)
+- [x] Effort lives inside the model menu only (no separate button)
+- [~] Chat rendering, high end (done: markdown with tables via TextView, http(s) links and images, checklist questions; left: option cards, document preview in chat): full markdown (tables, lists, code, quotes), clickable
+      links (open in the system browser, http/https only), images in answers (https
+      only), option lists rendered as cards, multi-choice questions as a checklist with
+      a submit button (like the "Выбери направления" screenshot), a small document
+      preview for outputs
+- [x] Right column as stacked collapsible modules (Environment, Context, Git, Files,
+      Todo, Agents, Jobs, Outputs), like the TUI sidebar, not tabs
+- [x] Outputs module: files the agent created or changed in the chat; open one in a
+      built-in viewer with markdown rendering
+- [x] Context module: a fill bar with each kind's share in percent
+- [x] App icon (placeholder) under projects/gui/assets; macOS .app bundle in the installer
+- [x] scripts: install-gui.sh (detects an existing install, updates or installs),
+      install-tui.sh, and a general install.sh that offers TUI, GUI or both and calls them;
+      README section
+
+Also done in round 2: HTTP to private networks for providers (any host with
+`allow_http: true`), unlisted models by name (model menu and Settings > Model), older
+builds open newer databases (`ignore_missing` on the migrator).
+
 ## Later (v2)
 
 - Internal browser panel, screenshots the model took, windows the model watches.

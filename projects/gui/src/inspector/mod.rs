@@ -1,33 +1,36 @@
-//! The right column, the engineering side: the project's git and files, and the shown
-//! chat's context, todo list, subagents and background jobs.
+//! The right column, the engineering side, as modules stacked one under another like
+//! the TUI's sidebar: where the chat works, its context, what it wrote, the project's
+//! git and files, and the chat's todo list, subagents and background jobs. Each module
+//! folds on its header.
 
 mod agents;
 mod context;
+mod environment;
 mod files;
 mod git;
 mod glyph;
 mod jobs;
+mod outputs;
 mod todo;
 
 use gpui_kit::{
-    component::{
-        ActiveTheme, IconName, Sizable,
-        button::{Button, ButtonVariants},
-    },
+    component::{ActiveTheme, IconName},
     *,
 };
 
 use crate::{
-    host, widgets,
+    widgets,
     workspace::{Right, Workspace},
 };
 
 pub const WIDTH: f32 = 340.;
 
-const TABS: &[(Right, &str)] = &[
+const MODULES: &[(Right, &str)] = &[
+    (Right::Environment, "Environment"),
+    (Right::Context, "Context"),
+    (Right::Outputs, "Outputs"),
     (Right::Git, "Git"),
     (Right::Files, "Files"),
-    (Right::Context, "Context"),
     (Right::Todo, "Todo"),
     (Right::Agents, "Agents"),
     (Right::Jobs, "Jobs"),
@@ -35,29 +38,57 @@ const TABS: &[(Right, &str)] = &[
 
 pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (panel, border) = (theme.sidebar, theme.sidebar_border);
-    let mut tabs = div().flex().flex_row().gap_0p5().px_1().py_2();
-    for (index, (tab, label)) in TABS.iter().enumerate() {
-        let tab = *tab;
-        tabs = tabs.child(
-            widgets::tab(("inspector-tab", index), label, ws.right == tab, cx).on_click(
-                cx.listener(move |ws, _, _, cx| {
-                    ws.right = tab;
-                    ws.refresh_inspector(cx);
-                    cx.notify();
-                }),
-            ),
-        );
+    let (panel, border, muted) = (theme.sidebar, theme.sidebar_border, theme.muted_foreground);
+    let mut column = div().flex().flex_col().pb_6();
+    for (index, (module, title)) in MODULES.iter().enumerate() {
+        let module = *module;
+        let open = !ws.folded.contains(&module);
+        let header = div()
+            .id(("module", index))
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .h(px(36.))
+            .px_4()
+            .cursor_pointer()
+            .child(div().flex_1().text_sm().font_weight(FontWeight::MEDIUM).child(*title))
+            .child(widgets::icon(
+                if open {
+                    IconName::ChevronDown
+                } else {
+                    IconName::ChevronRight
+                },
+                muted,
+            ))
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                if !ws.folded.remove(&module) {
+                    ws.folded.insert(module);
+                } else {
+                    ws.refresh_module(module, cx);
+                }
+                cx.notify();
+            }));
+        let mut section = div()
+            .flex()
+            .flex_col()
+            .when_border(index > 0, border)
+            .child(header);
+        if open {
+            let body = match module {
+                Right::Environment => environment::render(ws, cx),
+                Right::Context => context::render(ws, cx),
+                Right::Outputs => outputs::render(ws, cx),
+                Right::Git => git::render(ws, cx),
+                Right::Files => files::render(ws, cx),
+                Right::Todo => todo::render(ws, cx),
+                Right::Agents => agents::render(ws, cx),
+                Right::Jobs => jobs::render(ws, cx),
+            };
+            section = section.child(div().pb_3().child(body));
+        }
+        column = column.child(section);
     }
-    let body = match ws.right {
-        Right::Git => git::render(ws, cx),
-        Right::Files => files::render(ws, cx),
-        Right::Context => context::render(ws, cx),
-        Right::Todo => todo::render(ws, cx),
-        Right::Agents => agents::render(ws, cx),
-        Right::Jobs => jobs::render(ws, cx),
-    };
-    let dir = ws.selected_project().map(|project| project.dir.clone());
     div()
         .w(px(WIDTH))
         .h_full()
@@ -68,49 +99,42 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .border_color(border)
         .child(
             div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .justify_between()
-                .pr_2()
-                .border_b_1()
-                .border_color(border)
-                .child(tabs)
-                .child(
-                    Button::new("terminal")
-                        .ghost()
-                        .small()
-                        .icon(IconName::SquareTerminal)
-                        .tooltip("Open a terminal in the project")
-                        .on_click(cx.listener(move |ws, _, _, cx| match &dir {
-                            Some(dir) => {
-                                if let Err(error) = host::terminal::open(dir) {
-                                    ws.fail(error, cx);
-                                }
-                            }
-                            None => ws.fail(anyhow::anyhow!("pick a project first"), cx),
-                        })),
-                ),
-        )
-        .child(
-            div()
                 .id("inspector-body")
                 .flex_1()
                 .min_h_0()
                 .overflow_y_scroll()
-                .child(body),
+                .child(column),
         )
 }
 
+/// A hairline above every module but the first.
+trait WhenBorder {
+    fn when_border(self, on: bool, color: Hsla) -> Self;
+}
+
+impl WhenBorder for Div {
+    fn when_border(self, on: bool, color: Hsla) -> Self {
+        if on { self.border_t_1().border_color(color) } else { self }
+    }
+}
+
 impl Workspace {
-    /// Asks the core again for what the open tab shows.
+    /// Asks the core again for what the open modules show.
     pub fn refresh_inspector(&mut self, cx: &mut Context<Self>) {
-        match self.right {
+        for (module, _) in MODULES {
+            if !self.folded.contains(module) {
+                self.refresh_module(*module, cx);
+            }
+        }
+    }
+
+    fn refresh_module(&mut self, module: Right, cx: &mut Context<Self>) {
+        match module {
             Right::Git => self.load_git(cx),
             Right::Files => self.load_folder(String::new(), cx),
             Right::Context => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Todo | Right::Agents => {}
+            Right::Environment | Right::Outputs | Right::Todo | Right::Agents => {}
         }
     }
 }

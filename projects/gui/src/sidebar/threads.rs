@@ -21,7 +21,7 @@ pub fn render(ws: &Workspace, project: &Project, _: &mut Window, cx: &mut Contex
         .filter(|thread| thread.project.as_deref() == Some(dir.as_ref()))
         .filter(|thread| ws.matches_search(thread, cx))
         .collect();
-    let mut list = div().flex().flex_col().pl_4();
+    let mut list = div().flex().flex_col().gap_0p5().pl_5().pt_1();
     if threads.is_empty() {
         return list.child(widgets::muted("No chats yet.", cx));
     }
@@ -72,12 +72,12 @@ impl Workspace {
                 .is_some_and(|title| title.to_lowercase().contains(&query))
     }
 
-    pub fn new_chat(&mut self, project_id: &str, _: &mut Window, cx: &mut Context<Self>) {
+    /// A new chat in a project's folder, or in the workspace root without one.
+    pub fn new_chat(&mut self, project_id: Option<&str>, _: &mut Window, cx: &mut Context<Self>) {
         self.select_project(project_id, cx);
-        let Some(project) = self.selected_project() else {
-            return;
-        };
-        let dir = project.dir.clone();
+        let dir = self
+            .selected_project()
+            .map_or_else(|| self.home.clone(), |project| project.dir.clone());
         self.core.call(
             cx,
             move |client| async move { client.threads().start(dir).await },
@@ -96,26 +96,22 @@ impl Workspace {
         let Some(thread) = self.threads.iter().find(|thread| thread.id == thread_id).cloned() else {
             return;
         };
-        if let Some(dir) = &thread.project
-            && let Some(project) = self.projects.iter().find(|p| p.dir.to_string_lossy() == *dir)
-        {
-            let id = project.id.clone();
-            self.select_project(&id, cx);
-        }
+        let project = thread.project.as_deref().and_then(|dir| {
+            self.projects
+                .iter()
+                .find(|p| p.dir.to_string_lossy() == dir)
+                .map(|p| p.id.clone())
+        });
+        self.select_project(project.as_deref(), cx);
         if self.chats.contains_key(thread_id) {
             self.show(thread_id.to_owned(), cx);
             return;
         }
-        // A chat from before folders were recorded opens in the selected project's.
+        // A chat from before folders were recorded opens in the workspace root.
         let cwd = thread
             .project
             .clone()
-            .map(PathBuf::from)
-            .or_else(|| self.selected_project().map(|project| project.dir.clone()));
-        let Some(cwd) = cwd else {
-            self.fail(anyhow::anyhow!("add a project to open this chat in"), cx);
-            return;
-        };
+            .map_or_else(|| self.home.clone(), PathBuf::from);
         let thread_id = thread_id.to_owned();
         self.core.call(
             cx,

@@ -1,5 +1,5 @@
-//! Applies a palette to every component, and keeps the choice in a file of its own
-//! next to the config: it is how this window looks, not a setting of the core.
+//! Applies a palette and the chosen fonts to every component. The choice is kept in
+//! `gui.json` next to the config: it is how this window looks, not a core setting.
 
 mod palettes;
 
@@ -9,38 +9,88 @@ use gpui_kit::{
     component::theme::{Theme, ThemeConfig},
     *,
 };
-use serde_json::json;
+use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value, json};
 
 pub use palettes::{PALETTES, Palette};
 
-/// Where the chosen theme's name is kept.
-struct ThemeFile(PathBuf);
+pub const FONT_SIZES: &[f32] = &[13., 14., 15., 16., 17., 18.];
+pub const MONO_SIZES: &[f32] = &[12., 13., 14., 15., 16.];
 
-impl Global for ThemeFile {}
-
-pub fn init(file: PathBuf, cx: &mut App) {
-    let name = fs::read_to_string(&file).unwrap_or_default();
-    cx.set_global(ThemeFile(file));
-    let name = name.trim();
-    apply(if name.is_empty() { palettes::DEFAULT } else { name }, cx);
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Prefs {
+    pub theme: String,
+    /// `None` is the system font.
+    pub font: Option<String>,
+    pub font_size: f32,
+    pub mono_font: Option<String>,
+    pub mono_size: f32,
 }
 
-pub fn current(cx: &App) -> &'static Palette {
-    palettes::find(Theme::global(cx).theme_name())
-}
-
-/// Switches to the palette named `name` and remembers it.
-pub fn choose(name: &str, cx: &mut App) {
-    apply(name, cx);
-    let file = &cx.global::<ThemeFile>().0;
-    if let Err(error) = fs::write(file, name) {
-        tracing::warn!("cannot keep the theme: {error}");
+impl Default for Prefs {
+    fn default() -> Self {
+        Self {
+            theme: palettes::DEFAULT.to_owned(),
+            font: None,
+            font_size: 15.,
+            mono_font: None,
+            mono_size: 13.,
+        }
     }
 }
 
-fn apply(name: &str, cx: &mut App) {
-    let palette = palettes::find(name);
-    let config: ThemeConfig = match serde_json::from_value(config(palette)) {
+struct Stored {
+    file: PathBuf,
+    prefs: Prefs,
+}
+
+impl Global for Stored {}
+
+pub fn init(file: PathBuf, cx: &mut App) {
+    // A damaged or missing file falls back to the defaults.
+    let prefs = fs::read_to_string(&file)
+        .ok()
+        .and_then(|text| serde_json::from_str(&text).ok())
+        .unwrap_or_default();
+    cx.set_global(Stored { file, prefs });
+    apply(cx);
+}
+
+pub fn prefs(cx: &App) -> &Prefs {
+    &cx.global::<Stored>().prefs
+}
+
+/// Changes the preferences, applies them and keeps them.
+pub fn change(cx: &mut App, edit: impl FnOnce(&mut Prefs)) {
+    edit(&mut cx.global_mut::<Stored>().prefs);
+    apply(cx);
+    let stored = cx.global::<Stored>();
+    let saved = serde_json::to_string_pretty(&stored.prefs)
+        .map_err(anyhow::Error::from)
+        .and_then(|text| Ok(fs::write(&stored.file, text)?));
+    if let Err(error) = saved {
+        tracing::warn!("cannot keep the look: {error}");
+    }
+}
+
+/// The font families installed on this machine, for the settings.
+pub fn font_families(cx: &App) -> Vec<String> {
+    let mut names: Vec<String> = cx
+        .text_system()
+        .all_font_names()
+        .into_iter()
+        .filter(|name| !name.starts_with('.'))
+        .collect();
+    names.sort();
+    names.dedup();
+    names
+}
+
+fn apply(cx: &mut App) {
+    let prefs = prefs(cx).clone();
+    let palette = palettes::find(&prefs.theme);
+    let config: ThemeConfig = match serde_json::from_value(config(palette, &prefs)) {
         Ok(config) => config,
         Err(error) => {
             tracing::error!("theme {}: {error}", palette.name);
@@ -54,71 +104,85 @@ fn apply(name: &str, cx: &mut App) {
 }
 
 /// Spreads the palette's few colors over the component library's many.
-fn config(p: &Palette) -> serde_json::Value {
-    let hover = format!("{}cc", p.accent);
-    let soft = format!("{}26", p.accent);
-    let colors: serde_json::Map<String, serde_json::Value> = [
-        ("background", p.background.to_string()),
-        ("foreground", p.foreground.to_string()),
-        ("border", p.border.to_string()),
-        ("input.border", p.border.to_string()),
-        ("ring", p.accent.to_string()),
-        ("caret", p.accent.to_string()),
-        ("selection.background", soft.to_string()),
-        ("muted.background", p.surface.to_string()),
-        ("muted.foreground", p.muted.to_string()),
-        ("accent.background", p.surface.to_string()),
-        ("accent.foreground", p.foreground.to_string()),
-        ("primary.background", p.accent.to_string()),
-        ("primary.foreground", p.on_accent.to_string()),
-        ("primary.hover.background", hover.to_string()),
-        ("primary.active.background", p.accent.to_string()),
-        ("secondary.background", p.surface.to_string()),
-        ("secondary.foreground", p.foreground.to_string()),
-        ("secondary.hover.background", p.border.to_string()),
-        ("secondary.active.background", p.border.to_string()),
-        ("popover.background", p.panel.to_string()),
-        ("popover.foreground", p.foreground.to_string()),
-        ("list.background", p.panel.to_string()),
-        ("list.hover.background", p.surface.to_string()),
-        ("list.active.background", soft.to_string()),
-        ("list.active.border", p.accent.to_string()),
-        ("sidebar.background", p.panel.to_string()),
-        ("sidebar.foreground", p.foreground.to_string()),
-        ("sidebar.border", p.border.to_string()),
-        ("sidebar.accent.background", p.surface.to_string()),
-        ("sidebar.accent.foreground", p.foreground.to_string()),
-        ("sidebar.primary.background", p.accent.to_string()),
-        ("sidebar.primary.foreground", p.on_accent.to_string()),
-        ("tab.background", "#00000000".to_string()),
-        ("tab.foreground", p.muted.to_string()),
-        ("tab.active.background", p.surface.to_string()),
-        ("tab.active.foreground", p.foreground.to_string()),
-        ("tab_bar.background", p.panel.to_string()),
-        ("title_bar.background", p.panel.to_string()),
-        ("title_bar.border", p.border.to_string()),
-        ("scrollbar.background", "#00000000".to_string()),
-        ("scrollbar.thumb.background", format!("{}99", p.muted).to_string()),
-        ("switch.background", p.border.to_string()),
-        ("success.background", p.success.to_string()),
-        ("success.foreground", p.on_accent.to_string()),
-        ("warning.background", p.warning.to_string()),
-        ("warning.foreground", p.on_accent.to_string()),
-        ("danger.background", p.danger.to_string()),
-        ("danger.foreground", p.on_accent.to_string()),
-        ("info.background", p.accent.to_string()),
-        ("info.foreground", p.on_accent.to_string()),
-        ("link.foreground", p.accent.to_string()),
+fn config(p: &Palette, prefs: &Prefs) -> Value {
+    let hairline = format!("{}14", p.foreground);
+    let soft = format!("{}1f", p.accent);
+    let colors: Map<String, Value> = [
+        ("background", p.background),
+        ("foreground", p.foreground),
+        ("border", &hairline),
+        ("input.border", &hairline),
+        ("ring", p.accent),
+        ("caret", p.accent),
+        ("selection.background", &soft),
+        ("muted.background", p.surface),
+        ("muted.foreground", p.muted),
+        ("accent.background", p.raised),
+        ("accent.foreground", p.foreground),
+        // A calm primary: the parchment or ink of the ramp, the accent stays rare.
+        ("primary.background", p.accent),
+        ("primary.foreground", p.on_accent),
+        ("primary.hover.background", p.accent),
+        ("primary.active.background", p.accent),
+        ("secondary.background", p.raised),
+        ("secondary.foreground", p.foreground),
+        ("secondary.hover.background", p.raised),
+        ("secondary.active.background", p.surface),
+        ("popover.background", p.surface),
+        ("popover.foreground", p.foreground),
+        ("list.background", p.panel),
+        ("list.hover.background", p.surface),
+        ("list.active.background", p.raised),
+        ("list.active.border", &hairline),
+        ("sidebar.background", p.panel),
+        ("sidebar.foreground", p.foreground),
+        ("sidebar.border", &hairline),
+        ("sidebar.accent.background", p.surface),
+        ("sidebar.accent.foreground", p.foreground),
+        ("sidebar.primary.background", p.accent),
+        ("sidebar.primary.foreground", p.on_accent),
+        ("tab.background", "#00000000"),
+        ("tab.foreground", p.muted),
+        ("tab.active.background", p.raised),
+        ("tab.active.foreground", p.foreground),
+        ("tab_bar.background", p.panel),
+        ("title_bar.background", p.panel),
+        ("title_bar.border", &hairline),
+        ("scrollbar.background", "#00000000"),
+        ("switch.background", p.raised),
+        ("success.background", p.success),
+        ("success.foreground", p.on_accent),
+        ("warning.background", p.warning),
+        ("warning.foreground", p.on_accent),
+        ("danger.background", p.danger),
+        ("danger.foreground", p.on_accent),
+        ("info.background", p.secondary),
+        ("info.foreground", p.on_accent),
+        ("link.foreground", p.accent),
+        ("link.hover.foreground", p.foreground),
     ]
     .into_iter()
-    .map(|(key, value)| (key.to_owned(), serde_json::Value::String(value)))
+    .map(|(key, value)| (key.to_owned(), Value::String(value.to_owned())))
+    .chain([(
+        "scrollbar.thumb.background".to_owned(),
+        Value::String(format!("{}40", p.muted)),
+    )])
     .collect();
-    json!({
+    let mut config = json!({
         "name": p.name,
         "mode": if p.dark { "dark" } else { "light" },
         "radius": 8,
         "radius.lg": 12,
-        "shadow": false,
+        "shadow": !p.dark,
+        "font.size": prefs.font_size,
+        "mono_font.size": prefs.mono_size,
         "colors": colors,
-    })
+    });
+    if let Some(font) = &prefs.font {
+        config["font.family"] = json!(font);
+    }
+    if let Some(font) = &prefs.mono_font {
+        config["mono_font.family"] = json!(font);
+    }
+    config
 }

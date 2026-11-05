@@ -68,11 +68,11 @@ impl Workspace {
         if let Some(question) = question {
             text = question.answer(&[], &text);
         }
-        let dir = self.selected_project().map(|project| project.dir.clone());
-        if shown.is_none() && dir.is_none() {
-            self.fail(anyhow::anyhow!("add a project to chat in"), cx);
-            return;
-        }
+        // Without a project, a new chat works in the workspace root.
+        let dir = Some(
+            self.selected_project()
+                .map_or_else(|| self.home.clone(), |project| project.dir.clone()),
+        );
         self.composer
             .update(cx, |composer, cx| composer.set_value("", window, cx));
         self.core.call(

@@ -6,14 +6,18 @@
 //! - `connectors`: MCP servers, skills, plugins, tools and the agents' graph;
 //! - `chat`: the transcript, the composer and the bar under it, in the middle;
 //! - `inspector`: git, files, context, todo, agents and jobs, on the right;
-//! - `settings`: the settings tab;
+//! - `artifacts`: the files the agents made, by kind, in the middle column;
+//! - `modal`: what opens over the window: search, a new project, a file viewer;
+//! - `settings`: the settings page with its category menu;
 //! - `theme`: the color themes; `host`: what the machine opens, such as a terminal.
 
+mod artifacts;
 mod chat;
 mod connectors;
 mod core;
 mod host;
 mod inspector;
+mod modal;
 mod settings;
 mod sidebar;
 mod theme;
@@ -31,6 +35,11 @@ use gpui_kit::*;
 pub const THREAD_SOURCE: &str = "gui";
 
 fn main() -> Result<()> {
+    // The installer checks what it put in place with this.
+    if std::env::args().nth(1).as_deref() == Some("--version") {
+        println!("duskcode-gui {}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -38,7 +47,8 @@ fn main() -> Result<()> {
     let paths = Paths::from_home()?;
     let _restore_guard = app::RestoreGuard::startup(&paths, None)?;
     let telemetry = app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "gui").ok();
-    let theme_file = paths.config_root().join("gui-theme");
+    let look_file = paths.config_root().join("gui.json");
+    let home = paths.workspace_root().to_path_buf();
     let hello = Hello {
         protocol: PROTOCOL_VERSION,
         client: THREAD_SOURCE.to_owned(),
@@ -49,11 +59,14 @@ fn main() -> Result<()> {
     let runtime = Arc::new(runtime);
     let quit_runtime = Arc::clone(&runtime);
 
+    // Pictures in answers load over HTTPS through this client; see chat::messages.
+    let http = reqwest_client::ReqwestClient::user_agent("duskcode-gui")?;
     gpui_kit::application()
         .with_assets(gpui_kit::assets::Assets)
+        .with_http_client(Arc::new(http))
         .run(move |cx| {
             gpui_kit::init(cx);
-            theme::init(theme_file, cx);
+            theme::init(look_file, cx);
             let core = core::Core::new(client, Arc::clone(&runtime));
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),
@@ -64,7 +77,7 @@ fn main() -> Result<()> {
                 ..Default::default()
             };
             let opened = gpui_kit::open_window(options, cx, |window, cx| {
-                cx.new(|cx| workspace::Workspace::new(core, events, status, window, cx))
+                cx.new(|cx| workspace::Workspace::new(core, home, events, status, window, cx))
             });
             if let Err(error) = opened {
                 tracing::error!("cannot open the window: {error:#}");

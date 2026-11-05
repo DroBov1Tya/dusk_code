@@ -3,6 +3,7 @@
 
 mod approval;
 mod composer;
+pub mod links;
 mod messages;
 mod model_bar;
 mod model_menu;

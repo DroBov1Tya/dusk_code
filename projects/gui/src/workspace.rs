@@ -1,12 +1,15 @@
 //! The window's one root view: what it knows of the core, which tab each column shows,
 //! and the three columns themselves. Each column's module adds its own methods here.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::{
+    collections::{BTreeMap, HashMap, HashSet},
+    path::PathBuf,
+};
 
 use dusk_protocol::{
     client::{Event, Status},
     context::ContextReport,
-    project::{FileEntry, GitInfo, Project},
+    project::{FileEntry, GitInfo, OutputFile, OutputKind, Project},
     providers::ProviderStatus,
     settings::Settings,
     thread::Thread,
@@ -22,33 +25,29 @@ use gpui_kit::{
 use tokio::sync::{mpsc, watch};
 
 use crate::{
-    chat, chat::transcript::Transcript, connectors, connectors::Shelf, core::Core, inspector,
-    settings, sidebar,
+    artifacts, chat, chat::transcript::Transcript, connectors, connectors::Shelf, core::Core,
+    inspector, modal, modal::Modal, settings, settings::SettingsPage, sidebar,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Center {
     Chat,
+    Artifacts,
     Connectors,
     Settings,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+/// The modules of the right column, top to bottom.
+#[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Right {
+    Environment,
+    Context,
+    Outputs,
     Git,
     Files,
-    Context,
     Todo,
     Agents,
     Jobs,
-}
-
-/// The form that adds a project, or changes the one with `id`.
-pub struct ProjectForm {
-    pub id: Option<String>,
-    pub name: Entity<InputState>,
-    pub description: Entity<InputState>,
-    pub dir: Entity<InputState>,
 }
 
 /// The model menu over the composer, and which of its submenus is open.
@@ -61,6 +60,8 @@ pub enum Picker {
 
 pub struct Workspace {
     pub core: Core,
+    /// Where a chat without a project works: the workspace root.
+    pub home: PathBuf,
     pub status: Status,
     pub projects: Vec<Project>,
     /// Every chat the core keeps; subagent threads are left out.
@@ -73,10 +74,18 @@ pub struct Workspace {
     pub center: Center,
     pub shelf: Shelf,
     pub shelf_search: Entity<InputState>,
-    pub right: Right,
+    /// The right column's modules that are folded.
+    pub folded: HashSet<Right>,
+    pub modal: Option<Modal>,
+    pub settings_page: SettingsPage,
+    pub font_search: Entity<InputState>,
+    /// The machine's font families, read once.
+    pub fonts: Vec<String>,
+    pub model_input: Entity<InputState>,
+    pub outputs: Vec<OutputFile>,
+    pub artifact_kind: Option<OutputKind>,
     pub search: Entity<InputState>,
     pub composer: Entity<TextareaState>,
-    pub form: Option<ProjectForm>,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     pub git: Option<GitInfo>,
@@ -88,6 +97,8 @@ pub struct Workspace {
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
     pub picker: Option<Picker>,
+    /// Options marked in the shown chat's question.
+    pub picked: Vec<usize>,
     /// Answers whose reasoning is unfolded, by chat and item index.
     pub unfolded: HashSet<(String, usize)>,
     pub scroll: ScrollHandle,
@@ -98,6 +109,7 @@ pub struct Workspace {
 impl Workspace {
     pub fn new(
         core: Core,
+        home: PathBuf,
         events: mpsc::UnboundedReceiver<Event>,
         status: watch::Receiver<Status>,
         window: &mut Window,
@@ -109,6 +121,16 @@ impl Workspace {
         let shelf_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         cx.subscribe_in(&shelf_search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
             .detach();
+        let font_search = cx.new(|cx| InputState::new(window, cx).placeholder("Find a font"));
+        cx.subscribe_in(&font_search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
+            .detach();
+        let model_input = cx.new(|cx| InputState::new(window, cx).placeholder("provider/model"));
+        cx.subscribe_in(&model_input, window, |ws, _, event: &InputEvent, _, cx| {
+            if let InputEvent::PressEnter { .. } = event {
+                ws.use_typed_model(cx);
+            }
+        })
+        .detach();
         let composer = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx)
                 .auto_grow(2, 10)
@@ -125,6 +147,7 @@ impl Workspace {
         let first = status.borrow().clone();
         let mut workspace = Self {
             core,
+            home,
             status: first,
             projects: Vec::new(),
             threads: Vec::new(),
@@ -135,10 +158,16 @@ impl Workspace {
             center: Center::Chat,
             shelf: Shelf::Connectors,
             shelf_search,
-            right: Right::Git,
+            folded: [Right::Files, Right::Jobs].into_iter().collect(),
+            modal: None,
+            settings_page: SettingsPage::Appearance,
+            font_search,
+            fonts: crate::theme::font_families(cx),
+            model_input,
+            outputs: Vec::new(),
+            artifact_kind: None,
             search,
             composer,
-            form: None,
             notice: None,
             git: None,
             files: BTreeMap::new(),
@@ -148,6 +177,7 @@ impl Workspace {
             settings: None,
             providers: Vec::new(),
             picker: None,
+            picked: Vec::new(),
             unfolded: HashSet::new(),
             scroll: ScrollHandle::new(),
             followed: (0, false),
@@ -248,18 +278,21 @@ impl Render for Workspace {
         let (background, foreground) = (theme.background, theme.foreground);
         let center = match self.center {
             Center::Chat => chat::render(self, window, cx).into_any_element(),
+            Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
             Center::Connectors => connectors::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
         };
+        let modal = modal::render(self, window, cx);
         div()
+            .relative()
             .size_full()
             .flex()
             .flex_row()
             .bg(background)
             .text_color(foreground)
-            .text_sm()
             .child(sidebar::render(self, window, cx))
             .child(div().flex_1().min_w_0().h_full().child(center))
             .child(inspector::render(self, window, cx))
+            .children(modal)
     }
 }

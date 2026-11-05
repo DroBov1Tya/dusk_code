@@ -61,16 +61,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .ghost()
                 .xsmall()
                 .icon(IconName::Cpu)
-                .label(model)
+                .label(format!("{model} · {effort}"))
                 .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Model, cx))),
-        )
-        .child(
-            Button::new("pick-effort")
-                .ghost()
-                .xsmall()
-                .icon(IconName::Bot)
-                .label(format!("effort: {effort}"))
-                .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Effort, cx))),
         )
         .child(div().flex_1())
         .child(format!("{} / {}", short(used), short(limit)))

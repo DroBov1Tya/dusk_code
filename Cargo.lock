@@ -1912,6 +1912,8 @@ dependencies = [
  "dusk_core",
  "dusk_protocol",
  "gpui-kit",
+ "gpui-pre-reqwest-client",
+ "serde",
  "serde_json",
  "tokio",
  "tracing",
@@ -3020,6 +3022,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "gpui-pre-http-client-tls"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c9dcc12b5ad064550dd84c3f514aa27ff328d9f8542646107a8756679a72765"
+dependencies = [
+ "log",
+ "rustls",
+ "rustls-platform-verifier",
+ "webpki-roots",
+]
+
+[[package]]
 name = "gpui-pre-ios"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3213,6 +3227,24 @@ dependencies = [
  "wasm-streams 0.4.2",
  "web-sys",
  "windows-registry 0.4.0",
+]
+
+[[package]]
+name = "gpui-pre-reqwest-client"
+version = "0.3.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a426a7c0a9a594f9bb8891ebf47d85c2df0fd618e3bcb661d9218bc1e15d36fe"
+dependencies = [
+ "anyhow",
+ "bytes",
+ "futures",
+ "gpui-pre-http-client",
+ "gpui-pre-http-client-tls",
+ "gpui-pre-reqwest",
+ "gpui-pre-util",
+ "log",
+ "regex",
+ "tokio",
 ]
 
 [[package]]
@@ -7243,6 +7275,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "ring",
  "rustls-pki-types",

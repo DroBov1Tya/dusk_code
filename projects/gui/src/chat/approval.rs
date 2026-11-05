@@ -3,13 +3,13 @@
 use dusk_protocol::tools::Decision;
 use gpui_kit::{
     component::{
-        ActiveTheme, Sizable,
+        ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     *,
 };
 
-use crate::workspace::Workspace;
+use crate::{widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let mut cards = div().flex().flex_col().gap_2().px_6().max_w(px(900.)).mx_auto().w_full();
@@ -50,26 +50,45 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         );
     }
     if let Some(question) = &chat.question {
-        let mut options = div().flex().flex_row().flex_wrap().gap_2();
+        let muted = cx.theme().muted_foreground;
+        let mut options = div().flex().flex_col().gap_1();
         for (index, option) in question.options.iter().enumerate() {
+            let picked = ws.picked.contains(&index);
+            let mark = if question.multiple {
+                if picked { IconName::CircleCheck } else { IconName::Square }
+            } else {
+                IconName::ChevronRight
+            };
             options = options.child(
-                Button::new(SharedString::from(format!("option-{index}")))
-                    .small()
-                    .label(option.clone())
-                    .on_click(cx.listener(move |ws, _, _, cx| ws.answer(index, cx))),
+                widgets::row(("option", index), picked, cx)
+                    .h(px(36.))
+                    .child(widgets::icon(mark, if picked { cx.theme().primary } else { muted }))
+                    .child(div().flex_1().child(option.clone()))
+                    .on_click(cx.listener(move |ws, _, _, cx| ws.pick(index, cx))),
             );
         }
-        cards = cards.child(
-            card(border, surface)
-                .child(div().font_weight(FontWeight::MEDIUM).child(question.question.clone()))
-                .child(options)
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(cx.theme().muted_foreground)
-                        .child("Or write your own answer below."),
-                ),
-        );
+        let mut card = card(border, surface)
+            .child(div().font_weight(FontWeight::MEDIUM).child(question.question.clone()))
+            .child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(if question.multiple {
+                        "Pick any. Or write your own answer below."
+                    } else {
+                        "Pick one. Or write your own answer below."
+                    }),
+            )
+            .child(options);
+        if question.multiple {
+            card = card.child(
+                Button::new("answer-chosen")
+                    .primary()
+                    .label("Answer")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.answer_picked(cx))),
+            );
+        }
+        cards = cards.child(card);
     }
     cards
 }
@@ -104,7 +123,27 @@ impl Workspace {
         );
     }
 
-    fn answer(&mut self, index: usize, cx: &mut Context<Self>) {
+    /// One choice answers at once; with several allowed, it is marked until Answer.
+    fn pick(&mut self, index: usize, cx: &mut Context<Self>) {
+        let multiple = self.shown_chat().and_then(|chat| chat.question.as_ref()).is_some_and(|q| q.multiple);
+        if !multiple {
+            self.picked = vec![index];
+            self.answer_picked(cx);
+            return;
+        }
+        if let Some(at) = self.picked.iter().position(|&picked| picked == index) {
+            self.picked.remove(at);
+        } else {
+            self.picked.push(index);
+        }
+        cx.notify();
+    }
+
+    fn answer_picked(&mut self, cx: &mut Context<Self>) {
+        let chosen = std::mem::take(&mut self.picked);
+        if chosen.is_empty() {
+            return;
+        }
         let Some(thread_id) = self.shown.clone() else {
             return;
         };
@@ -114,7 +153,7 @@ impl Workspace {
         let Some(question) = chat.question.take() else {
             return;
         };
-        let text = question.answer(&[index], "");
+        let text = question.answer(&chosen, "");
         self.core.call(
             cx,
             move |client| async move { client.threads().send(&thread_id, text, false).await },

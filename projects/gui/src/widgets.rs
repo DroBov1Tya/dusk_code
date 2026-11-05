@@ -6,16 +6,21 @@ use gpui_kit::{
     *,
 };
 
-/// A column's heading: small capitals in the muted color.
-pub fn heading(text: impl Into<SharedString>, cx: &App) -> Div {
+/// A section's label: sentence case in the muted color, closer to its items than to
+/// the section above.
+pub fn caption(text: impl Into<SharedString>, cx: &App) -> Div {
     div()
-        .px_3()
-        .pt_3()
-        .pb_1()
+        .px_4()
+        .pt_6()
+        .pb_2()
         .text_xs()
-        .font_weight(FontWeight::SEMIBOLD)
+        .font_weight(FontWeight::MEDIUM)
         .text_color(cx.theme().muted_foreground)
-        .child(text.into().to_uppercase())
+        .child(text.into())
+}
+
+pub fn heading(text: impl Into<SharedString>, cx: &App) -> Div {
+    caption(text, cx)
 }
 
 /// A row that highlights under the pointer and when `active`.
@@ -30,7 +35,7 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .gap_2()
         .mx_1()
         .px_2()
-        .py_1()
+        .h(px(32.))
         .rounded_md()
         .cursor_pointer()
         .when(active, |row| row.bg(selected))
@@ -59,25 +64,4 @@ pub fn muted(text: impl Into<SharedString>, cx: &App) -> Div {
         .text_xs()
         .text_color(cx.theme().muted_foreground)
         .child(text.into())
-}
-
-/// A tab button of a column's tab bar.
-pub fn tab(id: impl Into<ElementId>, label: &'static str, active: bool, cx: &App) -> Stateful<Div> {
-    let theme = cx.theme();
-    let color = if active {
-        theme.foreground
-    } else {
-        theme.muted_foreground
-    };
-    div()
-        .id(id)
-        .px_2()
-        .py_1()
-        .rounded_md()
-        .text_xs()
-        .cursor_pointer()
-        .text_color(color)
-        .when(active, |tab| tab.bg(theme.tab_active))
-        .hover(|tab| tab.text_color(theme.foreground))
-        .child(label)
 }

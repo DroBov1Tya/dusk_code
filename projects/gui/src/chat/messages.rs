@@ -1,7 +1,7 @@
 //! The transcript drawn: messages as markdown, reasoning folded, tools as one line each.
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName, text::TextView},
+    component::{ActiveTheme, IconName},
     *,
 };
 
@@ -68,7 +68,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                     }
                 }
                 if !text.is_empty() {
-                    answer = answer.child(TextView::markdown(
+                    answer = answer.child(super::links::markdown(
                         SharedString::from(format!("answer-{key}")),
                         text.clone(),
                     ));

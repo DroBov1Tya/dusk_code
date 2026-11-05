@@ -10,9 +10,25 @@ delegating tasks to specialist agents. Sessions are stored locally in SQLite.
 curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh
 ```
 
-The installer downloads a release build for macOS arm64 or Linux x86_64 / arm64,
-verifies its checksum, and links `duskcode` into `/usr/local/bin` or `~/.local/bin`.
-Run it from a project folder:
+The installer asks what to install: the terminal client `duskcode`, the desktop
+client `duskcode-gui`, or both. `DUSKCODE_INSTALL=tui`, `gui` or `both` answers ahead,
+for a server or a script:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | DUSKCODE_INSTALL=tui sh
+```
+
+Each part has its own script, which finds an existing install and updates it in place:
+
+- `scripts/install-tui.sh` downloads a release build for macOS arm64 or Linux
+  x86_64 / arm64, verifies its checksum, and links `duskcode` into `/usr/local/bin`
+  or `~/.local/bin`.
+- `scripts/install-gui.sh` builds the desktop client from a checkout (or downloads
+  it once releases carry it), puts it beside `duskcode`, and adds `Duskcode.app` to
+  `~/Applications` on macOS or a desktop entry on Linux. The build needs a recent
+  Rust: `rustup update stable`.
+
+Run the terminal client from a project folder:
 
 ```sh
 duskcode
@@ -26,6 +42,13 @@ To build from source:
 ```sh
 cargo build --release
 ./target/release/duskcode
+```
+
+The desktop client is a separate binary, so a server never builds it:
+
+```sh
+cargo build --release -p dusk_gui
+./target/release/duskcode-gui
 ```
 
 <p align="center">

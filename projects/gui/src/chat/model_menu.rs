@@ -41,6 +41,22 @@ pub fn render(ws: &Workspace, picker: Picker, effort: &str, cx: &mut Context<Wor
         .child(
             submenu_row("menu-more", "More models", None, picker == Picker::MoreModels, cx)
                 .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::MoreModels, cx))),
+        )
+        .child(separator(cx))
+        .child(
+            div()
+                .px_2()
+                .py_1()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("A model the server does not list"),
+                )
+                .child(gpui_kit::component::input::Input::new(&ws.model_input)),
         );
     let side = match picker {
         Picker::Model => None,

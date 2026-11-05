@@ -1,7 +1,7 @@
 //! What one chat shows, built from its history and then from its live events. Plain
 //! data, so the drawing code only reads it.
 
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, path::PathBuf};
 
 use dusk_protocol::{
     conversation::{Message, MessageRole},
@@ -52,6 +52,8 @@ pub struct Transcript {
     pub title: Option<String>,
     /// Text the core gave back, such as after /undo, for the composer to offer again.
     pub offered: Option<String>,
+    /// Files the chat wrote or edited, oldest first, as the tools were given them.
+    pub outputs: Vec<PathBuf>,
 }
 
 impl Transcript {
@@ -75,6 +77,7 @@ impl Transcript {
                     });
                 }
                 for call in &message.tool_calls {
+                    self.note_output(&call.name, &call.arguments);
                     self.items.push(Item::Tool(Tool {
                         call_id: call.id.clone(),
                         name: call.name.clone(),
@@ -97,12 +100,15 @@ impl Transcript {
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
-            ThreadEvent::ToolStarted(call) => self.items.push(Item::Tool(Tool {
+            ThreadEvent::ToolStarted(call) => {
+                self.note_output(&call.name, &call.arguments);
+                self.items.push(Item::Tool(Tool {
                 detail: summary(&call.arguments),
-                call_id: call.id,
-                name: call.name,
-                state: ToolState::Running,
-            })),
+                    call_id: call.id,
+                    name: call.name,
+                    state: ToolState::Running,
+                }));
+            }
             ThreadEvent::ToolFinished { call_id, result } => {
                 let tool = self.items.iter_mut().rev().find_map(|item| match item {
                     Item::Tool(tool) if tool.call_id == call_id => Some(tool),
@@ -188,6 +194,19 @@ impl Transcript {
             | ThreadEvent::LocalUnsent(_)
             | ThreadEvent::Queued { .. } => {}
         }
+    }
+
+    /// Writing tools leave a file the user may want to open.
+    fn note_output(&mut self, tool: &str, arguments: &serde_json::Value) {
+        if !matches!(tool, "write_file" | "edit_file") {
+            return;
+        }
+        let Some(path) = arguments.get("path").and_then(|path| path.as_str()) else {
+            return;
+        };
+        let path = PathBuf::from(path);
+        self.outputs.retain(|known| *known != path);
+        self.outputs.push(path);
     }
 
     fn notice(&mut self, text: &str) {
