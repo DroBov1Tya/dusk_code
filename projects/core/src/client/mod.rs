@@ -21,7 +21,7 @@ use dusk_protocol::{
     config::{ContextPolicy, ProviderKind},
     conversation::{LocalUnsent, Message},
     mcp::McpInfo,
-    project::{FileEntry, GitInfo, Project},
+    project::{FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::Thread,
     tools::Decision,
@@ -520,6 +520,21 @@ impl Projects<'_> {
             Response::Files(files) => Ok(files),
             other => Err(unexpected(other)),
         }
+    }
+}
+
+impl Projects<'_> {
+    pub async fn outputs(&self) -> Result<Vec<OutputFile>> {
+        match self.0.call(Request::Project(ProjectRequest::Outputs)).await? {
+            Response::Outputs(files) => Ok(files),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn read_output(&self, path: PathBuf) -> Result<String> {
+        self.0
+            .text(Request::Project(ProjectRequest::ReadOutput { path }))
+            .await
     }
 }
 

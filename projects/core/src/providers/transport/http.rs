@@ -20,14 +20,42 @@ pub fn is_loopback(url: &Url) -> bool {
     url.scheme() == "http" && address.is_some_and(|address| address.is_loopback())
 }
 
-/// The configured base URL: HTTPS, or HTTP to this machine, with no credentials, query
-/// or fragment in it.
-pub fn base_url(text: &str) -> Result<Url> {
+/// Plain HTTP to an address of a private network, such as a model server on the LAN
+/// or a Tailscale node, named by its address for the same reason as above.
+pub fn is_private(url: &Url) -> bool {
+    use std::net::IpAddr;
+    let address = url
+        .host_str()
+        .map(|host| host.trim_start_matches('[').trim_end_matches(']'))
+        .and_then(|host| host.parse::<IpAddr>().ok());
+    let private = match address {
+        Some(IpAddr::V4(v4)) => {
+            let [a, b, ..] = v4.octets();
+            v4.is_private() || v4.is_link_local() || a == 100 && (64..128).contains(&b)
+        }
+        Some(IpAddr::V6(v6)) => (v6.segments()[0] & 0xfe00) == 0xfc00,
+        None => false,
+    };
+    url.scheme() == "http" && private
+}
+
+/// The configured base URL: HTTPS, or HTTP to this machine or a private network, or to
+/// any host when `allow_http` says so in the config, since the key then travels
+/// unencrypted. No credentials, query or fragment in it.
+pub fn base_url(text: &str, allow_http: bool) -> Result<Url> {
     let url = Url::parse(text).map_err(|_| anyhow!("invalid provider base URL"))?;
+    let plain = url.scheme() == "http" && url.host_str().is_some();
     ensure!(
-        url.scheme() == "https" && url.host_str().is_some() || is_loopback(&url),
-        "provider base URL must use HTTPS, or HTTP to 127.0.0.1 or [::1]"
+        url.scheme() == "https" && url.host_str().is_some()
+            || is_loopback(&url)
+            || is_private(&url)
+            || allow_http && plain,
+        "provider base URL must use HTTPS, or HTTP to this machine or a private network; \
+         set allow_http: true on the provider to send its key over plain HTTP elsewhere"
     );
+    if plain && !is_loopback(&url) {
+        tracing::warn!(target: "dusk_core::security", "a provider is reached over plain HTTP");
+    }
     ensure!(
         url.username().is_empty()
             && url.password().is_none()
@@ -90,20 +118,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn plain_http_reaches_only_this_machine() {
+    fn plain_http_reaches_this_machine_and_private_networks() {
         let url = |text: &str| Url::parse(text).unwrap();
         assert!(is_loopback(&url("http://127.0.0.1:8080/v1")));
         assert!(is_loopback(&url("http://[::1]:8080/v1")));
-        for remote in [
-            "http://localhost/v1",
-            "http://10.0.0.1/v1",
-            "http://example.com/v1",
-        ] {
-            assert!(!is_loopback(&url(remote)), "{remote}");
-            assert!(base_url(remote).is_err(), "{remote}");
+        for private in ["http://10.0.0.1/v1", "http://192.168.1.20:8080/v1", "http://100.101.1.2/v1", "http://[fd00::1]/v1"] {
+            assert!(base_url(private, false).is_ok(), "{private}");
         }
-        assert!(base_url("https://user:pass@api.example.com/v1").is_err());
-        assert!(base_url("https://api.example.com/v1").is_ok());
+        // Names may resolve anywhere, and public addresses are the open internet.
+        for public in ["http://localhost/v1", "http://example.com/v1", "http://8.8.8.8/v1"] {
+            assert!(base_url(public, false).is_err(), "{public}");
+            assert!(base_url(public, true).is_ok(), "{public}");
+        }
+        assert!(base_url("https://user:pass@api.example.com/v1", false).is_err());
+        assert!(base_url("http://user:pass@10.0.0.1/v1", true).is_err());
+        assert!(base_url("https://api.example.com/v1", false).is_ok());
     }
 
     #[test]

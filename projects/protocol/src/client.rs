@@ -14,7 +14,7 @@ use crate::{
     mcp::{McpInfo, McpStatus},
     model::Effort,
     plugins::PluginInfo,
-    project::{FileEntry, GitInfo, Project},
+    project::{FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::{Thread, ThreadEvent},
     tools::Decision,
@@ -258,6 +258,13 @@ pub enum ProjectRequest {
         id: String,
         path: String,
     },
+    /// The files under the workspace and the pictures folder, newest first.
+    Outputs,
+    /// A text file for a preview, read only under the workspace, the pictures folder or
+    /// a saved project, and only up to `MAX_PREVIEW_BYTES`.
+    ReadOutput {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -282,6 +289,7 @@ pub enum Response {
     Project(Project),
     Git(GitInfo),
     Files(Vec<FileEntry>),
+    Outputs(Vec<OutputFile>),
     System(SystemReport),
     Answer(Box<Answer>),
     /// The request failed; the text says why in full.

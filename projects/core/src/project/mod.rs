@@ -3,6 +3,7 @@
 
 mod files;
 mod git;
+mod outputs;
 
 use std::path::{Component, Path, PathBuf};
 
@@ -13,6 +14,7 @@ use crate::state::State;
 
 pub use files::list as files;
 pub use git::{info as git, switch_branch};
+pub use outputs::{list as outputs, read as read_output};
 
 /// Saves a new project, or changes the one with `id`. The folder is stored resolved, so
 /// one folder reached by two paths is still one project.

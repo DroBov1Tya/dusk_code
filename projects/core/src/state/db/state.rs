@@ -11,7 +11,14 @@ use sqlx::{ConnectOptions, SqlitePool, migrate::Migrator, sqlite::SqliteConnectO
 
 use super::legacy;
 
-static MIGRATOR: Migrator = sqlx::migrate!("src/state/db/migrations");
+// A newer build may have added migrations this one does not know, as when a branch
+// with a new table ran first. They only add, so this build still opens the database
+// instead of refusing it.
+static MIGRATOR: Migrator = {
+    let mut migrator = sqlx::migrate!("src/state/db/migrations");
+    migrator.ignore_missing = true;
+    migrator
+};
 
 // One connection, so writes never interleave: each one runs in its own transaction.
 pub struct State {

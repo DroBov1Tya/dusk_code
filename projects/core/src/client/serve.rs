@@ -335,7 +335,18 @@ impl Server {
             ProjectRequest::Files { id, path } => {
                 Response::Files(project::files(&project::find(state, &id).await?, &path).await?)
             }
+            ProjectRequest::Outputs => Response::Outputs(project::outputs(self.output_roots()).await?),
+            ProjectRequest::ReadOutput { path } => {
+                let mut roots = self.output_roots();
+                roots.extend(state.list_projects().await?.into_iter().map(|p| p.dir));
+                Response::Text(project::read_output(&path, &roots).await?)
+            }
         })
+    }
+
+    fn output_roots(&self) -> Vec<PathBuf> {
+        let paths = self.runtime.paths();
+        vec![paths.workspace_root().to_path_buf(), paths.artifacts_dir()]
     }
 
     /// Keeps the thread's input and forwards its events until its task ends.
