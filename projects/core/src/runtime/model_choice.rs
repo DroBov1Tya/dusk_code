@@ -10,7 +10,7 @@ use std::{
 
 use parking_lot::RwLock;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, ensure};
 use tokio::task::JoinSet;
 
 use crate::{
@@ -118,11 +118,19 @@ impl Choice {
         let provider = registry
             .provider(provider_name)
             .with_context(|| format!("no provider {provider_name} in the config"))?;
-        let model = Self::models(&*provider, provider_name)
-            .await?
+        // Not every server lists its models: a name it does not list is still tried,
+        // with its limits unknown, and the first request says if it is wrong.
+        let listed = Self::models(&*provider, provider_name)
+            .await
+            .unwrap_or_default()
             .into_iter()
-            .find(|model| model.id == id)
-            .with_context(|| format!("provider {provider_name} offers no model {id}"))?;
+            .find(|model| model.id == id);
+        ensure!(!id.trim().is_empty(), "the model name is empty");
+        let model = listed.unwrap_or_else(|| Model {
+            id: id.to_owned(),
+            context_window: None,
+            max_output: None,
+        });
         Ok(Choice {
             provider_name: provider_name.to_owned(),
             provider,

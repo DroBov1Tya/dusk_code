@@ -3,7 +3,7 @@
 //! process and one in another see the same core.
 //!
 //! The calls are grouped as the protocol groups them: `client.threads()`,
-//! `client.settings()`, `client.catalog()`, `client.work()`, and the rest on `Client`.
+//! `client.settings()`, `client.catalog()`, `client.work()`, `client.projects()`, and the rest on `Client`.
 //! Events arrive on `client.events`, the status on `client.status`.
 
 mod serve;
@@ -14,13 +14,14 @@ use anyhow::{Result, anyhow, bail, ensure};
 use dusk_protocol::{
     catalog::NodeText,
     client::{
-        CatalogRequest, Event, Hello, PROTOCOL_VERSION, Request, Response, Secret, SettingsRequest,
-        Status, Switch, ThreadRequest, WorkRequest,
+        CatalogRequest, Event, Hello, PROTOCOL_VERSION, ProjectRequest, Request, Response, Secret,
+        SettingsRequest, Status, Switch, ThreadRequest, WorkRequest,
     },
     command::{Answer, Command},
     config::{ContextPolicy, ProviderKind},
     conversation::{LocalUnsent, Message},
     mcp::McpInfo,
+    project::{FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::Thread,
     tools::Decision,
@@ -75,6 +76,10 @@ impl Client {
         Work(self)
     }
 
+    pub fn projects(&self) -> Projects<'_> {
+        Projects(self)
+    }
+
     /// A slash command that does not run in a thread.
     pub async fn command(&self, command: Command) -> Result<Answer> {
         match self.call(Request::Command(command)).await? {
@@ -104,8 +109,9 @@ impl Client {
         }
     }
 
-    /// Closes every thread and stops the core; returns once it has stopped.
-    pub async fn shutdown(self) {
+    /// Closes every thread and stops the core; returns once it has stopped. Every call
+    /// after it fails.
+    pub async fn shutdown(&self) {
         let _ = self.send(Request::Shutdown).await;
     }
 
@@ -223,6 +229,17 @@ impl Threads<'_> {
     pub async fn stop_agent(&self, thread_id: &str) -> Result<()> {
         let thread_id = thread_id.to_owned();
         self.done(ThreadRequest::StopAgent { thread_id }).await
+    }
+
+    pub async fn rename(&self, thread_id: &str, title: &str) -> Result<()> {
+        let (thread_id, title) = (thread_id.to_owned(), title.to_owned());
+        self.done(ThreadRequest::Rename { thread_id, title }).await
+    }
+
+    /// Erases the chat for good: its records, its agents' threads and its folder.
+    pub async fn delete(&self, thread_id: &str) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::Delete { thread_id }).await
     }
 
     /// Answers a tool's request; `false` when it no longer waits.
@@ -454,6 +471,97 @@ impl Work<'_> {
         let (thread_id, id) = (thread_id.to_owned(), id.to_owned());
         let request = WorkRequest::RemoveSource { thread_id, id };
         self.0.done(Request::Work(request)).await
+    }
+}
+
+pub struct Projects<'a>(&'a Client);
+
+impl Projects<'_> {
+    pub async fn list(&self) -> Result<Vec<Project>> {
+        match self.0.call(Request::Project(ProjectRequest::List)).await? {
+            Response::Projects(projects) => Ok(projects),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Saves a new project when `id` is `None`, or changes that one.
+    pub async fn save(
+        &self,
+        id: Option<String>,
+        name: String,
+        description: String,
+        dir: PathBuf,
+    ) -> Result<Project> {
+        let request = ProjectRequest::Save {
+            id,
+            name,
+            description,
+            dir,
+        };
+        match self.0.call(Request::Project(request)).await? {
+            Response::Project(project) => Ok(project),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn remove(&self, id: &str) -> Result<()> {
+        let id = id.to_owned();
+        self.0
+            .done(Request::Project(ProjectRequest::Remove { id }))
+            .await
+    }
+
+    pub async fn git(&self, id: &str) -> Result<GitInfo> {
+        let id = id.to_owned();
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::Git { id }))
+            .await?
+        {
+            Response::Git(info) => Ok(info),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn switch_branch(&self, id: &str, branch: &str) -> Result<()> {
+        let (id, branch) = (id.to_owned(), branch.to_owned());
+        let request = ProjectRequest::SwitchBranch { id, branch };
+        self.0.done(Request::Project(request)).await
+    }
+
+    /// The entries of `path`, a folder relative to the project's, `""` for its top.
+    pub async fn files(&self, id: &str, path: &str) -> Result<Vec<FileEntry>> {
+        let (id, path) = (id.to_owned(), path.to_owned());
+        let request = ProjectRequest::Files { id, path };
+        match self.0.call(Request::Project(request)).await? {
+            Response::Files(files) => Ok(files),
+            other => Err(unexpected(other)),
+        }
+    }
+}
+
+impl Projects<'_> {
+    pub async fn outputs(&self) -> Result<Vec<OutputFile>> {
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::Outputs))
+            .await?
+        {
+            Response::Outputs(files) => Ok(files),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn delete_output(&self, path: PathBuf) -> Result<()> {
+        self.0
+            .done(Request::Project(ProjectRequest::DeleteOutput { path }))
+            .await
+    }
+
+    pub async fn read_output(&self, path: PathBuf) -> Result<String> {
+        self.0
+            .text(Request::Project(ProjectRequest::ReadOutput { path }))
+            .await
     }
 }
 

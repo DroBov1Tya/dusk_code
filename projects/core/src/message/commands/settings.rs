@@ -11,12 +11,13 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
     runtime.read_agents().await?;
     let config = runtime.config().current();
     let tools = runtime
-        .tool_kinds()
+        .tool_kinds()?
         .into_iter()
-        .map(|(name, kind)| ToolInfo {
+        .map(|(name, kind, description)| ToolInfo {
             enabled: config.mode_tool_enabled(config.mode(), &name, kind),
             name,
             kind,
+            description,
         })
         .collect();
     Ok(Settings {
@@ -24,6 +25,7 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         max_goal_rounds: config.limits().max_goal_rounds,
         idle_screen_minutes: config.appearance().idle_screen_minutes,
         mode: config.mode().to_owned(),
+        modes: runtime.mode_infos(),
         memory: config.memory(),
         work_history: config.work_history(),
         update_channel: config.update_channel(),

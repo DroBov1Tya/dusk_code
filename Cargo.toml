@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
-members = ["projects/core", "projects/evals", "projects/external/telegram", "projects/protocol", "projects/tui"]
+members = ["projects/core", "projects/evals", "projects/external/telegram", "projects/gui", "projects/protocol", "projects/tui"]
 default-members = ["projects/tui"]
 
 [workspace.package]
-version = "0.70.6"
+version = "0.71.0"
 edition = "2024"
 publish = false
 license = "MIT"

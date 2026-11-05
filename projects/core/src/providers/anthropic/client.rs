@@ -55,7 +55,7 @@ struct ModelEntry {
 
 impl Anthropic {
     pub fn new(config: &ProviderConfig) -> Result<Self> {
-        let base_url = http::base_url(&config.base_url)?;
+        let base_url = http::base_url(&config.base_url, config.allow_http)?;
         let api_key = if config.api_key.0.is_empty() {
             None
         } else {

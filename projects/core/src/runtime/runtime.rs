@@ -321,6 +321,7 @@ impl Runtime {
             base_url,
             api_key: ApiKey(api_key.unwrap_or_default()),
             inline_tags: false,
+            allow_http: false,
         };
         crate::providers::validate_provider(&provider)?;
         let adapter = Arc::new(Provider::new(&provider)?);
@@ -430,6 +431,22 @@ impl Runtime {
     /// Every mode of the chat, in the order Tab walks them.
     pub fn modes(&self) -> Vec<String> {
         Modes::new(&self.launcher.paths.modes_dir()).list()
+    }
+
+    /// Every mode with the first sentence of its prompt, for a client to describe it.
+    pub fn mode_infos(&self) -> Vec<dusk_protocol::settings::ModeInfo> {
+        let dir = self.launcher.paths.modes_dir();
+        self.modes()
+            .into_iter()
+            .map(|name| {
+                let prompt =
+                    std::fs::read_to_string(dir.join(format!("{name}.md"))).unwrap_or_default();
+                let flat = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
+                let end = flat.find(". ").map_or(flat.len(), |at| at + 1);
+                let summary = flat[..end].chars().take(200).collect();
+                dusk_protocol::settings::ModeInfo { name, summary }
+            })
+            .collect()
     }
 
     /// Moves the chat to the next mode; its prompt and tools apply from the next step.
@@ -713,9 +730,21 @@ impl Runtime {
 
     /// The tools a chat gets, by name.
     /// Every tool with its kind, by kind and then by name.
-    pub fn tool_kinds(&self) -> Vec<(String, ToolKind)> {
+    /// Every switchable tool with its kind and what it tells the model.
+    pub fn tool_kinds(&self) -> Result<Vec<(String, ToolKind, String)>> {
         // Tools do not depend on the thread.
-        self.launcher.tools("", None, 0).kinds()
+        let tools = self.launcher.tools("", None, 0);
+        let root = self.launcher.paths.workspace_root();
+        let scope = Arc::new(ToolScope::new(root, root)?);
+        let mut descriptions = tools.descriptions(&scope, &self.launcher.config.current());
+        Ok(tools
+            .kinds()
+            .into_iter()
+            .map(|(name, kind)| {
+                let description = descriptions.remove(&name).unwrap_or_default();
+                (name, kind, description)
+            })
+            .collect())
     }
 
     /// How each MCP server in the config stands.
@@ -807,6 +836,10 @@ impl Runtime {
     /// The chats started in `cwd`, the most recently active first.
     pub async fn project_threads(&self, cwd: &Path) -> Result<Vec<Thread>> {
         self.launcher.state.project_threads(&project_dir(cwd)).await
+    }
+
+    pub fn state(&self) -> &State {
+        &self.launcher.state
     }
 
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {

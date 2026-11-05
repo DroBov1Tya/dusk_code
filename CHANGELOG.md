@@ -4,6 +4,32 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## 0.71.0 - 2026-11-05
+
+### Added
+
+- The desktop client, duskcode-gui, a binary of its own, so a server installs only the
+  terminal client. Projects with their chats, pinned and recent chats, search, chat
+  rename and delete; the chat with markdown, links, pictures and media cards, folded
+  agent steps, approvals and questions, attachments and a message navigator; model,
+  effort and mode menus with a context ring; connectors with details and per-tool
+  switches for MCP servers, skills, plugins, built-in tools and the agents by level;
+  artifacts by kind with a viewer; the chat's environment, context, activity, outputs,
+  changes, files, todo, agents and jobs on the right; settings with themes, fonts,
+  limits, updates and system usage.
+- Projects in the core: named folders with their git state and files, shared by
+  every client; chats can be renamed and deleted for good.
+- install.sh asks for the terminal client, the desktop client or both, and
+  scripts/install-gui.sh installs or updates the desktop client.
+
+### Changed
+
+- A provider may use plain HTTP to a private network address, and to any host with
+  `allow_http: true`.
+- A model the provider does not list can be chosen by name, also with
+  `/model provider/name`.
+- An older build opens a database a newer build added tables to.
+
 ## 0.70.6 - 2026-11-04
 
 ### Added

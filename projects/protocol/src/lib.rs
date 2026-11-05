@@ -7,6 +7,7 @@
 //! - `conversation`, `work`, `goal`, `agent`: what those events carry;
 //! - `model`, `tools`, `artifact`: model output, tool calls and their pictures;
 //! - `config`, `settings`, `providers`, `mcp`, `catalog`: what the settings show;
+//! - `project`: projects, their git state and files;
 //! - `update`, `system`, `paths`: releases, resource use and path completion;
 //! - `pasted`: how pasted text and sources are marked inside a message.
 
@@ -24,6 +25,7 @@ pub mod model;
 pub mod pasted;
 pub mod paths;
 pub mod plugins;
+pub mod project;
 pub mod providers;
 pub mod settings;
 pub mod system;

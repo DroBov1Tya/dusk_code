@@ -6,8 +6,8 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use anyhow::{Context, Result, anyhow, ensure};
 use dusk_protocol::{
     client::{
-        CatalogRequest, Event, Request, Response, SettingsRequest, Status, Switch, ThreadRequest,
-        WorkRequest,
+        CatalogRequest, Event, ProjectRequest, Request, Response, SettingsRequest, Status, Switch,
+        ThreadRequest, WorkRequest,
     },
     config::ApprovalPolicy,
     update::{Channel, InstallProgress},
@@ -20,6 +20,7 @@ use tracing::warn;
 
 use crate::{
     message::commands,
+    project,
     runtime::{Runtime, ThreadHandle, ThreadInput},
 };
 
@@ -112,6 +113,7 @@ impl Server {
             Request::Settings(request) => self.settings(request),
             Request::Catalog(request) => self.catalog(request).await,
             Request::Work(request) => self.work(request).await,
+            Request::Project(request) => self.project(request).await,
             Request::Command(command) => Ok(Response::Answer(Box::new(
                 commands::answer(command, &self.runtime).await?,
             ))),
@@ -178,6 +180,30 @@ impl Server {
             }
             ThreadRequest::StopAgent { thread_id } => {
                 runtime.stop_agent(&thread_id).await?;
+                Response::Done
+            }
+            ThreadRequest::Rename { thread_id, title } => {
+                let title = title.trim();
+                ensure!(
+                    title.chars().count() <= 200,
+                    "a title is at most 200 characters"
+                );
+                runtime.state().set_title(&thread_id, title).await?;
+                Response::Done
+            }
+            ThreadRequest::Delete { thread_id } => {
+                // Its turn ends first, so nothing writes to what is being erased.
+                self.close(&thread_id).await;
+                let runtime = &self.runtime;
+                for folder in runtime.state().delete_thread(&thread_id).await? {
+                    // Only plain names under the workspace root are taken.
+                    let path = runtime.paths().workspace_folder(&folder)?;
+                    match tokio::fs::remove_dir_all(&path).await {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => warn!("cannot remove a deleted chat's folder: {error}"),
+                    }
+                }
                 Response::Done
             }
             ThreadRequest::Approve { id, decision } => {
@@ -307,6 +333,50 @@ impl Server {
                 Response::Done
             }
         })
+    }
+
+    async fn project(&self, request: ProjectRequest) -> Result<Response> {
+        let state = self.runtime.state();
+        Ok(match request {
+            ProjectRequest::List => Response::Projects(state.list_projects().await?),
+            ProjectRequest::Save {
+                id,
+                name,
+                description,
+                dir,
+            } => Response::Project(project::save(state, id, &name, &description, &dir).await?),
+            ProjectRequest::Remove { id } => {
+                state.remove_project(&id).await?;
+                Response::Done
+            }
+            ProjectRequest::Git { id } => {
+                Response::Git(project::git(&project::find(state, &id).await?).await?)
+            }
+            ProjectRequest::SwitchBranch { id, branch } => {
+                project::switch_branch(&project::find(state, &id).await?, &branch).await?;
+                Response::Done
+            }
+            ProjectRequest::Files { id, path } => {
+                Response::Files(project::files(&project::find(state, &id).await?, &path).await?)
+            }
+            ProjectRequest::Outputs => {
+                Response::Outputs(project::outputs(self.output_roots()).await?)
+            }
+            ProjectRequest::DeleteOutput { path } => {
+                project::delete_output(&path, &self.output_roots()).await?;
+                Response::Done
+            }
+            ProjectRequest::ReadOutput { path } => {
+                let mut roots = self.output_roots();
+                roots.extend(state.list_projects().await?.into_iter().map(|p| p.dir));
+                Response::Text(project::read_output(&path, &roots).await?)
+            }
+        })
+    }
+
+    fn output_roots(&self) -> Vec<PathBuf> {
+        let paths = self.runtime.paths();
+        vec![paths.workspace_root().to_path_buf(), paths.artifacts_dir()]
     }
 
     /// Keeps the thread's input and forwards its events until its task ends.

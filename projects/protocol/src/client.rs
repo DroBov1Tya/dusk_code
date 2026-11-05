@@ -14,6 +14,7 @@ use crate::{
     mcp::{McpInfo, McpStatus},
     model::Effort,
     plugins::PluginInfo,
+    project::{FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::{Thread, ThreadEvent},
     tools::Decision,
@@ -22,7 +23,7 @@ use crate::{
 };
 
 /// Raised whenever a request, a response or an event changes shape.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The first thing a client says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +50,7 @@ pub enum Request {
     Settings(SettingsRequest),
     Catalog(CatalogRequest),
     Work(WorkRequest),
+    Project(ProjectRequest),
     /// A slash command that does not run in a thread.
     Command(Command),
     SystemReport,
@@ -105,6 +107,14 @@ pub enum ThreadRequest {
         thread_id: String,
     },
     StopAgent {
+        thread_id: String,
+    },
+    Rename {
+        thread_id: String,
+        title: String,
+    },
+    /// Erases the chat, its agents' threads and its files folder for good.
+    Delete {
         thread_id: String,
     },
     /// Answers a tool's request for a yes; `false` when it no longer waits.
@@ -228,6 +238,47 @@ pub enum WorkRequest {
     },
 }
 
+/// Projects, and the git state and files of one. Git and files are read only inside
+/// a saved project's folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectRequest {
+    List,
+    /// Saves a new project, or changes the one with `id`; answers with the project.
+    Save {
+        id: Option<String>,
+        name: String,
+        description: String,
+        dir: PathBuf,
+    },
+    Remove {
+        id: String,
+    },
+    Git {
+        id: String,
+    },
+    /// Refused while the work tree has changes, so nothing is lost.
+    SwitchBranch {
+        id: String,
+        branch: String,
+    },
+    /// The entries of `path`, a folder relative to the project's, `""` for its top.
+    Files {
+        id: String,
+        path: String,
+    },
+    /// The files under the workspace and the pictures folder, newest first.
+    Outputs,
+    /// A text file for a preview, read only under the workspace, the pictures folder or
+    /// a saved project, and only up to `MAX_PREVIEW_BYTES`.
+    ReadOutput {
+        path: PathBuf,
+    },
+    /// Removes a file under the workspace or the pictures folder, never a project's.
+    DeleteOutput {
+        path: PathBuf,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
@@ -246,6 +297,11 @@ pub enum Response {
     Jobs(Vec<JobInfo>),
     Node(NodeText),
     Mcp(Vec<McpInfo>),
+    Projects(Vec<Project>),
+    Project(Project),
+    Git(GitInfo),
+    Files(Vec<FileEntry>),
+    Outputs(Vec<OutputFile>),
     System(SystemReport),
     Answer(Box<Answer>),
     /// The request failed; the text says why in full.

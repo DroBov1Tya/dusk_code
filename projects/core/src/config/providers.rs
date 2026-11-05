@@ -19,6 +19,10 @@ pub struct ProviderConfig {
     /// The server leaves `<think>` and `<tool_call>` tags inside the answer text.
     #[serde(default, skip_serializing_if = "is_false")]
     pub inline_tags: bool,
+    /// Plain HTTP to a host outside this machine and the private networks; the key
+    /// then travels unencrypted, so it is never on by default.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub allow_http: bool,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
