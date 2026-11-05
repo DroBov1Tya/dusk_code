@@ -8,6 +8,7 @@ mod compaction;
 pub mod generation;
 mod inbox;
 mod mailboxes;
+mod rate;
 mod vision;
 
 pub use agent::Agent;
