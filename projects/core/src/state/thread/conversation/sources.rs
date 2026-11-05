@@ -47,6 +47,18 @@ impl State {
             .context("list the sources")
     }
 
+    /// The new size of a source's file, after a tool rewrote it.
+    pub async fn set_source_bytes(&self, thread_id: &str, id: &str, bytes: u64) -> Result<()> {
+        sqlx::query("UPDATE sources SET bytes = ? WHERE thread_id = ? AND source_id = ?")
+            .bind(i64::try_from(bytes).context("source size is negative")?)
+            .bind(thread_id)
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .context("update the source size")?;
+        Ok(())
+    }
+
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
         sqlx::query("UPDATE sources SET pinned = ? WHERE thread_id = ? AND source_id = ?")
             .bind(pinned)

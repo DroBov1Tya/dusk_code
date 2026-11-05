@@ -27,7 +27,9 @@ pub use computer::run_overlay_if_asked;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
 pub use console::{Jobs, RunCommand};
-pub use harness::{AskUser, DisplayImage, GoalTool, Question, ReadHistory, Remember, Tasks};
+pub use harness::{
+    AskUser, DisplayImage, GoalTool, NameSession, PlanEdit, Question, ReadHistory, Remember, Tasks,
+};
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::{Place, ToolScope};

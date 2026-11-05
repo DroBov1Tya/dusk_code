@@ -34,7 +34,8 @@ use crate::{
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, Jobs, McpTool,
-        MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry, ToolScope,
+        MessageParent, NameSession, PlanEdit, ReadHistory, Remember, RunCommand, Tasks,
+        ToolRegistry, ToolScope,
     },
 };
 
@@ -157,6 +158,14 @@ impl Launcher {
         if depth == 0 {
             tools.add(Box::new(AskUser));
             tools.add(Box::new(GoalTool::new(
+                Arc::clone(&self.state),
+                thread_id.to_owned(),
+            )));
+            tools.add(Box::new(NameSession::new(
+                Arc::clone(&self.state),
+                thread_id.to_owned(),
+            )));
+            tools.add(Box::new(PlanEdit::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
             )));
