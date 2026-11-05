@@ -240,6 +240,20 @@ split view each chat half gets its own right column).
       scrolls to it
 - [x] Send button: round and modern, not a square
 
+## Round 4 (done)
+
+- [x] Media cards: a picture alone on a line becomes a cover beside the text after it
+- [x] Environment pinned under the right column; both side columns can be hidden
+- [x] Mode menu with each mode's first sentence (core: Settings.modes)
+- [x] Message navigator right beside the composer
+- [x] Dusk is the violet theme; Lotus removed
+- [x] TUI: `/model provider/name` for a model the server does not list (help says so)
+- [x] Artifacts delete with a confirmation (core: DeleteOutput, workspace only)
+- [x] Plugin settings for this run only, from the plugin's window (masked, never saved)
+- [x] Agent cards keep their chips on one line
+- [x] Files copied in Finder paste as attachments (chips), as does the + menu
+- [ ] Pasted screenshots (images) saved to the project's attachments folder (core)
+
 ## Later (v2)
 
 - Internal browser panel, screenshots the model took, windows the model watches.

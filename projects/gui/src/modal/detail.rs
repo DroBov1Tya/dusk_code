@@ -4,7 +4,7 @@
 
 use dusk_protocol::{catalog::NodeText, client::Switch as CoreSwitch, mcp::McpState};
 use gpui_kit::{
-    component::{ActiveTheme, Sizable, switch::Switch},
+    component::{ActiveTheme, Sizable, input::InputState, switch::Switch},
     *,
 };
 
@@ -130,6 +130,43 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                     plugin.missing_settings.join(", ")
                 )));
             }
+            for (key, input) in &ws.secret_inputs {
+                let (plugin, key_name) = (plugin.name.clone(), key.clone());
+                page = page.child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap_1()
+                        .child(div().text_sm().child(key.clone()))
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .gap_2()
+                                .child(
+                                    div()
+                                        .flex_1()
+                                        .child(gpui_kit::component::input::Input::new(input)),
+                                )
+                                .child(
+                                    gpui_kit::component::button::Button::new(SharedString::from(
+                                        format!("secret-{key}"),
+                                    ))
+                                    .label("Use for this run")
+                                    .on_click(cx.listener(
+                                        move |ws, _, window, cx| {
+                                            ws.give_secret(&plugin, &key_name, window, cx);
+                                        },
+                                    )),
+                                ),
+                        ),
+                );
+            }
+            if !ws.secret_inputs.is_empty() {
+                page = page.child(div().text_xs().text_color(muted).child(
+                    "Kept in memory on this machine until duskcode stops; never written to the config. Enter it again after a restart.",
+                ));
+            }
             page
         }
         Detail::Skill { file, .. } | Detail::Agent { file, .. } => match file {
@@ -202,6 +239,56 @@ fn toggle(id: &str, on: bool, switch: CoreSwitch, cx: &mut Context<Workspace>) -
 }
 
 impl Workspace {
+    /// A plugin's window, with a hidden field for each setting it still lacks.
+    pub fn open_plugin(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let missing = self
+            .status
+            .plugins
+            .iter()
+            .find(|plugin| plugin.name == name)
+            .map(|plugin| plugin.missing_settings.clone())
+            .unwrap_or_default();
+        self.secret_inputs = missing
+            .into_iter()
+            .map(|key| {
+                let input = cx.new(|cx| {
+                    InputState::new(window, cx)
+                        .masked(true)
+                        .placeholder("Value")
+                });
+                (key, input)
+            })
+            .collect();
+        self.open_detail(Detail::Plugin(name.to_owned()), cx);
+    }
+
+    fn give_secret(
+        &mut self,
+        plugin: &str,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((_, input)) = self.secret_inputs.iter().find(|(name, _)| name == key) else {
+            return;
+        };
+        let value = input.read(cx).value().trim().to_owned();
+        if value.is_empty() {
+            return;
+        }
+        // The field forgets the value at once; only the core holds it now.
+        input.update(cx, |input, cx| input.set_value("", window, cx));
+        let (plugin, key) = (plugin.to_owned(), key.to_owned());
+        self.core.call(
+            cx,
+            move |client| async move { client.settings().plugin_secret(&plugin, &key, &value).await },
+            |ws, result, cx| match result {
+                Ok(()) => cx.notify(),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
     pub fn open_detail(&mut self, detail: Detail, cx: &mut Context<Self>) {
         let name = detail.title().to_owned();
         let load = match &detail {

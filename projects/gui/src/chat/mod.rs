@@ -4,9 +4,10 @@
 mod approval;
 mod composer;
 pub mod links;
+mod media;
 mod messages;
-mod model_bar;
 mod mode_menu;
+mod model_bar;
 mod model_menu;
 mod navigator;
 mod ring;
@@ -86,7 +87,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     header.child(widgets::badge(project, cx.theme().muted_foreground))
                 })
                 .child(div().flex_1())
-                .child(panel_toggle("toggle-right", IconName::PanelRight, |ws| &mut ws.right_hidden, cx)),
+                .child(panel_toggle(
+                    "toggle-right",
+                    IconName::PanelRight,
+                    |ws| &mut ws.right_hidden,
+                    cx,
+                )),
         )
         .children(notice)
         .child(div().flex_1().min_h_0().child(body))

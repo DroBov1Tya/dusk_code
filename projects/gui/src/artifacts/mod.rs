@@ -133,8 +133,11 @@ fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Statefu
             .into_any_element(),
     };
     let path = file.path.clone();
+    let doomed = file.path.clone();
     div()
         .id(("artifact", index))
+        .group("artifact")
+        .relative()
         .flex()
         .flex_col()
         .rounded_lg()
@@ -159,6 +162,28 @@ fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Statefu
                         .text_color(muted)
                         .truncate()
                         .child(format!("{folder} · {}", size(file.bytes))),
+                ),
+        )
+        .child(
+            div()
+                .absolute()
+                .top_2()
+                .right_2()
+                .invisible()
+                .group_hover("artifact", |corner| corner.visible())
+                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                .child(
+                    Button::new(("artifact-delete", index))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Delete)
+                        .tooltip("Delete")
+                        .on_click(cx.listener(move |ws, _, _, cx| {
+                            ws.modal = Some(crate::modal::Modal::DeleteFile {
+                                path: doomed.clone(),
+                            });
+                            cx.notify();
+                        })),
                 ),
         )
         .on_click(cx.listener(move |ws, _, _, cx| ws.view_file(path.clone(), cx)))

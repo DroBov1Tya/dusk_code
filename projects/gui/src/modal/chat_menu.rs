@@ -126,7 +126,65 @@ pub fn delete(title: &str, cx: &mut Context<Workspace>) -> Div {
         )
 }
 
+pub fn delete_file(path: &std::path::Path, cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .p_5()
+        .child(format!(
+            "Delete {}?",
+            path.file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_default()
+        ))
+        .child(
+            div()
+                .text_sm()
+                .text_color(muted)
+                .child("The file is removed from the disk. This cannot be undone."),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .justify_end()
+                .gap_2()
+                .child(
+                    Button::new("file-keep")
+                        .ghost()
+                        .label("Keep it")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
+                )
+                .child(
+                    Button::new("file-delete")
+                        .danger()
+                        .label("Delete")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.delete_file(cx))),
+                ),
+        )
+}
+
 impl Workspace {
+    fn delete_file(&mut self, cx: &mut Context<Self>) {
+        let Some(Modal::DeleteFile { path }) = &self.modal else {
+            return;
+        };
+        let path = path.clone();
+        self.core.call(
+            cx,
+            move |client| async move { client.projects().delete_output(path).await },
+            |ws, result, cx| match result {
+                Ok(()) => {
+                    ws.modal = None;
+                    ws.load_outputs(cx);
+                }
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
     fn title_of(&self, thread_id: &str) -> String {
         self.threads
             .iter()

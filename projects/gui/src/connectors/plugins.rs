@@ -6,7 +6,7 @@ use gpui_kit::{
 };
 
 use super::{card, grid, matches};
-use crate::{modal::detail::Detail, widgets, workspace::Workspace};
+use crate::{widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
     let warning = cx.theme().warning;
@@ -47,9 +47,7 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
                     ),
                 cx,
             )
-            .on_click(
-                cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Plugin(open.clone()), cx)),
-            ),
+            .on_click(cx.listener(move |ws, _, window, cx| ws.open_plugin(&open, window, cx))),
         );
     }
     cards

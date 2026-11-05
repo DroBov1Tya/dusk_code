@@ -51,7 +51,11 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .bg(cx.theme().accent)
                 .text_xs()
                 .child(crate::widgets::icon(
-                    if path.is_dir() { IconName::Folder } else { IconName::File },
+                    if path.is_dir() {
+                        IconName::Folder
+                    } else {
+                        IconName::File
+                    },
                     muted,
                 ))
                 .child(name)

@@ -161,37 +161,63 @@ fn card(
     );
     let name = node.name.clone();
     let inside = node.children.len();
-    let mut chips = div().flex().flex_row().flex_wrap().gap_1();
-    for (label, names) in [
-        ("asks", &node.links),
-        ("asked by", asked_by.get(&node.name).unwrap_or(&Vec::new())),
-    ] {
-        for target in names.iter().take(3) {
-            let path = paths.get(target).cloned();
-            chips = chips.child(
-                div()
-                    .id(SharedString::from(format!(
-                        "chip-{}-{label}-{target}",
-                        node.name
-                    )))
-                    .px_1p5()
-                    .rounded_sm()
-                    .text_xs()
-                    .text_color(accent)
-                    .bg(accent.opacity(0.1))
-                    .cursor_pointer()
-                    .child(format!("{label} {target}"))
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        if let Some(path) = &path {
-                            // Shows the level the linked agent sits on.
-                            let mut parent = path.clone();
-                            parent.pop();
-                            ws.agent_path = parent;
-                            cx.notify();
-                        }
-                    })),
-            );
-        }
+    // One line of chips at most, so a card keeps its height; the rest is a count.
+    let empty = Vec::new();
+    let links: Vec<(&str, &String)> = node
+        .links
+        .iter()
+        .map(|target| ("asks", target))
+        .chain(
+            asked_by
+                .get(&node.name)
+                .unwrap_or(&empty)
+                .iter()
+                .map(|from| ("asked by", from)),
+        )
+        .collect();
+    let mut chips = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_1()
+        .overflow_hidden();
+    for (label, target) in links.iter().take(2) {
+        let path = paths.get(*target).cloned();
+        chips = chips.child(
+            div()
+                .id(SharedString::from(format!(
+                    "chip-{}-{label}-{target}",
+                    node.name
+                )))
+                .flex_none()
+                .max_w(px(130.))
+                .truncate()
+                .px_1p5()
+                .rounded_sm()
+                .text_xs()
+                .text_color(accent)
+                .bg(accent.opacity(0.1))
+                .cursor_pointer()
+                .child(format!("{label} {target}"))
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    if let Some(path) = &path {
+                        // Shows the level the linked agent sits on.
+                        let mut parent = path.clone();
+                        parent.pop();
+                        ws.agent_path = parent;
+                        cx.notify();
+                    }
+                })),
+        );
+    }
+    if links.len() > 2 {
+        chips = chips.child(
+            div()
+                .flex_none()
+                .text_xs()
+                .text_color(muted)
+                .child(format!("+{} more", links.len() - 2)),
+        );
     }
     let enter = name.clone();
     let open = name.clone();
@@ -205,6 +231,7 @@ fn card(
         .flex()
         .flex_col()
         .gap_1()
+        .overflow_hidden()
         .rounded_lg()
         .border_1()
         .border_color(border)

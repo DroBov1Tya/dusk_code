@@ -177,8 +177,7 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Context => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {
-            }
+            Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {}
         }
     }
 }

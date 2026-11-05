@@ -11,7 +11,6 @@ use gpui_kit::{
 };
 
 use super::{
-    links,
     transcript::{Item, Tool, ToolState},
     working,
 };
@@ -108,10 +107,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                     }
                 }
                 if !text.is_empty() {
-                    answer = answer.child(links::markdown(
-                        SharedString::from(format!("answer-{key}")),
-                        text.clone(),
-                    ));
+                    answer = answer.child(super::media::render(&format!("answer-{key}"), text, cx));
                 }
                 answer.into_any_element()
             }

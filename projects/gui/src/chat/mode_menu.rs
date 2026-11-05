@@ -26,7 +26,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         .border_color(theme.border)
         .bg(theme.popover)
         .shadow_lg();
-    let modes = ws.settings.as_ref().map(|settings| settings.modes.clone()).unwrap_or_default();
+    let modes = ws
+        .settings
+        .as_ref()
+        .map(|settings| settings.modes.clone())
+        .unwrap_or_default();
     if modes.is_empty() {
         list = list.child(widgets::muted("Loading the modes...", cx));
     }
@@ -50,10 +54,22 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
                         .flex_col()
                         .flex_1()
                         .gap_0p5()
-                        .child(div().font_weight(FontWeight::MEDIUM).child(title(&mode.name)))
-                        .child(div().text_xs().text_color(muted).line_clamp(2).child(mode.summary.clone())),
+                        .child(
+                            div()
+                                .font_weight(FontWeight::MEDIUM)
+                                .child(title(&mode.name)),
+                        )
+                        .child(
+                            div()
+                                .text_xs()
+                                .text_color(muted)
+                                .line_clamp(2)
+                                .child(mode.summary.clone()),
+                        ),
                 )
-                .when(current, |row| row.child(widgets::icon(IconName::Check, accent)))
+                .when(current, |row| {
+                    row.child(widgets::icon(IconName::Check, accent))
+                })
                 .on_click(cx.listener(move |ws, _, _, cx| ws.choose_mode(&name, cx))),
         );
     }

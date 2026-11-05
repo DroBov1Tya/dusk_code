@@ -16,11 +16,11 @@ use dusk_protocol::{
     work::JobInfo,
 };
 use gpui_kit::{
-    prelude::FluentBuilder,
     component::{
         ActiveTheme,
         input::{InputEvent, InputState, TextareaState},
     },
+    prelude::FluentBuilder,
     *,
 };
 use tokio::sync::{mpsc, watch};
@@ -109,6 +109,8 @@ pub struct Workspace {
     pub attachments: Vec<PathBuf>,
     /// The shown chat's sent messages, by transcript row, for the navigator.
     pub sent_rows: Vec<(usize, String)>,
+    /// Fields for the settings a plugin lacks, in its detail window.
+    pub secret_inputs: Vec<(String, Entity<InputState>)>,
     /// The agents graph's level: the names from the root down.
     pub agent_path: Vec<String>,
     /// The chat a right click opened the menu of, and where.
@@ -208,6 +210,7 @@ impl Workspace {
             right_hidden: false,
             attachments: Vec::new(),
             sent_rows: Vec::new(),
+            secret_inputs: Vec::new(),
             agent_path: Vec::new(),
             chat_menu: None,
             system: None,
@@ -328,9 +331,13 @@ impl Render for Workspace {
             .flex_row()
             .bg(background)
             .text_color(foreground)
-            .when(!self.left_hidden, |row| row.child(sidebar::render(self, window, cx)))
+            .when(!self.left_hidden, |row| {
+                row.child(sidebar::render(self, window, cx))
+            })
             .child(div().flex_1().min_w_0().h_full().child(center))
-            .when(!self.right_hidden, |row| row.child(inspector::render(self, window, cx)))
+            .when(!self.right_hidden, |row| {
+                row.child(inspector::render(self, window, cx))
+            })
             .children(modal)
             .children(chat_menu)
     }

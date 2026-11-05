@@ -31,6 +31,9 @@ pub enum Modal {
         content: ViewerContent,
     },
     Detail(detail::Detail),
+    DeleteFile {
+        path: PathBuf,
+    },
     Rename {
         thread_id: String,
         title: Entity<InputState>,
@@ -73,6 +76,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
+        Modal::DeleteFile { path } => (
+            "Delete file".to_owned(),
+            480.,
+            chat_menu::delete_file(path, cx),
+        ),
         Modal::Detail(item) => {
             let item = item.clone();
             (item.title().to_owned(), 720., detail::render(ws, &item, cx))
