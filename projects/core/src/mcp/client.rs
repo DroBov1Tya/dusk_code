@@ -113,6 +113,13 @@ impl McpClient {
         self.service.is_closed()
     }
 
+    /// The instructions the server gave at the handshake, if any.
+    pub fn instructions(&self) -> Option<String> {
+        self.service
+            .peer_info()
+            .and_then(|info| info.instructions.clone())
+    }
+
     /// The text of the result; a result the server marks as an error is an error.
     #[tracing::instrument(name = "mcp_call", skip_all, fields(tool = name))]
     pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<String> {

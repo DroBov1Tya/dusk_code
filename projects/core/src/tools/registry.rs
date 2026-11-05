@@ -99,6 +99,15 @@ impl ToolRegistry {
         self.tools.get(name).map(|tool| tool.kind())
     }
 
+    /// The skill a successful `load_skill` call named; `None` for other tools or when
+    /// the arguments do not name one.
+    pub fn loaded_skill(&self, name: &str, arguments: &serde_json::Value) -> Option<String> {
+        if name != "load_skill" {
+            return None;
+        }
+        Some(arguments.get("name")?.as_str()?.to_owned())
+    }
+
     #[cfg(test)]
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.tools.keys().map(String::as_str)

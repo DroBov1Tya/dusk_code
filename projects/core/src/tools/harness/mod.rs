@@ -19,4 +19,5 @@ pub use name_session::NameSession;
 pub use plan_edit::PlanEdit;
 pub use read_history::ReadHistory;
 pub use remember::Remember;
+pub(crate) use remember::project_folder;
 pub use tasks::Tasks;

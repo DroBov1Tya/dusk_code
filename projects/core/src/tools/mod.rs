@@ -27,6 +27,7 @@ pub use computer::run_overlay_if_asked;
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
 pub use console::{Jobs, RunCommand};
+pub(crate) use harness::project_folder;
 pub use harness::{
     AskUser, DisplayImage, GoalTool, NameSession, PlanEdit, Question, ReadHistory, Remember, Tasks,
 };

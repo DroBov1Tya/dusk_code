@@ -31,7 +31,9 @@ use crate::{
     init,
     init::paths::Paths,
     mcp::{McpInfo, McpServers, McpStatus},
-    message::commands::{ContextReport, context_report},
+    message::commands::{
+        ContextDetail, ContextReport, McpServerDetail, MemoryFile, context_report,
+    },
     message::sources::ThreadSources,
     providers::Provider,
     release::{
@@ -40,7 +42,7 @@ use crate::{
     },
     runtime::thread::thread_start::{self, FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
-    tools::{Decision, ToolKind, ToolScope},
+    tools::{Decision, McpTool, ToolKind, ToolScope, project_folder},
     util::usage::{self},
 };
 
@@ -420,7 +422,71 @@ impl Runtime {
             .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
                 choice.input_limit(&config)
             });
-        context_report(&launcher.state, thread_id, &mode, prompt, &specs, limit).await
+        let detail = self.context_detail(&cwd);
+        context_report(
+            &launcher.state,
+            thread_id,
+            &mode,
+            prompt,
+            &specs,
+            limit,
+            &detail,
+        )
+        .await
+    }
+
+    /// What the context report breaks down per item: the skills on now, the servers
+    /// ready for it, and the memory files that ride in every request.
+    fn context_detail(&self, cwd: &Path) -> ContextDetail {
+        let launcher = &self.launcher;
+        let config = launcher.config.current();
+        let skills = skills::list(&launcher.paths.skills_dir(), &config)
+            .into_iter()
+            .filter(|skill| skill.enabled && skill.problem.is_none())
+            .map(|skill| (skill.name, skill.description))
+            .collect();
+        let mcp = launcher
+            .mcp
+            .ready()
+            .iter()
+            .filter_map(|server| {
+                let detail = McpServerDetail {
+                    server: server.name.clone(),
+                    tools: server
+                        .tools
+                        .iter()
+                        .filter_map(|tool| McpTool::model_name(&server.name, &tool.name))
+                        .collect(),
+                    instructions: server.client.instructions(),
+                };
+                (!detail.tools.is_empty() || detail.instructions.is_some()).then_some(detail)
+            })
+            .collect();
+        let mut memory = Vec::new();
+        if config.memory().enabled {
+            memory.push(MemoryFile {
+                label: "remember".into(),
+                path: launcher.paths.rules_root().join("MEMORY.md"),
+                max_chars: config.memory().max_chars,
+            });
+        }
+        if config.work_history().enabled {
+            memory.push(MemoryFile {
+                label: "remember_project".into(),
+                path: launcher
+                    .paths
+                    .workspace_root()
+                    .join("projects")
+                    .join(project_folder(cwd))
+                    .join("MEMORY.md"),
+                max_chars: config.work_history().max_chars,
+            });
+        }
+        ContextDetail {
+            skills,
+            mcp,
+            memory,
+        }
     }
 
     /// The machine as the core found it at start.

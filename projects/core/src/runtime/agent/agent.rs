@@ -29,10 +29,11 @@ use crate::{
     },
     runtime::goal::action as goal,
     state::{
-        AgentPhase, CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, PendingMessage, State,
-        Turn, TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,
+        AgentPhase, CallPurpose, Goal, GoalStatus, KIND_MCP_TOOL, KIND_SKILL, MessageRole,
+        ModelCall, PendingMessage, State, Turn, TurnAnswer, TurnOutcome, TurnStatus,
+        estimate_tokens,
     },
-    tools::{Progress, ToolRegistry, ToolScope},
+    tools::{Progress, ToolKind, ToolRegistry, ToolScope},
 };
 
 /// Bounds a model that keeps calling tools; long tasks of small steps fit in it.
@@ -644,6 +645,26 @@ impl Agent {
                 let notes = self.run_hooks(HookEvent::AfterTool, Some(&call.name), details);
                 for note in notes.await.context {
                     content.push_str(&format!("\n\n{note}"));
+                }
+            }
+            // Durable usage counts: skills loaded and MCP tools called, when the call
+            // ran and did not fail.
+            if finished.is_some() && outcome != "failed" {
+                if let Some(skill) = self.tools.loaded_skill(&call.name, &call.arguments) {
+                    if let Err(error) = self
+                        .state
+                        .record_item_use(Some(&self.thread_id), KIND_SKILL, &skill)
+                        .await
+                    {
+                        warn!("cannot count the skill use: {error:#}");
+                    }
+                } else if self.tools.kind_of(&call.name) == Some(ToolKind::Mcp)
+                    && let Err(error) = self
+                        .state
+                        .record_item_use(Some(&self.thread_id), KIND_MCP_TOOL, call.name.as_str())
+                        .await
+                {
+                    warn!("cannot count the MCP tool use: {error:#}");
                 }
             }
             let stored = self.state.record_tool_result_with_outcome(
