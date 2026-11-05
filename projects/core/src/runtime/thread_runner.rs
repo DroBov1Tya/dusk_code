@@ -368,7 +368,7 @@ impl ThreadRunner {
             Err(error) => self.agent.emit(ThreadEvent::Rejected {
                 reason: format!("{error:#}"),
             }),
-            Ok(command) => command.run_in_thread(&self.agent, &mut self.inbox).await,
+            Ok(command) => commands::run_in_thread(command, &self.agent, &mut self.inbox).await,
         }
         // Removed only once done: a command cut short by a crash runs again on restart.
         state.remove_pending(pending.pending_id).await

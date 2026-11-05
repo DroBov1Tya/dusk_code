@@ -9,11 +9,13 @@
 //! - `providers`, `mcp`, `tools`: what the agents talk to and act with;
 //! - `runtime`, `message`, `state`: running threads, what messages carry, and the records;
 //! - `plugins`: what the community adds without changing this code;
+//! - `client`: the protocol's core side; clients talk to the core through it;
 //! - `backup`: `/migrate` archives, their restore, and the guard of an uninstall;
 //! - `util`: small helpers with no domain.
 
 pub mod backup;
 pub mod catalog;
+pub mod client;
 pub mod config;
 pub mod init;
 pub mod mcp;

@@ -44,7 +44,7 @@ pub struct InputView<'a> {
 
 impl InputView<'_> {
     pub fn draw(&mut self, frame: &mut Frame, area: Rect) {
-        let approvals = self.app.config.current().approvals();
+        let approvals = self.app.status.approvals;
         self.draw_footer(
             frame,
             area,

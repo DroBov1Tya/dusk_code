@@ -160,7 +160,7 @@ pub struct PluginRow {
     pub description: String,
     pub enabled: bool,
     /// What it brings, such as `mcp` or `platform`.
-    pub parts: Vec<&'static str>,
+    pub parts: Vec<String>,
     /// Why it does not load or what its platform says, such as a code to pair with.
     pub note: Option<String>,
     /// Its secret settings and whether each is set for this session.

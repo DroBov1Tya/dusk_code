@@ -1070,6 +1070,7 @@ dependencies = [
  "clap",
  "crossterm",
  "dusk_core",
+ "dusk_protocol",
  "dusk_telegram",
  "futures",
  "image",

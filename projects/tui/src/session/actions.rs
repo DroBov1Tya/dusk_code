@@ -3,12 +3,8 @@
 use std::env;
 
 use anyhow::Result;
-use dusk_core::{
-    config::ApprovalPolicy,
-    message::commands::Command,
-    release::update::{Channel, InstallProgress},
-    runtime::Runtime,
-};
+use dusk_core::client::Client;
+use dusk_protocol::{client::Switch, command::Command, update::InstallProgress};
 use ratatui::DefaultTerminal;
 
 use super::{
@@ -28,12 +24,12 @@ pub enum Flow {
 }
 
 /// Does what an action asks. Each arm is the whole of what one action means.
-pub async fn apply<'a>(
-    runtime: &'a Runtime,
+pub async fn apply(
+    client: &Client,
     app: &mut App,
     open: &mut Option<OpenThread>,
     terminal: &mut DefaultTerminal,
-    update: &mut Option<InstallingUpdate<'a>>,
+    update: &mut Option<InstallingUpdate>,
     action: Action,
 ) -> Result<Flow> {
     match action {
@@ -47,12 +43,12 @@ pub async fn apply<'a>(
                 .plugins
                 .iter()
                 .any(|plugin| plugin.name == name && plugin.enabled);
-            if let Err(error) = runtime.set_plugin_enabled(&name, !enabled) {
+            if let Err(error) = client.settings().plugin_enabled(&name, !enabled).await {
                 app.error(format!("cannot switch the plugin: {error:#}"));
             }
         }
         Action::SetPluginSecret { plugin, key, value } => {
-            match runtime.set_plugin_secret(&plugin, &key, &value) {
+            match client.settings().plugin_secret(&plugin, &key, &value).await {
                 Ok(()) => {
                     if let Some(Panel::Plugins { entry, .. }) = &mut app.panel {
                         *entry = None;
@@ -69,25 +65,28 @@ pub async fn apply<'a>(
                 }
             }
         }
-        Action::Send(text) => send(runtime, app, open, text, false).await,
+        Action::Send(text) => send(client, app, open, text, false).await,
         Action::Approve { id, decision } => {
-            if !runtime.answer_approval(id, decision) {
+            if !matches!(client.threads().approve(id, decision).await, Ok(true)) {
                 app.flash = Some("that request is no longer waiting".into());
             }
         }
-        Action::SendNow(text) => send(runtime, app, open, text, true).await,
+        Action::SendNow(text) => send(client, app, open, text, true).await,
         Action::Connect {
             kind,
             name,
             base_url,
             api_key,
-        } => match runtime.connect_provider(kind, name, base_url, api_key) {
+        } => match client
+            .settings()
+            .connect(kind, name, base_url, api_key)
+            .await
+        {
             Ok(_) => {
-                app.panel = Some(Panel::Models(ModelList::checking(
-                    runtime.model().map(|choice| choice.name()),
-                )));
+                let model = client.status.borrow().model.clone();
+                app.panel = Some(Panel::Models(ModelList::checking(model)));
                 terminal.draw(|frame| ui::draw(frame, app))?;
-                answer(runtime, app, open, Command::Model { name: None }).await;
+                answer(client, app, open, Command::Model { name: None }).await;
                 app.flash =
                     Some("Provider saved; choose a model, then /resend for local messages".into());
             }
@@ -97,7 +96,7 @@ pub async fn apply<'a>(
                 }
             }
         },
-        Action::SetContextPolicy(policy) => match runtime.set_context_policy(policy) {
+        Action::SetContextPolicy(policy) => match client.settings().context_policy(policy).await {
             Ok(limit) => {
                 app.limit = limit;
                 if let Some(Panel::Settings(view)) = &mut app.panel {
@@ -116,7 +115,7 @@ pub async fn apply<'a>(
                 }
             }
         },
-        Action::SetAgentLimit(limit) => match runtime.set_max_agents_at_work(limit) {
+        Action::SetAgentLimit(limit) => match client.settings().max_agents_at_work(limit).await {
             Ok(()) => {
                 if let Some(Panel::Settings(list)) = &mut app.panel {
                     list.max_agents_at_work = limit;
@@ -125,20 +124,22 @@ pub async fn apply<'a>(
             }
             Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
         },
-        Action::SetIdleMinutes(minutes) => match runtime.set_idle_screen_minutes(minutes) {
-            Ok(()) => {
-                let minutes = runtime.config().current().appearance().idle_screen_minutes;
-                if let Some(Panel::Settings(list)) = &mut app.panel {
-                    list.idle_screen_minutes = minutes;
+        Action::SetIdleMinutes(minutes) => {
+            match client.settings().idle_screen_minutes(minutes).await {
+                Ok(minutes) => {
+                    let minutes = minutes as u32;
+                    if let Some(Panel::Settings(list)) = &mut app.panel {
+                        list.idle_screen_minutes = minutes;
+                    }
+                    app.flash = Some(match minutes {
+                        0 => "Idle screen: off".to_owned(),
+                        minutes => format!("Idle screen: after {minutes} min"),
+                    });
                 }
-                app.flash = Some(match minutes {
-                    0 => "Idle screen: off".to_owned(),
-                    minutes => format!("Idle screen: after {minutes} min"),
-                });
+                Err(error) => app.error(format!("cannot save the idle screen: {error:#}")),
             }
-            Err(error) => app.error(format!("cannot save the idle screen: {error:#}")),
-        },
-        Action::SetGoalRounds(rounds) => match runtime.set_max_goal_rounds(rounds) {
+        }
+        Action::SetGoalRounds(rounds) => match client.settings().max_goal_rounds(rounds).await {
             Ok(()) => {
                 if let Some(Panel::Settings(list)) = &mut app.panel {
                     list.max_goal_rounds = rounds;
@@ -148,7 +149,7 @@ pub async fn apply<'a>(
             }
             Err(error) => app.error(format!("cannot save the goal rounds: {error:#}")),
         },
-        Action::SetMemoryChars(chars) => match runtime.set_memory_chars(chars) {
+        Action::SetMemoryChars(chars) => match client.settings().memory_chars(chars).await {
             Ok(()) => {
                 if let Some(Panel::Settings(list)) = &mut app.panel {
                     list.memory.max_chars = chars;
@@ -157,73 +158,69 @@ pub async fn apply<'a>(
             }
             Err(error) => app.error(format!("cannot save the memory size: {error:#}")),
         },
-        Action::SetWorkHistoryChars(chars) => match runtime.set_work_history_chars(chars) {
-            Ok(()) => {
-                let chars = runtime.config().current().work_history().max_chars;
-                if let Some(Panel::Settings(list)) = &mut app.panel {
-                    list.work_history.max_chars = chars;
+        Action::SetWorkHistoryChars(chars) => {
+            match client.settings().work_history_chars(chars).await {
+                Ok(chars) => {
+                    let chars = chars as usize;
+                    if let Some(Panel::Settings(list)) = &mut app.panel {
+                        list.work_history.max_chars = chars;
+                    }
+                    app.flash = Some(format!("Project memory: up to {chars} characters"));
                 }
-                app.flash = Some(format!("Project memory: up to {chars} characters"));
+                Err(error) => app.error(format!("cannot save the project memory size: {error:#}")),
             }
-            Err(error) => app.error(format!("cannot save the project memory size: {error:#}")),
-        },
+        }
         Action::Switch { kind, name, on } => {
-            let saved = match kind {
-                SwitchKind::Agent => runtime.set_agent_enabled(&name, on),
-                SwitchKind::Tool => runtime.set_tool_enabled(&name, on),
-                SwitchKind::Skill => runtime.set_skill_enabled(&name, on),
-                SwitchKind::Mcp => runtime.set_mcp_enabled(&name, on),
-                SwitchKind::Memory => runtime.set_memory_enabled(on),
-                SwitchKind::WorkHistory => runtime.set_work_history_enabled(on),
-                SwitchKind::DevChannel => runtime.set_update_channel(match on {
-                    true => Channel::Dev,
-                    false => Channel::Stable,
-                }),
-                SwitchKind::Approvals(ApprovalPolicy::Sandbox)
-                    if on && !runtime.platform().sandbox =>
-                {
-                    Err(anyhow::anyhow!("this system has no sandbox for commands"))
-                }
-                SwitchKind::Approvals(policy) => runtime.set_approvals(match on {
-                    true => policy,
-                    false => ApprovalPolicy::Ask,
-                }),
-                SwitchKind::Logging => runtime.set_logging_enabled(on),
+            let switch = match kind {
+                SwitchKind::Agent => Switch::Agent(name),
+                SwitchKind::Tool => Switch::Tool(name),
+                SwitchKind::Skill => Switch::Skill(name),
+                SwitchKind::Mcp => Switch::Mcp(name),
+                SwitchKind::Memory => Switch::Memory,
+                SwitchKind::WorkHistory => Switch::WorkHistory,
+                SwitchKind::DevChannel => Switch::DevChannel,
+                SwitchKind::Approvals(policy) => Switch::Approvals(policy),
+                SwitchKind::Logging => Switch::Logging,
             };
-            match saved {
-                Ok(()) => answer(runtime, app, open, Command::Settings).await,
+            match client.settings().switch(switch, on).await {
+                Ok(()) => answer(client, app, open, Command::Settings).await,
                 Err(error) => app.error(format!("cannot save the setting: {error:#}")),
             }
         }
-        Action::OpenSkill(name) => match runtime.skill(&name) {
+        Action::OpenSkill(name) => match client.catalog().skill(&name).await {
             Ok(skill) => open_editor(app, FileEditor::skill(skill), false),
             Err(error) => app.flash = Some(format!("cannot open the skill: {error:#}")),
         },
-        Action::SaveSkill { name, text } => match runtime.save_skill(&name, &text) {
+        Action::SaveSkill { name, text } => match client.catalog().save_skill(&name, &text).await {
             Ok(skill) => {
                 open_editor(app, FileEditor::skill(skill), true);
                 app.flash = Some(format!("skill {name} saved"));
-                answer(runtime, app, open, Command::Settings).await;
+                answer(client, app, open, Command::Settings).await;
             }
             Err(error) => editor_error(app, format!("not saved: {error:#}")),
         },
-        Action::OpenAgentFile(name) => match runtime.agent(&name) {
+        Action::OpenAgentFile(name) => match client.catalog().agent(&name).await {
             Ok(agent) => open_editor(app, FileEditor::agent(agent), false),
             Err(error) => app.flash = Some(format!("cannot open the agent: {error:#}")),
         },
-        Action::SaveAgentFile { name, text } => match runtime.save_agent(&name, &text).await {
-            Ok(agent) => {
-                open_editor(app, FileEditor::agent(agent), true);
-                app.flash = Some(format!("agent {name} saved"));
-                answer(runtime, app, open, Command::Settings).await;
+        Action::SaveAgentFile { name, text } => {
+            match client.catalog().save_agent(&name, &text).await {
+                Ok(agent) => {
+                    open_editor(app, FileEditor::agent(agent), true);
+                    app.flash = Some(format!("agent {name} saved"));
+                    answer(client, app, open, Command::Settings).await;
+                }
+                Err(error) => editor_error(app, format!("not saved: {error:#}")),
             }
-            Err(error) => editor_error(app, format!("not saved: {error:#}")),
-        },
+        }
         Action::OpenMcp(name) => {
-            let text = name.as_deref().map(|name| runtime.mcp_server_text(name));
-            match text.transpose() {
+            let text = match name.as_deref() {
+                Some(name) => client.catalog().mcp_server_text(name).await.map(Some),
+                None => Ok(None),
+            };
+            match text {
                 Ok(text) => {
-                    let servers = runtime.mcp_servers();
+                    let servers = client.catalog().mcp_servers().await.unwrap_or_default();
                     let server = servers
                         .iter()
                         .find(|server| Some(&server.name) == name.as_ref());
@@ -232,13 +229,17 @@ pub async fn apply<'a>(
                 Err(error) => app.flash = Some(format!("cannot open the server: {error:#}")),
             }
         }
-        Action::SaveMcp { old, text } => match runtime.save_mcp_server(old.as_deref(), &text) {
+        Action::SaveMcp { old, text } => match client
+            .catalog()
+            .save_mcp_server(old.as_deref(), &text)
+            .await
+        {
             Ok(saved) => {
-                let servers = runtime.mcp_servers();
+                let servers = client.catalog().mcp_servers().await.unwrap_or_default();
                 match &saved {
                     Some(name) => {
                         let server = servers.iter().find(|server| server.name == *name);
-                        let text = runtime.mcp_server_text(name).ok();
+                        let text = client.catalog().mcp_server_text(name).await.ok();
                         open_editor(app, FileEditor::mcp(server, text), true);
                         app.flash = Some(format!("MCP server {name} saved, starting"));
                     }
@@ -249,17 +250,17 @@ pub async fn apply<'a>(
                         app.flash = Some("MCP server removed".into());
                     }
                 }
-                answer(runtime, app, open, Command::Settings).await;
+                answer(client, app, open, Command::Settings).await;
             }
             Err(error) => editor_error(app, format!("not saved: {error:#}")),
         },
-        Action::SignInMcp(name) => match runtime.sign_in_mcp(&name).await {
+        Action::SignInMcp(name) => match client.catalog().sign_in_mcp(&name).await {
             Ok(page) => {
                 // The full address carries the sign-in's state; shown only when needed.
-                let notice = match open_in_browser(page.as_str()) {
+                let notice = match open_in_browser(&page) {
                     true => format!(
                         "Sign-in to {name} opened in the browser at {}",
-                        page.origin().ascii_serialization()
+                        origin(&page)
                     ),
                     false => format!("Sign-in to {name}: open {page} in a browser"),
                 };
@@ -269,21 +270,23 @@ pub async fn apply<'a>(
             Err(error) => app.flash = Some(format!("cannot sign in to {name}: {error:#}")),
         },
         Action::RestartMcp(name) => {
-            runtime.restart_mcp(&name);
+            if let Err(error) = client.catalog().restart_mcp(&name).await {
+                app.error(format!("cannot restart the server: {error:#}"));
+            }
             app.flash = Some(format!("MCP server {name} starting again"));
-            answer(runtime, app, open, Command::Settings).await;
+            answer(client, app, open, Command::Settings).await;
         }
         Action::Resend(id) => {
-            if runtime.model().is_none() {
+            if client.status.borrow().model.is_none() {
                 app.flash = Some("Connect a provider and choose a model before resending".into());
                 return Ok(Flow::Go);
             }
-            if let Err(error) = ensure_open(runtime, app, open).await {
+            if let Err(error) = ensure_open(client, app, open).await {
                 app.error(format!("cannot open the thread: {error:#}"));
                 return Ok(Flow::Go);
             }
             if let Some(thread_id) = &app.thread_id {
-                match runtime.resend_local_unsent(thread_id, &id).await {
+                match client.threads().resend_local_unsent(thread_id, &id).await {
                     Ok(()) => {
                         app.mark_local_sent(&id);
                         app.flash = Some("Local message queued".into());
@@ -294,7 +297,7 @@ pub async fn apply<'a>(
         }
         Action::Cancel => {
             if let Some(thread) = &open
-                && let Err(error) = thread.handle.input.cancel().await
+                && let Err(error) = client.threads().cancel(&thread.thread_id).await
             {
                 app.error(format!("{error:#}"));
             }
@@ -305,51 +308,51 @@ pub async fn apply<'a>(
                 thread_id,
                 sequence,
             };
-            answer(runtime, app, open, command).await;
+            answer(client, app, open, command).await;
         }
         Action::Command(Command::Sources { add, .. }) => {
             // A file can be the first thing a chat gets.
             if add.is_some()
-                && let Err(error) = ensure_open(runtime, app, open).await
+                && let Err(error) = ensure_open(client, app, open).await
             {
                 app.error(format!("cannot open a thread: {error:#}"));
                 return Ok(Flow::Go);
             }
             let thread_id = app.thread_id.clone();
             let command = Command::Sources { thread_id, add };
-            answer(runtime, app, open, command).await;
+            answer(client, app, open, command).await;
         }
         Action::PinSource { id, pinned } => {
             if let Some(thread_id) = app.thread_id.clone() {
-                if let Err(error) = runtime.pin_source(&thread_id, &id, pinned).await {
+                if let Err(error) = client.work().pin_source(&thread_id, &id, pinned).await {
                     app.error(format!("cannot pin the source: {error:#}"));
                 }
                 let command = Command::Sources {
                     thread_id: Some(thread_id),
                     add: None,
                 };
-                answer(runtime, app, open, command).await;
+                answer(client, app, open, command).await;
             }
         }
         Action::RemoveSource(id) => {
             if let Some(thread_id) = app.thread_id.clone() {
-                if let Err(error) = runtime.remove_source(&thread_id, &id).await {
+                if let Err(error) = client.work().remove_source(&thread_id, &id).await {
                     app.error(format!("cannot remove the source: {error:#}"));
                 }
                 let command = Command::Sources {
                     thread_id: Some(thread_id),
                     add: None,
                 };
-                answer(runtime, app, open, command).await;
+                answer(client, app, open, command).await;
             }
         }
         Action::Command(Command::Jobs { .. }) => {
             let thread_id = app.thread_id.clone();
-            answer(runtime, app, open, Command::Jobs { thread_id }).await;
+            answer(client, app, open, Command::Jobs { thread_id }).await;
         }
         Action::StopJob(job_id) => {
             if let Some(thread_id) = app.thread_id.clone() {
-                match runtime.stop_job(&thread_id, &job_id).await {
+                match client.work().stop_job(&thread_id, &job_id).await {
                     Ok(_) => app.flash = Some("stopping the job".into()),
                     Err(error) => app.error(format!("cannot stop the job: {error:#}")),
                 }
@@ -358,11 +361,11 @@ pub async fn apply<'a>(
         }
         Action::Command(Command::Resume { .. }) => {
             let cwd = env::current_dir().ok();
-            answer(runtime, app, open, Command::Resume { cwd }).await;
+            answer(client, app, open, Command::Resume { cwd }).await;
         }
         Action::Command(Command::Context { .. }) => {
             let thread_id = app.thread_id.clone();
-            answer(runtime, app, open, Command::Context { thread_id }).await;
+            answer(client, app, open, Command::Context { thread_id }).await;
         }
         Action::Command(command) => {
             if let Command::Migrate { .. } = command {
@@ -381,28 +384,17 @@ pub async fn apply<'a>(
                 terminal.draw(|frame| ui::draw(frame, app))?;
             }
             if command == (Command::Model { name: None }) {
-                app.panel = Some(Panel::Models(ModelList::checking(
-                    runtime.model().map(|choice| choice.name()),
-                )));
+                let model = client.status.borrow().model.clone();
+                app.panel = Some(Panel::Models(ModelList::checking(model)));
                 terminal.draw(|frame| ui::draw(frame, app))?;
             }
-            answer(runtime, app, open, command).await;
+            answer(client, app, open, command).await;
         }
 
         Action::InstallUpdate(tag) => {
             if update.is_none() {
-                let (sender, progress) = tokio::sync::watch::channel(InstallProgress::default());
-                let installing_tag = tag.clone();
-                let result = Box::pin(async move {
-                    runtime
-                        .install_update_with_progress(&installing_tag, sender)
-                        .await
-                });
-                *update = Some(InstallingUpdate {
-                    tag,
-                    progress,
-                    result,
-                });
+                let result = Box::pin(client.install_update(&tag));
+                *update = Some(InstallingUpdate { tag, result });
                 if let Some(Panel::Update {
                     progress,
                     note,
@@ -422,18 +414,18 @@ pub async fn apply<'a>(
                 false => format!("open {url} in a browser"),
             });
         }
-        Action::NextMode => match runtime.next_mode() {
+        Action::NextMode => match client.settings().next_mode().await {
             Ok(mode) => app.mode = mode,
             Err(error) => app.error(format!("cannot switch the mode: {error:#}")),
         },
-        Action::StopAgent(thread_id) => match runtime.stop_agent(&thread_id).await {
+        Action::StopAgent(thread_id) => match client.threads().stop_agent(&thread_id).await {
             Ok(()) => app.flash = Some("stopping the agent".into()),
             Err(error) => app.error(format!("cannot stop the agent: {error:#}")),
         },
         Action::OpenThread(thread_id) if app.thread_id.as_deref() == Some(&thread_id) => {}
         Action::OpenThread(thread_id) => {
-            close(open.take()).await;
-            match OpenThread::resume(runtime, app, &thread_id).await {
+            close(client, open.take()).await;
+            match OpenThread::resume(client, app, &thread_id).await {
                 Ok(thread) => *open = Some(thread),
                 Err(error) => {
                     app.open(None, None, &[]);
@@ -441,8 +433,8 @@ pub async fn apply<'a>(
                 }
             }
         }
-        Action::Preview(thread_id) => preview(runtime, app, thread_id).await,
-        Action::OpenAgent(thread_id) => match runtime.thread_messages(&thread_id).await {
+        Action::Preview(thread_id) => preview(client, app, thread_id).await,
+        Action::OpenAgent(thread_id) => match client.threads().messages(&thread_id).await {
             Ok(history) => {
                 let transcript = Transcript::from_history(&history);
                 let card = app
@@ -465,6 +457,11 @@ pub async fn apply<'a>(
         }
     }
     Ok(Flow::Go)
+}
+
+/// The scheme and host of a page, without the path and query it carries.
+fn origin(page: &str) -> String {
+    page.splitn(4, '/').take(3).collect::<Vec<_>>().join("/")
 }
 
 /// The system's browser shows the page; false when none could be started.

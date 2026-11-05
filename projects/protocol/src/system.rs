@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// What the application costs the machine right now.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SystemReport {
     pub process: Option<ProcessUsage>,
     /// The database file, its write-ahead log and shared memory.

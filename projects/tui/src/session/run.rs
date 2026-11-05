@@ -12,14 +12,15 @@ use std::{
 
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, MouseEventKind};
-use dusk_core::{release::update::InstallProgress, runtime::Runtime};
+use dusk_core::client::{ArtifactStore, Client};
+use dusk_protocol::client::Event as CoreEvent;
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
 use super::{
     actions::{Flow, apply, set_update_note},
     answers::{jobs_wanted, refresh_jobs, refresh_system, system_open},
-    thread::{OpenThread, close, next_event, send},
+    thread::{OpenThread, close, send},
 };
 use crate::{
     app::{Action, App, PRESS, Panel, SettingCategory, Tone},
@@ -27,8 +28,6 @@ use crate::{
 };
 
 pub const THREAD_SOURCE: &str = "tui";
-/// How long a closing thread may take to stop its turn and finish.
-pub const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 pub const FRAME: Duration = Duration::from_millis(80);
 /// How often the git line is read again; edits made outside show within it.
 pub const GIT_PERIOD: Duration = Duration::from_secs(5);
@@ -40,31 +39,26 @@ pub const SYSTEM_PERIOD: Duration = Duration::from_secs(2);
 pub const JOBS_PERIOD: Duration = Duration::from_secs(1);
 pub const MAX_EVENTS_PER_FRAME: usize = 512;
 
-pub struct InstallingUpdate<'a> {
+pub struct InstallingUpdate {
     pub tag: String,
-    pub progress: tokio::sync::watch::Receiver<InstallProgress>,
-    pub result: Pin<Box<dyn Future<Output = Result<PathBuf>> + Send + 'a>>,
+    pub result: Pin<Box<dyn Future<Output = Result<PathBuf>> + Send>>,
 }
 
 pub async fn run(
-    runtime: &Runtime,
+    client: &mut Client,
     mut terminal: DefaultTerminal,
     thread: Option<String>,
 ) -> Result<()> {
-    let config = runtime.config().clone();
-    let choice = runtime.model();
-    let limit = runtime.input_limit();
-    let mut app = App::new(choice.as_ref().map(|choice| choice.name()), limit, config);
+    let status = client.status.borrow_and_update().clone();
+    let mut app = App::new(status.clone());
     app.transcript
-        .set_artifact_store(dusk_core::state::artifacts::ArtifactStore::new(
-            runtime.paths().artifacts_dir(),
-        ));
+        .set_artifact_store(ArtifactStore::new(status.artifacts_dir.clone()));
     let mut open = None;
     if let Some(thread_id) = thread {
-        open = Some(OpenThread::resume(runtime, &mut app, &thread_id).await?);
+        open = Some(OpenThread::resume(client, &mut app, &thread_id).await?);
     }
     // Shipped files follow the build; a local edit to one is replaced, so say which.
-    let updated = runtime.updated_builtin();
+    let updated = &status.updated_builtin;
     if !updated.is_empty() {
         let mut names = updated
             .iter()
@@ -97,42 +91,41 @@ pub async fn run(
     let cwd = env::current_dir()?;
     let mut shown_title = String::new();
     let mut terminal_status = crate::host::terminal::TerminalStatus::new();
-    let mut known_model = choice.as_ref().map(|choice| choice.name());
-    let mut update: Option<InstallingUpdate<'_>> = None;
+    let mut known_model = status.model.clone();
+    let mut update: Option<InstallingUpdate> = None;
     let mut idle_since = Instant::now();
     loop {
-        if let Some(update) = &mut update
+        let status = client.status.borrow_and_update().clone();
+        if update.is_some()
             && let Some(Panel::Update { progress, .. }) = &mut app.panel
         {
-            *progress = Some(*update.progress.borrow_and_update());
+            *progress = status.install;
         }
-        if let Some(choice) = runtime.model() {
-            let name = choice.name();
+        if let Some(name) = &status.model {
             // A saved model is not proof the provider answers, but one the core picked
             // after start was found over the network. No thread may exist yet to say so.
-            if known_model.as_deref() != Some(name.as_str()) {
+            if known_model.as_ref() != Some(name) {
                 app.provider_available = true;
                 known_model = Some(name.clone());
             }
-            app.model = name;
-            app.limit = runtime.input_limit();
+            app.model = name.clone();
+            app.limit = status.input_limit;
         }
-        let config = runtime.config().current();
-        app.effort = config.effort();
-        app.mode = config.mode().to_owned();
+        app.effort = status.effort;
+        app.mode = status.mode.clone();
         if let Some(Panel::Settings(view)) = &mut app.panel {
-            view.selected_model = runtime.model().map(|choice| choice.name());
-            view.context_policy = runtime.context_policy();
-            view.effective_limit = runtime.input_limit();
+            view.selected_model = status.model.clone();
+            view.context_policy = status.context_policy;
+            view.effective_limit = status.input_limit;
             view.effort = app.effort;
         }
-        // Read before the statuses: a server that settles in between still gets a frame.
-        let mcp_starting = runtime.mcp_starting();
-        app.mcp = runtime.mcp_statuses();
+        let mcp_starting = status.mcp_starting;
+        app.mcp = status.mcp.clone();
         if matches!(app.panel, Some(Panel::Plugins { .. })) {
-            app.plugins = runtime
-                .plugins()
-                .into_iter()
+            app.plugins = status
+                .plugins
+                .iter()
+                .cloned()
                 .map(|plugin| crate::app::PluginRow {
                     name: plugin.name,
                     version: plugin.version,
@@ -147,17 +140,19 @@ pub async fn run(
         // Servers start in the background; the settings show them as they settle.
         if let Some(Panel::Settings(view)) = &mut app.panel
             && view.category == Some(SettingCategory::Mcp)
+            && let Ok(servers) = client.catalog().mcp_servers().await
         {
-            view.mcp = runtime.mcp_servers();
+            view.mcp = servers;
             if let Some(editor) = &mut view.editor {
                 editor.update_mcp(&view.mcp);
             }
         }
+        app.status = status;
         // /undo changed the history: it is read again, and the message goes back to the box.
         if let Some(text) = app.undone.take()
             && let Some(thread_id) = app.thread_id.clone()
         {
-            match runtime.thread_messages(&thread_id).await {
+            match client.threads().messages(&thread_id).await {
                 Ok(history) => {
                     let (title, goal) = (app.title.take(), app.goal.take());
                     let (tasks, tokens) = (std::mem::take(&mut app.tasks), app.tokens);
@@ -171,16 +166,16 @@ pub async fn run(
         }
         // A fork summary opens its new thread; this one stays as it was.
         if let Some(summary) = app.forked.take() {
-            close(open.take()).await;
-            match runtime.fork_thread(THREAD_SOURCE, &summary, &cwd).await {
-                Ok(handle) => {
-                    app.open(Some(handle.thread_id.clone()), None, &[]);
+            close(client, open.take()).await;
+            match client.threads().fork(&summary, cwd.clone()).await {
+                Ok(thread_id) => {
+                    app.open(Some(thread_id.clone()), None, &[]);
                     app.transcript.notice(
                         "forked: this thread goes on from a summary of the last one",
                         Tone::Info,
                     );
                     app.transcript.add_summary(&summary);
-                    open = Some(OpenThread::new(handle));
+                    open = Some(OpenThread::new(thread_id));
                 }
                 Err(error) => app.error(format!("cannot fork: {error:#}")),
             }
@@ -189,7 +184,7 @@ pub async fn run(
         if !app.is_busy()
             && let Some(text) = app.release_queue()
         {
-            send(runtime, &mut app, &mut open, text, false).await;
+            send(client, &mut app, &mut open, text, false).await;
         }
         terminal_status.update(app.is_busy() || app.agents_at_work());
         // Work is activity too: the idle screen waits for both to stop.
@@ -197,17 +192,16 @@ pub async fn run(
             idle_since = Instant::now();
         }
         app.refresh_paths();
-        app.update_available = runtime.available_update();
-        refresh_system(runtime, &mut app).await;
-        refresh_jobs(runtime, &mut app).await;
+        app.update_available = app.status.available_update.clone();
+        refresh_system(client, &mut app).await;
+        refresh_jobs(client, &mut app).await;
         terminal.draw(|frame| ui::draw(frame, &mut app))?;
         let title = ui::tab_title(&app);
         if title != shown_title {
             crate::host::terminal::set_title(&title);
             shown_title = title;
         }
-        let idle_after =
-            Duration::from_secs(60 * u64::from(config.appearance().idle_screen_minutes));
+        let idle_after = Duration::from_secs(60 * u64::from(app.status.idle_screen_minutes));
         let action = tokio::select! {
             result = async {
                 match &mut update {
@@ -222,7 +216,7 @@ pub async fn run(
                         Err(error) => format!("not updated: {error:#}"),
                     };
                     if let Some(Panel::Update { progress, .. }) = &mut app.panel {
-                        *progress = success.then(|| *update.progress.borrow());
+                        *progress = success.then(|| client.status.borrow().install).flatten();
                     }
                     set_update_note(&mut app, note);
                 }
@@ -257,28 +251,21 @@ pub async fn run(
             ), if app.pressed.is_some() => Action::None,
             _ = tokio::time::sleep(app.screensaver.as_ref().map_or(FRAME, |playing| playing.frame_period())),
                 if app.screensaver.is_some() => Action::None,
-            event = next_event(&mut open) => {
-                match event {
-                    Some(event) => {
-                        // Everything that has arrived meanwhile is drawn in one frame, so
-                        // fast streams do not cost a frame per token.
-                        if let Some(thread) = &mut open {
-                            thread.apply(&mut app, event);
-                            for _ in 0..MAX_EVENTS_PER_FRAME {
-                                let Some(event) = thread.handle.output.ready_event() else {
-                                    break;
-                                };
-                                    thread.apply(&mut app, event);
-                            }
-                        }
-                    }
-                    None => {
-                        app.error("the thread stopped; the next message opens it again");
-                        app.stop_work();
-                    }
+            Some(event) = client.events.recv() => {
+                // Everything that has arrived meanwhile is drawn in one frame, so fast
+                // streams do not cost a frame per token.
+                let mut event = Some(event);
+                for _ in 0..MAX_EVENTS_PER_FRAME {
+                    let Some(next) = event else {
+                        break;
+                    };
+                    show(&mut app, &mut open, next);
+                    event = client.events.try_recv().ok();
                 }
                 Action::None
             }
+            // The core changed something the screen shows, such as a model it found.
+            Ok(()) = client.status.changed() => Action::None,
             // While the core looks for a model, the clock redraws what it finds.
             _ = system_clock.tick(), if system_open(&app) => Action::None,
             _ = jobs_clock.tick(), if jobs_wanted(&app) => Action::None,
@@ -299,7 +286,7 @@ pub async fn run(
             _ = clock.tick(), if app.is_busy()
                 || app.agents_at_work()
                 || app.task_timers_run()
-                || runtime.discovering_model()
+                || app.status.discovering_model
                 || update.is_some()
                 || mcp_starting => {
                 app.tick();
@@ -307,7 +294,7 @@ pub async fn run(
             }
         };
         match apply(
-            runtime,
+            client,
             &mut app,
             &mut open,
             &mut terminal,
@@ -320,8 +307,26 @@ pub async fn run(
             Flow::Quit => break,
         }
     }
-    close(open.take()).await;
+    close(client, open.take()).await;
     Ok(())
+}
+
+/// Shows an event of the open thread; those of a thread closed meanwhile are dropped.
+fn show(app: &mut App, open: &mut Option<OpenThread>, event: CoreEvent) {
+    let Some(thread) = open else {
+        return;
+    };
+    match event {
+        CoreEvent::Thread { thread_id, event } if thread_id == thread.thread_id => {
+            thread.apply(app, *event);
+        }
+        CoreEvent::Ended { thread_id } if thread_id == thread.thread_id => {
+            thread.ended = true;
+            app.error("the thread stopped; the next message opens it again");
+            app.stop_work();
+        }
+        _ => {}
+    }
 }
 
 /// A key, a click, a scroll or a paste counts as the user being back; a moving pointer

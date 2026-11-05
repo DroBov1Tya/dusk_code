@@ -17,6 +17,7 @@ mod ui;
 use anyhow::Result;
 use cli::args::{self, Args};
 use dusk_core::{init::logs, init::paths::Paths, release::update, runtime::Runtime};
+use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
 use tracing::{error, info};
 
 #[tokio::main]
@@ -72,10 +73,15 @@ async fn main() -> Result<()> {
     cli::resources::ensure().await;
     // Started before the screen is taken, so a first-start message stays readable.
     let runtime = Runtime::start(paths, state_db).await?;
+    let hello = Hello {
+        protocol: PROTOCOL_VERSION,
+        client: session::THREAD_SOURCE.to_owned(),
+    };
+    let mut client = dusk_core::client::serve(runtime, hello)?;
     let terminal = host::terminal::enter()?;
-    let result = session::run(&runtime, terminal, thread).await;
+    let result = session::run(&mut client, terminal, thread).await;
     host::terminal::leave();
-    runtime.shutdown().await;
+    client.shutdown().await;
     match &result {
         Ok(()) => info!("duskcode exits"),
         Err(error) => error!("duskcode exits: {error:#}"),

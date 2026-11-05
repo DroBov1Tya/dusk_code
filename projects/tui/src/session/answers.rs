@@ -3,10 +3,10 @@
 
 use std::time::Instant;
 
-use dusk_core::{
-    config::Effort,
-    message::commands::{Answer, Command},
-    runtime::Runtime,
+use dusk_core::client::Client;
+use dusk_protocol::{
+    command::{Answer, Command},
+    model::Effort,
 };
 
 use super::{
@@ -21,13 +21,13 @@ use crate::app::{
 
 /// Shows what the core answered to a command that does not run in the thread.
 pub async fn answer(
-    runtime: &Runtime,
+    client: &Client,
     app: &mut App,
     open: &mut Option<OpenThread>,
     command: Command,
 ) {
     let migrating = matches!(&command, Command::Migrate { .. });
-    match command.answer(runtime).await {
+    match client.command(command).await {
         Ok(Answer::Migrated(path)) => {
             app.panel = None;
             app.flash = None;
@@ -49,18 +49,18 @@ pub async fn answer(
                 preview: None,
             }));
             if let Some(thread_id) = first {
-                preview(runtime, app, thread_id).await;
+                preview(client, app, thread_id).await;
             }
         }
         Ok(Answer::Providers { current, providers }) => {
             app.panel = Some(Panel::Models(ModelList::checked(current, providers)));
         }
-        Ok(Answer::ModelSwitched(choice)) => {
+        Ok(Answer::ModelSwitched { name }) => {
             app.panel = None;
-            app.limit = runtime.input_limit();
-            app.model = choice.name();
+            app.limit = client.status.borrow().input_limit;
+            app.flash = Some(format!("model {name}"));
+            app.model = name;
             app.provider_available = true;
-            app.flash = Some(format!("model {}", choice.name()));
         }
         Ok(Answer::Settings(settings)) => match &mut app.panel {
             Some(Panel::Settings(view)) => view.refresh(*settings),
@@ -121,7 +121,7 @@ pub async fn answer(
             app.panel = Some(Panel::Context { report, row: 0 });
         }
         Ok(Answer::NewThread) => {
-            close(open.take()).await;
+            close(client, open.take()).await;
             app.panel = None;
             app.open(None, None, &[]);
         }
@@ -146,7 +146,7 @@ pub fn jobs_wanted(app: &App) -> bool {
 
 /// Reads the open thread's jobs, and the output of the one chosen in the window, when
 /// something changed, and every `JOBS_PERIOD` while one runs or the window is open.
-pub async fn refresh_jobs(runtime: &Runtime, app: &mut App) {
+pub async fn refresh_jobs(client: &Client, app: &mut App) {
     let Some(thread_id) = app.thread_id.clone() else {
         app.jobs.clear();
         return;
@@ -160,7 +160,7 @@ pub async fn refresh_jobs(runtime: &Runtime, app: &mut App) {
     }
     app.jobs_stale = false;
     app.jobs_read = Instant::now();
-    match runtime.jobs(&thread_id).await {
+    match client.work().jobs(&thread_id).await {
         Ok(jobs) => app.jobs = jobs,
         Err(error) => return app.error(format!("cannot read the jobs: {error:#}")),
     }
@@ -169,7 +169,8 @@ pub async fn refresh_jobs(runtime: &Runtime, app: &mut App) {
         view.selected = view.selected.min(view.jobs.len().saturating_sub(1));
         view.stale = false;
         view.output = match view.jobs.get(view.selected) {
-            Some(job) => runtime
+            Some(job) => client
+                .work()
                 .job_output(&thread_id, &job.job_id)
                 .await
                 .unwrap_or_else(|error| format!("cannot read the output: {error:#}")),
@@ -184,7 +185,7 @@ pub fn system_open(app: &App) -> bool {
 }
 
 /// The system tab reads its numbers when opened and then every `SYSTEM_PERIOD`.
-pub async fn refresh_system(runtime: &Runtime, app: &mut App) {
+pub async fn refresh_system(client: &Client, app: &mut App) {
     let Some(Panel::Settings(view)) = &mut app.panel else {
         return;
     };
@@ -195,7 +196,7 @@ pub async fn refresh_system(runtime: &Runtime, app: &mut App) {
     if view.category != Some(SettingCategory::System) || !due {
         return;
     }
-    match runtime.system_report().await {
+    match client.system_report().await {
         Ok(report) => view.system = Some((report, Instant::now())),
         Err(error) => app.error(format!("cannot read the system numbers: {error:#}")),
     }
@@ -203,8 +204,8 @@ pub async fn refresh_system(runtime: &Runtime, app: &mut App) {
 
 /// Shows a thread in the threads panel, if the panel is still open. A preview that
 /// cannot be read just stays empty; opening the thread reports the error.
-pub async fn preview(runtime: &Runtime, app: &mut App, thread_id: String) {
-    let Ok(history) = runtime.thread_messages(&thread_id).await else {
+pub async fn preview(client: &Client, app: &mut App, thread_id: String) {
+    let Ok(history) = client.threads().messages(&thread_id).await else {
         return;
     };
     if let Some(Panel::Threads(list)) = &mut app.panel {

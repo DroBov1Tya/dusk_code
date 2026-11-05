@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
 /// A configured provider as a check found it: its models, or why it did not answer.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderStatus {
     pub name: String,
     pub models: Result<Vec<Model>, String>,

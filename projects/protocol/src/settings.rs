@@ -9,6 +9,7 @@ use crate::{
     update::Channel,
 };
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Settings {
     pub max_agents_at_work: usize,
     pub max_goal_rounds: u32,
@@ -30,6 +31,7 @@ pub struct Settings {
     pub mcp: Vec<McpInfo>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolInfo {
     pub name: String,
     pub kind: ToolKind,
