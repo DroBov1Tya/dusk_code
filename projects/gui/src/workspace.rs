@@ -106,6 +106,8 @@ pub struct Workspace {
     pub agent_path: Vec<String>,
     /// The chat a right click opened the menu of, and where.
     pub chat_menu: Option<(String, Point<Pixels>)>,
+    pub system: Option<dusk_protocol::system::SystemReport>,
+    pub update: Option<dusk_protocol::update::UpdateInfo>,
     /// Answers whose reasoning is unfolded, by chat and item index.
     pub unfolded: HashSet<(String, usize)>,
     pub scroll: ScrollHandle,
@@ -126,11 +128,15 @@ impl Workspace {
         cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
             .detach();
         let shelf_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
-        cx.subscribe_in(&shelf_search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
-            .detach();
+        cx.subscribe_in(&shelf_search, window, |_, _, _: &InputEvent, _, cx| {
+            cx.notify()
+        })
+        .detach();
         let font_search = cx.new(|cx| InputState::new(window, cx).placeholder("Find a font"));
-        cx.subscribe_in(&font_search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
-            .detach();
+        cx.subscribe_in(&font_search, window, |_, _, _: &InputEvent, _, cx| {
+            cx.notify()
+        })
+        .detach();
         let model_input = cx.new(|cx| InputState::new(window, cx).placeholder("provider/model"));
         cx.subscribe_in(&model_input, window, |ws, _, event: &InputEvent, _, cx| {
             if let InputEvent::PressEnter { .. } = event {
@@ -145,11 +151,15 @@ impl Workspace {
             state.set_submit_on_enter(true, cx);
             state
         });
-        cx.subscribe_in(&composer, window, |this, _, event: &InputEvent, window, cx| {
-            if let InputEvent::PressEnter { shift: false, .. } = event {
-                this.send(window, cx);
-            }
-        })
+        cx.subscribe_in(
+            &composer,
+            window,
+            |this, _, event: &InputEvent, window, cx| {
+                if let InputEvent::PressEnter { shift: false, .. } = event {
+                    this.send(window, cx);
+                }
+            },
+        )
         .detach();
         let first = status.borrow().clone();
         let mut workspace = Self {
@@ -189,6 +199,8 @@ impl Workspace {
             attach_open: false,
             agent_path: Vec::new(),
             chat_menu: None,
+            system: None,
+            update: None,
             unfolded: HashSet::new(),
             scroll: ScrollHandle::new(),
             followed: (0, false),
@@ -234,7 +246,10 @@ impl Workspace {
     fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
         match event {
             Event::Thread { thread_id, event } => {
-                let titled = matches!(*event, dusk_protocol::thread::ThreadEvent::TitleChanged { .. });
+                let titled = matches!(
+                    *event,
+                    dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
+                );
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.apply(*event);
                 }

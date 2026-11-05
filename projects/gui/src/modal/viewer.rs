@@ -26,7 +26,12 @@ pub enum ViewerContent {
     Error(String),
 }
 
-pub fn render(path: &Path, content: &ViewerContent, _: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(
+    path: &Path,
+    content: &ViewerContent,
+    _: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Div {
     let muted = cx.theme().muted_foreground;
     let shown = path.to_path_buf();
     let header = div()
@@ -55,10 +60,16 @@ pub fn render(path: &Path, content: &ViewerContent, _: &mut Window, cx: &mut Con
         );
     let body = match content {
         ViewerContent::Loading => widgets::muted("Loading...", cx).into_any_element(),
-        ViewerContent::Markdown(text) => links::markdown("viewer-markdown", text.clone())
-            .into_any_element(),
+        ViewerContent::Markdown(text) => {
+            links::markdown("viewer-markdown", text.clone()).into_any_element()
+        }
         ViewerContent::Text(text) => div()
-            .font_family(crate::theme::prefs(cx).mono_font.clone().unwrap_or_else(|| "Menlo".to_owned()))
+            .font_family(
+                crate::theme::prefs(cx)
+                    .mono_font
+                    .clone()
+                    .unwrap_or_else(|| "Menlo".to_owned()),
+            )
             .text_sm()
             .whitespace_normal()
             .child(text.clone())
@@ -72,7 +83,11 @@ pub fn render(path: &Path, content: &ViewerContent, _: &mut Window, cx: &mut Con
         }
         ViewerContent::Error(error) => widgets::muted(error.clone(), cx).into_any_element(),
     };
-    div().flex().flex_col().child(header).child(div().px_5().pb_5().child(body))
+    div()
+        .flex()
+        .flex_col()
+        .child(header)
+        .child(div().px_5().pb_5().child(body))
 }
 
 impl Workspace {
@@ -101,7 +116,10 @@ impl Workspace {
             cx,
             move |client| async move { client.projects().read_output(asked).await },
             move |ws, result, cx| {
-                if let Some(Modal::Viewer { path: open, content }) = &mut ws.modal
+                if let Some(Modal::Viewer {
+                    path: open,
+                    content,
+                }) = &mut ws.modal
                     && *open == path
                 {
                     *content = match result {
@@ -129,9 +147,8 @@ pub fn kind(path: &Path) -> OutputKind {
         .to_ascii_lowercase();
     match extension.as_str() {
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => OutputKind::Image,
-        "pdf" | "docx" | "doc" | "odt" | "rtf" | "csv" | "tsv" | "xlsx" | "xls" | "pptx" | "epub" => {
-            OutputKind::Document
-        }
+        "pdf" | "docx" | "doc" | "odt" | "rtf" | "csv" | "tsv" | "xlsx" | "xls" | "pptx"
+        | "epub" => OutputKind::Document,
         "" => OutputKind::Other,
         _ => OutputKind::Text,
     }

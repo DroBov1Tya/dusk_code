@@ -32,7 +32,9 @@ pub enum Shelf {
 
 pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let Some(settings) = ws.settings.clone() else {
-        return div().id("connectors").child(widgets::muted("Loading...", cx));
+        return div()
+            .id("connectors")
+            .child(widgets::muted("Loading...", cx));
     };
     let counts = [
         (Shelf::Connectors, "Connectors", settings.mcp.len()),
@@ -42,8 +44,12 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         (Shelf::Agents, "Agents", 0),
     ];
     let theme = cx.theme();
-    let (foreground, muted, accent, border) =
-        (theme.foreground, theme.muted_foreground, theme.primary, theme.border);
+    let (foreground, muted, accent, border) = (
+        theme.foreground,
+        theme.muted_foreground,
+        theme.primary,
+        theme.border,
+    );
     let mut tabs = div().flex().flex_row().gap_6().px_6().pt_5();
     for (shelf, label, count) in counts {
         let active = ws.shelf == shelf;
@@ -57,7 +63,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .pb_1()
                 .cursor_pointer()
                 .border_b_2()
-                .border_color(if active { accent } else { gpui_kit::transparent_black() })
+                .border_color(if active {
+                    accent
+                } else {
+                    gpui_kit::transparent_black()
+                })
                 .text_color(if active { foreground } else { muted })
                 .text_base()
                 .child(label)

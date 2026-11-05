@@ -25,9 +25,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .px_2()
         .pt_3()
         .child(
-            nav_row("nav-new", IconName::Plus, "New chat", false, cx).on_click(cx.listener(
-                |ws, _, window, cx| ws.new_chat(None, window, cx),
-            )),
+            nav_row("nav-new", IconName::Plus, "New chat", false, cx)
+                .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),
         )
         .child(
             nav_row("nav-search", IconName::Search, "Search", false, cx).on_click(cx.listener(
@@ -38,25 +37,43 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             )),
         )
         .child(
-            nav_row("nav-artifacts", IconName::LayoutDashboard, "Artifacts", ws.center == Center::Artifacts, cx)
-                .on_click(cx.listener(|ws, _, _, cx| {
-                    ws.center = Center::Artifacts;
-                    ws.load_outputs(cx);
-                })),
+            nav_row(
+                "nav-artifacts",
+                IconName::LayoutDashboard,
+                "Artifacts",
+                ws.center == Center::Artifacts,
+                cx,
+            )
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.center = Center::Artifacts;
+                ws.load_outputs(cx);
+            })),
         )
         .child(
-            nav_row("nav-connectors", IconName::Network, "Connectors", ws.center == Center::Connectors, cx)
-                .on_click(cx.listener(|ws, _, _, cx| {
-                    ws.center = Center::Connectors;
-                    ws.load_settings(cx);
-                })),
+            nav_row(
+                "nav-connectors",
+                IconName::Network,
+                "Connectors",
+                ws.center == Center::Connectors,
+                cx,
+            )
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.center = Center::Connectors;
+                ws.load_settings(cx);
+            })),
         )
         .child(
-            nav_row("nav-settings", IconName::Settings, "Settings", ws.center == Center::Settings, cx)
-                .on_click(cx.listener(|ws, _, _, cx| {
-                    ws.center = Center::Settings;
-                    ws.load_settings(cx);
-                })),
+            nav_row(
+                "nav-settings",
+                IconName::Settings,
+                "Settings",
+                ws.center == Center::Settings,
+                cx,
+            )
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.center = Center::Settings;
+                ws.load_settings(cx);
+            })),
         );
     div()
         .w(px(WIDTH))
@@ -79,7 +96,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         )
 }
 
-fn nav_row(id: &'static str, icon: IconName, label: &'static str, active: bool, cx: &App) -> Stateful<Div> {
+fn nav_row(
+    id: &'static str,
+    icon: IconName,
+    label: &'static str,
+    active: bool,
+    cx: &App,
+) -> Stateful<Div> {
     let muted = cx.theme().muted_foreground;
     widgets::row(id, active, cx)
         .h(px(32.))

@@ -14,8 +14,14 @@ use crate::{chat::links, widgets, workspace::Workspace};
 #[derive(Clone)]
 pub enum Detail {
     Mcp(String),
-    Skill { name: String, file: Option<NodeText> },
-    Agent { name: String, file: Option<NodeText> },
+    Skill {
+        name: String,
+        file: Option<NodeText>,
+    },
+    Agent {
+        name: String,
+        file: Option<NodeText>,
+    },
     Plugin(String),
     Tool(String),
 }
@@ -31,8 +37,12 @@ impl Detail {
 
 pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (muted, success, danger, warning) =
-        (theme.muted_foreground, theme.success, theme.danger, theme.warning);
+    let (muted, success, danger, warning) = (
+        theme.muted_foreground,
+        theme.success,
+        theme.danger,
+        theme.warning,
+    );
     let page = div().flex().flex_col().gap_3().p_5();
     let Some(settings) = &ws.settings else {
         return page.child(widgets::muted("Loading...", cx));
@@ -50,9 +60,15 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
             };
             let mut page = page
                 .child(div().text_sm().text_color(color).child(state))
-                .child(div().text_xs().text_color(muted).child(server.target.clone()));
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(server.target.clone()),
+                );
             if server.tools.is_empty() {
-                page = page.child(widgets::muted("Its tools show once the server is ready.", cx).px_0());
+                page = page
+                    .child(widgets::muted("Its tools show once the server is ready.", cx).px_0());
             }
             for tool in &server.tools {
                 let short = tool
@@ -63,7 +79,12 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 page = page.child(row(
                     &short,
                     &tool.description,
-                    toggle(&tool.name, tool.enabled, CoreSwitch::Tool(tool.name.clone()), cx),
+                    toggle(
+                        &tool.name,
+                        tool.enabled,
+                        CoreSwitch::Tool(tool.name.clone()),
+                        cx,
+                    ),
                     cx,
                 ));
             }
@@ -76,10 +97,18 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
             page.child(row(
                 kind_label(tool.kind.name()),
                 "",
-                toggle(&tool.name, tool.enabled, CoreSwitch::Tool(tool.name.clone()), cx),
+                toggle(
+                    &tool.name,
+                    tool.enabled,
+                    CoreSwitch::Tool(tool.name.clone()),
+                    cx,
+                ),
                 cx,
             ))
-            .child(links::markdown("tool-description", tool.description.clone()))
+            .child(links::markdown(
+                "tool-description",
+                tool.description.clone(),
+            ))
         }
         Detail::Plugin(name) => {
             let Some(plugin) = ws.status.plugins.iter().find(|plugin| &plugin.name == name) else {
@@ -91,7 +120,10 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                     plugin.version,
                     plugin.parts.join(", ")
                 )))
-                .child(links::markdown("plugin-description", plugin.description.clone()));
+                .child(links::markdown(
+                    "plugin-description",
+                    plugin.description.clone(),
+                ));
             if !plugin.missing_settings.is_empty() {
                 page = page.child(div().text_sm().text_color(warning).child(format!(
                     "Needs settings: {}",
@@ -193,8 +225,9 @@ impl Workspace {
             },
             |ws, result, cx| match result {
                 Ok(text) => {
-                    if let Some(Modal::Detail(Detail::Skill { file, .. } | Detail::Agent { file, .. })) =
-                        &mut ws.modal
+                    if let Some(Modal::Detail(
+                        Detail::Skill { file, .. } | Detail::Agent { file, .. },
+                    )) = &mut ws.modal
                     {
                         *file = Some(text);
                         cx.notify();

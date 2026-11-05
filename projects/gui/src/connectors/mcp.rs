@@ -15,15 +15,22 @@ use crate::{modal::detail::Detail, widgets, workspace::Workspace};
 
 pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (success, warning, danger, muted) =
-        (theme.success, theme.warning, theme.danger, theme.muted_foreground);
+    let (success, warning, danger, muted) = (
+        theme.success,
+        theme.warning,
+        theme.danger,
+        theme.muted_foreground,
+    );
     let servers: Vec<_> = settings
         .mcp
         .iter()
         .filter(|server| matches(query, &[&server.name, &server.target]))
         .collect();
     if servers.is_empty() {
-        return div().child(widgets::muted("No MCP servers. Add one to the config's mcp section.", cx));
+        return div().child(widgets::muted(
+            "No MCP servers. Add one to the config's mcp section.",
+            cx,
+        ));
     }
     let mut cards = grid();
     for server in servers {
@@ -67,19 +74,27 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
                 CoreSwitch::Mcp(name.clone()),
                 cx,
             ));
-        let kind = if server.remote { "MCP · remote" } else { "MCP · local" };
-        cards = cards.child(card::render(
-            card::Card {
-                id: SharedString::from(format!("mcp-card-{name}")),
-                name: server.name.clone(),
-                kind: kind.to_owned(),
-                description,
-                state: Some((state, color)),
-            },
-            actions,
-            cx,
-        )
-        .on_click(cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Mcp(open.clone()), cx))));
+        let kind = if server.remote {
+            "MCP · remote"
+        } else {
+            "MCP · local"
+        };
+        cards = cards.child(
+            card::render(
+                card::Card {
+                    id: SharedString::from(format!("mcp-card-{name}")),
+                    name: server.name.clone(),
+                    kind: kind.to_owned(),
+                    description,
+                    state: Some((state, color)),
+                },
+                actions,
+                cx,
+            )
+            .on_click(
+                cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Mcp(open.clone()), cx)),
+            ),
+        );
     }
     cards
 }

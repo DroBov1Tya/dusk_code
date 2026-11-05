@@ -58,7 +58,13 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             .h(px(36.))
             .px_4()
             .cursor_pointer()
-            .child(div().flex_1().text_sm().font_weight(FontWeight::MEDIUM).child(*title))
+            .child(
+                div()
+                    .flex_1()
+                    .text_sm()
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(*title),
+            )
             .child(widgets::icon(
                 if open {
                     IconName::ChevronDown
@@ -121,7 +127,11 @@ trait WhenBorder {
 
 impl WhenBorder for Div {
     fn when_border(self, on: bool, color: Hsla) -> Self {
-        if on { self.border_t_1().border_color(color) } else { self }
+        if on {
+            self.border_t_1().border_color(color)
+        } else {
+            self
+        }
     }
 }
 
@@ -160,7 +170,8 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Context => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Environment | Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {}
+            Right::Environment | Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {
+            }
         }
     }
 }

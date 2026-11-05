@@ -3,12 +3,7 @@
 
 use dusk_protocol::{client::Switch as CoreSwitch, config::ApprovalPolicy};
 use gpui_kit::{
-    component::{
-        Sizable,
-        button::Button,
-        input::Input,
-        switch::Switch,
-    },
+    component::{Sizable, button::Button, input::Input, switch::Switch},
     *,
 };
 
@@ -22,7 +17,10 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
             body = body
                 .child(line(
                     "Model",
-                    &ws.status.model.clone().unwrap_or_else(|| "none chosen".to_owned()),
+                    &ws.status
+                        .model
+                        .clone()
+                        .unwrap_or_else(|| "none chosen".to_owned()),
                     cx,
                 ))
                 .child(
@@ -53,40 +51,139 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
         }
         SettingsPage::Safety => {
             for (label, hint, policy) in [
-                ("Sandbox", "Commands run confined to the project", ApprovalPolicy::Sandbox),
-                ("Arbiter", "A second model answers the approvals", ApprovalPolicy::Arbiter),
-                ("Full access", "No questions; only for trusted work", ApprovalPolicy::FullAccess),
+                (
+                    "Sandbox",
+                    "Commands run confined to the project",
+                    ApprovalPolicy::Sandbox,
+                ),
+                (
+                    "Arbiter",
+                    "A second model answers the approvals",
+                    ApprovalPolicy::Arbiter,
+                ),
+                (
+                    "Full access",
+                    "No questions; only for trusted work",
+                    ApprovalPolicy::FullAccess,
+                ),
             ] {
                 let on = ws.status.approvals == policy;
-                body = body.child(line(label, hint, cx).child(
-                    Switch::new(SharedString::from(format!("policy-{label}")))
-                        .checked(on)
-                        .small()
-                        .on_click(cx.listener(move |ws, on: &bool, _, cx| {
-                            ws.switch(CoreSwitch::Approvals(policy), *on, cx);
-                        })),
-                ));
+                body = body.child(
+                    line(label, hint, cx).child(
+                        Switch::new(SharedString::from(format!("policy-{label}")))
+                            .checked(on)
+                            .small()
+                            .on_click(cx.listener(move |ws, on: &bool, _, cx| {
+                                ws.switch(CoreSwitch::Approvals(policy), *on, cx);
+                            })),
+                    ),
+                );
             }
-            body = body.child(widgets::muted("With all off, the agent asks before risky actions.", cx).px_0());
+            body = body.child(
+                widgets::muted("With all off, the agent asks before risky actions.", cx).px_0(),
+            );
         }
         SettingsPage::Memory => {
             if let Some(settings) = ws.settings.clone() {
                 body = body
-                    .child(switch_line("Memory", "What the agents remember between chats", settings.memory.enabled, CoreSwitch::Memory, cx))
-                    .child(switch_line("Work history", "A summary of past work in each project", settings.work_history.enabled, CoreSwitch::WorkHistory, cx));
+                    .child(switch_line(
+                        "Memory",
+                        "What the agents remember between chats",
+                        settings.memory.enabled,
+                        CoreSwitch::Memory,
+                        cx,
+                    ))
+                    .child(switch_line(
+                        "Work history",
+                        "A summary of past work in each project",
+                        settings.work_history.enabled,
+                        CoreSwitch::WorkHistory,
+                        cx,
+                    ));
             }
         }
         SettingsPage::Advanced => {
             if let Some(settings) = ws.settings.clone() {
                 body = body
-                    .child(switch_line("Log files", "Written on this machine only", settings.logging, CoreSwitch::Logging, cx))
-                    .child(line("Agents at work at once", &settings.max_agents_at_work.to_string(), cx))
-                    .child(line("Goal rounds", &settings.max_goal_rounds.to_string(), cx));
+                    .child(switch_line(
+                        "Log files",
+                        "Written on this machine only",
+                        settings.logging,
+                        CoreSwitch::Logging,
+                        cx,
+                    ))
+                    .child(
+                        line(
+                            "Agents at work at once",
+                            "Subagents that may run at the same time",
+                            cx,
+                        )
+                        .child(stepper(
+                            "agents",
+                            settings.max_agents_at_work as u64,
+                            1,
+                            32,
+                            |ws, value, cx| ws.set_limit(Limit::Agents, value, cx),
+                            cx,
+                        )),
+                    )
+                    .child(
+                        line(
+                            "Goal rounds",
+                            "How many rounds a goal may take before it stops",
+                            cx,
+                        )
+                        .child(stepper(
+                            "rounds",
+                            u64::from(settings.max_goal_rounds),
+                            1,
+                            200,
+                            |ws, value, cx| ws.set_limit(Limit::Rounds, value, cx),
+                            cx,
+                        )),
+                    );
             }
         }
-        SettingsPage::Appearance => {}
+        SettingsPage::Appearance | SettingsPage::Updates | SettingsPage::Usage => {}
     }
     body
+}
+
+#[derive(Clone, Copy)]
+enum Limit {
+    Agents,
+    Rounds,
+}
+
+/// A number with a minus and a plus, kept inside its bounds.
+fn stepper(
+    id: &'static str,
+    value: u64,
+    min: u64,
+    max: u64,
+    set: fn(&mut Workspace, u64, &mut Context<Workspace>),
+    cx: &mut Context<Workspace>,
+) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .child(
+            Button::new(SharedString::from(format!("{id}-less")))
+                .xsmall()
+                .label("−")
+                .on_click(
+                    cx.listener(move |ws, _, _, cx| set(ws, value.saturating_sub(1).max(min), cx)),
+                ),
+        )
+        .child(div().w(px(32.)).text_center().child(value.to_string()))
+        .child(
+            Button::new(SharedString::from(format!("{id}-more")))
+                .xsmall()
+                .label("+")
+                .on_click(cx.listener(move |ws, _, _, cx| set(ws, (value + 1).min(max), cx))),
+        )
 }
 
 fn switch_line(
@@ -117,10 +214,29 @@ impl Workspace {
         );
     }
 
+    fn set_limit(&mut self, limit: Limit, value: u64, cx: &mut Context<Self>) {
+        self.core.call(
+            cx,
+            move |client| async move {
+                match limit {
+                    Limit::Agents => client.settings().max_agents_at_work(value as usize).await,
+                    Limit::Rounds => client.settings().max_goal_rounds(value as u32).await,
+                }
+            },
+            |ws, result, cx| match result {
+                Ok(()) => ws.load_settings(cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
     /// A model the provider does not list, typed as provider/model.
     pub fn use_typed_model(&mut self, cx: &mut Context<Self>) {
         let name = self.model_input.read(cx).value().trim().to_owned();
-        if name.split_once('/').is_none_or(|(p, m)| p.is_empty() || m.is_empty()) {
+        if name
+            .split_once('/')
+            .is_none_or(|(p, m)| p.is_empty() || m.is_empty())
+        {
             self.fail(anyhow::anyhow!("write the model as provider/model"), cx);
             return;
         }

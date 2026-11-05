@@ -22,8 +22,12 @@ const KINDS: &[(Option<OutputKind>, &str)] = &[
 
 pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
-    let (foreground, muted, accent, border) =
-        (theme.foreground, theme.muted_foreground, theme.primary, theme.border);
+    let (foreground, muted, accent, border) = (
+        theme.foreground,
+        theme.muted_foreground,
+        theme.primary,
+        theme.border,
+    );
     let mut tabs = div().flex().flex_row().items_center().gap_6().px_6().pt_5();
     for (kind, label) in KINDS {
         let kind = *kind;
@@ -72,8 +76,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         grid = grid.child(card(index, file, cx));
     }
     let body = if files.is_empty() {
-        widgets::muted("Nothing here yet. Files the agents write in the workspace show here.", cx)
-            .into_any_element()
+        widgets::muted(
+            "Nothing here yet. Files the agents write in the workspace show here.",
+            cx,
+        )
+        .into_any_element()
     } else {
         grid.into_any_element()
     };
@@ -88,7 +95,12 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
 
 fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, surface, border, raised) = (theme.muted_foreground, theme.muted, theme.border, theme.accent);
+    let (muted, surface, border, raised) = (
+        theme.muted_foreground,
+        theme.muted,
+        theme.border,
+        theme.accent,
+    );
     let name = file
         .path
         .file_name()

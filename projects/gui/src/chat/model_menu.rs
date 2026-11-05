@@ -15,16 +15,29 @@ use crate::{
 /// How many models of the current provider the menu lists before More models.
 const FIRST: usize = 6;
 const WIDTH: f32 = 300.;
-const EFFORTS: &[&str] = &["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
+const EFFORTS: &[&str] = &[
+    "default", "off", "minimal", "low", "medium", "high", "xhigh", "max",
+];
 
-pub fn render(ws: &Workspace, picker: Picker, effort: &str, cx: &mut Context<Workspace>) -> Stateful<Div> {
+pub fn render(
+    ws: &Workspace,
+    picker: Picker,
+    effort: &str,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
     let current = ws.status.model.clone().unwrap_or_default();
     let provider = current.split('/').next().unwrap_or_default();
     let mut main = panel(cx);
-    let mine = ws.providers.iter().find(|p| p.name == provider).or(ws.providers.first());
+    let mine = ws
+        .providers
+        .iter()
+        .find(|p| p.name == provider)
+        .or(ws.providers.first());
     match mine.map(|p| (p, &p.models)) {
         None => main = main.child(widgets::muted("Loading the models...", cx)),
-        Some((p, Err(error))) => main = main.child(widgets::muted(format!("{}: {error}", p.name), cx)),
+        Some((p, Err(error))) => {
+            main = main.child(widgets::muted(format!("{}: {error}", p.name), cx))
+        }
         Some((p, Ok(models))) => {
             for (index, model) in models.iter().take(FIRST).enumerate() {
                 let name = format!("{}/{}", p.name, model.id);
@@ -35,12 +48,24 @@ pub fn render(ws: &Workspace, picker: Picker, effort: &str, cx: &mut Context<Wor
     main = main
         .child(separator(cx))
         .child(
-            submenu_row("menu-effort", "Effort", Some(capitalize(effort)), picker == Picker::Effort, cx)
-                .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::Effort, cx))),
+            submenu_row(
+                "menu-effort",
+                "Effort",
+                Some(capitalize(effort)),
+                picker == Picker::Effort,
+                cx,
+            )
+            .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::Effort, cx))),
         )
         .child(
-            submenu_row("menu-more", "More models", None, picker == Picker::MoreModels, cx)
-                .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::MoreModels, cx))),
+            submenu_row(
+                "menu-more",
+                "More models",
+                None,
+                picker == Picker::MoreModels,
+                cx,
+            )
+            .on_click(cx.listener(|ws, _, _, cx| ws.open_submenu(Picker::MoreModels, cx))),
         )
         .child(separator(cx))
         .child(
@@ -96,7 +121,13 @@ fn panel(cx: &App) -> Div {
         .text_sm()
 }
 
-fn model_row(name: &str, label: &str, current: &str, key: Option<usize>, cx: &mut Context<Workspace>) -> Stateful<Div> {
+fn model_row(
+    name: &str,
+    label: &str,
+    current: &str,
+    key: Option<usize>,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
     let muted = cx.theme().muted_foreground;
     let accent = cx.theme().primary;
     let chosen = name == current;
@@ -104,14 +135,27 @@ fn model_row(name: &str, label: &str, current: &str, key: Option<usize>, cx: &mu
     widgets::row(SharedString::from(format!("model-{name}")), false, cx)
         .py_1p5()
         .child(div().flex_1().min_w_0().truncate().child(label.to_owned()))
-        .when(chosen, |row| row.child(widgets::icon(IconName::Check, accent)))
+        .when(chosen, |row| {
+            row.child(widgets::icon(IconName::Check, accent))
+        })
         .when(!chosen && key.is_some(), |row| {
-            row.child(div().text_xs().text_color(muted).child(key.unwrap_or_default().to_string()))
+            row.child(
+                div()
+                    .text_xs()
+                    .text_color(muted)
+                    .child(key.unwrap_or_default().to_string()),
+            )
         })
         .on_click(cx.listener(move |ws, _, _, cx| ws.choose_model(target.clone(), cx)))
 }
 
-fn submenu_row(id: &'static str, label: &'static str, value: Option<String>, open: bool, cx: &App) -> Stateful<Div> {
+fn submenu_row(
+    id: &'static str,
+    label: &'static str,
+    value: Option<String>,
+    open: bool,
+    cx: &App,
+) -> Stateful<Div> {
     let muted = cx.theme().muted_foreground;
     widgets::row(id, open, cx)
         .py_1p5()
@@ -132,7 +176,9 @@ fn efforts(effort: &str, cx: &mut Context<Workspace>) -> Div {
             widgets::row(SharedString::from(format!("effort-{level}")), false, cx)
                 .py_1p5()
                 .child(div().flex_1().child(capitalize(level)))
-                .when(*level == effort, |row| row.child(widgets::icon(IconName::Check, accent)))
+                .when(*level == effort, |row| {
+                    row.child(widgets::icon(IconName::Check, accent))
+                })
                 .on_click(cx.listener(move |ws, _, _, cx| ws.choose_effort(level, cx))),
         );
     }
@@ -140,7 +186,12 @@ fn efforts(effort: &str, cx: &mut Context<Workspace>) -> Div {
 }
 
 fn all_models(ws: &Workspace, current: &str, cx: &mut Context<Workspace>) -> Div {
-    let mut scroll = div().id("all-models").max_h(px(420.)).flex().flex_col().overflow_y_scroll();
+    let mut scroll = div()
+        .id("all-models")
+        .max_h(px(420.))
+        .flex()
+        .flex_col()
+        .overflow_y_scroll();
     for provider in &ws.providers {
         scroll = scroll.child(widgets::heading(provider.name.clone(), cx));
         match &provider.models {

@@ -28,7 +28,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .p_3()
                 .rounded_lg()
                 .border_1()
-                .border_color(if chosen { hex(palette.accent) } else { cx.theme().border })
+                .border_color(if chosen {
+                    hex(palette.accent)
+                } else {
+                    cx.theme().border
+                })
                 .bg(hex(palette.background))
                 .cursor_pointer()
                 .child(
@@ -40,8 +44,20 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                         .flex_col()
                         .gap_1()
                         .p_2()
-                        .child(div().h(px(6.)).w(relative(0.6)).rounded_sm().bg(hex(palette.muted)))
-                        .child(div().h(px(6.)).w(relative(0.4)).rounded_sm().bg(hex(palette.accent))),
+                        .child(
+                            div()
+                                .h(px(6.))
+                                .w(relative(0.6))
+                                .rounded_sm()
+                                .bg(hex(palette.muted)),
+                        )
+                        .child(
+                            div()
+                                .h(px(6.))
+                                .w(relative(0.4))
+                                .rounded_sm()
+                                .bg(hex(palette.accent)),
+                        ),
                 )
                 .child(
                     div()
@@ -49,7 +65,13 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                         .flex_row()
                         .items_center()
                         .gap_1()
-                        .child(div().flex_1().text_sm().text_color(hex(palette.foreground)).child(name))
+                        .child(
+                            div()
+                                .flex_1()
+                                .text_sm()
+                                .text_color(hex(palette.foreground))
+                                .child(name),
+                        )
                         .child(swatch(palette.surface))
                         .child(swatch(palette.accent)),
                 )
@@ -107,20 +129,43 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .child(widgets::caption("Theme", cx).px_0())
         .child(themes)
         .child(widgets::caption("Fonts", cx).px_0())
-        .child(line("Interface size", "Text in every column", cx).child(sizes(prefs.font_size, theme::FONT_SIZES, false, cx)))
-        .child(line("Code size", "Commands, paths and code", cx).child(sizes(prefs.mono_size, theme::MONO_SIZES, true, cx)))
         .child(
-            line(
-                "Interface font",
-                &format!("Now {}", prefs.font.clone().unwrap_or_else(|| "the system font".to_owned())),
+            line("Interface size", "Text in every column", cx).child(sizes(
+                prefs.font_size,
+                theme::FONT_SIZES,
+                false,
                 cx,
-            ),
+            )),
         )
+        .child(
+            line("Code size", "Commands, paths and code", cx).child(sizes(
+                prefs.mono_size,
+                theme::MONO_SIZES,
+                true,
+                cx,
+            )),
+        )
+        .child(line(
+            "Interface font",
+            &format!(
+                "Now {}",
+                prefs
+                    .font
+                    .clone()
+                    .unwrap_or_else(|| "the system font".to_owned())
+            ),
+            cx,
+        ))
         .child(div().pt_2().child(Input::new(&ws.font_search)))
         .child(div().pt_2().child(fonts))
 }
 
-fn font_row(label: &str, family: Option<String>, chosen: bool, cx: &mut Context<Workspace>) -> Stateful<Div> {
+fn font_row(
+    label: &str,
+    family: Option<String>,
+    chosen: bool,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
     let shown = family.clone();
     widgets::row(SharedString::from(format!("font-{label}")), chosen, cx)
         .child(
@@ -155,7 +200,11 @@ trait WhenSelected {
 
 impl WhenSelected for Button {
     fn when_selected(self, selected: bool) -> Self {
-        if selected { self.primary() } else { self.ghost() }
+        if selected {
+            self.primary()
+        } else {
+            self.ghost()
+        }
     }
 }
 

@@ -13,15 +13,33 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (muted, track, foreground) = (theme.muted_foreground, theme.border, theme.foreground);
     // One color per part, the largest first; the rest share a quiet grey.
-    let colors = [theme.primary, theme.cyan, theme.success, theme.warning, theme.magenta, theme.blue];
+    let colors = [
+        theme.primary,
+        theme.cyan,
+        theme.success,
+        theme.warning,
+        theme.magenta,
+        theme.blue,
+    ];
     let limit = report.limit.max(1) as f32;
     let share = |tokens: u64| (tokens as f32 / limit).min(1.);
     let mut parts: Vec<_> = report.sections.iter().collect();
     parts.sort_by_key(|section| std::cmp::Reverse(section.tokens));
     let color = |index: usize| colors.get(index).copied().unwrap_or(muted.opacity(0.6));
-    let mut bar = div().flex().flex_row().h(px(8.)).rounded_full().overflow_hidden().bg(track);
+    let mut bar = div()
+        .flex()
+        .flex_row()
+        .h(px(8.))
+        .rounded_full()
+        .overflow_hidden()
+        .bg(track);
     for (index, section) in parts.iter().enumerate() {
-        bar = bar.child(div().h_full().w(relative(share(section.tokens))).bg(color(index)));
+        bar = bar.child(
+            div()
+                .h_full()
+                .w(relative(share(section.tokens)))
+                .bg(color(index)),
+        );
     }
     let row = |swatch: Hsla, name: String, tokens: u64| {
         div()
@@ -31,9 +49,27 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .gap_2()
             .text_sm()
             .child(div().size(px(10.)).rounded_sm().bg(swatch))
-            .child(div().flex_1().min_w_0().truncate().text_color(foreground.opacity(0.85)).child(name))
-            .child(div().w(px(56.)).text_right().text_color(muted).child(short(tokens)))
-            .child(div().w(px(48.)).text_right().child(format!("{:.1}%", share(tokens) * 100.)))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_color(foreground.opacity(0.85))
+                    .child(name),
+            )
+            .child(
+                div()
+                    .w(px(56.))
+                    .text_right()
+                    .text_color(muted)
+                    .child(short(tokens)),
+            )
+            .child(
+                div()
+                    .w(px(48.))
+                    .text_right()
+                    .child(format!("{:.1}%", share(tokens) * 100.)),
+            )
     };
     let used = report.total.min(report.limit);
     let mut column = div()
@@ -47,7 +83,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .flex_row()
                 .justify_between()
                 .child(format!("{:.0}% used", share(report.total) * 100.))
-                .child(div().text_color(muted).child(format!("{} / {}", short(report.total), short(report.limit)))),
+                .child(div().text_color(muted).child(format!(
+                    "{} / {}",
+                    short(report.total),
+                    short(report.limit)
+                ))),
         )
         .child(bar);
     for (index, section) in parts.iter().enumerate() {

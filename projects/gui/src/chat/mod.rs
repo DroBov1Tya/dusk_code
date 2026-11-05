@@ -7,6 +7,7 @@ pub mod links;
 mod messages;
 mod model_bar;
 mod model_menu;
+mod navigator;
 mod ring;
 pub mod transcript;
 mod working;
@@ -67,7 +68,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .gap_2()
                 .border_b_1()
                 .border_color(border)
-                .child(div().font_weight(FontWeight::SEMIBOLD).truncate().child(title))
+                .child(
+                    div()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .truncate()
+                        .child(title),
+                )
                 .when(!project.is_empty(), |header| {
                     header.child(widgets::badge(project, cx.theme().muted_foreground))
                 }),

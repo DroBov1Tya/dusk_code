@@ -39,7 +39,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Di
                 widgets::row("menu-rename", false, cx)
                     .child(widgets::icon(IconName::Replace, muted))
                     .child("Rename")
-                    .on_click(cx.listener(move |ws, _, window, cx| ws.ask_rename(&rename, window, cx))),
+                    .on_click(
+                        cx.listener(move |ws, _, window, cx| ws.ask_rename(&rename, window, cx)),
+                    ),
             )
             .child(
                 widgets::row("menu-pin", false, cx)

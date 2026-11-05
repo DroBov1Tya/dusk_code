@@ -18,7 +18,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     };
     let theme = cx.theme();
     let muted = theme.muted_foreground;
-    let Some(branch) = git.branch.clone().or_else(|| (!git.branches.is_empty()).then(|| "detached".to_owned())) else {
+    let Some(branch) = git
+        .branch
+        .clone()
+        .or_else(|| (!git.branches.is_empty()).then(|| "detached".to_owned()))
+    else {
         return div().child(widgets::muted("Not a git repository.", cx));
     };
     let sync = git
@@ -37,7 +41,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .px_3()
                 .pt_3()
                 .child(widgets::icon(IconName::Github, theme.primary))
-                .child(div().font_weight(FontWeight::SEMIBOLD).child(branch.clone()))
+                .child(
+                    div()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(branch.clone()),
+                )
                 .child(div().text_xs().text_color(muted).child(sync))
                 .child(div().flex_1())
                 .child(
@@ -48,7 +56,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                         .on_click(cx.listener(|ws, _, _, cx| ws.load_git(cx))),
                 ),
         )
-        .child(widgets::heading(format!("Changes ({})", git.changes.len()), cx));
+        .child(widgets::heading(
+            format!("Changes ({})", git.changes.len()),
+            cx,
+        ));
     for change in git.changes.iter().take(200) {
         column = column.child(
             div()
@@ -92,7 +103,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .flex()
                     .flex_col()
                     .child(tree.branch.clone().unwrap_or_else(|| "detached".to_owned()))
-                    .child(div().text_color(muted).truncate().child(tree.path.display().to_string())),
+                    .child(
+                        div()
+                            .text_color(muted)
+                            .truncate()
+                            .child(tree.path.display().to_string()),
+                    ),
             );
         }
     }

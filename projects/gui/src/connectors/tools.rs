@@ -32,7 +32,12 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
         let mut cards = grid();
         for tool in tools {
             let open = tool.name.clone();
-            let line = tool.description.lines().next().unwrap_or_default().to_owned();
+            let line = tool
+                .description
+                .lines()
+                .next()
+                .unwrap_or_default()
+                .to_owned();
             cards = cards.child(
                 card::render(
                     card::Card {
@@ -50,18 +55,19 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
                     ),
                     cx,
                 )
-                .on_click(cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Tool(open.clone()), cx))),
+                .on_click(
+                    cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Tool(open.clone()), cx)),
+                ),
             );
         }
-        page = page.child(widgets::caption(capitalize(kind.name()), cx).px_0()).child(cards);
+        page = page
+            .child(widgets::caption(capitalize(kind.name()), cx).px_0())
+            .child(cards);
     }
-    page.child(
-        div()
-            .pt_2()
-            .text_xs()
-            .text_color(muted)
-            .child(format!("Switches apply to the {} mode. MCP tools are under Connectors.", settings.mode)),
-    )
+    page.child(div().pt_2().text_xs().text_color(muted).child(format!(
+        "Switches apply to the {} mode. MCP tools are under Connectors.",
+        settings.mode
+    )))
 }
 
 fn capitalize(text: &str) -> String {

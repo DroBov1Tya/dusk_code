@@ -25,7 +25,10 @@ pub fn render(share: f32, fill: Hsla, track: Hsla) -> impl IntoElement {
                     let mut path = PathBuilder::stroke(px(2.5));
                     for step in 0..=STEPS {
                         let angle = from + (to - from) * step as f32 / STEPS as f32 - FRAC_PI_2;
-                        let at = point(center.x + radius * angle.cos(), center.y + radius * angle.sin());
+                        let at = point(
+                            center.x + radius * angle.cos(),
+                            center.y + radius * angle.sin(),
+                        );
                         if step == 0 {
                             path.move_to(at);
                         } else {

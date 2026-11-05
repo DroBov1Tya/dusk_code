@@ -22,25 +22,43 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
             SkillKind::Own => "Skill · yours".to_owned(),
             SkillKind::Other => format!("Skill · {}", skill.source.as_deref().unwrap_or("other")),
         };
-        cards = cards.child(card::render(
-            card::Card {
-                id: SharedString::from(format!("skill-card-{}", skill.name)),
-                name: skill.name.clone(),
-                kind,
-                description: skill.problem.clone().unwrap_or_else(|| skill.description.clone()),
-                state: skill.problem.as_ref().map(|_| ("Problem".to_owned(), danger)),
-            },
-            toggle(
-                format!("skill-{}", skill.name),
-                skill.enabled,
-                CoreSwitch::Skill(skill.name.clone()),
+        cards = cards.child(
+            card::render(
+                card::Card {
+                    id: SharedString::from(format!("skill-card-{}", skill.name)),
+                    name: skill.name.clone(),
+                    kind,
+                    description: skill
+                        .problem
+                        .clone()
+                        .unwrap_or_else(|| skill.description.clone()),
+                    state: skill
+                        .problem
+                        .as_ref()
+                        .map(|_| ("Problem".to_owned(), danger)),
+                },
+                toggle(
+                    format!("skill-{}", skill.name),
+                    skill.enabled,
+                    CoreSwitch::Skill(skill.name.clone()),
+                    cx,
+                ),
                 cx,
-            ),
-            cx,
-        )
-        .on_click(cx.listener(move |ws, _, _, cx| {
-            ws.open_detail(Detail::Skill { name: open.clone(), file: None }, cx);
-        })));
+            )
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                ws.open_detail(
+                    Detail::Skill {
+                        name: open.clone(),
+                        file: None,
+                    },
+                    cx,
+                );
+            })),
+        );
     }
-    if any { cards } else { div().child(widgets::muted("No skills match.", cx)) }
+    if any {
+        cards
+    } else {
+        div().child(widgets::muted("No skills match.", cx))
+    }
 }

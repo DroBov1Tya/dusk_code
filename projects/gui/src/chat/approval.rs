@@ -12,7 +12,14 @@ use gpui_kit::{
 use crate::{widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let mut cards = div().flex().flex_col().gap_2().px_6().max_w(px(780.)).mx_auto().w_full();
+    let mut cards = div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .px_6()
+        .max_w(px(780.))
+        .mx_auto()
+        .w_full();
     let Some(chat) = ws.shown_chat() else {
         return cards;
     };
@@ -32,7 +39,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 Button::new(SharedString::from(format!("session-{id}")))
                     .small()
                     .label(format!("Allow {scope} for the session"))
-                    .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Session, cx))),
+                    .on_click(
+                        cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Session, cx)),
+                    ),
             );
         }
         buttons = buttons.child(
@@ -55,20 +64,31 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         for (index, option) in question.options.iter().enumerate() {
             let picked = ws.picked.contains(&index);
             let mark = if question.multiple {
-                if picked { IconName::CircleCheck } else { IconName::Square }
+                if picked {
+                    IconName::CircleCheck
+                } else {
+                    IconName::Square
+                }
             } else {
                 IconName::ChevronRight
             };
             options = options.child(
                 widgets::row(("option", index), picked, cx)
                     .h(px(36.))
-                    .child(widgets::icon(mark, if picked { cx.theme().primary } else { muted }))
+                    .child(widgets::icon(
+                        mark,
+                        if picked { cx.theme().primary } else { muted },
+                    ))
                     .child(div().flex_1().child(option.clone()))
                     .on_click(cx.listener(move |ws, _, _, cx| ws.pick(index, cx))),
             );
         }
         let mut card = card(border, surface)
-            .child(div().font_weight(FontWeight::MEDIUM).child(question.question.clone()))
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(question.question.clone()),
+            )
             .child(
                 div()
                     .text_xs()
@@ -125,7 +145,10 @@ impl Workspace {
 
     /// One choice answers at once; with several allowed, it is marked until Answer.
     fn pick(&mut self, index: usize, cx: &mut Context<Self>) {
-        let multiple = self.shown_chat().and_then(|chat| chat.question.as_ref()).is_some_and(|q| q.multiple);
+        let multiple = self
+            .shown_chat()
+            .and_then(|chat| chat.question.as_ref())
+            .is_some_and(|q| q.multiple);
         if !multiple {
             self.picked = vec![index];
             self.answer_picked(cx);

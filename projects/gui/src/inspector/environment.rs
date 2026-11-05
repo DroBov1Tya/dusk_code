@@ -41,11 +41,18 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(line(IconName::Github, branch))
         .child(line(
             IconName::Cpu,
-            ws.status.model.clone().unwrap_or_else(|| "no model".to_owned()),
+            ws.status
+                .model
+                .clone()
+                .unwrap_or_else(|| "no model".to_owned()),
         ))
         .child(line(
             IconName::Bot,
-            format!("{} mode · {:?} approvals", ws.status.mode, ws.status.approvals).to_lowercase(),
+            format!(
+                "{} mode · {:?} approvals",
+                ws.status.mode, ws.status.approvals
+            )
+            .to_lowercase(),
         ))
 }
 

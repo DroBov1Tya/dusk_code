@@ -53,7 +53,12 @@ pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> 
     let height = (children.len().max(1) as f32) * (CARD_H + GAP);
     let focus_y = height / 2. - CARD_H / 2.;
     let ends: Vec<(f32, f32)> = (0..children.len())
-        .map(|index| (focus_y + CARD_H / 2., index as f32 * (CARD_H + GAP) + CARD_H / 2.))
+        .map(|index| {
+            (
+                focus_y + CARD_H / 2.,
+                index as f32 * (CARD_H + GAP) + CARD_H / 2.,
+            )
+        })
         .collect();
     let edges = canvas(
         |_, _, _| {},
@@ -91,7 +96,11 @@ pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> 
         .border_1()
         .border_color(accent)
         .bg(surface)
-        .child(div().font_weight(FontWeight::SEMIBOLD).child(focus.name.clone()))
+        .child(
+            div()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child(focus.name.clone()),
+        )
         .child(
             div()
                 .text_xs()
@@ -144,17 +153,27 @@ fn card(
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, border, surface, accent) =
-        (theme.muted_foreground, theme.border, theme.muted, theme.primary);
+    let (muted, border, surface, accent) = (
+        theme.muted_foreground,
+        theme.border,
+        theme.muted,
+        theme.primary,
+    );
     let name = node.name.clone();
     let inside = node.children.len();
     let mut chips = div().flex().flex_row().flex_wrap().gap_1();
-    for (label, names) in [("asks", &node.links), ("asked by", asked_by.get(&node.name).unwrap_or(&Vec::new()))] {
+    for (label, names) in [
+        ("asks", &node.links),
+        ("asked by", asked_by.get(&node.name).unwrap_or(&Vec::new())),
+    ] {
         for target in names.iter().take(3) {
             let path = paths.get(target).cloned();
             chips = chips.child(
                 div()
-                    .id(SharedString::from(format!("chip-{}-{label}-{target}", node.name)))
+                    .id(SharedString::from(format!(
+                        "chip-{}-{label}-{target}",
+                        node.name
+                    )))
                     .px_1p5()
                     .rounded_sm()
                     .text_xs()
@@ -198,7 +217,14 @@ fn card(
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::MEDIUM).child(name.clone()))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .truncate()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(name.clone()),
+                )
                 .children((inside > 0).then(|| {
                     div()
                         .flex()
@@ -237,7 +263,13 @@ fn card(
                 ws.agent_path.push(enter.clone());
                 cx.notify();
             } else {
-                ws.open_detail(Detail::Agent { name: open.clone(), file: None }, cx);
+                ws.open_detail(
+                    Detail::Agent {
+                        name: open.clone(),
+                        file: None,
+                    },
+                    cx,
+                );
             }
         }))
 }
@@ -253,7 +285,11 @@ fn crumb(
     div()
         .id(id)
         .cursor_pointer()
-        .text_color(if current { theme.foreground } else { theme.muted_foreground })
+        .text_color(if current {
+            theme.foreground
+        } else {
+            theme.muted_foreground
+        })
         .child(label.to_owned())
         .on_click(cx.listener(move |ws, _, _, cx| {
             ws.agent_path.truncate(depth);
@@ -282,7 +318,8 @@ fn paths(root: &AgentNode) -> BTreeMap<String, Vec<String>> {
     fn walk(node: &AgentNode, trail: &mut Vec<String>, out: &mut BTreeMap<String, Vec<String>>) {
         for child in &node.children {
             trail.push(child.name.clone());
-            out.entry(child.name.clone()).or_insert_with(|| trail.clone());
+            out.entry(child.name.clone())
+                .or_insert_with(|| trail.clone());
             walk(child, trail, out);
             trail.pop();
         }
@@ -327,7 +364,11 @@ mod tests {
         let root = node(
             "chat",
             vec![
-                node("plan", vec![node("a", vec![], &[]), node("b", vec![], &["review"])], &[]),
+                node(
+                    "plan",
+                    vec![node("a", vec![], &[]), node("b", vec![], &["review"])],
+                    &[],
+                ),
                 node("review", vec![], &[]),
             ],
             &[],

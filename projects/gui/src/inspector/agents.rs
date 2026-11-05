@@ -34,7 +34,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                                 .flex()
                                 .flex_row()
                                 .gap_2()
-                                .child(div().font_weight(FontWeight::MEDIUM).child(agent.name.clone()))
+                                .child(
+                                    div()
+                                        .font_weight(FontWeight::MEDIUM)
+                                        .child(agent.name.clone()),
+                                )
                                 .child(widgets::badge(
                                     if agent.working { "working" } else { "done" },
                                     if agent.working { accent } else { success },

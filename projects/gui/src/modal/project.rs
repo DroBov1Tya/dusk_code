@@ -66,13 +66,20 @@ pub fn render(form: &ProjectForm, cx: &mut Context<Workspace>) -> Div {
                 ),
         )
         .child(div().h_2())
-        .child(label("Description: what the project is, for you and the agents"))
+        .child(label(
+            "Description: what the project is, for you and the agents",
+        ))
         .child(Textarea::new(&form.description).h(px(180.)))
         .child(actions)
 }
 
 impl Workspace {
-    pub fn open_form(&mut self, project: Option<Project>, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn open_form(
+        &mut self,
+        project: Option<Project>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let (id, name, description, dir) = match project {
             Some(project) => (
                 Some(project.id),
@@ -82,7 +89,10 @@ impl Workspace {
             ),
             None => Default::default(),
         };
-        let field = |placeholder: &'static str, value: String, window: &mut Window, cx: &mut Context<Self>| {
+        let field = |placeholder: &'static str,
+                     value: String,
+                     window: &mut Window,
+                     cx: &mut Context<Self>| {
             cx.new(|cx| {
                 let mut state = InputState::new(window, cx).placeholder(placeholder);
                 state.set_value(value, window, cx);
@@ -121,10 +131,12 @@ impl Workspace {
                 if let Some(Modal::Project(form)) = &ws.modal {
                     let shown = path.display().to_string();
                     let name_empty = form.name.read(cx).value().is_empty();
-                    form.dir.update(cx, |dir, cx| dir.set_value(shown, window, cx));
+                    form.dir
+                        .update(cx, |dir, cx| dir.set_value(shown, window, cx));
                     if name_empty && let Some(folder) = path.file_name() {
                         let folder = folder.to_string_lossy().into_owned();
-                        form.name.update(cx, |name, cx| name.set_value(folder, window, cx));
+                        form.name
+                            .update(cx, |name, cx| name.set_value(folder, window, cx));
                     }
                 }
             });

@@ -1,8 +1,8 @@
 //! Small pieces every column draws with.
 
 use gpui_kit::{
-    prelude::FluentBuilder,
     component::{ActiveTheme, Icon, IconName, Sizable},
+    prelude::FluentBuilder,
     *,
 };
 

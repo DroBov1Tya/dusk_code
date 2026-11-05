@@ -11,15 +11,11 @@ const DOTS: usize = 21;
 const GOLDEN: f32 = 2.399_963;
 
 pub fn render(id: impl Into<ElementId>, color: Hsla) -> impl IntoElement {
-    div()
-        .relative()
-        .size(px(SIZE))
-        .flex_none()
-        .with_animation(
-            id,
-            Animation::new(Duration::from_millis(2400)).repeat(),
-            move |figure, phase| figure.children(dots(phase, color)),
-        )
+    div().relative().size(px(SIZE)).flex_none().with_animation(
+        id,
+        Animation::new(Duration::from_millis(2400)).repeat(),
+        move |figure, phase| figure.children(dots(phase, color)),
+    )
 }
 
 fn dots(phase: f32, color: Hsla) -> Vec<Div> {

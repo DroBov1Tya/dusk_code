@@ -276,11 +276,13 @@ impl State {
         .bind(id)
         .execute(&mut *transaction)
         .await?;
-        sqlx::query(family!("DELETE FROM threads WHERE id IN (SELECT id FROM family)"))
-            .bind(id)
-            .execute(&mut *transaction)
-            .await
-            .context("delete the chat")?;
+        sqlx::query(family!(
+            "DELETE FROM threads WHERE id IN (SELECT id FROM family)"
+        ))
+        .bind(id)
+        .execute(&mut *transaction)
+        .await
+        .context("delete the chat")?;
         // Then every row left pointing at a deleted one, table by table, until none is.
         let tables: Vec<String> = sqlx::query_scalar(
             "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
@@ -340,16 +342,34 @@ mod tests {
     async fn a_deleted_chat_takes_its_agents_and_records() {
         let state = temp_state("thread-delete").await;
         state.create_thread("chat", "gui").await.unwrap();
-        state.create_agent_thread("agent", "chat", "general", "Fable-1").await.unwrap();
+        state
+            .create_agent_thread("agent", "chat", "general", "Fable-1")
+            .await
+            .unwrap();
         state.create_thread("other", "gui").await.unwrap();
-        state.set_thread_folder("chat", "2026-11-05-chat").await.unwrap();
+        state
+            .set_thread_folder("chat", "2026-11-05-chat")
+            .await
+            .unwrap();
         for id in ["chat", "agent", "other"] {
-            state.add_user_message(id, &format!("r-{id}"), "hello").await.unwrap();
-            state.add_task(id, "work", &["one".to_owned()]).await.unwrap();
+            state
+                .add_user_message(id, &format!("r-{id}"), "hello")
+                .await
+                .unwrap();
+            state
+                .add_task(id, "work", &["one".to_owned()])
+                .await
+                .unwrap();
         }
         let folders = state.delete_thread("chat").await.unwrap();
         assert_eq!(folders, ["2026-11-05-chat"]);
-        let left: Vec<String> = state.list_threads().await.unwrap().into_iter().map(|t| t.id).collect();
+        let left: Vec<String> = state
+            .list_threads()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|t| t.id)
+            .collect();
         assert_eq!(left, ["other"]);
         assert!(state.list_messages("chat").await.unwrap().is_empty());
         assert_eq!(state.list_messages("other").await.unwrap().len(), 1);

@@ -1,11 +1,17 @@
 //! The shown chat's task board, as its agents keep it.
 
-use gpui_kit::{component::{ActiveTheme, IconName}, *};
+use gpui_kit::{
+    component::{ActiveTheme, IconName},
+    *,
+};
 
 use crate::{widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let tasks = ws.shown_chat().map(|chat| chat.tasks.as_slice()).unwrap_or_default();
+    let tasks = ws
+        .shown_chat()
+        .map(|chat| chat.tasks.as_slice())
+        .unwrap_or_default();
     if tasks.is_empty() {
         return div().child(widgets::muted("No tasks in this chat.", cx));
     }

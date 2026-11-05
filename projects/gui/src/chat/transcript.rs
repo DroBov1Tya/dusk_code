@@ -13,7 +13,10 @@ use dusk_protocol::{
 
 pub enum Item {
     User(String),
-    Assistant { text: String, reasoning: String },
+    Assistant {
+        text: String,
+        reasoning: String,
+    },
     Tool(Tool),
     /// A picture a tool or a message carries, by its ID in the pictures folder.
     Image(String),
@@ -85,7 +88,9 @@ impl Transcript {
     fn add_message(&mut self, message: &Message) {
         match message.role {
             MessageRole::System => {}
-            MessageRole::User | MessageRole::Job => self.items.push(Item::User(message.content.clone())),
+            MessageRole::User | MessageRole::Job => {
+                self.items.push(Item::User(message.content.clone()))
+            }
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
                     self.items.push(Item::Assistant {
@@ -106,7 +111,9 @@ impl Transcript {
                 }
             }
             MessageRole::Tool => {
-                if let Some(tool) = self.tool_mut(message.tool_call_id.as_deref().unwrap_or_default()) {
+                if let Some(tool) =
+                    self.tool_mut(message.tool_call_id.as_deref().unwrap_or_default())
+                {
                     tool.output = clip(&message.content);
                 }
             }
@@ -129,9 +136,9 @@ impl Transcript {
             ThreadEvent::ToolStarted(call) => {
                 self.note_output(&call.name, &call.arguments);
                 self.items.push(Item::Tool(Tool {
-                detail: summary(&call.arguments),
-                arguments: clip(&call.arguments.to_string()),
-                output: String::new(),
+                    detail: summary(&call.arguments),
+                    arguments: clip(&call.arguments.to_string()),
+                    output: String::new(),
                     call_id: call.id,
                     name: call.name,
                     state: ToolState::Running,
@@ -201,7 +208,8 @@ impl Transcript {
             }
             ThreadEvent::AnswerCut { error } => self.items.push(Item::Error(error)),
             ThreadEvent::CompactionFailed { error } => {
-                self.items.push(Item::Error(format!("Compaction failed: {error}")));
+                self.items
+                    .push(Item::Error(format!("Compaction failed: {error}")));
             }
             ThreadEvent::OutputLimitReached => self.notice("The answer reached the output limit."),
             ThreadEvent::PicturesRefused { model } => {
@@ -212,7 +220,11 @@ impl Transcript {
             ThreadEvent::ContextTooLarge { tokens, limit } => self.items.push(Item::Error(
                 format!("The context is too large: {tokens} of {limit} tokens."),
             )),
-            ThreadEvent::ArbiterDecided { what, allow, reason } => {
+            ThreadEvent::ArbiterDecided {
+                what,
+                allow,
+                reason,
+            } => {
                 let verdict = if allow { "allowed" } else { "denied" };
                 self.notice(&format!("Arbiter {verdict} {what}: {reason}"));
             }

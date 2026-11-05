@@ -2,6 +2,7 @@
 
 mod appearance;
 mod behavior;
+mod system;
 
 use gpui_kit::{
     component::{ActiveTheme, IconName},
@@ -18,6 +19,8 @@ pub enum SettingsPage {
     Safety,
     Memory,
     Advanced,
+    Updates,
+    Usage,
 }
 
 const PAGES: &[(SettingsPage, IconName, &str)] = &[
@@ -25,8 +28,14 @@ const PAGES: &[(SettingsPage, IconName, &str)] = &[
     (SettingsPage::Model, IconName::Cpu, "Model"),
     (SettingsPage::Chat, IconName::Inbox, "Chat"),
     (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
-    (SettingsPage::Memory, IconName::MemoryStick, "Memory and context"),
+    (
+        SettingsPage::Memory,
+        IconName::MemoryStick,
+        "Memory and context",
+    ),
     (SettingsPage::Advanced, IconName::Settings2, "Advanced"),
+    (SettingsPage::Updates, IconName::RefreshCw, "Updates"),
+    (SettingsPage::Usage, IconName::Cpu, "System usage"),
 ];
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
@@ -51,6 +60,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .child(div().flex_1().child(*label))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.settings_page = page;
+                    ws.load_page(page, cx);
                     cx.notify();
                 })),
         );
@@ -61,6 +71,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .map_or("", |(.., label)| *label);
     let body = match ws.settings_page {
         SettingsPage::Appearance => appearance::render(ws, window, cx),
+        SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
         page => behavior::render(ws, page, cx),
     };
     div().size_full().flex().flex_row().child(menu).child(

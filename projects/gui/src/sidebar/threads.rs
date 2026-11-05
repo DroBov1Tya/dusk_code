@@ -4,8 +4,7 @@
 use std::path::PathBuf;
 
 use dusk_protocol::{project::Project, thread::Thread};
-use gpui_kit::{
-    prelude::FluentBuilder,component::ActiveTheme, *};
+use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 
 use crate::{
     chat::transcript::Transcript,
@@ -13,7 +12,12 @@ use crate::{
     workspace::{Center, Workspace},
 };
 
-pub fn render(ws: &Workspace, project: &Project, _: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(
+    ws: &Workspace,
+    project: &Project,
+    _: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Div {
     let dir = project.dir.to_string_lossy();
     let threads: Vec<&Thread> = ws
         .threads
@@ -51,14 +55,15 @@ pub fn chat_row(
         .unwrap_or_else(|| "New chat".to_owned());
     let prefix = if source.is_some() { "recent" } else { "chat" };
     widgets::row(SharedString::from(format!("{prefix}-{id}")), shown, cx)
-        .child(
-            div()
-                .size_1p5()
-                .rounded_full()
-                .bg(if working { accent } else { muted.opacity(0.4) }),
-        )
+        .child(div().size_1p5().rounded_full().bg(if working {
+            accent
+        } else {
+            muted.opacity(0.4)
+        }))
         .child(div().flex_1().min_w_0().truncate().child(title))
-        .when_some(source, |row, source| row.child(widgets::badge(source.to_owned(), accent)))
+        .when_some(source, |row, source| {
+            row.child(widgets::badge(source.to_owned(), accent))
+        })
         .on_click({
             let id = id.clone();
             cx.listener(move |ws, _, _, cx| ws.open_chat(&id, cx))
@@ -103,7 +108,12 @@ impl Workspace {
     }
 
     pub fn open_chat(&mut self, thread_id: &str, cx: &mut Context<Self>) {
-        let Some(thread) = self.threads.iter().find(|thread| thread.id == thread_id).cloned() else {
+        let Some(thread) = self
+            .threads
+            .iter()
+            .find(|thread| thread.id == thread_id)
+            .cloned()
+        else {
             return;
         };
         let project = thread.project.as_deref().and_then(|dir| {

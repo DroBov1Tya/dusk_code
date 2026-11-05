@@ -17,7 +17,13 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .flex()
             .flex_col()
             .flex_1()
-            .child(div().text_lg().font_weight(FontWeight::MEDIUM).text_color(foreground).child(value))
+            .child(
+                div()
+                    .text_lg()
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(foreground)
+                    .child(value),
+            )
             .child(div().text_xs().text_color(muted).child(label))
     };
     let mut column = div().flex().flex_col().gap_2().px_4().child(

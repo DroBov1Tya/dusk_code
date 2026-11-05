@@ -36,7 +36,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .shown_chat()
         .and_then(|chat| chat.tokens)
         .unwrap_or((0, ws.status.input_limit));
-    let share = if limit == 0 { 0. } else { (used as f32 / limit as f32).min(1.) };
+    let share = if limit == 0 {
+        0.
+    } else {
+        (used as f32 / limit as f32).min(1.)
+    };
     let meter = if share > 0.9 {
         danger
     } else if share > 0.7 {
@@ -75,7 +79,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(div().flex_1())
         .child(format!("{} / {}", short(used), short(limit)))
         .child(super::ring::render(share, meter, border));
-    let menu = ws.picker.map(|picker| super::model_menu::render(ws, picker, &effort, cx));
+    let menu = ws
+        .picker
+        .map(|picker| super::model_menu::render(ws, picker, &effort, cx));
     div().relative().child(bar).children(menu)
 }
 

@@ -1,7 +1,10 @@
 //! The shown chat's background jobs, with a stop for those this run owns.
 
 use gpui_kit::{
-    component::{ActiveTheme, Sizable, button::{Button, ButtonVariants}},
+    component::{
+        ActiveTheme, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -37,11 +40,20 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                         .flex_row()
                         .items_center()
                         .gap_2()
-                        .child(widgets::badge(job.status.clone(), if job.running { accent } else { muted }))
+                        .child(widgets::badge(
+                            job.status.clone(),
+                            if job.running { accent } else { muted },
+                        ))
                         .child(div().flex_1())
                         .children(stop),
                 )
-                .child(div().text_xs().font_family("Menlo").line_clamp(2).child(job.command.clone())),
+                .child(
+                    div()
+                        .text_xs()
+                        .font_family("Menlo")
+                        .line_clamp(2)
+                        .child(job.command.clone()),
+                ),
         );
     }
     column

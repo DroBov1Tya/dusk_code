@@ -62,7 +62,11 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                             cx.notify();
                         })),
                 )
-                .child(div().flex_1().child(Textarea::new(&ws.composer).appearance(false)))
+                .child(
+                    div()
+                        .flex_1()
+                        .child(Textarea::new(&ws.composer).appearance(false)),
+                )
                 .child(button),
         )
         .children(attach)
@@ -101,7 +105,10 @@ fn attach_menu(cx: &mut Context<Workspace>) -> Stateful<Div> {
         )
         .child(
             crate::widgets::row("attach-folders", false, cx)
-                .child(crate::widgets::icon(IconName::Folder, theme.muted_foreground))
+                .child(crate::widgets::icon(
+                    IconName::Folder,
+                    theme.muted_foreground,
+                ))
                 .child("Folders")
                 .on_click(cx.listener(|ws, _, window, cx| ws.attach(true, window, cx))),
         )
@@ -182,7 +189,8 @@ impl Workspace {
                     }
                     text.push_str(&path.display().to_string());
                 }
-                ws.composer.update(cx, |composer, cx| composer.set_value(text, window, cx));
+                ws.composer
+                    .update(cx, |composer, cx| composer.set_value(text, window, cx));
             });
         })
         .detach();

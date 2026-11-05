@@ -39,8 +39,18 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
                 .gap_0p5()
                 .flex_1()
                 .min_w_0()
-                .child(div().font_weight(FontWeight::SEMIBOLD).truncate().child(card.name))
-                .child(div().text_xs().text_color(theme.muted_foreground).child(card.kind))
+                .child(
+                    div()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .truncate()
+                        .child(card.name),
+                )
+                .child(
+                    div()
+                        .text_xs()
+                        .text_color(theme.muted_foreground)
+                        .child(card.kind),
+                )
                 .child(
                     div()
                         .text_xs()

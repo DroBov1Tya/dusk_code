@@ -26,21 +26,22 @@ const FOLLOW_SLACK: f32 = 48.;
 pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let shown = ws.shown.clone().unwrap_or_default();
     let Some(chat) = ws.chats.get(&shown) else {
-        return div().id("transcript").child(widgets::muted("Opening...", cx));
+        return div()
+            .id("transcript")
+            .child(widgets::muted("Opening...", cx));
     };
     let theme = cx.theme();
-    let (surface, muted, accent, danger, border) =
-        (theme.muted, theme.muted_foreground, theme.primary, theme.danger, theme.border);
+    let (surface, muted, accent, danger, border) = (
+        theme.muted,
+        theme.muted_foreground,
+        theme.primary,
+        theme.danger,
+        theme.border,
+    );
     let pictures = ws.status.artifacts_dir.clone();
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .px_6()
-        .py_6()
-        .max_w(px(780.))
-        .mx_auto()
-        .w_full();
+    // Each row is a direct child of the scrolled box, so a sent message can be scrolled to.
+    let mut rows: Vec<AnyElement> = Vec::new();
+    let mut sent: Vec<(usize, String)> = Vec::new();
     let mut index = 0;
     while index < chat.items.len() {
         let key = format!("{shown}-{index}");
@@ -58,12 +59,15 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                     _ => None,
                 })
                 .collect();
-            column = column.child(run(ws, &shown, start, &tools, cx));
+            rows.push(lane(run(ws, &shown, start, &tools, cx).into_any_element()));
             continue;
         }
         index += 1;
         let at = index - 1;
-        column = column.child(match item {
+        if let Item::User(text) = item {
+            sent.push((rows.len(), text.clone()));
+        }
+        rows.push(lane(match item {
             Item::User(text) => div()
                 .self_end()
                 .max_w(px(600.))
@@ -84,7 +88,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                             .text_xs()
                             .text_color(muted)
                             .cursor_pointer()
-                            .child(if unfolded { "▾ Thinking" } else { "▸ Thinking" })
+                            .child(if unfolded {
+                                "▾ Thinking"
+                            } else {
+                                "▸ Thinking"
+                            })
                             .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx))),
                     );
                     if unfolded {
@@ -108,7 +116,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 answer.into_any_element()
             }
             Item::Image(id) => picture(&pictures, id),
-            Item::Notice(text) => div().text_xs().text_color(muted).child(text.clone()).into_any_element(),
+            Item::Notice(text) => div()
+                .text_xs()
+                .text_color(muted)
+                .child(text.clone())
+                .into_any_element(),
             Item::Error(text) => div()
                 .px_3()
                 .py_2()
@@ -119,10 +131,10 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .child(text.clone())
                 .into_any_element(),
             Item::Tool(_) => unreachable!("runs are drawn above"),
-        });
+        }));
     }
     if chat.working {
-        column = column.child(
+        rows.push(lane(
             div()
                 .flex()
                 .flex_row()
@@ -130,9 +142,13 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .gap_3()
                 .text_xs()
                 .text_color(muted)
-                .child(working::render(SharedString::from(format!("working-{shown}")), accent))
-                .child("Working"),
-        );
+                .child(working::render(
+                    SharedString::from(format!("working-{shown}")),
+                    accent,
+                ))
+                .child("Working")
+                .into_any_element(),
+        ));
     }
     let size = (chat.items.len(), chat.working);
     let at_bottom = {
@@ -143,16 +159,50 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         ws.scroll.scroll_to_bottom();
     }
     ws.followed = size;
-    div()
+    let list = div()
         .id("transcript")
         .size_full()
+        .flex()
+        .flex_col()
+        .gap_4()
+        .py_6()
         .overflow_y_scroll()
         .track_scroll(&ws.scroll)
-        .child(column)
+        .children(rows);
+    div()
+        .id("transcript-frame")
+        .relative()
+        .size_full()
+        .child(list)
+        .children((sent.len() > 1).then(|| super::navigator::render(&sent, cx)))
+}
+
+/// A row at the chat's reading width, centered.
+fn lane(content: AnyElement) -> AnyElement {
+    div()
+        .w_full()
+        .flex()
+        .justify_center()
+        .px_6()
+        .child(
+            div()
+                .w_full()
+                .max_w(px(780.))
+                .flex()
+                .flex_col()
+                .child(content),
+        )
+        .into_any_element()
 }
 
 /// A run of steps: the latest one, and the count of the others to unfold.
-fn run(ws: &Workspace, shown: &str, start: usize, tools: &[&Tool], cx: &mut Context<Workspace>) -> Div {
+fn run(
+    ws: &Workspace,
+    shown: &str,
+    start: usize,
+    tools: &[&Tool],
+    cx: &mut Context<Workspace>,
+) -> Div {
     let muted = cx.theme().muted_foreground;
     let open = ws.unfolded.contains(&(shown.to_owned(), start | RUN));
     let mut block = div().flex().flex_col().gap_1();
@@ -179,10 +229,21 @@ fn run(ws: &Workspace, shown: &str, start: usize, tools: &[&Tool], cx: &mut Cont
     block
 }
 
-fn step(ws: &Workspace, shown: &str, index: usize, tool: &Tool, cx: &mut Context<Workspace>) -> Div {
+fn step(
+    ws: &Workspace,
+    shown: &str,
+    index: usize,
+    tool: &Tool,
+    cx: &mut Context<Workspace>,
+) -> Div {
     let theme = cx.theme();
-    let (muted, success, danger, accent, surface) =
-        (theme.muted_foreground, theme.success, theme.danger, theme.primary, theme.muted);
+    let (muted, success, danger, accent, surface) = (
+        theme.muted_foreground,
+        theme.success,
+        theme.danger,
+        theme.primary,
+        theme.muted,
+    );
     let open = ws.unfolded.contains(&(shown.to_owned(), index | STEP));
     let (icon, color) = match tool.state {
         ToolState::Running => (IconName::LoaderCircle, accent),
@@ -205,8 +266,17 @@ fn step(ws: &Workspace, shown: &str, index: usize, tool: &Tool, cx: &mut Context
             .text_color(muted)
             .cursor_pointer()
             .child(widgets::icon(icon, color))
-            .child(div().font_weight(FontWeight::MEDIUM).child(tool.name.clone()))
-            .child(div().truncate().font_family(mono.clone()).child(tool.detail.clone()))
+            .child(
+                div()
+                    .font_weight(FontWeight::MEDIUM)
+                    .child(tool.name.clone()),
+            )
+            .child(
+                div()
+                    .truncate()
+                    .font_family(mono.clone())
+                    .child(tool.detail.clone()),
+            )
             .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx))),
     );
     if open {

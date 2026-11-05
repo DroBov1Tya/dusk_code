@@ -34,11 +34,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             widgets::row(SharedString::from(format!("found-{id}")), false, cx)
                 .h(px(40.))
                 .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .child(thread.title.clone().unwrap_or_else(|| "New chat".to_owned())),
+                    div().flex_1().min_w_0().truncate().child(
+                        thread
+                            .title
+                            .clone()
+                            .unwrap_or_else(|| "New chat".to_owned()),
+                    ),
                 )
                 .children(project.map(|name| div().text_xs().text_color(muted).child(name)))
                 .child(widgets::badge(thread.source.clone(), muted))

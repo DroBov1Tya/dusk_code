@@ -184,7 +184,10 @@ impl Server {
             }
             ThreadRequest::Rename { thread_id, title } => {
                 let title = title.trim();
-                ensure!(title.chars().count() <= 200, "a title is at most 200 characters");
+                ensure!(
+                    title.chars().count() <= 200,
+                    "a title is at most 200 characters"
+                );
                 runtime.state().set_title(&thread_id, title).await?;
                 Response::Done
             }

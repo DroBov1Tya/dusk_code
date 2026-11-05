@@ -25,23 +25,32 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
         let name = plugin.name.clone();
         let open = plugin.name.clone();
         let state = (!plugin.missing_settings.is_empty()).then(|| {
-            (format!("Needs {}", plugin.missing_settings.join(", ")), warning)
+            (
+                format!("Needs {}", plugin.missing_settings.join(", ")),
+                warning,
+            )
         });
-        cards = cards.child(card::render(
-            card::Card {
-                id: SharedString::from(format!("plugin-card-{name}")),
-                name: plugin.name.clone(),
-                kind: format!("Plugin {} · {}", plugin.version, plugin.parts.join(", ")),
-                description: plugin.description.clone(),
-                state,
-            },
-            Switch::new(SharedString::from(format!("plugin-{name}")))
-                .checked(plugin.enabled)
-                .small()
-                .on_click(cx.listener(move |ws, on: &bool, _, cx| ws.plugin_enabled(&name, *on, cx))),
-            cx,
-        )
-        .on_click(cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Plugin(open.clone()), cx))));
+        cards = cards.child(
+            card::render(
+                card::Card {
+                    id: SharedString::from(format!("plugin-card-{name}")),
+                    name: plugin.name.clone(),
+                    kind: format!("Plugin {} · {}", plugin.version, plugin.parts.join(", ")),
+                    description: plugin.description.clone(),
+                    state,
+                },
+                Switch::new(SharedString::from(format!("plugin-{name}")))
+                    .checked(plugin.enabled)
+                    .small()
+                    .on_click(
+                        cx.listener(move |ws, on: &bool, _, cx| ws.plugin_enabled(&name, *on, cx)),
+                    ),
+                cx,
+            )
+            .on_click(
+                cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Plugin(open.clone()), cx)),
+            ),
+        );
     }
     cards
 }

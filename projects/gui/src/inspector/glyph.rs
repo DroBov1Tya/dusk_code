@@ -121,7 +121,11 @@ mod tests {
             }
             let drawn = points(shape);
             assert!(drawn.len() > 3);
-            assert!(drawn.iter().all(|(x, y)| x.abs() <= 1.001 && y.abs() <= 1.001));
+            assert!(
+                drawn
+                    .iter()
+                    .all(|(x, y)| x.abs() <= 1.001 && y.abs() <= 1.001)
+            );
         }
     }
 }

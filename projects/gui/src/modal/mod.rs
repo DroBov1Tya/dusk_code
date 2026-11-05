@@ -26,10 +26,19 @@ pub use viewer::ViewerContent;
 pub enum Modal {
     Search,
     Project(ProjectForm),
-    Viewer { path: PathBuf, content: ViewerContent },
+    Viewer {
+        path: PathBuf,
+        content: ViewerContent,
+    },
     Detail(detail::Detail),
-    Rename { thread_id: String, title: Entity<InputState> },
-    Delete { thread_id: String, title: String },
+    Rename {
+        thread_id: String,
+        title: Entity<InputState>,
+    },
+    Delete {
+        thread_id: String,
+        title: String,
+    },
 }
 
 /// The form that adds a project, or changes the one with `id`.
@@ -44,7 +53,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let (title, width, body) = match ws.modal.as_ref()? {
         Modal::Search => ("Search chats".to_owned(), 640., search::render(ws, cx)),
         Modal::Project(form) => (
-            if form.id.is_some() { "Edit project" } else { "New project" }.to_owned(),
+            if form.id.is_some() {
+                "Edit project"
+            } else {
+                "New project"
+            }
+            .to_owned(),
             640.,
             project::render(form, cx),
         ),
@@ -53,8 +67,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             880.,
             viewer::render(path, content, window, cx),
         ),
-        Modal::Rename { title, .. } => ("Rename chat".to_owned(), 480., chat_menu::rename(title, cx)),
-        Modal::Delete { title, .. } => ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx)),
+        Modal::Rename { title, .. } => {
+            ("Rename chat".to_owned(), 480., chat_menu::rename(title, cx))
+        }
+        Modal::Delete { title, .. } => {
+            ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
+        }
         Modal::Detail(item) => {
             let item = item.clone();
             (item.title().to_owned(), 720., detail::render(ws, &item, cx))
@@ -93,7 +111,14 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
                 ),
         )
-        .child(div().id("modal-body").flex_1().min_h_0().overflow_y_scroll().child(body));
+        .child(
+            div()
+                .id("modal-body")
+                .flex_1()
+                .min_h_0()
+                .overflow_y_scroll()
+                .child(body),
+        );
     Some(
         div()
             .absolute()
@@ -103,7 +128,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .justify_center()
             .pt(px(72.))
             .bg(gpui_kit::black().opacity(0.45))
-            .on_mouse_down(MouseButton::Left, cx.listener(|ws, _, _, cx| ws.close_modal(cx)))
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|ws, _, _, cx| ws.close_modal(cx)),
+            )
             .child(panel),
     )
 }
