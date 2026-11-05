@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["projects/core", "projects/evals", "projects/external/telegram", "projects/protocol", "projects/tui"]
+members = ["projects/core", "projects/evals", "projects/external/telegram", "projects/gui", "projects/protocol", "projects/tui"]
 default-members = ["projects/tui"]
 
 [workspace.package]

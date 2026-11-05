@@ -382,7 +382,9 @@ mod tests {
     /// and schema must agree, just as they did in those releases.
     async fn before_goal_verification(state: &State) {
         sqlx::raw_sql(
-            "DROP TABLE agent_efforts;
+            "DROP TABLE projects;
+            DELETE FROM _sqlx_migrations WHERE version = 20;
+            DROP TABLE agent_efforts;
             DELETE FROM _sqlx_migrations WHERE version = 19;
             DROP TABLE agent_phases;
             DELETE FROM _sqlx_migrations WHERE version = 18;
@@ -521,7 +523,9 @@ mod tests {
         // What that build's migrations 17 to 19 made, recorded with their checksums, in
         // place of the released 17.
         sqlx::raw_sql(
-            "DROP TABLE agent_efforts;
+            "DROP TABLE projects;
+             DELETE FROM _sqlx_migrations WHERE version = 20;
+             DROP TABLE agent_efforts;
              DELETE FROM _sqlx_migrations WHERE version = 19;
              DROP TABLE agent_phases;
              DELETE FROM _sqlx_migrations WHERE version = 18;
@@ -555,7 +559,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

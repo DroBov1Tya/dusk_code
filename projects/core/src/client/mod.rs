@@ -109,8 +109,9 @@ impl Client {
         }
     }
 
-    /// Closes every thread and stops the core; returns once it has stopped.
-    pub async fn shutdown(self) {
+    /// Closes every thread and stops the core; returns once it has stopped. Every call
+    /// after it fails.
+    pub async fn shutdown(&self) {
         let _ = self.send(Request::Shutdown).await;
     }
 
