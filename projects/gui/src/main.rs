@@ -2,13 +2,15 @@
 //! protocol, the same way the TUI does:
 //! - `core`: the bridge from the window to the core's client;
 //! - `workspace`: the window's state and its three columns;
-//! - `sidebar`: projects, chats, recent chats, search and connectors, on the left;
+//! - `sidebar`: projects, chats, recent chats and search, on the left;
+//! - `connectors`: MCP servers, skills, plugins, tools and the agents' graph;
 //! - `chat`: the transcript, the composer and the bar under it, in the middle;
 //! - `inspector`: git, files, context, todo, agents and jobs, on the right;
 //! - `settings`: the settings tab;
 //! - `theme`: the color themes; `host`: what the machine opens, such as a terminal.
 
 mod chat;
+mod connectors;
 mod core;
 mod host;
 mod inspector;

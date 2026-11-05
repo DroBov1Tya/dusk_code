@@ -21,18 +21,16 @@ use gpui_kit::{
 };
 use tokio::sync::{mpsc, watch};
 
-use crate::{chat, chat::transcript::Transcript, core::Core, inspector, settings, sidebar};
+use crate::{
+    chat, chat::transcript::Transcript, connectors, connectors::Shelf, core::Core, inspector,
+    settings, sidebar,
+};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Center {
     Chat,
-    Settings,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Left {
-    Chats,
     Connectors,
+    Settings,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -73,7 +71,8 @@ pub struct Workspace {
     pub project: Option<String>,
     pub collapsed: HashSet<String>,
     pub center: Center,
-    pub left: Left,
+    pub shelf: Shelf,
+    pub shelf_search: Entity<InputState>,
     pub right: Right,
     pub search: Entity<InputState>,
     pub composer: Entity<TextareaState>,
@@ -107,6 +106,9 @@ impl Workspace {
         let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search chats"));
         cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
             .detach();
+        let shelf_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
+        cx.subscribe_in(&shelf_search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
+            .detach();
         let composer = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx)
                 .auto_grow(2, 10)
@@ -131,7 +133,8 @@ impl Workspace {
             project: None,
             collapsed: HashSet::new(),
             center: Center::Chat,
-            left: Left::Chats,
+            shelf: Shelf::Connectors,
+            shelf_search,
             right: Right::Git,
             search,
             composer,
@@ -245,6 +248,7 @@ impl Render for Workspace {
         let (background, foreground) = (theme.background, theme.foreground);
         let center = match self.center {
             Center::Chat => chat::render(self, window, cx).into_any_element(),
+            Center::Connectors => connectors::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
         };
         div()

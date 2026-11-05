@@ -79,7 +79,6 @@ sidebar/projects.rs  project rows (collapsible), add/edit project form (name, de
 sidebar/threads.rs   chat rows of a project, new chat button
 sidebar/recent.rs    every chat by last activity, with its source badge (tui, gui, telegram...)
 sidebar/search.rs    filter chats by title
-sidebar/connectors.rs MCP servers, skills, plugins, agents with on/off switches
 chat/mod.rs          Chat state: open threads (map thread_id -> Transcript), the shown one
 chat/transcript.rs   Transcript items from history (Message) and live ThreadEvent; render
 chat/composer.rs     textarea, Enter sends, Shift+Enter new line, stop button while working
@@ -95,6 +94,10 @@ inspector/todo.rs    the thread's tasks
 inspector/agents.rs  subagents with generated icons, their state
 inspector/jobs.rs    background jobs, output, stop
 inspector/glyph.rs   deterministic geometric icon (spiral, rose, polygon star) from fnv1a(thread_id)
+connectors/mod.rs    center page with tabs Connectors (MCP), Skills, Plugins, Tools, Agents + search
+connectors/card.rs   card: icon slot (letter tile until the core gives an icon), name, kind, state, action
+connectors/{mcp,skills,plugins,tools}.rs  one tab each, two-column card grid
+connectors/graph.rs  agents graph: parent left of children, bezier edges, dashed edges for links
 settings/mod.rs      settings tab: theme, approvals, mode, memory, work history, limits, logging
 host/terminal.rs     opens the system terminal app in the project folder
                      (macOS: `open -a Terminal <dir>`; Linux: $TERMINAL, x-terminal-emulator,
@@ -135,6 +138,8 @@ watched windows, cron).
 - [x] settings tab with the theme picker
 - [x] terminal button
 - [x] cargo clippy --all-targets clean for dusk_gui, cargo test (core 178, gui 1)
+- [x] connectors as a center page with cards, icon slots and a Tools tab; agents as a graph
+- [ ] core: an `icon` field on McpInfo (URL or file under the config) for enterprise connectors
 - [ ] check every panel by hand in the running app (the user reports bugs)
 - [ ] model menu: close on a click outside (`on_mouse_down_out`), keys 1-6 pick a model
 - [ ] Linux build in OrbStack (see memory `linux-checks`): needs Vulkan/X11/Wayland libs
