@@ -4,7 +4,7 @@ members = ["projects/core", "projects/evals", "projects/external/telegram", "pro
 default-members = ["projects/tui"]
 
 [workspace.package]
-version = "0.71.0"
+version = "0.71.1"
 edition = "2024"
 publish = false
 license = "MIT"
