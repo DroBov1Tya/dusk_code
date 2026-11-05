@@ -143,13 +143,13 @@ pub struct App {
     pub turn_started_at: Option<i64>,
     pub last_turn_duration_ms: Option<u64>,
     pub config: Arc<LiveConfig>,
-    pub(super) turn_running: bool,
-    pub(super) compacting: bool,
-    pub(super) sent: Vec<String>,
-    pub(super) sent_ids: HashSet<String>,
-    pub(super) recall: Option<usize>,
-    pub(super) recall_draft: Option<Input>,
-    pub(super) output_samples: VecDeque<(Instant, usize)>,
+    pub turn_running: bool,
+    pub compacting: bool,
+    pub sent: Vec<String>,
+    pub sent_ids: HashSet<String>,
+    pub recall: Option<usize>,
+    pub recall_draft: Option<Input>,
+    pub output_samples: VecDeque<(Instant, usize)>,
 }
 
 impl App {
@@ -345,12 +345,12 @@ impl App {
             .or(self.last_turn_duration_ms)
     }
 
-    pub(super) fn record_output(&mut self, text: &str) {
+    pub fn record_output(&mut self, text: &str) {
         self.output_samples.push_back((Instant::now(), text.len()));
         self.trim_output_samples();
     }
 
-    pub(super) fn trim_output_samples(&mut self) {
+    pub fn trim_output_samples(&mut self) {
         let now = Instant::now();
         while self
             .output_samples
@@ -446,7 +446,7 @@ pub fn compact_number(value: u64) -> String {
 }
 
 /// `value / unit` with one decimal, dropped when it is zero.
-pub(super) fn tenths(value: u64, unit: u64) -> String {
+pub fn tenths(value: u64, unit: u64) -> String {
     let tenths = (value * 10 + unit / 2) / unit;
     match tenths % 10 {
         0 => (tenths / 10).to_string(),

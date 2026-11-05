@@ -6,7 +6,7 @@ use super::{Action, Activity, App, Connection, Panel, Tone};
 
 impl App {
     /// Takes the typed text for sending; commands show as notices, messages as the user's.
-    pub(super) fn submit(&mut self, now: bool) -> Action {
+    pub fn submit(&mut self, now: bool) -> Action {
         if self.input.is_empty() {
             return Action::None;
         }
@@ -74,7 +74,7 @@ impl App {
     }
 
     /// Steps through what was sent before, newest first.
-    pub(super) fn recall(&mut self, older: bool) {
+    pub fn recall(&mut self, older: bool) {
         let next = match (self.recall, older) {
             (None, true) => self.sent.len().checked_sub(1),
             (None, false) => None,
@@ -95,7 +95,7 @@ impl App {
         }
     }
 
-    pub(super) fn after_compaction(&mut self) {
+    pub fn after_compaction(&mut self) {
         self.activity = if self.turn_running {
             Activity::Thinking
         } else {

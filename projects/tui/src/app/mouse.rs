@@ -312,7 +312,7 @@ impl App {
 }
 
 /// Shared column-based selection for the main transcript and agent windows.
-pub(super) fn selected_lines<'a>(
+pub fn selected_lines<'a>(
     selection: Selection,
     left: u16,
     text_at: impl Fn(usize) -> Option<&'a str>,
