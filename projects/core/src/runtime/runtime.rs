@@ -809,6 +809,10 @@ impl Runtime {
         self.launcher.state.project_threads(&project_dir(cwd)).await
     }
 
+    pub fn state(&self) -> &State {
+        &self.launcher.state
+    }
+
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
         self.launcher.state.list_threads().await
     }

@@ -6,6 +6,7 @@
 mod agents;
 pub mod artifacts;
 mod db;
+mod projects;
 mod thread;
 
 pub use agents::{AgentPhase, Identity};

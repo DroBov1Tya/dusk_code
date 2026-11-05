@@ -10,6 +10,7 @@
 //! - `release`: shipped resources, their sync into the config, and updates;
 //! - `providers`, `mcp`, `tools`: what the agents talk to and act with;
 //! - `runtime`, `message`, `state`: running threads, what messages carry, and the records;
+//! - `project`: named folders, their git state and files, read only inside them;
 //! - `plugins`: what the community adds without changing this code;
 //! - `backup`: `/migrate` archives, their restore, and the guard of an uninstall;
 //! - `util`: small helpers with no domain.
@@ -24,6 +25,7 @@ mod mcp;
 mod message;
 mod platform;
 mod plugins;
+mod project;
 mod providers;
 mod release;
 mod runtime;

@@ -14,6 +14,7 @@ use crate::{
     mcp::{McpInfo, McpStatus},
     model::Effort,
     plugins::PluginInfo,
+    project::{FileEntry, GitInfo, Project},
     system::SystemReport,
     thread::{Thread, ThreadEvent},
     tools::Decision,
@@ -22,7 +23,7 @@ use crate::{
 };
 
 /// Raised whenever a request, a response or an event changes shape.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// The first thing a client says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -49,6 +50,7 @@ pub enum Request {
     Settings(SettingsRequest),
     Catalog(CatalogRequest),
     Work(WorkRequest),
+    Project(ProjectRequest),
     /// A slash command that does not run in a thread.
     Command(Command),
     SystemReport,
@@ -228,6 +230,36 @@ pub enum WorkRequest {
     },
 }
 
+/// Projects, and the git state and files of one. Git and files are read only inside
+/// a saved project's folder.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProjectRequest {
+    List,
+    /// Saves a new project, or changes the one with `id`; answers with the project.
+    Save {
+        id: Option<String>,
+        name: String,
+        description: String,
+        dir: PathBuf,
+    },
+    Remove {
+        id: String,
+    },
+    Git {
+        id: String,
+    },
+    /// Refused while the work tree has changes, so nothing is lost.
+    SwitchBranch {
+        id: String,
+        branch: String,
+    },
+    /// The entries of `path`, a folder relative to the project's, `""` for its top.
+    Files {
+        id: String,
+        path: String,
+    },
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
@@ -246,6 +278,10 @@ pub enum Response {
     Jobs(Vec<JobInfo>),
     Node(NodeText),
     Mcp(Vec<McpInfo>),
+    Projects(Vec<Project>),
+    Project(Project),
+    Git(GitInfo),
+    Files(Vec<FileEntry>),
     System(SystemReport),
     Answer(Box<Answer>),
     /// The request failed; the text says why in full.

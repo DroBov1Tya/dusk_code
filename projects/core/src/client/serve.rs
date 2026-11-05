@@ -6,8 +6,8 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use anyhow::{Context, Result, anyhow, ensure};
 use dusk_protocol::{
     client::{
-        CatalogRequest, Event, Request, Response, SettingsRequest, Status, Switch, ThreadRequest,
-        WorkRequest,
+        CatalogRequest, Event, ProjectRequest, Request, Response, SettingsRequest, Status,
+        Switch, ThreadRequest, WorkRequest,
     },
     config::ApprovalPolicy,
     update::{Channel, InstallProgress},
@@ -20,6 +20,7 @@ use tracing::warn;
 
 use crate::{
     message::commands,
+    project,
     runtime::{Runtime, ThreadHandle, ThreadInput},
 };
 
@@ -112,6 +113,7 @@ impl Server {
             Request::Settings(request) => self.settings(request),
             Request::Catalog(request) => self.catalog(request).await,
             Request::Work(request) => self.work(request).await,
+            Request::Project(request) => self.project(request).await,
             Request::Command(command) => Ok(Response::Answer(Box::new(
                 commands::answer(command, &self.runtime).await?,
             ))),
@@ -305,6 +307,33 @@ impl Server {
             WorkRequest::RemoveSource { thread_id, id } => {
                 runtime.remove_source(&thread_id, &id).await?;
                 Response::Done
+            }
+        })
+    }
+
+    async fn project(&self, request: ProjectRequest) -> Result<Response> {
+        let state = self.runtime.state();
+        Ok(match request {
+            ProjectRequest::List => Response::Projects(state.list_projects().await?),
+            ProjectRequest::Save {
+                id,
+                name,
+                description,
+                dir,
+            } => Response::Project(project::save(state, id, &name, &description, &dir).await?),
+            ProjectRequest::Remove { id } => {
+                state.remove_project(&id).await?;
+                Response::Done
+            }
+            ProjectRequest::Git { id } => {
+                Response::Git(project::git(&project::find(state, &id).await?).await?)
+            }
+            ProjectRequest::SwitchBranch { id, branch } => {
+                project::switch_branch(&project::find(state, &id).await?, &branch).await?;
+                Response::Done
+            }
+            ProjectRequest::Files { id, path } => {
+                Response::Files(project::files(&project::find(state, &id).await?, &path).await?)
             }
         })
     }
