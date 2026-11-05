@@ -83,26 +83,6 @@ impl Request {
         }
     }
 
-    /// What a yes for the session covers, for the client to name: the folder of the path,
-    /// or the program of a plain command. `None` when the session cannot be offered.
-    pub fn session_grant(&self) -> Option<String> {
-        match self {
-            Self::Path { path, .. } => Some(folder_of(path).display().to_string()),
-            Self::Command { command } => program(command).map(str::to_owned),
-            Self::Screen { .. } => Some("the screen".into()),
-            Self::SystemPointer { .. } => Some("the system pointer".into()),
-            Self::Keyboard { .. } => None,
-            Self::Window { grant, .. } => match grant {
-                Some(WindowAccess::List) => Some("listing window names and IDs".into()),
-                Some(WindowAccess::Capture(_)) => Some("capture of this selected window".into()),
-                Some(WindowAccess::Activate(_)) => {
-                    Some("control activation in this selected window".into())
-                }
-                None => None,
-            },
-        }
-    }
-
     pub fn what(&self) -> String {
         match self {
             Self::Path { path, write: true } => format!("writing {}", path.display()),
@@ -121,6 +101,9 @@ impl Request {
 pub struct ApprovalRequest {
     pub id: u64,
     pub request: Request,
+    /// What a yes for the session covers, as the core decides it: the folder of the
+    /// path, or the program of a plain command. `None` when it cannot be offered.
+    pub session: Option<String>,
 }
 
 /// A question as the client shows it. The client always adds a field for the user's
@@ -194,38 +177,6 @@ impl Question {
         }
         Ok(())
     }
-}
-
-/// Characters that let one command line run another, or hide what it runs. A program
-/// allowed for the session is allowed only on lines without them.
-pub const SHELL_SYNTAX: &[char] = &[
-    ';', '&', '|', '$', '`', '<', '>', '(', ')', '\n', '\r', '\'', '"', '\\',
-];
-
-/// Programs that run their arguments as another command; allowing one would allow all.
-pub const RUNNERS: &[&str] = &[
-    "sudo", "doas", "env", "xargs", "exec", "eval", "command", "builtin", "nohup", "nice",
-    "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
-];
-
-/// The folder a yes for a path opens: the path itself when it is one.
-pub fn folder_of(path: &std::path::Path) -> PathBuf {
-    match path.is_dir() {
-        true => path.to_owned(),
-        false => path.parent().unwrap_or(path).to_owned(),
-    }
-}
-
-/// The program of a command line that runs exactly one plain program.
-pub fn program(command: &str) -> Option<&str> {
-    if command.contains(SHELL_SYNTAX) {
-        return None;
-    }
-    let name = command.split_whitespace().next()?;
-    let plain = name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || "-_./+".contains(c));
-    (plain && !RUNNERS.contains(&name.rsplit('/').next().unwrap_or(name))).then_some(name)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

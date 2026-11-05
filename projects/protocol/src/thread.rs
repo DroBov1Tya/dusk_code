@@ -156,6 +156,7 @@ mod tests {
                 request: Request::Command {
                     command: "cargo test".into(),
                 },
+                session: Some("cargo".into()),
             })),
         };
         let text = serde_json::to_string(&event).unwrap();

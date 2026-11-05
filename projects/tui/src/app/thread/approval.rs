@@ -18,7 +18,7 @@ impl Asked {
     /// The answers offered, in order; the session one only when the core can keep it.
     pub fn choices(&self) -> Vec<(Decision, String)> {
         let mut choices = vec![(Decision::Once, "allow once".to_owned())];
-        if let Some(grant) = self.request.request.session_grant() {
+        if let Some(grant) = &self.request.session {
             let what = match self.request.request {
                 Request::Path { write: true, .. } => format!("allow writing in {grant}"),
                 Request::Path { write: false, .. } => format!("allow reading in {grant}"),
