@@ -95,7 +95,7 @@ impl Remember {
 
 /// A readable name with a hash of the whole path, so two projects of one name never
 /// share a memory.
-fn project_folder(cwd: &Path) -> String {
+pub(crate) fn project_folder(cwd: &Path) -> String {
     let name: String = cwd
         .file_name()
         .map(|name| name.to_string_lossy())

@@ -15,4 +15,6 @@ mod settings;
 mod undo;
 
 pub use command::{answer, parse, run_in_thread};
-pub use context::{ContextReport, report as context_report};
+pub use context::{
+    ContextDetail, ContextReport, McpServerDetail, MemoryFile, report as context_report,
+};

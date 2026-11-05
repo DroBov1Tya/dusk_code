@@ -19,6 +19,7 @@ use dusk_protocol::{
     },
     command::{Answer, Command},
     config::{ContextPolicy, ProviderKind},
+    context::ContextReport,
     conversation::{LocalUnsent, Message},
     mcp::McpInfo,
     project::{FileEntry, GitInfo, OutputFile, Project},
@@ -85,6 +86,16 @@ impl Client {
         match self.call(Request::Command(command)).await? {
             Response::Answer(answer) => Ok(*answer),
             other => Err(unexpected(other)),
+        }
+    }
+
+    /// What the next request of `thread_id` carries, with the per-item breakdown.
+    pub async fn context_report(&self, thread_id: Option<String>) -> Result<ContextReport> {
+        match self.command(Command::Context { thread_id }).await? {
+            Answer::Context(report) => Ok(report),
+            other => Err(anyhow!(
+                "the command answered {other:?}, not a context report"
+            )),
         }
     }
 
