@@ -2,7 +2,7 @@
 //! response; when it calls tools, they run and the next step sends their results back,
 //! until the model answers without calling a tool.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc, time::{Duration, Instant}};
 
 use parking_lot::Mutex;
 
@@ -514,10 +514,23 @@ impl Agent {
         loop {
             let mut output = ModelOutput::default();
             let events = self.events.clone();
+            let mut meter = super::rate::RateMeter::default();
             let streamed = generation::generate(&*choice.provider, request, &mut output, |event| {
+                if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
+                    self.emit(ThreadEvent::OutputRate {
+                        tokens_per_sec,
+                        window_ms: super::rate::WINDOW.as_millis() as u64,
+                    });
+                }
                 let _ = events.send(ThreadEvent::Model(event.clone()));
             });
             let mut generated = inbox.race(streamed).await;
+            if let Some(tokens_per_sec) = meter.current(Instant::now()) {
+                self.emit(ThreadEvent::OutputRate {
+                    tokens_per_sec,
+                    window_ms: super::rate::WINDOW.as_millis() as u64,
+                });
+            }
             if request.effort == Some(Effort::Off)
                 && let Ok(Err(error)) = &mut generated
                 && is_unsupported_effort(error)
