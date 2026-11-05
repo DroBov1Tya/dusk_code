@@ -11,7 +11,12 @@ use super::{
     approvals::{Approvals, Request, WindowAccess},
     scope::{Place, ToolScope},
 };
-use crate::{BoxFuture, config::Config, platform::Needs, runtime::ThreadEvent};
+use crate::{
+    BoxFuture,
+    config::{ApprovalPolicy, Config},
+    platform::Needs,
+    runtime::ThreadEvent,
+};
 
 pub use dusk_protocol::settings::ToolKind;
 
@@ -25,9 +30,30 @@ pub struct ToolContext {
     pub progress: Option<Progress>,
     /// Where requests for the user's approval go; `None` where no runtime runs the tools.
     pub approvals: Option<Arc<Approvals>>,
+    /// The thread's record, where its own approval mode lives; `None` where no runtime
+    /// runs the tools.
+    pub state: Option<Arc<crate::state::State>>,
+    /// The thread the tool acts for, with `state`.
+    pub thread_id: String,
 }
 
 impl ToolContext {
+    /// The policy that decides a request: the thread's own mode when it has one, the
+    /// default in the settings otherwise. A failed read falls back to the settings.
+    pub async fn approvals_policy(&self) -> ApprovalPolicy {
+        let Some(state) = &self.state else {
+            return self.config.approvals();
+        };
+        match state.thread_approvals(&self.thread_id).await {
+            Ok(Some(policy)) => policy,
+            Ok(None) => self.config.approvals(),
+            Err(error) => {
+                tracing::warn!("cannot read the thread's approval mode: {error:#}");
+                self.config.approvals()
+            }
+        }
+    }
+
     /// Resolves a path the model gave; one outside the folders needs the user's yes.
     pub async fn resolve(&self, path: &str, write: bool) -> Result<PathBuf> {
         let (resolved, place) = self.scope.locate(path)?;
@@ -40,8 +66,9 @@ impl ToolContext {
                 path: resolved.clone(),
                 write,
             };
+            let policy = self.approvals_policy().await;
             approvals
-                .ask(request, self.progress.clone(), self.config.approvals())
+                .ask(request, self.progress.clone(), policy)
                 .await?;
         }
         Ok(resolved)
@@ -58,9 +85,8 @@ impl ToolContext {
             true => Request::Keyboard { action },
             false => Request::Screen { action },
         };
-        approvals
-            .ask(request, self.progress.clone(), self.config.approvals())
-            .await
+        let policy = self.approvals_policy().await;
+        approvals.ask(request, self.progress.clone(), policy).await
     }
 
     /// A screen grant never permits physical pointer takeover. Without an approval
@@ -68,18 +94,19 @@ impl ToolContext {
     pub async fn approve_system_pointer(&self, action: &str) -> Result<()> {
         let Some(approvals) = &self.approvals else {
             anyhow::ensure!(
-                self.config.approvals() == crate::config::ApprovalPolicy::FullAccess,
+                self.approvals_policy().await == ApprovalPolicy::FullAccess,
                 "system pointer control needs a separate approval service or explicit full access"
             );
             return Ok(());
         };
+        let policy = self.approvals_policy().await;
         approvals
             .ask(
                 Request::SystemPointer {
                     action: action.to_owned(),
                 },
                 self.progress.clone(),
-                self.config.approvals(),
+                policy,
             )
             .await
     }
@@ -89,11 +116,12 @@ impl ToolContext {
     pub async fn approve_window(&self, grant: Option<WindowAccess>, action: &str) -> Result<()> {
         let Some(approvals) = &self.approvals else {
             anyhow::ensure!(
-                self.config.approvals() == crate::config::ApprovalPolicy::FullAccess,
+                self.approvals_policy().await == ApprovalPolicy::FullAccess,
                 "window use needs an approval service or explicit full access"
             );
             return Ok(());
         };
+        let policy = self.approvals_policy().await;
         approvals
             .ask(
                 Request::Window {
@@ -101,7 +129,7 @@ impl ToolContext {
                     action: action.to_owned(),
                 },
                 self.progress.clone(),
-                self.config.approvals(),
+                policy,
             )
             .await
     }
@@ -114,9 +142,8 @@ impl ToolContext {
         let request = Request::Command {
             command: command.to_owned(),
         };
-        approvals
-            .ask(request, self.progress.clone(), self.config.approvals())
-            .await
+        let policy = self.approvals_policy().await;
+        approvals.ask(request, self.progress.clone(), policy).await
     }
 }
 

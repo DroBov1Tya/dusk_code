@@ -559,7 +559,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

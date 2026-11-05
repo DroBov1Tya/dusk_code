@@ -21,11 +21,14 @@ use crate::{
 use super::sections::{is_zero, yes};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, McpServerConfig, Memory,
-    Plugged, PluginConfig, ProviderConfig, ThreadConfig, WorkHistory,
+    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory,
 };
 
 /// MCP server names are this long at most.
 const MAX_MCP_NAME: usize = 24;
+
+/// Branch prefixes are this long at most.
+const MAX_BRANCH_PREFIX: usize = 64;
 
 /// Written above the settings whenever the core saves the file.
 const HEADER: &str = "\
@@ -47,6 +50,12 @@ pub struct Config {
     /// profile may silence the bell; set this to false to disable notifications here.
     #[serde(default = "yes")]
     sound_notifications: bool,
+    /// Whether clients notify at all; off keeps them silent whatever sound says.
+    #[serde(default = "yes")]
+    notifications: bool,
+    /// Version control settings; clients show this section as "Version control".
+    #[serde(default, skip_serializing_if = "VersionControl::is_default")]
+    version_control: VersionControl,
     #[serde(default, skip_serializing_if = "Appearance::is_default")]
     appearance: Appearance,
     /// Tools switched on or off by name; a tool not listed is on.
@@ -182,6 +191,27 @@ impl Config {
 
     pub fn sound_notifications(&self) -> bool {
         self.sound_notifications
+    }
+
+    /// Whether clients notify at all.
+    pub fn notifications(&self) -> bool {
+        self.notifications
+    }
+
+    pub fn set_notifications(&mut self, on: bool) {
+        self.notifications = on;
+    }
+
+    pub fn set_sound_notifications(&mut self, on: bool) {
+        self.sound_notifications = on;
+    }
+
+    pub fn version_control(&self) -> &VersionControl {
+        &self.version_control
+    }
+
+    pub fn set_branch_prefix(&mut self, prefix: &str) {
+        self.version_control.branch_prefix = prefix.trim().to_owned();
     }
 
     pub fn appearance(&self) -> Appearance {
@@ -385,6 +415,15 @@ impl Config {
             self.limits.max_agents_at_work > 0,
             "max_agents_at_work must be above zero"
         );
+        let prefix = &self.version_control.branch_prefix;
+        ensure!(
+            prefix.len() <= MAX_BRANCH_PREFIX,
+            "version_control.branch_prefix must be at most {MAX_BRANCH_PREFIX} characters"
+        );
+        ensure!(
+            prefix.is_empty() || valid_branch_prefix(prefix),
+            "version_control.branch_prefix is not a valid branch prefix"
+        );
         ensure!(
             self.memory.max_chars > 0,
             "memory.max_chars must be above zero"
@@ -486,6 +525,18 @@ impl fmt::Debug for Config {
             .field("logging", &self.logging.enabled)
             .finish()
     }
+}
+
+/// Whether a branch prefix can start a branch name: path components of letters, digits,
+/// `-`, `_` and `.` separated by single `/`, such as `dusk/`. A prefix is the part this
+/// tool puts in front, so it may end with `/`; Git's full rules apply to the whole name.
+fn valid_branch_prefix(prefix: &str) -> bool {
+    !prefix.starts_with('/')
+        && !prefix.contains("//")
+        && !prefix.contains("..")
+        && prefix
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' || c == '/')
 }
 
 fn read_private_file(path: &Path) -> Result<Vec<u8>> {
@@ -613,10 +664,43 @@ mod tests {
     fn written_yaml_reads_back_the_same() {
         let mut config = parse(PROVIDERS).unwrap();
         config.set_tool_enabled("run_command", false);
+        config.set_branch_prefix("dusk/");
+        config.set_notifications(false);
+        config.set_sound_notifications(false);
         let yaml = config.to_yaml().unwrap();
         assert!(yaml.starts_with(HEADER));
         let again = parse(&yaml).unwrap();
         assert!(!again.tool_enabled("run_command"));
         assert_eq!(again.providers()["main"].api_key.0, "sk-test");
+        assert_eq!(again.version_control().branch_prefix, "dusk/");
+        assert!(!again.notifications());
+        assert!(!again.sound_notifications());
+    }
+
+    #[test]
+    fn branch_prefixes_are_bounded_and_safe() {
+        assert!(
+            parse(&format!(
+                "{PROVIDERS}version_control:\n  branch_prefix: 'dusk/'\n"
+            ))
+            .is_ok()
+        );
+        assert!(parse("version_control:\n  branch_prefix: ''\n").is_ok());
+        for bad in ["a//b", "..", "a b/", "/a", &"x".repeat(65)] {
+            assert!(
+                parse(&format!("version_control:\n  branch_prefix: '{bad}'\n")).is_err(),
+                "{bad:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn notifications_default_to_on_and_stay_off_when_set() {
+        let plain = parse(PROVIDERS).unwrap();
+        assert!(plain.notifications() && plain.sound_notifications());
+        let off = parse("notifications: false\n").unwrap();
+        assert!(!off.notifications() && off.sound_notifications());
+        let silent = parse("sound_notifications: false\n").unwrap();
+        assert!(silent.notifications() && !silent.sound_notifications());
     }
 }

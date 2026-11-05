@@ -18,7 +18,7 @@ use dusk_protocol::{
         SettingsRequest, Status, Switch, ThreadRequest, WorkRequest,
     },
     command::{Answer, Command},
-    config::{ContextPolicy, ProviderKind},
+    config::{ApprovalPolicy, ContextPolicy, ProviderKind},
     conversation::{LocalUnsent, Message},
     mcp::McpInfo,
     project::{FileEntry, GitInfo, OutputFile, Project},
@@ -250,6 +250,26 @@ impl Threads<'_> {
         }
     }
 
+    /// The thread's own approval mode; `None` goes back to the default in settings.
+    pub async fn set_approvals(
+        &self,
+        thread_id: &str,
+        policy: Option<ApprovalPolicy>,
+    ) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::SetApprovals { thread_id, policy })
+            .await
+    }
+
+    /// The thread's own approval mode; `None` when it uses the default in settings.
+    pub async fn approvals(&self, thread_id: &str) -> Result<Option<ApprovalPolicy>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::GetApprovals { thread_id }).await? {
+            Response::Approvals(policy) => Ok(policy),
+            other => Err(unexpected(other)),
+        }
+    }
+
     async fn opened(&self, request: ThreadRequest) -> Result<String> {
         match self.call(request).await? {
             Response::Opened { thread_id } => Ok(thread_id),
@@ -300,6 +320,12 @@ impl Settings<'_> {
 
     pub async fn switch(&self, switch: Switch, on: bool) -> Result<()> {
         self.done(SettingsRequest::Switch { switch, on }).await
+    }
+
+    /// The version control branch prefix; empty adds none.
+    pub async fn branch_prefix(&self, prefix: &str) -> Result<()> {
+        self.done(SettingsRequest::BranchPrefix(prefix.to_owned()))
+            .await
     }
 
     /// Returns the mode switched to.

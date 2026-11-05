@@ -23,7 +23,7 @@ use crate::{
 };
 
 /// Raised whenever a request, a response or an event changes shape.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// The first thing a client says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -122,6 +122,15 @@ pub enum ThreadRequest {
         id: u64,
         decision: Decision,
     },
+    /// The thread's own approval mode; `None` goes back to the default in settings.
+    SetApprovals {
+        thread_id: String,
+        policy: Option<ApprovalPolicy>,
+    },
+    /// Answers with the thread's own approval mode, or none when it uses the default.
+    GetApprovals {
+        thread_id: String,
+    },
 }
 
 /// What `/settings` changes.
@@ -140,6 +149,8 @@ pub enum SettingsRequest {
         switch: Switch,
         on: bool,
     },
+    /// The version control branch prefix; empty adds none.
+    BranchPrefix(String),
     /// Answers with the mode switched to.
     NextMode,
     /// Switches to the mode of this name.
@@ -176,6 +187,10 @@ pub enum Switch {
     /// On sets the policy, off goes back to asking.
     Approvals(ApprovalPolicy),
     Logging,
+    /// Whether clients notify at all.
+    Notifications,
+    /// Whether notifications ring the terminal bell.
+    SoundNotifications,
 }
 
 /// The files the user edits through the settings, and the MCP servers.
@@ -297,6 +312,8 @@ pub enum Response {
     Jobs(Vec<JobInfo>),
     Node(NodeText),
     Mcp(Vec<McpInfo>),
+    /// A thread's own approval mode, or none when it uses the default in settings.
+    Approvals(Option<ApprovalPolicy>),
     Projects(Vec<Project>),
     Project(Project),
     Git(GitInfo),
@@ -333,6 +350,8 @@ pub struct Status {
     pub approvals: ApprovalPolicy,
     pub max_goal_rounds: u32,
     pub idle_screen_minutes: u32,
+    /// Whether clients notify at all.
+    pub notifications: bool,
     pub sound_notifications: bool,
     pub mcp: Vec<McpStatus>,
     pub mcp_starting: bool,
