@@ -1,7 +1,7 @@
 //! What one chat shows, built from its history and then from its live events. Plain
 //! data, so the drawing code only reads it.
 
-use std::{collections::BTreeMap, path::PathBuf};
+use std::{collections::BTreeMap, path::PathBuf, time::Instant};
 
 use dusk_protocol::{
     artifact::ImageArtifact,
@@ -70,6 +70,32 @@ pub enum ToolState {
     Failed,
 }
 
+/// One thing that passed between the agents, the user's approvals and the arbiter, as
+/// the arbiter window shows it.
+pub struct Exchange {
+    pub at: Instant,
+    pub from: String,
+    pub to: String,
+    pub kind: ExchangeKind,
+    pub text: String,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ExchangeKind {
+    /// A task given to an agent.
+    Asked,
+    /// An agent's report back.
+    Reported,
+    /// A tool's request for a yes.
+    Approval,
+    Allowed,
+    Denied,
+}
+
+/// Who a chat is in the arbiter window.
+pub const CHAT: &str = "chat";
+const ARBITER: &str = "arbiter";
+
 /// A subagent of the chat, as the right column shows it.
 pub struct Agent {
     pub name: String,
@@ -93,6 +119,10 @@ pub struct Transcript {
     pub outputs: Vec<PathBuf>,
     /// What each subagent of the chat said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, Transcript>,
+    /// What passed between the agents and the arbiter, oldest first.
+    pub exchanges: Vec<Exchange>,
+    /// When the arbiter last answered, for its pulse.
+    pub arbiter_at: Option<Instant>,
 }
 
 impl Transcript {
@@ -144,9 +174,17 @@ impl Transcript {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         match event {
-            ThreadEvent::UserMessage(message)
-            | ThreadEvent::FromAgent(message)
-            | ThreadEvent::FromJob(message) => self.items.push(Item::User(message.content)),
+            ThreadEvent::FromAgent(message) => {
+                let from = message
+                    .from_thread_id
+                    .as_deref()
+                    .map_or_else(|| "an agent".to_owned(), |id| self.agent_name(id));
+                self.exchange(&from, CHAT, ExchangeKind::Reported, &message.content);
+                self.items.push(Item::User(message.content));
+            }
+            ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
+                self.items.push(Item::User(message.content))
+            }
             ThreadEvent::TurnStarted(_) => self.working = true,
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => self.working = false,
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
@@ -188,6 +226,7 @@ impl Transcript {
                 task,
                 ..
             } => {
+                self.exchange(CHAT, &agent, ExchangeKind::Asked, &task);
                 self.agents.insert(
                     thread_id,
                     Agent {
@@ -198,6 +237,29 @@ impl Transcript {
                 );
             }
             ThreadEvent::Subagent { thread_id, event } => {
+                // What an agent asks, and what is answered for it, shows with its name.
+                let who = self.agent_name(&thread_id);
+                match &*event {
+                    ThreadEvent::SubagentStarted { agent, task, .. } => {
+                        self.exchange(&who, agent, ExchangeKind::Asked, task);
+                    }
+                    ThreadEvent::Approval(request) => {
+                        self.exchange(
+                            &who,
+                            ARBITER,
+                            ExchangeKind::Approval,
+                            &request.request.what(),
+                        );
+                    }
+                    ThreadEvent::ArbiterDecided {
+                        what,
+                        allow,
+                        reason,
+                    } => {
+                        self.decided(&who, what, *allow, reason);
+                    }
+                    _ => {}
+                }
                 if let Some(agent) = self.agents.get_mut(&thread_id) {
                     match &*event {
                         ThreadEvent::TurnStarted(_) => agent.working = true,
@@ -208,7 +270,15 @@ impl Transcript {
                 self.agent_chats.entry(thread_id).or_default().apply(*event);
             }
             ThreadEvent::Question(question) => self.question = Some(question),
-            ThreadEvent::Approval(request) => self.approvals.push(request),
+            ThreadEvent::Approval(request) => {
+                self.exchange(
+                    CHAT,
+                    ARBITER,
+                    ExchangeKind::Approval,
+                    &request.request.what(),
+                );
+                self.approvals.push(request);
+            }
             ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Undone { text } => {
@@ -247,6 +317,7 @@ impl Transcript {
             } => {
                 let verdict = if allow { "allowed" } else { "denied" };
                 self.notice(&format!("Arbiter {verdict} {what}: {reason}"));
+                self.decided(CHAT, &what, allow, &reason);
             }
             ThreadEvent::Goal { note, .. } => self.notice(&note),
             ThreadEvent::Forked { .. } => self.notice("Forked into a new chat."),
@@ -283,6 +354,32 @@ impl Transcript {
         let path = PathBuf::from(path);
         self.outputs.retain(|known| *known != path);
         self.outputs.push(path);
+    }
+
+    fn agent_name(&self, thread_id: &str) -> String {
+        self.agents
+            .get(thread_id)
+            .map_or_else(|| "an agent".to_owned(), |agent| agent.name.clone())
+    }
+
+    fn exchange(&mut self, from: &str, to: &str, kind: ExchangeKind, text: &str) {
+        self.exchanges.push(Exchange {
+            at: Instant::now(),
+            from: from.to_owned(),
+            to: to.to_owned(),
+            kind,
+            text: text.chars().take(400).collect(),
+        });
+    }
+
+    fn decided(&mut self, asker: &str, what: &str, allow: bool, reason: &str) {
+        let kind = if allow {
+            ExchangeKind::Allowed
+        } else {
+            ExchangeKind::Denied
+        };
+        self.exchange(ARBITER, asker, kind, &format!("{what}: {reason}"));
+        self.arbiter_at = Some(Instant::now());
     }
 
     fn tool_mut(&mut self, call_id: &str) -> Option<&mut Tool> {

@@ -5,7 +5,7 @@ mod approval;
 mod composer;
 pub mod links;
 mod media;
-mod messages;
+pub mod messages;
 mod mode_menu;
 mod model_bar;
 mod model_menu;

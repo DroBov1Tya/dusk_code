@@ -2,10 +2,12 @@
 //! One at a time; a click on the dimmed backdrop or the close button shuts it.
 
 mod agent_chat;
+mod arbiter;
 mod chat_menu;
 pub mod detail;
 mod project;
 mod search;
+mod sphere;
 mod viewer;
 
 use std::path::PathBuf;
@@ -39,6 +41,7 @@ pub enum Modal {
         agent: String,
         name: String,
     },
+    Arbiter,
     Rename {
         thread_id: String,
         title: Entity<InputState>,
@@ -81,6 +84,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
+        Modal::Arbiter => ("Arbiter".to_owned(), 1040., arbiter::render(ws, cx)),
         Modal::AgentChat { agent, name } => {
             let (agent, name) = (agent.clone(), name.clone());
             (name, 760., agent_chat::render(ws, &agent, cx))

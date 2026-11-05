@@ -28,6 +28,7 @@ use crate::{
 pub const WIDTH: f32 = 340.;
 
 const MODULES: &[(Right, &str)] = &[
+    (Right::Arbiter, "Arbiter"),
     (Right::Context, "Context"),
     (Right::Activity, "Activity"),
     (Right::Outputs, "Outputs"),
@@ -88,6 +89,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             .child(header);
         if open {
             let body = match module {
+                Right::Arbiter => arbiter_summary(ws, cx),
                 Right::Context => context::render(ws, cx),
                 Right::Activity => activity::render(ws, cx),
                 Right::Outputs => outputs::render(ws, cx),
@@ -148,6 +150,41 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         )
 }
 
+/// The arbiter's tally, and the way into its window.
+fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    use crate::chat::transcript::ExchangeKind;
+    let muted = cx.theme().muted_foreground;
+    let (mut asked, mut allowed, mut denied) = (0, 0, 0);
+    if let Some(chat) = ws.shown_chat() {
+        for exchange in &chat.exchanges {
+            match exchange.kind {
+                ExchangeKind::Approval => asked += 1,
+                ExchangeKind::Allowed => allowed += 1,
+                ExchangeKind::Denied => denied += 1,
+                _ => {}
+            }
+        }
+    }
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_3()
+        .px_4()
+        .text_sm()
+        .child(div().flex_1().text_color(muted).child(format!(
+            "{asked} asked · {allowed} allowed · {denied} denied"
+        )))
+        .child(
+            gpui_kit::component::button::Button::new("arbiter-open")
+                .label("Open")
+                .on_click(cx.listener(|ws, _, _, cx| {
+                    ws.modal = Some(crate::modal::Modal::Arbiter);
+                    cx.notify();
+                })),
+        )
+}
+
 /// A hairline above every module but the first.
 trait WhenBorder {
     fn when_border(self, on: bool, color: Hsla) -> Self;
@@ -168,6 +205,10 @@ impl Workspace {
     fn has_content(&self, module: Right) -> bool {
         let chat = self.shown_chat();
         match module {
+            Right::Arbiter => {
+                self.status.approvals == dusk_protocol::config::ApprovalPolicy::Arbiter
+                    || chat.is_some_and(|chat| !chat.exchanges.is_empty())
+            }
             Right::Context => self.context.is_some(),
             Right::Activity => chat.is_some_and(|chat| !chat.activity().is_empty()),
             Right::Outputs => chat.is_some_and(|chat| !chat.outputs.is_empty()),
@@ -197,7 +238,7 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Context => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {}
+            Right::Arbiter | Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {}
         }
     }
 }
