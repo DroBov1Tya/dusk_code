@@ -4,6 +4,22 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## 0.71.1 - 2026-11-05
+
+### Added
+
+- The desktop client's arbiter window: the chat's agents, what passed between them,
+  the approval requests and the arbiter's answers, around a sphere that stirs at each
+  answer.
+- Subagent chats open to read, live while they work; pictures show as cards with
+  their title and description; the version in the corner opens the updates.
+
+### Changed
+
+- Long chats scroll smoothly: only the messages in sight are drawn.
+- The message navigator is four ticks by the composer and opens over the chat.
+- The sidebar folds into a narrow rail of icons.
+
 ## 0.71.0 - 2026-11-05
 
 ### Added

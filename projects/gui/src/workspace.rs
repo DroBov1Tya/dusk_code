@@ -41,6 +41,7 @@ pub enum Center {
 /// The modules of the right column, top to bottom.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Right {
+    Arbiter,
     Context,
     Activity,
     Outputs,
@@ -120,9 +121,13 @@ pub struct Workspace {
     pub update: Option<dusk_protocol::update::UpdateInfo>,
     /// Answers whose reasoning is unfolded, by chat and item index.
     pub unfolded: HashSet<(String, usize)>,
-    pub scroll: ScrollHandle,
-    /// The transcript size last scrolled to, so the view follows only new output.
-    pub followed: (usize, bool),
+    /// The shown chat's transcript as a virtual list, and the rows it holds.
+    pub list: ListState,
+    pub rows: Vec<crate::chat::messages::Row>,
+    /// The chat the list was built for; another one starts it anew.
+    pub list_chat: Option<String>,
+    /// A row changed height, as when folded: measure every row again.
+    pub measure_again: bool,
 }
 
 impl Workspace {
@@ -218,8 +223,10 @@ impl Workspace {
             system: None,
             update: None,
             unfolded: HashSet::new(),
-            scroll: ScrollHandle::new(),
-            followed: (0, false),
+            list: ListState::new(0, ListAlignment::Top, px(800.)),
+            rows: Vec::new(),
+            list_chat: None,
+            measure_again: false,
         };
         workspace.pump_events(events, cx);
         workspace.pump_status(status, cx);
@@ -333,8 +340,12 @@ impl Render for Workspace {
             .flex_row()
             .bg(background)
             .text_color(foreground)
-            .when(!self.left_hidden, |row| {
-                row.child(sidebar::render(self, window, cx))
+            .map(|row| {
+                if self.left_hidden {
+                    row.child(sidebar::rail(self, cx))
+                } else {
+                    row.child(sidebar::render(self, window, cx))
+                }
             })
             .child(div().flex_1().min_w_0().h_full().child(center))
             .when(!self.right_hidden, |row| {

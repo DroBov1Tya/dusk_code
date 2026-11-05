@@ -1,7 +1,7 @@
-//! The transcript drawn: messages as markdown, reasoning folded, pictures in full, and
-//! the agent's steps folded so only the latest shows; unfolding the run shows every
-//! step, and unfolding a step shows its arguments and answer. The view follows new
-//! output only while it is scrolled to the bottom.
+//! The transcript drawn as a virtual list: only the rows in sight are laid out, their
+//! heights cached, so a long chat scrolls without lag. Messages are markdown, reasoning
+//! folds, pictures are cards, and the agent's steps fold so only the latest shows. The
+//! list follows new output while it is scrolled to the end.
 
 use std::path::Path;
 
@@ -20,127 +20,117 @@ use crate::{widgets, workspace::Workspace};
 /// Keys of unfolded things share one set: answers by index, runs and steps apart.
 const RUN: usize = 1 << 40;
 const STEP: usize = 1 << 41;
-/// How close to the bottom still counts as at the bottom.
-const FOLLOW_SLACK: f32 = 48.;
 
-pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
+/// One row of the list: an item, a run of steps, or the working figure.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Row {
+    Item(usize),
+    Run { start: usize, end: usize },
+    Working,
+}
+
+pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
     let shown = ws.shown.clone().unwrap_or_default();
     let Some(chat) = ws.chats.get(&shown) else {
-        return div()
-            .id("transcript")
-            .child(widgets::muted("Opening...", cx));
+        return widgets::muted("Opening...", cx).into_any_element();
     };
-    let theme = cx.theme();
-    let (surface, muted, accent, danger, border) = (
-        theme.muted,
-        theme.muted_foreground,
-        theme.primary,
-        theme.danger,
-        theme.border,
-    );
-    let pictures = ws.status.artifacts_dir.clone();
-    // Each row is a direct child of the scrolled box, so a sent message can be scrolled to.
-    let mut rows: Vec<AnyElement> = Vec::new();
-    let mut sent: Vec<(usize, String)> = Vec::new();
+    let mut rows = Vec::new();
+    let mut sent = Vec::new();
     let mut index = 0;
     while index < chat.items.len() {
-        let key = format!("{shown}-{index}");
-        let item = &chat.items[index];
-        if let Item::Tool(_) = item {
-            // A run of steps: the latest shows, the rest fold under it.
+        if let Item::Tool(_) = chat.items[index] {
             let start = index;
             while index < chat.items.len() && matches!(chat.items[index], Item::Tool(_)) {
                 index += 1;
             }
-            // A shown picture stands for the step that showed it.
-            let tools: Vec<&Tool> = chat.items[start..index]
-                .iter()
-                .filter_map(|item| match item {
-                    Item::Tool(tool)
-                        if !(tool.name == "display_image" && tool.state == ToolState::Done) =>
-                    {
-                        Some(tool)
-                    }
-                    _ => None,
-                })
-                .collect();
-            if tools.is_empty() {
-                continue;
+            if !steps(&chat.items[start..index]).is_empty() {
+                rows.push(Row::Run { start, end: index });
             }
-            rows.push(lane(run(ws, &shown, start, &tools, cx).into_any_element()));
             continue;
         }
-        index += 1;
-        let at = index - 1;
-        if let Item::User(text) = item {
+        if let Item::User(text) = &chat.items[index] {
             sent.push((rows.len(), text.clone()));
         }
-        rows.push(lane(match item {
-            Item::User(text) => div()
-                .self_end()
-                .max_w(px(600.))
-                .px_4()
-                .py_2()
-                .rounded_xl()
-                .bg(surface)
-                .child(text.clone())
-                .into_any_element(),
-            Item::Assistant { text, reasoning } => {
-                let unfolded = ws.unfolded.contains(&(shown.clone(), at));
-                let mut answer = div().flex().flex_col().gap_2();
-                if !reasoning.trim().is_empty() {
-                    let id = shown.clone();
-                    answer = answer.child(
-                        div()
-                            .id(SharedString::from(format!("reasoning-{key}")))
-                            .text_xs()
-                            .text_color(muted)
-                            .cursor_pointer()
-                            .child(if unfolded {
-                                "▾ Thinking"
-                            } else {
-                                "▸ Thinking"
-                            })
-                            .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx))),
-                    );
-                    if unfolded {
-                        answer = answer.child(
-                            div()
-                                .pl_3()
-                                .border_l_2()
-                                .border_color(border)
-                                .text_xs()
-                                .text_color(muted)
-                                .child(reasoning.clone()),
-                        );
-                    }
-                }
-                if !text.is_empty() {
-                    answer = answer.child(super::media::render(&format!("answer-{key}"), text, cx));
-                }
-                answer.into_any_element()
-            }
-            Item::Image(image) => picture(&pictures, image, cx),
-            Item::Notice(text) => div()
-                .text_xs()
-                .text_color(muted)
-                .child(text.clone())
-                .into_any_element(),
-            Item::Error(text) => div()
-                .px_3()
-                .py_2()
-                .rounded_md()
-                .text_xs()
-                .text_color(danger)
-                .bg(danger.opacity(0.1))
-                .child(text.clone())
-                .into_any_element(),
-            Item::Tool(_) => unreachable!("runs are drawn above"),
-        }));
+        rows.push(Row::Item(index));
+        index += 1;
     }
     if chat.working {
-        rows.push(lane(
-            div()
+        rows.push(Row::Working);
+    }
+    sync(ws, &shown, &rows);
+    ws.rows = rows;
+    ws.sent_rows = sent;
+    list(
+        ws.list.clone(),
+        cx.processor(|ws, ix: usize, _window, cx| ws.transcript_row(ix, cx)),
+    )
+    .size_full()
+    .into_any_element()
+}
+
+/// Tells the list what changed: a new chat is measured anew; rows that came or changed
+/// at the end, where streaming text grows, are measured again.
+fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
+    if ws.list_chat.as_deref() != Some(shown) {
+        ws.list_chat = Some(shown.to_owned());
+        ws.list.reset(rows.len());
+        ws.list.set_follow_mode(FollowMode::Tail);
+        return;
+    }
+    let old = ws.list.item_count();
+    let same = old.min(rows.len());
+    // The first row that differs from what the list holds, and the last one, which may
+    // still be growing.
+    let first = ws
+        .rows
+        .iter()
+        .zip(rows)
+        .position(|(a, b)| a != b)
+        .unwrap_or(same)
+        .min(same.saturating_sub(1));
+    if old != rows.len() || ws.measure_again {
+        ws.list.splice(first..old, rows.len() - first);
+    } else if let Some(last) = rows.len().checked_sub(1) {
+        ws.list.splice(last..last + 1, 1);
+    }
+    if ws.measure_again {
+        ws.measure_again = false;
+        ws.list.splice(0..rows.len(), rows.len());
+    }
+}
+
+/// The steps a run shows: a picture card stands for the step that showed it.
+fn steps(items: &[Item]) -> Vec<&Tool> {
+    items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Tool(tool)
+                if !(tool.name == "display_image" && tool.state == ToolState::Done) =>
+            {
+                Some(tool)
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+impl Workspace {
+    fn transcript_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
+        let shown = self.shown.clone().unwrap_or_default();
+        let (Some(row), Some(chat)) = (self.rows.get(ix).copied(), self.chats.get(&shown)) else {
+            return div().into_any_element();
+        };
+        let theme = cx.theme();
+        let (surface, muted, accent, danger, border) = (
+            theme.muted,
+            theme.muted_foreground,
+            theme.primary,
+            theme.danger,
+            theme.border,
+        );
+        // Space between rows lives in the rows, as the list has no gap of its own.
+        let content = match row {
+            Row::Working => div()
                 .flex()
                 .flex_row()
                 .items_center()
@@ -150,36 +140,94 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .child(working::render(
                     SharedString::from(format!("working-{shown}")),
                     accent,
+                    theme.foreground,
                 ))
                 .child("Working")
                 .into_any_element(),
-        ));
+            Row::Run { start, end } => {
+                let tools = steps(&chat.items[start..end]);
+                run(self, &shown, start, &tools, cx).into_any_element()
+            }
+            Row::Item(at) => {
+                let key = format!("{shown}-{at}");
+                match &chat.items[at] {
+                    Item::User(text) => div()
+                        .self_end()
+                        .max_w(px(600.))
+                        .px_4()
+                        .py_2()
+                        .rounded_xl()
+                        .bg(surface)
+                        .child(text.clone())
+                        .into_any_element(),
+                    Item::Assistant { text, reasoning } => {
+                        let unfolded = self.unfolded.contains(&(shown.clone(), at));
+                        let mut answer = div().flex().flex_col().gap_2();
+                        if !reasoning.trim().is_empty() {
+                            let id = shown.clone();
+                            answer = answer.child(
+                                div()
+                                    .id(SharedString::from(format!("reasoning-{key}")))
+                                    .text_xs()
+                                    .text_color(muted)
+                                    .cursor_pointer()
+                                    .child(if unfolded {
+                                        "▾ Thinking"
+                                    } else {
+                                        "▸ Thinking"
+                                    })
+                                    .on_click(
+                                        cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx)),
+                                    ),
+                            );
+                            if unfolded {
+                                answer = answer.child(
+                                    div()
+                                        .pl_3()
+                                        .border_l_2()
+                                        .border_color(border)
+                                        .text_xs()
+                                        .text_color(muted)
+                                        .child(reasoning.clone()),
+                                );
+                            }
+                        }
+                        if !text.is_empty() {
+                            answer = answer.child(super::media::render(
+                                &format!("answer-{key}"),
+                                text,
+                                cx,
+                            ));
+                        }
+                        answer.into_any_element()
+                    }
+                    Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
+                    Item::Notice(text) => div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(text.clone())
+                        .into_any_element(),
+                    Item::Error(text) => div()
+                        .px_3()
+                        .py_2()
+                        .rounded_md()
+                        .text_xs()
+                        .text_color(danger)
+                        .bg(danger.opacity(0.1))
+                        .child(text.clone())
+                        .into_any_element(),
+                    Item::Tool(_) => div().into_any_element(),
+                }
+            }
+        };
+        let top = if ix == 0 { 24. } else { 8. };
+        let bottom = if ix + 1 == self.rows.len() { 24. } else { 8. };
+        div()
+            .pt(px(top))
+            .pb(px(bottom))
+            .child(lane(content))
+            .into_any_element()
     }
-    let size = (chat.items.len(), chat.working);
-    let at_bottom = {
-        let (offset, max) = (ws.scroll.offset().y, ws.scroll.max_offset().y);
-        -offset >= max - px(FOLLOW_SLACK)
-    };
-    if at_bottom && (size != ws.followed || chat.working) {
-        ws.scroll.scroll_to_bottom();
-    }
-    ws.followed = size;
-    ws.sent_rows = sent;
-    let list = div()
-        .id("transcript")
-        .size_full()
-        .flex()
-        .flex_col()
-        .gap_4()
-        .py_6()
-        .overflow_y_scroll()
-        .track_scroll(&ws.scroll)
-        .children(rows);
-    div()
-        .id("transcript-frame")
-        .relative()
-        .size_full()
-        .child(list)
 }
 
 /// A row at the chat's reading width, centered.
@@ -375,6 +423,7 @@ impl Workspace {
         if !self.unfolded.remove(&key) {
             self.unfolded.insert(key);
         }
+        self.measure_again = true;
         cx.notify();
     }
 }

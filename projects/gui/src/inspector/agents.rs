@@ -14,8 +14,13 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let mut column = div().flex().flex_col().gap_2().p_2();
     for (thread_id, agent) in &chat.agents {
         let color = if agent.working { accent } else { muted };
+        let open = thread_id.clone();
         column = column.child(
             div()
+                .id(SharedString::from(format!("agent-chat-{thread_id}")))
+                .cursor_pointer()
+                .hover(|card| card.bg(theme.accent))
+                .on_click(cx.listener(move |ws, _, _, cx| ws.open_agent_chat(&open, cx)))
                 .flex()
                 .flex_row()
                 .gap_3()
