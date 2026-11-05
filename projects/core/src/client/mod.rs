@@ -552,6 +552,12 @@ impl Projects<'_> {
         }
     }
 
+    pub async fn delete_output(&self, path: PathBuf) -> Result<()> {
+        self.0
+            .done(Request::Project(ProjectRequest::DeleteOutput { path }))
+            .await
+    }
+
     pub async fn read_output(&self, path: PathBuf) -> Result<String> {
         self.0
             .text(Request::Project(ProjectRequest::ReadOutput { path }))

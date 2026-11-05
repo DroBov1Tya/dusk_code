@@ -61,6 +61,25 @@ pub async fn read(path: &Path, roots: &[PathBuf]) -> Result<String> {
     String::from_utf8(bytes).context("not a text file")
 }
 
+/// Removes one file the outputs list, only inside `roots`; folders are never removed.
+pub async fn delete(path: &Path, roots: &[PathBuf]) -> Result<()> {
+    let path = tokio::fs::canonicalize(path)
+        .await
+        .context("no such file")?;
+    let mut allowed = false;
+    for root in roots {
+        if let Ok(root) = tokio::fs::canonicalize(root).await {
+            allowed |= path.starts_with(&root) && path != root;
+        }
+    }
+    ensure!(allowed, "only files of the workspace can be deleted here");
+    let metadata = tokio::fs::symlink_metadata(&path).await?;
+    ensure!(metadata.is_file(), "only a file can be deleted here");
+    tokio::fs::remove_file(&path)
+        .await
+        .context("cannot delete the file")
+}
+
 fn file(path: &Path) -> Option<OutputFile> {
     let metadata = path.metadata().ok()?;
     let modified = metadata
@@ -123,8 +142,12 @@ mod tests {
             .await
             .is_err()
         );
-        let listed = list(roots).await.unwrap();
+        assert!(delete(&outside.join("secret.txt"), &roots).await.is_err());
+        assert!(delete(&root, &roots).await.is_err());
+        let listed = list(roots.clone()).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].kind, OutputKind::Text);
+        delete(&root.join("report.md"), &roots).await.unwrap();
+        assert!(list(roots).await.unwrap().is_empty());
     }
 }

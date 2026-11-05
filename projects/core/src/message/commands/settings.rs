@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use crate::runtime::Runtime;
 
-pub use dusk_protocol::settings::{Settings, ToolInfo};
+pub use dusk_protocol::settings::{ModeInfo, Settings, ToolInfo};
 
 pub async fn run(runtime: &Runtime) -> Result<Settings> {
     runtime.read_agents().await?;
@@ -25,6 +25,7 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
         max_goal_rounds: config.limits().max_goal_rounds,
         idle_screen_minutes: config.appearance().idle_screen_minutes,
         mode: config.mode().to_owned(),
+        modes: runtime.mode_infos(),
         memory: config.memory(),
         work_history: config.work_history(),
         update_channel: config.update_channel(),

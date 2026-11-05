@@ -24,11 +24,20 @@ pub struct Settings {
     pub logging: bool,
     /// The chat's mode, whose switches `tools` shows.
     pub mode: String,
+    /// Every mode, in the order Tab walks them.
+    pub modes: Vec<ModeInfo>,
     /// Every tool by kind and then by name.
     pub tools: Vec<ToolInfo>,
     pub skills: Vec<SkillInfo>,
     pub agents: AgentTree,
     pub mcp: Vec<McpInfo>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ModeInfo {
+    pub name: String,
+    /// The first sentence of its prompt.
+    pub summary: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

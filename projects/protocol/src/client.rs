@@ -273,6 +273,10 @@ pub enum ProjectRequest {
     ReadOutput {
         path: PathBuf,
     },
+    /// Removes a file under the workspace or the pictures folder, never a project's.
+    DeleteOutput {
+        path: PathBuf,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

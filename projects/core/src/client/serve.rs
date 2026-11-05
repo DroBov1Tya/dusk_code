@@ -362,6 +362,10 @@ impl Server {
             ProjectRequest::Outputs => {
                 Response::Outputs(project::outputs(self.output_roots()).await?)
             }
+            ProjectRequest::DeleteOutput { path } => {
+                project::delete_output(&path, &self.output_roots()).await?;
+                Response::Done
+            }
             ProjectRequest::ReadOutput { path } => {
                 let mut roots = self.output_roots();
                 roots.extend(state.list_projects().await?.into_iter().map(|p| p.dir));
