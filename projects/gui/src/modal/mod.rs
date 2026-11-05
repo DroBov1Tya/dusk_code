@@ -1,6 +1,7 @@
 //! What opens over the window: the chat search, the project form and the file viewer.
 //! One at a time; a click on the dimmed backdrop or the close button shuts it.
 
+mod chat_menu;
 pub mod detail;
 mod project;
 mod search;
@@ -19,6 +20,7 @@ use gpui_kit::{
 
 use crate::workspace::Workspace;
 
+pub use chat_menu::render as chat_menu;
 pub use viewer::ViewerContent;
 
 pub enum Modal {
@@ -26,6 +28,8 @@ pub enum Modal {
     Project(ProjectForm),
     Viewer { path: PathBuf, content: ViewerContent },
     Detail(detail::Detail),
+    Rename { thread_id: String, title: Entity<InputState> },
+    Delete { thread_id: String, title: String },
 }
 
 /// The form that adds a project, or changes the one with `id`.
@@ -49,6 +53,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             880.,
             viewer::render(path, content, window, cx),
         ),
+        Modal::Rename { title, .. } => ("Rename chat".to_owned(), 480., chat_menu::rename(title, cx)),
+        Modal::Delete { title, .. } => ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx)),
         Modal::Detail(item) => {
             let item = item.clone();
             (item.title().to_owned(), 720., detail::render(ws, &item, cx))

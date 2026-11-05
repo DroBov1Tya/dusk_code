@@ -231,6 +231,17 @@ impl Threads<'_> {
         self.done(ThreadRequest::StopAgent { thread_id }).await
     }
 
+    pub async fn rename(&self, thread_id: &str, title: &str) -> Result<()> {
+        let (thread_id, title) = (thread_id.to_owned(), title.to_owned());
+        self.done(ThreadRequest::Rename { thread_id, title }).await
+    }
+
+    /// Erases the chat for good: its records, its agents' threads and its folder.
+    pub async fn delete(&self, thread_id: &str) -> Result<()> {
+        let thread_id = thread_id.to_owned();
+        self.done(ThreadRequest::Delete { thread_id }).await
+    }
+
     /// Answers a tool's request; `false` when it no longer waits.
     pub async fn approve(&self, id: u64, decision: Decision) -> Result<bool> {
         match self.call(ThreadRequest::Approve { id, decision }).await? {

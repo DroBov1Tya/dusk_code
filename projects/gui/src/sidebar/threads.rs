@@ -59,7 +59,17 @@ pub fn chat_row(
         )
         .child(div().flex_1().min_w_0().truncate().child(title))
         .when_some(source, |row, source| row.child(widgets::badge(source.to_owned(), accent)))
-        .on_click(cx.listener(move |ws, _, _, cx| ws.open_chat(&id, cx)))
+        .on_click({
+            let id = id.clone();
+            cx.listener(move |ws, _, _, cx| ws.open_chat(&id, cx))
+        })
+        .on_mouse_down(
+            MouseButton::Right,
+            cx.listener(move |ws, event: &MouseDownEvent, _, cx| {
+                ws.chat_menu = Some((id.clone(), event.position));
+                cx.notify();
+            }),
+        )
 }
 
 impl Workspace {

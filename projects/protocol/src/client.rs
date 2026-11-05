@@ -109,6 +109,14 @@ pub enum ThreadRequest {
     StopAgent {
         thread_id: String,
     },
+    Rename {
+        thread_id: String,
+        title: String,
+    },
+    /// Erases the chat, its agents' threads and its files folder for good.
+    Delete {
+        thread_id: String,
+    },
     /// Answers a tool's request for a yes; `false` when it no longer waits.
     Approve {
         id: u64,

@@ -182,6 +182,27 @@ impl Server {
                 runtime.stop_agent(&thread_id).await?;
                 Response::Done
             }
+            ThreadRequest::Rename { thread_id, title } => {
+                let title = title.trim();
+                ensure!(title.chars().count() <= 200, "a title is at most 200 characters");
+                runtime.state().set_title(&thread_id, title).await?;
+                Response::Done
+            }
+            ThreadRequest::Delete { thread_id } => {
+                // Its turn ends first, so nothing writes to what is being erased.
+                self.close(&thread_id).await;
+                let runtime = &self.runtime;
+                for folder in runtime.state().delete_thread(&thread_id).await? {
+                    // Only plain names under the workspace root are taken.
+                    let path = runtime.paths().workspace_folder(&folder)?;
+                    match tokio::fs::remove_dir_all(&path).await {
+                        Ok(()) => {}
+                        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(error) => warn!("cannot remove a deleted chat's folder: {error}"),
+                    }
+                }
+                Response::Done
+            }
             ThreadRequest::Approve { id, decision } => {
                 Response::Waiting(runtime.answer_approval(id, decision))
             }

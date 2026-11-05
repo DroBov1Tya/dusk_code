@@ -26,6 +26,8 @@ pub struct Prefs {
     pub font_size: f32,
     pub mono_font: Option<String>,
     pub mono_size: f32,
+    /// Chats pinned to the top of the list, by thread ID.
+    pub pinned: Vec<String>,
 }
 
 impl Default for Prefs {
@@ -36,6 +38,7 @@ impl Default for Prefs {
             font_size: 15.,
             mono_font: None,
             mono_size: 13.,
+            pinned: Vec::new(),
         }
     }
 }

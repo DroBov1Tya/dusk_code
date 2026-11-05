@@ -104,6 +104,8 @@ pub struct Workspace {
     pub attach_open: bool,
     /// The agents graph's level: the names from the root down.
     pub agent_path: Vec<String>,
+    /// The chat a right click opened the menu of, and where.
+    pub chat_menu: Option<(String, Point<Pixels>)>,
     /// Answers whose reasoning is unfolded, by chat and item index.
     pub unfolded: HashSet<(String, usize)>,
     pub scroll: ScrollHandle,
@@ -186,6 +188,7 @@ impl Workspace {
             picked: Vec::new(),
             attach_open: false,
             agent_path: Vec::new(),
+            chat_menu: None,
             unfolded: HashSet::new(),
             scroll: ScrollHandle::new(),
             followed: (0, false),
@@ -291,6 +294,7 @@ impl Render for Workspace {
             Center::Settings => settings::render(self, window, cx).into_any_element(),
         };
         let modal = modal::render(self, window, cx);
+        let chat_menu = modal::chat_menu(self, cx);
         div()
             .relative()
             .size_full()
@@ -302,5 +306,6 @@ impl Render for Workspace {
             .child(div().flex_1().min_w_0().h_full().child(center))
             .child(inspector::render(self, window, cx))
             .children(modal)
+            .children(chat_menu)
     }
 }

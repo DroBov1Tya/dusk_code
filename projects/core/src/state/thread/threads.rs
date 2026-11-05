@@ -232,6 +232,92 @@ impl State {
     }
 }
 
+/// `$rest` run over the chat bound first and every agent thread under it.
+macro_rules! family {
+    ($rest:literal) => {
+        concat!(
+            "WITH RECURSIVE family(id) AS (SELECT ? UNION SELECT threads.id FROM threads ",
+            "JOIN family ON threads.parent_thread_id = family.id) ",
+            $rest
+        )
+    };
+}
+
+impl State {
+    /// Erases a chat and the threads of every subagent under it, with all their records,
+    /// for good. Answers with their files folders, for the caller to remove.
+    pub async fn delete_thread(&self, id: &str) -> Result<Vec<String>> {
+        let mut transaction = self.pool.begin().await.context("begin the delete")?;
+        // Every check waits for the commit, when no row may point at a deleted one.
+        sqlx::query("PRAGMA defer_foreign_keys = ON")
+            .execute(&mut *transaction)
+            .await?;
+        let ids: Vec<String> = sqlx::query_scalar(family!("SELECT id FROM family"))
+            .bind(id)
+            .fetch_all(&mut *transaction)
+            .await
+            .context("find the chat's threads")?;
+        let known: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM threads WHERE id = ?")
+            .bind(id)
+            .fetch_one(&mut *transaction)
+            .await?;
+        ensure!(known == 1 && !ids.is_empty(), "no such chat");
+        let folders: Vec<String> = sqlx::query_scalar(family!(
+            "SELECT folder FROM thread_folders WHERE thread_id IN (SELECT id FROM family)"
+        ))
+        .bind(id)
+        .fetch_all(&mut *transaction)
+        .await?;
+        // The search index has no trigger for deletes, so its rows go first.
+        sqlx::query(family!(
+            "DELETE FROM messages_search WHERE rowid IN
+             (SELECT rowid FROM messages WHERE thread_id IN (SELECT id FROM family))"
+        ))
+        .bind(id)
+        .execute(&mut *transaction)
+        .await?;
+        sqlx::query(family!("DELETE FROM threads WHERE id IN (SELECT id FROM family)"))
+            .bind(id)
+            .execute(&mut *transaction)
+            .await
+            .context("delete the chat")?;
+        // Then every row left pointing at a deleted one, table by table, until none is.
+        let tables: Vec<String> = sqlx::query_scalar(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+             AND name NOT LIKE '_sqlx%' AND sql NOT LIKE 'CREATE VIRTUAL%'",
+        )
+        .fetch_all(&mut *transaction)
+        .await?;
+        loop {
+            let mut removed = 0;
+            for table in &tables {
+                let keys: Vec<(String, String, String)> = sqlx::query_as(
+                    "SELECT \"from\", \"table\", \"to\" FROM pragma_foreign_key_list(?)",
+                )
+                .bind(table)
+                .fetch_all(&mut *transaction)
+                .await?;
+                for (column, parent, key) in keys {
+                    // Names come from the schema itself, never from a caller.
+                    let sql = format!(
+                        "DELETE FROM \"{table}\" WHERE \"{column}\" IS NOT NULL
+                         AND \"{column}\" NOT IN (SELECT \"{key}\" FROM \"{parent}\")"
+                    );
+                    removed += sqlx::query(sqlx::AssertSqlSafe(sql))
+                        .execute(&mut *transaction)
+                        .await?
+                        .rows_affected();
+                }
+            }
+            if removed == 0 {
+                break;
+            }
+        }
+        transaction.commit().await.context("commit the delete")?;
+        Ok(folders)
+    }
+}
+
 fn decode_thread(row: SqliteRow) -> Result<Thread> {
     Ok(Thread {
         id: row.try_get("id")?,
@@ -249,6 +335,27 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
 #[cfg(test)]
 mod tests {
     use crate::testing::temp_state;
+
+    #[tokio::test]
+    async fn a_deleted_chat_takes_its_agents_and_records() {
+        let state = temp_state("thread-delete").await;
+        state.create_thread("chat", "gui").await.unwrap();
+        state.create_agent_thread("agent", "chat", "general", "Fable-1").await.unwrap();
+        state.create_thread("other", "gui").await.unwrap();
+        state.set_thread_folder("chat", "2026-11-05-chat").await.unwrap();
+        for id in ["chat", "agent", "other"] {
+            state.add_user_message(id, &format!("r-{id}"), "hello").await.unwrap();
+            state.add_task(id, "work", &["one".to_owned()]).await.unwrap();
+        }
+        let folders = state.delete_thread("chat").await.unwrap();
+        assert_eq!(folders, ["2026-11-05-chat"]);
+        let left: Vec<String> = state.list_threads().await.unwrap().into_iter().map(|t| t.id).collect();
+        assert_eq!(left, ["other"]);
+        assert!(state.list_messages("chat").await.unwrap().is_empty());
+        assert_eq!(state.list_messages("other").await.unwrap().len(), 1);
+        assert_eq!(state.thread_tasks("other").await.unwrap().len(), 1);
+        assert!(state.delete_thread("chat").await.is_err());
+    }
 
     #[tokio::test]
     async fn a_folder_lists_its_chats_and_those_of_no_known_folder() {
