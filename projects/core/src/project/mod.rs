@@ -36,12 +36,17 @@ pub async fn save(
         description.chars().count() <= MAX_DESCRIPTION_CHARS,
         "a project description is at most {MAX_DESCRIPTION_CHARS} characters"
     );
-    ensure!(dir.is_absolute(), "the project folder must be an absolute path");
+    ensure!(
+        dir.is_absolute(),
+        "the project folder must be an absolute path"
+    );
     let dir = tokio::fs::canonicalize(dir)
         .await
         .with_context(|| format!("cannot open {}", dir.display()))?;
     ensure!(dir.is_dir(), "{} is not a folder", dir.display());
-    let shown = dir.to_str().context("the project folder is not valid UTF-8")?;
+    let shown = dir
+        .to_str()
+        .context("the project folder is not valid UTF-8")?;
     let id = match id {
         Some(id) => {
             ensure!(
@@ -56,7 +61,10 @@ pub async fn save(
             id
         }
     };
-    state.load_project(&id).await?.context("the project was not stored")
+    state
+        .load_project(&id)
+        .await?
+        .context("the project was not stored")
 }
 
 pub async fn find(state: &State, id: &str) -> Result<Project> {
@@ -123,11 +131,23 @@ mod tests {
         let root = temp_dir("project-folder");
         std::fs::create_dir_all(&root).unwrap();
         assert!(save(&state, None, " ", "", &root).await.is_err());
-        assert!(save(&state, None, "a", "", Path::new("relative")).await.is_err());
-        assert!(save(&state, None, "a", "", &root.join("none")).await.is_err());
+        assert!(
+            save(&state, None, "a", "", Path::new("relative"))
+                .await
+                .is_err()
+        );
+        assert!(
+            save(&state, None, "a", "", &root.join("none"))
+                .await
+                .is_err()
+        );
         let saved = save(&state, None, " a ", "", &root).await.unwrap();
         assert_eq!(saved.name, "a");
         assert_eq!(saved.dir, std::fs::canonicalize(&root).unwrap());
-        assert!(save(&state, Some("other".into()), "a", "", &root).await.is_err());
+        assert!(
+            save(&state, Some("other".into()), "a", "", &root)
+                .await
+                .is_err()
+        );
     }
 }

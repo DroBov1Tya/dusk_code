@@ -6,7 +6,7 @@ use gpui_kit::{
 };
 
 use super::{card, grid, matches};
-use crate::{widgets, workspace::Workspace};
+use crate::{modal::detail::Detail, widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
     let warning = cx.theme().warning;
@@ -23,6 +23,7 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
     let mut cards = grid();
     for plugin in plugins {
         let name = plugin.name.clone();
+        let open = plugin.name.clone();
         let state = (!plugin.missing_settings.is_empty()).then(|| {
             (format!("Needs {}", plugin.missing_settings.join(", ")), warning)
         });
@@ -39,7 +40,8 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
                 .small()
                 .on_click(cx.listener(move |ws, on: &bool, _, cx| ws.plugin_enabled(&name, *on, cx))),
             cx,
-        ));
+        )
+        .on_click(cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Plugin(open.clone()), cx))));
     }
     cards
 }

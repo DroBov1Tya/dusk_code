@@ -4,7 +4,7 @@ use dusk_protocol::{catalog::SkillKind, client::Switch as CoreSwitch, settings::
 use gpui_kit::{component::ActiveTheme, *};
 
 use super::{card, grid, matches, toggle};
-use crate::{widgets, workspace::Workspace};
+use crate::{modal::detail::Detail, widgets, workspace::Workspace};
 
 pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
     let danger = cx.theme().danger;
@@ -16,6 +16,7 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
         .filter(|skill| matches(query, &[&skill.name, &skill.description]))
     {
         any = true;
+        let open = skill.name.clone();
         let kind = match skill.kind {
             SkillKind::Builtin => "Skill · built in".to_owned(),
             SkillKind::Own => "Skill · yours".to_owned(),
@@ -36,7 +37,10 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
                 cx,
             ),
             cx,
-        ));
+        )
+        .on_click(cx.listener(move |ws, _, _, cx| {
+            ws.open_detail(Detail::Skill { name: open.clone(), file: None }, cx);
+        })));
     }
     if any { cards } else { div().child(widgets::muted("No skills match.", cx)) }
 }

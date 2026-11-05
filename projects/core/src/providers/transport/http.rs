@@ -122,11 +122,20 @@ mod tests {
         let url = |text: &str| Url::parse(text).unwrap();
         assert!(is_loopback(&url("http://127.0.0.1:8080/v1")));
         assert!(is_loopback(&url("http://[::1]:8080/v1")));
-        for private in ["http://10.0.0.1/v1", "http://192.168.1.20:8080/v1", "http://100.101.1.2/v1", "http://[fd00::1]/v1"] {
+        for private in [
+            "http://10.0.0.1/v1",
+            "http://192.168.1.20:8080/v1",
+            "http://100.101.1.2/v1",
+            "http://[fd00::1]/v1",
+        ] {
             assert!(base_url(private, false).is_ok(), "{private}");
         }
         // Names may resolve anywhere, and public addresses are the open internet.
-        for public in ["http://localhost/v1", "http://example.com/v1", "http://8.8.8.8/v1"] {
+        for public in [
+            "http://localhost/v1",
+            "http://example.com/v1",
+            "http://8.8.8.8/v1",
+        ] {
             assert!(base_url(public, false).is_err(), "{public}");
             assert!(base_url(public, true).is_ok(), "{public}");
         }

@@ -22,7 +22,11 @@ pub async fn info(project: &Project) -> Result<GitInfo> {
     )
     .await?;
     let worktrees = git(dir, &["worktree", "list", "--porcelain"]).await?;
-    let status = git(dir, &["status", "--porcelain=v1", "-z", "--untracked-files=all"]).await?;
+    let status = git(
+        dir,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    )
+    .await?;
     // No upstream is no error worth showing: the counts are just left out.
     let ahead_behind = git(dir, &["rev-list", "--left-right", "--count", "HEAD...@{u}"])
         .await
@@ -137,7 +141,8 @@ mod tests {
 
     #[test]
     fn status_is_read_inside_the_project() {
-        let status = " M app/src/a.rs\0R  app/b.rs\0app/old.rs\0?? app/new/\0 M other/c.rs\0UU app/d.rs\0";
+        let status =
+            " M app/src/a.rs\0R  app/b.rs\0app/old.rs\0?? app/new/\0 M other/c.rs\0UU app/d.rs\0";
         let changes = parse_status(status, "app/");
         let shown: Vec<_> = changes
             .iter()

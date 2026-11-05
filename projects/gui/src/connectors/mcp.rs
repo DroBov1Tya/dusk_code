@@ -11,7 +11,7 @@ use gpui_kit::{
 };
 
 use super::{card, grid, matches, toggle};
-use crate::{widgets, workspace::Workspace};
+use crate::{modal::detail::Detail, widgets, workspace::Workspace};
 
 pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
@@ -38,7 +38,7 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
             _ => server.target.clone(),
         };
         let name = server.name.clone();
-        let (restart, sign_in) = (name.clone(), name.clone());
+        let (restart, sign_in, open) = (name.clone(), name.clone(), name.clone());
         let actions = div()
             .flex()
             .flex_row()
@@ -78,7 +78,8 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
             },
             actions,
             cx,
-        ));
+        )
+        .on_click(cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Mcp(open.clone()), cx))));
     }
     cards
 }

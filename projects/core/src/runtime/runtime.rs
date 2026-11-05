@@ -714,9 +714,21 @@ impl Runtime {
 
     /// The tools a chat gets, by name.
     /// Every tool with its kind, by kind and then by name.
-    pub fn tool_kinds(&self) -> Vec<(String, ToolKind)> {
+    /// Every switchable tool with its kind and what it tells the model.
+    pub fn tool_kinds(&self) -> Result<Vec<(String, ToolKind, String)>> {
         // Tools do not depend on the thread.
-        self.launcher.tools("", None, 0).kinds()
+        let tools = self.launcher.tools("", None, 0);
+        let root = self.launcher.paths.workspace_root();
+        let scope = Arc::new(ToolScope::new(root, root)?);
+        let mut descriptions = tools.descriptions(&scope, &self.launcher.config.current());
+        Ok(tools
+            .kinds()
+            .into_iter()
+            .map(|(name, kind)| {
+                let description = descriptions.remove(&name).unwrap_or_default();
+                (name, kind, description)
+            })
+            .collect())
     }
 
     /// How each MCP server in the config stands.

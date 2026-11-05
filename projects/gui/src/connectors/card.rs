@@ -29,6 +29,8 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
         .border_1()
         .border_color(theme.border)
         .bg(theme.muted)
+        .cursor_pointer()
+        .hover(|card| card.border_color(theme.muted_foreground.opacity(0.4)))
         .child(icon_slot(&card.name, cx))
         .child(
             div()
@@ -58,7 +60,12 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
                     card.state
                         .map(|(text, color)| div().text_xs().text_color(color).child(text)),
                 )
-                .child(action),
+                // The action keeps its clicks, so a switch does not open the card.
+                .child(
+                    div()
+                        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+                        .child(action),
+                ),
         )
 }
 

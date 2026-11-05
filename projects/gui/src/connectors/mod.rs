@@ -76,7 +76,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         Shelf::Skills => skills::render(&settings, &query, cx),
         Shelf::Plugins => plugins::render(ws, &query, cx),
         Shelf::Tools => tools::render(&settings, &query, cx),
-        Shelf::Agents => graph::render(&settings.agents, cx),
+        Shelf::Agents => graph::render(ws, &settings.agents, cx),
     };
     div()
         .id("connectors")

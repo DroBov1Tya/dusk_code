@@ -1,6 +1,7 @@
 //! What opens over the window: the chat search, the project form and the file viewer.
 //! One at a time; a click on the dimmed backdrop or the close button shuts it.
 
+pub mod detail;
 mod project;
 mod search;
 mod viewer;
@@ -24,6 +25,7 @@ pub enum Modal {
     Search,
     Project(ProjectForm),
     Viewer { path: PathBuf, content: ViewerContent },
+    Detail(detail::Detail),
 }
 
 /// The form that adds a project, or changes the one with `id`.
@@ -36,17 +38,21 @@ pub struct ProjectForm {
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Option<Div> {
     let (title, width, body) = match ws.modal.as_ref()? {
-        Modal::Search => ("Search chats", 640., search::render(ws, cx)),
+        Modal::Search => ("Search chats".to_owned(), 640., search::render(ws, cx)),
         Modal::Project(form) => (
-            if form.id.is_some() { "Edit project" } else { "New project" },
+            if form.id.is_some() { "Edit project" } else { "New project" }.to_owned(),
             640.,
             project::render(form, cx),
         ),
         Modal::Viewer { path, content } => (
-            "File",
+            "File".to_owned(),
             880.,
             viewer::render(path, content, window, cx),
         ),
+        Modal::Detail(item) => {
+            let item = item.clone();
+            (item.title().to_owned(), 720., detail::render(ws, &item, cx))
+        }
     };
     let theme = cx.theme();
     let panel = div()

@@ -6,8 +6,8 @@ use std::{collections::HashMap, path::PathBuf, sync::Arc, time::Duration};
 use anyhow::{Context, Result, anyhow, ensure};
 use dusk_protocol::{
     client::{
-        CatalogRequest, Event, ProjectRequest, Request, Response, SettingsRequest, Status,
-        Switch, ThreadRequest, WorkRequest,
+        CatalogRequest, Event, ProjectRequest, Request, Response, SettingsRequest, Status, Switch,
+        ThreadRequest, WorkRequest,
     },
     config::ApprovalPolicy,
     update::{Channel, InstallProgress},
@@ -335,7 +335,9 @@ impl Server {
             ProjectRequest::Files { id, path } => {
                 Response::Files(project::files(&project::find(state, &id).await?, &path).await?)
             }
-            ProjectRequest::Outputs => Response::Outputs(project::outputs(self.output_roots()).await?),
+            ProjectRequest::Outputs => {
+                Response::Outputs(project::outputs(self.output_roots()).await?)
+            }
             ProjectRequest::ReadOutput { path } => {
                 let mut roots = self.output_roots();
                 roots.extend(state.list_projects().await?.into_iter().map(|p| p.dir));

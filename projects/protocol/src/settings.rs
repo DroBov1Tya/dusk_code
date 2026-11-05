@@ -36,6 +36,8 @@ pub struct ToolInfo {
     pub name: String,
     pub kind: ToolKind,
     pub enabled: bool,
+    /// What the model is told the tool does.
+    pub description: String,
 }
 
 /// What a tool works on, for clients to group tools by; in the order they are shown.

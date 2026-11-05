@@ -1,6 +1,11 @@
 //! The tools a thread offers, by name: built-in ones and those of MCP servers.
 
-use std::{collections::BTreeMap, path::Path, sync::Arc, time::Instant};
+use std::{
+    collections::{BTreeMap, HashMap},
+    path::Path,
+    sync::Arc,
+    time::Instant,
+};
 
 use anyhow::Result;
 use serde_json::Value;
@@ -120,6 +125,24 @@ impl ToolRegistry {
                 config.mode_tool_enabled(crate::catalog::modes::MAIN, tool.name(), tool.kind())
             }
         }
+    }
+
+    /// What each tool tells the model it does, switched off or not, by name.
+    pub fn descriptions(
+        &self,
+        scope: &Arc<ToolScope>,
+        config: &Arc<Config>,
+    ) -> HashMap<String, String> {
+        let context = ToolContext {
+            scope: Arc::clone(scope),
+            config: Arc::clone(config),
+            progress: None,
+            approvals: None,
+        };
+        self.tools
+            .iter()
+            .map(|(name, tool)| (name.clone(), tool.description(&context)))
+            .collect()
     }
 
     /// The tools the config has on, as the model sees them.

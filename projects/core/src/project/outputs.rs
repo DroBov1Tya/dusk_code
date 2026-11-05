@@ -48,7 +48,10 @@ pub async fn read(path: &Path, roots: &[PathBuf]) -> Result<String> {
             allowed |= path.starts_with(root);
         }
     }
-    ensure!(allowed, "only files of the workspace or a project can be shown");
+    ensure!(
+        allowed,
+        "only files of the workspace or a project can be shown"
+    );
     let metadata = tokio::fs::metadata(&path).await?;
     ensure!(metadata.is_file(), "not a file");
     if metadata.len() > MAX_PREVIEW_BYTES {
@@ -104,9 +107,22 @@ mod tests {
         std::fs::create_dir_all(&outside).unwrap();
         std::fs::write(outside.join("secret.txt"), "no").unwrap();
         let roots = vec![root.clone()];
-        assert_eq!(read(&root.join("report.md"), &roots).await.unwrap(), "# done");
+        assert_eq!(
+            read(&root.join("report.md"), &roots).await.unwrap(),
+            "# done"
+        );
         assert!(read(&outside.join("secret.txt"), &roots).await.is_err());
-        assert!(read(&root.join("../").join(outside.file_name().unwrap()).join("secret.txt"), &roots).await.is_err());
+        assert!(
+            read(
+                &root
+                    .join("../")
+                    .join(outside.file_name().unwrap())
+                    .join("secret.txt"),
+                &roots
+            )
+            .await
+            .is_err()
+        );
         let listed = list(roots).await.unwrap();
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].kind, OutputKind::Text);

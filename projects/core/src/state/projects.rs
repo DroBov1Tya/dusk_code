@@ -55,14 +55,15 @@ impl State {
         description: &str,
         dir: &str,
     ) -> Result<bool> {
-        let done = sqlx::query("UPDATE projects SET name = ?, description = ?, dir = ? WHERE id = ?")
-            .bind(name)
-            .bind(description)
-            .bind(dir)
-            .bind(id)
-            .execute(&self.pool)
-            .await
-            .context("save the project; is its folder another project's?")?;
+        let done =
+            sqlx::query("UPDATE projects SET name = ?, description = ?, dir = ? WHERE id = ?")
+                .bind(name)
+                .bind(description)
+                .bind(dir)
+                .bind(id)
+                .execute(&self.pool)
+                .await
+                .context("save the project; is its folder another project's?")?;
         Ok(done.rows_affected() > 0)
     }
 

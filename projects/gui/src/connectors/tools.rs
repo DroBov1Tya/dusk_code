@@ -1,48 +1,73 @@
-//! The tools of the chat's mode, grouped by what they work on, each with its switch.
+//! The built-in tools of the chat's mode as cards, grouped by what they work on; a card
+//! opens what the tool tells the model. MCP tools live with their servers.
 
-use dusk_protocol::{client::Switch as CoreSwitch, settings::Settings};
+use dusk_protocol::{
+    client::Switch as CoreSwitch,
+    settings::{Settings, ToolKind},
+};
 use gpui_kit::{component::ActiveTheme, *};
 
-use super::{grid, matches, toggle};
-use crate::{widgets, workspace::Workspace};
+use super::{card, grid, matches, toggle};
+use crate::{modal::detail::Detail, widgets, workspace::Workspace};
 
 pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
-    let border = cx.theme().border;
+    let muted = cx.theme().muted_foreground;
     let mut page = div().flex().flex_col().gap_2();
-    let mut kinds: Vec<_> = settings.tools.iter().map(|tool| tool.kind).collect();
+    let mut kinds: Vec<_> = settings
+        .tools
+        .iter()
+        .map(|tool| tool.kind)
+        .filter(|kind| *kind != ToolKind::Mcp)
+        .collect();
     kinds.dedup();
     for kind in kinds {
         let tools: Vec<_> = settings
             .tools
             .iter()
-            .filter(|tool| tool.kind == kind && matches(query, &[&tool.name]))
+            .filter(|tool| tool.kind == kind && matches(query, &[&tool.name, &tool.description]))
             .collect();
         if tools.is_empty() {
             continue;
         }
         let mut cards = grid();
         for tool in tools {
+            let open = tool.name.clone();
+            let line = tool.description.lines().next().unwrap_or_default().to_owned();
             cards = cards.child(
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_3()
-                    .px_3()
-                    .py_2()
-                    .rounded_lg()
-                    .border_1()
-                    .border_color(border)
-                    .child(div().flex_1().min_w_0().truncate().font_family("Menlo").child(tool.name.clone()))
-                    .child(toggle(
+                card::render(
+                    card::Card {
+                        id: SharedString::from(format!("tool-card-{}", tool.name)),
+                        name: tool.name.clone(),
+                        kind: format!("Built in · {}", kind.name()),
+                        description: line,
+                        state: None,
+                    },
+                    toggle(
                         format!("tool-{}", tool.name),
                         tool.enabled,
                         CoreSwitch::Tool(tool.name.clone()),
                         cx,
-                    )),
+                    ),
+                    cx,
+                )
+                .on_click(cx.listener(move |ws, _, _, cx| ws.open_detail(Detail::Tool(open.clone()), cx))),
             );
         }
-        page = page.child(widgets::heading(kind.name(), cx)).child(cards);
+        page = page.child(widgets::caption(capitalize(kind.name()), cx).px_0()).child(cards);
     }
-    page.child(widgets::muted(format!("Switches apply to the {} mode.", settings.mode), cx))
+    page.child(
+        div()
+            .pt_2()
+            .text_xs()
+            .text_color(muted)
+            .child(format!("Switches apply to the {} mode. MCP tools are under Connectors.", settings.mode)),
+    )
+}
+
+fn capitalize(text: &str) -> String {
+    let mut chars = text.chars();
+    chars
+        .next()
+        .map(|first| first.to_uppercase().chain(chars).collect())
+        .unwrap_or_default()
 }

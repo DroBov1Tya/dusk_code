@@ -76,8 +76,14 @@ mod tests {
             },
         ];
         assert_eq!(change_of(&changes, "src", true), Some(ChangeKind::Modified));
-        assert_eq!(change_of(&changes, "src/a.rs", false), Some(ChangeKind::Modified));
-        assert_eq!(change_of(&changes, "new/x.rs", false), Some(ChangeKind::Untracked));
+        assert_eq!(
+            change_of(&changes, "src/a.rs", false),
+            Some(ChangeKind::Modified)
+        );
+        assert_eq!(
+            change_of(&changes, "new/x.rs", false),
+            Some(ChangeKind::Untracked)
+        );
         assert_eq!(change_of(&changes, "srcx", true), None);
     }
 }

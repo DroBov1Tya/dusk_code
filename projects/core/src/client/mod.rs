@@ -495,12 +495,18 @@ impl Projects<'_> {
 
     pub async fn remove(&self, id: &str) -> Result<()> {
         let id = id.to_owned();
-        self.0.done(Request::Project(ProjectRequest::Remove { id })).await
+        self.0
+            .done(Request::Project(ProjectRequest::Remove { id }))
+            .await
     }
 
     pub async fn git(&self, id: &str) -> Result<GitInfo> {
         let id = id.to_owned();
-        match self.0.call(Request::Project(ProjectRequest::Git { id })).await? {
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::Git { id }))
+            .await?
+        {
             Response::Git(info) => Ok(info),
             other => Err(unexpected(other)),
         }
@@ -525,7 +531,11 @@ impl Projects<'_> {
 
 impl Projects<'_> {
     pub async fn outputs(&self) -> Result<Vec<OutputFile>> {
-        match self.0.call(Request::Project(ProjectRequest::Outputs)).await? {
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::Outputs))
+            .await?
+        {
             Response::Outputs(files) => Ok(files),
             other => Err(unexpected(other)),
         }

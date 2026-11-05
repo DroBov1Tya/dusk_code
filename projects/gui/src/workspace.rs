@@ -102,6 +102,8 @@ pub struct Workspace {
     /// Options marked in the shown chat's question.
     pub picked: Vec<usize>,
     pub attach_open: bool,
+    /// The agents graph's level: the names from the root down.
+    pub agent_path: Vec<String>,
     /// Answers whose reasoning is unfolded, by chat and item index.
     pub unfolded: HashSet<(String, usize)>,
     pub scroll: ScrollHandle,
@@ -183,6 +185,7 @@ impl Workspace {
             picker_closed: None,
             picked: Vec::new(),
             attach_open: false,
+            agent_path: Vec::new(),
             unfolded: HashSet::new(),
             scroll: ScrollHandle::new(),
             followed: (0, false),

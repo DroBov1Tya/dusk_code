@@ -11,12 +11,13 @@ pub async fn run(runtime: &Runtime) -> Result<Settings> {
     runtime.read_agents().await?;
     let config = runtime.config().current();
     let tools = runtime
-        .tool_kinds()
+        .tool_kinds()?
         .into_iter()
-        .map(|(name, kind)| ToolInfo {
+        .map(|(name, kind, description)| ToolInfo {
             enabled: config.mode_tool_enabled(config.mode(), &name, kind),
             name,
             kind,
+            description,
         })
         .collect();
     Ok(Settings {
