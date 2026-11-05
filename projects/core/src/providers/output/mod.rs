@@ -6,68 +6,17 @@ pub mod inline_tags;
 pub mod text_calls;
 
 use anyhow::{Context, Result, bail, ensure};
-use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use super::errors::{OutputLimit, Transient};
 use crate::BoxFuture;
 
+pub use dusk_protocol::model::{FinishReason, ModelEvent, ToolCall, Usage};
+
 /// Bounds memory for a provider that never finishes; every kind of output counts.
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
 /// Tool calls one answer may make; real answers make a few.
 const MAX_TOOL_CALLS: usize = 128;
-
-/// One increment of a streamed model response.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum ModelEvent {
-    /// Model thinking: shown to the user and never sent back as context.
-    Reasoning(String),
-    Text(String),
-    /// A new tool call; its arguments follow as `ToolArguments` with the same index.
-    ToolCall {
-        index: u32,
-        id: String,
-        name: String,
-    },
-    /// A piece of the JSON arguments of the call with this index.
-    ToolArguments {
-        index: u32,
-        fragment: String,
-    },
-    Usage(Usage),
-    Finished(FinishReason),
-}
-
-/// Token usage of the whole request, as the provider reports it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct Usage {
-    /// Everything the request sent, the cached part included.
-    pub prompt_tokens: u64,
-    /// The part of the prompt the provider served from its cache, usually at a discount.
-    pub cached_prompt_tokens: u64,
-    /// Everything the model wrote, its reasoning included.
-    pub completion_tokens: u64,
-    pub reasoning_tokens: u64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum FinishReason {
-    Stop,
-    ToolCalls,
-    /// Cut by the output token limit.
-    Length,
-    ContentFilter,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ToolCall {
-    /// Provider-assigned; a tool result refers back to it.
-    pub id: String,
-    pub name: String,
-    pub arguments: Value,
-}
 
 /// A streamed model response.
 pub trait ChatStream: Send {

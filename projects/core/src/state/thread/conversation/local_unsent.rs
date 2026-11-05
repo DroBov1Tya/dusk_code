@@ -6,13 +6,7 @@ use uuid::Uuid;
 
 use super::{State, timestamp_ms};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LocalUnsent {
-    pub id: String,
-    pub thread_id: String,
-    pub content: String,
-    pub created_at: i64,
-}
+pub use dusk_protocol::conversation::LocalUnsent;
 
 impl State {
     pub async fn add_local_unsent(&self, thread_id: &str, content: &str) -> Result<LocalUnsent> {

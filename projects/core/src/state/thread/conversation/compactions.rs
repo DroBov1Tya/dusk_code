@@ -9,16 +9,7 @@ use super::{
     messages::{decode_message, estimate_tokens, read_tokens},
 };
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Compaction {
-    pub compaction_id: i64,
-    pub thread_id: String,
-    /// The newest message the summary covers.
-    pub through_sequence: u64,
-    pub summary: String,
-    /// Estimated size of the summary.
-    pub summary_tokens: u64,
-}
+pub use dusk_protocol::conversation::Compaction;
 
 impl State {
     pub async fn add_compaction(

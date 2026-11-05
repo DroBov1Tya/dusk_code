@@ -17,29 +17,7 @@ use super::{
 };
 use crate::providers::ToolCall;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Turn {
-    pub turn_id: String,
-    pub thread_id: String,
-    /// Sequence of the newest user message this turn answers.
-    pub last_sequence: u64,
-    pub response_message_id: Option<String>,
-    pub status: TurnStatus,
-    /// Unix timestamps in milliseconds.
-    pub started_at: i64,
-    pub finished_at: Option<i64>,
-    pub error_message: Option<String>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum TurnStatus {
-    Running,
-    Completed,
-    /// Stopped by the user or a restart; a partial answer is kept when there was one.
-    Interrupted,
-    Failed,
-}
+pub use dusk_protocol::work::{Turn, TurnStatus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
@@ -318,17 +296,6 @@ impl State {
         .context("interrupt running turns")?;
         transaction.commit().await.context("commit recovery")?;
         Ok(())
-    }
-}
-
-impl TurnStatus {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::Running => "running",
-            Self::Completed => "completed",
-            Self::Interrupted => "interrupted",
-            Self::Failed => "failed",
-        }
     }
 }
 

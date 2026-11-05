@@ -988,6 +988,7 @@ dependencies = [
  "chrono",
  "core-foundation",
  "core-graphics",
+ "dusk_protocol",
  "futures",
  "ignore",
  "image",
@@ -1034,6 +1035,16 @@ dependencies = [
  "serde_json",
  "tokio",
  "uuid",
+]
+
+[[package]]
+name = "dusk_protocol"
+version = "0.70.6"
+dependencies = [
+ "anyhow",
+ "schemars 1.2.3",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

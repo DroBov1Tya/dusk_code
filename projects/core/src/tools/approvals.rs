@@ -16,106 +16,8 @@ use tokio::sync::{mpsc, oneshot};
 use super::tool::Progress;
 use crate::{config::ApprovalPolicy, runtime::ThreadEvent};
 
-/// Characters that let one command line run another, or hide what it runs. A program
-/// allowed for the session is allowed only on lines without them.
-const SHELL_SYNTAX: &[char] = &[
-    ';', '&', '|', '$', '`', '<', '>', '(', ')', '\n', '\r', '\'', '"', '\\',
-];
-
-/// Programs that run their arguments as another command; allowing one would allow all.
-const RUNNERS: &[&str] = &[
-    "sudo", "doas", "env", "xargs", "exec", "eval", "command", "builtin", "nohup", "nice",
-    "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
-];
-
-/// Window inventory or one kind of access to a retained window selection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum WindowAccess {
-    List,
-    Capture(String),
-    Activate(String),
-}
-
-/// What a tool asks to do.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Request {
-    /// A path outside the working directory and the workspace.
-    Path { path: PathBuf, write: bool },
-    /// A shell command line.
-    Command { command: String },
-    /// Seeing the screen and independent accessibility activation. This never grants
-    /// control of the user's system pointer.
-    Screen { action: String },
-    /// Moving and clicking/scrolling with the shared system pointer. This needs its
-    /// own session grant, separate from screen access and independent activation.
-    SystemPointer { action: String },
-    /// Window metadata, capture or activation. None is a request to end confinement.
-    Window {
-        grant: Option<WindowAccess>,
-        action: String,
-    },
-    /// Typing or pressing keys, which can do anything a shell can: asked every time,
-    /// with what it sends.
-    Keyboard { action: String },
-}
-
-impl Request {
-    /// What `who` asks for, in a line, for any client to show.
-    pub fn describe(&self, who: &str) -> String {
-        match self {
-            Self::Path { path, write: true } => format!("{who} wants to write {}", path.display()),
-            Self::Path { path, write: false } => format!("{who} wants to read {}", path.display()),
-            Self::Command { command } => format!("{who} wants to run: {command}"),
-            Self::Screen { action } => format!("{who} wants to use the screen: {action}"),
-            Self::SystemPointer { action } => {
-                format!("{who} wants to control your system pointer: {action}")
-            }
-            Self::Keyboard { action } => format!("{who} wants to use the keyboard: {action}"),
-            Self::Window { action, .. } => {
-                format!("{who} wants to use window tools: {action}")
-            }
-        }
-    }
-
-    /// What a yes for the session covers, for the client to name: the folder of the path,
-    /// or the program of a plain command. `None` when the session cannot be offered.
-    pub fn session_grant(&self) -> Option<String> {
-        match self {
-            Self::Path { path, .. } => Some(folder_of(path).display().to_string()),
-            Self::Command { command } => program(command).map(str::to_owned),
-            Self::Screen { .. } => Some("the screen".into()),
-            Self::SystemPointer { .. } => Some("the system pointer".into()),
-            Self::Keyboard { .. } => None,
-            Self::Window { grant, .. } => match grant {
-                Some(WindowAccess::List) => Some("listing window names and IDs".into()),
-                Some(WindowAccess::Capture(_)) => Some("capture of this selected window".into()),
-                Some(WindowAccess::Activate(_)) => {
-                    Some("control activation in this selected window".into())
-                }
-                None => None,
-            },
-        }
-    }
-
-    pub fn what(&self) -> String {
-        match self {
-            Self::Path { path, write: true } => format!("writing {}", path.display()),
-            Self::Path { path, write: false } => format!("reading {}", path.display()),
-            Self::Command { command } => format!("running `{command}`"),
-            Self::Screen { action } => format!("using the screen: {action}"),
-            Self::SystemPointer { action } => format!("controlling the system pointer: {action}"),
-            Self::Keyboard { action } => format!("using the keyboard: {action}"),
-            Self::Window { action, .. } => format!("using window tools: {action}"),
-        }
-    }
-}
-
-/// A request as the client sees it; `id` is what its answer names.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ApprovalRequest {
-    pub id: u64,
-    pub request: Request,
-}
+pub use dusk_protocol::tools::{ApprovalRequest, Request, WindowAccess};
+use dusk_protocol::tools::{folder_of, program};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Decision {
@@ -294,26 +196,6 @@ impl Grants {
             Request::Window { grant, .. } => self.windows.extend(grant.clone()),
         }
     }
-}
-
-/// The folder a yes for a path opens: the path itself when it is one.
-fn folder_of(path: &std::path::Path) -> PathBuf {
-    match path.is_dir() {
-        true => path.to_owned(),
-        false => path.parent().unwrap_or(path).to_owned(),
-    }
-}
-
-/// The program of a command line that runs exactly one plain program.
-fn program(command: &str) -> Option<&str> {
-    if command.contains(SHELL_SYNTAX) {
-        return None;
-    }
-    let name = command.split_whitespace().next()?;
-    let plain = name
-        .chars()
-        .all(|c| c.is_ascii_alphanumeric() || "-_./+".contains(c));
-    (plain && !RUNNERS.contains(&name.rsplit('/').next().unwrap_or(name))).then_some(name)
 }
 
 #[cfg(test)]

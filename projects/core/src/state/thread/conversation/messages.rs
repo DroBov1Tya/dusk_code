@@ -7,43 +7,7 @@ use uuid::Uuid;
 use super::{State, timestamp_ms};
 use crate::{providers::ToolCall, state::artifacts::ImageArtifact};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Message {
-    pub message_id: String,
-    pub thread_id: String,
-    /// Order within the thread, from 1.
-    pub sequence: u64,
-    pub role: MessageRole,
-    pub content: String,
-    /// Model thinking; only assistant messages carry it, and only when it was recorded.
-    pub reasoning: Option<String>,
-    /// Only assistant messages call tools.
-    pub tool_calls: Vec<ToolCall>,
-    /// Set exactly on tool messages: the call they answer.
-    pub tool_call_id: Option<String>,
-    /// Image cards for clients. Never included in model context or URL detection.
-    pub artifacts: Vec<ImageArtifact>,
-    /// For a user message another agent sent: the thread it came from.
-    pub from_thread_id: Option<String>,
-    /// A process completion, distinct from user input and system instructions.
-    pub from_job_id: Option<String>,
-    /// Estimated sizes in model tokens; see `estimate_tokens`.
-    pub content_tokens: u64,
-    pub tool_calls_tokens: u64,
-    pub reasoning_tokens: u64,
-    /// Unix timestamp in milliseconds.
-    pub created_at: i64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[non_exhaustive]
-pub enum MessageRole {
-    System,
-    User,
-    Assistant,
-    Tool,
-    Job,
-}
+pub use dusk_protocol::conversation::{Message, MessageRole};
 
 /// A message about to be stored. The constructors allow only valid combinations.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,13 +20,6 @@ pub struct NewMessage {
     artifacts: Vec<ImageArtifact>,
     from_thread_id: Option<String>,
     from_job_id: Option<String>,
-}
-
-impl Message {
-    /// Estimated size of what the model receives of this message.
-    pub fn context_tokens(&self) -> u64 {
-        self.content_tokens + self.tool_calls_tokens
-    }
 }
 
 impl State {
@@ -271,17 +228,6 @@ impl NewMessage {
     pub fn with_artifacts(mut self, artifacts: Vec<ImageArtifact>) -> Self {
         self.artifacts = artifacts;
         self
-    }
-}
-
-impl MessageRole {
-    fn as_str(self) -> &'static str {
-        match self {
-            Self::System | Self::Job => "system",
-            Self::User => "user",
-            Self::Assistant => "assistant",
-            Self::Tool => "tool",
-        }
     }
 }
 
