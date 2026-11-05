@@ -4,7 +4,7 @@ use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonRounded, ButtonVariants},
-        input::Textarea,
+        input::{Paste, Textarea},
     },
     *,
 };
@@ -32,6 +32,44 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
             .on_click(cx.listener(|ws, _, window, cx| ws.send(window, cx)))
     };
     let attach = ws.attach_open.then(|| attach_menu(cx));
+    let navigator = (ws.sent_rows.len() > 1).then(|| super::navigator::render(&ws.sent_rows, cx));
+    let muted = cx.theme().muted_foreground;
+    let mut chips = div().flex().flex_row().flex_wrap().gap_1();
+    for (index, path) in ws.attachments.iter().enumerate() {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        chips = chips.child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .pl_2()
+                .rounded_md()
+                .bg(cx.theme().accent)
+                .text_xs()
+                .child(crate::widgets::icon(
+                    if path.is_dir() { IconName::Folder } else { IconName::File },
+                    muted,
+                ))
+                .child(name)
+                .child(
+                    Button::new(("unattach", index))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .on_click(cx.listener(move |ws, _, _, cx| {
+                            if index < ws.attachments.len() {
+                                ws.attachments.remove(index);
+                            }
+                            cx.notify();
+                        })),
+                ),
+        );
+    }
+    let chips = (!ws.attachments.is_empty()).then_some(chips);
     div()
         .relative()
         .px_6()
@@ -50,6 +88,8 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .border_1()
                 .border_color(cx.theme().border)
                 .bg(cx.theme().muted)
+                .relative()
+                .children(navigator)
                 .child(
                     Button::new("attach")
                         .ghost()
@@ -70,6 +110,24 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .child(button),
         )
         .children(attach)
+        .children(chips.map(|chips| div().pt_2().child(chips)))
+        // Files copied in the file manager arrive as files, not as their names.
+        .capture_action(cx.listener(|ws, _: &Paste, _, cx| {
+            let Some(item) = cx.read_from_clipboard() else {
+                return;
+            };
+            let mut found = false;
+            for entry in item.entries() {
+                if let ClipboardEntry::ExternalPaths(paths) = entry {
+                    ws.attachments.extend(paths.paths().iter().cloned());
+                    found = true;
+                }
+            }
+            if found {
+                cx.stop_propagation();
+                cx.notify();
+            }
+        }))
         // Tab switches the mode, before the text box takes it as an indent.
         .capture_key_down(cx.listener(|ws, event: &KeyDownEvent, _, cx| {
             let keys = &event.keystroke;
@@ -123,6 +181,13 @@ impl Workspace {
     /// project when none is shown.
     pub fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut text = self.composer.read(cx).value().trim().to_owned();
+        // Attached files go as their paths; the core keeps them among the chat's sources.
+        for path in std::mem::take(&mut self.attachments) {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&path.display().to_string());
+        }
         if text.is_empty() {
             return;
         }
@@ -167,9 +232,8 @@ impl Workspace {
         );
     }
 
-    /// Puts the picked paths into the message; the core keeps named pictures and files
-    /// among the chat's sources when it is sent.
-    fn attach(&mut self, folders: bool, window: &mut Window, cx: &mut Context<Self>) {
+    /// Adds the picked files or folders to the next message.
+    fn attach(&mut self, folders: bool, _: &mut Window, cx: &mut Context<Self>) {
         self.attach_open = false;
         let picked = cx.prompt_for_paths(PathPromptOptions {
             files: !folders,
@@ -177,20 +241,13 @@ impl Workspace {
             multiple: true,
             prompt: Some("Attach".into()),
         });
-        cx.spawn_in(window, async move |ws, cx| {
+        cx.spawn(async move |ws, cx| {
             let Ok(Ok(Some(paths))) = picked.await else {
                 return;
             };
-            let _ = ws.update_in(cx, |ws, window, cx| {
-                let mut text = ws.composer.read(cx).value().to_string();
-                for path in paths {
-                    if !text.is_empty() && !text.ends_with(char::is_whitespace) {
-                        text.push(' ');
-                    }
-                    text.push_str(&path.display().to_string());
-                }
-                ws.composer
-                    .update(cx, |composer, cx| composer.set_value(text, window, cx));
+            let _ = ws.update(cx, |ws, cx| {
+                ws.attachments.extend(paths);
+                cx.notify();
             });
         })
         .detach();

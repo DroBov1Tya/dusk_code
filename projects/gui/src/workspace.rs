@@ -16,6 +16,7 @@ use dusk_protocol::{
     work::JobInfo,
 };
 use gpui_kit::{
+    prelude::FluentBuilder,
     component::{
         ActiveTheme,
         input::{InputEvent, InputState, TextareaState},
@@ -40,7 +41,6 @@ pub enum Center {
 /// The modules of the right column, top to bottom.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Right {
-    Environment,
     Context,
     Activity,
     Outputs,
@@ -54,6 +54,7 @@ pub enum Right {
 /// The model menu over the composer, and which of its submenus is open.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
+    Mode,
     Model,
     Effort,
     MoreModels,
@@ -102,6 +103,12 @@ pub struct Workspace {
     /// Options marked in the shown chat's question.
     pub picked: Vec<usize>,
     pub attach_open: bool,
+    pub left_hidden: bool,
+    pub right_hidden: bool,
+    /// Files to send with the next message.
+    pub attachments: Vec<PathBuf>,
+    /// The shown chat's sent messages, by transcript row, for the navigator.
+    pub sent_rows: Vec<(usize, String)>,
     /// The agents graph's level: the names from the root down.
     pub agent_path: Vec<String>,
     /// The chat a right click opened the menu of, and where.
@@ -197,6 +204,10 @@ impl Workspace {
             picker_closed: None,
             picked: Vec::new(),
             attach_open: false,
+            left_hidden: false,
+            right_hidden: false,
+            attachments: Vec::new(),
+            sent_rows: Vec::new(),
             agent_path: Vec::new(),
             chat_menu: None,
             system: None,
@@ -317,9 +328,9 @@ impl Render for Workspace {
             .flex_row()
             .bg(background)
             .text_color(foreground)
-            .child(sidebar::render(self, window, cx))
+            .when(!self.left_hidden, |row| row.child(sidebar::render(self, window, cx)))
             .child(div().flex_1().min_w_0().h_full().child(center))
-            .child(inspector::render(self, window, cx))
+            .when(!self.right_hidden, |row| row.child(inspector::render(self, window, cx)))
             .children(modal)
             .children(chat_menu)
     }

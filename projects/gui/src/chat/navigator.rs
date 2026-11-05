@@ -1,4 +1,4 @@
-//! The sent messages as a short column of ticks beside the chat. Under the pointer it
+//! The sent messages as a short column of ticks left of the composer. Under the pointer it
 //! grows into a catalog: each tick shows its message's number and first words, and a
 //! click scrolls the chat to it.
 
@@ -69,9 +69,11 @@ pub fn render(sent: &[(usize, String)], cx: &mut Context<Workspace>) -> Stateful
     div()
         .id("navigator")
         .group("navigator")
+        // Right beside the composer, growing up and out under the pointer.
         .absolute()
-        .left(px(8.))
-        .top(px(24.))
+        .right(relative(1.))
+        .bottom(px(8.))
+        .mr_1()
         .w(px(28.))
         .max_h(relative(0.8))
         .overflow_y_scroll()

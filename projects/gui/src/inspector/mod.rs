@@ -27,7 +27,6 @@ use crate::{
 pub const WIDTH: f32 = 340.;
 
 const MODULES: &[(Right, &str)] = &[
-    (Right::Environment, "Environment"),
     (Right::Context, "Context"),
     (Right::Activity, "Activity"),
     (Right::Outputs, "Outputs"),
@@ -88,7 +87,6 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             .child(header);
         if open {
             let body = match module {
-                Right::Environment => environment::render(ws, cx),
                 Right::Context => context::render(ws, cx),
                 Right::Activity => activity::render(ws, cx),
                 Right::Outputs => outputs::render(ws, cx),
@@ -118,6 +116,16 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .overflow_y_scroll()
                 .child(column),
         )
+        // Where the chat works stays in sight, under everything that scrolls.
+        .child(
+            div()
+                .flex_none()
+                .border_t_1()
+                .border_color(border)
+                .pt_2()
+                .pb_3()
+                .child(environment::render(ws, cx)),
+        )
 }
 
 /// A hairline above every module but the first.
@@ -140,7 +148,6 @@ impl Workspace {
     fn has_content(&self, module: Right) -> bool {
         let chat = self.shown_chat();
         match module {
-            Right::Environment => true,
             Right::Context => self.context.is_some(),
             Right::Activity => chat.is_some_and(|chat| !chat.activity().is_empty()),
             Right::Outputs => chat.is_some_and(|chat| !chat.outputs.is_empty()),
@@ -170,7 +177,7 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Context => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Environment | Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {
+            Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {
             }
         }
     }

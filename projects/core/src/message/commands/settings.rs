@@ -5,7 +5,7 @@ use anyhow::Result;
 
 use crate::runtime::Runtime;
 
-pub use dusk_protocol::settings::{ModeInfo, Settings, ToolInfo};
+pub use dusk_protocol::settings::{Settings, ToolInfo};
 
 pub async fn run(runtime: &Runtime) -> Result<Settings> {
     runtime.read_agents().await?;

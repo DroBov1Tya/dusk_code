@@ -26,23 +26,22 @@ pub struct Palette {
 pub const DEFAULT: &str = "Dusk";
 
 pub const PALETTES: &[Palette] = &[
-    // Old dark fantasy: ash and iron, worn parchment for the text, and the one warm
-    // light of a bonfire for the accent. Grim, never evil, never neon.
+    // Dusk: night water in ink blue, a violet flower for the accent and its golden heart.
     Palette {
         name: "Dusk",
         dark: true,
-        background: "#1c1b18",
-        panel: "#171614",
-        surface: "#23211e",
-        raised: "#2d2b27",
-        foreground: "#e8e0d0",
-        secondary: "#ada595",
-        muted: "#878073",
-        accent: "#d98a4e",
-        on_accent: "#1c1b18",
-        success: "#86a874",
-        warning: "#d2a650",
-        danger: "#c95a50",
+        background: "#12151e",
+        panel: "#0e1118",
+        surface: "#191d28",
+        raised: "#232835",
+        foreground: "#eef0f5",
+        secondary: "#a3a9b8",
+        muted: "#7a8296",
+        accent: "#b99cf0",
+        on_accent: "#12151e",
+        success: "#6fcfae",
+        warning: "#e7c35a",
+        danger: "#ef6b8a",
     },
     Palette {
         name: "Light",
@@ -109,23 +108,6 @@ pub const PALETTES: &[Palette] = &[
         success: "#86b07a",
         warning: "#e8a54a",
         danger: "#e0505a",
-    },
-    // Night water in ink blue, a violet flower for the accent and its golden heart.
-    Palette {
-        name: "Lotus",
-        dark: true,
-        background: "#12151e",
-        panel: "#0e1118",
-        surface: "#191d28",
-        raised: "#232835",
-        foreground: "#eef0f5",
-        secondary: "#a3a9b8",
-        muted: "#7a8296",
-        accent: "#b99cf0",
-        on_accent: "#12151e",
-        success: "#6fcfae",
-        warning: "#e7c35a",
-        danger: "#ef6b8a",
     },
 ];
 

@@ -72,16 +72,22 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             Button::new("mode")
                 .ghost()
                 .xsmall()
-                .label(format!("{} mode", ws.status.mode))
-                .tooltip("Switch the mode (Tab)")
-                .on_click(cx.listener(|ws, _, _, cx| ws.next_mode(cx))),
+                .label(format!("{} mode", ws.status.mode.to_lowercase()))
+                .tooltip("Pick a mode; Tab walks them")
+                .on_click(cx.listener(|ws, _, _, cx| {
+                    if ws.settings.is_none() {
+                        ws.load_settings(cx);
+                    }
+                    ws.toggle_picker(Picker::Mode, cx);
+                })),
         )
         .child(div().flex_1())
         .child(format!("{} / {}", short(used), short(limit)))
         .child(super::ring::render(share, meter, border));
-    let menu = ws
-        .picker
-        .map(|picker| super::model_menu::render(ws, picker, &effort, cx));
+    let menu = ws.picker.map(|picker| match picker {
+        Picker::Mode => super::mode_menu::render(ws, cx),
+        picker => super::model_menu::render(ws, picker, &effort, cx),
+    });
     div().relative().child(bar).children(menu)
 }
 

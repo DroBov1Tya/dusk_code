@@ -159,6 +159,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         ws.scroll.scroll_to_bottom();
     }
     ws.followed = size;
+    ws.sent_rows = sent;
     let list = div()
         .id("transcript")
         .size_full()
@@ -174,7 +175,6 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .relative()
         .size_full()
         .child(list)
-        .children((sent.len() > 1).then(|| super::navigator::render(&sent, cx)))
 }
 
 /// A row at the chat's reading width, centered.

@@ -6,13 +6,21 @@ mod composer;
 pub mod links;
 mod messages;
 mod model_bar;
+mod mode_menu;
 mod model_menu;
 mod navigator;
 mod ring;
 pub mod transcript;
 mod working;
 
-use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
+use gpui_kit::{
+    component::{
+        ActiveTheme, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
+    prelude::FluentBuilder,
+    *,
+};
 
 use crate::{widgets, workspace::Workspace};
 
@@ -76,13 +84,33 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 )
                 .when(!project.is_empty(), |header| {
                     header.child(widgets::badge(project, cx.theme().muted_foreground))
-                }),
+                })
+                .child(div().flex_1())
+                .child(panel_toggle("toggle-right", IconName::PanelRight, |ws| &mut ws.right_hidden, cx)),
         )
         .children(notice)
         .child(div().flex_1().min_h_0().child(body))
         .child(approval::render(ws, cx))
         .child(composer::render(ws, window, cx))
         .child(model_bar::render(ws, cx))
+}
+
+/// Shows or hides a side column.
+fn panel_toggle(
+    id: &'static str,
+    icon: IconName,
+    hidden: fn(&mut Workspace) -> &mut bool,
+    cx: &mut Context<Workspace>,
+) -> Button {
+    Button::new(id)
+        .ghost()
+        .small()
+        .icon(icon)
+        .on_click(cx.listener(move |ws, _, _, cx| {
+            let hidden = hidden(ws);
+            *hidden = !*hidden;
+            cx.notify();
+        }))
 }
 
 fn empty(ws: &Workspace, cx: &App) -> Div {
