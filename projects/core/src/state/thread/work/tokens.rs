@@ -8,65 +8,7 @@ use super::{State, messages::read_tokens, timestamp_ms};
 
 use crate::providers::Usage;
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ThreadTokens {
-    /// The best known size of the current context: what the provider counted for the
-    /// last call plus estimates of what came after it. Before any call, `current.total()`.
-    pub context: u64,
-    /// What the model receives now: the system messages, the newest summary and the
-    /// messages after it.
-    pub current: TokenCounts,
-    /// Every message and summary the thread ever had.
-    pub all: TokenCounts,
-    /// Sums of what the provider reported over every model call of the thread and of the
-    /// subagents it asked.
-    pub spent: Usage,
-    pub model_calls: u64,
-}
-
-/// Estimated tokens by who wrote them.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct TokenCounts {
-    /// The mode's prompt and other system instructions.
-    pub system: u64,
-    /// What the client sent.
-    pub user: u64,
-    /// The agent's answers.
-    pub assistant: u64,
-    /// The agent's thinking; never sent back, so it is always 0 in the current context.
-    pub reasoning: u64,
-    pub tool_calls: u64,
-    pub tool_results: u64,
-    /// Compaction summaries, which stand in for the older messages.
-    pub summary: u64,
-    /// Tool definitions, sent with every request but never stored, so the agent counts
-    /// them into the current context only.
-    pub tool_specs: u64,
-}
-
-impl TokenCounts {
-    pub fn total(&self) -> u64 {
-        self.system
-            + self.user
-            + self.assistant
-            + self.reasoning
-            + self.tool_calls
-            + self.tool_results
-            + self.summary
-            + self.tool_specs
-    }
-
-    fn add(&mut self, role: &str, content: u64, tool_calls: u64, reasoning: u64) {
-        match role {
-            "system" => self.system += content,
-            "user" => self.user += content,
-            "assistant" => self.assistant += content,
-            _ => self.tool_results += content,
-        }
-        self.tool_calls += tool_calls;
-        self.reasoning += reasoning;
-    }
-}
+pub use dusk_protocol::work::{ThreadTokens, TokenCounts};
 
 /// Which call a usage report belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]

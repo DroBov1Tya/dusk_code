@@ -15,8 +15,9 @@ use crate::{
     config::Config,
     platform::Platform,
     providers::{ToolCall, ToolSpec},
-    state::artifacts::ImageArtifact,
 };
+
+pub use dusk_protocol::tools::ToolResult;
 
 /// The model reads every result; a runaway one must not flood its context.
 const MAX_RESULT_BYTES: usize = 64 * 1024;
@@ -34,27 +35,6 @@ pub struct ToolRegistry {
     pub(crate) approvals: Option<Arc<super::Approvals>>,
     /// What the machine offers; set by the launcher from what it found at start.
     pub(crate) platform: Platform,
-}
-
-/// What the model gets back from a call.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ToolResult {
-    pub content: String,
-    pub is_error: bool,
-    /// Set only by the foreground shell runner, never inferred from output text.
-    pub exit_code: Option<i32>,
-    pub artifacts: Vec<ImageArtifact>,
-}
-
-impl ToolResult {
-    pub fn text(content: String) -> Self {
-        Self {
-            content,
-            is_error: false,
-            exit_code: None,
-            artifacts: Vec::new(),
-        }
-    }
 }
 
 impl ToolRegistry {

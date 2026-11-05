@@ -8,23 +8,11 @@ use std::{
     path::{Path, PathBuf},
 };
 
+pub use dusk_protocol::paths::{PathCompletion, PathEntry};
+
 /// Names alone are cheap to read; only matches are looked at further.
 const MAX_SCANNED: usize = 50_000;
 const MAX_FOUND: usize = 200;
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct PathEntry {
-    pub name: String,
-    pub directory: bool,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct PathCompletion {
-    /// Matching entries, folders first, then by name.
-    pub entries: Vec<PathEntry>,
-    /// Reading stopped early: there may be more.
-    pub partial: bool,
-}
 
 /// Whether a word of a message reads as a path to complete: `/`, `~/`, `./` or `../`.
 pub fn is_path(word: &str) -> bool {

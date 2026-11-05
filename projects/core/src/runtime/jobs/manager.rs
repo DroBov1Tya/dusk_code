@@ -25,6 +25,8 @@ use crate::{
     tools::console::{ProcessGroup, spawn},
 };
 
+pub use dusk_protocol::work::JobInfo;
+
 const MAX_RUNNING: usize = 64;
 const MAX_RUNNING_PER_THREAD: usize = 8;
 const MAX_COMMAND_BYTES: usize = 16 * 1024;
@@ -49,21 +51,6 @@ struct RunningJob {
 struct Capture {
     bytes: Vec<u8>,
     truncated: bool,
-}
-
-/// A job as a client lists it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct JobInfo {
-    pub job_id: String,
-    pub command: String,
-    /// In words: running, completed, failed, cancelled, timed_out, interrupted, or running
-    /// in, or unknown because of, another runtime.
-    pub status: String,
-    pub running: bool,
-    /// This runtime owns its process, so it can be stopped from here.
-    pub stoppable: bool,
-    pub started_at: i64,
-    pub finished_at: Option<i64>,
 }
 
 #[derive(Clone)]

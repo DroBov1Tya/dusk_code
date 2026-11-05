@@ -11,7 +11,8 @@ mod plugins;
 mod providers;
 mod sections;
 
-pub use context::{ContextPolicy, ContextPreset, UNKNOWN_WINDOW};
+pub use context::{ContextPolicy, ContextPreset};
+pub use dusk_protocol::config::UNKNOWN_WINDOW;
 pub use effort::Effort;
 pub use file::Config;
 pub use mcp::{

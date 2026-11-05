@@ -18,14 +18,10 @@ use crate::{
     providers::{Model, ModelProvider, ProviderRegistry},
 };
 
+pub use dusk_protocol::providers::ProviderStatus;
+
 /// A provider that does not list its models within this time counts as down.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(8);
-
-/// A configured provider as a check found it: its models, or why it did not answer.
-pub struct ProviderStatus {
-    pub name: String,
-    pub models: Result<Vec<Model>, String>,
-}
 
 /// How long a model whose vision could not be checked waits to be asked again.
 const VISION_RETRY: Duration = Duration::from_secs(10 * 60);
@@ -256,28 +252,26 @@ impl ModelChoice {
     }
 }
 
-impl ProviderStatus {
-    /// Asks every configured provider for its models at once.
-    pub async fn check_all(config: &Config) -> Result<Vec<ProviderStatus>> {
-        let registry = ProviderRegistry::from_config(config)?;
-        let mut checks = JoinSet::new();
-        for name in registry.names() {
-            let name = name.to_owned();
-            let Some(provider) = registry.provider(&name) else {
-                continue;
+/// Asks every configured provider for its models at once.
+pub async fn check_providers(config: &Config) -> Result<Vec<ProviderStatus>> {
+    let registry = ProviderRegistry::from_config(config)?;
+    let mut checks = JoinSet::new();
+    for name in registry.names() {
+        let name = name.to_owned();
+        let Some(provider) = registry.provider(&name) else {
+            continue;
+        };
+        checks.spawn(async move {
+            let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models()).await;
+            let models = match listed {
+                Ok(Ok(models)) => Ok(models),
+                Ok(Err(error)) => Err(format!("{error:#}")),
+                Err(_) => Err("no answer in time".into()),
             };
-            checks.spawn(async move {
-                let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models()).await;
-                let models = match listed {
-                    Ok(Ok(models)) => Ok(models),
-                    Ok(Err(error)) => Err(format!("{error:#}")),
-                    Err(_) => Err("no answer in time".into()),
-                };
-                ProviderStatus { name, models }
-            });
-        }
-        let mut statuses = checks.join_all().await;
-        statuses.sort_by(|a, b| a.name.cmp(&b.name));
-        Ok(statuses)
+            ProviderStatus { name, models }
+        });
     }
+    let mut statuses = checks.join_all().await;
+    statuses.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(statuses)
 }
