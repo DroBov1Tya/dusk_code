@@ -323,7 +323,9 @@ impl Transcript {
             ThreadEvent::Forked { .. } => self.notice("Forked into a new chat."),
             ThreadEvent::AgentPhase { .. }
             | ThreadEvent::LocalUnsent(_)
-            | ThreadEvent::Queued { .. } => {}
+            | ThreadEvent::Queued { .. }
+            // Ignored until the rate UI lands.
+            | ThreadEvent::OutputRate { .. } => {}
         }
     }
 
