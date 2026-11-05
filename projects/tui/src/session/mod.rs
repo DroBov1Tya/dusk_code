@@ -6,4 +6,4 @@ mod answers;
 mod run;
 mod thread;
 
-pub use run::run;
+pub use run::{THREAD_SOURCE, run};

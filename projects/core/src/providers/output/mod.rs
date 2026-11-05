@@ -48,11 +48,6 @@ impl ModelOutput {
         self.size.div_ceil(4) as u64
     }
 
-    /// Nothing the user could have seen yet: no text, reasoning or tool call.
-    pub fn is_empty(&self) -> bool {
-        self.size == 0 && self.calls.is_empty()
-    }
-
     /// Whether the model wrote any of its answer or a tool call; reasoning alone is not.
     pub fn answered(&self) -> bool {
         !self.text.trim().is_empty() || !self.calls.is_empty()

@@ -27,6 +27,8 @@ use crate::{
     mcp::McpServers,
 };
 
+pub use dusk_protocol::plugins::PluginInfo;
+
 const PLUGINS_DIR: &str = "plugins";
 /// Beside the rules, so updates that replace shipped plugins never touch it.
 const DATA_DIR: &str = "plugin-data";
@@ -40,23 +42,6 @@ impl fmt::Debug for Secret {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter.write_str("[REDACTED]")
     }
-}
-
-/// A plugin as `/settings` shows it.
-#[derive(Debug, Clone)]
-pub struct PluginInfo {
-    pub name: String,
-    pub version: String,
-    pub description: String,
-    pub enabled: bool,
-    /// What it brings, such as `mcp` or `hooks`.
-    pub parts: Vec<&'static str>,
-    /// Settings it asks for that the config does not give.
-    pub missing_settings: Vec<String>,
-    /// Its secret settings and whether each is set for this session.
-    pub secrets: Vec<(String, bool)>,
-    /// Why it cannot load, when it cannot.
-    pub problem: Option<String>,
 }
 
 pub struct Plugins {
@@ -334,7 +319,7 @@ fn info(
         (manifest.platform.is_some(), "platform"),
     ] {
         if has {
-            parts.push(part);
+            parts.push(part.to_owned());
         }
     }
     PluginInfo {

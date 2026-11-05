@@ -176,6 +176,7 @@ impl State {
     }
 
     /// Stores what one call of the newest tool step returned.
+    #[cfg(test)]
     pub async fn record_tool_result(
         &self,
         turn_id: &str,
@@ -186,6 +187,7 @@ impl State {
             .await
     }
 
+    #[cfg(test)]
     pub async fn record_tool_result_with_artifacts(
         &self,
         turn_id: &str,

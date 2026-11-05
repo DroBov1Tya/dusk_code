@@ -11,6 +11,5 @@ mod mailboxes;
 mod vision;
 
 pub use agent::Agent;
-pub use compaction::AUTO_COMPACT_PERCENT;
 pub use inbox::{Inbox, Input, Stop};
 pub use mailboxes::{Mailbox, Mailboxes};

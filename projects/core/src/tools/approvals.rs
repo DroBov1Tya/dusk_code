@@ -17,7 +17,6 @@ use super::tool::Progress;
 use crate::{config::ApprovalPolicy, runtime::ThreadEvent};
 
 pub use dusk_protocol::tools::{ApprovalRequest, Request, WindowAccess};
-use dusk_protocol::tools::{folder_of, program};
 
 pub use dusk_protocol::tools::Decision;
 
@@ -77,9 +76,11 @@ impl Approvals {
             id,
             events: progress.events.clone(),
         };
+        let session = session_grant(&request);
         progress.emit(ThreadEvent::Approval(ApprovalRequest {
             id,
             request: request.clone(),
+            session,
         }));
         match answer.await {
             Ok(Decision::Once) => Ok(()),
@@ -192,6 +193,58 @@ impl Grants {
     }
 }
 
+/// What a yes for the session covers, for the client to name: the folder of the path,
+/// or the program of a plain command. `None` when the session cannot be offered.
+pub fn session_grant(request: &Request) -> Option<String> {
+    match request {
+        Request::Path { path, .. } => Some(folder_of(path).display().to_string()),
+        Request::Command { command } => program(command).map(str::to_owned),
+        Request::Screen { .. } => Some("the screen".into()),
+        Request::SystemPointer { .. } => Some("the system pointer".into()),
+        Request::Keyboard { .. } => None,
+        Request::Window { grant, .. } => match grant {
+            Some(WindowAccess::List) => Some("listing window names and IDs".into()),
+            Some(WindowAccess::Capture(_)) => Some("capture of this selected window".into()),
+            Some(WindowAccess::Activate(_)) => {
+                Some("control activation in this selected window".into())
+            }
+            None => None,
+        },
+    }
+}
+
+/// Characters that let one command line run another, or hide what it runs. A program
+/// allowed for the session is allowed only on lines without them.
+const SHELL_SYNTAX: &[char] = &[
+    ';', '&', '|', '$', '`', '<', '>', '(', ')', '\n', '\r', '\'', '"', '\\',
+];
+
+/// Programs that run their arguments as another command; allowing one would allow all.
+const RUNNERS: &[&str] = &[
+    "sudo", "doas", "env", "xargs", "exec", "eval", "command", "builtin", "nohup", "nice",
+    "timeout", "time", "watch", "sh", "bash", "zsh", "fish", "dash", "ksh", "su",
+];
+
+/// The folder a yes for a path opens: the path itself when it is one.
+fn folder_of(path: &std::path::Path) -> PathBuf {
+    match path.is_dir() {
+        true => path.to_owned(),
+        false => path.parent().unwrap_or(path).to_owned(),
+    }
+}
+
+/// The program of a command line that runs exactly one plain program.
+fn program(command: &str) -> Option<&str> {
+    if command.contains(SHELL_SYNTAX) {
+        return None;
+    }
+    let name = command.split_whitespace().next()?;
+    let plain = name
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || "-_./+".contains(c));
+    (plain && !RUNNERS.contains(&name.rsplit('/').next().unwrap_or(name))).then_some(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -301,8 +354,8 @@ mod tests {
             grant: None,
             action: "release".into(),
         };
-        assert_ne!(capture.session_grant(), press.session_grant());
-        assert_eq!(release.session_grant(), None);
+        assert_ne!(session_grant(&capture), session_grant(&press));
+        assert_eq!(session_grant(&release), None);
         decide(&approvals, select, Decision::Session).await.unwrap();
         approvals
             .ask(capture.clone(), None, ApprovalPolicy::Ask)
@@ -434,7 +487,7 @@ mod tests {
         grants.add(&pointer);
         assert!(grants.covers(&pointer));
         assert!(!grants.covers(&screen));
-        assert_ne!(pointer.session_grant(), screen.session_grant());
+        assert_ne!(session_grant(&pointer), session_grant(&screen));
         assert!(pointer.describe("agent").contains("system pointer"));
     }
 
@@ -462,7 +515,7 @@ mod tests {
             assert!(!grants.covers(&command(line)), "{line:?}");
         }
         for line in ["sudo rm", "env rm", "/bin/sh x", "xargs rm"] {
-            assert_eq!(command(line).session_grant(), None, "{line:?}");
+            assert_eq!(session_grant(&command(line)), None, "{line:?}");
         }
     }
 

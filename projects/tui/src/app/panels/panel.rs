@@ -2,13 +2,10 @@
 
 use ratatui::layout::Rect;
 
-use dusk_core::{
-    config::ProviderKind,
-    message::commands::ContextReport,
-    release::update::{InstallProgress, UpdateInfo},
-    runtime::jobs::JobInfo,
-    runtime::model_choice::ProviderStatus,
-    state::{Message, MessageRole, Source, Thread, UndoPoint},
+use dusk_protocol::{
+    config::ProviderKind, context::ContextReport, conversation::Message, conversation::MessageRole,
+    conversation::Source, conversation::UndoPoint, providers::ProviderStatus, thread::Thread,
+    update::InstallProgress, update::UpdateInfo, work::JobInfo,
 };
 
 use super::{AgentWindow, SettingsView};
@@ -160,7 +157,7 @@ pub struct PluginRow {
     pub description: String,
     pub enabled: bool,
     /// What it brings, such as `mcp` or `platform`.
-    pub parts: Vec<&'static str>,
+    pub parts: Vec<String>,
     /// Why it does not load or what its platform says, such as a code to pair with.
     pub note: Option<String>,
     /// Its secret settings and whether each is set for this session.

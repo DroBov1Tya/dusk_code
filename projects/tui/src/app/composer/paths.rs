@@ -4,7 +4,8 @@
 
 use std::env;
 
-use dusk_core::message::path_completion::{self, PathCompletion};
+use dusk_core::app::path_completion;
+use dusk_protocol::paths::PathCompletion;
 
 use super::App;
 

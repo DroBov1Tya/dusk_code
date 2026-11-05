@@ -7,16 +7,12 @@
 use std::{collections::BTreeSet, time::Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use dusk_core::{
-    catalog::agents::{AgentNode, AgentTree},
-    catalog::graph::NodeText,
-    catalog::graph::Problem,
-    catalog::skills::SkillInfo,
-    config::{ApprovalPolicy, ContextPolicy, ContextPreset, Effort, Memory, WorkHistory},
-    mcp::{McpInfo, McpState, McpToolInfo},
-    message::commands::{Command, Settings, ToolInfo},
-    release::update::Channel,
-    runtime::SystemReport,
+use dusk_protocol::{
+    catalog::AgentNode, catalog::AgentTree, catalog::NodeText, catalog::Problem,
+    catalog::SkillInfo, command::Command, config::ApprovalPolicy, config::ContextPolicy,
+    config::ContextPreset, config::Memory, config::WorkHistory, mcp::McpInfo, mcp::McpState,
+    mcp::McpToolInfo, model::Effort, settings::Settings, settings::ToolInfo, system::SystemReport,
+    update::Channel,
 };
 
 use super::{Panel, step};

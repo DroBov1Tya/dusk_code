@@ -2,16 +2,13 @@
 
 use std::{
     collections::{HashSet, VecDeque},
-    sync::Arc,
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-use dusk_core::{
-    config::Effort,
-    config::live::LiveConfig,
-    mcp::McpStatus,
-    runtime::jobs::JobInfo,
-    state::{Goal, LocalUnsent, Message, MessageRole, Task, ThreadTokens},
+use dusk_protocol::client::Status;
+use dusk_protocol::{
+    conversation::LocalUnsent, conversation::Message, conversation::MessageRole, goal::Goal,
+    mcp::McpStatus, model::Effort, work::JobInfo, work::Task, work::ThreadTokens,
 };
 use ratatui::layout::Rect;
 
@@ -142,7 +139,8 @@ pub struct App {
     pub mcp: Vec<McpStatus>,
     pub turn_started_at: Option<i64>,
     pub last_turn_duration_ms: Option<u64>,
-    pub config: Arc<LiveConfig>,
+    /// What the core last said about itself: model, settings, MCP, updates.
+    pub status: Status,
     pub turn_running: bool,
     pub compacting: bool,
     pub sent: Vec<String>,
@@ -165,10 +163,11 @@ impl App {
         }
     }
 
-    pub fn new(model: Option<String>, limit: u64, config: Arc<LiveConfig>) -> Self {
+    pub fn new(status: Status) -> Self {
+        let limit = status.input_limit;
         Self {
-            provider_available: model.is_some(),
-            model: model.unwrap_or_else(|| "no model".into()),
+            provider_available: status.model.is_some(),
+            model: status.model.clone().unwrap_or_else(|| "no model".into()),
             effort: None,
             mode: String::new(),
             local_unsent: Vec::new(),
@@ -224,7 +223,7 @@ impl App {
             update_available: None,
             undone: None,
             paths: None,
-            goal_rounds: config.current().limits().max_goal_rounds,
+            goal_rounds: status.max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
             approvals: Vec::new(),
@@ -253,7 +252,7 @@ impl App {
             mcp: Vec::new(),
             turn_started_at: None,
             last_turn_duration_ms: None,
-            config,
+            status,
             turn_running: false,
             compacting: false,
             sent: Vec::new(),

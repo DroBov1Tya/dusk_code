@@ -8,17 +8,17 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use dusk_core::{backup::archive, init::paths::Paths, release::resources};
+use dusk_core::app::{self, Paths};
 
 const BINARY: &str = "duskcode";
 
 pub fn run(paths: &Paths) -> Result<()> {
-    let removal = archive::RemovalGuard::acquire()?;
+    let removal = app::RemovalGuard::acquire()?;
     let home = PathBuf::from(env::var_os("HOME").context("HOME is not set")?);
     let exe = env::current_exe().context("cannot find this binary")?;
     let exe = fs::canonicalize(&exe).unwrap_or(exe);
     let links = links_to(&exe, &home);
-    let install_dir = resources::data_root()?;
+    let install_dir = app::data_root()?;
     removal.validate_application_data_root(&install_dir)?;
     let config = paths.config_root();
     ensure!(

@@ -1,4 +1,6 @@
-//! dusk_core: all application logic. Front ends (CLI, TUI, GUI) are thin clients over it.
+//! dusk_core: all application logic. Front ends (CLI, TUI, GUI) are thin clients over it:
+//! they see only `client`, the protocol's core side, and `app`, what their process needs
+//! to start. Everything else is private to the core.
 //!
 //! The tree follows the subsystems, as a kernel does:
 //! - `platform`: the machine, found first: its system, its screen and its sandbox;
@@ -12,20 +14,22 @@
 //! - `backup`: `/migrate` archives, their restore, and the guard of an uninstall;
 //! - `util`: small helpers with no domain.
 
-pub mod backup;
-pub mod catalog;
-pub mod config;
-pub mod init;
-pub mod mcp;
-pub mod message;
-pub mod platform;
-pub mod plugins;
-pub mod providers;
-pub mod release;
-pub mod runtime;
-pub mod state;
-pub mod tools;
-pub mod util;
+pub mod app;
+mod backup;
+mod catalog;
+pub mod client;
+mod config;
+mod init;
+mod mcp;
+mod message;
+mod platform;
+mod plugins;
+mod providers;
+mod release;
+mod runtime;
+mod state;
+mod tools;
+mod util;
 
 use std::{future::Future, pin::Pin};
 

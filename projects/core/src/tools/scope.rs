@@ -81,6 +81,7 @@ impl ToolScope {
 
     /// Resolves a path the model gave, existing or not, and checks that it stays inside
     /// the working directory or the workspace.
+    #[cfg(test)]
     pub fn resolve(&self, path: &str) -> Result<PathBuf> {
         let (resolved, place) = self.locate(path)?;
         ensure!(

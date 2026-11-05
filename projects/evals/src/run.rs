@@ -12,10 +12,13 @@ use std::{
 
 use anyhow::{Context, Result};
 use dusk_core::{
-    config::Config,
-    init::paths::Paths,
-    providers::ModelEvent,
-    runtime::{Runtime, ThreadEvent},
+    app::{self, Paths},
+    client::Client,
+};
+use dusk_protocol::{
+    client::{Event, Hello, PROTOCOL_VERSION},
+    model::ModelEvent,
+    thread::ThreadEvent,
 };
 use regex::Regex;
 
@@ -45,26 +48,33 @@ pub async fn all(options: &Options) -> Result<()> {
         fs::copy(file, paths.main_prompt()).context("cannot read the prompt")?;
         prompt = file.display().to_string();
     }
-    let runtime = Runtime::start(paths, None).await?;
+    let hello = Hello {
+        protocol: PROTOCOL_VERSION,
+        client: SOURCE.to_owned(),
+    };
+    let mut client = app::start(paths, None, hello).await?;
     if let Some(mode) = &options.mode {
-        runtime
-            .config()
-            .update(|config: &mut Config| config.set_mode(mode.clone()))?;
+        client.settings().mode(mode).await?;
         prompt = format!("{prompt}, mode {mode}");
     }
     // The core looks for a model in the background when the config names none.
-    while runtime.discovering_model() {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+    while client.status.borrow_and_update().discovering_model {
+        if client.status.changed().await.is_err() {
+            break;
+        }
     }
-    let model = runtime
-        .model()
-        .map_or("none".to_owned(), |choice| choice.name());
+    let model = client
+        .status
+        .borrow()
+        .model
+        .clone()
+        .unwrap_or_else(|| "none".to_owned());
     let mut outcomes = Vec::new();
     for task in &tasks {
         for run in 1..=options.runs {
             eprintln!("{} run {run}/{}", task.name, options.runs);
             let timeout = Duration::from_secs(options.timeout_seconds);
-            let outcome = one(&runtime, task, &home.0, timeout).await;
+            let outcome = one(&mut client, task, &home.0, timeout).await;
             outcomes.push(outcome.unwrap_or_else(|error| Outcome {
                 task: task.name.clone(),
                 passed: false,
@@ -80,7 +90,7 @@ pub async fn all(options: &Options) -> Result<()> {
             }));
         }
     }
-    runtime.shutdown().await;
+    client.shutdown().await;
     let report = Report {
         model,
         prompt,
@@ -170,17 +180,26 @@ impl Watch {
     }
 }
 
-async fn one(runtime: &Runtime, task: &Task, home: &Path, timeout: Duration) -> Result<Outcome> {
+async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -> Result<Outcome> {
     let project = home.join(format!("project-{}", uuid::Uuid::now_v7()));
     sandbox::prepare(task, &project)?;
     let started = Instant::now();
-    let mut handle = runtime.new_thread(SOURCE, &project).await?;
-    handle.input.send(task.prompt.clone()).await?;
+    let thread_id = client.threads().start(project.clone()).await?;
+    client
+        .threads()
+        .send(&thread_id, task.prompt.clone(), false)
+        .await?;
     let mut watch = Watch::default();
+    let events = &mut client.events;
     let waited = tokio::time::timeout(timeout, async {
         while !watch.done() {
-            match handle.output.next_event().await {
-                Some(event) => watch.see(event, None),
+            match events.recv().await {
+                Some(Event::Thread {
+                    thread_id: id,
+                    event,
+                }) if id == thread_id => watch.see(*event, None),
+                Some(Event::Ended { thread_id: id }) if id == thread_id => break,
+                Some(_) => {}
                 None => break,
             }
         }
@@ -191,7 +210,7 @@ async fn one(runtime: &Runtime, task: &Task, home: &Path, timeout: Duration) -> 
         Ok(()) => watch.problem.take(),
         Err(_) => Some("timed out".to_owned()),
     };
-    drop(handle);
+    client.threads().close(&thread_id).await?;
     // Timed-out work is judged as it stands: it counts as a failure whatever it holds.
     let (passed, why) = match problem {
         None => sandbox::check(task, &project, &watch.answer, home)?,

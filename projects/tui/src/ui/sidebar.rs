@@ -1,11 +1,7 @@
 //! The left rail. Statistics always have a place; agent and MCP sections appear only when
 //! their event sources have supplied something to show.
 
-use dusk_core::{
-    mcp::McpState,
-    runtime::AUTO_COMPACT_PERCENT,
-    state::{Task, ThreadTokens},
-};
+use dusk_protocol::{mcp::McpState, work::AUTO_COMPACT_PERCENT, work::Task, work::ThreadTokens};
 use ratatui::{
     Frame,
     layout::Rect,

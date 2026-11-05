@@ -3,10 +3,7 @@
 
 use std::io::{self, IsTerminal, Write};
 
-use dusk_core::release::{
-    complete::{self, Step},
-    update,
-};
+use dusk_core::app::{self, Step};
 use tracing::{info, warn};
 
 pub async fn ensure() {
@@ -15,7 +12,7 @@ pub async fn ensure() {
         let line = match step {
             Step::Listing => format!(
                 "duskcode: resources for {} are missing, asking GitHub for them",
-                update::VERSION
+                app::VERSION
             ),
             Step::Fetching { done, total } => {
                 format!("duskcode: fetching resources {done}/{total}")
@@ -31,7 +28,7 @@ pub async fn ensure() {
         };
         let _ = stderr.flush();
     };
-    match complete::ensure_installed(&shown).await {
+    match app::ensure_installed(&shown).await {
         Ok(None) => {}
         Ok(Some(fetched)) => {
             if terminal {

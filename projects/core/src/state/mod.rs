@@ -13,8 +13,8 @@ pub use db::State;
 pub use thread::{
     BackgroundJob, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion, GoalEvidence,
     GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
-    PendingMessage, Source, Task, TaskItem, Thread, ThreadTokens, TokenCounts, Turn, TurnAnswer,
-    TurnOutcome, TurnStatus, UndoPoint, estimate_tokens,
+    PendingMessage, Source, Task, Thread, Turn, TurnAnswer, TurnOutcome, TurnStatus, UndoPoint,
+    estimate_tokens,
 };
 
 pub use db::timestamp_ms;

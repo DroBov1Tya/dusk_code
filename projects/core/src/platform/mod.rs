@@ -8,5 +8,5 @@ mod linux;
 mod macos;
 mod sandbox;
 
-pub use detect::{Needs, Os, Platform};
+pub use detect::{Needs, Platform};
 pub use sandbox::{Confinement, shell};

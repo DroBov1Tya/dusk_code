@@ -4,7 +4,7 @@
 //! declines, and a message sent from the box declines it as well.
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use dusk_core::tools::Question;
+use dusk_protocol::tools::Question;
 
 use super::{Action, App, Input};
 

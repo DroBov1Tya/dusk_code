@@ -2,7 +2,7 @@
 
 use ratatui::text::{Line, Span};
 
-use dusk_core::runtime::jobs::JobInfo;
+use dusk_protocol::work::JobInfo;
 
 use super::frame::selectable;
 use crate::app::JobsView;

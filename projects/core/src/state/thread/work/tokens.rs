@@ -8,7 +8,7 @@ use super::{State, messages::read_tokens, timestamp_ms};
 
 use crate::providers::Usage;
 
-pub use dusk_protocol::work::{ThreadTokens, TokenCounts};
+pub use dusk_protocol::work::ThreadTokens;
 
 /// Which call a usage report belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -6,27 +6,13 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
+pub use dusk_protocol::context::{ContextReport, ContextSection};
 
 use crate::{
     providers::ToolSpec,
     runtime::thread::{Conversation, spec_tokens},
     state::{MessageRole, State, estimate_tokens},
 };
-
-pub struct ContextReport {
-    /// The size of the next request, as the sidebar counts it.
-    pub total: u64,
-    pub limit: u64,
-    pub sections: Vec<ContextSection>,
-}
-
-/// A part of the request; its tokens are estimated, the total may be the provider's.
-pub struct ContextSection {
-    pub name: &'static str,
-    pub tokens: u64,
-    /// What it is made of, largest first.
-    pub items: Vec<(String, u64)>,
-}
 
 pub async fn report(
     state: &State,
@@ -128,7 +114,7 @@ fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
 fn section(name: &'static str, mut items: Vec<(String, u64)>) -> ContextSection {
     items.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     ContextSection {
-        name,
+        name: name.to_owned(),
         tokens: items.iter().map(|(_, tokens)| tokens).sum(),
         items,
     }

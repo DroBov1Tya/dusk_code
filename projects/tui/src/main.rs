@@ -16,13 +16,14 @@ mod ui;
 
 use anyhow::Result;
 use cli::args::{self, Args};
-use dusk_core::{init::logs, init::paths::Paths, release::update, runtime::Runtime};
+use dusk_core::app::Paths;
+use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
 use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     #[cfg(target_os = "macos")]
-    if dusk_core::tools::run_overlay_if_asked() {
+    if dusk_core::app::run_overlay_if_asked() {
         return Ok(());
     }
     // The built-in telegram plugin's platform: this binary, run by the core.
@@ -40,27 +41,26 @@ async fn main() -> Result<()> {
         Args::Remove => return cli::remove::run(&Paths::from_home()?),
         Args::InstallResources { directory } => {
             // The installer's archive is checked against the tag first; offline it stands.
-            match dusk_core::release::complete::complete(&directory, update::VERSION).await {
+            match dusk_core::app::complete(&directory, dusk_core::app::VERSION).await {
                 Ok(0) => {}
                 Ok(fetched) => eprintln!("fetched {fetched} resource files from GitHub"),
                 Err(error) => eprintln!("resources not checked against GitHub: {error:#}"),
             }
-            dusk_core::release::resources::install_snapshot(&directory, update::VERSION)?;
+            dusk_core::app::install_snapshot(&directory, dusk_core::app::VERSION)?;
             return Ok(());
         }
         Args::Update => {
             let paths = Paths::from_home()?;
-            println!("{}", update::update_now(&paths).await?);
+            println!("{}", dusk_core::app::update_now(&paths).await?);
             return Ok(());
         }
     };
     let state_db = state_db
-        .map(|path| dusk_core::backup::archive::resolve_state_db(&path))
+        .map(|path| dusk_core::app::resolve_state_db(&path))
         .transpose()?;
     // Keep a shared lock for the full process lifetime, including log initialization.
-    let _restore_guard =
-        dusk_core::backup::archive::RestoreGuard::startup(&paths, state_db.as_deref())?;
-    let telemetry = match logs::init(&paths, env!("CARGO_CRATE_NAME"), "tui") {
+    let _restore_guard = dusk_core::app::RestoreGuard::startup(&paths, state_db.as_deref())?;
+    let telemetry = match dusk_core::app::init_logs(&paths, env!("CARGO_CRATE_NAME"), "tui") {
         Ok(telemetry) => Some(telemetry),
         Err(error) => {
             eprintln!("duskcode: no log files: {error:#}");
@@ -71,11 +71,15 @@ async fn main() -> Result<()> {
     info!("duskcode {} starts", env!("CARGO_PKG_VERSION"));
     cli::resources::ensure().await;
     // Started before the screen is taken, so a first-start message stays readable.
-    let runtime = Runtime::start(paths, state_db).await?;
+    let hello = Hello {
+        protocol: PROTOCOL_VERSION,
+        client: session::THREAD_SOURCE.to_owned(),
+    };
+    let mut client = dusk_core::app::start(paths, state_db, hello).await?;
     let terminal = host::terminal::enter()?;
-    let result = session::run(&runtime, terminal, thread).await;
+    let result = session::run(&mut client, terminal, thread).await;
     host::terminal::leave();
-    runtime.shutdown().await;
+    client.shutdown().await;
     match &result {
         Ok(()) => info!("duskcode exits"),
         Err(error) => error!("duskcode exits: {error:#}"),
