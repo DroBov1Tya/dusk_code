@@ -3,17 +3,22 @@
 //! No executable archive parser or external archiver is involved. Links and special files
 //! are refused rather than followed; saved paths inside file contents are not rewritten.
 
-use serde::{Deserialize, Serialize};
-
 mod export;
 mod files;
-mod guard;
+mod inventory;
+mod manifest;
+mod overlap;
+mod removal_guard;
 mod restore;
+mod restore_guard;
+mod transaction;
 mod verify;
 
 pub use export::export;
-pub use guard::{RemovalGuard, RestoreGuard, resolve_state_db};
-pub use restore::{recover, restore};
+pub use removal_guard::RemovalGuard;
+pub use restore::restore;
+pub use restore_guard::{RestoreGuard, resolve_state_db};
+pub use transaction::recover;
 
 const MAGIC: &[u8] = b"DUSKCODE-ARCHIVE\n";
 const FORMAT: &str = "duskcode-portable";
@@ -28,33 +33,3 @@ const BUFFER_BYTES: usize = 64 * 1024;
 const PENDING_RESTORE: &str = ".restore-pending";
 const RESTORE_LOCK: &str = ".restore.lock";
 const MAX_TRANSACTION_BYTES: u64 = 64 * 1024;
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Manifest {
-    format: String,
-    version: u32,
-    application_version: String,
-    created_at_ms: i64,
-    /// Backups are deliberately not backed up again.
-    excluded_workspace_paths: Vec<String>,
-    entries: Vec<Entry>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Entry {
-    /// Only `config[/...]` or `workspace[/...]`, with portable slash-separated names.
-    path: String,
-    kind: Kind,
-    size: u64,
-    sha256: Option<String>,
-    executable: bool,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Kind {
-    Directory,
-    File,
-}
