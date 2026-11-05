@@ -9,13 +9,12 @@
 //! - `artifacts`: the files the agents made, by kind, in the middle column;
 //! - `modal`: what opens over the window: search, a new project, a file viewer;
 //! - `settings`: the settings page with its category menu;
-//! - `theme`: the color themes; `host`: what the machine opens, such as a terminal.
+//! - `theme`: the color themes and fonts.
 
 mod artifacts;
 mod chat;
 mod connectors;
 mod core;
-mod host;
 mod inspector;
 mod modal;
 mod settings;

@@ -7,7 +7,9 @@ pub mod links;
 mod messages;
 mod model_bar;
 mod model_menu;
+mod ring;
 pub mod transcript;
+mod working;
 
 use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 

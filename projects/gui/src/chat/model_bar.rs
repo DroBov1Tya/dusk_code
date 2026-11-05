@@ -47,7 +47,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let bar = div()
         .px_6()
         .py_2()
-        .max_w(px(900.))
+        .max_w(px(780.))
         .mx_auto()
         .w_full()
         .flex()
@@ -64,16 +64,17 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .label(format!("{model} · {effort}"))
                 .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Model, cx))),
         )
+        .child(
+            Button::new("mode")
+                .ghost()
+                .xsmall()
+                .label(format!("{} mode", ws.status.mode))
+                .tooltip("Switch the mode (Tab)")
+                .on_click(cx.listener(|ws, _, _, cx| ws.next_mode(cx))),
+        )
         .child(div().flex_1())
         .child(format!("{} / {}", short(used), short(limit)))
-        .child(
-            div()
-                .w(px(96.))
-                .h(px(6.))
-                .rounded_full()
-                .bg(border)
-                .child(div().h_full().rounded_full().bg(meter).w(relative(share))),
-        );
+        .child(super::ring::render(share, meter, border));
     let menu = ws.picker.map(|picker| super::model_menu::render(ws, picker, &effort, cx));
     div().relative().child(bar).children(menu)
 }
@@ -93,7 +94,12 @@ fn short(tokens: u64) -> String {
 
 impl Workspace {
     pub fn toggle_picker(&mut self, picker: Picker, cx: &mut Context<Self>) {
-        if self.picker == Some(picker) {
+        // The click that closed the menu from outside must not open it again.
+        let just_closed = self
+            .picker_closed
+            .take()
+            .is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(300));
+        if self.picker == Some(picker) || just_closed {
             self.picker = None;
         } else {
             if self.providers.is_empty() {

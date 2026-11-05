@@ -105,7 +105,7 @@ fn switch_line(
 }
 
 impl Workspace {
-    fn next_mode(&mut self, cx: &mut Context<Self>) {
+    pub fn next_mode(&mut self, cx: &mut Context<Self>) {
         self.core.call(
             cx,
             |client| async move { client.settings().next_mode().await },

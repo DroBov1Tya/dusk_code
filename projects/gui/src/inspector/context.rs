@@ -1,5 +1,5 @@
-//! What the shown chat's next request carries: how full the context is, and each kind
-//! of load with its share of the window.
+//! What the shown chat's next request carries, as one bar in colored parts and a row
+//! per part: its tokens and its share of the window, then the free space.
 
 use dusk_protocol::command::{Answer, Command};
 use gpui_kit::{component::ActiveTheme, *};
@@ -11,73 +11,57 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         return div().child(widgets::muted("Open a chat to see its context.", cx));
     };
     let theme = cx.theme();
-    let (accent, track, muted, warning, danger) =
-        (theme.primary, theme.border, theme.muted_foreground, theme.warning, theme.danger);
-    let share = |tokens: u64| {
-        if report.limit == 0 {
-            0.
-        } else {
-            (tokens as f32 / report.limit as f32).min(1.)
-        }
-    };
-    let filled = share(report.total);
-    let fill = if filled > 0.9 {
-        danger
-    } else if filled > 0.7 {
-        warning
-    } else {
-        accent
-    };
-    let bar = |part: f32, color: Hsla, height: f32| {
+    let (muted, track, foreground) = (theme.muted_foreground, theme.border, theme.foreground);
+    // One color per part, the largest first; the rest share a quiet grey.
+    let colors = [theme.primary, theme.cyan, theme.success, theme.warning, theme.magenta, theme.blue];
+    let limit = report.limit.max(1) as f32;
+    let share = |tokens: u64| (tokens as f32 / limit).min(1.);
+    let mut parts: Vec<_> = report.sections.iter().collect();
+    parts.sort_by_key(|section| std::cmp::Reverse(section.tokens));
+    let color = |index: usize| colors.get(index).copied().unwrap_or(muted.opacity(0.6));
+    let mut bar = div().flex().flex_row().h(px(8.)).rounded_full().overflow_hidden().bg(track);
+    for (index, section) in parts.iter().enumerate() {
+        bar = bar.child(div().h_full().w(relative(share(section.tokens))).bg(color(index)));
+    }
+    let row = |swatch: Hsla, name: String, tokens: u64| {
         div()
-            .h(px(height))
-            .rounded_full()
-            .bg(track)
-            .child(div().h_full().rounded_full().bg(color).w(relative(part)))
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .text_sm()
+            .child(div().size(px(10.)).rounded_sm().bg(swatch))
+            .child(div().flex_1().min_w_0().truncate().text_color(foreground.opacity(0.85)).child(name))
+            .child(div().w(px(56.)).text_right().text_color(muted).child(short(tokens)))
+            .child(div().w(px(48.)).text_right().child(format!("{:.1}%", share(tokens) * 100.)))
     };
+    let used = report.total.min(report.limit);
     let mut column = div()
         .flex()
         .flex_col()
-        .gap_3()
+        .gap_2()
         .px_4()
         .child(
             div()
                 .flex()
                 .flex_row()
                 .justify_between()
-                .text_sm()
-                .child(format!("{:.0}% full", filled * 100.))
-                .child(
-                    div()
-                        .text_color(muted)
-                        .child(format!("{} / {}", report.total, report.limit)),
-                ),
+                .child(format!("{:.0}% used", share(report.total) * 100.))
+                .child(div().text_color(muted).child(format!("{} / {}", short(report.total), short(report.limit)))),
         )
-        .child(bar(filled, fill, 6.));
-    for section in &report.sections {
-        let part = share(section.tokens);
-        column = column.child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_1()
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .justify_between()
-                        .text_xs()
-                        .child(section.name.clone())
-                        .child(
-                            div()
-                                .text_color(muted)
-                                .child(format!("{:.1}% · {}", part * 100., section.tokens)),
-                        ),
-                )
-                .child(bar(part, muted, 3.)),
-        );
+        .child(bar);
+    for (index, section) in parts.iter().enumerate() {
+        column = column.child(row(color(index), section.name.clone(), section.tokens));
     }
-    column
+    column.child(row(track, "Free space".to_owned(), report.limit - used))
+}
+
+fn short(tokens: u64) -> String {
+    match tokens {
+        0..1_000 => tokens.to_string(),
+        1_000..1_000_000 => format!("{:.1}k", tokens as f64 / 1e3),
+        _ => format!("{:.1}M", tokens as f64 / 1e6),
+    }
 }
 
 impl Workspace {

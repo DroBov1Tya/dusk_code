@@ -3,6 +3,7 @@
 //! git and files, and the chat's todo list, subagents and background jobs. Each module
 //! folds on its header.
 
+mod activity;
 mod agents;
 mod context;
 mod environment;
@@ -28,8 +29,9 @@ pub const WIDTH: f32 = 340.;
 const MODULES: &[(Right, &str)] = &[
     (Right::Environment, "Environment"),
     (Right::Context, "Context"),
+    (Right::Activity, "Activity"),
     (Right::Outputs, "Outputs"),
-    (Right::Git, "Git"),
+    (Right::Git, "Changes"),
     (Right::Files, "Files"),
     (Right::Todo, "Todo"),
     (Right::Agents, "Agents"),
@@ -40,7 +42,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     let theme = cx.theme();
     let (panel, border, muted) = (theme.sidebar, theme.sidebar_border, theme.muted_foreground);
     let mut column = div().flex().flex_col().pb_6();
-    for (index, (module, title)) in MODULES.iter().enumerate() {
+    let shown: Vec<_> = MODULES
+        .iter()
+        .filter(|(module, _)| ws.has_content(*module))
+        .collect();
+    for (index, (module, title)) in shown.into_iter().enumerate() {
         let module = *module;
         let open = !ws.folded.contains(&module);
         let header = div()
@@ -78,6 +84,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             let body = match module {
                 Right::Environment => environment::render(ws, cx),
                 Right::Context => context::render(ws, cx),
+                Right::Activity => activity::render(ws, cx),
                 Right::Outputs => outputs::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
@@ -119,6 +126,25 @@ impl WhenBorder for Div {
 }
 
 impl Workspace {
+    /// A module shows only once it has something to show.
+    fn has_content(&self, module: Right) -> bool {
+        let chat = self.shown_chat();
+        match module {
+            Right::Environment => true,
+            Right::Context => self.context.is_some(),
+            Right::Activity => chat.is_some_and(|chat| !chat.activity().is_empty()),
+            Right::Outputs => chat.is_some_and(|chat| !chat.outputs.is_empty()),
+            Right::Git => self
+                .git
+                .as_ref()
+                .is_some_and(|git| git.branch.is_some() || !git.branches.is_empty()),
+            Right::Files => self.project.is_some(),
+            Right::Todo => chat.is_some_and(|chat| !chat.tasks.is_empty()),
+            Right::Agents => chat.is_some_and(|chat| !chat.agents.is_empty()),
+            Right::Jobs => !self.jobs.is_empty(),
+        }
+    }
+
     /// Asks the core again for what the open modules show.
     pub fn refresh_inspector(&mut self, cx: &mut Context<Self>) {
         for (module, _) in MODULES {
@@ -134,7 +160,7 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Context => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Environment | Right::Outputs | Right::Todo | Right::Agents => {}
+            Right::Environment | Right::Activity | Right::Outputs | Right::Todo | Right::Agents => {}
         }
     }
 }

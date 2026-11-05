@@ -15,6 +15,8 @@ pub enum Item {
     User(String),
     Assistant { text: String, reasoning: String },
     Tool(Tool),
+    /// A picture a tool or a message carries, by its ID in the pictures folder.
+    Image(String),
     Notice(String),
     Error(String),
 }
@@ -23,7 +25,22 @@ pub struct Tool {
     pub call_id: String,
     pub name: String,
     pub detail: String,
+    /// The arguments in full, for the unfolded step.
+    pub arguments: String,
+    /// The start of what the tool answered, once it has.
+    pub output: String,
     pub state: ToolState,
+}
+
+/// How much of a tool's arguments and answer an unfolded step shows.
+const SHOWN_CHARS: usize = 4000;
+
+fn clip(text: &str) -> String {
+    let mut clipped: String = text.chars().take(SHOWN_CHARS).collect();
+    if clipped.len() < text.len() {
+        clipped.push_str("\n...");
+    }
+    clipped
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -82,11 +99,20 @@ impl Transcript {
                         call_id: call.id.clone(),
                         name: call.name.clone(),
                         detail: summary(&call.arguments),
+                        arguments: clip(&call.arguments.to_string()),
+                        output: String::new(),
                         state: ToolState::Done,
                     }));
                 }
             }
-            MessageRole::Tool => {}
+            MessageRole::Tool => {
+                if let Some(tool) = self.tool_mut(message.tool_call_id.as_deref().unwrap_or_default()) {
+                    tool.output = clip(&message.content);
+                }
+            }
+        }
+        for artifact in &message.artifacts {
+            self.items.push(Item::Image(artifact.id.clone()));
         }
     }
 
@@ -104,22 +130,24 @@ impl Transcript {
                 self.note_output(&call.name, &call.arguments);
                 self.items.push(Item::Tool(Tool {
                 detail: summary(&call.arguments),
+                arguments: clip(&call.arguments.to_string()),
+                output: String::new(),
                     call_id: call.id,
                     name: call.name,
                     state: ToolState::Running,
                 }));
             }
             ThreadEvent::ToolFinished { call_id, result } => {
-                let tool = self.items.iter_mut().rev().find_map(|item| match item {
-                    Item::Tool(tool) if tool.call_id == call_id => Some(tool),
-                    _ => None,
-                });
-                if let Some(tool) = tool {
+                if let Some(tool) = self.tool_mut(&call_id) {
                     tool.state = if result.is_error {
                         ToolState::Failed
                     } else {
                         ToolState::Done
                     };
+                    tool.output = clip(&result.content);
+                }
+                for artifact in result.artifacts {
+                    self.items.push(Item::Image(artifact.id));
                 }
             }
             ThreadEvent::Tokens { tokens, limit } => self.tokens = Some((context(&tokens), limit)),
@@ -196,6 +224,22 @@ impl Transcript {
         }
     }
 
+    /// How many times each tool ran in the chat, most used first.
+    pub fn activity(&self) -> Vec<(String, usize)> {
+        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
+        for item in &self.items {
+            if let Item::Tool(tool) = item {
+                *counts.entry(tool.name.as_str()).or_default() += 1;
+            }
+        }
+        let mut counts: Vec<_> = counts
+            .into_iter()
+            .map(|(name, count)| (name.to_owned(), count))
+            .collect();
+        counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+        counts
+    }
+
     /// Writing tools leave a file the user may want to open.
     fn note_output(&mut self, tool: &str, arguments: &serde_json::Value) {
         if !matches!(tool, "write_file" | "edit_file") {
@@ -207,6 +251,13 @@ impl Transcript {
         let path = PathBuf::from(path);
         self.outputs.retain(|known| *known != path);
         self.outputs.push(path);
+    }
+
+    fn tool_mut(&mut self, call_id: &str) -> Option<&mut Tool> {
+        self.items.iter_mut().rev().find_map(|item| match item {
+            Item::Tool(tool) if tool.call_id == call_id => Some(tool),
+            _ => None,
+        })
     }
 
     fn notice(&mut self, text: &str) {

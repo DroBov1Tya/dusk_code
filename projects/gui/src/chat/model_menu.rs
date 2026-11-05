@@ -17,7 +17,7 @@ const FIRST: usize = 6;
 const WIDTH: f32 = 300.;
 const EFFORTS: &[&str] = &["default", "off", "minimal", "low", "medium", "high", "xhigh", "max"];
 
-pub fn render(ws: &Workspace, picker: Picker, effort: &str, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, picker: Picker, effort: &str, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let current = ws.status.model.clone().unwrap_or_default();
     let provider = current.split('/').next().unwrap_or_default();
     let mut main = panel(cx);
@@ -64,6 +64,7 @@ pub fn render(ws: &Workspace, picker: Picker, effort: &str, cx: &mut Context<Wor
         Picker::MoreModels => Some(all_models(ws, &current, cx)),
     };
     div()
+        .id("model-menu")
         .absolute()
         .bottom(px(40.))
         .left(px(24.))
@@ -73,6 +74,11 @@ pub fn render(ws: &Workspace, picker: Picker, effort: &str, cx: &mut Context<Wor
         .gap_1()
         .child(main)
         .children(side)
+        .on_mouse_down_out(cx.listener(|ws, _, _, cx| {
+            ws.picker = None;
+            ws.picker_closed = Some(std::time::Instant::now());
+            cx.notify();
+        }))
 }
 
 fn panel(cx: &App) -> Div {

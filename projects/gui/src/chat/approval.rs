@@ -12,7 +12,7 @@ use gpui_kit::{
 use crate::{widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let mut cards = div().flex().flex_col().gap_2().px_6().max_w(px(900.)).mx_auto().w_full();
+    let mut cards = div().flex().flex_col().gap_2().px_6().max_w(px(780.)).mx_auto().w_full();
     let Some(chat) = ws.shown_chat() else {
         return cards;
     };

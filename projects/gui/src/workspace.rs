@@ -42,6 +42,7 @@ pub enum Center {
 pub enum Right {
     Environment,
     Context,
+    Activity,
     Outputs,
     Git,
     Files,
@@ -97,8 +98,10 @@ pub struct Workspace {
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
     pub picker: Option<Picker>,
+    pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.
     pub picked: Vec<usize>,
+    pub attach_open: bool,
     /// Answers whose reasoning is unfolded, by chat and item index.
     pub unfolded: HashSet<(String, usize)>,
     pub scroll: ScrollHandle,
@@ -177,7 +180,9 @@ impl Workspace {
             settings: None,
             providers: Vec::new(),
             picker: None,
+            picker_closed: None,
             picked: Vec::new(),
+            attach_open: false,
             unfolded: HashSet::new(),
             scroll: ScrollHandle::new(),
             followed: (0, false),
