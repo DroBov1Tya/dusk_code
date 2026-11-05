@@ -12,7 +12,7 @@ use std::{
 
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, MouseEventKind};
-use dusk_core::client::{ArtifactStore, Client};
+use dusk_core::{app::ArtifactStore, client::Client};
 use dusk_protocol::client::Event as CoreEvent;
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
@@ -270,7 +270,7 @@ pub async fn run(
             _ = system_clock.tick(), if system_open(&app) => Action::None,
             _ = jobs_clock.tick(), if jobs_wanted(&app) => Action::None,
             _ = memory_clock.tick() => {
-                if let Ok(Some(usage)) = tokio::task::spawn_blocking(dusk_core::util::usage::process).await {
+                if let Ok(Some(usage)) = tokio::task::spawn_blocking(dusk_core::app::process_usage).await {
                     tracing::info!(
                         "memory {} MB, {} transcript entries",
                         usage.resident_bytes / (1024 * 1024),

@@ -11,7 +11,7 @@ mod plugins;
 mod providers;
 mod sections;
 
-pub use context::{ContextPolicy, ContextPreset};
+pub use context::ContextPolicy;
 pub use dusk_protocol::config::UNKNOWN_WINDOW;
 pub use effort::Effort;
 pub use file::Config;
@@ -21,6 +21,5 @@ pub use mcp::{
 pub use plugins::{Plugged, PluginConfig};
 pub use providers::{ApiKey, ProviderConfig, ProviderKind};
 pub use sections::{
-    Appearance, ApprovalPolicy, Limits, Logging, Memory, RecordMode, ThreadConfig, Traces,
-    WorkHistory,
+    Appearance, ApprovalPolicy, Limits, Logging, Memory, ThreadConfig, Traces, WorkHistory,
 };

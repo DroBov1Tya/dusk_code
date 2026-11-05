@@ -1,7 +1,7 @@
 //! The thread on screen. Text blocks get room around them; thinking, tool calls and
 //! summaries fold into one line each and stack tightly, so the conversation stays in view.
 
-use dusk_core::{providers::ToolCall, tools::ToolResult};
+use dusk_protocol::{model::ToolCall, tools::ToolResult};
 use ratatui::{
     Frame,
     layout::{Alignment, Rect, Size},

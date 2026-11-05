@@ -28,6 +28,7 @@ pub struct JobSummary {
 }
 
 impl State {
+    #[cfg(test)]
     pub async fn create_job(
         &self,
         thread_id: &str,

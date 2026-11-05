@@ -2,6 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Compacting starts once the context passes this share of the input limit. The rest is
+/// room for the summary request and its answer, so 256k compacts at about 205k.
+pub const AUTO_COMPACT_PERCENT: u64 = 80;
+
 use crate::model::Usage;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

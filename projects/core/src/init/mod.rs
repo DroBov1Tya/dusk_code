@@ -5,4 +5,4 @@ pub mod logs;
 pub mod paths;
 mod setup;
 
-pub use setup::{Initialization, create_private_dir, initialize};
+pub use setup::{create_private_dir, initialize};

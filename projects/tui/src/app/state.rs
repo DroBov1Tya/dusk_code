@@ -5,13 +5,11 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
-use dusk_core::{
-    config::Effort,
-    mcp::McpStatus,
-    runtime::jobs::JobInfo,
-    state::{Goal, LocalUnsent, Message, MessageRole, Task, ThreadTokens},
-};
 use dusk_protocol::client::Status;
+use dusk_protocol::{
+    conversation::LocalUnsent, conversation::Message, conversation::MessageRole, goal::Goal,
+    mcp::McpStatus, model::Effort, work::JobInfo, work::Task, work::ThreadTokens,
+};
 use ratatui::layout::Rect;
 
 use super::{

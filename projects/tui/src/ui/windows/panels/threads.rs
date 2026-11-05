@@ -7,7 +7,7 @@ use ratatui::{
     widgets::{Block, BorderType, Clear, Paragraph},
 };
 
-use dusk_core::state::MessageRole;
+use dusk_protocol::conversation::MessageRole;
 
 use super::frame::{age, ago, fit, selectable, window};
 use crate::app::{App, ThreadList, paste};

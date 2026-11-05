@@ -7,8 +7,8 @@ mod tokens;
 mod turns;
 
 pub use jobs::{BackgroundJob, JobSummary};
-pub use tasks::{Task, TaskItem};
-pub use tokens::{CallPurpose, LastPrompt, ModelCall, ThreadTokens, TokenCounts};
+pub use tasks::Task;
+pub use tokens::{CallPurpose, LastPrompt, ModelCall};
 pub use turns::{Turn, TurnAnswer, TurnOutcome, TurnStatus};
 
 use super::{Message, State, conversation::messages, timestamp_ms};

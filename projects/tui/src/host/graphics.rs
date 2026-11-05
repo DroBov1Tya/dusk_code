@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use dusk_core::state::artifacts::ImageArtifact;
+use dusk_protocol::artifact::ImageArtifact;
 use image::{DynamicImage, imageops::FilterType};
 use ratatui::{
     Frame,

@@ -2,7 +2,10 @@
 //! deletes as a whole; the core's <pasted> tags carry it in the sent message, and how a
 //! paste looks on screen is worked out here.
 
-pub use dusk_core::message::pasted::{Part, has_pasted, plain, source_tag, split, wrap};
+pub use dusk_protocol::{
+    pasted::Part, pasted::has_pasted, pasted::plain, pasted::source_tag, pasted::split,
+    pasted::wrap,
+};
 
 use super::compact_number;
 

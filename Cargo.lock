@@ -1030,6 +1030,7 @@ dependencies = [
  "anyhow",
  "clap",
  "dusk_core",
+ "dusk_protocol",
  "regex",
  "serde",
  "serde_json",

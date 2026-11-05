@@ -5,6 +5,8 @@
 
 use std::process::Command;
 
+/// `MacOs` is the system's own name, and the log prints it as it is.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Os {
     MacOs,

@@ -16,10 +16,7 @@ use crate::{
     runtime::thread::thread_start::{NO_PROMPT, read_prompt},
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
-
-/// Compacting starts once the context passes this share of the input limit. The rest is
-/// room for the summary request and its answer, so 256k compacts at about 205k.
-pub const AUTO_COMPACT_PERCENT: u64 = 80;
+pub use dusk_protocol::work::AUTO_COMPACT_PERCENT;
 
 /// Names listed in the note; a thread with more attached is rare.
 const MAX_LISTED_SOURCES: usize = 200;

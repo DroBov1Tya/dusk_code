@@ -31,8 +31,6 @@ use tokio::sync::{mpsc, oneshot, watch};
 use crate::runtime::Runtime;
 use serve::{Call, Server};
 
-pub use crate::state::artifacts::ArtifactStore;
-
 /// Starts the core's side of the protocol over `runtime` for the client that said
 /// `hello`.
 pub fn serve(runtime: Runtime, hello: Hello) -> Result<Client> {
@@ -292,6 +290,10 @@ impl Settings<'_> {
         self.0
             .text(Request::Settings(SettingsRequest::NextMode))
             .await
+    }
+
+    pub async fn mode(&self, name: &str) -> Result<()> {
+        self.done(SettingsRequest::Mode(name.to_owned())).await
     }
 
     /// Saves a provider and returns the name it was saved under.

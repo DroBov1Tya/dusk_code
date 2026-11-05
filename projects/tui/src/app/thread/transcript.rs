@@ -11,11 +11,9 @@ use std::{
 };
 
 use super::paste;
-use dusk_core::{
-    catalog::skills::{SkillSave, SkillSaveAction},
-    providers::ToolCall,
-    state::{Message, MessageRole, artifacts::ImageArtifact},
-    tools::ToolResult,
+use dusk_protocol::{
+    artifact::ImageArtifact, catalog::SkillSave, catalog::SkillSaveAction, conversation::Message,
+    conversation::MessageRole, model::ToolCall, tools::ToolResult,
 };
 
 pub enum Entry {
@@ -146,7 +144,7 @@ const JOB_LINES: usize = 12;
 const JOB_CHARS: usize = 1200;
 
 impl Transcript {
-    pub fn set_artifact_store(&mut self, store: dusk_core::state::artifacts::ArtifactStore) {
+    pub fn set_artifact_store(&mut self, store: dusk_core::app::ArtifactStore) {
         self.images = super::images::Images::new(store);
         self.changed();
     }

@@ -16,9 +16,8 @@ use crate::{
     state::{MessageRole, State, TurnAnswer, TurnOutcome},
     tools::{Judge, Request, Verdict},
 };
+pub use dusk_protocol::thread::ARBITER_THREAD as THREAD;
 
-/// The arbiter's thread, one for the whole config.
-pub const THREAD: &str = "arbiter";
 /// Earlier requests and verdicts it reads before deciding.
 const HISTORY: usize = 40;
 const MAX_ANSWER_TOKENS: u64 = 400;

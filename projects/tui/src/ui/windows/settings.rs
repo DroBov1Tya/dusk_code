@@ -2,11 +2,9 @@
 //! agent a pad on the trace from the one that may ask it, lit while it can be asked.
 //! Skills open beside the list: what their front matter says on top, the raw file below.
 
-use dusk_core::{
-    catalog::skills::{SkillInfo, SkillKind},
-    config::{ApprovalPolicy, ContextPolicy, ContextPreset},
-    mcp::{McpInfo, McpState, McpToolInfo},
-    release::update::Channel,
+use dusk_protocol::{
+    catalog::SkillInfo, catalog::SkillKind, config::ApprovalPolicy, config::ContextPolicy,
+    config::ContextPreset, mcp::McpInfo, mcp::McpState, mcp::McpToolInfo, update::Channel,
 };
 use ratatui::{
     Frame,

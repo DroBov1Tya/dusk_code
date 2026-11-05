@@ -9,4 +9,4 @@ mod servers;
 
 pub use client::{McpClient, RemoteTool, check_headers, check_url};
 pub use oauth::TokenFile;
-pub use servers::{McpInfo, McpServer, McpServers, McpState, McpStatus, McpToolInfo};
+pub use servers::{McpInfo, McpServer, McpServers, McpStatus};

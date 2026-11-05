@@ -2,6 +2,7 @@
 //! the mode's for a chat, MAIN mode's for the general agent, and the agent's own text for
 //! others.
 
+pub use dusk_protocol::thread::{agent_name, fnv1a};
 use std::{
     fs,
     io::ErrorKind,
@@ -152,20 +153,6 @@ pub async fn start_agent_thread(
     })
 }
 
-/// The name an agent's thread goes by, made from its ID, so every client shows the same
-/// one: a word and two hex digits, such as `Fable-3a`.
-pub fn agent_name(thread_id: &str) -> String {
-    const NAMES: [&str; 8] = [
-        "Aster", "Beryl", "Cinder", "Dapple", "Ember", "Fable", "Glint", "Hollow",
-    ];
-    let seed = name_seed(thread_id);
-    format!(
-        "{}-{:02x}",
-        NAMES[(seed as usize) % NAMES.len()],
-        (seed >> 24) & 0xff
-    )
-}
-
 /// What a thread goes by: its stored name, or for a thread older than names, the one its
 /// ID gives.
 pub fn display_name(thread: &Thread) -> String {
@@ -173,18 +160,6 @@ pub fn display_name(thread: &Thread) -> String {
         .name
         .clone()
         .unwrap_or_else(|| agent_name(&thread.id))
-}
-
-pub fn name_seed(thread_id: &str) -> u64 {
-    fnv1a(thread_id.as_bytes())
-}
-
-/// FNV-1a: stable across runs and builds, unlike the standard hasher. Not a defence
-/// against anyone.
-pub fn fnv1a(bytes: &[u8]) -> u64 {
-    bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
-        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
-    })
 }
 
 /// Reads a prompt file such as MAIN.md; a missing or blank file means no prompt.

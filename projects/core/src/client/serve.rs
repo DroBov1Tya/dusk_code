@@ -207,6 +207,7 @@ impl Server {
             }
             SettingsRequest::Switch { switch, on } => self.switch(switch, on)?,
             SettingsRequest::NextMode => return Ok(Response::Text(runtime.next_mode()?)),
+            SettingsRequest::Mode(name) => runtime.set_mode(&name)?,
             SettingsRequest::Connect {
                 kind,
                 name,

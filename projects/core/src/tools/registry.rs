@@ -90,6 +90,7 @@ impl ToolRegistry {
         self.tools.get(name).map(|tool| tool.kind())
     }
 
+    #[cfg(test)]
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.tools.keys().map(String::as_str)
     }

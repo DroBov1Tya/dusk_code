@@ -18,9 +18,8 @@ pub mod thread;
 mod thread_lock;
 mod thread_runner;
 
-pub use agent::AUTO_COMPACT_PERCENT;
 pub use events::ThreadEvent;
 pub use launcher::Launcher;
-pub use runtime::{Runtime, SystemReport, ThreadHandle};
+pub use runtime::{Runtime, ThreadHandle};
 pub use thread_lock::ThreadLock;
 pub use thread_runner::{ThreadInput, ThreadOutput, ThreadRunner, ThreadSetup};

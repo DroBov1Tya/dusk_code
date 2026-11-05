@@ -132,6 +132,8 @@ pub enum SettingsRequest {
     },
     /// Answers with the mode switched to.
     NextMode,
+    /// Switches to the mode of this name.
+    Mode(String),
     /// Saves a provider; a model is chosen with `/model`.
     Connect {
         kind: ProviderKind,

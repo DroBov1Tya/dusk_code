@@ -1,8 +1,7 @@
 //! What the app asks the session to do, and the commands the box offers.
 
-use dusk_core::{
-    config::{ContextPolicy, ProviderKind},
-    message::commands::{COMMANDS, Command},
+use dusk_protocol::{
+    command::COMMANDS, command::Command, config::ContextPolicy, config::ProviderKind,
     tools::Decision,
 };
 

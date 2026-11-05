@@ -14,6 +14,5 @@ mod resume;
 mod settings;
 mod undo;
 
-pub use command::{Answer, COMMANDS, Command, answer, parse, run_in_thread};
-pub use context::{ContextReport, ContextSection, report as context_report};
-pub use settings::{Settings, ToolInfo};
+pub use command::{answer, parse, run_in_thread};
+pub use context::{ContextReport, report as context_report};

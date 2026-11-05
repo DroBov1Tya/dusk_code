@@ -3,11 +3,11 @@
 use std::path::Path;
 
 use anyhow::Result;
-use dusk_core::{backup::archive, init::paths::Paths};
+use dusk_core::app::{self, Paths};
 
 pub fn run(archive_path: &Path) -> Result<()> {
     let paths = Paths::from_home()?;
-    archive::restore(&paths, archive_path)?;
+    app::restore(&paths, archive_path)?;
     println!(
         "Restored config and chats to {} and {}.\nThe archive contains API keys and chat history; keep it private.\nSaved absolute project paths are unchanged. Start duskcode normally when ready.",
         paths.config_root().display(),
@@ -18,7 +18,7 @@ pub fn run(archive_path: &Path) -> Result<()> {
 
 pub fn recover() -> Result<()> {
     let paths = Paths::from_home()?;
-    archive::recover(&paths)?;
+    app::recover(&paths)?;
     println!(
         "Interrupted restore completed. Both data roots match the journaled archive. Start duskcode normally when ready."
     );

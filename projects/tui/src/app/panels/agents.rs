@@ -8,11 +8,9 @@ use std::{
 };
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
-use dusk_core::{
-    config::Effort,
-    providers::ModelEvent,
-    runtime::{ThreadEvent, arbiter::THREAD as ARBITER_THREAD},
-    state::{AgentPhase, ThreadTokens},
+use dusk_protocol::{
+    agent::AgentPhase, model::Effort, model::ModelEvent, thread::ARBITER_THREAD,
+    thread::ThreadEvent, work::ThreadTokens,
 };
 use ratatui::layout::{Position, Rect};
 
