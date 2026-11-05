@@ -77,3 +77,20 @@ pub struct Compaction {
     /// Estimated size of the summary.
     pub summary_tokens: u64,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Source {
+    pub source_id: String,
+    pub name: String,
+    pub file: String,
+    pub bytes: u64,
+    pub pinned: bool,
+    pub delivered: bool,
+}
+
+/// A user message the thread can go back to.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UndoPoint {
+    pub sequence: u64,
+    pub text: String,
+}

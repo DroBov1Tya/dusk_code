@@ -14,11 +14,13 @@ use std::{
 
 use anyhow::{Context, Result, ensure};
 use reqwest::Client;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use sha2::{Digest, Sha256};
 use tokio::sync::watch;
 
 use crate::{config::Config, init::paths::Paths};
+
+pub use dusk_protocol::update::{Channel, InstallProgress, InstallStage, UpdateInfo};
 
 pub(super) const REPOSITORY: &str = "DroBov1Tya/dusk_code";
 const API: &str = "https://api.github.com/repos";
@@ -29,100 +31,30 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 const MAX_ARCHIVE_BYTES: usize = 128 * 1024 * 1024;
 const TIMEOUT: Duration = Duration::from_secs(120);
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Channel {
-    #[default]
-    Stable,
-    Dev,
-}
-
-impl Channel {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Stable => "stable",
-            Self::Dev => "dev",
-        }
-    }
-
-    pub fn other(self) -> Self {
-        match self {
-            Self::Stable => Self::Dev,
-            Self::Dev => Self::Stable,
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UpdateInfo {
-    pub current: String,
-    pub channel: Channel,
-    /// The newest version on the channel, as its tag.
-    pub latest: String,
-    pub prerelease: bool,
-    /// Commits from the running version to a newer `latest`, when GitHub knows both.
-    pub commits_behind: Option<u64>,
-    /// `latest` is newer than the running version.
-    pub newer: bool,
-    /// The release has the archive for this target; right after a tag it may still be
-    /// building on GitHub.
-    pub ready: bool,
-}
-
-impl UpdateInfo {
-    /// The newest version on `channel`, and how far the running one is behind it.
-    pub async fn check(channel: Channel) -> Result<Self> {
-        let client = client()?;
-        let release = newest(&client, channel).await?;
-        let current = format!("v{VERSION}");
-        let newer = version(&release.tag_name) > version(&current);
-        let compare = format!("compare/{current}...{}", release.tag_name);
-        // A build of an untagged commit has nothing to compare from.
-        let commits_behind = match newer {
-            true => get_json::<Comparison>(&client, &compare)
-                .await
-                .ok()
-                .map(|comparison| comparison.ahead_by),
-            false => None,
-        };
-        Ok(UpdateInfo {
-            newer,
-            ready: release.ready(),
-            current,
-            channel,
-            latest: release.tag_name,
-            prerelease: release.prerelease,
-            commits_behind,
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum InstallStage {
-    Preparing,
-    Downloading,
-    Verifying,
-    Installing,
-    Complete,
-}
-
-/// Download byte counts stay available through verification and installation.
-/// A missing or zero content length does not give a useful percentage.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct InstallProgress {
-    pub stage: InstallStage,
-    pub downloaded: u64,
-    pub total: Option<u64>,
-}
-
-impl Default for InstallProgress {
-    fn default() -> Self {
-        Self {
-            stage: InstallStage::Preparing,
-            downloaded: 0,
-            total: None,
-        }
-    }
+/// The newest version on `channel`, and how far the running one is behind it.
+pub async fn check_update(channel: Channel) -> Result<UpdateInfo> {
+    let client = client()?;
+    let release = newest(&client, channel).await?;
+    let current = format!("v{VERSION}");
+    let newer = version(&release.tag_name) > version(&current);
+    let compare = format!("compare/{current}...{}", release.tag_name);
+    // A build of an untagged commit has nothing to compare from.
+    let commits_behind = match newer {
+        true => get_json::<Comparison>(&client, &compare)
+            .await
+            .ok()
+            .map(|comparison| comparison.ahead_by),
+        false => None,
+    };
+    Ok(UpdateInfo {
+        newer,
+        ready: release.ready(),
+        current,
+        channel,
+        latest: release.tag_name,
+        prerelease: release.prerelease,
+        commits_behind,
+    })
 }
 
 #[derive(Deserialize)]
@@ -211,7 +143,7 @@ pub async fn update_now(paths: &Paths) -> Result<String> {
         Ok(bytes) => Config::parse(&bytes)?.update_channel(),
         Err(_) => Channel::default(),
     };
-    let info = UpdateInfo::check(channel).await?;
+    let info = check_update(channel).await?;
     if !info.newer {
         return Ok(format!(
             "{} is up to date on the {} channel (newest {})",

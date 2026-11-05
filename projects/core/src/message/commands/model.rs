@@ -5,11 +5,11 @@ use anyhow::Result;
 
 use crate::runtime::{
     Runtime,
-    model_choice::{Choice, ProviderStatus},
+    model_choice::{Choice, ProviderStatus, check_providers},
 };
 
 pub async fn check(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
-    ProviderStatus::check_all(&runtime.config().current()).await
+    check_providers(&runtime.config().current()).await
 }
 
 pub async fn switch(runtime: &Runtime, name: &str) -> Result<Choice> {

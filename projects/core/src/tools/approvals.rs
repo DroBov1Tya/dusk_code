@@ -19,13 +19,7 @@ use crate::{config::ApprovalPolicy, runtime::ThreadEvent};
 pub use dusk_protocol::tools::{ApprovalRequest, Request, WindowAccess};
 use dusk_protocol::tools::{folder_of, program};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Decision {
-    Once,
-    /// Also yes to the same folder or program until the core stops.
-    Session,
-    Deny,
-}
+pub use dusk_protocol::tools::Decision;
 
 /// What decides a request in the user's place, in arbiter mode.
 pub trait Judge: Send + Sync {

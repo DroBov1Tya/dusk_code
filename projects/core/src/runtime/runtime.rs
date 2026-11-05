@@ -22,7 +22,7 @@ use crate::platform::Platform;
 use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     catalog::agents::{AgentTree, Agents},
-    catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE},
+    catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
     catalog::modes::Modes,
     catalog::skills::{self, SkillInfo},
     config::live::LiveConfig,
@@ -41,8 +41,10 @@ use crate::{
     runtime::thread::thread_start::{self, FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, Source, State, Task, Thread, UndoPoint},
     tools::{Decision, ToolKind, ToolScope},
-    util::usage::{self, ProcessUsage},
+    util::usage::{self},
 };
+
+pub use dusk_protocol::system::SystemReport;
 
 /// Hand edits to config.yml are picked up within this time.
 const CONFIG_CHECK_PERIOD: Duration = Duration::from_secs(60);
@@ -66,19 +68,6 @@ pub struct Runtime {
     state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
     _restore_guard: Option<crate::backup::archive::RestoreGuard>,
-}
-
-/// What the application costs the machine right now.
-pub struct SystemReport {
-    pub process: Option<ProcessUsage>,
-    /// The database file, its write-ahead log and shared memory.
-    pub database_bytes: u64,
-    pub wal_bytes: u64,
-    /// Images kept for image cards.
-    pub artifacts_bytes: u64,
-    pub logs_bytes: u64,
-    pub threads: u64,
-    pub messages: u64,
 }
 
 /// A running thread, as its client sees it.
@@ -247,7 +236,7 @@ impl Runtime {
             self.config()
                 .update(|config| config.set_update_channel(channel))?;
         }
-        update::UpdateInfo::check(self.config().current().update_channel()).await
+        update::check_update(self.config().current().update_channel()).await
     }
 
     /// Installs a release while publishing the latest stage and downloaded bytes.
@@ -465,13 +454,13 @@ impl Runtime {
 
     /// An agent's AGENT.md as it is on disk; reading it again throws edits away.
     pub fn agent(&self, name: &str) -> Result<NodeText> {
-        NodeText::read(&self.launcher.paths.agents_dir(), AGENT_FILE, name)
+        read_node_text(&self.launcher.paths.agents_dir(), AGENT_FILE, name)
     }
 
     /// Saves an agent's AGENT.md once the text reads as an agent, and reads the agents
     /// again so the new version applies now.
     pub async fn save_agent(&self, name: &str, text: &str) -> Result<NodeText> {
-        let saved = NodeText::save(&self.launcher.paths.agents_dir(), AGENT_FILE, name, text)?;
+        let saved = save_node_text(&self.launcher.paths.agents_dir(), AGENT_FILE, name, text)?;
         self.read_agents().await?;
         Ok(saved)
     }
@@ -530,12 +519,12 @@ impl Runtime {
 
     /// A skill's file as it is on disk; reading it again throws edits away.
     pub fn skill(&self, name: &str) -> Result<NodeText> {
-        NodeText::read(&self.launcher.paths.skills_dir(), SKILL_FILE, name)
+        read_node_text(&self.launcher.paths.skills_dir(), SKILL_FILE, name)
     }
 
     /// Saves a skill's file once the text reads as a skill.
     pub fn save_skill(&self, name: &str, text: &str) -> Result<NodeText> {
-        NodeText::save(&self.launcher.paths.skills_dir(), SKILL_FILE, name, text)
+        save_node_text(&self.launcher.paths.skills_dir(), SKILL_FILE, name, text)
     }
 
     /// The plugins found, with whether each is on and what keeps one from loading.

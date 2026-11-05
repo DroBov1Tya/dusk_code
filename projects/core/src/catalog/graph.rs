@@ -30,6 +30,8 @@ use serde_json::Value;
 
 use crate::{init::paths::is_plain_folder_name, util::fs::read_regular};
 
+pub use dusk_protocol::catalog::{NodeText, Problem};
+
 pub const SKILL_FILE: &str = "SKILL.md";
 pub const AGENT_FILE: &str = "AGENT.md";
 const MAX_NODE_BYTES: u64 = 256 * 1024;
@@ -87,13 +89,6 @@ impl Node {
         );
         parse_node(text, name, PathBuf::new()).map(drop)
     }
-}
-
-/// A node that could not be read, or a link to a node that is not there.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Problem {
-    pub node: String,
-    pub reason: String,
 }
 
 /// Other front matter fields, such as `license`, are allowed and ignored.
@@ -297,37 +292,24 @@ fn yes() -> bool {
     true
 }
 
-/// A skill's or an agent's file as a client edits it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct NodeText {
-    pub name: String,
-    /// The front matter fields with plain values, by name, such as `description` and
-    /// `license`.
-    pub metadata: Vec<(String, String)>,
-    /// The whole file, front matter included.
-    pub text: String,
+/// The node's file, `file` in the folder `name` under `directory`, as it is on disk now.
+pub fn read_node_text(directory: &Path, file: &str, name: &str) -> Result<NodeText> {
+    let text = read_text(&node_file(directory, file, name)?)?;
+    Ok(NodeText {
+        name: name.to_owned(),
+        metadata: metadata(&text),
+        text,
+    })
 }
 
-impl NodeText {
-    /// The node's file, `file` in the folder `name` under `directory`, as it is on disk now.
-    pub fn read(directory: &Path, file: &str, name: &str) -> Result<Self> {
-        let text = read_text(&node_file(directory, file, name)?)?;
-        Ok(Self {
-            name: name.to_owned(),
-            metadata: metadata(&text),
-            text,
-        })
-    }
-
-    /// Replaces the node's file with `text` once it reads as a node. The file is written
-    /// beside the old one and moved over it, so a failed write leaves the old one whole.
-    pub fn save(directory: &Path, file: &str, name: &str, text: &str) -> Result<Self> {
-        let path = node_file(directory, file, name)?;
-        ensure!(path.is_file(), "{name} does not exist");
-        Node::check(text, name)?;
-        crate::util::atomic::write_private(&path, text.as_bytes())?;
-        Self::read(directory, file, name)
-    }
+/// Replaces the node's file with `text` once it reads as a node. The file is written
+/// beside the old one and moved over it, so a failed write leaves the old one whole.
+pub fn save_node_text(directory: &Path, file: &str, name: &str, text: &str) -> Result<NodeText> {
+    let path = node_file(directory, file, name)?;
+    ensure!(path.is_file(), "{name} does not exist");
+    Node::check(text, name)?;
+    crate::util::atomic::write_private(&path, text.as_bytes())?;
+    read_node_text(directory, file, name)
 }
 
 /// The node's file by name; the name is folder names joined by `/`, never a way out of
@@ -405,19 +387,19 @@ mod tests {
         let good = "---\nname: notes\ndescription: Taking notes\nlicense: MIT\n---\nWrite.\n";
         fs::write(directory.join("notes").join(SKILL_FILE), good).unwrap();
 
-        let node = NodeText::read(&directory, SKILL_FILE, "notes").unwrap();
+        let node = read_node_text(&directory, SKILL_FILE, "notes").unwrap();
         assert!(node.metadata.contains(&("license".into(), "MIT".into())));
-        assert!(NodeText::save(&directory, SKILL_FILE, "notes", "no front matter").is_err());
+        assert!(save_node_text(&directory, SKILL_FILE, "notes", "no front matter").is_err());
         assert_eq!(
-            NodeText::read(&directory, SKILL_FILE, "notes")
+            read_node_text(&directory, SKILL_FILE, "notes")
                 .unwrap()
                 .text,
             good,
             "a refused save keeps it"
         );
-        assert!(NodeText::read(&directory, SKILL_FILE, "../notes").is_err());
+        assert!(read_node_text(&directory, SKILL_FILE, "../notes").is_err());
         let edited = good.replace("Write.", "Write more.");
-        let saved = NodeText::save(&directory, SKILL_FILE, "notes", &edited).unwrap();
+        let saved = save_node_text(&directory, SKILL_FILE, "notes", &edited).unwrap();
         assert_eq!(saved.text, edited);
     }
 }

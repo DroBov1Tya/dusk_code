@@ -227,3 +227,11 @@ pub fn program(command: &str) -> Option<&str> {
         .all(|c| c.is_ascii_alphanumeric() || "-_./+".contains(c));
     (plain && !RUNNERS.contains(&name.rsplit('/').next().unwrap_or(name))).then_some(name)
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Decision {
+    Once,
+    /// Also yes to the same folder or program until the core stops.
+    Session,
+    Deny,
+}

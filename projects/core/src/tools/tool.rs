@@ -13,6 +13,8 @@ use super::{
 };
 use crate::{BoxFuture, config::Config, platform::Needs, runtime::ThreadEvent};
 
+pub use dusk_protocol::settings::ToolKind;
+
 /// What a tool sees: where it may act and the settings of the current step.
 /// Owned, so a call can keep it across awaits and hand it on without lifetimes.
 #[derive(Clone)]
@@ -129,37 +131,6 @@ impl Progress {
     pub fn emit(&self, event: ThreadEvent) {
         // A client that stopped listening does not stop the call.
         let _ = self.events.send(event);
-    }
-}
-
-/// What a tool works on, for clients to group tools by; in the order they are shown.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum ToolKind {
-    Files,
-    Console,
-    Agents,
-    /// The thread itself: its history, tasks and skills.
-    Harness,
-    Mcp,
-    /// The screen: screenshots, mouse and keyboard. Heavy, so off until switched on.
-    Computer,
-}
-
-impl ToolKind {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Files => "files",
-            Self::Console => "console",
-            Self::Agents => "agents",
-            Self::Harness => "harness",
-            Self::Mcp => "mcp",
-            Self::Computer => "computer",
-        }
-    }
-
-    /// Whether a tool of this kind is on before the user switches it.
-    pub fn on_by_default(self) -> bool {
-        self != Self::Computer
     }
 }
 

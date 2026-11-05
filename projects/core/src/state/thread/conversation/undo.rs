@@ -9,12 +9,7 @@ use sqlx::Row;
 use super::State;
 use crate::state::MessageRole;
 
-/// A user message the thread can go back to.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct UndoPoint {
-    pub sequence: u64,
-    pub text: String,
-}
+pub use dusk_protocol::conversation::UndoPoint;
 
 impl State {
     /// The user's own messages, oldest first; messages from agents are not points.

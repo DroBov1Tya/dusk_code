@@ -162,3 +162,23 @@ mod tests {
         assert_eq!(serde_json::from_str::<ThreadEvent>(&text).unwrap(), event);
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Thread {
+    pub id: String,
+    /// Who started the thread, such as `cli`.
+    pub source: String,
+    /// Unix timestamp in milliseconds.
+    pub created_at: i64,
+    /// `None` until the first message.
+    pub title: Option<String>,
+    /// When the newest message or local unsent input was stored, or `created_at`.
+    pub active_at: i64,
+    /// For a subagent's thread: the thread that asked it, and the agent's name.
+    pub parent_thread_id: Option<String>,
+    pub agent: Option<String>,
+    /// What an agent's thread goes by, such as `Fable-3a`.
+    pub name: Option<String>,
+    /// The folder a chat was started in; `None` for one older than this record.
+    pub project: Option<String>,
+}

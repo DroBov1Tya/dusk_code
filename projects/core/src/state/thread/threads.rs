@@ -6,25 +6,7 @@ use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{State, timestamp_ms};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Thread {
-    pub id: String,
-    /// Who started the thread, such as `cli`.
-    pub source: String,
-    /// Unix timestamp in milliseconds.
-    pub created_at: i64,
-    /// `None` until the first message.
-    pub title: Option<String>,
-    /// When the newest message or local unsent input was stored, or `created_at`.
-    pub active_at: i64,
-    /// For a subagent's thread: the thread that asked it, and the agent's name.
-    pub parent_thread_id: Option<String>,
-    pub agent: Option<String>,
-    /// What an agent's thread goes by, such as `Fable-3a`.
-    pub name: Option<String>,
-    /// The folder a chat was started in; `None` for one older than this record.
-    pub project: Option<String>,
-}
+pub use dusk_protocol::thread::Thread;
 
 impl State {
     pub async fn create_thread(&self, id: &str, source: &str) -> Result<Thread> {

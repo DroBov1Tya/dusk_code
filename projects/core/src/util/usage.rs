@@ -3,13 +3,7 @@
 
 use std::{fs, path::Path, process::Command};
 
-/// The running process as `ps` sees it; `None` where `ps` is missing.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct ProcessUsage {
-    pub resident_bytes: u64,
-    /// Of one core, averaged over the process lifetime on macOS and recently on Linux.
-    pub cpu_percent: f32,
-}
+pub use dusk_protocol::system::ProcessUsage;
 
 pub fn process() -> Option<ProcessUsage> {
     let output = Command::new("ps")

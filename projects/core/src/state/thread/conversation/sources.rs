@@ -1,31 +1,22 @@
 //! The record of what is attached to a chat; the files are in its workspace.
 
 use anyhow::{Context, Result};
-use sqlx::{FromRow, Row, sqlite::SqliteRow};
+use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{State, timestamp_ms};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Source {
-    pub source_id: String,
-    pub name: String,
-    pub file: String,
-    pub bytes: u64,
-    pub pinned: bool,
-    pub delivered: bool,
-}
+pub use dusk_protocol::conversation::Source;
 
-impl FromRow<'_, SqliteRow> for Source {
-    fn from_row(row: &SqliteRow) -> sqlx::Result<Self> {
-        Ok(Self {
-            source_id: row.try_get("source_id")?,
-            name: row.try_get("name")?,
-            file: row.try_get("file")?,
-            bytes: row.try_get::<i64, _>("bytes")?.max(0) as u64,
-            pinned: row.try_get("pinned")?,
-            delivered: row.try_get("delivered")?,
-        })
-    }
+/// A row of `sources`; the type lives in the protocol, so it cannot be `FromRow` here.
+fn source_from_row(row: SqliteRow) -> sqlx::Result<Source> {
+    Ok(Source {
+        source_id: row.try_get("source_id")?,
+        name: row.try_get("name")?,
+        file: row.try_get("file")?,
+        bytes: row.try_get::<i64, _>("bytes")?.max(0) as u64,
+        pinned: row.try_get("pinned")?,
+        delivered: row.try_get("delivered")?,
+    })
 }
 
 impl State {
@@ -48,8 +39,9 @@ impl State {
 
     /// The chat's sources, oldest first.
     pub async fn sources(&self, thread_id: &str) -> Result<Vec<Source>> {
-        sqlx::query_as("SELECT * FROM sources WHERE thread_id = ? ORDER BY created_at, source_id")
+        sqlx::query("SELECT * FROM sources WHERE thread_id = ? ORDER BY created_at, source_id")
             .bind(thread_id)
+            .try_map(source_from_row)
             .fetch_all(&self.pool)
             .await
             .context("list the sources")

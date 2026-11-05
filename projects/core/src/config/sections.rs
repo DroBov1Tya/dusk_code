@@ -5,89 +5,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-/// Ask is the default. Sandbox runs commands without asking, confined by the system to
-/// the working folders; paths outside them and the screen are still asked. Full access
-/// answers every request with yes. Arbiter hands each request to an agent that decides
-/// in the user's place. The config folder stays closed either way.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ApprovalPolicy {
-    #[default]
-    Ask,
-    Sandbox,
-    Arbiter,
-    FullAccess,
-}
-
-impl ApprovalPolicy {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Ask => "ask",
-            Self::Sandbox => "sandbox",
-            Self::Arbiter => "arbiter",
-            Self::FullAccess => "full access",
-        }
-    }
-
-    pub(super) fn is_ask(&self) -> bool {
-        *self == Self::Ask
-    }
-}
-
-/// The memory of the user: whether the agent keeps it, and its size. Every request
-/// carries it, so it is kept small.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct Memory {
-    #[serde(default = "yes")]
-    pub enabled: bool,
-    #[serde(default = "default_memory_chars")]
-    pub max_chars: usize,
-}
-
-impl Default for Memory {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            max_chars: default_memory_chars(),
-        }
-    }
-}
-
-impl Memory {
-    pub(super) fn is_default(&self) -> bool {
-        *self == Self::default()
-    }
-}
-
-/// Compact facts about the current project, kept separately from user memory.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WorkHistory {
-    #[serde(default)]
-    pub enabled: bool,
-    #[serde(default = "default_memory_chars")]
-    pub max_chars: usize,
-}
-
-impl Default for WorkHistory {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            max_chars: default_memory_chars(),
-        }
-    }
-}
-
-impl WorkHistory {
-    pub(super) fn is_default(&self) -> bool {
-        *self == Self::default()
-    }
-}
-
-fn default_memory_chars() -> usize {
-    2000
-}
+pub use dusk_protocol::config::yes;
+pub use dusk_protocol::config::{ApprovalPolicy, Memory, WorkHistory};
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -218,10 +137,6 @@ impl RecordMode {
             Self::Answer => false,
         }
     }
-}
-
-pub fn yes() -> bool {
-    true
 }
 
 pub fn is_true(value: &bool) -> bool {
