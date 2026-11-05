@@ -1,6 +1,7 @@
 //! What opens over the window: the chat search, the project form and the file viewer.
 //! One at a time; a click on the dimmed backdrop or the close button shuts it.
 
+mod agent_chat;
 mod chat_menu;
 pub mod detail;
 mod project;
@@ -33,6 +34,10 @@ pub enum Modal {
     Detail(detail::Detail),
     DeleteFile {
         path: PathBuf,
+    },
+    AgentChat {
+        agent: String,
+        name: String,
     },
     Rename {
         thread_id: String,
@@ -75,6 +80,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         }
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
+        }
+        Modal::AgentChat { agent, name } => {
+            let (agent, name) = (agent.clone(), name.clone());
+            (name, 760., agent_chat::render(ws, &agent, cx))
         }
         Modal::DeleteFile { path } => (
             "Delete file".to_owned(),

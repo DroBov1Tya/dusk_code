@@ -333,8 +333,12 @@ impl Render for Workspace {
             .flex_row()
             .bg(background)
             .text_color(foreground)
-            .when(!self.left_hidden, |row| {
-                row.child(sidebar::render(self, window, cx))
+            .map(|row| {
+                if self.left_hidden {
+                    row.child(sidebar::rail(self, cx))
+                } else {
+                    row.child(sidebar::render(self, window, cx))
+                }
             })
             .child(div().flex_1().min_w_0().h_full().child(center))
             .when(!self.right_hidden, |row| {

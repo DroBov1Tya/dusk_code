@@ -20,8 +20,9 @@ use gpui_kit::{
 };
 
 use crate::{
+    settings::SettingsPage,
     widgets,
-    workspace::{Right, Workspace},
+    workspace::{Center, Right, Workspace},
 };
 
 pub const WIDTH: f32 = 340.;
@@ -123,8 +124,27 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .border_t_1()
                 .border_color(border)
                 .pt_2()
-                .pb_3()
-                .child(environment::render(ws, cx)),
+                .pb_2()
+                .child(environment::render(ws, cx))
+                .child(
+                    div()
+                        .id("version")
+                        .px_4()
+                        .pt_1()
+                        .flex()
+                        .justify_end()
+                        .text_xs()
+                        .text_color(muted)
+                        .cursor_pointer()
+                        .hover(|version| version.text_color(cx.theme().foreground))
+                        .child(format!("duskcode {}", env!("CARGO_PKG_VERSION")))
+                        .on_click(cx.listener(|ws, _, _, cx| {
+                            ws.center = Center::Settings;
+                            ws.settings_page = SettingsPage::Updates;
+                            ws.load_page(SettingsPage::Updates, cx);
+                            cx.notify();
+                        })),
+                ),
         )
 }
 

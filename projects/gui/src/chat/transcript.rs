@@ -91,6 +91,8 @@ pub struct Transcript {
     pub offered: Option<String>,
     /// Files the chat wrote or edited, oldest first, as the tools were given them.
     pub outputs: Vec<PathBuf>,
+    /// What each subagent of the chat said and did, by its thread ID.
+    pub agent_chats: BTreeMap<String, Transcript>,
 }
 
 impl Transcript {
@@ -197,12 +199,13 @@ impl Transcript {
             }
             ThreadEvent::Subagent { thread_id, event } => {
                 if let Some(agent) = self.agents.get_mut(&thread_id) {
-                    match *event {
+                    match &*event {
                         ThreadEvent::TurnStarted(_) => agent.working = true,
                         ThreadEvent::Idle | ThreadEvent::Failed(_) => agent.working = false,
                         _ => {}
                     }
                 }
+                self.agent_chats.entry(thread_id).or_default().apply(*event);
             }
             ThreadEvent::Question(question) => self.question = Some(question),
             ThreadEvent::Approval(request) => self.approvals.push(request),

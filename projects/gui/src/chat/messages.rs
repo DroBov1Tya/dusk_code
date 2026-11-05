@@ -150,6 +150,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .child(working::render(
                     SharedString::from(format!("working-{shown}")),
                     accent,
+                    cx.theme().foreground,
                 ))
                 .child("Working")
                 .into_any_element(),
