@@ -187,6 +187,59 @@ Also done in round 2: HTTP to private networks for providers (any host with
 `allow_http: true`), unlisted models by name (model menu and Settings > Model), older
 builds open newer databases (`ignore_missing` on the migrator).
 
+## Round 3 (user requests, 2026-11-05), version 0.71.0 local, release with GUI in 0.72
+
+Layout rule: the left column is shared; the right column belongs to a chat (with a
+split view each chat half gets its own right column).
+
+- [ ] Context view like the Claude Code one: colored square, name, tokens, percent per
+      section, a segmented bar, free space, autocompact buffer; click a section for its
+      details (which skills, MCP tools, memory files, MCP instructions, with counts);
+      needs core: per-item breakdown and use counts of skills/MCP tools per chat and total
+- [ ] Pasted screenshots and attachments go to the project's attachments folder under
+      ~/Documents/duskcode, images in their own category (core: keep_pastes target)
+- [ ] Connectors: a detail window for each MCP server, skill, plugin and agent; MCP
+      tools switched on/off and described there (not in Tools)
+- [ ] Tools tab: built-in tools only, as cards with a description window and a switch
+      (core: ToolInfo needs a description)
+- [ ] Agents graph: progressive disclosure. Start with category cards (the root's
+      children), enter one to see its own subgraph with a breadcrumb; links to agents
+      elsewhere shown as chips ("also asks X"), not as crossing edges
+- [ ] Settings: edit max agents at work and goal rounds
+- [ ] Arbiter: its own right-column window showing agents, their parents, messages
+      between them, approval requests and the arbiter's answers; the arbiter is an
+      animated dot sphere that pulses like a hive on each request
+- [ ] Settings > System usage: what the GUI process itself uses (CPU, memory)
+- [x] Version 0.71.0 locally, no tag
+- [ ] Settings > Updates: commits ahead, the latest changelog, an update button
+- [ ] Dark themes a little lighter (they are uncomfortably dark)
+- [ ] Right click on a chat: delete (from the database and ~/Documents, confirmed,
+      cannot be undone), rename, pin to the top
+- [ ] Drag a chat to split the center into two chats side by side, each with its own
+      right column
+- [ ] Per-chat access mode (safety) under the composer; settings hold the default
+      (core: per-thread approval policy)
+- [ ] A click outside any open menu or window closes it
+- [ ] Working indicator: an animated geometric dot figure, not a spinner circle
+- [ ] Right column shows only modules that have something; Git renamed Changes;
+      terminal button removed
+- [ ] Chat scrolls up freely while the agent works
+- [ ] display_image shows the real picture, not TUI pixels
+- [ ] Agent actions folded: only the latest shows, expand to see the rest, expand one
+      for its details
+- [ ] Project environment: key/value variables for that project only (core: stored per
+      project, applied to commands; values are secrets, never logged)
+- [ ] Activity counts like the TUI (tools run, files changed, agents asked...)
+- [ ] Context meter under the composer: a ring in four equal parts that changes color
+      as it fills
+- [ ] Chat column a little narrower; a + on the left of the composer opens a menu:
+      files first, then folders
+- [ ] The chat mode shown under the composer, Tab switches it
+- [ ] Message navigator: a short vertical accordion next to the chat; on hover it grows
+      into a catalog of ticks, each previews a sent message with its number, a click
+      scrolls to it
+- [ ] Send button: round and modern, not a square
+
 ## Later (v2)
 
 - Internal browser panel, screenshots the model took, windows the model watches.

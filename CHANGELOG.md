@@ -4,6 +4,24 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## 0.71.0 - unreleased
+
+### Added
+
+- The desktop client, duskcode-gui: projects with their chats, the chat with markdown,
+  approvals and questions, connectors, artifacts, settings and six themes. It is a
+  binary of its own, so a server installs only the terminal client.
+- Projects in the core: named folders with their git state and files, shared by every
+  client.
+- install.sh asks for the terminal client, the desktop client or both.
+
+### Changed
+
+- A provider may use plain HTTP to a private network address, and to any host with
+  `allow_http: true`.
+- A model the provider does not list can still be chosen by name.
+- An older build opens a database a newer build added tables to.
+
 ## 0.70.6 - 2026-11-04
 
 ### Added
