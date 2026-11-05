@@ -23,7 +23,7 @@ const BUSY: &str = "WITH RECURSIVE agents(id) AS (
         AND (m.role = 'user' OR m.from_job_id IS NOT NULL)
         AND m.sequence > (SELECT COALESCE(MAX(last_sequence), 0) FROM turns WHERE thread_id = m.thread_id))";
 
-pub(super) async fn verify(state: &State, thread_id: &str) -> Result<Option<Goal>> {
+pub async fn verify(state: &State, thread_id: &str) -> Result<Option<Goal>> {
     let Some((revision, attempt)) = begin(state, thread_id).await? else {
         return Ok(None);
     };

@@ -220,18 +220,18 @@ impl RecordMode {
     }
 }
 
-pub(super) fn yes() -> bool {
+pub fn yes() -> bool {
     true
 }
 
-pub(super) fn is_true(value: &bool) -> bool {
+pub fn is_true(value: &bool) -> bool {
     *value
 }
 
-pub(super) fn is_zero(value: &u64) -> bool {
+pub fn is_zero(value: &u64) -> bool {
     *value == 0
 }
 
-pub(super) fn is_false(value: &bool) -> bool {
+pub fn is_false(value: &bool) -> bool {
     !value
 }

@@ -193,7 +193,7 @@ async fn run(
 }
 
 /// How the command is confined in sandbox mode, by the scope it runs in.
-pub(super) fn confinement(context: &ToolContext) -> Option<Confinement> {
+pub fn confinement(context: &ToolContext) -> Option<Confinement> {
     let scope = &*context.scope;
     (context.config.approvals() == ApprovalPolicy::Sandbox)
         .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))

@@ -57,7 +57,7 @@ fn confined(_: &str, _: &Confinement) -> Result<Command> {
     anyhow::bail!("this system has no sandbox for commands; switch to ask or full access")
 }
 
-pub(super) fn available() -> bool {
+pub fn available() -> bool {
     #[cfg(target_os = "macos")]
     return super::macos::sandbox::available();
     #[cfg(target_os = "linux")]

@@ -43,7 +43,7 @@ pub async fn write_text(path: &Path, text: String) -> Result<()> {
 
 /// A notice is prepared from the old bytes, but emitted only after the write succeeds.
 /// Unreadable/oversized old files and invalid skill text do not establish a skill update.
-pub(super) async fn skill_save(scope: &ToolScope, path: &Path, text: &str) -> Option<SkillSave> {
+pub async fn skill_save(scope: &ToolScope, path: &Path, text: &str) -> Option<SkillSave> {
     let name = scope.skill_name(path)?;
     Node::check(text, &name).ok()?;
     let action = match tokio::fs::symlink_metadata(path).await {
@@ -61,7 +61,7 @@ pub(super) async fn skill_save(scope: &ToolScope, path: &Path, text: &str) -> Op
     Some(SkillSave { name, action })
 }
 
-pub(super) fn with_skill_save(content: String, saved: Option<SkillSave>) -> String {
+pub fn with_skill_save(content: String, saved: Option<SkillSave>) -> String {
     match saved {
         Some(saved) => format!("{content}\n{}", saved.stored()),
         None => content,

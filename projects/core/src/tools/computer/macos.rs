@@ -65,7 +65,7 @@ fn front_window_at(at: Point) -> Option<Window> {
 
 /// Resolve the topmost visual window and require its owner and geometry to be unique.
 /// AX does not expose a public CGWindowID, so ambiguous mappings are unsafe to press.
-pub(super) fn independent_window(at: Point) -> Result<(u32, i32, Rect)> {
+pub fn independent_window(at: Point) -> Result<(u32, i32, Rect)> {
     let overlay = Cursor::shared().pid().map(i64::from);
     let windows = visible_windows();
     let front = windows
