@@ -682,6 +682,25 @@ impl Runtime {
         Ok(())
     }
 
+    pub fn set_notifications(&self, on: bool) -> Result<()> {
+        self.config()
+            .update(|config| config.set_notifications(on))?;
+        Ok(())
+    }
+
+    /// The version control branch prefix; empty adds none.
+    pub fn set_branch_prefix(&self, prefix: &str) -> Result<()> {
+        self.config()
+            .update(|config| config.set_branch_prefix(prefix))?;
+        Ok(())
+    }
+
+    pub fn set_sound_notifications(&self, on: bool) -> Result<()> {
+        self.config()
+            .update(|config| config.set_sound_notifications(on))?;
+        Ok(())
+    }
+
     /// Full access answers every approval request with yes.
     pub fn set_approvals(&self, policy: ApprovalPolicy) -> Result<()> {
         self.config()

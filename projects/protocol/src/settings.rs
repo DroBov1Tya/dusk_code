@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     catalog::{AgentTree, SkillInfo},
-    config::{ApprovalPolicy, Memory, WorkHistory},
+    config::{ApprovalPolicy, Memory, VersionControl, WorkHistory},
     mcp::McpInfo,
     update::Channel,
 };
@@ -18,6 +18,12 @@ pub struct Settings {
     pub work_history: WorkHistory,
     pub update_channel: Channel,
     pub approvals: ApprovalPolicy,
+    /// Version control settings, shown as their own section.
+    pub version_control: VersionControl,
+    /// Whether clients notify at all; the bell is the TUI's notification.
+    pub notifications: bool,
+    /// Whether notifications ring the terminal bell; off stays silent.
+    pub sound_notifications: bool,
     /// Commands can run confined on this machine.
     pub sandbox: bool,
     /// Log files and traces; off writes and sends nothing.

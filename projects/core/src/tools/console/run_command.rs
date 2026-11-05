@@ -102,7 +102,7 @@ impl Tool for RunCommand {
                         &owner.thread_id,
                         &arguments.command,
                         scope.cwd(),
-                        confinement(&context).as_ref(),
+                        confinement(&context).await.as_ref(),
                         timeout,
                         context
                             .progress
@@ -112,7 +112,7 @@ impl Tool for RunCommand {
                     .await?;
                 return Ok(format!("background job started: job_id={id}"));
             }
-            let confinement = confinement(&context);
+            let confinement = confinement(&context).await;
             Ok(
                 run(&arguments.command, scope, confinement.as_ref(), timeout)
                     .await?
@@ -139,7 +139,7 @@ impl Tool for RunCommand {
                 ));
             }
             context.approve_command(&parsed.command).await?;
-            let confinement = confinement(&context);
+            let confinement = confinement(&context).await;
             run(
                 &parsed.command,
                 &context.scope,
@@ -193,9 +193,9 @@ async fn run(
 }
 
 /// How the command is confined in sandbox mode, by the scope it runs in.
-pub fn confinement(context: &ToolContext) -> Option<Confinement> {
+pub async fn confinement(context: &ToolContext) -> Option<Confinement> {
     let scope = &*context.scope;
-    (context.config.approvals() == ApprovalPolicy::Sandbox)
+    (context.approvals_policy().await == ApprovalPolicy::Sandbox)
         .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))
 }
 

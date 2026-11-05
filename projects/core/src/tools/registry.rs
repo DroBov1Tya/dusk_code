@@ -40,6 +40,10 @@ pub struct ToolRegistry {
     pub(crate) approvals: Option<Arc<super::Approvals>>,
     /// What the machine offers; set by the launcher from what it found at start.
     pub(crate) platform: Platform,
+    /// The record, where each thread's own approval mode lives.
+    pub(crate) state: Option<Arc<crate::state::State>>,
+    /// The thread these tools run for; its own mode applies.
+    pub(crate) thread_id: String,
 }
 
 impl ToolRegistry {
@@ -138,6 +142,8 @@ impl ToolRegistry {
             config: Arc::clone(config),
             progress: None,
             approvals: None,
+            state: self.state.clone(),
+            thread_id: self.thread_id.clone(),
         };
         self.tools
             .iter()
@@ -152,6 +158,8 @@ impl ToolRegistry {
             config: Arc::clone(config),
             progress: None,
             approvals: None,
+            state: self.state.clone(),
+            thread_id: self.thread_id.clone(),
         };
         self.tools
             .values()
@@ -204,6 +212,8 @@ impl ToolRegistry {
             config: Arc::clone(config),
             progress: Some(progress),
             approvals: self.approvals.clone(),
+            state: self.state.clone(),
+            thread_id: self.thread_id.clone(),
         };
         let started = Instant::now();
         if !tool.available(&context) {

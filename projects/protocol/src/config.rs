@@ -1,6 +1,6 @@
 //! Settings a client shows and changes: approvals, context, memory, providers.
 
-use anyhow::{Result, ensure};
+use anyhow::{Result, bail, ensure};
 use serde::{Deserialize, Serialize};
 
 /// Serde defaults of the settings below.
@@ -42,6 +42,42 @@ impl ApprovalPolicy {
 
     pub fn is_ask(&self) -> bool {
         *self == Self::Ask
+    }
+
+    /// The name the config file and state records keep, for a thread's own mode.
+    pub fn stored_name(self) -> &'static str {
+        match self {
+            Self::Ask => "ask",
+            Self::Sandbox => "sandbox",
+            Self::Arbiter => "arbiter",
+            Self::FullAccess => "full_access",
+        }
+    }
+
+    /// The policy stored under `name`; an error for an unknown name.
+    pub fn parse_stored(name: &str) -> Result<Self> {
+        match name {
+            "ask" => Ok(Self::Ask),
+            "sandbox" => Ok(Self::Sandbox),
+            "arbiter" => Ok(Self::Arbiter),
+            "full_access" => Ok(Self::FullAccess),
+            _ => bail!("unknown approval policy {name:?}"),
+        }
+    }
+}
+
+/// Version control settings; clients show this section as "Version control".
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VersionControl {
+    /// The prefix for branch names this tool creates, such as `dusk/`; empty adds none.
+    #[serde(default)]
+    pub branch_prefix: String,
+}
+
+impl VersionControl {
+    pub fn is_default(&self) -> bool {
+        *self == Self::default()
     }
 }
 

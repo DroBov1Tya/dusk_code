@@ -112,6 +112,8 @@ impl Launcher {
         tools.jobs = Some(Arc::clone(&self.jobs));
         tools.approvals = Some(Arc::clone(&self.approvals));
         tools.platform = self.platform;
+        tools.state = Some(Arc::clone(&self.state));
+        tools.thread_id = thread_id.to_owned();
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
                 tools.add(Box::new(tool));

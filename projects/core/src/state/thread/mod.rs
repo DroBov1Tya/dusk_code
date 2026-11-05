@@ -3,6 +3,7 @@
 //! work done in it (turns, token usage, the task board and background jobs) and its
 //! standing goal.
 
+mod approvals;
 mod conversation;
 mod goal;
 mod threads;

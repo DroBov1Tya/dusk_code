@@ -212,6 +212,8 @@ mod tests {
             config: Arc::clone(&config),
             progress: None,
             approvals: None,
+            state: None,
+            thread_id: String::new(),
         };
         assert!(tool.description(&context).ends_with("(empty)"));
         tool.call(json!({"memory": "- prefers Russian"}), context.clone())
@@ -263,6 +265,8 @@ mod tests {
             config: Arc::clone(config),
             progress: None,
             approvals: None,
+            state: None,
+            thread_id: String::new(),
         };
         assert!(!tool.available(&context(&one, &off)));
         assert!(
