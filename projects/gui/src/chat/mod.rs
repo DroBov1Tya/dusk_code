@@ -10,6 +10,7 @@ mod mode_menu;
 mod model_bar;
 mod model_menu;
 mod navigator;
+pub mod queue;
 mod ring;
 pub mod transcript;
 mod working;

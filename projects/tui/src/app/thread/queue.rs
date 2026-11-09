@@ -27,7 +27,7 @@ impl App {
         if self.queued.is_empty() {
             return None;
         }
-        let text = self.queued.drain(..).collect::<Vec<_>>().join("\n\n");
+        let text = std::mem::take(&mut self.queued).join("\n\n");
         self.show_sent(&text);
         Some(text)
     }
@@ -35,7 +35,7 @@ impl App {
     /// Stopping the agent hands what waits back to the box rather than sending it.
     pub fn unqueue_into_box(&mut self) {
         if !self.queued.is_empty() && self.input.text.is_empty() {
-            let text = self.queued.drain(..).collect::<Vec<_>>().join("\n\n");
+            let text = std::mem::take(&mut self.queued).join("\n\n");
             self.input.set(text);
         }
     }

@@ -55,7 +55,11 @@ impl RateMeter {
     pub fn current(&self, now: Instant) -> Option<u64> {
         let start = self.start?;
         let now_ms = now.duration_since(start).as_millis() as u64;
-        Some(rolling_rate(&self.samples, now_ms, WINDOW.as_millis() as u64))
+        Some(rolling_rate(
+            &self.samples,
+            now_ms,
+            WINDOW.as_millis() as u64,
+        ))
     }
 
     fn add(&mut self, tokens: u64, now: Instant) -> Option<u64> {

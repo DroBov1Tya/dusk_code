@@ -234,10 +234,8 @@ fn mcp_tool_names(detail: &ContextDetail) -> Vec<String> {
 }
 
 fn read_capped(file: &MemoryFile) -> String {
-    let text = match std::fs::read_to_string(&file.path) {
-        Ok(text) => text,
-        Err(_) => String::new(),
-    };
+    // A memory file that is gone or unreadable simply adds nothing to the report.
+    let text = std::fs::read_to_string(&file.path).unwrap_or_default();
     text.trim().chars().take(file.max_chars).collect()
 }
 

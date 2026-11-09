@@ -32,6 +32,21 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
             .on_click(cx.listener(|ws, _, window, cx| ws.send(window, cx)))
     };
     let attach = ws.attach_open.then(|| attach_menu(cx));
+    let queued = super::queue::render(ws, cx);
+    // Output speed while the agent writes, from the core's rate events.
+    let rate = ws
+        .shown
+        .as_ref()
+        .filter(|_| working)
+        .and_then(|id| ws.rates.get(id))
+        .filter(|rate| **rate > 0)
+        .map(|rate| {
+            div()
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .pb_1()
+                .child(format!("{rate} tok/s"))
+        });
     let navigator =
         (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, cx));
     let muted = cx.theme().muted_foreground;
@@ -82,6 +97,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
         .max_w(px(780.))
         .mx_auto()
         .w_full()
+        .children(queued)
         .child(
             div()
                 .flex()
@@ -112,6 +128,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                         .flex_1()
                         .child(Textarea::new(&ws.composer).appearance(false)),
                 )
+                .children(rate)
                 .child(button),
         )
         .children(attach)
@@ -204,6 +221,15 @@ impl Workspace {
             .and_then(|chat| chat.question.take());
         if let Some(question) = question {
             text = question.answer(&[], &text);
+        } else if let Some(thread_id) = shown
+            .clone()
+            .filter(|id| self.chats.get(id).is_some_and(|chat| chat.working))
+        {
+            // The agent is busy: the text waits, editable, until the turn ends.
+            self.composer
+                .update(cx, |composer, cx| composer.set_value("", window, cx));
+            self.queue(thread_id, text, window, cx);
+            return;
         }
         // Without a project, a new chat works in the workspace root.
         let dir = Some(

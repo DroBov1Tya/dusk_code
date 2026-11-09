@@ -181,7 +181,8 @@ async fn keep_running(
     spec: PlatformSpec,
     statuses: Arc<RwLock<BTreeMap<String, String>>>,
 ) {
-    for attempt in 0.. {
+    let mut attempt = 0usize;
+    loop {
         let ended = match Session::run(&launcher, &spec, &statuses).await {
             Ok(()) => "the platform ended".to_owned(),
             Err(error) => format!("the platform failed: {error:#}"),
@@ -189,6 +190,7 @@ async fn keep_running(
         warn!("plugin {}: {ended}", spec.plugin);
         statuses.write().insert(spec.plugin.clone(), ended);
         let wait = RESTART_WAITS[attempt.min(RESTART_WAITS.len() - 1)];
+        attempt = attempt.saturating_add(1);
         tokio::time::sleep(Duration::from_secs(wait)).await;
     }
 }
