@@ -25,7 +25,9 @@ use crate::tools::{
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
-const MAX_STREAM_BYTES: usize = 32 * 1024;
+/// Each stream keeps its start and its end, where failures usually show.
+const HEAD_BYTES: usize = 8 * 1024;
+const TAIL_BYTES: usize = 24 * 1024;
 
 #[derive(Default)]
 pub struct RunCommand {
@@ -65,7 +67,7 @@ impl Tool for RunCommand {
         let scope = &*context.scope;
         format!(
             "Run a command with sh -c in {}. Stdin is empty. Returns the exit code, stdout \
-             and stderr, each cut at 32 KiB. A non-zero exit code is a failed result. Put \
+             and stderr; a long stream keeps its first 8 KiB and last 24 KiB. A non-zero exit code is a failed result. Put \
              temporary and downloaded files in {}.",
             scope.cwd().display(),
             scope.workspace().display()
@@ -239,23 +241,47 @@ impl Drop for ProcessGroup {
 
 /// Keeps reading past the cap so a chatty child never blocks on a full pipe.
 async fn read_capped(mut stream: impl AsyncRead + Unpin) -> std::io::Result<String> {
-    let mut kept = Vec::new();
-    let mut truncated = false;
+    let mut kept = HeadTail::default();
     let mut buffer = [0u8; 8192];
     loop {
         let read = stream.read(&mut buffer).await?;
         if read == 0 {
             break;
         }
-        let room = MAX_STREAM_BYTES - kept.len();
-        kept.extend_from_slice(&buffer[..read.min(room)]);
-        truncated |= read > room;
+        kept.push(&buffer[..read]);
     }
-    let mut text = String::from_utf8_lossy(&kept).into_owned();
-    if truncated {
-        text.push_str("\n[output truncated]");
+    Ok(kept.finish())
+}
+
+/// The first `HEAD_BYTES` and the last `TAIL_BYTES` of a stream, and how much fell
+/// between them.
+#[derive(Default)]
+struct HeadTail {
+    head: Vec<u8>,
+    tail: std::collections::VecDeque<u8>,
+    dropped: usize,
+}
+
+impl HeadTail {
+    fn push(&mut self, mut bytes: &[u8]) {
+        let room = HEAD_BYTES - self.head.len();
+        let into_head = bytes.len().min(room);
+        self.head.extend_from_slice(&bytes[..into_head]);
+        bytes = &bytes[into_head..];
+        self.tail.extend(bytes);
+        let over = self.tail.len().saturating_sub(TAIL_BYTES);
+        self.tail.drain(..over);
+        self.dropped += over;
     }
-    Ok(text)
+
+    fn finish(self) -> String {
+        let head = String::from_utf8_lossy(&self.head).into_owned();
+        let tail = String::from_utf8_lossy(&Vec::from(self.tail)).into_owned();
+        match self.dropped {
+            0 => head + &tail,
+            dropped => format!("{head}\n[{dropped} bytes cut]\n{tail}"),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -265,6 +291,26 @@ mod tests {
 
     use super::*;
     use crate::testing::{temp_dir, tool_context};
+
+    #[test]
+    fn a_long_stream_keeps_its_start_and_end() {
+        let mut kept = HeadTail::default();
+        kept.push(b"start\n");
+        kept.push(&vec![b'.'; HEAD_BYTES + TAIL_BYTES]);
+        kept.push(b"\nerror: the end");
+        let text = kept.finish();
+        assert!(text.starts_with("start\n"));
+        assert!(text.ends_with("error: the end"));
+        assert!(text.contains("bytes cut]"));
+        assert!(text.len() < HEAD_BYTES + TAIL_BYTES + 64);
+    }
+
+    #[test]
+    fn a_short_stream_is_whole() {
+        let mut kept = HeadTail::default();
+        kept.push(b"ok\n");
+        assert_eq!(kept.finish(), "ok\n");
+    }
 
     fn scope(name: &str) -> ToolScope {
         let root = temp_dir(name);
