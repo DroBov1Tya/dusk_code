@@ -103,6 +103,16 @@ pub enum ThreadEvent {
         tokens: ThreadTokens,
         limit: u64,
     },
+    /// The output generation rate of this thread's agent, over a short rolling window:
+    /// about once a second while it generates, and once when a model call ends. A
+    /// subagent's rate reaches the client wrapped in `Subagent`, whose `thread_id` says
+    /// which agent it is.
+    OutputRate {
+        /// Generated tokens per second over `window_ms`, counted as context sizes are.
+        tokens_per_sec: u64,
+        /// How wide the window the average covers is, in milliseconds.
+        window_ms: u64,
+    },
     /// The context is past the input limit, so the queued turn was not started or the
     /// running one ended; the client should switch model or compact.
     ContextTooLarge {

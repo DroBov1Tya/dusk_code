@@ -2,7 +2,11 @@
 //! response; when it calls tools, they run and the next step sends their results back,
 //! until the model answers without calling a tool.
 
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{
+    path::PathBuf,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use parking_lot::Mutex;
 
@@ -29,10 +33,11 @@ use crate::{
     },
     runtime::goal::action as goal,
     state::{
-        AgentPhase, CallPurpose, Goal, GoalStatus, MessageRole, ModelCall, PendingMessage, State,
-        Turn, TurnAnswer, TurnOutcome, TurnStatus, estimate_tokens,
+        AgentPhase, CallPurpose, Goal, GoalStatus, KIND_MCP_TOOL, KIND_SKILL, MessageRole,
+        ModelCall, PendingMessage, State, Turn, TurnAnswer, TurnOutcome, TurnStatus,
+        estimate_tokens,
     },
-    tools::{Progress, ToolRegistry, ToolScope},
+    tools::{Progress, ToolKind, ToolRegistry, ToolScope},
 };
 
 /// Bounds a model that keeps calling tools; long tasks of small steps fit in it.
@@ -514,10 +519,23 @@ impl Agent {
         loop {
             let mut output = ModelOutput::default();
             let events = self.events.clone();
+            let mut meter = super::rate::RateMeter::default();
             let streamed = generation::generate(&*choice.provider, request, &mut output, |event| {
+                if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
+                    self.emit(ThreadEvent::OutputRate {
+                        tokens_per_sec,
+                        window_ms: super::rate::WINDOW.as_millis() as u64,
+                    });
+                }
                 let _ = events.send(ThreadEvent::Model(event.clone()));
             });
             let mut generated = inbox.race(streamed).await;
+            if let Some(tokens_per_sec) = meter.current(Instant::now()) {
+                self.emit(ThreadEvent::OutputRate {
+                    tokens_per_sec,
+                    window_ms: super::rate::WINDOW.as_millis() as u64,
+                });
+            }
             if request.effort == Some(Effort::Off)
                 && let Ok(Err(error)) = &mut generated
                 && is_unsupported_effort(error)
@@ -631,6 +649,26 @@ impl Agent {
                 let notes = self.run_hooks(HookEvent::AfterTool, Some(&call.name), details);
                 for note in notes.await.context {
                     content.push_str(&format!("\n\n{note}"));
+                }
+            }
+            // Durable usage counts: skills loaded and MCP tools called, when the call
+            // ran and did not fail.
+            if finished.is_some() && outcome != "failed" {
+                if let Some(skill) = self.tools.loaded_skill(&call.name, &call.arguments) {
+                    if let Err(error) = self
+                        .state
+                        .record_item_use(Some(&self.thread_id), KIND_SKILL, &skill)
+                        .await
+                    {
+                        warn!("cannot count the skill use: {error:#}");
+                    }
+                } else if self.tools.kind_of(&call.name) == Some(ToolKind::Mcp)
+                    && let Err(error) = self
+                        .state
+                        .record_item_use(Some(&self.thread_id), KIND_MCP_TOOL, call.name.as_str())
+                        .await
+                {
+                    warn!("cannot count the MCP tool use: {error:#}");
                 }
             }
             let stored = self.state.record_tool_result_with_outcome(

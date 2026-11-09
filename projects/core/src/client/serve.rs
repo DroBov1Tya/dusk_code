@@ -209,6 +209,16 @@ impl Server {
             ThreadRequest::Approve { id, decision } => {
                 Response::Waiting(runtime.answer_approval(id, decision))
             }
+            ThreadRequest::SetApprovals { thread_id, policy } => {
+                runtime
+                    .state()
+                    .set_thread_approvals(&thread_id, policy)
+                    .await?;
+                Response::Done
+            }
+            ThreadRequest::GetApprovals { thread_id } => {
+                Response::Approvals(runtime.state().thread_approvals(&thread_id).await?)
+            }
         })
     }
 
@@ -232,6 +242,7 @@ impl Server {
                 return Ok(Response::Number(saved as u64));
             }
             SettingsRequest::Switch { switch, on } => self.switch(switch, on)?,
+            SettingsRequest::BranchPrefix(prefix) => runtime.set_branch_prefix(&prefix)?,
             SettingsRequest::NextMode => return Ok(Response::Text(runtime.next_mode()?)),
             SettingsRequest::Mode(name) => runtime.set_mode(&name)?,
             SettingsRequest::Connect {
@@ -279,6 +290,8 @@ impl Server {
                 false => ApprovalPolicy::Ask,
             }),
             Switch::Logging => runtime.set_logging_enabled(on),
+            Switch::Notifications => runtime.set_notifications(on),
+            Switch::SoundNotifications => runtime.set_sound_notifications(on),
         }
     }
 
@@ -482,6 +495,7 @@ fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -> Status {
         approvals: config.approvals(),
         max_goal_rounds: config.limits().max_goal_rounds,
         idle_screen_minutes: config.appearance().idle_screen_minutes,
+        notifications: config.notifications(),
         sound_notifications: config.sound_notifications(),
         // Read before the statuses: a server that settles in between still shows.
         mcp_starting: runtime.mcp_starting(),

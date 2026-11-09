@@ -62,6 +62,8 @@ pub fn tool_context(scope: &ToolScope) -> ToolContext {
         config: Arc::clone(config),
         progress: None,
         approvals: None,
+        state: None,
+        thread_id: String::new(),
     }
 }
 

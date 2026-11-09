@@ -30,7 +30,10 @@ pub const KEYS: [(&str, &str); 30] = [
     ("Shift+PgUp/Dn", "scroll subagent cards"),
     ("Alt+PgUp/Dn", "scroll MCP tools"),
     ("Ctrl+T /resume", "threads, with a preview of each"),
-    ("/model", "choose the model; /model provider/name uses one the server does not list"),
+    (
+        "/model",
+        "choose the model; /model provider/name uses one the server does not list",
+    ),
     ("/connect", "add a provider URL and optional API key"),
     ("/settings", "concurrent agent limit, tools and skills"),
     (

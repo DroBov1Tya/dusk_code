@@ -34,7 +34,8 @@ use crate::{
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, Jobs, McpTool,
-        MessageParent, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry, ToolScope,
+        MessageParent, NameSession, PlanEdit, ReadHistory, Remember, RunCommand, Tasks,
+        ToolRegistry, ToolScope,
     },
 };
 
@@ -111,6 +112,8 @@ impl Launcher {
         tools.jobs = Some(Arc::clone(&self.jobs));
         tools.approvals = Some(Arc::clone(&self.approvals));
         tools.platform = self.platform;
+        tools.state = Some(Arc::clone(&self.state));
+        tools.thread_id = thread_id.to_owned();
         for server in self.mcp.ready() {
             for tool in McpTool::all(&server) {
                 tools.add(Box::new(tool));
@@ -157,6 +160,14 @@ impl Launcher {
         if depth == 0 {
             tools.add(Box::new(AskUser));
             tools.add(Box::new(GoalTool::new(
+                Arc::clone(&self.state),
+                thread_id.to_owned(),
+            )));
+            tools.add(Box::new(NameSession::new(
+                Arc::clone(&self.state),
+                thread_id.to_owned(),
+            )));
+            tools.add(Box::new(PlanEdit::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),
             )));

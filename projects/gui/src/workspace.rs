@@ -108,6 +108,11 @@ pub struct Workspace {
     pub right_hidden: bool,
     /// Files to send with the next message.
     pub attachments: Vec<PathBuf>,
+    /// Messages written while the agent works: each sits above the composer,
+    /// editable, and goes in queue order when the turn ends.
+    pub pending: Vec<chat::queue::Pending>,
+    /// Output tokens per second by thread, from the core's rate events.
+    pub rates: HashMap<String, u64>,
     /// The shown chat's sent messages, by transcript row, for the navigator.
     pub sent_rows: Vec<(usize, String)>,
     pub navigator_open: bool,
@@ -201,6 +206,8 @@ impl Workspace {
             search,
             composer,
             notice: None,
+            pending: Vec::new(),
+            rates: HashMap::new(),
             git: None,
             files: BTreeMap::new(),
             expanded: HashSet::new(),
@@ -269,12 +276,24 @@ impl Workspace {
     fn on_event(&mut self, event: Event, cx: &mut Context<Self>) {
         match event {
             Event::Thread { thread_id, event } => {
+                if let dusk_protocol::thread::ThreadEvent::OutputRate { tokens_per_sec, .. } =
+                    &*event
+                {
+                    self.rates.insert(thread_id.clone(), *tokens_per_sec);
+                }
                 let titled = matches!(
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
                 );
+                let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
+                    let was_working = chat.working;
                     chat.apply(*event);
+                    finished = was_working && !chat.working;
+                }
+                if finished {
+                    self.rates.remove(&thread_id);
+                    self.send_next_pending(&thread_id, cx);
                 }
                 if titled {
                     self.reload_threads(cx);

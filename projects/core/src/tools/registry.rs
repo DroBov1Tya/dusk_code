@@ -40,6 +40,10 @@ pub struct ToolRegistry {
     pub(crate) approvals: Option<Arc<super::Approvals>>,
     /// What the machine offers; set by the launcher from what it found at start.
     pub(crate) platform: Platform,
+    /// The record, where each thread's own approval mode lives.
+    pub(crate) state: Option<Arc<crate::state::State>>,
+    /// The thread these tools run for; its own mode applies.
+    pub(crate) thread_id: String,
 }
 
 impl ToolRegistry {
@@ -95,6 +99,15 @@ impl ToolRegistry {
         self.tools.get(name).map(|tool| tool.kind())
     }
 
+    /// The skill a successful `load_skill` call named; `None` for other tools or when
+    /// the arguments do not name one.
+    pub fn loaded_skill(&self, name: &str, arguments: &serde_json::Value) -> Option<String> {
+        if name != "load_skill" {
+            return None;
+        }
+        Some(arguments.get("name")?.as_str()?.to_owned())
+    }
+
     #[cfg(test)]
     pub fn names(&self) -> impl Iterator<Item = &str> {
         self.tools.keys().map(String::as_str)
@@ -138,6 +151,8 @@ impl ToolRegistry {
             config: Arc::clone(config),
             progress: None,
             approvals: None,
+            state: self.state.clone(),
+            thread_id: self.thread_id.clone(),
         };
         self.tools
             .iter()
@@ -152,6 +167,8 @@ impl ToolRegistry {
             config: Arc::clone(config),
             progress: None,
             approvals: None,
+            state: self.state.clone(),
+            thread_id: self.thread_id.clone(),
         };
         self.tools
             .values()
@@ -204,6 +221,8 @@ impl ToolRegistry {
             config: Arc::clone(config),
             progress: Some(progress),
             approvals: self.approvals.clone(),
+            state: self.state.clone(),
+            thread_id: self.thread_id.clone(),
         };
         let started = Instant::now();
         if !tool.available(&context) {
@@ -260,7 +279,10 @@ mod tests {
     use crate::{
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
-        tools::{AgentState, AskUser, DisplayImage, GoalTool, ReadHistory, Remember, Tasks},
+        tools::{
+            AgentState, AskUser, DisplayImage, GoalTool, NameSession, PlanEdit, ReadHistory,
+            Remember, Tasks,
+        },
     };
 
     struct NeedsScreen;
@@ -313,6 +335,8 @@ mod tests {
         let mut tools: Vec<Box<dyn Tool>> = super::super::builtin::all(&dir);
         tools.push(Box::new(Tasks::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(GoalTool::new(Arc::clone(&state), "t".into())));
+        tools.push(Box::new(NameSession::new(Arc::clone(&state), "t".into())));
+        tools.push(Box::new(PlanEdit::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(ReadHistory::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(Remember::user(dir.clone())));
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));

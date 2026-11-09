@@ -12,7 +12,7 @@ mod providers;
 mod sections;
 
 pub use context::ContextPolicy;
-pub use dusk_protocol::config::UNKNOWN_WINDOW;
+pub use dusk_protocol::config::{UNKNOWN_WINDOW, VersionControl};
 pub use effort::Effort;
 pub use file::Config;
 pub use mcp::{
