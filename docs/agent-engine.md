@@ -42,17 +42,19 @@ and clear errors. So duskcode keeps one edit tool and lets the shell do the rest
 
 - [x] `read_file` reads a window: 2000 lines or 50 KiB from an offset.
 - [x] `run_command` keeps the first 8 KiB and the last 24 KiB of each stream.
-- [ ] `edit_file` miss shows the nearest lines; CRLF-tolerant match.
-- [ ] Prompt: batch independent calls in one step; think only about what decides the next
+- [x] `edit_file` miss shows the nearest lines; CRLF-tolerant match.
+- [x] Prompt: batch independent calls in one step; think only about what decides the next
       step; no `sleep` polling, use background commands.
-- [ ] Run read-only tool calls of one step in parallel.
-- [ ] Retries: more attempts, backoff with jitter, `retry-after`, no retry after the answer
-      started; errors without a clear code count as transient.
+- [ ] Run read-only tool calls of one step in parallel. Low gain: those tools take
+      milliseconds, and the long ones (commands) change things; batching per step is
+      what saves time, and the prompt asks for it.
+- [x] Retries: six attempts, backoff with jitter, `retry-after`, no retry after the answer
+      started; stream errors without a clear cause count as transient.
 - [ ] Client-side token bucket per provider, so a goal loop cannot get the key banned.
-- [ ] Cache: count deepseek's cache fields; `prompt_cache_key` per thread for
+- [~] Cache: deepseek's cache hits counted; `prompt_cache_key` per thread for
       OpenAI-compatible providers; the tool list is sent again when the mode changes,
       without touching the cached prefix more than needed.
-- [ ] Subagents: the runtime moves the phase to executing on the first working call, so a
-      subagent does not spend a step on bookkeeping.
+- [x] Subagents: phases are optional; the runtime starts the task in planning and marks
+      it done on the answer, so a subagent does not spend steps on bookkeeping.
 - [ ] Compaction prepared before the limit, recent tail kept word for word.
 - [ ] An eval set (a Terminal-Bench subset through Harbor) to measure each change.

@@ -4,6 +4,25 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- The desktop client keeps messages written while the agent works above the box and
+  sends them when the turn ends; it shows tokens per second and its icon on a bare
+  binary.
+- Per-chat access modes, version control and notification settings, name_session and
+  plan_edit tools, a per-item context breakdown with use counts (core).
+
+### Changed
+
+- Agents spend fewer steps and tokens: files are read a window at a time, commands keep
+  the end of their output, a failed edit shows the lines it missed, subagents no longer
+  report phases by hand, and the prompts ask for more work per step.
+- Requests that fail without a clear cause are tried again, up to six times, with
+  growing pauses and the provider's retry-after.
+- DeepSeek cache hits are counted.
+
 ## 0.71.1 - 2026-11-05
 
 ### Added
