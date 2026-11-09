@@ -149,6 +149,7 @@ impl Anthropic {
             .map_err(|_| Transient("provider completion request failed".into()))?;
         let status = response.status();
         if !status.is_success() {
+            let wait = http::retry_failure(&response, String::new());
             let reason = tokio::time::timeout(ERROR_BODY_TIMEOUT, error_message(response))
                 .await
                 .ok()
@@ -159,7 +160,12 @@ impl Anthropic {
                 None => refused,
             };
             if http::is_retryable(status) {
-                bail!(Transient(message));
+                // Keeps the retry-after the headers gave, with this message.
+                return Err(match crate::providers::retry_after(&wait) {
+                    Some(after) => anyhow::Error::new(Transient(message))
+                        .context(crate::providers::RetryAfter(after)),
+                    None => Transient(message).into(),
+                });
             }
             let reason = reason.unwrap_or_default().to_ascii_lowercase();
             if effort_off && status == StatusCode::BAD_REQUEST && reason.contains("thinking") {

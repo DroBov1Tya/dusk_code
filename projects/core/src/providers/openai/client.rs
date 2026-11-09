@@ -139,7 +139,7 @@ impl OpenAiCompatible {
         if !status.is_success() {
             let message = http::refused("completion", status);
             if http::is_retryable(status) {
-                bail!(Transient(message));
+                return Err(http::retry_failure(&response, message));
             }
             if has_pictures && matches!(status.as_u16(), 400 | 413 | 415 | 422) {
                 bail!(UnsupportedPictures);

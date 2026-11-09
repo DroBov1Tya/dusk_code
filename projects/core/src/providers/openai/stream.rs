@@ -173,7 +173,9 @@ impl CompletionParser {
             if self.effort_off && error_rejects_effort_off(&error) {
                 bail!(UnsupportedEffort);
             }
-            bail!("provider reported an error during streaming");
+            // Type and code only: the message can echo the input.
+            let kind = format!("{} {}", error["type"], error["code"]);
+            return Err(crate::providers::stream_error(&kind));
         }
         let mut events = Vec::new();
         for choice in chunk.choices.into_iter().filter(|choice| choice.index == 0) {

@@ -15,14 +15,12 @@ mod request;
 mod transport;
 
 pub use errors::{
-    OutputLimit, is_output_limit, is_transient, is_unsupported_effort, is_unsupported_pictures,
+    OutputLimit, RetryAfter, Transient, is_output_limit, is_transient, is_unsupported_effort,
+    is_unsupported_pictures, retry_after, stream_error,
 };
+#[cfg(test)]
+pub use output::{ChatStream, FinishReason};
 pub use output::{ModelEvent, ModelOutput, ToolCall, Usage, text_calls};
 pub use registry::{Model, ModelProvider, Provider, ProviderRegistry, validate_provider};
 pub use request::{ChatMessage, ChatRequest, Picture, ToolSpec};
 pub use transport::http::is_loopback;
-#[cfg(test)]
-pub use {
-    errors::Transient,
-    output::{ChatStream, FinishReason},
-};

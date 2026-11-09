@@ -2,7 +2,7 @@
 //! sent again, an effort or pictures the provider refuses, and an answer cut at the
 //! output limit.
 
-use std::fmt;
+use std::{fmt, time::Duration};
 
 /// A failure that may pass if the same request is sent again: the network, a busy or
 /// failing server, a cut stream.
@@ -56,6 +56,47 @@ impl fmt::Display for Transient {
 
 impl std::error::Error for Transient {}
 
+/// How long the provider asked to wait before the next attempt (`retry-after`).
+#[derive(Debug)]
+pub struct RetryAfter(pub Duration);
+
+impl fmt::Display for RetryAfter {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "retry after {} s", self.0.as_secs())
+    }
+}
+
+impl std::error::Error for RetryAfter {}
+
+pub fn retry_after(error: &anyhow::Error) -> Option<Duration> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<RetryAfter>().map(|wait| wait.0))
+}
+
+/// An error a provider puts in its stream. Without a clear sign that the request itself
+/// is wrong (bad input, key, model or size), it is taken as one that may pass.
+pub fn stream_error(kind: &str) -> anyhow::Error {
+    const PERMANENT: [&str; 10] = [
+        "invalid",
+        "authentication",
+        "permission",
+        "not_found",
+        "too_large",
+        "context_length",
+        "content_filter",
+        "401",
+        "403",
+        "404",
+    ];
+    let kind = kind.to_ascii_lowercase();
+    if PERMANENT.iter().any(|word| kind.contains(word)) {
+        anyhow::anyhow!("provider reported an error during streaming")
+    } else {
+        Transient("provider reported an error during streaming".into()).into()
+    }
+}
+
 /// Whether `error` or anything it wraps is a `Transient` failure.
 pub fn is_transient(error: &anyhow::Error) -> bool {
     error
@@ -78,4 +119,17 @@ impl std::error::Error for OutputLimit {}
 
 pub fn is_output_limit(error: &anyhow::Error) -> bool {
     error.downcast_ref::<OutputLimit>().is_some()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn stream_errors_without_a_clear_cause_may_pass() {
+        assert!(is_transient(&stream_error("")));
+        assert!(is_transient(&stream_error("server_error 500")));
+        assert!(!is_transient(&stream_error("invalid_request_error")));
+        assert!(!is_transient(&stream_error("context_length_exceeded")));
+    }
 }

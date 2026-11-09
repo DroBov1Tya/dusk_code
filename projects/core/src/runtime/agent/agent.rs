@@ -43,9 +43,10 @@ use crate::{
 /// Bounds a model that keeps calling tools; long tasks of small steps fit in it.
 const MAX_STEPS: usize = 150;
 /// A model call that fails before writing anything is tried this many times in all.
-const MAX_ATTEMPTS: u32 = 3;
-/// Doubles before each further attempt.
+const MAX_ATTEMPTS: u32 = 6;
+/// Doubles before each further attempt, up to `MAX_RETRY_DELAY`.
 const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
+const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
 
 pub struct Agent {
     pub state: Arc<State>,
@@ -557,11 +558,11 @@ impl Agent {
                 let rejected = std::mem::replace(error, anyhow!("reasoning effort rejected"));
                 *error = rejected.context(detail);
             }
-            let error = match &generated {
+            let (error, asked_wait) = match &generated {
                 Ok(Err(error))
                     if attempt < MAX_ATTEMPTS && !output.answered() && is_transient(error) =>
                 {
-                    format!("{error:#}")
+                    (format!("{error:#}"), crate::providers::retry_after(error))
                 }
                 _ => return Ok((output, generated)),
             };
@@ -570,7 +571,7 @@ impl Agent {
                 self.thread_id
             );
             self.emit(ThreadEvent::Retrying { attempt, error });
-            let pause = FIRST_RETRY_DELAY * 2u32.pow(attempt - 1);
+            let pause = asked_wait.unwrap_or_else(|| retry_delay(attempt));
             inbox.race(tokio::time::sleep(pause)).await?;
             attempt += 1;
         }
@@ -881,6 +882,18 @@ fn missing_tools(messages: &[ChatMessage], tools: &[ToolSpec]) -> Option<String>
          have, or ask an agent that has them.",
         missing.join(", ")
     ))
+}
+
+/// Exponential backoff with up to a quarter of jitter, so agents that failed together do
+/// not all come back at the same moment.
+fn retry_delay(attempt: u32) -> Duration {
+    let base = FIRST_RETRY_DELAY
+        .saturating_mul(2u32.saturating_pow(attempt - 1))
+        .min(MAX_RETRY_DELAY);
+    let noise = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |now| now.subsec_nanos());
+    base + base.mul_f64(f64::from(noise % 1000) / 4000.0)
 }
 
 #[cfg(test)]

@@ -194,13 +194,9 @@ impl MessageParser {
                 ));
             }
             Event::Error { error } => {
-                if matches!(
-                    error["type"].as_str(),
-                    Some("overloaded_error" | "api_error" | "rate_limit_error")
-                ) {
-                    bail!(Transient("provider is overloaded".into()));
-                }
-                bail!("provider reported an error during streaming");
+                return Err(crate::providers::stream_error(
+                    error["type"].as_str().unwrap_or_default(),
+                ));
             }
             Event::Other => {}
         }
