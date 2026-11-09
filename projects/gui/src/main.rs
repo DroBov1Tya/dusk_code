@@ -15,6 +15,7 @@ mod artifacts;
 mod chat;
 mod connectors;
 mod core;
+mod icon;
 mod inspector;
 mod modal;
 mod settings;
@@ -65,6 +66,7 @@ fn main() -> Result<()> {
         .with_http_client(Arc::new(http))
         .run(move |cx| {
             gpui_kit::init(cx);
+            icon::set_dock_icon();
             theme::init(look_file, cx);
             let core = core::Core::new(client, Arc::clone(&runtime));
             let options = WindowOptions {
@@ -73,6 +75,7 @@ fn main() -> Result<()> {
                     title: Some("duskcode".into()),
                     ..Default::default()
                 }),
+                app_id: Some(icon::APP_ID.to_owned()),
                 ..Default::default()
             };
             let opened = gpui_kit::open_window(options, cx, |window, cx| {

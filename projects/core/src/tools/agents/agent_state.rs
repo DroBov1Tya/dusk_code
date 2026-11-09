@@ -51,8 +51,9 @@ impl Tool for AgentState {
         "Say where you are in your task: planning (reading and deciding how), executing \
          (doing the work), reviewing (checking what you did against the task), done, or \
          paused (waiting on something). Work goes planning, executing, reviewing, done; \
-         from reviewing you may go back to executing to fix what the review found. Move \
-         on when the phase changes, not at every step."
+         from reviewing you may go back to executing to fix what the review found. \
+         Optional: the runtime starts the task in planning and marks it done when you \
+         answer; call this only to pause or to show progress in a long task."
             .into()
     }
 

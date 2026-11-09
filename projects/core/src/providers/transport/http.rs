@@ -93,6 +93,24 @@ pub fn is_retryable(status: StatusCode) -> bool {
     matches!(status.as_u16(), 408 | 409 | 429) || status.is_server_error()
 }
 
+/// A failure worth another attempt, carrying the provider's `retry-after` in seconds
+/// when it gave one, capped so a bad header cannot stall the turn.
+pub fn retry_failure(response: &Response, message: String) -> anyhow::Error {
+    use crate::providers::{RetryAfter, Transient};
+    const MAX_WAIT: Duration = Duration::from_secs(60);
+    let wait = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<u64>().ok())
+        .map(|seconds| Duration::from_secs(seconds).min(MAX_WAIT));
+    let error = anyhow::Error::new(Transient(message));
+    match wait {
+        Some(wait) => error.context(RetryAfter(wait)),
+        None => error,
+    }
+}
+
 /// What a refused request tells the user; a bad key says so, with where to fix it.
 pub fn refused(what: &str, status: StatusCode) -> String {
     let code = status.as_u16();

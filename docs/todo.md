@@ -8,7 +8,8 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 
 ## Agent engine (core)
 
-- [ ] Study why opencode 2.0 beats 1.19 on benchmarks; apply what fits
+- [x] Study why opencode 2.0 beats 1.19 on benchmarks (see `agent-engine.md`)
+- [ ] Work through the plan in `agent-engine.md`
 - [ ] Bring the agent loop up to Claude Code level: explore with grep/find, read slices
       (`sed -n`, line ranges), small edits, parallel reads, short summaries back to the
       main agent; measure whether `command` can replace `write_file`/`edit_file`
@@ -18,6 +19,8 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [ ] Retries for failed requests without a clear error code (backoff, capped)
 - [ ] Client-side token bucket rate limit per provider (guards goal loops)
 - [ ] Send the tool list again when the mode changes
+- [ ] A command or agent code already running can be moved to the background by hand
+      (TUI + GUI)
 - [ ] `run_command` runs in the background: the chat stays writable while it works;
       a running command can be moved to the background (TUI + GUI)
 - [ ] MCP code mode: the model writes one script that calls a set of MCP tools
@@ -42,6 +45,16 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
       a view and an edit mode, on the right (GUI) and a command (TUI)
 
 ## Providers and voice
+
+- [ ] Cost of tokens on paid APIs, never guessed: the cost the provider reports for the
+      call (OpenRouter `usage.cost`, xAI `cost_in_usd_ticks`, LiteLLM
+      `x-litellm-response-cost`), else its pricing API (OpenRouter `/models`, LiteLLM
+      `/model/info`), else a price table the user writes per model; otherwise unknown.
+      Stored per call in integer micro-USD with its source; cache writes counted apart
+- [ ] Balance where a normal key may read it, chosen in the provider's config, sent only
+      to its base URL: DeepSeek `/user/balance`, Kimi `/v1/users/me/balance`,
+      OpenRouter `/api/v1/key`, LiteLLM `/key/info`; never ask for an admin key
+- [x] DeepSeek cache hits counted (`prompt_cache_hit_tokens`)
 
 - [ ] Several providers at once in Models: add, use, remove
 - [ ] STT (microphone button by send) and TTS (speaker button by a model answer)
@@ -95,6 +108,7 @@ Right column
 - [ ] Less information at once overall: calmer, fewer simultaneous things
 
 Settings and updates
+- [x] App icon on a bare binary (Dock on macOS, app ID on Linux)
 - [ ] Notifications section
 - [ ] Version control section (branch prefix ...)
 - [ ] "new release!" label when an update exists; a dev update channel switch

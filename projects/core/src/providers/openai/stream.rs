@@ -120,6 +120,8 @@ struct WireUsage {
     completion_tokens: u64,
     prompt_tokens_details: Option<PromptDetails>,
     completion_tokens_details: Option<CompletionDetails>,
+    /// DeepSeek reports cache hits here, and may leave out the details above.
+    prompt_cache_hit_tokens: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -173,7 +175,9 @@ impl CompletionParser {
             if self.effort_off && error_rejects_effort_off(&error) {
                 bail!(UnsupportedEffort);
             }
-            bail!("provider reported an error during streaming");
+            // Type and code only: the message can echo the input.
+            let kind = format!("{} {}", error["type"], error["code"]);
+            return Err(crate::providers::stream_error(&kind));
         }
         let mut events = Vec::new();
         for choice in chunk.choices.into_iter().filter(|choice| choice.index == 0) {
@@ -191,6 +195,7 @@ impl CompletionParser {
                 cached_prompt_tokens: usage
                     .prompt_tokens_details
                     .and_then(|details| details.cached_tokens)
+                    .or(usage.prompt_cache_hit_tokens)
                     .unwrap_or(0),
                 completion_tokens: usage.completion_tokens,
                 reasoning_tokens: usage
@@ -253,6 +258,19 @@ mod tests {
         format!(
             "data: {{\"choices\":[{{\"index\":0,\"delta\":{{}},\"finish_reason\":\"{reason}\"}}]}}\n\n"
         )
+    }
+
+    #[test]
+    fn deepseek_cache_hits_count_as_cached() {
+        let body = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1,\"prompt_cache_hit_tokens\":8,\"prompt_cache_miss_tokens\":2}}\n\n";
+        let events = CompletionParser::default().feed(body.as_bytes()).unwrap();
+        assert!(matches!(
+            events.as_slice(),
+            [ModelEvent::Usage(Usage {
+                cached_prompt_tokens: 8,
+                ..
+            })]
+        ));
     }
 
     #[test]
