@@ -123,6 +123,7 @@ Type=Application
 Name=Duskcode
 Exec=$installed
 Icon=duskcode
+StartupWMClass=duskcode
 Categories=Development;
 DESKTOP
     say "+ $apps/duskcode.desktop"
