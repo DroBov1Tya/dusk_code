@@ -59,6 +59,10 @@ impl SettingsWindow<'_> {
             (Some(SettingCategory::Models), _) if self.view.manual_context.is_some() => {
                 " digits enter token count  Ctrl+A select all  enter save  esc cancel "
             }
+            (Some(SettingCategory::VersionControl), _) if self.view.branch_input.is_some() => {
+                " type the prefix  Ctrl+A select all  enter save  esc cancel "
+            }
+            (Some(SettingCategory::VersionControl), _) => " enter/click edit  esc back ",
             (Some(SettingCategory::System), _) => " read every 2 s while open  esc back ",
             (Some(SettingCategory::Limits | SettingCategory::Appearance), _) => {
                 " up/down choose  left/right change  esc back "
@@ -224,6 +228,28 @@ impl SettingsWindow<'_> {
                 ]
             }
             Some(SettingCategory::Limits) => self.limit_rows(width),
+            Some(SettingCategory::VersionControl) => {
+                let shown = match self.view.branch_prefix.as_str() {
+                    "" => "none".to_owned(),
+                    prefix => prefix.to_owned(),
+                };
+                let mut lines = vec![right(
+                    vec![Span::raw("  branch prefix")],
+                    Span::styled(format!("{shown}  "), fg(TEXT)),
+                    width,
+                )];
+                if let Some(input) = &self.view.branch_input {
+                    lines.push(manual_context_line(input, width));
+                }
+                let row = Row {
+                    lines,
+                    switch: None,
+                    lead: 0,
+                };
+                let about =
+                    "    the start of the branch names it creates, such as dusk/; empty adds none";
+                vec![described(row, about, width)]
+            }
             Some(SettingCategory::Appearance) => {
                 let minutes = match self.view.idle_screen_minutes {
                     0 => "off".to_owned(),
@@ -741,8 +767,8 @@ fn memory_size_row(label: &'static str, chars: usize, width: usize) -> Row {
     }
 }
 
-/// The manual value has its own row so the caret remains visible in narrow windows.
-/// This editor accepts ASCII digits, so byte offsets are also terminal cell offsets.
+/// The value being edited has its own row so the caret remains visible in narrow windows.
+/// These editors accept ASCII only, so byte offsets are also terminal cell offsets.
 fn manual_context_line(input: &Input, width: usize) -> Line<'static> {
     const INDENT: usize = 4;
     let available = width.saturating_sub(INDENT).max(1);

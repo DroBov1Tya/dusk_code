@@ -4,7 +4,9 @@ use std::env;
 
 use anyhow::Result;
 use dusk_core::client::Client;
-use dusk_protocol::{client::Switch, command::Command, update::InstallProgress};
+use dusk_protocol::{
+    client::Switch, command::Command, config::ApprovalPolicy, update::InstallProgress,
+};
 use ratatui::DefaultTerminal;
 
 use super::{
@@ -123,6 +125,56 @@ pub async fn apply(
                 app.flash = Some(format!("Concurrent agents: {limit}"));
             }
             Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
+        },
+        Action::Access(name) => {
+            let Some(thread_id) = app.thread_id.clone() else {
+                app.flash = Some("Send a message first; the access mode belongs to a chat".into());
+                return Ok(Flow::Go);
+            };
+            let Some(name) = name else {
+                match client.threads().approvals(&thread_id).await {
+                    Ok(Some(policy)) => app.flash = Some(format!("Access here: {}", policy.name())),
+                    Ok(None) => {
+                        let default = app.status.approvals.name();
+                        app.flash = Some(format!("Access here: {default} (the default)"));
+                    }
+                    Err(error) => app.error(format!("cannot read the access mode: {error:#}")),
+                }
+                return Ok(Flow::Go);
+            };
+            let policy = match name.as_str() {
+                "default" => None,
+                "ask" => Some(ApprovalPolicy::Ask),
+                "sandbox" => Some(ApprovalPolicy::Sandbox),
+                "arbiter" => Some(ApprovalPolicy::Arbiter),
+                "full" | "full access" | "full_access" => Some(ApprovalPolicy::FullAccess),
+                _ => {
+                    app.flash = Some("Use ask, sandbox, arbiter, full or default".into());
+                    return Ok(Flow::Go);
+                }
+            };
+            match client.threads().set_approvals(&thread_id, policy).await {
+                Ok(()) => {
+                    app.flash = Some(match policy {
+                        Some(policy) => format!("Access here: {}", policy.name()),
+                        None => "Access here: back to the default".to_owned(),
+                    })
+                }
+                Err(error) => app.error(format!("cannot set the access mode: {error:#}")),
+            }
+        }
+        Action::SetBranchPrefix(prefix) => match client.settings().branch_prefix(&prefix).await {
+            Ok(()) => {
+                if let Some(Panel::Settings(view)) = &mut app.panel {
+                    view.branch_prefix = prefix.clone();
+                    view.branch_input = None;
+                }
+                app.flash = Some(match prefix.is_empty() {
+                    true => "Branch prefix: none".to_owned(),
+                    false => format!("Branch prefix: {prefix}"),
+                });
+            }
+            Err(error) => app.error(format!("cannot save the branch prefix: {error:#}")),
         },
         Action::SetIdleMinutes(minutes) => {
             match client.settings().idle_screen_minutes(minutes).await {
