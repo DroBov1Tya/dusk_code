@@ -5,4 +5,4 @@
 mod lease;
 mod manager;
 
-pub use manager::{JobInfo, JobManager, JobOwner};
+pub use manager::{JobInfo, JobManager, JobOwner, Launch};

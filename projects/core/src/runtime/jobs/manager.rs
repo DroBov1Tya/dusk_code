@@ -18,7 +18,7 @@ use super::lease::{JobLease, Owner};
 use crate::{
     runtime::agent::{Input, Mailboxes},
     state::{BackgroundJob, JobSummary, State},
-    tools::console::process::{HeadTail, Running},
+    tools::console::process::{CommandEnv, HeadTail, Running},
 };
 
 pub use dusk_protocol::work::JobInfo;
@@ -26,6 +26,13 @@ pub use dusk_protocol::work::JobInfo;
 const MAX_RUNNING: usize = 64;
 const MAX_RUNNING_PER_THREAD: usize = 8;
 const MAX_COMMAND_BYTES: usize = 16 * 1024;
+
+/// Where and how a background command starts.
+pub struct Launch<'a> {
+    pub cwd: &'a std::path::Path,
+    pub confinement: Option<&'a crate::platform::Confinement>,
+    pub env: &'a CommandEnv,
+}
 
 pub struct JobManager {
     pub state: Arc<State>,
@@ -183,12 +190,11 @@ impl JobManager {
         self: &Arc<Self>,
         owner: &str,
         command: &str,
-        cwd: &std::path::Path,
-        confinement: Option<&crate::platform::Confinement>,
+        launch: Launch<'_>,
         timeout_seconds: u64,
         call_id: Option<&str>,
     ) -> Result<String> {
-        let running = || Running::start(command, cwd, confinement, &[]);
+        let running = || Running::start(command, launch.cwd, launch.confinement, launch.env);
         self.launch(owner, command, call_id, running, timeout_seconds)
             .await
     }
@@ -474,6 +480,16 @@ mod tests {
     use super::*;
     use crate::testing::temp_dir;
 
+    /// A plain command in the current folder.
+    fn launch() -> Launch<'static> {
+        static ENV: std::sync::LazyLock<CommandEnv> = std::sync::LazyLock::new(CommandEnv::default);
+        Launch {
+            cwd: Path::new("."),
+            confinement: None,
+            env: &ENV,
+        }
+    }
+
     async fn open(name: &str) -> (Arc<State>, PathBuf) {
         let database = temp_dir(name).join("state.db");
         let state = Arc::new(State::open(&database).await.unwrap());
@@ -516,7 +532,8 @@ mod tests {
         let handed = manager.foreground("thread", "call_1");
         let mut request = handed.request();
         let command = "echo early; sleep 0.3; echo late";
-        let running = Running::start(command, Path::new("."), None, &[]).unwrap();
+        let running =
+            Running::start(command, Path::new("."), None, &CommandEnv::default()).unwrap();
         assert!(manager.send_to_background("other", "call_1").await.is_err());
         manager
             .send_to_background("thread", "call_1")
@@ -540,7 +557,7 @@ mod tests {
         let (state, database) = open("job-once").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start("thread", "echo hi", Path::new("."), None, 10, None)
+            .start("thread", "echo hi", launch(), 10, None)
             .await
             .unwrap();
         let job = finished(&state, &id).await;
@@ -560,14 +577,7 @@ mod tests {
         let (state, database) = open("job-exit").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start(
-                "thread",
-                "echo bad >&2; exit 3",
-                Path::new("."),
-                None,
-                10,
-                None,
-            )
+            .start("thread", "echo bad >&2; exit 3", launch(), 10, None)
             .await
             .unwrap();
         let job = finished(&state, &id).await;
@@ -580,7 +590,7 @@ mod tests {
         let (state, database) = open("job-cancel").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start("thread", "sleep 30", Path::new("."), None, 60, None)
+            .start("thread", "sleep 30", launch(), 60, None)
             .await
             .unwrap();
         manager.cancel("thread", &id).await.unwrap();
@@ -639,14 +649,7 @@ mod tests {
         let (state, database) = open("job-list").await;
         let manager = manager(&state, &database).await;
         let id = manager
-            .start(
-                "thread",
-                "echo first; sleep 30",
-                Path::new("."),
-                None,
-                60,
-                None,
-            )
+            .start("thread", "echo first; sleep 30", launch(), 60, None)
             .await
             .unwrap();
         let mut output = String::new();

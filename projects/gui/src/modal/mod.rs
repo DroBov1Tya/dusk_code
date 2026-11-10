@@ -79,6 +79,10 @@ pub struct ProjectForm {
     pub name: Entity<InputState>,
     pub description: Entity<TextareaState>,
     pub dir: Entity<InputState>,
+    /// The names of the project's variables; their values stay in the core.
+    pub env: Vec<String>,
+    pub env_name: Entity<InputState>,
+    pub env_value: Entity<InputState>,
 }
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Option<Div> {

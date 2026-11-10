@@ -8,6 +8,10 @@ use serde::{Deserialize, Serialize};
 /// The longest name and description a project may have, in characters.
 pub const MAX_NAME_CHARS: usize = 80;
 pub const MAX_DESCRIPTION_CHARS: usize = 2000;
+/// What a project's environment variables may hold.
+pub const MAX_ENV_VARS: usize = 64;
+pub const MAX_ENV_NAME_CHARS: usize = 64;
+pub const MAX_ENV_VALUE_BYTES: usize = 8 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Project {

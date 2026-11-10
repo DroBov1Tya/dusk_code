@@ -134,7 +134,8 @@ From `gui-todo.md`
 - [x] Pasted screenshots become attachments (kept as the chat's sources on send)
 - [x] Context details on click: a part unfolds to its items, with use counts
 - [ ] Drag a chat to split the center in two
-- [ ] Project environment variables (secrets, never logged)
+- [x] Project environment variables (secrets, never logged): set in the GUI project form;
+      the core gives them to the project's commands and masks their values in output
 
 ## TUI
 
@@ -149,3 +150,7 @@ From `gui-todo.md`
 
 - [ ] Remove `resources/internal/RETIRED_SKILL_FILES.md`: blocked, the 0.70.2 updater
       checks for it before updating (`release/shipped.rs`); ask the user when to drop 0.70.2
+- [ ] Linux: Landlock cannot hide a folder, so a sandboxed command can read the database
+      under `~/.config/duskcode/session/` (project variables, as the provider keys in
+      `config.yml` already). Keep secrets where the sandbox can deny them; macOS denies
+      the folder already
