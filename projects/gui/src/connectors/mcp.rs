@@ -1,9 +1,11 @@
 //! MCP servers as cards: how each stands, a restart, a sign-in and its switch.
 
+use std::{collections::HashSet, time::Duration};
+
 use dusk_protocol::{client::Switch as CoreSwitch, mcp::McpState, settings::Settings};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, Disableable, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -13,7 +15,17 @@ use gpui_kit::{
 use super::{card, grid, matches, toggle};
 use crate::{modal::detail::Detail, widgets, workspace::Workspace};
 
-pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
+const SHOWN: Duration = Duration::from_millis(800);
+const POLL: Duration = Duration::from_secs(1);
+/// A server that has not settled in this many polls is left as it is.
+const POLLS: usize = 40;
+
+pub fn render(
+    settings: &Settings,
+    restarting: &HashSet<String>,
+    query: &str,
+    cx: &mut Context<Workspace>,
+) -> Div {
     let theme = cx.theme();
     let (success, warning, danger, muted) = (
         theme.success,
@@ -34,7 +46,9 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
     }
     let mut cards = grid();
     for server in servers {
+        let busy = restarting.contains(&server.name);
         let (state, color) = match &server.state {
+            _ if busy => ("Restarting".to_owned(), warning),
             McpState::Off => ("Off".to_owned(), muted),
             McpState::Starting => ("Starting".to_owned(), warning),
             McpState::Ready(tools) => (format!("Ready · {} tools", tools.len()), success),
@@ -64,7 +78,12 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
                 Button::new(SharedString::from(format!("restart-{name}")))
                     .ghost()
                     .xsmall()
-                    .icon(IconName::RefreshCw)
+                    .icon(if busy {
+                        IconName::LoaderCircle
+                    } else {
+                        IconName::RefreshCw
+                    })
+                    .disabled(busy)
                     .tooltip("Restart")
                     .on_click(cx.listener(move |ws, _, _, cx| ws.restart_mcp(&restart, cx))),
             )
@@ -101,14 +120,49 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
 }
 
 impl Workspace {
+    /// The card says "Restarting" for at least `SHOWN`, so a server that fails at once
+    /// still shows the attempt; then the status is read until nothing is starting.
     fn restart_mcp(&mut self, name: &str, cx: &mut Context<Self>) {
         let name = name.to_owned();
+        self.mcp_restarting.insert(name.clone());
+        cx.notify();
+        let started = name.clone();
         self.core.call(
             cx,
-            move |client| async move { client.catalog().restart_mcp(&name).await },
-            |ws, result, cx| match result {
-                Ok(()) => ws.load_settings(cx),
-                Err(error) => ws.fail(error, cx),
+            move |client| async move { client.catalog().restart_mcp(&started).await },
+            move |ws, result, cx| match result {
+                Ok(()) => {
+                    ws.load_settings(cx);
+                    cx.spawn(async move |ws, cx| {
+                        cx.background_executor().timer(SHOWN).await;
+                        let _ = ws.update(cx, |ws, cx| {
+                            ws.mcp_restarting.remove(&name);
+                            cx.notify();
+                        });
+                        for _ in 0..POLLS {
+                            cx.background_executor().timer(POLL).await;
+                            let Ok(starting) = ws.update(cx, |ws, cx| {
+                                ws.load_settings(cx);
+                                ws.settings.as_ref().is_some_and(|settings| {
+                                    settings
+                                        .mcp
+                                        .iter()
+                                        .any(|server| server.state == McpState::Starting)
+                                })
+                            }) else {
+                                return;
+                            };
+                            if !starting {
+                                return;
+                            }
+                        }
+                    })
+                    .detach();
+                }
+                Err(error) => {
+                    ws.mcp_restarting.remove(&name);
+                    ws.fail(error, cx)
+                }
             },
         );
     }

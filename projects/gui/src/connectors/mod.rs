@@ -82,7 +82,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     }
     let query = ws.shelf_search.read(cx).value().trim().to_lowercase();
     let body = match ws.shelf {
-        Shelf::Connectors => mcp::render(&settings, &query, cx),
+        Shelf::Connectors => mcp::render(&settings, &ws.mcp_restarting, &query, cx),
         Shelf::Skills => skills::render(&settings, &query, cx),
         Shelf::Plugins => plugins::render(ws, &query, cx),
         Shelf::Tools => tools::render(&settings, &query, cx),

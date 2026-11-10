@@ -160,6 +160,8 @@ pub struct Workspace {
     pub notice: Option<String>,
     pub git: Option<GitInfo>,
     pub touched: Vec<dusk_protocol::project::Change>,
+    /// MCP servers whose restart button was just pressed.
+    pub mcp_restarting: HashSet<String>,
     /// Folder entries by folder, `""` for the project's top.
     pub files: BTreeMap<String, Vec<FileEntry>>,
     pub expanded: HashSet<String>,
@@ -304,6 +306,7 @@ impl Workspace {
             rates: HashMap::new(),
             git: None,
             touched: Vec::new(),
+            mcp_restarting: HashSet::new(),
             files: BTreeMap::new(),
             expanded: HashSet::new(),
             context: None,
