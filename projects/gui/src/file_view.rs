@@ -191,6 +191,16 @@ impl Workspace {
             .to_string()
     }
 
+    /// Opens a path from the chat, `path` or `path:line`, relative to the project.
+    pub fn open_path(&mut self, path: &str, cx: &mut Context<Self>) {
+        let (name, line) = match path.rsplit_once(':') {
+            Some((name, line)) => (name, line.parse().ok()),
+            None => (path, None),
+        };
+        let dir = self.project_dir().unwrap_or_else(|| self.home.clone());
+        self.open_file(dir.join(name), line, cx);
+    }
+
     /// The chosen project's folder.
     pub fn project_dir(&self) -> Option<PathBuf> {
         self.projects
