@@ -239,7 +239,10 @@ impl Tool for AskAgent {
              the name the agent got, such as Fable-3a: use it for the agent, with the user \
              too. What the agent writes and its final answer arrive later as messages from \
              that name. Pass the name as `thread` to write to the same agent again; \
-             end your turn when there is nothing else to do until it answers.\nAgents:\n{}",
+             end your turn when there is nothing else to do until it answers. A brief \
+             gives the goal, the relevant paths, what is already known and what to \
+             report. Use agents for large searches, independent review and parts that \
+             would fill this context; do small things yourself.\nAgents:\n{}",
             agents.join("\n")
         )
     }
