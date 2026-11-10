@@ -24,7 +24,7 @@ use gpui_kit::{
 
 use crate::workspace::Workspace;
 
-pub use chat_menu::render as chat_menu;
+pub use chat_menu::{FADE, render as chat_menu};
 pub use viewer::ViewerContent;
 
 pub enum Modal {
@@ -37,6 +37,10 @@ pub enum Modal {
     Detail(detail::Detail),
     DeleteFile {
         path: PathBuf,
+    },
+    /// Every artifact a tab shows, deleted at once after a yes.
+    DeleteFiles {
+        paths: Vec<PathBuf>,
     },
     AgentChat {
         agent: String,
@@ -136,6 +140,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             let (agent, name) = (agent.clone(), name.clone());
             (name, 760., agent_chat::render(ws, &agent, cx))
         }
+        Modal::DeleteFiles { paths } => (
+            "Delete files".to_owned(),
+            480.,
+            chat_menu::delete_files(paths.len(), cx),
+        ),
         Modal::DeleteFile { path } => (
             "Delete file".to_owned(),
             480.,

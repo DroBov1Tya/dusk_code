@@ -6,6 +6,7 @@ mod system;
 
 use gpui_kit::{
     component::{ActiveTheme, IconName},
+    prelude::FluentBuilder,
     *,
 };
 
@@ -17,6 +18,8 @@ pub enum SettingsPage {
     Model,
     Chat,
     Safety,
+    Notifications,
+    VersionControl,
     Memory,
     Advanced,
     Updates,
@@ -28,6 +31,12 @@ const PAGES: &[(SettingsPage, IconName, &str)] = &[
     (SettingsPage::Model, IconName::Cpu, "Model"),
     (SettingsPage::Chat, IconName::Inbox, "Chat"),
     (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
+    (SettingsPage::Notifications, IconName::Bell, "Notifications"),
+    (
+        SettingsPage::VersionControl,
+        IconName::Github,
+        "Version control",
+    ),
     (
         SettingsPage::Memory,
         IconName::MemoryStick,
@@ -58,6 +67,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .h(px(36.))
                 .child(widgets::icon(icon.clone(), muted))
                 .child(div().flex_1().child(*label))
+                .when(
+                    page == SettingsPage::Updates && ws.status.available_update.is_some(),
+                    |row| row.child(widgets::badge("new release!", cx.theme().primary)),
+                )
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.settings_page = page;
                     ws.load_page(page, cx);

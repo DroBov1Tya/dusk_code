@@ -35,6 +35,10 @@ pub async fn info(project: &Project) -> Result<GitInfo> {
             let mut parts = counts.split_whitespace().map(str::parse::<u64>);
             Some((parts.next()?.ok()?, parts.next()?.ok()?))
         });
+    let web = git(dir, &["remote", "get-url", "origin"])
+        .await
+        .ok()
+        .and_then(|remote| web_page(remote.trim()));
     let branch = branch.trim();
     Ok(GitInfo {
         branch: (!branch.is_empty()).then(|| branch.to_owned()),
@@ -42,7 +46,42 @@ pub async fn info(project: &Project) -> Result<GitInfo> {
         worktrees: parse_worktrees(&worktrees),
         ahead_behind,
         changes: parse_status(&status, prefix.trim()),
+        web,
     })
+}
+
+/// The https page of a remote such as `git@github.com:owner/repo.git`,
+/// `ssh://git@host/owner/repo` or `https://user:key@host/owner/repo.git`. Credentials
+/// are dropped; a host or path with anything but plain characters gives none.
+fn web_page(remote: &str) -> Option<String> {
+    let rest = remote
+        .strip_prefix("https://")
+        .or_else(|| remote.strip_prefix("http://"))
+        .or_else(|| remote.strip_prefix("ssh://"));
+    let (host, path) = match rest {
+        Some(rest) => {
+            let rest = rest.rsplit_once('@').map_or(rest, |(_, after)| after);
+            let (host, path) = rest.split_once('/')?;
+            // An ssh port is not the web server's.
+            (host.split(':').next()?, path)
+        }
+        None => {
+            let (user_host, path) = remote.split_once(':')?;
+            (user_host.rsplit_once('@')?.1, path)
+        }
+    };
+    let path = path.trim_end_matches('/').trim_end_matches(".git");
+    let host_ok = !host.is_empty()
+        && host.contains('.')
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-');
+    let path_ok = !path.is_empty()
+        && !path.split('/').any(|part| part.is_empty() || part == "..")
+        && path
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-~/".contains(c));
+    (host_ok && path_ok).then(|| format!("https://{host}/{path}"))
 }
 
 pub async fn switch_branch(project: &Project, branch: &str) -> Result<()> {
@@ -138,6 +177,35 @@ fn parse_worktrees(text: &str) -> Vec<Worktree> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_remote_gives_its_page_without_credentials() {
+        for (remote, page) in [
+            (
+                "git@github.com:owner/repo.git",
+                Some("https://github.com/owner/repo"),
+            ),
+            (
+                "ssh://git@gitlab.com:2222/group/sub/repo.git",
+                Some("https://gitlab.com/group/sub/repo"),
+            ),
+            (
+                "https://user:secret@github.com/owner/repo.git",
+                Some("https://github.com/owner/repo"),
+            ),
+            (
+                "https://github.com/owner/repo/",
+                Some("https://github.com/owner/repo"),
+            ),
+            ("/srv/git/repo.git", None),
+            ("file:///etc/passwd", None),
+            ("https://github.com/owner/../../x", None),
+            ("https://evil.com/a?b=<script>", None),
+            ("git@local:repo", None),
+        ] {
+            assert_eq!(web_page(remote).as_deref(), page, "{remote}");
+        }
+    }
 
     #[test]
     fn status_is_read_inside_the_project() {

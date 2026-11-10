@@ -41,7 +41,7 @@ pub fn chat_row(
     thread: &Thread,
     source: Option<&str>,
     cx: &mut Context<Workspace>,
-) -> Stateful<Div> {
+) -> AnyElement {
     let theme = cx.theme();
     let (muted, accent) = (theme.muted_foreground, theme.primary);
     let id = thread.id.clone();
@@ -54,12 +54,25 @@ pub fn chat_row(
         .or_else(|| thread.title.clone())
         .unwrap_or_else(|| "New chat".to_owned());
     let prefix = if source.is_some() { "recent" } else { "chat" };
-    widgets::row(SharedString::from(format!("{prefix}-{id}")), shown, cx)
-        .child(div().size_1p5().rounded_full().bg(if working {
-            accent
-        } else {
-            muted.opacity(0.4)
-        }))
+    let fading = ws.fading.contains(&thread.id);
+    let dot = div().size_1p5().rounded_full().flex_none();
+    // A chat whose agent works breathes; the others rest.
+    let dot = if working {
+        dot.bg(accent)
+            .with_animation(
+                SharedString::from(format!("{prefix}-working-{id}")),
+                Animation::new(std::time::Duration::from_millis(1400)).repeat(),
+                |dot, phase| {
+                    let pulse = 0.35 + 0.65 * (phase * std::f32::consts::TAU).cos().abs();
+                    dot.opacity(pulse)
+                },
+            )
+            .into_any_element()
+    } else {
+        dot.bg(muted.opacity(0.4)).into_any_element()
+    };
+    let row = widgets::row(SharedString::from(format!("{prefix}-{id}")), shown, cx)
+        .child(dot)
         .child(div().flex_1().min_w_0().truncate().child(title))
         .when_some(source, |row, source| {
             row.child(widgets::badge(source.to_owned(), accent))
@@ -74,7 +87,16 @@ pub fn chat_row(
                 ws.chat_menu = Some((id.clone(), event.position));
                 cx.notify();
             }),
-        )
+        );
+    if !fading {
+        return row.into_any_element();
+    }
+    row.with_animation(
+        SharedString::from(format!("{prefix}-fade-{}", thread.id)),
+        Animation::new(crate::modal::FADE).with_easing(ease_out_quint()),
+        |row, delta| row.opacity(1. - delta),
+    )
+    .into_any_element()
 }
 
 impl Workspace {
