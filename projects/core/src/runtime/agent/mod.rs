@@ -9,6 +9,7 @@ pub mod generation;
 mod inbox;
 mod mailboxes;
 mod rate;
+mod repeats;
 mod vision;
 
 pub use agent::Agent;

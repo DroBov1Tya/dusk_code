@@ -6,6 +6,22 @@ TUI and GUI stay at parity; no release, tag or version bump without the user's o
 
 Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 
+## GUI: IDE-level work (open)
+
+- [x] Changes: only the +/- totals in the column; a review page with files, line numbers
+      and green, red and grey lines (GUI) and `/diff` (TUI)
+- [ ] Look at the review page, the todo wrapping and the message list in the running app
+      (none of it could be seen from the session: screenshots of the window do not work
+      from the shell)
+- [ ] A file viewer in the center like an editor: line numbers, syntax colors, search,
+      opened from Files, from a diff and from a path in the chat
+- [ ] A terminal pane in the window (a PTY and a terminal emulator such as alacritty_terminal,
+      drawn with gpui); the TUI already is one. Several tabs, the chat's folder as its start
+- [ ] Keyboard for the review page (j/k between files, n/p between hunks, Esc back)
+- [ ] Side-by-side diff, collapsing of unchanged runs, word-level highlights
+- [ ] A full pass for polish: motion under 400 ms, one accent, hover and focus states on
+      every control, empty states, density, icons, charts for usage
+
 ## Agent engine (core)
 
 - [x] Study why opencode 2.0 beats 1.19 on benchmarks (see `agent-engine.md`)
@@ -31,6 +47,8 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
       a running command can be moved to the background (TUI + GUI)
 - [ ] Frontier gaps (`frontier-gap.md`): trusted eval run (Terminal-Bench subset), stubbing old tool results, MCP tools loaded on demand, a cheap model per
       role, diagnostics after edits, patch tool experiment, background compaction
+- [ ] Weak-model harness (`weak-models.md`): rules into tool descriptions, long output spilled to
+      a file, reminders for a stale task list, a check command after edits
 - [ ] MCP code mode: the model writes one script that calls a set of MCP tools
 - [x] Subagent answers are their own step on the agent's side (not the user's message),
       foldable, outside the thinking/tools fold (GUI; the TUI already did)
