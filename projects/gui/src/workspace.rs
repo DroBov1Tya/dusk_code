@@ -47,6 +47,7 @@ pub enum Right {
     Screenshots,
     Git,
     Files,
+    Plan,
     Todo,
     Agents,
     Jobs,
@@ -104,6 +105,8 @@ pub struct Workspace {
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
     pub alerts: crate::notify::Alerts,
+    /// The shown chat's pinned plan.
+    pub plan: crate::inspector::plan::Plan,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     pub jobs: Vec<JobInfo>,
@@ -242,6 +245,7 @@ impl Workspace {
             expanded: HashSet::new(),
             context: None,
             alerts: Default::default(),
+            plan: crate::inspector::plan::Plan::new(window, cx),
             context_open: HashSet::new(),
             jobs: Vec::new(),
             settings: None,
@@ -322,6 +326,7 @@ impl Workspace {
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
                 );
                 self.notify_event(&thread_id, &event, cx);
+                self.watch_plan(&thread_id, &event, cx);
                 let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     let was_working = chat.working;

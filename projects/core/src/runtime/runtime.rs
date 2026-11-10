@@ -756,6 +756,26 @@ impl Runtime {
         .await
     }
 
+    /// The thread's pinned plan, or none.
+    pub async fn plan(&self, thread_id: &str) -> Result<Option<String>> {
+        let state = &self.launcher.state;
+        let workspace = thread_start::workspace(state, &self.launcher.paths, thread_id).await?;
+        crate::tools::read_plan(state, &workspace, thread_id).await
+    }
+
+    /// Rewrites the thread's plan as the user typed it; empty text removes it.
+    pub async fn save_plan(&self, thread_id: &str, text: &str) -> Result<()> {
+        let state = &self.launcher.state;
+        let workspace = thread_start::workspace(state, &self.launcher.paths, thread_id).await?;
+        if text.trim().is_empty() {
+            return crate::tools::clear_plan(state, &workspace, thread_id).await;
+        }
+        let name = crate::tools::PLAN_NAME;
+        crate::tools::save_plan(state, &workspace, thread_id, name, text)
+            .await
+            .map(drop)
+    }
+
     /// The background jobs of a thread, oldest first.
     pub async fn jobs(&self, thread_id: &str) -> Result<Vec<JobInfo>> {
         self.launcher.jobs.list(thread_id).await

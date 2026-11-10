@@ -15,7 +15,7 @@ mod thread;
 
 pub use action::{Action, commands};
 pub use composer::PathPopup;
-pub use composer::{EditorButton, EditorHit, Input, PasteEditor, paste};
+pub use composer::{EditorButton, EditorHit, EditorTarget, Input, PasteEditor, paste};
 pub use hits::{
     Activity, Button, ButtonHit, ChipHit, Focus, InputRow, PRESS, Pressed, Selection, TEXT_COLUMN,
     TranscriptHit,

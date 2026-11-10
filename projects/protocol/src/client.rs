@@ -271,6 +271,15 @@ pub enum WorkRequest {
         thread_id: String,
         id: String,
     },
+    /// The chat's pinned plan, a Markdown text the user and the model both edit.
+    Plan {
+        thread_id: String,
+    },
+    /// Rewrites the plan; empty text removes it.
+    SavePlan {
+        thread_id: String,
+        text: String,
+    },
 }
 
 /// Projects, and the git state and files of one. Git and files are read only inside
@@ -333,6 +342,8 @@ pub enum Response {
     Node(NodeText),
     Mcp(Vec<McpInfo>),
     Snippets(Vec<Snippet>),
+    /// The pinned plan, or none before one was written.
+    Plan(Option<String>),
     Profile(Profile),
     /// A thread's own approval mode, or none when it uses the default in settings.
     Approvals(Option<ApprovalPolicy>),

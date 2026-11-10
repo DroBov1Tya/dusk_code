@@ -8,6 +8,11 @@ testing.
 
 ### Added
 
+- The chat's pinned plan is shared: the model keeps it with `plan_edit`, and the user
+  reads and rewrites the same Markdown in the GUI's Plan module (also from the + menu)
+  or with `/plan` in the TUI. It comes back with every message; saving empty text
+  removes it.
+
 - TUI: `/access` sets the access mode of the chat (ask, sandbox, arbiter, full, or back
   to the default), and a "version control" page in the settings edits the branch prefix.
 - GUI: the name in the sidebar reads Duskcode.

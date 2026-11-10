@@ -38,6 +38,10 @@ pub enum Action {
     SetGoalRounds(u32),
     SetIdleMinutes(u32),
     SetBranchPrefix(String),
+    /// `/plan`: open the chat's pinned plan in the editor.
+    OpenPlan,
+    /// The plan as the editor saved it; empty text removes it.
+    SavePlan(String),
     /// `/access`: this chat's own approval mode, or the one it has now when none is named.
     Access(Option<String>),
     SetMemoryChars(usize),
@@ -114,6 +118,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "/plugins",
             "the plugins found, to switch on or off; they live in rules/plugins/",
         ),
+        ("/plan", "read and edit this chat's pinned plan"),
         (
             "/access",
             "this chat's access: ask, sandbox, arbiter, full or default",

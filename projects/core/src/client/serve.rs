@@ -350,6 +350,11 @@ impl Server {
             WorkRequest::StopJob { thread_id, job_id } => {
                 Response::Text(runtime.stop_job(&thread_id, &job_id).await?)
             }
+            WorkRequest::Plan { thread_id } => Response::Plan(runtime.plan(&thread_id).await?),
+            WorkRequest::SavePlan { thread_id, text } => {
+                runtime.save_plan(&thread_id, &text).await?;
+                Response::Done
+            }
             WorkRequest::PinSource {
                 thread_id,
                 id,

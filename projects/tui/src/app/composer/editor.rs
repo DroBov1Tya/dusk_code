@@ -4,10 +4,19 @@
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 
 use super::{App, Input, Panel};
+use crate::app::Action;
+
+/// What the editor's text goes back to on save.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum EditorTarget {
+    /// The chip of the box with this index.
+    Paste(usize),
+    /// The chat's pinned plan.
+    Plan,
+}
 
 pub struct PasteEditor {
-    /// The chip the text belongs to.
-    pub index: usize,
+    pub target: EditorTarget,
     pub text: Input,
     original: String,
     /// Closing was asked with unsaved changes.
@@ -38,8 +47,17 @@ const WHEEL: usize = 3;
 
 impl PasteEditor {
     pub fn new(index: usize, text: String) -> Self {
+        Self::of(EditorTarget::Paste(index), text)
+    }
+
+    /// The chat's plan, to read and rewrite.
+    pub fn plan(text: String) -> Self {
+        Self::of(EditorTarget::Plan, text)
+    }
+
+    fn of(target: EditorTarget, text: String) -> Self {
         Self {
-            index,
+            target,
             text: Input {
                 command_cycle: None,
                 text: text.clone(),
@@ -66,24 +84,24 @@ impl App {
         }
     }
 
-    pub fn editor_key(&mut self, key: KeyEvent) {
+    pub fn editor_key(&mut self, key: KeyEvent) -> Action {
         let Some(Panel::Paste(editor)) = &mut self.panel else {
-            return;
+            return Action::None;
         };
         if editor.confirming {
             let button = match key.code {
                 KeyCode::Char('y') | KeyCode::Enter => EditorButton::Save,
                 KeyCode::Char('n') => EditorButton::Discard,
                 KeyCode::Esc | KeyCode::Char('c') => EditorButton::KeepEditing,
-                _ => return,
+                _ => return Action::None,
             };
             return self.press_editor(button);
         }
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
         let text = &mut editor.text;
         match key.code {
-            KeyCode::Char('s') if ctrl => self.press_editor(EditorButton::Save),
-            KeyCode::Esc => self.press_editor(EditorButton::Close),
+            KeyCode::Char('s') if ctrl => return self.press_editor(EditorButton::Save),
+            KeyCode::Esc => return self.press_editor(EditorButton::Close),
             KeyCode::Char(c) if !ctrl => text.insert(c.encode_utf8(&mut [0; 4])),
             KeyCode::Enter => text.insert("\n"),
             KeyCode::Tab => text.insert("    "),
@@ -103,6 +121,7 @@ impl App {
             KeyCode::PageDown => move_rows(text, PAGE, true),
             _ => {}
         }
+        Action::None
     }
 
     /// Pasting into the editor types the text in; it is a chip already.
@@ -114,9 +133,9 @@ impl App {
         }
     }
 
-    pub fn editor_mouse(&mut self, mouse: MouseEvent) {
+    pub fn editor_mouse(&mut self, mouse: MouseEvent) -> Action {
         let Some(Panel::Paste(editor)) = &mut self.panel else {
-            return;
+            return Action::None;
         };
         match mouse.kind {
             MouseEventKind::ScrollUp => move_rows(&mut editor.text, WHEEL, false),
@@ -128,27 +147,32 @@ impl App {
                     .iter()
                     .find(|hit| y == hit.row && x >= hit.left && x < hit.right);
                 if let Some(button) = hit.map(|hit| hit.button) {
-                    self.press_editor(button);
+                    return self.press_editor(button);
                 }
             }
             _ => {}
         }
+        Action::None
     }
 
-    fn press_editor(&mut self, button: EditorButton) {
+    fn press_editor(&mut self, button: EditorButton) -> Action {
         let Some(Panel::Paste(editor)) = &mut self.panel else {
-            return;
+            return Action::None;
         };
         match button {
             EditorButton::Close if editor.changed() => editor.confirming = true,
             EditorButton::KeepEditing => editor.confirming = false,
             EditorButton::Close | EditorButton::Discard => self.panel = None,
             EditorButton::Save => {
-                let (index, text) = (editor.index, editor.text.text.clone());
+                let (target, text) = (editor.target, editor.text.text.clone());
                 self.panel = None;
-                self.input.replace_paste(index, text);
+                match target {
+                    EditorTarget::Paste(index) => self.input.replace_paste(index, text),
+                    EditorTarget::Plan => return Action::SavePlan(text),
+                }
             }
         }
+        Action::None
     }
 }
 

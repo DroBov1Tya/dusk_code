@@ -7,6 +7,6 @@ mod paths;
 
 use super::{App, Panel, compact_number};
 
-pub use editor::{EditorButton, EditorHit, PasteEditor};
+pub use editor::{EditorButton, EditorHit, EditorTarget, PasteEditor};
 pub use input::Input;
 pub use paths::PathPopup;

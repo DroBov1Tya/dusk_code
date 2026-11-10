@@ -183,7 +183,10 @@ impl Workspace {
         self.center = Center::Chat;
         self.context = None;
         self.jobs.clear();
+        self.plan.text = None;
+        self.plan.editing = false;
         self.refresh_inspector(cx);
+        self.load_plan(cx);
         cx.notify();
     }
 }
