@@ -8,6 +8,9 @@ testing.
 
 ### Added
 
+- macOS releases carry the desktop client as Duskcode.app in a disk image, with the
+  resources of its version inside the bundle, so it runs on a Mac with nothing else
+  installed (`scripts/package-macos.sh`, signed ad hoc).
 - The desktop client keeps messages written while the agent works above the box and
   sends them when the turn ends; it shows tokens per second and its icon on a bare
   binary.

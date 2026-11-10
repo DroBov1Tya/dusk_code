@@ -215,6 +215,12 @@ pub async fn install_with_progress(
         let binary = std::env::current_exe()
             .and_then(fs::canonicalize)
             .context("cannot find the running binary")?;
+        // The archive holds the terminal client; another binary, such as the desktop
+        // app in its bundle, would be replaced by it.
+        ensure!(
+            binary.file_name().is_some_and(|name| name == "duskcode"),
+            "this build is updated from its release download, not in place"
+        );
         let directory = binary.parent().context("the binary has no folder")?;
         let work = directory.join(format!(".duskcode-update-{}", uuid::Uuid::now_v7()));
         let installed = unpack_into(&archive, &work, &name, &binary, &version);
