@@ -29,35 +29,31 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .ahead_behind
         .map(|(ahead, behind)| format!("↑{ahead} ↓{behind}"))
         .unwrap_or_default();
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .px_3()
-                .pt_3()
-                .child(widgets::icon(IconName::Github, theme.primary))
-                .child(
-                    div()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .child(branch.clone()),
-                )
-                .child(div().text_xs().text_color(muted).child(sync))
-                .child(div().flex_1())
-                .child(
-                    Button::new("git-refresh")
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::RefreshCw)
-                        .tooltip("Read the repository again")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.load_git(cx))),
-                ),
-        )
-        .child(widgets::heading("Changes", cx));
+    let mut column = div().flex().flex_col().child(
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .px_3()
+            .pt_3()
+            .child(widgets::icon(IconName::Github, theme.primary))
+            .child(
+                div()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(branch.clone()),
+            )
+            .child(div().text_xs().text_color(muted).child(sync))
+            .child(div().flex_1())
+            .child(
+                Button::new("git-refresh")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::RefreshCw)
+                    .tooltip("Read the repository again")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.load_git(cx))),
+            ),
+    );
     let stat = git.stat;
     column = if git.changes.is_empty() {
         column.child(widgets::muted(

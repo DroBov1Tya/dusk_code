@@ -190,7 +190,7 @@ fn card(
                     node.name
                 )))
                 .flex_none()
-                .max_w(px(130.))
+                .max_w(px(100.))
                 .truncate()
                 .px_1p5()
                 .rounded_sm()
@@ -216,7 +216,7 @@ fn card(
                 .flex_none()
                 .text_xs()
                 .text_color(muted)
-                .child(format!("+{} more", links.len() - 2)),
+                .child(format!("+{}", links.len() - 2)),
         );
     }
     let enter = name.clone();

@@ -8,6 +8,11 @@ testing.
 
 ### Changed
 
+- GUI, from a pass over every page in pictures: card descriptions end in an ellipsis instead of
+  being cut mid-letter; the "+N" of an agent's links is no longer cut off; the Changes module
+  has no second "Changes" heading; the context legend uses six fixed hues, so "tools" and
+  "tool results" no longer look alike; the Model page's section labels line up with their
+  rows; font rows have one height; the hunk header in the review has room around it.
 - GUI: code in the file viewer had the library's light-theme colors, so names were dark blue
   on a dark page; each theme now has its own syntax colors from its palette.
 - GUI: the repository was read only while the Changes module was open, so a folded one left the
