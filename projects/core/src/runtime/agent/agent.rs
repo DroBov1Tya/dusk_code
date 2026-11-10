@@ -16,11 +16,12 @@ use tokio::sync::mpsc;
 use tracing::{info, warn};
 
 use super::{Inbox, Stop, generation};
+use crate::catalog::modes::Modes;
 use crate::plugins::{HookEvent, Hooks, hooks::Outcome};
 use crate::runtime::{
     ThreadEvent,
     model_choice::{Choice, ModelChoice},
-    thread::{Conversation, spec_tokens},
+    thread::{Conversation, spec_tokens, thread_start::NO_PROMPT},
 };
 use crate::state::artifacts::ArtifactStore;
 use crate::{
@@ -105,6 +106,9 @@ impl Agent {
         {
             return Ok(None);
         }
+        if self.depth == 0 {
+            self.follow_mode(&conversation).await?;
+        }
         let turn = self.state.start_turn(&self.thread_id).await?;
         if let Some(turn) = &turn {
             info!("thread {} turn {} starts", self.thread_id, turn.turn_id);
@@ -118,6 +122,22 @@ impl Agent {
             }
         }
         Ok(turn)
+    }
+
+    /// A chat takes up the prompt of its mode when a turn starts, so a switch, or an
+    /// edit of the prompt, applies from the next turn. The cached prefix changes once
+    /// then, and only then.
+    async fn follow_mode(&self, conversation: &Conversation) -> Result<()> {
+        let mode = self.config.current().mode().to_owned();
+        let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
+        let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
+        if conversation.prompt() != Some(prompt) {
+            info!("thread {} takes up the {mode} prompt", self.thread_id);
+            self.state
+                .add_system_message(&self.thread_id, prompt)
+                .await?;
+        }
+        Ok(())
     }
 
     /// Runs the turn to its end and records it. Returns why it stopped early, if it did,
@@ -414,6 +434,7 @@ impl Agent {
             tools: &tools,
             max_output_tokens: choice.model.max_output,
             effort,
+            cache_key: Some(&self.thread_id),
         };
         let mut called = self.call_model(&choice, request, &config, inbox).await;
         if matches!(&called, Ok((_, Ok(Err(error)))) if is_unsupported_pictures(error)) {
@@ -424,6 +445,7 @@ impl Agent {
                 tools: &tools,
                 max_output_tokens: choice.model.max_output,
                 effort,
+                cache_key: Some(&self.thread_id),
             };
             called = self.call_model(&choice, request, &config, inbox).await;
         }

@@ -1,6 +1,8 @@
 //! The left rail. Statistics always have a place; agent and MCP sections appear only when
 //! their event sources have supplied something to show.
 
+use unicode_width::UnicodeWidthStr;
+
 use dusk_protocol::{mcp::McpState, work::AUTO_COMPACT_PERCENT, work::Task, work::ThreadTokens};
 use ratatui::{
     Frame,
@@ -334,8 +336,11 @@ impl Sidebar<'_> {
                 (None, _, true) => "",
                 (None, _, false) => "done",
             };
-            // Room left by the loader, the time and the status.
-            let room = (area.width as usize).saturating_sub(13 + state.len() + 2 * PAD as usize);
+            // Room left by the loader, the time and the status, as wide as they are now:
+            // the time grows past an hour.
+            let loader_width: usize = middle.iter().map(|span| span.content.width()).sum();
+            let used = loader_width + 1 + age.width() + 2 + state.width() + 2 * PAD as usize;
+            let room = (area.width as usize).saturating_sub(used);
             let named = vec![
                 Span::raw(" "),
                 Span::styled(wrap::clip(&name, room), bold(color)),

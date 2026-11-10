@@ -38,6 +38,7 @@ pub struct Provider {
     adapter: ProviderAdapter,
     inline_tags: bool,
     prices: BTreeMap<String, Price>,
+    rate: Option<super::rate::TokenBucket>,
 }
 
 enum ProviderAdapter {
@@ -87,6 +88,12 @@ impl Provider {
         for (model, price) in &settings.prices {
             super::cost::check(model, price)?;
         }
+        anyhow::ensure!(
+            settings
+                .requests_per_minute
+                .is_none_or(|limit| (1..=100_000).contains(&limit)),
+            "requests_per_minute must be from 1 to 100000"
+        );
         let adapter = match settings.kind {
             ProviderKind::OpenAiCompatible | ProviderKind::OpenAi => {
                 ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
@@ -97,6 +104,9 @@ impl Provider {
             adapter,
             inline_tags: settings.inline_tags,
             prices: settings.prices.clone(),
+            rate: settings
+                .requests_per_minute
+                .map(super::rate::TokenBucket::new),
         })
     }
 }
@@ -113,6 +123,9 @@ impl ModelProvider for Provider {
 
     fn stream_chat<'a>(&'a self, request: ChatRequest<'a>) -> BoxFuture<'a, Box<dyn ChatStream>> {
         Box::pin(async move {
+            if let Some(rate) = &self.rate {
+                rate.take().await;
+            }
             let price = self.prices.get(request.model).copied();
             let adapter = match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => {

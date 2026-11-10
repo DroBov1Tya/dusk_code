@@ -52,4 +52,7 @@ pub struct ChatRequest<'a> {
     /// The provider stops the model after this many tokens; its own cap when unknown.
     pub max_output_tokens: Option<u64>,
     pub effort: Option<Effort>,
+    /// Requests with the same key share a prefix, so a provider that routes by it keeps
+    /// them on one cache: the thread's ID for agent steps.
+    pub cache_key: Option<&'a str>,
 }

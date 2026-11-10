@@ -67,17 +67,33 @@ impl Conversation {
     /// of a chat adds the prompt of the mode it is in then, so the context changes only
     /// at those points and a provider's cache of it holds in between.
     pub fn system_texts(&self, through: u64) -> Vec<String> {
-        let (forks, prompts): (Vec<&Message>, Vec<&Message>) = self
+        let prompt = self
+            .prompt_through(through)
+            .filter(|prompt| *prompt != NO_PROMPT)
+            .map(str::to_owned);
+        let forks = self
             .messages
             .iter()
             .filter(|message| message.role == MessageRole::System && message.sequence <= through)
-            .partition(|message| message.content.starts_with(FORK_INTRO));
-        let prompt = prompts
-            .last()
-            .map(|message| message.content.clone())
-            .filter(|prompt| prompt != NO_PROMPT);
-        let forks = forks.into_iter().map(|message| message.content.clone());
+            .filter(|message| message.content.starts_with(FORK_INTRO))
+            .map(|message| message.content.clone());
         prompt.into_iter().chain(forks).collect()
+    }
+
+    /// The prompt the model gets now, `NO_PROMPT` included.
+    pub fn prompt(&self) -> Option<&str> {
+        self.prompt_through(u64::MAX)
+    }
+
+    fn prompt_through(&self, through: u64) -> Option<&str> {
+        self.messages
+            .iter()
+            .rfind(|message| {
+                message.role == MessageRole::System
+                    && message.sequence <= through
+                    && !message.content.starts_with(FORK_INTRO)
+            })
+            .map(|message| message.content.as_str())
     }
 
     pub fn has_queued(&self) -> bool {

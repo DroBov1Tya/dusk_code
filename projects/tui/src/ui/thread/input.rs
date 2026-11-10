@@ -69,7 +69,7 @@ impl InputView<'_> {
             height: area.height.saturating_sub(approval),
             ..area
         };
-        let polled = poll_rows(self.app).min(area.height);
+        let polled = poll_rows(self.app, area.width).min(area.height);
         self.draw_poll(
             frame,
             Rect {
@@ -334,31 +334,38 @@ impl InputView<'_> {
         for row in (0..=own_row).take(visible_rows) {
             let here = poll.active && poll.cursor == row;
             let pointer = if here { " \u{203A} " } else { "   " };
-            let (mark, text) = if row < own_row {
+            let style = if here { bold(ACCENT) } else { Style::new() };
+            let labels = if row < own_row {
                 let mark = match (poll.question.multiple, poll.checked[row]) {
                     (true, true) => "[x] ",
                     (true, false) => "[ ] ",
                     (false, _) if here => "(\u{2022}) ",
                     (false, _) => "( ) ",
                 };
-                (mark, poll.question.options[row].clone())
+                let option = &poll.question.options[row];
+                vec![wrap::clip(&format!("{pointer}{mark}{option}"), width)]
+            } else if poll.own.text.is_empty() && !here {
+                vec![format!("{pointer}\u{270E}  your own answer")]
             } else {
-                let own = if poll.own.text.is_empty() && !here {
-                    "your own answer".to_owned()
-                } else {
-                    poll.own.text.clone()
-                };
-                ("\u{270E}  ", own)
+                // The first line carries the pencil, the rest line up under it.
+                own_lines(&poll.own.text, width)
+                    .into_iter()
+                    .enumerate()
+                    .map(|(at, line)| match at {
+                        0 => format!("{pointer}\u{270E}  {line}"),
+                        _ => format!("{}{line}", " ".repeat(OWN_LEAD)),
+                    })
+                    .collect()
             };
-            let style = if here { bold(ACCENT) } else { Style::new() };
-            let label = wrap::clip(&format!("{pointer}{mark}{text}"), width);
-            poll.hits.push(PollHit {
-                row: inner.y + 1 + row as u16,
-                left: inner.x,
-                right: inner.right(),
-                target: PollTarget::Row(row),
-            });
-            lines.push(Line::from(Span::styled(label, style)));
+            for label in labels {
+                poll.hits.push(PollHit {
+                    row: inner.y + lines.len() as u16,
+                    left: inner.x,
+                    right: inner.right(),
+                    target: PollTarget::Row(row),
+                });
+                lines.push(Line::from(Span::styled(label, style)));
+            }
         }
         let hint = if poll.question.multiple {
             "space marks  enter sends  tab to the box  esc declines"
@@ -391,9 +398,20 @@ impl InputView<'_> {
         ]));
         frame.render_widget(Paragraph::new(lines), inner);
         if poll.active && poll.cursor == own_row && own_row < visible_rows && cursor_allowed {
-            let column = 6 + poll.own.text[..poll.own.cursor].width();
+            // Wrapping by characters puts the text before the cursor on the same lines.
+            let all = wrap::chars(&poll.own.text, width.saturating_sub(OWN_LEAD)).len();
+            let before = wrap::chars(
+                &poll.own.text[..poll.own.cursor],
+                width.saturating_sub(OWN_LEAD),
+            );
+            let shown_from = all.saturating_sub(MAX_OWN_LINES);
+            let line = (before.len() - 1).saturating_sub(shown_from);
+            let column = OWN_LEAD + before.last().map_or(0, |last| last.width());
             let x = (inner.x as usize + column).min(inner.right().saturating_sub(1) as usize);
-            frame.set_cursor_position(Position::new(x as u16, inner.y + 1 + own_row as u16));
+            let y = inner.y + 1 + (own_row + line) as u16;
+            if y < inner.bottom() {
+                frame.set_cursor_position(Position::new(x as u16, y));
+            }
         }
     }
 
@@ -642,7 +660,7 @@ impl InputView<'_> {
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
     approval_rows(app)
-        + poll_rows(app)
+        + poll_rows(app, width)
         + goal_rows(app)
         + queue_rows(app)
         + rows.len().clamp(MIN_ROWS, MAX_ROWS) as u16
@@ -658,10 +676,23 @@ fn approval_rows(app: &App) -> u16 {
 }
 
 /// The question's border, its text, the options, the own answer and the buttons.
-fn poll_rows(app: &App) -> u16 {
-    app.poll
-        .as_ref()
-        .map_or(0, |poll| poll.question.options.len() as u16 + 5)
+fn poll_rows(app: &App, width: u16) -> u16 {
+    app.poll.as_ref().map_or(0, |poll| {
+        let own = own_lines(&poll.own.text, width.saturating_sub(2) as usize).len();
+        (poll.question.options.len() + own) as u16 + 4
+    })
+}
+
+/// Columns before the own answer: the pointer and the pencil.
+const OWN_LEAD: usize = 6;
+/// A longer answer shows its last lines, where the cursor usually is.
+const MAX_OWN_LINES: usize = 5;
+
+/// The own answer wrapped to the box, at most `MAX_OWN_LINES` of it.
+fn own_lines(text: &str, width: usize) -> Vec<String> {
+    let lines = wrap::chars(text, width.saturating_sub(OWN_LEAD));
+    let skip = lines.len().saturating_sub(MAX_OWN_LINES);
+    lines.into_iter().skip(skip).collect()
 }
 
 fn goal_rows(app: &App) -> u16 {
@@ -743,8 +774,11 @@ fn status(app: &App) -> (Vec<Span<'static>>, String) {
         }
         (activity, _) => {
             let (color, what) = match activity {
-                Activity::Thinking => (ACCENT, "thinking".to_owned()),
-                Activity::Writing => (ACCENT, "writing".to_owned()),
+                Activity::Thinking => (
+                    ACCENT,
+                    format!("{}{}", app.thinking_label(), app.rate_note()),
+                ),
+                Activity::Writing => (ACCENT, format!("writing{}", app.rate_note())),
                 Activity::Tool(name) => (TEXT_SOFT, format!("running {name}")),
                 Activity::Compacting => (DUSK, "compacting the context".to_owned()),
                 Activity::Forking => (DUSK, "describing the thread for a fork".to_owned()),

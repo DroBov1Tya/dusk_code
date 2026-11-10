@@ -338,6 +338,24 @@ impl App {
         agents::rate(&self.output_samples)
     }
 
+    /// What the agent does between its steps: with effort off the model does not
+    /// think, it reads the context.
+    pub fn thinking_label(&self) -> &'static str {
+        if self.effort == Some(Effort::Off) {
+            "reading"
+        } else {
+            "thinking"
+        }
+    }
+
+    /// The model's pace while it writes, as ` · 42 tok/s`.
+    pub fn rate_note(&self) -> String {
+        self.approximate_tokens_per_second()
+            .filter(|rate| *rate >= 0.5)
+            .map(|rate| format!(" \u{00B7} {rate:.0} tok/s"))
+            .unwrap_or_default()
+    }
+
     pub fn elapsed_ms(&self) -> Option<u64> {
         self.turn_started_at
             .map(|started| now_ms().saturating_sub(started).max(0) as u64)

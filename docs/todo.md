@@ -17,9 +17,10 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [ ] Analyze how to make the agent faster without losing quality
 - [ ] Prompt caching: stable prefix (system, tools, memory) first, cache breakpoints,
       count cache reads; spend fewer input tokens
-- [ ] Retries for failed requests without a clear error code (backoff, capped)
-- [ ] Client-side token bucket rate limit per provider (guards goal loops)
-- [ ] Send the tool list again when the mode changes
+- [x] Retries for failed requests without a clear error code (backoff, capped)
+- [x] Client-side token bucket per provider: `requests_per_minute` in its config
+- [x] A mode switch applies from the next turn: the tools at once, the mode's prompt
+      leads the next request
 - [ ] A command or agent code already running can be moved to the background by hand
       (TUI + GUI)
 - [ ] `run_command` runs in the background: the chat stays writable while it works;
@@ -129,9 +130,9 @@ From `gui-todo.md`
 
 ## TUI
 
-- [ ] "done" sometimes does not fit
-- [ ] With effort off, do not print "thinking" for each action; show tps
-- [ ] A typed own answer to a question wraps long lines
+- [x] "done" sometimes does not fit (subagent rows past an hour, long tool lines)
+- [x] With effort off, do not print "thinking" for each action; show tps
+- [x] A typed own answer to a question wraps long lines
 - [ ] Parity: `@me` and `@name`, background commands, access mode per chat, pinned plan
 
 ## Repository

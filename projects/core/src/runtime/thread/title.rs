@@ -66,6 +66,7 @@ impl Agent {
             max_output_tokens: Some(TITLE_OUTPUT_TOKENS),
             // A title needs no thought.
             effort: None,
+            cache_key: None,
         };
         // Not shown to the client: the title arrives as one event.
         let mut output = ModelOutput::default();

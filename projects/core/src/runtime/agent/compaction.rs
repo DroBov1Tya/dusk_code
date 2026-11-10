@@ -159,6 +159,7 @@ impl Agent {
             tools: &[],
             max_output_tokens: choice.model.max_output,
             effort: config.effort(),
+            cache_key: None,
         };
         let (output, generated) = match self.call_model(&choice, request, &config, inbox).await {
             Ok(called) => called,

@@ -326,6 +326,7 @@ impl Runtime {
             allow_http: false,
             prices: Default::default(),
             balance: None,
+            requests_per_minute: None,
         };
         crate::providers::validate_provider(&provider)?;
         let adapter = Arc::new(Provider::new(&provider)?);
