@@ -8,6 +8,9 @@ testing.
 
 ### Added
 
+- GUI: the options of a question from the agent are numbered cards, the chosen one
+  outlined.
+
 - Project variables: the GUI project form sets environment variables, such as API
   tokens, for the commands that run in the project's folder, foreground or in the
   background. Values are write-only, kept in the core's database, and masked in
