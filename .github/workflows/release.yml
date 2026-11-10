@@ -65,11 +65,22 @@ jobs:
           rustup update stable
           rustup default stable
           rustup target add ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ${{ matrix.target }}
+          # A tag reads the cache a run on main saved; only main writes it.
+          save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: musl
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build
-        run: cargo build --release --locked --target ${{ matrix.target }} -p dusk_tui
+        shell: bash
+        # The desktop client builds with the terminal one in a single call on macOS, so
+        # cargo shares the dependencies and compiles both at once.
+        run: |
+          packages=(-p dusk_tui)
+          if [[ "$RUNNER_OS" == macOS ]]; then packages+=(-p dusk_gui); fi
+          cargo build --release --locked --target ${{ matrix.target }} "${packages[@]}"
       - name: Package
         shell: bash
         run: |
@@ -90,7 +101,6 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          cargo build --release --locked --target ${{ matrix.target }} -p dusk_gui
           version=$(cat "dist/duskcode-${{ matrix.target }}/resources/VERSION")
           sh scripts/package-macos.sh \
             "target/${{ matrix.target }}/release/duskcode-gui" "$version" dist
