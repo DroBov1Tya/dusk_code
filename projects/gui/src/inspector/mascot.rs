@@ -1,9 +1,9 @@
-//! The fox: the mascot of duskcode, one for each subagent. A fox is the animal of the dusk.
-//! It sits upright, seen from the front, and lies down content when its work is done. It is built
-//! from layers (the body, the tail, the eyes, and what it holds or what hovers over it), so
-//! every state has frames of its own: it thinks with dots that fill and eyes turned up,
-//! writes with a pencil, hammers, searches with a lens, reads a page, lies with its tail
-//! curled and sparks when done, and stands dizzy under stars when it failed.
+//! The fox: the mascot of duskcode, drawn in 8-bit cells, one for each subagent. A fox is
+//! the animal of the dusk. It is built from layers (the fox itself, its eyes, its tail, and
+//! what it holds or what hovers over it), so every state gets its own motion from a few
+//! frames: it thinks with dots that fill, writes with a pencil, hammers, searches with a
+//! lens, reads a page, rests with its eyes closed and sparks when done, and is dizzy
+//! under stars when it failed.
 
 use std::time::Duration;
 
@@ -11,309 +11,41 @@ use gpui_kit::*;
 
 use crate::chat::transcript::AgentState;
 
-/// The fox's own picture is 36 by 32 cells; the margin on the left holds what it holds.
-const W: usize = 46;
-const H: usize = 41;
-const AT_X: i32 = 10;
-const AT_Y: i32 = 3;
+/// The canvas: the fox is 16 by 16 cells in the middle; the margin holds what it holds.
+const W: usize = 20;
+const H: usize = 18;
+/// Where the fox's own corner stands on the canvas.
+const AT: (i32, i32) = (2, 2);
 
 type Grid = [[u8; W]; H];
 
-// Generated from shapes by a script; edit the picture, not these rows.
-const SIT_BODY: [&str; 38] = [
-    "......kk............kk..............",
-    ".....kbhk..........khbk.............",
-    ".....kbohk........khobk.............",
-    ".....kowohkkkkkkkkhowdk.............",
-    ".....kowwohhhhhhhhowwdk.............",
-    ".....kowoooooooooooowdk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....koooovvvvvvvvooodk.............",
-    "....kvvooovvvnnvvvooovvk............",
-    "....kvvooovvvvvvvvooovvk............",
-    "...kvvvvodvvvvvvvvdovvvvk...........",
-    "....kkvvvkovvvvvvdkvvvkk............",
-    ".....kvvvkooovvoodkvvvk.............",
-    "......kkkhoowwwwoohkkk..............",
-    "........koowwwwwwodk................",
-    ".......khoowwwwwwoohk...............",
-    ".......kooowwwwwwoodk...............",
-    ".......kooowwwwwwoodk...............",
-    ".......kooowwwwwwoodk...............",
-    ".......kooowwwwwwoodk...............",
-    ".......kooooowwoooodk...............",
-    "......kkooooowwoooodkk..............",
-    ".....khhooooowwooooohhk.............",
-    "....khoooooooooooooooohk............",
-    "...khoooooooooooooooooohk...........",
-    "...kooooooooooooooooooodk...........",
-    "...kdooooobbbddbbbooooodk...........",
-    "....kooooobbbkkbbboooodk............",
-    "....kbbbbobbbkkbbbobbbbk............",
-    "...kbbbbbbbbbkkbbbbbbbbbk...........",
-    "....kbbbkkkkk..kkkkkbbbk............",
-    ".....kkk............kkk.............",
-    "....................................",
-    "....................................",
+/// The fox with its eyes left as `E`, drawn by `eyes`.
+const FOX: [&str; 16] = [
+    "..kk........kk..",
+    "..kook....kook..",
+    "..kooooooooook..",
+    "..oooooooooooo..",
+    "..oooEooooEooo..",
+    ".wwooooooooooww.",
+    ".wwwwoooooowwww.",
+    "..wwwwwkkwwwww..",
+    "...wwwwwwwwww...",
+    "....oowwwwoo....",
+    "...oowwwwwwoo...",
+    "..ooowwwwwwooo..",
+    "..oooowwwwoooo..",
+    "..oooooooooooo..",
+    "..kkkooooookkk..",
+    "..kkk......kkk..",
 ];
-const SIT_LOW: [&str; 38] = [
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "...........................kkk......",
-    "..........................kvvvk.....",
-    ".........................kvvvvvk....",
-    "........................kvvvvvvk....",
-    "........................kvvvoovhk...",
-    ".........................kvoooodk...",
-    "........................khoooooohk..",
-    "........................kooooooodk..",
-    "........................koooooodk...",
-    ".......................khoooooodk...",
-    ".....................kkkooooooodk...",
-    "....................khhhooooooodk...",
-    "...................khoooooooooodk...",
-    "..................khoooooooooddk....",
-    "..................kdoooooooodkk.....",
-    "...................kdooooooodk......",
-    "....................kdddddddk.......",
-    ".....................kkkkkkk........",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-];
-const SIT_MID: [&str; 38] = [
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "..........................kkkk......",
-    ".........................kvvvvk.....",
-    "........................kvvvvvvk....",
-    "........................kvvvvvvk....",
-    "........................kvvvvvvhk...",
-    ".........................kvooooohk..",
-    "........................khoooooodk..",
-    "........................kdoooooodk..",
-    ".........................koooooodk..",
-    "........................khooooodk...",
-    ".......................khoooooodk...",
-    ".......................koooooooohk..",
-    ".....................kkhooooooodk...",
-    "....................khhoooooooodk...",
-    "...................khooooooooddk....",
-    "..................khoooooooodkk.....",
-    "..................kdoooooooodk......",
-    "...................kdoodooodk.......",
-    "....................kddkdddk........",
-    ".....................kk.kkk.........",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-];
-const SIT_HIGH: [&str; 38] = [
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    ".........................kkkk.......",
-    "........................kvvvvk......",
-    ".......................kvvvvvvk.....",
-    ".......................kvvvvvvk.....",
-    ".......................kvvvvvvhk....",
-    "........................kvvoooohk...",
-    "........................koooooodk...",
-    "........................kooooooohk..",
-    "........................koooooodk...",
-    "........................koooooodk...",
-    ".......................khoooooodk...",
-    ".......................kooooooodk...",
-    ".......................kooooooodk...",
-    "......................kkooooooodk...",
-    ".....................khhoooooodk....",
-    "....................khooooooodk.....",
-    "...................khooooooodk......",
-    "..................khoooooooodk......",
-    "..................kdoooooooodk......",
-    "...................kdoodddddk.......",
-    "....................kddkkkkk........",
-    ".....................kk.............",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-];
-const LIE_BODY: [&str; 38] = [
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "......kk............kk..............",
-    ".....kbhk..........khbk.............",
-    ".....kbohk........khobk.............",
-    ".....kowohkkkkkkkkhowdk.............",
-    ".....kowwohhhhhhhhowwdk.............",
-    ".....kowoooooooooooowdk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....kooooooooooooooodk.............",
-    ".....koooovvvvvvvvooodk.............",
-    "....kvvooovvvnnvvvooovvk............",
-    "....kvvooovvvvvvvvooovvk............",
-    "...kvvvvoovvvvvvvvoovvvvk...........",
-    "....kovvvoovvvvvvoovvvdk............",
-    "...khovvvoooovvoooovvvohk...........",
-    "...kdooooooowwwwooooooodk...........",
-    "....kdoooooowwwwoooooodk............",
-    ".....kddbbbbbwwbbbbbddk.............",
-    "......kkbbbbbddbbbbbkk..............",
-    ".......kbbbbbkkbbbbbk...............",
-    "........kkkkk..kkkkk................",
-    "....................................",
-];
-const LIE_A: [&str; 38] = [
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "............................kkkk....",
-    "...........................kvvvvk...",
-    "..........................kvvvvvvk..",
-    "..........................kvvvvvvk..",
-    "..........................kvvvvvvk..",
-    ".........................khvooovvk..",
-    ".....................kkkkkoooooodk..",
-    "....................khhhhhoooooodk..",
-    "...................khooooooooooodk..",
-    "...................koooooooooooddk..",
-    "...................kdooooooooodkk...",
-    "....................kdddooooodk.....",
-    ".....................kkkdddddk......",
-    "........................kkkkk.......",
-    "....................................",
-    "....................................",
-];
-const LIE_B: [&str; 38] = [
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "....................................",
-    "...........................kkkkk....",
-    "..........................kvvvvvk...",
-    "..........................kvvvvvk...",
-    "..........................kvvvvvk...",
-    "..........................kvvooohk..",
-    "..........................koooooohk.",
-    "..........................koooooodk.",
-    "..........................koooooodk.",
-    ".....................kkkkkhooooodk..",
-    "....................khhhhhooooooohk.",
-    "...................khoooooooooooodk.",
-    "...................koooooooooooodk..",
-    "...................kdooooooooodddk..",
-    "....................kdddooooodkkk...",
-    ".....................kkkddoddk......",
-    "........................kkdkk.......",
-    "..........................k.........",
-    "....................................",
-];
-
-#[derive(Clone, Copy)]
-enum Pose {
-    Sit,
-    Lie,
-}
 
 #[derive(Clone, Copy)]
 enum Eyes {
     Open,
-    /// Turned up: thinking.
+    /// Looking up and to the side: thinking.
     Up,
-    /// Closed and smiling: content.
-    Happy,
+    /// Closed: at rest.
+    Closed,
     /// A red cross each: it failed.
     Dizzy,
 }
@@ -346,7 +78,6 @@ enum Fx {
 
 #[derive(Clone, Copy)]
 struct Frame {
-    pose: Pose,
     /// How far the fox sits above its usual place, in cells.
     lift: i32,
     eyes: Eyes,
@@ -356,9 +87,8 @@ struct Frame {
     ms: u64,
 }
 
-const fn frame(pose: Pose, lift: i32, eyes: Eyes, tail: Tail, fx: Fx, ms: u64) -> Frame {
+const fn frame(lift: i32, eyes: Eyes, tail: Tail, fx: Fx, ms: u64) -> Frame {
     Frame {
-        pose,
         lift,
         eyes,
         tail,
@@ -379,35 +109,35 @@ fn tool_fx(name: &str, step: u8) -> Fx {
 }
 
 fn frames(state: &AgentState) -> Vec<Frame> {
-    use {Eyes::*, Pose::*, Tail::*};
+    use {Eyes::*, Tail::*};
     match state {
-        // It thinks with the dots filling, eyes turned up, and rocks a little.
+        // It thinks with the dots filling, and rocks a little.
         AgentState::Thinking => vec![
-            frame(Sit, 0, Up, Low, Fx::Dots(1), 420),
-            frame(Sit, 0, Up, Low, Fx::Dots(2), 420),
-            frame(Sit, 1, Up, Mid, Fx::Dots(3), 420),
-            frame(Sit, 0, Up, Mid, Fx::Dots(0), 420),
+            frame(0, Up, Low, Fx::Dots(1), 420),
+            frame(0, Up, Low, Fx::Dots(2), 420),
+            frame(1, Up, Mid, Fx::Dots(3), 420),
+            frame(0, Up, Mid, Fx::Dots(0), 420),
         ],
         // It writes: the pencil goes and comes, the tail wags quickly.
         AgentState::Writing => vec![
-            frame(Sit, 0, Open, Mid, Fx::Pencil(0), 200),
-            frame(Sit, 0, Open, High, Fx::Pencil(1), 200),
-            frame(Sit, 0, Open, Mid, Fx::Pencil(0), 200),
-            frame(Sit, 1, Open, Low, Fx::Pencil(1), 200),
+            frame(0, Open, Mid, Fx::Pencil(0), 200),
+            frame(0, Open, High, Fx::Pencil(1), 200),
+            frame(0, Open, Mid, Fx::Pencil(0), 200),
+            frame(1, Open, Low, Fx::Pencil(1), 200),
         ],
         AgentState::Tool(name) => vec![
-            frame(Sit, 0, Open, Mid, tool_fx(name, 0), 260),
-            frame(Sit, 0, Open, High, tool_fx(name, 1), 260),
+            frame(0, Open, Mid, tool_fx(name, 0), 260),
+            frame(0, Open, High, tool_fx(name, 1), 260),
         ],
-        // Done: it lies down, content, the tail curling, and the sparks come and go.
+        // At rest: it breathes, the tail up, the sparks come and go.
         AgentState::Done => vec![
-            frame(Lie, 0, Happy, Low, Fx::Sparkle(0), 900),
-            frame(Lie, 0, Happy, Mid, Fx::Sparkle(1), 900),
+            frame(0, Closed, High, Fx::Sparkle(0), 900),
+            frame(1, Closed, High, Fx::Sparkle(1), 900),
         ],
         AgentState::Failed => vec![
-            frame(Sit, 0, Dizzy, Low, Fx::Stars(0), 320),
-            frame(Sit, 0, Dizzy, Low, Fx::Stars(1), 320),
-            frame(Sit, 0, Dizzy, Low, Fx::Stars(2), 320),
+            frame(0, Dizzy, Low, Fx::Stars(0), 320),
+            frame(0, Dizzy, Low, Fx::Stars(1), 320),
+            frame(0, Dizzy, Low, Fx::Stars(2), 320),
         ],
     }
 }
@@ -424,158 +154,132 @@ fn put_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
     }
 }
 
-/// A layer onto the grid at the fox's place, `lift` cells up.
-fn stamp(grid: &mut Grid, layer: &[&str], lift: i32) {
-    for (y, row) in layer.iter().enumerate() {
-        for (x, cell) in row.bytes().enumerate() {
-            if cell != b'.' {
-                put(grid, x as i32 + AT_X, y as i32 + AT_Y - lift, cell);
-            }
-        }
-    }
-}
-
-/// Two eyes, two cells wide and three tall, on the face.
-fn eyes(grid: &mut Grid, pose: Pose, lift: i32, state: Eyes) {
-    let rows: [&str; 3] = match state {
-        Eyes::Open => ["Wk", "kk", "kk"],
-        Eyes::Up => ["Wk", "kk", "oo"],
-        Eyes::Happy => ["oo", "kk", "oo"],
-        Eyes::Dizzy => ["rW", "Wr", "rW"],
-    };
-    let (y, xs) = match pose {
-        Pose::Sit => (8, [9, 17]),
-        Pose::Lie => (22, [9, 17]),
-    };
-    for x in xs {
-        for (dy, row) in rows.iter().enumerate() {
-            for (dx, cell) in row.bytes().enumerate() {
-                put(
-                    grid,
-                    x + dx as i32 + AT_X,
-                    y + dy as i32 + AT_Y - lift,
-                    cell,
-                );
-            }
-        }
-    }
-}
-
-/// The picture of one frame: the tail, the body, the eyes, and what is in the margin.
+/// The picture of one frame: the fox, its eyes and tail, and what is in the margin.
 fn compose(frame: Frame) -> Grid {
     let mut grid = [[b'.'; W]; H];
-    let (tail, body): (&[&str], &[&str]) = match (frame.pose, frame.tail) {
-        (Pose::Sit, Tail::Low) => (&SIT_LOW, &SIT_BODY),
-        (Pose::Sit, Tail::Mid) => (&SIT_MID, &SIT_BODY),
-        (Pose::Sit, Tail::High) => (&SIT_HIGH, &SIT_BODY),
-        (Pose::Lie, Tail::Low) => (&LIE_A, &LIE_BODY),
-        (Pose::Lie, _) => (&LIE_B, &LIE_BODY),
+    let at = |x: i32, y: i32| (x + AT.0, y + AT.1 - frame.lift);
+    for (y, row) in FOX.iter().enumerate() {
+        for (x, cell) in row.bytes().enumerate() {
+            let (cx, cy) = at(x as i32, y as i32);
+            match cell {
+                b'.' | b'E' => {}
+                other => put(&mut grid, cx, cy, other),
+            }
+        }
+    }
+    // The eyes: two cells of ink in each case, other pixels for the cross.
+    let eye = |grid: &mut Grid, x: i32, y: i32, cell: u8| {
+        let (cx, cy) = at(x, y);
+        put(grid, cx, cy, cell);
     };
-    stamp(&mut grid, tail, frame.lift);
-    stamp(&mut grid, body, frame.lift);
-    eyes(&mut grid, frame.pose, frame.lift, frame.eyes);
+    for x in [5, 10] {
+        match frame.eyes {
+            Eyes::Open => eye(&mut grid, x, 4, b'k'),
+            Eyes::Up => {
+                eye(&mut grid, x + 1, 3, b'k');
+                eye(&mut grid, x + 1, 4, b'o');
+                eye(&mut grid, x, 4, b'o');
+            }
+            Eyes::Closed => eye(&mut grid, x, 4, b'd'),
+            Eyes::Dizzy => {
+                eye(&mut grid, x, 4, b'o');
+                for (dx, dy) in [(0, -1), (-1, 0), (1, 0), (0, 1)] {
+                    eye(&mut grid, x + dx, 4 + dy, b'r');
+                }
+            }
+        }
+    }
+    let tail: &[(i32, i32)] = match frame.tail {
+        Tail::Low => &[(14, 13), (15, 13)],
+        Tail::Mid => &[(14, 12), (15, 11)],
+        Tail::High => &[(14, 12), (15, 11), (15, 10)],
+    };
+    for (x, y) in tail {
+        let (cx, cy) = at(*x, *y);
+        put(&mut grid, cx, cy, b'o');
+    }
+    let tip = match frame.tail {
+        Tail::Low => (16, 12),
+        Tail::Mid => (16, 10),
+        Tail::High => (16, 9),
+    };
+    let (tx, ty) = at(tip.0, tip.1);
+    put(&mut grid, tx, ty, b'w');
     fx(&mut grid, frame.fx);
     grid
 }
 
-/// The margin, in canvas cells, to the left of the right hand (at 17, 22): dots `a`, handles
-/// `b`, steel `g`, glass `c`, paper `W`, gold `y`, ink `k`.
-/// A cell of what the fox holds, placed from the picture of the hand.
-fn held(grid: &mut Grid, x: i32, y: i32, cell: u8) {
-    put(grid, x + 5, y + 14, cell);
-}
-
-fn held_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
-    for (x, y) in cells {
-        held(grid, *x, *y, cell);
-    }
-}
-
+/// The margin, in canvas cells: dots `a`, pencil and hammer handles `b`, steel `g`, glass
+/// `c`, paper `w`, gold `y`, ink `k`.
 fn fx(grid: &mut Grid, fx: Fx) {
     match fx {
         Fx::Dots(lit) => {
-            for (index, x) in [21, 24, 27].into_iter().enumerate() {
+            for (index, x) in [13, 15, 17].into_iter().enumerate() {
                 let cell = if (index as u8) < lit { b'a' } else { b'g' };
                 put(grid, x, 0, cell);
             }
         }
         Fx::Pencil(step) => {
             let shift = i32::from(step);
-            held_all(
+            put_all(
                 grid,
-                &[
-                    (16, 21),
-                    (15, 20 - shift),
-                    (14, 19 - shift),
-                    (13, 18 - shift),
-                ],
+                &[(16, 9 - shift), (17, 8 - shift), (18, 7 - shift)],
                 b'y',
             );
-            held(grid, 12, 17 - shift, b'k');
+            put(grid, 19, 6 - shift, b'k');
             // The line it leaves grows.
-            for x in 0..(2 + 2 * shift) {
-                held(grid, 8 + x, 24, b'W');
+            let length = 2 + 2 * shift;
+            for x in 0..length {
+                put(grid, 16 + x, 12, b'w');
             }
         }
         Fx::Hammer(down) => {
             if down {
-                held_all(grid, &[(16, 21), (15, 22), (14, 23)], b'b');
-                held_all(grid, &[(10, 22), (11, 22), (12, 22), (13, 22)], b'g');
-                held_all(grid, &[(10, 23), (11, 23), (12, 23), (13, 23)], b'g');
-                held_all(grid, &[(9, 26), (10, 26)], b'y');
+                put_all(grid, &[(16, 9), (17, 9), (18, 9)], b'b');
+                put_all(grid, &[(19, 8), (19, 9), (19, 10)], b'g');
+                put_all(grid, &[(18, 12), (19, 12)], b'y');
             } else {
-                held_all(grid, &[(16, 21), (15, 20), (14, 19), (13, 18)], b'b');
-                held_all(grid, &[(10, 15), (11, 15), (12, 15), (13, 15)], b'g');
-                held_all(grid, &[(10, 16), (11, 16), (12, 16), (13, 16)], b'g');
+                put_all(grid, &[(16, 9), (17, 8), (18, 7)], b'b');
+                put_all(grid, &[(18, 5), (19, 5), (18, 6), (19, 6)], b'g');
             }
         }
         Fx::Lens(step) => {
             let (dx, dy) = if step == 0 { (0, 0) } else { (-1, 1) };
             let ring = [
-                (9, 15),
-                (10, 15),
-                (11, 15),
-                (8, 16),
-                (12, 16),
-                (8, 17),
-                (12, 17),
-                (9, 18),
-                (10, 18),
-                (11, 18),
+                (16, 6),
+                (17, 6),
+                (18, 6),
+                (15, 7),
+                (19, 7),
+                (15, 8),
+                (19, 8),
+                (16, 9),
+                (17, 9),
+                (18, 9),
             ];
             for (x, y) in ring {
-                held(grid, x + dx, y + dy, b'c');
+                put(grid, x + dx, y + dy, b'c');
             }
-            held_all(
-                grid,
-                &[(13 + dx, 19 + dy), (14 + dx, 20 + dy), (15 + dx, 21 + dy)],
-                b'b',
-            );
+            put_all(grid, &[(19 + dx, 10 + dy)], b'b');
         }
         Fx::Page(step) => {
-            for y in 14..22 {
-                for x in 7..13 {
-                    held(grid, x, y, b'W');
+            for y in 6..11 {
+                for x in 16..20 {
+                    put(grid, x, y, b'w');
                 }
             }
-            let line = 16 + i32::from(step);
-            held_all(
+            let line = 7 + i32::from(step);
+            put_all(
                 grid,
-                &[
-                    (8, line),
-                    (9, line),
-                    (10, line),
-                    (8, line + 2),
-                    (9, line + 2),
-                ],
+                &[(17, line), (18, line), (17, line + 2), (18, line + 2)],
                 b'g',
             );
         }
         Fx::Sparkle(step) => {
             let (a, b) = if step == 0 {
-                ((4, 10), (42, 12))
+                ((1, 3), (18, 2))
             } else {
-                ((6, 8), (40, 14))
+                ((2, 1), (17, 4))
             };
             for (x, y) in [a, b] {
                 put_all(
@@ -587,26 +291,23 @@ fn fx(grid: &mut Grid, fx: Fx) {
         }
         Fx::Stars(step) => {
             let places = [
-                [(19, 0), (23, 1), (27, 0)],
-                [(21, 0), (25, 1), (29, 0)],
-                [(23, 0), (27, 1), (19, 1)],
+                [(5, 0), (9, 1), (13, 0)],
+                [(7, 0), (11, 1), (15, 0)],
+                [(9, 0), (13, 1), (5, 1)],
             ];
             put_all(grid, &places[usize::from(step) % 3], b'y');
         }
     }
 }
 
-/// The color of a cell. `accent` is the color the caller gives the thinking dots.
+/// The color of a cell. `a` is the accent the caller gives (the signal color for work).
 fn paint(cell: u8, accent: Hsla) -> Option<Hsla> {
     let rgb = |hex: u32| Some(rgb(hex).into());
     match cell {
         b'o' => rgb(0xe9793a),
         b'd' => rgb(0xb4561e),
         b'w' => rgb(0xf6e9d2),
-        b'W' => rgb(0xf4f6fb),
-        b'k' => rgb(0x1a1022),
-        b's' => rgb(0x4a2a1c),
-        b'n' => rgb(0x100a14),
+        b'k' => rgb(0x2a1d1a),
         b'y' => rgb(0xf2c14e),
         b'c' => rgb(0x7cc7e8),
         b'b' => rgb(0x9a6a3c),
@@ -639,11 +340,12 @@ pub fn render(
                 let mut at = (phase * total as f32) as u64;
                 let mut index = 0;
                 for (frame, ms) in times.iter().enumerate() {
-                    index = frame;
                     if at < *ms {
+                        index = frame;
                         break;
                     }
                     at -= ms;
+                    index = frame;
                 }
                 let grid = grids[index];
                 figure.child(
@@ -682,19 +384,8 @@ mod tests {
     use super::*;
 
     #[::core::prelude::v1::test]
-    fn the_layers_fit_the_canvas_and_every_state_has_frames() {
-        for layer in [
-            &SIT_BODY[..],
-            &SIT_LOW[..],
-            &SIT_MID[..],
-            &SIT_HIGH[..],
-            &LIE_BODY[..],
-            &LIE_A[..],
-            &LIE_B[..],
-        ] {
-            assert_eq!(layer.len(), H - AT_Y as usize);
-            assert!(layer.iter().all(|row| row.len() == 36));
-        }
+    fn the_fox_is_square_and_every_state_has_frames() {
+        assert!(FOX.iter().all(|row| row.len() == 16));
         let states = [
             AgentState::Thinking,
             AgentState::Writing,
@@ -706,6 +397,7 @@ mod tests {
         for state in &states {
             let frames = frames(state);
             assert!(frames.len() >= 2 && frames.iter().all(|f| f.ms > 0));
+            // Composing every frame must stay inside the canvas without panicking.
             for frame in frames {
                 compose(frame);
             }
