@@ -123,8 +123,9 @@ Settings and updates
 - [x] "new release!" label when an update exists; a dev update channel switch
 
 Motion
-- [ ] Animations that answer a user action are under 400 ms; purely visual ones may be
-      slow and beautiful
+- [x] Animations that answer a user action are under 400 ms (the fade of a deleted chat
+      is 220 ms); the rest are purely visual and loop slowly: working figures, the
+      sidebar pulse, the mascots, the arbiter sphere
 
 From `gui-todo.md`
 - [x] Core: an `icon` field on McpInfo (a picture in `~/.config/duskcode/icons/`, named

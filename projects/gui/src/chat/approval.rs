@@ -6,6 +6,7 @@ use gpui_kit::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -60,26 +61,45 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     }
     if let Some(question) = &chat.question {
         let muted = cx.theme().muted_foreground;
-        let mut options = div().flex().flex_col().gap_1();
+        let (primary, hover) = (cx.theme().primary, muted.opacity(0.5));
+        let mut options = div().flex().flex_col().gap_2();
         for (index, option) in question.options.iter().enumerate() {
             let picked = ws.picked.contains(&index);
-            let mark = if question.multiple {
-                if picked {
-                    IconName::CircleCheck
-                } else {
-                    IconName::Square
-                }
+            // A tick for what is chosen in a list of several, the number otherwise.
+            let badge = if question.multiple && picked {
+                widgets::icon(IconName::CircleCheck, primary).into_any_element()
             } else {
-                IconName::ChevronRight
+                div()
+                    .flex_none()
+                    .size(px(22.))
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_full()
+                    .border_1()
+                    .border_color(if picked { primary } else { border })
+                    .text_xs()
+                    .text_color(if picked { primary } else { muted })
+                    .child((index + 1).to_string())
+                    .into_any_element()
             };
             options = options.child(
-                widgets::row(("option", index), picked, cx)
-                    .h(px(36.))
-                    .child(widgets::icon(
-                        mark,
-                        if picked { cx.theme().primary } else { muted },
-                    ))
-                    .child(div().flex_1().child(option.clone()))
+                div()
+                    .id(("option", index))
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_3()
+                    .px_3()
+                    .py_2()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(if picked { primary } else { border })
+                    .when(picked, |card| card.bg(primary.opacity(0.08)))
+                    .cursor_pointer()
+                    .hover(move |card| card.border_color(if picked { primary } else { hover }))
+                    .child(badge)
+                    .child(div().flex_1().min_w_0().child(option.clone()))
                     .on_click(cx.listener(move |ws, _, _, cx| ws.pick(index, cx))),
             );
         }
