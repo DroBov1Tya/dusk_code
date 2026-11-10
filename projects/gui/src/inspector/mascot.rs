@@ -1,9 +1,8 @@
 //! The fox: the mascot of duskcode, one for each subagent. A fox is the animal of the dusk.
-//! It sits upright, seen from the front, and lies down content when its work is done. It is built
-//! from layers (the body, the tail, the eyes, and what it holds or what hovers over it), so
-//! every state has frames of its own: it thinks with dots that fill and eyes turned up,
-//! writes with a pencil, hammers, searches with a lens, reads a page, lies with its tail
-//! curled and sparks when done, and stands dizzy under stars when it failed.
+//! Only down to the chest, in as few 8-bit cells as it takes to be a fox: two ears, a cream
+//! face, big cheeks. It is symmetric by construction. The picture is one layer; what moves is
+//! the eyes, a bounce, and what hovers beside it: dots that fill while it thinks, a pencil, a
+//! hammer, a lens, a page, sparks when done and stars when it failed.
 
 use std::time::Duration;
 
@@ -11,237 +10,46 @@ use gpui_kit::*;
 
 use crate::chat::transcript::AgentState;
 
-/// The fox's own picture is 36 by 32 cells; the margin on the left holds what it holds.
-const W: usize = 32;
-const H: usize = 29;
-const AT_X: i32 = 0;
+/// The fox is 16 cells wide and 16 tall; the margin on the right holds what it holds, and
+/// the one on top its dots.
+const W: usize = 26;
+const H: usize = 19;
 const AT_Y: i32 = 3;
 
 type Grid = [[u8; W]; H];
 
 // Generated from shapes by a script; edit the picture, not these rows.
-const SIT_BODY: [&str; 26] = [
-    "........................",
-    "......k..........k......",
-    ".....kbkk......kkbk.....",
-    ".....kohhkkkkkkhhdk.....",
-    ".....koeehhhhhheedk.....",
-    ".....kooooooooooodk.....",
-    ".....kooooooooooodk.....",
-    "....khoovvoooovvoohk....",
-    "....kovvvvoooovvvvdk....",
-    "....kvvvvvvoovvvvvvk....",
-    ".....kvvvvvnvvvvvvk.....",
-    "....khdvvvvvvvvvvdhk....",
-    ".....kkkkddddddkkkk.....",
-    ".........kkkkkk.........",
-    "........khhvvhhk........",
-    ".......khovvvvohk.......",
-    ".......koovvvvodk.......",
-    ".......koovvvvodk.......",
-    "......khooovvooohk......",
-    ".....khooooddoooohk.....",
-    "......kddbbkkbbddk......",
-    ".......kkkk..kkkk.......",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
+const BODY: [&str; 16] = [
+    "...k........k...",
+    "..kok......kok..",
+    ".koook....koook.",
+    ".koeookkkkooeok.",
+    ".kooooooooooook.",
+    ".kooooooooooook.",
+    ".kooooooooooook.",
+    "khoooooooooooohk",
+    ".kooooooooooook.",
+    ".kvvoooooooovvk.",
+    "..kvvvvnnvvvvk..",
+    "...koovvvvook...",
+    "....koovvook....",
+    "...kkooooookk...",
+    "..khhoooooohhk..",
+    "..koooovvooook..",
 ];
-const SIT_LOW: [&str; 26] = [
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "..kk....................",
-    ".kvvk...................",
-    "kvvvvk..................",
-    "kvovvk..................",
-    "kooovk..................",
-    "kooodk..................",
-    "koooohk.................",
-    "kdoooohkk...............",
-    ".kdoooohhk..............",
-    "..kdooooohk.............",
-    "...kdddddk..............",
-    "....kkkkk...............",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-];
-const SIT_MID: [&str; 26] = [
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "..kkk...................",
-    ".kvvvk..................",
-    ".kvvvk..................",
-    "kvovk...................",
-    "hooohk..................",
-    "kooodk..................",
-    "kooodk..................",
-    "koooohk.................",
-    "kddooohkk...............",
-    ".kkoooohhk..............",
-    "..kdoodoohk.............",
-    "...kddkddk..............",
-    "....kk.kk...............",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-];
-const SIT_HIGH: [&str; 26] = [
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "...kkk..................",
-    "..kvvvk.................",
-    "..kvvvk.................",
-    ".khvvvk.................",
-    "khoovk..................",
-    "kooodk..................",
-    "kooodk..................",
-    "kooodk..................",
-    "koooohk.................",
-    "kddooohk................",
-    ".kkoooohk...............",
-    "..kdoooohk..............",
-    "...kdddoohk.............",
-    "....kkkddk..............",
-    ".......kk...............",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-];
-const LIE_BODY: [&str; 26] = [
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "....k.......k...........",
-    "...kbk....kkbk..........",
-    "...kehkkkkhedk..........",
-    "...keohhhhodk...........",
-    "...koooooooohk..........",
-    "..khvvvooovvvkkkkk......",
-    "..kvvvvvnvvvvhhhhhkk....",
-    "...kvvvvvvvvoooooohhk...",
-    "....kvoovooooooooooohk..",
-    "...kvvvvvvooooooooooohk.",
-    "...kvvvvvvooooooooooodk.",
-    "....kvvvvooooooooodddk..",
-    ".....kkkkdddddddddkkk...",
-    ".........kkkkkkkkk......",
-    "........................",
-    "........................",
-    "........................",
-];
-const LIE_A: [&str; 26] = [
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "...................kkk..",
-    "..................khhhk.",
-    "..................kooohk",
-    ".......kkk.kk..kkkhoodk.",
-    "......kvvvkhhkkhhhooodk.",
-    "......kvvvhoohkooodoodk.",
-    "......kvvkdoodkdodkddk..",
-    ".......kk.kddk.kdk.kk...",
-    "...........kk...k.......",
-    "........................",
-];
-const LIE_B: [&str; 26] = [
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "........................",
-    "....................kk..",
-    "...................khhk.",
-    "..................khoohk",
-    ".....kk...........kooodk",
-    "....kvvkk..kk..kkkhoodk.",
-    "....kvvvhkkhhkkhhhooodk.",
-    ".....kkoohhoohkoooddddk.",
-    "......kddkdoodkdodkkkk..",
-    ".......kk.kddk.kdk......",
-    "...........kk...k.......",
-    "........................",
-];
-
-#[derive(Clone, Copy)]
-enum Pose {
-    Sit,
-    Lie,
-}
 
 #[derive(Clone, Copy)]
 enum Eyes {
     Open,
     /// Turned up: thinking.
     Up,
-    /// Closed and smiling: content.
+    /// Closed and content.
     Happy,
     /// A red cross each: it failed.
     Dizzy,
 }
 
-#[derive(Clone, Copy)]
-enum Tail {
-    Low,
-    Mid,
-    High,
-}
-
-/// What is in the margin: what it holds, or what hovers over it.
+/// What is beside the fox: what it holds, or what hovers over it.
 #[derive(Clone, Copy)]
 enum Fx {
     /// Three dots of which this many are lit.
@@ -262,28 +70,19 @@ enum Fx {
 
 #[derive(Clone, Copy)]
 struct Frame {
-    pose: Pose,
     /// How far the fox sits above its usual place, in cells.
     lift: i32,
     eyes: Eyes,
-    tail: Tail,
     fx: Fx,
     /// How long the frame stays.
     ms: u64,
 }
 
-const fn frame(pose: Pose, lift: i32, eyes: Eyes, tail: Tail, fx: Fx, ms: u64) -> Frame {
-    Frame {
-        pose,
-        lift,
-        eyes,
-        tail,
-        fx,
-        ms,
-    }
+const fn frame(lift: i32, eyes: Eyes, fx: Fx, ms: u64) -> Frame {
+    Frame { lift, eyes, fx, ms }
 }
 
-/// What a tool's name says it does, for the thing the fox holds.
+/// What a tool's name says it does, for the thing beside the fox.
 fn tool_fx(name: &str, step: u8) -> Fx {
     use dusk_protocol::agent::Doing;
     match Doing::of_tool(name) {
@@ -295,35 +94,35 @@ fn tool_fx(name: &str, step: u8) -> Fx {
 }
 
 fn frames(state: &AgentState) -> Vec<Frame> {
-    use {Eyes::*, Pose::*, Tail::*};
+    use Eyes::*;
     match state {
         // It thinks with the dots filling, eyes turned up, and rocks a little.
         AgentState::Thinking => vec![
-            frame(Sit, 0, Up, Low, Fx::Dots(1), 420),
-            frame(Sit, 0, Up, Low, Fx::Dots(2), 420),
-            frame(Sit, 1, Up, Mid, Fx::Dots(3), 420),
-            frame(Sit, 0, Up, Mid, Fx::Dots(0), 420),
+            frame(0, Up, Fx::Dots(1), 420),
+            frame(0, Up, Fx::Dots(2), 420),
+            frame(1, Up, Fx::Dots(3), 420),
+            frame(0, Up, Fx::Dots(0), 420),
         ],
-        // It writes: the pencil goes and comes, the tail wags quickly.
+        // It writes: the pencil goes and comes, with a small bounce.
         AgentState::Writing => vec![
-            frame(Sit, 0, Open, Mid, Fx::Pencil(0), 200),
-            frame(Sit, 0, Open, High, Fx::Pencil(1), 200),
-            frame(Sit, 0, Open, Mid, Fx::Pencil(0), 200),
-            frame(Sit, 1, Open, Low, Fx::Pencil(1), 200),
+            frame(0, Open, Fx::Pencil(0), 200),
+            frame(1, Open, Fx::Pencil(1), 200),
+            frame(0, Open, Fx::Pencil(0), 200),
+            frame(1, Open, Fx::Pencil(1), 200),
         ],
         AgentState::Tool(name) => vec![
-            frame(Sit, 0, Open, Mid, tool_fx(name, 0), 260),
-            frame(Sit, 0, Open, High, tool_fx(name, 1), 260),
+            frame(0, Open, tool_fx(name, 0), 260),
+            frame(1, Open, tool_fx(name, 1), 260),
         ],
-        // Done: it lies down, content, the tail curling, and the sparks come and go.
+        // Done: eyes closed and content, the sparks come and go.
         AgentState::Done => vec![
-            frame(Lie, 0, Happy, Low, Fx::Sparkle(0), 900),
-            frame(Lie, 0, Happy, Mid, Fx::Sparkle(1), 900),
+            frame(0, Happy, Fx::Sparkle(0), 900),
+            frame(0, Happy, Fx::Sparkle(1), 900),
         ],
         AgentState::Failed => vec![
-            frame(Sit, 0, Dizzy, Low, Fx::Stars(0), 320),
-            frame(Sit, 0, Dizzy, Low, Fx::Stars(1), 320),
-            frame(Sit, 0, Dizzy, Low, Fx::Stars(2), 320),
+            frame(0, Dizzy, Fx::Stars(0), 320),
+            frame(0, Dizzy, Fx::Stars(1), 320),
+            frame(0, Dizzy, Fx::Stars(2), 320),
         ],
     }
 }
@@ -340,71 +139,39 @@ fn put_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
     }
 }
 
-/// A layer onto the grid at the fox's place, `lift` cells up.
-fn stamp(grid: &mut Grid, layer: &[&str], lift: i32) {
-    for (y, row) in layer.iter().enumerate() {
+/// The two eyes: a dark dash each, on the orange of the face.
+fn eyes(grid: &mut Grid, lift: i32, state: Eyes) {
+    let rows: [u8; 3] = match state {
+        Eyes::Open => *b"okk",
+        Eyes::Up => *b"kko",
+        Eyes::Happy => *b"oko",
+        Eyes::Dizzy => *b"ror",
+    };
+    for x in [4, 11] {
+        for (dy, cell) in rows.iter().enumerate() {
+            put(grid, x, 6 + dy as i32 + AT_Y - lift, *cell);
+        }
+    }
+}
+
+/// The picture of one frame: the fox, its eyes, and what is beside it.
+fn compose(frame: Frame) -> Grid {
+    let mut grid = [[b'.'; W]; H];
+    for (y, row) in BODY.iter().enumerate() {
         for (x, cell) in row.bytes().enumerate() {
             if cell != b'.' {
-                put(grid, x as i32 + AT_X, y as i32 + AT_Y - lift, cell);
+                put(&mut grid, x as i32, y as i32 + AT_Y - frame.lift, cell);
             }
         }
     }
-}
-
-/// The two eyes on the face: a dark dash each. A cell that is not part of the eye is the
-/// face's own color, cream when sitting and orange when lying.
-fn eyes(grid: &mut Grid, pose: Pose, lift: i32, state: Eyes) {
-    let (y, xs, rows): (i32, [i32; 2], [u8; 3]) = match pose {
-        Pose::Sit => (
-            7,
-            [7, 16],
-            match state {
-                Eyes::Open => *b"vkk",
-                Eyes::Up => *b"kkv",
-                Eyes::Happy => *b"vkv",
-                Eyes::Dizzy => *b"rvr",
-            },
-        ),
-        Pose::Lie => (
-            13,
-            [5, 10],
-            match state {
-                Eyes::Open => *b"kko",
-                Eyes::Up => *b"kko",
-                Eyes::Happy => *b"oko",
-                Eyes::Dizzy => *b"rwr",
-            },
-        ),
-    };
-    for x in xs {
-        for (dy, cell) in rows.iter().enumerate() {
-            put(grid, x + AT_X, y + dy as i32 + AT_Y - lift, *cell);
-        }
-    }
-}
-
-/// The picture of one frame: the tail, the body, the eyes, and what is in the margin.
-fn compose(frame: Frame) -> Grid {
-    let mut grid = [[b'.'; W]; H];
-    let (tail, body): (&[&str], &[&str]) = match (frame.pose, frame.tail) {
-        (Pose::Sit, Tail::Low) => (&SIT_LOW, &SIT_BODY),
-        (Pose::Sit, Tail::Mid) => (&SIT_MID, &SIT_BODY),
-        (Pose::Sit, Tail::High) => (&SIT_HIGH, &SIT_BODY),
-        (Pose::Lie, Tail::Low) => (&LIE_A, &LIE_BODY),
-        (Pose::Lie, _) => (&LIE_B, &LIE_BODY),
-    };
-    stamp(&mut grid, tail, frame.lift);
-    stamp(&mut grid, body, frame.lift);
-    eyes(&mut grid, frame.pose, frame.lift, frame.eyes);
+    eyes(&mut grid, frame.lift, frame.eyes);
     fx(&mut grid, frame.fx);
     grid
 }
 
-/// The margin, in canvas cells, to the left of the right hand (at 17, 22): dots `a`, handles
-/// `b`, steel `g`, glass `c`, paper `W`, gold `y`, ink `k`.
 /// A cell of what the fox holds, placed from the picture of the hand.
 fn held(grid: &mut Grid, x: i32, y: i32, cell: u8) {
-    put(grid, 35 - x, y + 2, cell);
+    put(grid, 33 - x, y - 3, cell);
 }
 
 fn held_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
@@ -416,9 +183,9 @@ fn held_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
 fn fx(grid: &mut Grid, fx: Fx) {
     match fx {
         Fx::Dots(lit) => {
-            for (index, x) in [10, 12, 14].into_iter().enumerate() {
+            for (index, x) in [6, 8, 10].into_iter().enumerate() {
                 let cell = if (index as u8) < lit { b'a' } else { b'g' };
-                put(grid, x, 3, cell);
+                put(grid, x, 1, cell);
             }
         }
         Fx::Pencil(step) => {
@@ -495,9 +262,9 @@ fn fx(grid: &mut Grid, fx: Fx) {
         }
         Fx::Sparkle(step) => {
             let (a, b) = if step == 0 {
-                ((4, 10), (42, 12))
+                ((1, 7), (24, 9))
             } else {
-                ((6, 8), (40, 14))
+                ((3, 4), (22, 12))
             };
             for (x, y) in [a, b] {
                 put_all(
@@ -509,9 +276,9 @@ fn fx(grid: &mut Grid, fx: Fx) {
         }
         Fx::Stars(step) => {
             let places = [
-                [(8, 3), (12, 2), (16, 3)],
-                [(10, 3), (14, 2), (18, 3)],
-                [(12, 3), (16, 2), (7, 2)],
+                [(5, 1), (8, 0), (11, 1)],
+                [(6, 1), (9, 0), (12, 1)],
+                [(7, 1), (10, 0), (4, 0)],
             ];
             put_all(grid, &places[usize::from(step) % 3], b'y');
         }
@@ -607,18 +374,13 @@ mod tests {
     use super::*;
 
     #[::core::prelude::v1::test]
-    fn the_layers_fit_the_canvas_and_every_state_has_frames() {
-        for layer in [
-            &SIT_BODY[..],
-            &SIT_LOW[..],
-            &SIT_MID[..],
-            &SIT_HIGH[..],
-            &LIE_BODY[..],
-            &LIE_A[..],
-            &LIE_B[..],
-        ] {
-            assert_eq!(layer.len(), 26);
-            assert!(layer.iter().all(|row| row.len() == 24));
+    fn the_fox_is_symmetric_and_every_state_has_frames() {
+        assert_eq!(BODY.len(), 16);
+        for row in BODY {
+            let cells = row.as_bytes();
+            assert_eq!(cells.len(), 16);
+            let mirrored: Vec<u8> = cells.iter().rev().copied().collect();
+            assert_eq!(cells, &mirrored[..], "{row}");
         }
         let states = [
             AgentState::Thinking,
