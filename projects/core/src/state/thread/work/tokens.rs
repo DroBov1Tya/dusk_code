@@ -1,12 +1,13 @@
 //! How many tokens a thread holds and what its model calls cost. Sizes are estimated per
-//! message, so they split by who wrote what; costs are what the provider reported.
+//! message, so they split by who wrote what; token counts are what the provider
+//! reported, and money is what it reported or the user's price list gave.
 
 use anyhow::{Context, Result};
 use sqlx::Row;
 
 use super::{State, messages::read_tokens, timestamp_ms};
 
-use crate::providers::Usage;
+use crate::providers::{Usage, cost::CostSource};
 
 pub use dusk_protocol::work::ThreadTokens;
 
@@ -48,8 +49,8 @@ impl State {
         sqlx::query(
             "INSERT INTO model_usage (thread_id, turn_id, purpose, compaction_id, model,
                 through_sequence, prompt_tokens, cached_prompt_tokens, completion_tokens,
-                reasoning_tokens, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                reasoning_tokens, cache_write_tokens, cost_micro_usd, cost_source, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&call.thread_id)
         .bind(&call.turn_id)
@@ -61,6 +62,17 @@ impl State {
         .bind(sql_count(usage.cached_prompt_tokens)?)
         .bind(sql_count(usage.completion_tokens)?)
         .bind(sql_count(usage.reasoning_tokens)?)
+        .bind(sql_count(usage.cache_write_tokens)?)
+        .bind(
+            usage
+                .cost
+                .map(|cost| sql_count(cost.micro_usd))
+                .transpose()?,
+        )
+        .bind(usage.cost.map(|cost| match cost.source {
+            CostSource::Provider => "provider",
+            CostSource::Prices => "prices",
+        }))
         .bind(timestamp)
         .execute(&self.pool)
         .await
@@ -143,7 +155,10 @@ impl State {
                 COALESCE(SUM(prompt_tokens), 0) AS prompt_tokens,
                 COALESCE(SUM(cached_prompt_tokens), 0) AS cached_prompt_tokens,
                 COALESCE(SUM(completion_tokens), 0) AS completion_tokens,
-                COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens
+                COALESCE(SUM(reasoning_tokens), 0) AS reasoning_tokens,
+                COALESCE(SUM(cache_write_tokens), 0) AS cache_write_tokens,
+                COALESCE(SUM(cost_micro_usd), 0) AS cost_micro_usd,
+                COUNT(*) - COUNT(cost_micro_usd) AS unpriced_calls
              FROM model_usage WHERE thread_id IN (
                 WITH RECURSIVE family(id) AS (
                     SELECT ? UNION ALL
@@ -160,7 +175,11 @@ impl State {
             cached_prompt_tokens: read_tokens(&spent, "cached_prompt_tokens")?,
             completion_tokens: read_tokens(&spent, "completion_tokens")?,
             reasoning_tokens: read_tokens(&spent, "reasoning_tokens")?,
+            cache_write_tokens: read_tokens(&spent, "cache_write_tokens")?,
+            cost: None,
         };
+        tokens.cost_micro_usd = read_tokens(&spent, "cost_micro_usd")?;
+        tokens.unpriced_calls = read_tokens(&spent, "unpriced_calls")?;
         Ok(tokens)
     }
 }
@@ -256,5 +275,31 @@ mod tests {
             .await
             .unwrap();
         assert!(state.last_prompt("thread", id).await.unwrap().is_some());
+    }
+
+    #[tokio::test]
+    async fn costs_sum_and_unknown_ones_are_counted_apart() {
+        let (state, turn_id) = thread_with_a_tool_step("tokens_cost").await;
+        let priced = Usage {
+            prompt_tokens: 10,
+            cost: Some(crate::providers::cost::Cost {
+                micro_usd: 4_200,
+                source: CostSource::Provider,
+            }),
+            ..Usage::default()
+        };
+        let unknown = Usage {
+            prompt_tokens: 10,
+            ..Usage::default()
+        };
+        for usage in [priced, priced, unknown] {
+            state
+                .record_usage(&call(&turn_id, None, 4), usage)
+                .await
+                .unwrap();
+        }
+        let tokens = state.thread_tokens("thread").await.unwrap();
+        assert_eq!(tokens.cost_micro_usd, 8_400);
+        assert_eq!(tokens.unpriced_calls, 1);
     }
 }

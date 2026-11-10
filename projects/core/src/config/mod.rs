@@ -19,7 +19,7 @@ pub use mcp::{
     HttpServerConfig, McpServerConfig, StdioServerConfig, mcp_server_yaml, parse_mcp_server,
 };
 pub use plugins::{Plugged, PluginConfig};
-pub use providers::{ApiKey, ProviderConfig, ProviderKind};
+pub use providers::{ApiKey, BalanceApi, Price, ProviderConfig, ProviderKind};
 pub use sections::{
     Appearance, ApprovalPolicy, Limits, Logging, Memory, ThreadConfig, Traces, WorkHistory,
 };

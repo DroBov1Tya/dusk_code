@@ -23,11 +23,16 @@ pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
         if !lines.is_empty() {
             lines.push(Line::default());
         }
-        let (light, about) = match &provider.models {
-            Ok(models) if models.len() == 1 => ((ON, POSITIVE), "1 model".into()),
+        let (light, mut about) = match &provider.models {
+            Ok(models) if models.len() == 1 => ((ON, POSITIVE), "1 model".to_owned()),
             Ok(models) => ((ON, POSITIVE), format!("{} models", models.len())),
-            Err(_) => ((ON, NEGATIVE), "unavailable".into()),
+            Err(_) => ((ON, NEGATIVE), "unavailable".to_owned()),
         };
+        match &provider.balance {
+            Some(Ok(balance)) => about.push_str(&format!(" \u{00B7} {}", balance.text())),
+            Some(Err(_)) => about.push_str(" \u{00B7} balance unknown"),
+            None => {}
+        }
         lines.push(selectable(
             vec![
                 Span::styled(format!(" {} ", light.0), fg(light.1)),

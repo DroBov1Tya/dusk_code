@@ -382,7 +382,11 @@ mod tests {
     /// and schema must agree, just as they did in those releases.
     async fn before_goal_verification(state: &State) {
         sqlx::raw_sql(
-            "DROP TABLE projects;
+            "ALTER TABLE model_usage DROP COLUMN cache_write_tokens;
+            ALTER TABLE model_usage DROP COLUMN cost_micro_usd;
+            ALTER TABLE model_usage DROP COLUMN cost_source;
+            DELETE FROM _sqlx_migrations WHERE version = 23;
+            DROP TABLE projects;
             DELETE FROM _sqlx_migrations WHERE version = 20;
             DROP TABLE agent_efforts;
             DELETE FROM _sqlx_migrations WHERE version = 19;
@@ -559,7 +563,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

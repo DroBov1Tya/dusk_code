@@ -47,14 +47,14 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 
 ## Providers and voice
 
-- [ ] Cost of tokens on paid APIs, never guessed: the cost the provider reports for the
-      call (OpenRouter `usage.cost`, xAI `cost_in_usd_ticks`, LiteLLM
-      `x-litellm-response-cost`), else its pricing API (OpenRouter `/models`, LiteLLM
-      `/model/info`), else a price table the user writes per model; otherwise unknown.
-      Stored per call in integer micro-USD with its source; cache writes counted apart
-- [ ] Balance where a normal key may read it, chosen in the provider's config, sent only
-      to its base URL: DeepSeek `/user/balance`, Kimi `/v1/users/me/balance`,
-      OpenRouter `/api/v1/key`, LiteLLM `/key/info`; never ask for an admin key
+- [x] Cost of tokens on paid APIs, never guessed: the cost the provider reports
+      (OpenRouter `usage.cost`, xAI `cost_in_usd_ticks`), else the `prices` the user
+      writes per model in the provider's config; otherwise unknown. Stored per call in
+      micro-USD with its source; cache writes counted apart
+- [ ] Prices from the provider's pricing API (OpenRouter `/models`, LiteLLM
+      `/model/info`) and LiteLLM's cost header, so fewer models need a hand-written price
+- [x] Balance where a plain key may read it, sent only to the provider's own host:
+      DeepSeek, Kimi and OpenRouter by host, LiteLLM with `balance: litellm`
 - [x] DeepSeek cache hits counted (`prompt_cache_hit_tokens`)
 
 - [ ] Several providers at once in Models: add, use, remove

@@ -7,6 +7,8 @@
 //! failures the agent tells apart.
 
 mod anthropic;
+pub mod balance;
+pub mod cost;
 mod errors;
 mod openai;
 pub mod output;

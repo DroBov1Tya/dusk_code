@@ -11,6 +11,10 @@ testing.
 - The desktop client keeps messages written while the agent works above the box and
   sends them when the turn ends; it shows tokens per second and its icon on a bare
   binary.
+- The cost of a chat, as the provider reports it or from a `prices` list per model in
+  the provider's config, shown next to the call count; never guessed. Providers that
+  tell the balance to a plain key (DeepSeek, Kimi, OpenRouter, and LiteLLM with
+  `balance: litellm`) show it in the model list.
 - Per-chat access modes, version control and notification settings, name_session and
   plan_edit tools, a per-item context breakdown with use counts (core).
 

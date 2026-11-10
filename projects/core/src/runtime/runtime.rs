@@ -324,6 +324,8 @@ impl Runtime {
             api_key: ApiKey(api_key.unwrap_or_default()),
             inline_tags: false,
             allow_http: false,
+            prices: Default::default(),
+            balance: None,
         };
         crate::providers::validate_provider(&provider)?;
         let adapter = Arc::new(Provider::new(&provider)?);
