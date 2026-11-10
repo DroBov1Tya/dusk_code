@@ -30,8 +30,8 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [x] `run_command` runs in the background: the chat stays writable while it works;
       a running command can be moved to the background (TUI + GUI)
 - [ ] MCP code mode: the model writes one script that calls a set of MCP tools
-- [ ] Subagent answers are their own step on the agent's side (not the user's message),
-      foldable, outside the thinking/tools fold
+- [x] Subagent answers are their own step on the agent's side (not the user's message),
+      foldable, outside the thinking/tools fold (GUI; the TUI already did)
 - [x] `name_session` tool: named from the first user message, short enough for the list
 - [x] `plan_edit` tool for the pinned plan
 - [x] Output tokens per second per agent (core events)

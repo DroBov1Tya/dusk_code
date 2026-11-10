@@ -168,6 +168,36 @@ impl Workspace {
                             user_text(text),
                         ))
                         .into_any_element(),
+                    Item::Agent { from, text } => {
+                        let unfolded = self.unfolded.contains(&(shown.clone(), at));
+                        let id = shown.clone();
+                        let first = text.lines().next().unwrap_or_default();
+                        let mark = if unfolded { "\u{25BE}" } else { "\u{25B8}" };
+                        let mut card = div().flex().flex_col().gap_2().child(
+                            div()
+                                .id(SharedString::from(format!("agent-{key}")))
+                                .text_xs()
+                                .text_color(muted)
+                                .cursor_pointer()
+                                .truncate()
+                                .child(if unfolded {
+                                    format!("{mark} {from} reported")
+                                } else {
+                                    format!("{mark} {from} reported: {first}")
+                                })
+                                .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx))),
+                        );
+                        if unfolded {
+                            card =
+                                card.child(div().pl_3().border_l_2().border_color(border).child(
+                                    links::markdown(
+                                        SharedString::from(format!("report-{key}")),
+                                        text.clone(),
+                                    ),
+                                ));
+                        }
+                        card.into_any_element()
+                    }
                     Item::Assistant { text, reasoning } => {
                         let unfolded = self.unfolded.contains(&(shown.clone(), at));
                         let mut answer = div().flex().flex_col().gap_2();

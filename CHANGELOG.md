@@ -8,6 +8,8 @@ testing.
 
 ### Added
 
+- GUI: what a subagent reports back is a folded card on the agent's side of the chat,
+  with its name and first line, instead of a bubble that looked like the user's message.
 - The files a chat's commands changed in the project are kept per chat: the core compares
   git's list of changes around each foreground command. GUI: a "Touched" module in the
   right column; TUI: `/files`.
