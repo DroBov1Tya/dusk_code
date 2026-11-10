@@ -52,12 +52,22 @@ pub enum Panel {
         row: usize,
     },
     Jobs(JobsView),
+    /// The chat's folder's changes: the files, or one of them open.
+    Diff(DiffView),
     /// What is attached to the thread; `removing` asks to press the key again.
     Sources {
         sources: Vec<Source>,
         selected: usize,
         removing: bool,
     },
+}
+
+pub struct DiffView {
+    pub files: Vec<dusk_protocol::project::FileDiff>,
+    pub selected: usize,
+    /// One file is open, scrolled to `scroll`.
+    pub open: bool,
+    pub scroll: usize,
 }
 
 /// The thread's background jobs and the output of the chosen one, read again every second

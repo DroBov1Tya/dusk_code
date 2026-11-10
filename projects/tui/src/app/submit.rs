@@ -25,6 +25,7 @@ impl App {
             }
             "/plan" => return Action::OpenPlan,
             "/files" => return Action::ChangedFiles,
+            "/diff" => return Action::Diff,
             "/me" => return Action::OpenMe,
             "/plugins" => {
                 self.panel = Some(Panel::Plugins {

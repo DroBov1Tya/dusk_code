@@ -284,6 +284,12 @@ pub enum WorkRequest {
         thread_id: String,
         text: String,
     },
+    /// The changes in the chat's own folder against the last commit, as `Diff` of a
+    /// project answers; the folder is the one the chat started in.
+    Diff {
+        thread_id: String,
+        path: Option<String>,
+    },
     /// The files the chat's commands changed in its project.
     ChangedFiles {
         thread_id: String,

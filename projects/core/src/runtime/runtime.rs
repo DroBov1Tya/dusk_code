@@ -797,6 +797,22 @@ impl Runtime {
             .map(drop)
     }
 
+    /// The git changes in the folder the thread started in.
+    pub async fn chat_diff(
+        &self,
+        thread_id: &str,
+        path: Option<&str>,
+    ) -> Result<Vec<dusk_protocol::project::FileDiff>> {
+        let thread = self
+            .launcher
+            .state
+            .load_thread(thread_id)
+            .await?
+            .context("no such thread")?;
+        let dir = thread.project.context("the thread has no folder")?;
+        crate::project::diff(std::path::Path::new(&dir), path).await
+    }
+
     /// The files the thread's commands changed in its project.
     pub async fn changed_files(
         &self,

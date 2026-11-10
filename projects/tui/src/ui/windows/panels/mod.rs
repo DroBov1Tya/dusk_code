@@ -2,6 +2,7 @@
 
 mod connection;
 mod context;
+mod diff;
 mod frame;
 mod help;
 mod jobs;

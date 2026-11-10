@@ -558,6 +558,19 @@ impl Work<'_> {
         }
     }
 
+    /// The changes in the folder the chat started in, file by file, or one file's.
+    pub async fn diff(&self, thread_id: &str, path: Option<&str>) -> Result<Vec<FileDiff>> {
+        let (thread_id, path) = (thread_id.to_owned(), path.map(str::to_owned));
+        match self
+            .0
+            .call(Request::Work(WorkRequest::Diff { thread_id, path }))
+            .await?
+        {
+            Response::Diff(files) => Ok(files),
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// The files the chat's commands changed in its project, by path.
     pub async fn changed_files(&self, thread_id: &str) -> Result<Vec<Change>> {
         let thread_id = thread_id.to_owned();

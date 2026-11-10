@@ -6,9 +6,7 @@
 use std::path::Path;
 
 use anyhow::{Result, ensure};
-use dusk_protocol::project::{
-    Change, ChangeKind, DiffKind, DiffLine, DiffStat, FileDiff, Hunk, Project,
-};
+use dusk_protocol::project::{Change, ChangeKind, DiffKind, DiffLine, DiffStat, FileDiff, Hunk};
 
 use super::git::{changes, git, git_differs};
 
@@ -22,8 +20,7 @@ const MAX_UNTRACKED_BYTES: u64 = 256 * 1024;
 const MAX_UNTRACKED_FILES: usize = 100;
 
 /// The changes in the project, or in one file of it.
-pub async fn diff(project: &Project, path: Option<&str>) -> Result<Vec<FileDiff>> {
-    let dir = &project.dir;
+pub async fn diff(dir: &Path, path: Option<&str>) -> Result<Vec<FileDiff>> {
     if let Some(path) = path {
         ensure!(
             !path.is_empty()
@@ -296,18 +293,12 @@ mod tests {
 
     #[test]
     fn a_path_that_leaves_the_project_is_refused() {
-        let project = Project {
-            id: "p".into(),
-            name: "p".into(),
-            description: String::new(),
-            dir: std::env::temp_dir(),
-            created_at: 0,
-        };
+        let dir = std::env::temp_dir();
         let run = |path: &'static str| {
             tokio::runtime::Builder::new_current_thread()
                 .build()
                 .unwrap()
-                .block_on(diff(&project, Some(path)))
+                .block_on(diff(&dir, Some(path)))
         };
         for bad in ["../x", "/etc/passwd", "-p", "a/../../b", ""] {
             assert!(run(bad).is_err(), "{bad}");
@@ -332,14 +323,7 @@ mod tests {
         assert!(run(&["add", "a.txt"]) && run(&["commit", "-qm", "first"]));
         std::fs::write(dir.join("a.txt"), "one\n2\nthree\nfour\n").unwrap();
         std::fs::write(dir.join("new.txt"), "x\ny\n").unwrap();
-        let project = Project {
-            id: "p".into(),
-            name: "p".into(),
-            description: String::new(),
-            dir: dir.clone(),
-            created_at: 0,
-        };
-        let files = diff(&project, None).await.unwrap();
+        let files = diff(&dir, None).await.unwrap();
         let by = |path: &str| files.iter().find(|file| file.path == path).unwrap();
         assert_eq!((by("a.txt").added, by("a.txt").removed), (2, 1));
         assert_eq!(by("a.txt").kind, ChangeKind::Modified);

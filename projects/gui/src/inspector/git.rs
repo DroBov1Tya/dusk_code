@@ -56,27 +56,51 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                         .on_click(cx.listener(|ws, _, _, cx| ws.load_git(cx))),
                 ),
         )
-        .child(widgets::heading(
-            format!("Changes ({})", git.changes.len()),
+        .child(widgets::heading("Changes", cx));
+    let stat = git.stat;
+    column = if git.changes.is_empty() {
+        column.child(widgets::muted(
+            "Clean: nothing differs from the last commit.",
             cx,
-        ));
-    for change in git.changes.iter().take(200) {
-        column = column.child(
+        ))
+    } else {
+        let (ok, bad) = (cx.theme().success, cx.theme().danger);
+        column.child(
             div()
+                .id("review-open")
                 .flex()
                 .flex_row()
+                .items_center()
                 .gap_2()
-                .px_3()
-                .text_xs()
+                .mx_2()
+                .px_2()
+                .py_2()
+                .rounded_md()
+                .cursor_pointer()
+                .hover(|row| row.bg(cx.theme().list_hover))
+                .child(div().text_sm().child(format!(
+                    "{} file{}",
+                    stat.files.max(git.changes.len() as u64),
+                    if stat.files == 1 { "" } else { "s" }
+                )))
                 .child(
                     div()
-                        .w(px(12.))
-                        .text_color(change_color(change.kind, cx))
-                        .child(change_letter(change.kind)),
+                        .text_sm()
+                        .text_color(ok)
+                        .child(format!("+{}", stat.added)),
                 )
-                .child(div().truncate().child(change.path.clone())),
-        );
-    }
+                .child(
+                    div()
+                        .text_sm()
+                        .text_color(bad)
+                        .child(format!("\u{2212}{}", stat.removed)),
+                )
+                .child(div().flex_1())
+                .child(div().text_xs().text_color(muted).child("Review"))
+                .child(widgets::icon(IconName::ChevronRight, muted))
+                .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
+        )
+    };
     column = column.child(widgets::heading("Branches", cx));
     for (index, name) in git.branches.iter().enumerate() {
         let current = *name == branch;

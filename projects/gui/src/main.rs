@@ -19,6 +19,7 @@ mod icon;
 mod inspector;
 mod modal;
 mod notify;
+mod review;
 mod settings;
 mod sidebar;
 mod theme;

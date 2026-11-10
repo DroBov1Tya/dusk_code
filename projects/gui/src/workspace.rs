@@ -27,7 +27,7 @@ use tokio::sync::{mpsc, watch};
 
 use crate::{
     artifacts, chat, chat::transcript::Transcript, connectors, connectors::Shelf, core::Core,
-    inspector, modal, modal::Modal, settings, settings::SettingsPage, sidebar,
+    inspector, modal, modal::Modal, review, settings, settings::SettingsPage, sidebar,
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -36,6 +36,8 @@ pub enum Center {
     Artifacts,
     Connectors,
     Settings,
+    /// The project's changes, file by file.
+    Review,
 }
 
 /// The modules of the right column, top to bottom.
@@ -160,6 +162,7 @@ pub struct Workspace {
     pub notice: Option<String>,
     pub git: Option<GitInfo>,
     pub touched: Vec<dusk_protocol::project::Change>,
+    pub review: crate::review::Review,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,
     /// Folder entries by folder, `""` for the project's top.
@@ -306,6 +309,7 @@ impl Workspace {
             rates: HashMap::new(),
             git: None,
             touched: Vec::new(),
+            review: crate::review::Review::new(),
             mcp_restarting: HashSet::new(),
             files: BTreeMap::new(),
             expanded: HashSet::new(),
@@ -465,6 +469,7 @@ impl Render for Workspace {
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
             Center::Connectors => connectors::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
+            Center::Review => review::render(self, cx).into_any_element(),
         };
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);

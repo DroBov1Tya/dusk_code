@@ -625,6 +625,28 @@ impl App {
                 }
                 return Action::None;
             }
+            Panel::Diff(view) => {
+                match key.code {
+                    _ if view.open && (up || down) => {
+                        view.scroll = if up {
+                            view.scroll.saturating_sub(1)
+                        } else {
+                            view.scroll + 1
+                        }
+                    }
+                    KeyCode::PageUp if view.open => view.scroll = view.scroll.saturating_sub(15),
+                    KeyCode::PageDown if view.open => view.scroll += 15,
+                    _ if up || down => step(&mut view.selected, view.files.len(), down),
+                    KeyCode::Enter if !view.open => {
+                        view.open = true;
+                        view.scroll = 0;
+                    }
+                    KeyCode::Esc | KeyCode::Left if view.open => view.open = false,
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
+                return Action::None;
+            }
             Panel::Effort { selected } => {
                 match key.code {
                     _ if up || down => step(selected, EFFORTS.len(), down),

@@ -352,6 +352,9 @@ impl Server {
                 Response::Text(runtime.stop_job(&thread_id, &job_id).await?)
             }
             WorkRequest::Plan { thread_id } => Response::Plan(runtime.plan(&thread_id).await?),
+            WorkRequest::Diff { thread_id, path } => {
+                Response::Diff(runtime.chat_diff(&thread_id, path.as_deref()).await?)
+            }
             WorkRequest::ChangedFiles { thread_id } => {
                 Response::Changes(runtime.changed_files(&thread_id).await?)
             }
@@ -399,7 +402,7 @@ impl Server {
                 Response::Git(project::git(&project::find(state, &id).await?).await?)
             }
             ProjectRequest::Diff { id, path } => Response::Diff(
-                project::diff(&project::find(state, &id).await?, path.as_deref()).await?,
+                project::diff(&project::find(state, &id).await?.dir, path.as_deref()).await?,
             ),
             ProjectRequest::SwitchBranch { id, branch } => {
                 project::switch_branch(&project::find(state, &id).await?, &branch).await?;
