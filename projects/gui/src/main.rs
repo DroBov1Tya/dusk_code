@@ -18,6 +18,7 @@ mod core;
 mod file_view;
 mod icon;
 mod inspector;
+mod keys;
 mod modal;
 mod notify;
 mod review;
@@ -72,6 +73,7 @@ fn main() -> Result<()> {
         .with_http_client(Arc::new(http))
         .run(move |cx| {
             gpui_kit::init(cx);
+            keys::bind(cx);
             icon::set_dock_icon();
             theme::init(look_file, cx);
             let core = core::Core::new(client, Arc::clone(&runtime));

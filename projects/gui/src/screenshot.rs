@@ -14,6 +14,7 @@
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
+//! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
@@ -64,6 +65,22 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                             }
                         }
                         None => eprintln!("cannot render {value}"),
+                    }
+                }
+                "key" => {
+                    for key in value.split_whitespace() {
+                        // The parser wants a name that lives forever; a development tool may
+                        // leak one. The press runs outside any update of the workspace, as a
+                        // real key does.
+                        let key: &'static str = Box::leak(key.to_owned().into_boxed_str());
+                        match Keystroke::parse(key).ok() {
+                            Some(keystroke) => {
+                                let _ = cx.update_window(window, |_, window, cx| {
+                                    window.dispatch_keystroke(keystroke, cx);
+                                });
+                            }
+                            None => eprintln!("no such key {key}"),
+                        }
                     }
                 }
                 "quit" => break,
@@ -140,6 +157,7 @@ fn act(
                 "vcs" => SettingsPage::VersionControl,
                 "memory" => SettingsPage::Memory,
                 "advanced" => SettingsPage::Advanced,
+                "keyboard" => SettingsPage::Keyboard,
                 "updates" => SettingsPage::Updates,
                 "usage" => SettingsPage::Usage,
                 _ => SettingsPage::Appearance,

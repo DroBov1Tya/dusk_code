@@ -186,6 +186,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
         }
         SettingsPage::Appearance
         | SettingsPage::AboutMe
+        | SettingsPage::Keyboard
         | SettingsPage::Updates
         | SettingsPage::Usage => {}
     }

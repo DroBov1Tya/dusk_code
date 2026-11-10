@@ -22,6 +22,7 @@ pub enum SettingsPage {
     Safety,
     AboutMe,
     Notifications,
+    Keyboard,
     VersionControl,
     Memory,
     Advanced,
@@ -36,6 +37,7 @@ const PAGES: &[(SettingsPage, IconName, &str)] = &[
     (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
     (SettingsPage::AboutMe, IconName::User, "About me"),
     (SettingsPage::Notifications, IconName::Bell, "Notifications"),
+    (SettingsPage::Keyboard, IconName::SquareTerminal, "Keyboard"),
     (
         SettingsPage::VersionControl,
         IconName::Github,
@@ -89,6 +91,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let body = match ws.settings_page {
         SettingsPage::Appearance => appearance::render(ws, window, cx),
         SettingsPage::AboutMe => about_me::render(ws, window, cx),
+        SettingsPage::Keyboard => crate::keys::page(cx),
         SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
         page => behavior::render(ws, page, cx),
     };
@@ -122,6 +125,7 @@ fn about(page: SettingsPage) -> &'static str {
         SettingsPage::Safety => "What the agents may do without asking.",
         SettingsPage::AboutMe => "What the agents know about you, and snippets for @names.",
         SettingsPage::Notifications => "How you hear that a chat needs you.",
+        SettingsPage::Keyboard => "Shortcuts for the places you go most.",
         SettingsPage::VersionControl => "Branches the agents create, and how they are named.",
         SettingsPage::Memory => "What is remembered between chats, and how much context is kept.",
         SettingsPage::Advanced => "Limits and timings. The defaults suit most work.",
