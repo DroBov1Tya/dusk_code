@@ -135,33 +135,44 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .flex_row()
                 .items_end()
                 .gap_2()
-                .p_2()
-                .rounded_xl()
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().muted)
-                .relative()
-                .children(navigator)
-                .children(mentions.map(crate::widgets::on_top))
                 .child(
-                    Button::new("attach")
-                        .ghost()
-                        .rounded(ButtonRounded::Size(px(999.)))
-                        .icon(IconName::Plus)
-                        .tooltip("Attach files or folders")
-                        .on_click(cx.listener(|ws, _, _, cx| {
-                            ws.attach_open = !ws.attach_open;
-                            cx.notify();
-                        })),
+                    div().flex_1().min_w_0().child(
+                        div()
+                            .flex()
+                            .flex_row()
+                            .items_end()
+                            .gap_2()
+                            .p_2()
+                            .rounded_xl()
+                            .border_1()
+                            .border_color(cx.theme().border)
+                            .bg(cx.theme().muted)
+                            .relative()
+                            .children(navigator)
+                            .children(mentions.map(crate::widgets::on_top))
+                            .child(
+                                Button::new("attach")
+                                    .ghost()
+                                    .rounded(ButtonRounded::Size(px(999.)))
+                                    .icon(IconName::Plus)
+                                    .tooltip("Attach files or folders")
+                                    .on_click(cx.listener(|ws, _, _, cx| {
+                                        ws.attach_open = !ws.attach_open;
+                                        cx.notify();
+                                    })),
+                            )
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .child(Textarea::new(&ws.composer).appearance(false)),
+                            )
+                            .children(rate)
+                            .child(button),
+                    ),
                 )
-                .child(
-                    div()
-                        .flex_1()
-                        .child(Textarea::new(&ws.composer).appearance(false)),
-                )
-                .children(rate)
-                .children(agents_button(ws, cx))
-                .child(button),
+                // The subagents stand beside the box, not in it: they are not part of what
+                // is sent.
+                .children(agents_button(ws, cx)),
         )
         .children(attach.map(crate::widgets::on_top))
         // Files copied in the file manager arrive as files, not as their names.
@@ -217,47 +228,86 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
         }))
 }
 
-/// The chat's subagents at a glance: how many, a dot lit while any works; a click
-/// opens them by role.
-fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+/// The chat's subagents at a glance, beside the box: the figure of the one that works (or
+/// the latest), a count, and a ring in the signal color while any works. A click opens
+/// the stage where each is seen at work.
+fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
     let chat = ws.shown_chat().filter(|chat| !chat.agents.is_empty())?;
     let thread_id = ws.shown.clone()?;
     let working = chat.agents.values().filter(|agent| agent.working).count();
+    let lead = chat
+        .agents
+        .iter()
+        .filter(|(_, agent)| agent.working)
+        .min_by_key(|(_, agent)| agent.started)
+        .or_else(|| chat.agents.iter().max_by_key(|(_, agent)| agent.started))?;
     let theme = cx.theme();
-    let dot = if working > 0 {
-        theme.primary
-    } else {
-        theme.muted_foreground.opacity(0.5)
-    };
+    let (signal, muted, border, surface) = (
+        theme.warning,
+        theme.muted_foreground,
+        theme.border,
+        theme.muted,
+    );
+    let color = if working > 0 { signal } else { muted };
     Some(
         div()
+            .id("agents")
             .relative()
-            .child(
-                Button::new("agents")
-                    .ghost()
-                    .icon(IconName::Bot)
-                    .label(chat.agents.len().to_string())
-                    .tooltip(if working > 0 {
-                        format!("{working} subagents at work")
-                    } else {
-                        "Subagents".to_owned()
-                    })
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.modal = Some(crate::modal::Modal::Agents {
-                            thread_id: thread_id.clone(),
-                        });
-                        cx.notify();
-                    })),
-            )
+            .size(px(52.))
+            .flex_none()
+            .flex()
+            .items_center()
+            .justify_center()
+            .rounded_xl()
+            .border_1()
+            .border_color(if working > 0 {
+                signal.opacity(0.7)
+            } else {
+                border
+            })
+            .bg(surface)
+            .cursor_pointer()
+            .hover(|button| button.border_color(muted.opacity(0.6)))
+            .tooltip(move |window, cx| {
+                gpui_kit::component::tooltip::Tooltip::new(if working > 0 {
+                    format!("{working} subagents at work")
+                } else {
+                    "Subagents".to_owned()
+                })
+                .build(window, cx)
+            })
+            .child(crate::inspector::mascot::render(
+                "agents-lead",
+                &lead.1.state,
+                color,
+                2.6,
+            ))
             .child(
                 div()
                     .absolute()
-                    .top(px(4.))
-                    .right(px(4.))
-                    .size(px(7.))
+                    .top(px(-6.))
+                    .right(px(-6.))
+                    .min_w(px(18.))
+                    .h(px(18.))
+                    .px_1()
+                    .flex()
+                    .items_center()
+                    .justify_center()
                     .rounded_full()
-                    .bg(dot),
-            ),
+                    .meta()
+                    .font_weight(FontWeight::MEDIUM)
+                    .bg(if working > 0 { signal } else { surface })
+                    .text_color(if working > 0 { theme.background } else { muted })
+                    .border_1()
+                    .border_color(border)
+                    .child(chat.agents.len().to_string()),
+            )
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                ws.modal = Some(crate::modal::Modal::Agents {
+                    thread_id: thread_id.clone(),
+                });
+                cx.notify();
+            })),
     )
 }
 

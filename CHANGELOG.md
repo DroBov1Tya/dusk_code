@@ -8,6 +8,12 @@ testing.
 
 ### Changed
 
+- GUI: the subagents moved out of the right column to a button beside the message box: the
+  figure of the agent at work (or the latest), a count, a ring in the signal color while any
+  works. It opens a stage with a zone for each kind of work (engineering, security, testing and
+  review, infrastructure, general); every agent is its 8-bit figure with a bubble for what it
+  does now: thinking (breathing), the tool it runs, writing, done, failed. The screenshot
+  script can stage agents (`fake=agents`, `modal=agents`).
 - GUI chat: answers have a taller line, the type scale is used all through, the model in the bar
   is shown without its provider and cut to a length the bar holds (the full name in the tip), a
   command waiting for approval is shown as code.

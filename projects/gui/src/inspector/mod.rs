@@ -4,12 +4,10 @@
 //! folds on its header.
 
 mod activity;
-pub mod agents;
 mod context;
 mod environment;
 mod files;
 pub mod git;
-mod glyph;
 mod jobs;
 pub mod mascot;
 pub mod plan;
@@ -23,7 +21,6 @@ use gpui_kit::{
 };
 
 use crate::{
-    chat::transcript::AgentState,
     settings::SettingsPage,
     ui::Type,
     widgets,
@@ -41,7 +38,6 @@ const MODULES: &[(Right, &str)] = &[
     (Right::Touched, "Touched"),
     (Right::Plan, "Plan"),
     (Right::Todo, "Todo"),
-    (Right::Agents, "Agents"),
     (Right::Jobs, "Jobs"),
 ];
 
@@ -112,7 +108,6 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 Right::Touched => touched::render(ws, cx),
                 Right::Plan => plan::render(ws, window, cx),
                 Right::Todo => todo::render(ws, cx),
-                Right::Agents => agents::render(ws, cx),
                 Right::Jobs => jobs::render(ws, cx),
             };
             section = section.child(div().pb_3().child(body));
@@ -194,17 +189,6 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
                 (done + usize::from(item.done), all + 1)
             });
             format!("{done}/{all}")
-        }),
-        Right::Agents => chat.map(|chat| {
-            let working = chat
-                .agents
-                .values()
-                .filter(|agent| !matches!(agent.state, AgentState::Done | AgentState::Failed))
-                .count();
-            match working {
-                0 => chat.agents.len().to_string(),
-                working => format!("{working} working"),
-            }
         }),
         Right::Jobs => {
             let running = ws.jobs.iter().filter(|job| job.running).count();
@@ -305,7 +289,6 @@ impl Workspace {
             Right::Touched => !self.touched.is_empty(),
             Right::Plan => plan::has_content(self),
             Right::Todo => chat.is_some_and(|chat| !chat.tasks.is_empty()),
-            Right::Agents => chat.is_some_and(|chat| !chat.agents.is_empty()),
             Right::Jobs => !self.jobs.is_empty(),
         }
     }
@@ -332,7 +315,7 @@ impl Workspace {
             Right::Jobs => self.load_jobs(cx),
             Right::Plan => self.load_plan(cx),
             Right::Touched => self.load_touched(cx),
-            Right::Arbiter | Right::Screenshots | Right::Todo | Right::Agents => {}
+            Right::Arbiter | Right::Screenshots | Right::Todo => {}
         }
     }
 }
