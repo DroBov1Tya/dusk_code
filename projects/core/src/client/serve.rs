@@ -398,6 +398,9 @@ impl Server {
             ProjectRequest::Git { id } => {
                 Response::Git(project::git(&project::find(state, &id).await?).await?)
             }
+            ProjectRequest::Diff { id, path } => Response::Diff(
+                project::diff(&project::find(state, &id).await?, path.as_deref()).await?,
+            ),
             ProjectRequest::SwitchBranch { id, branch } => {
                 project::switch_branch(&project::find(state, &id).await?, &branch).await?;
                 Response::Done

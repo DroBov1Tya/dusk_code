@@ -15,7 +15,7 @@ use crate::{
     mentions::{Profile, Snippet},
     model::Effort,
     plugins::PluginInfo,
-    project::{Change, FileEntry, GitInfo, OutputFile, Project},
+    project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::{Thread, ThreadEvent},
     tools::Decision,
@@ -308,6 +308,12 @@ pub enum ProjectRequest {
     Git {
         id: String,
     },
+    /// The changes against the last commit, file by file with their hunks; one file
+    /// when `path` is given. Untracked files show as all added.
+    Diff {
+        id: String,
+        path: Option<String>,
+    },
     /// Refused while the work tree has changes, so nothing is lost.
     SwitchBranch {
         id: String,
@@ -375,6 +381,7 @@ pub enum Response {
     Projects(Vec<Project>),
     Project(Project),
     Git(GitInfo),
+    Diff(Vec<FileDiff>),
     Files(Vec<FileEntry>),
     Changes(Vec<Change>),
     Outputs(Vec<OutputFile>),

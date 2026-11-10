@@ -40,13 +40,16 @@ pub async fn info(project: &Project) -> Result<GitInfo> {
         .ok()
         .and_then(|remote| web_page(remote.trim()));
     let branch = branch.trim();
+    let changes = parse_status(&status, prefix.trim());
+    let stat = super::diff::stat(dir, &changes).await;
     Ok(GitInfo {
         branch: (!branch.is_empty()).then(|| branch.to_owned()),
         branches: branches.lines().map(str::to_owned).collect(),
         worktrees: parse_worktrees(&worktrees),
         ahead_behind,
-        changes: parse_status(&status, prefix.trim()),
+        changes,
         web,
+        stat,
     })
 }
 
@@ -112,7 +115,7 @@ pub async fn switch_branch(project: &Project, branch: &str) -> Result<()> {
     Ok(())
 }
 
-async fn git(dir: &Path, args: &[&str]) -> Result<String> {
+pub(super) async fn git(dir: &Path, args: &[&str]) -> Result<String> {
     let mut command = Command::new("git");
     command
         .arg("-C")
@@ -131,6 +134,28 @@ async fn git(dir: &Path, args: &[&str]) -> Result<String> {
         bail!("git: {}", error.trim());
     }
     String::from_utf8(output.stdout).context("git printed text that is not UTF-8")
+}
+
+/// Like `git`, but a status of 1 is no error: `diff --no-index` uses it for "differs".
+pub(super) async fn git_differs(dir: &Path, args: &[&str]) -> Result<String> {
+    let mut command = Command::new("git");
+    command
+        .arg("-C")
+        .arg(dir)
+        .args(args)
+        .env("GIT_TERMINAL_PROMPT", "0")
+        .env("GIT_OPTIONAL_LOCKS", "0")
+        .stdin(Stdio::null())
+        .kill_on_drop(true);
+    let output = tokio::time::timeout(TIMEOUT, command.output())
+        .await
+        .context("git took too long")?
+        .context("cannot run git")?;
+    if !matches!(output.status.code(), Some(0 | 1)) {
+        let error = String::from_utf8_lossy(&output.stderr);
+        bail!("git: {}", error.trim());
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
 /// Paths come relative to the repository; `prefix` is where the project sits inside it,
