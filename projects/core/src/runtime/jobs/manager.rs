@@ -10,11 +10,7 @@ use std::{
 use parking_lot::Mutex;
 
 use anyhow::{Result, ensure};
-use tokio::{
-    io::{AsyncRead, AsyncReadExt},
-    process::Child,
-    sync::{Mutex as AsyncMutex, watch},
-};
+use tokio::sync::{Mutex as AsyncMutex, watch};
 use tracing::warn;
 use uuid::Uuid;
 
@@ -22,7 +18,7 @@ use super::lease::{JobLease, Owner};
 use crate::{
     runtime::agent::{Input, Mailboxes},
     state::{BackgroundJob, JobSummary, State},
-    tools::console::{ProcessGroup, spawn},
+    tools::console::process::{HeadTail, Running},
 };
 
 pub use dusk_protocol::work::JobInfo;
@@ -30,27 +26,45 @@ pub use dusk_protocol::work::JobInfo;
 const MAX_RUNNING: usize = 64;
 const MAX_RUNNING_PER_THREAD: usize = 8;
 const MAX_COMMAND_BYTES: usize = 16 * 1024;
-const MAX_STREAM_BYTES: usize = 32 * 1024;
 
 pub struct JobManager {
     pub state: Arc<State>,
     mailboxes: Arc<Mailboxes>,
     live: AsyncMutex<HashMap<String, Arc<RunningJob>>>,
     lease: Arc<JobLease>,
+    /// Foreground commands the user may send to the background, by tool call ID: the
+    /// thread they run in and the switch their tool watches.
+    foreground: Mutex<HashMap<String, (String, watch::Sender<bool>)>>,
+}
+
+/// A foreground command's place in the list, for as long as it runs.
+pub struct Foreground {
+    manager: Weak<JobManager>,
+    call_id: String,
+    request: watch::Receiver<bool>,
+}
+
+impl Foreground {
+    /// Turns true when the user sends the command to the background.
+    pub fn request(&self) -> watch::Receiver<bool> {
+        self.request.clone()
+    }
+}
+
+impl Drop for Foreground {
+    fn drop(&mut self) {
+        if let Some(manager) = self.manager.upgrade() {
+            manager.foreground.lock().remove(&self.call_id);
+        }
+    }
 }
 
 struct RunningJob {
     owner: String,
     cancel: watch::Sender<bool>,
     done: watch::Sender<bool>,
-    stdout: Arc<Mutex<Capture>>,
-    stderr: Arc<Mutex<Capture>>,
-}
-
-#[derive(Default)]
-struct Capture {
-    bytes: Vec<u8>,
-    truncated: bool,
+    stdout: Arc<Mutex<HeadTail>>,
+    stderr: Arc<Mutex<HeadTail>>,
 }
 
 #[derive(Clone)]
@@ -85,6 +99,7 @@ impl JobManager {
             mailboxes,
             lease,
             live: AsyncMutex::new(HashMap::new()),
+            foreground: Mutex::default(),
         }))
     }
 
@@ -173,6 +188,74 @@ impl JobManager {
         timeout_seconds: u64,
         call_id: Option<&str>,
     ) -> Result<String> {
+        let running = || Running::start(command, cwd, confinement, &[]);
+        self.launch(owner, command, call_id, running, timeout_seconds)
+            .await
+    }
+
+    /// Takes over a foreground command the user sent to the background, as it runs.
+    pub async fn adopt(
+        self: &Arc<Self>,
+        owner: &str,
+        command: &str,
+        call_id: Option<&str>,
+        running: Running,
+        timeout_seconds: u64,
+    ) -> Result<String> {
+        let mut running = Some(running);
+        let take = || {
+            running
+                .take()
+                .ok_or_else(|| anyhow::anyhow!("command taken twice"))
+        };
+        self.launch(owner, command, call_id, take, timeout_seconds)
+            .await
+    }
+
+    /// Lists a foreground command, so the user can send it to the background.
+    pub fn foreground(self: &Arc<Self>, owner: &str, call_id: &str) -> Foreground {
+        let (switch, request) = watch::channel(false);
+        self.foreground
+            .lock()
+            .insert(call_id.to_owned(), (owner.to_owned(), switch));
+        Foreground {
+            manager: Arc::downgrade(self),
+            call_id: call_id.to_owned(),
+            request,
+        }
+    }
+
+    /// Asks the foreground command of `call_id` to go to the background, if it may.
+    pub async fn send_to_background(&self, owner: &str, call_id: &str) -> Result<()> {
+        {
+            let live = self.live.lock().await;
+            ensure!(
+                live.len() < MAX_RUNNING,
+                "at most {MAX_RUNNING} background jobs may run"
+            );
+            ensure!(
+                live.values().filter(|job| job.owner == owner).count() < MAX_RUNNING_PER_THREAD,
+                "at most {MAX_RUNNING_PER_THREAD} background jobs may run in this thread"
+            );
+        }
+        let foreground = self.foreground.lock();
+        let (thread, switch) = foreground.get(call_id).ok_or_else(|| {
+            anyhow::anyhow!("the command has ended or cannot go to the background")
+        })?;
+        ensure!(thread == owner, "the command belongs to another thread");
+        switch.send_replace(true);
+        Ok(())
+    }
+
+    /// Records the job, starts or takes its process, and leaves it to a runtime task.
+    async fn launch(
+        self: &Arc<Self>,
+        owner: &str,
+        command: &str,
+        call_id: Option<&str>,
+        process: impl FnOnce() -> Result<Running>,
+        timeout_seconds: u64,
+    ) -> Result<String> {
         ensure!(
             command.len() <= MAX_COMMAND_BYTES,
             "background command exceeds 16 KiB"
@@ -205,8 +288,8 @@ impl JobManager {
             )
             .await?;
         ensure!(!self.mailboxes.is_closed(), "the runtime is shutting down");
-        let child = match spawn(command, cwd, confinement) {
-            Ok(child) => child,
+        let running = match process() {
+            Ok(running) => running,
             Err(error) => {
                 self.state
                     .remove_unstarted_job(&job_id, &self.lease.id)
@@ -220,11 +303,11 @@ impl JobManager {
             owner: owner.to_owned(),
             cancel,
             done,
-            stdout: Arc::new(Mutex::new(Capture::default())),
-            stderr: Arc::new(Mutex::new(Capture::default())),
+            stdout: Arc::clone(&running.stdout),
+            stderr: Arc::clone(&running.stderr),
         });
         live.insert(job_id.clone(), Arc::clone(&job));
-        // No await between spawning the child, handing it to the runtime task and
+        // No await between taking the process, handing it to the runtime task and
         // returning its ID. Cancellation of the launching tool cannot strand it.
         let manager = Arc::downgrade(self);
         let state = Arc::clone(&self.state);
@@ -232,7 +315,7 @@ impl JobManager {
         let id = job_id.clone();
         let lease = Arc::clone(&self.lease);
         tokio::spawn(async move {
-            let (status, output) = execute(child, &job, cancelled, timeout_seconds).await;
+            let (status, output) = execute(running, cancelled, timeout_seconds).await;
             // A transient state failure must not lose the result. Keep ownership and
             // bounded output until storage succeeds, or shutdown closes the database.
             loop {
@@ -340,62 +423,39 @@ impl Drop for JobManager {
 }
 
 async fn execute(
-    mut child: Child,
-    job: &RunningJob,
+    mut running: Running,
     mut cancelled: watch::Receiver<bool>,
     timeout_seconds: u64,
 ) -> (&'static str, String) {
-    let mut group = ProcessGroup(child.id());
-    let stdout = child.stdout.take().expect("spawn captures stdout");
-    let stderr = child.stderr.take().expect("spawn captures stderr");
-    let (reaped, drain) = watch::channel(false);
-    let wait = async {
-        let deadline = tokio::time::sleep(Duration::from_secs(timeout_seconds));
-        tokio::pin!(deadline);
-        let (status, exit) = tokio::select! {
-            // Once an outcome wins, a later cancellation cannot overwrite it.
-            exit = child.wait() => ("completed", Some(exit)),
-            _ = cancelled.wait_for(|value| *value) => ("cancelled", None),
-            _ = &mut deadline => ("timed_out", None),
-        };
-        group.kill();
-        let exit = match exit {
-            Some(exit) => exit,
-            None => child.wait().await,
-        };
-        reaped.send_replace(true);
-        (status, exit)
+    let deadline = tokio::time::sleep(Duration::from_secs(timeout_seconds));
+    tokio::pin!(deadline);
+    let (status, exit) = tokio::select! {
+        // Once an outcome wins, a later cancellation cannot overwrite it.
+        exit = running.child.wait() => ("completed", Some(exit)),
+        _ = cancelled.wait_for(|value| *value) => ("cancelled", None),
+        _ = &mut deadline => ("timed_out", None),
     };
-    // Read both streams to EOF even after the cap. Join, rather than try_join, keeps
-    // waiting/reaping the process if one output stream fails.
-    let (stdout, stderr, (status, exit)) = tokio::join!(
-        capture(stdout, &job.stdout, drain.clone()),
-        capture(stderr, &job.stderr, drain),
-        wait
-    );
-    let exited_cleanly = matches!(&exit, Ok(exit) if exit.success());
+    let (stdout, stderr, failure) = running.collect().await;
+    let exited_cleanly = matches!(&exit, Some(Ok(exit)) if exit.success());
     let mut output = match exit {
-        Ok(exit) => format!(
+        Some(Ok(exit)) => format!(
             "exit code: {}",
             exit.code().map_or_else(
                 || "none (terminated by a signal)".into(),
                 |code| code.to_string()
             )
         ),
-        Err(error) => format!("cannot wait for command: {error}"),
+        Some(Err(error)) => format!("cannot wait for command: {error}"),
+        None => "exit code: none (stopped)".into(),
     };
-    let failed = stdout.is_err() || stderr.is_err() || output.starts_with("cannot wait");
-    for (name, captured, result) in [
-        ("stdout", &job.stdout, stdout),
-        ("stderr", &job.stderr, stderr),
-    ] {
-        let text = captured.lock().text();
+    let failed = failure.is_some() || output.starts_with("cannot wait");
+    for (name, text) in [("stdout", stdout), ("stderr", stderr)] {
         if !text.is_empty() {
             output.push_str(&format!("\n{name}:\n{text}"));
         }
-        if let Err(error) = result {
-            output.push_str(&format!("\n{name} read failed: {error}"));
-        }
+    }
+    if let Some(failure) = failure {
+        output.push_str(&format!("\n{failure}"));
     }
     // Cancelled and timed-out jobs keep their own status; a finished one is judged by
     // its exit code, which the model sees in the output as well.
@@ -405,53 +465,6 @@ async fn execute(
         status
     };
     (status, output)
-}
-
-async fn capture(
-    mut stream: impl AsyncRead + Unpin,
-    saved: &Mutex<Capture>,
-    mut reaped: watch::Receiver<bool>,
-) -> std::io::Result<()> {
-    let mut buffer = [0u8; 8192];
-    // A child that deliberately leaves the process group can inherit a pipe. It
-    // cannot hold this job open forever after its shell has already been reaped.
-    let drain_deadline = async move {
-        let _ = reaped.wait_for(|value| *value).await;
-        tokio::time::sleep(Duration::from_secs(1)).await;
-    };
-    tokio::pin!(drain_deadline);
-    loop {
-        let count = tokio::select! {
-            count = stream.read(&mut buffer) => count?,
-            _ = &mut drain_deadline => return Err(std::io::Error::new(
-                std::io::ErrorKind::TimedOut, "output pipe stayed open after process group termination")),
-        };
-        if count == 0 {
-            return Ok(());
-        }
-        let mut saved = saved.lock();
-        let room = MAX_STREAM_BYTES - saved.bytes.len();
-        saved.bytes.extend_from_slice(&buffer[..count.min(room)]);
-        saved.truncated |= count > room;
-    }
-}
-
-impl Capture {
-    fn text(&self) -> String {
-        let mut text = String::from_utf8_lossy(&self.bytes).into_owned();
-        let truncated = self.truncated || text.len() > MAX_STREAM_BYTES;
-        if text.len() > MAX_STREAM_BYTES {
-            let mut end = MAX_STREAM_BYTES;
-            while !text.is_char_boundary(end) {
-                end -= 1;
-            }
-            text.truncate(end);
-        }
-        if truncated {
-            text.push_str("\n[output truncated]");
-        }
-        text
-    }
 }
 
 #[cfg(test)]
@@ -492,6 +505,34 @@ mod tests {
             .fetch_one(&state.pool)
             .await
             .unwrap()
+    }
+
+    /// The user's switch reaches only the thread's own command, and the command taken
+    /// over goes on running and ends as a job with all its output.
+    #[tokio::test]
+    async fn a_command_sent_to_the_background_finishes_as_a_job() {
+        let (state, database) = open("job-adopt").await;
+        let manager = manager(&state, &database).await;
+        let handed = manager.foreground("thread", "call_1");
+        let mut request = handed.request();
+        let command = "echo early; sleep 0.3; echo late";
+        let running = Running::start(command, Path::new("."), None, &[]).unwrap();
+        assert!(manager.send_to_background("other", "call_1").await.is_err());
+        manager
+            .send_to_background("thread", "call_1")
+            .await
+            .unwrap();
+        request.wait_for(|asked| *asked).await.unwrap();
+        let id = manager
+            .adopt("thread", command, None, running, 10)
+            .await
+            .unwrap();
+        drop(handed);
+        let gone = manager.send_to_background("thread", "call_1").await;
+        assert!(gone.is_err(), "the switch goes with its command");
+        let job = finished(&state, &id).await;
+        assert_eq!(job.status, "completed");
+        assert!(job.output.contains("early") && job.output.contains("late"));
     }
 
     #[tokio::test]

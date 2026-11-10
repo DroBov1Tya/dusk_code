@@ -670,6 +670,14 @@ impl Runtime {
         self.updates.found()
     }
 
+    /// Sends a running foreground command of the thread to the background.
+    pub async fn send_to_background(&self, thread_id: &str, call_id: &str) -> Result<()> {
+        self.launcher
+            .jobs
+            .send_to_background(thread_id, call_id)
+            .await
+    }
+
     /// Runs a command the user chose in the client, such as one from a code block, in
     /// the chat's folder and confined as its tools are. The client asked the user first;
     /// the output goes back to the client, not to the model.

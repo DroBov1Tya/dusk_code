@@ -13,10 +13,7 @@ use anyhow::{Context, Result, bail, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
-use tokio::{
-    io::{AsyncRead, AsyncReadExt},
-    process::{Child, Command},
-};
+use tokio::{process::Command, sync::watch};
 
 use parking_lot::Mutex;
 
@@ -31,11 +28,10 @@ use crate::tools::{
 };
 use crate::util::fs::printable;
 
+use super::process::Running;
+
 const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
-/// Each stream keeps its start and its end, where failures usually show.
-const HEAD_BYTES: usize = 8 * 1024;
-const TAIL_BYTES: usize = 24 * 1024;
 
 #[derive(Default)]
 pub struct RunCommand {
@@ -116,8 +112,25 @@ impl RunCommand {
             std::process::id(),
             NEXT_MARKER.fetch_add(1, Ordering::Relaxed)
         ));
-        // The trap runs on every exit, `exit` in the command included.
-        let script = format!("trap 'pwd -P >| \"$DUSK_CWD_FILE\" 2>/dev/null' EXIT\n{command}");
+        // The trap runs on every exit, `exit` in the command included. It writes only
+        // while the file is there, so a command sent to the background leaves none.
+        tokio::fs::write(&marker, "")
+            .await
+            .context("cannot prepare the command")?;
+        let script = format!(
+            "trap '[ -f \"$DUSK_CWD_FILE\" ] && pwd -P >| \"$DUSK_CWD_FILE\" 2>/dev/null' EXIT\n{command}"
+        );
+        // The user may send this command to the background while it runs.
+        let call_id = context
+            .progress
+            .as_ref()
+            .map(|progress| progress.call_id.clone());
+        let handed = match (&self.jobs, &call_id) {
+            (Some(owner), Some(call_id)) => {
+                Some(owner.manager.foreground(&owner.thread_id, call_id))
+            }
+            _ => None,
+        };
         let ran = run(
             &script,
             &self.start_dir(scope),
@@ -125,15 +138,39 @@ impl RunCommand {
             scope,
             confinement.as_ref(),
             timeout,
+            handed.as_ref().map(|handed| handed.request()),
         )
         .await;
         let ended = tokio::fs::read_to_string(&marker)
             .await
             .ok()
+            .filter(|text| !text.trim().is_empty())
             .map(|text| PathBuf::from(text.trim_end_matches('\n')));
-        // Gone already when the command never reached its end.
         let _ = tokio::fs::remove_file(&marker).await;
-        let mut result = ran?;
+        drop(handed);
+        let mut result = match ran? {
+            Ran::Done(result) => result,
+            Ran::Detached(running) => {
+                let owner = self
+                    .jobs
+                    .as_ref()
+                    .context("background jobs require a running thread")?;
+                let id = owner
+                    .manager
+                    .adopt(
+                        &owner.thread_id,
+                        command,
+                        call_id.as_deref(),
+                        running,
+                        MAX_TIMEOUT_SECONDS,
+                    )
+                    .await?;
+                return Ok(crate::tools::ToolResult::text(format!(
+                    "the user moved this command to the background: job_id={id}; its result \
+                     joins this agent when it ends"
+                )));
+            }
+        };
         if let Some(note) = self.keep_dir(scope, ended) {
             result.content.push_str(&format!("\n{note}"));
         }
@@ -235,6 +272,12 @@ impl Tool for RunCommand {
     }
 }
 
+/// How a foreground command ended: done, or handed on while it ran.
+enum Ran {
+    Done(crate::tools::ToolResult),
+    Detached(Running),
+}
+
 async fn run(
     script: &str,
     dir: &Path,
@@ -242,29 +285,32 @@ async fn run(
     scope: &ToolScope,
     confinement: Option<&Confinement>,
     timeout_seconds: u64,
-) -> Result<crate::tools::ToolResult> {
+    detach: Option<watch::Receiver<bool>>,
+) -> Result<Ran> {
     let skills = super::skill_saves::snapshot(scope).await;
-    let mut command = shell_command(script, dir, confinement)?;
-    if let Some(marker) = marker {
-        command.env("DUSK_CWD_FILE", marker);
-    }
-    let mut child = command.spawn().context("cannot start sh")?;
-    let mut group = ProcessGroup(child.id());
-    ensure!(group.0.is_some(), "command exited before it started");
-    let stdout = child.stdout.take().context("stdout is not captured")?;
-    let stderr = child.stderr.take().context("stderr is not captured")?;
-    // Background processes would keep the pipes open; ending the group closes them.
-    let exit = async {
-        let status = child.wait().await;
-        group.kill();
-        status
+    let env: Vec<(&str, &Path)> = marker
+        .map(|marker| ("DUSK_CWD_FILE", marker))
+        .into_iter()
+        .collect();
+    let mut running = Running::start(script, dir, confinement, &env)?;
+    let detached = async {
+        let Some(mut detach) = detach else {
+            return std::future::pending().await;
+        };
+        // A gone sender is no request.
+        if detach.wait_for(|detach| *detach).await.is_err() {
+            std::future::pending::<()>().await;
+        }
     };
-    let finished = async { tokio::try_join!(read_capped(stdout), read_capped(stderr), exit) };
-    let outcome = tokio::time::timeout(Duration::from_secs(timeout_seconds), finished).await;
-    let Ok(result) = outcome else {
-        bail!("command timed out after {timeout_seconds} seconds and was killed");
+    let status = tokio::select! {
+        status = running.child.wait() => status.context("cannot wait for the command")?,
+        // Dropping the command kills its group.
+        () = tokio::time::sleep(Duration::from_secs(timeout_seconds)) => {
+            bail!("command timed out after {timeout_seconds} seconds and was killed")
+        }
+        () = detached => return Ok(Ran::Detached(running)),
     };
-    let (stdout, stderr, status) = result.context("cannot read command output")?;
+    let (stdout, stderr, failure) = running.collect().await;
     let code = match status.code() {
         Some(code) => code.to_string(),
         None => "none (terminated by a signal)".into(),
@@ -275,18 +321,21 @@ async fn run(
             output.push_str(&format!("\n{name}:\n{text}"));
         }
     }
+    if let Some(failure) = failure {
+        output.push_str(&format!("\n{failure}"));
+    }
     if let Some(before) = skills
         && let Some(saved) = super::skill_saves::saved(scope, &before).await
     {
         // Last line, where clients look for it.
         output.push_str(&format!("\n{}", saved.stored()));
     }
-    Ok(crate::tools::ToolResult {
+    Ok(Ran::Done(crate::tools::ToolResult {
         content: output,
         is_error: !status.success(),
         exit_code: status.code(),
         artifacts: Vec::new(),
-    })
+    }))
 }
 
 /// Most a command the user runs from the client may be, as for background jobs.
@@ -310,9 +359,13 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
         scope,
         confinement.as_ref(),
         DEFAULT_TIMEOUT_SECONDS,
+        None,
     )
     .await?;
-    Ok(ran.content)
+    match ran {
+        Ran::Done(result) => Ok(result.content),
+        Ran::Detached(_) => bail!("a command the user runs is never handed on"),
+    }
 }
 
 /// How the command is confined in sandbox mode, by the scope it runs in.
@@ -322,14 +375,12 @@ pub async fn confinement(context: &ToolContext) -> Option<Confinement> {
         .then(|| Confinement::around(scope.cwd(), scope.workspace(), scope.protected()))
 }
 
-pub fn spawn(command: &str, cwd: &Path, confinement: Option<&Confinement>) -> Result<Child> {
-    shell_command(command, cwd, confinement)?
-        .spawn()
-        .context("cannot start sh")
-}
-
 /// The command ready to start, with the user's shell PATH when it was read.
-fn shell_command(command: &str, cwd: &Path, confinement: Option<&Confinement>) -> Result<Command> {
+pub(super) fn shell_command(
+    command: &str,
+    cwd: &Path,
+    confinement: Option<&Confinement>,
+) -> Result<Command> {
     let mut shell = platform::shell(command, confinement)?;
     if let Some(path) = platform::login_path::get() {
         shell.env("PATH", path);
@@ -344,77 +395,6 @@ fn shell_command(command: &str, cwd: &Path, confinement: Option<&Confinement>) -
     Ok(shell)
 }
 
-/// Kills the whole group when dropped, so a cancelled or timed-out command leaves nothing
-/// behind. Kills at most once: a later kill could hit a new group that reused the ID.
-pub struct ProcessGroup(pub Option<u32>);
-
-impl ProcessGroup {
-    pub fn kill(&mut self) {
-        let Some(id) = self.0.take() else {
-            return;
-        };
-        #[cfg(unix)]
-        if let Ok(id) = i32::try_from(id) {
-            // The group may already be gone; nothing is left to do then.
-            let _ = nix::sys::signal::killpg(
-                nix::unistd::Pid::from_raw(id),
-                nix::sys::signal::Signal::SIGKILL,
-            );
-        }
-    }
-}
-
-impl Drop for ProcessGroup {
-    fn drop(&mut self) {
-        self.kill();
-    }
-}
-
-/// Keeps reading past the cap so a chatty child never blocks on a full pipe.
-async fn read_capped(mut stream: impl AsyncRead + Unpin) -> std::io::Result<String> {
-    let mut kept = HeadTail::default();
-    let mut buffer = [0u8; 8192];
-    loop {
-        let read = stream.read(&mut buffer).await?;
-        if read == 0 {
-            break;
-        }
-        kept.push(&buffer[..read]);
-    }
-    Ok(kept.finish())
-}
-
-/// The first `HEAD_BYTES` and the last `TAIL_BYTES` of a stream, and how much fell
-/// between them.
-#[derive(Default)]
-struct HeadTail {
-    head: Vec<u8>,
-    tail: std::collections::VecDeque<u8>,
-    dropped: usize,
-}
-
-impl HeadTail {
-    fn push(&mut self, mut bytes: &[u8]) {
-        let room = HEAD_BYTES - self.head.len();
-        let into_head = bytes.len().min(room);
-        self.head.extend_from_slice(&bytes[..into_head]);
-        bytes = &bytes[into_head..];
-        self.tail.extend(bytes);
-        let over = self.tail.len().saturating_sub(TAIL_BYTES);
-        self.tail.drain(..over);
-        self.dropped += over;
-    }
-
-    fn finish(self) -> String {
-        let head = String::from_utf8_lossy(&self.head).into_owned();
-        let tail = String::from_utf8_lossy(&Vec::from(self.tail)).into_owned();
-        match self.dropped {
-            0 => head + &tail,
-            dropped => format!("{head}\n[{dropped} bytes cut]\n{tail}"),
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -422,26 +402,6 @@ mod tests {
 
     use super::*;
     use crate::testing::{temp_dir, tool_context};
-
-    #[test]
-    fn a_long_stream_keeps_its_start_and_end() {
-        let mut kept = HeadTail::default();
-        kept.push(b"start\n");
-        kept.push(&vec![b'.'; HEAD_BYTES + TAIL_BYTES]);
-        kept.push(b"\nerror: the end");
-        let text = kept.finish();
-        assert!(text.starts_with("start\n"));
-        assert!(text.ends_with("error: the end"));
-        assert!(text.contains("bytes cut]"));
-        assert!(text.len() < HEAD_BYTES + TAIL_BYTES + 64);
-    }
-
-    #[test]
-    fn a_short_stream_is_whole() {
-        let mut kept = HeadTail::default();
-        kept.push(b"ok\n");
-        assert_eq!(kept.finish(), "ok\n");
-    }
 
     fn scope(name: &str) -> ToolScope {
         let root = temp_dir(name);
@@ -533,20 +493,57 @@ mod tests {
         assert!(started.elapsed() < Duration::from_secs(4));
     }
 
+    /// Sent to the background mid-run, the command is handed on alive and its output
+    /// keeps what came before and after.
+    #[tokio::test]
+    async fn a_command_handed_on_keeps_running() {
+        let scope = scope("shell_handed_on");
+        let (switch, request) = tokio::sync::watch::channel(false);
+        tokio::spawn(async move {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            switch.send_replace(true);
+            // Kept alive until the command was handed on.
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        });
+        let started = std::time::Instant::now();
+        let script = "echo before; sleep 0.4; echo after";
+        let ran = run(script, scope.cwd(), None, &scope, None, 10, Some(request))
+            .await
+            .unwrap();
+        let Ran::Detached(mut running) = ran else {
+            panic!("the command finished in the foreground");
+        };
+        assert!(
+            started.elapsed() < Duration::from_millis(350),
+            "handed on at once"
+        );
+        running.child.wait().await.unwrap();
+        let (stdout, _, failure) = running.collect().await;
+        assert_eq!(failure, None);
+        assert!(
+            stdout.contains("before") && stdout.contains("after"),
+            "{stdout}"
+        );
+    }
+
     #[tokio::test]
     async fn background_processes_do_not_outlive_the_command() {
         let scope = scope("shell_background");
         let started = std::time::Instant::now();
-        let output = run(
+        let ran = run(
             "sleep 30 & echo started",
             scope.cwd(),
             None,
             &scope,
             None,
             10,
+            None,
         )
         .await
         .unwrap();
+        let Ran::Done(output) = ran else {
+            panic!("nothing asked for the background");
+        };
         assert!(output.content.contains("started"));
         assert!(
             started.elapsed() < Duration::from_secs(5),

@@ -350,6 +350,19 @@ pub async fn apply(
             let thread_id = app.thread_id.clone();
             answer(client, app, open, Command::Jobs { thread_id }).await;
         }
+        Action::Background(call_id) => {
+            if let Some(thread_id) = app.thread_id.clone() {
+                match client
+                    .threads()
+                    .send_to_background(&thread_id, &call_id)
+                    .await
+                {
+                    Ok(()) => app.flash = Some("the command goes on in the background".into()),
+                    Err(error) => app.error(format!("cannot send it to the background: {error:#}")),
+                }
+                app.jobs_stale = true;
+            }
+        }
         Action::StopJob(job_id) => {
             if let Some(thread_id) = app.thread_id.clone() {
                 match client.work().stop_job(&thread_id, &job_id).await {

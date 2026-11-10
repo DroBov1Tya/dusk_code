@@ -170,6 +170,10 @@ impl Server {
                 }
                 Response::Done
             }
+            ThreadRequest::Background { thread_id, call_id } => {
+                runtime.send_to_background(&thread_id, &call_id).await?;
+                Response::Done
+            }
             ThreadRequest::RunCommand { thread_id, command } => {
                 Response::Text(runtime.run_for_user(&thread_id, &command).await?)
             }
