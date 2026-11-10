@@ -23,7 +23,7 @@ use dusk_protocol::{
     context::ContextReport,
     conversation::{LocalUnsent, Message},
     mcp::McpInfo,
-    project::{FileEntry, GitInfo, OutputFile, Project},
+    project::{Change, FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::Thread,
     tools::Decision,
@@ -554,6 +554,19 @@ impl Work<'_> {
             .await?
         {
             Response::Plan(plan) => Ok(plan),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// The files the chat's commands changed in its project, by path.
+    pub async fn changed_files(&self, thread_id: &str) -> Result<Vec<Change>> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::ChangedFiles { thread_id }))
+            .await?
+        {
+            Response::Changes(changes) => Ok(changes),
             other => Err(unexpected(other)),
         }
     }

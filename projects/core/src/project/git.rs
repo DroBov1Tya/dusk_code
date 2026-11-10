@@ -84,6 +84,18 @@ fn web_page(remote: &str) -> Option<String> {
     (host_ok && path_ok).then(|| format!("https://{host}/{path}"))
 }
 
+/// The files git reports as changed in `dir`, or none outside a repository.
+pub async fn changes(dir: &Path) -> Vec<Change> {
+    let Ok(prefix) = git(dir, &["rev-parse", "--show-prefix"]).await else {
+        return Vec::new();
+    };
+    let args = ["status", "--porcelain=v1", "-z", "--untracked-files=all"];
+    match git(dir, &args).await {
+        Ok(status) => parse_status(&status, prefix.trim()),
+        Err(_) => Vec::new(),
+    }
+}
+
 pub async fn switch_branch(project: &Project, branch: &str) -> Result<()> {
     let info = info(project).await?;
     ensure!(

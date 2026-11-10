@@ -135,6 +135,10 @@ impl RunCommand {
             }
             _ => None,
         };
+        let before = match &context.state {
+            Some(_) => Some(super::file_changes::snapshot(scope.cwd()).await),
+            None => None,
+        };
         let ran = run(
             &script,
             &self.start_dir(scope),
@@ -177,6 +181,12 @@ impl RunCommand {
                 )));
             }
         };
+        if let (Some(before), Some(state)) = (before, &context.state) {
+            let touched = before.touched(&super::file_changes::snapshot(scope.cwd()).await);
+            if let Err(error) = state.note_thread_files(&context.thread_id, &touched).await {
+                tracing::warn!("cannot note the files a command changed: {error:#}");
+            }
+        }
         if let Some(note) = self.keep_dir(scope, ended) {
             result.content.push_str(&format!("\n{note}"));
         }

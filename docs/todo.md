@@ -13,8 +13,9 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
       compaction with tools and early compaction left)
 - [x] Files are written, edited and deleted through `run_command`; the sandbox confines
       it to the same folders, and a skill saved by a command still gets its notice
-- [ ] Per-chat list of files a chat changed (the GUI Outputs module went with the
-      write tools); could come from the core comparing `git status` around a command
+- [x] Per-chat list of files a chat changed: the core compares `git status` around each
+      foreground command and keeps the touched paths (GUI "Touched" module, TUI `/files`);
+      background commands and folders outside git are not covered
 - [x] Analyze how to make the agent faster without losing quality (`agent-engine.md`,
       measured with `projects/evals`)
 - [~] Prompt caching: stable prefix (system, tools, memory) first, cache breakpoints,

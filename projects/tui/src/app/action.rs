@@ -40,6 +40,8 @@ pub enum Action {
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// `/files`: what this chat's commands changed in the project.
+    ChangedFiles,
     /// `/me`: what `@me` says about the user, in the editor.
     OpenMe,
     /// `/snippet name`: a snippet for `@name`, new or as it is.
@@ -127,6 +129,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "the plugins found, to switch on or off; they live in rules/plugins/",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
+        ("/files", "the files this chat's commands changed"),
         (
             "/disconnect",
             "forget a provider and its key: /disconnect name",

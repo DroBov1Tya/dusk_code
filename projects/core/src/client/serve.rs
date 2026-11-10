@@ -352,6 +352,9 @@ impl Server {
                 Response::Text(runtime.stop_job(&thread_id, &job_id).await?)
             }
             WorkRequest::Plan { thread_id } => Response::Plan(runtime.plan(&thread_id).await?),
+            WorkRequest::ChangedFiles { thread_id } => {
+                Response::Changes(runtime.changed_files(&thread_id).await?)
+            }
             WorkRequest::SavePlan { thread_id, text } => {
                 runtime.save_plan(&thread_id, &text).await?;
                 Response::Done

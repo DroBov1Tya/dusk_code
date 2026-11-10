@@ -797,6 +797,14 @@ impl Runtime {
             .map(drop)
     }
 
+    /// The files the thread's commands changed in its project.
+    pub async fn changed_files(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<dusk_protocol::project::Change>> {
+        self.launcher.state.thread_files(thread_id).await
+    }
+
     /// The background jobs of a thread, oldest first.
     pub async fn jobs(&self, thread_id: &str) -> Result<Vec<JobInfo>> {
         self.launcher.jobs.list(thread_id).await

@@ -15,6 +15,7 @@ pub mod mascot;
 pub mod plan;
 mod screenshots;
 mod todo;
+pub mod touched;
 
 use gpui_kit::{
     component::{ActiveTheme, IconName},
@@ -36,6 +37,7 @@ const MODULES: &[(Right, &str)] = &[
     (Right::Screenshots, "Screenshots"),
     (Right::Git, "Changes"),
     (Right::Files, "Files"),
+    (Right::Touched, "Touched"),
     (Right::Plan, "Plan"),
     (Right::Todo, "Todo"),
     (Right::Agents, "Agents"),
@@ -106,6 +108,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 Right::Screenshots => screenshots::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
+                Right::Touched => touched::render(ws, cx),
                 Right::Plan => plan::render(ws, window, cx),
                 Right::Todo => todo::render(ws, cx),
                 Right::Agents => agents::render(ws, cx),
@@ -183,6 +186,7 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
             }
         }),
         Right::Files | Right::Plan => None,
+        Right::Touched => Some(ws.touched.len().to_string()),
         Right::Todo => chat.map(|chat| {
             let items = chat.tasks.iter().flat_map(|task| &task.items);
             let (done, all) = items.fold((0, 0), |(done, all), item| {
@@ -297,6 +301,7 @@ impl Workspace {
                 .as_ref()
                 .is_some_and(|git| git.branch.is_some() || !git.branches.is_empty()),
             Right::Files => self.project.is_some(),
+            Right::Touched => !self.touched.is_empty(),
             Right::Plan => plan::has_content(self),
             Right::Todo => chat.is_some_and(|chat| !chat.tasks.is_empty()),
             Right::Agents => chat.is_some_and(|chat| !chat.agents.is_empty()),
@@ -320,6 +325,7 @@ impl Workspace {
             Right::Statistics => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
             Right::Plan => self.load_plan(cx),
+            Right::Touched => self.load_touched(cx),
             Right::Arbiter | Right::Screenshots | Right::Todo | Right::Agents => {}
         }
     }

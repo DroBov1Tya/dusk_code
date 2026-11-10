@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 36] = [
+pub const KEYS: [(&str, &str); 37] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -42,6 +42,7 @@ pub const KEYS: [(&str, &str); 36] = [
         "view saved local messages; Enter explicitly sends one",
     ),
     ("/plan", "read and edit this chat's pinned plan"),
+    ("/files", "the files this chat's commands changed"),
     (
         "/disconnect",
         "forget a provider and its key: /disconnect name",
