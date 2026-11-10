@@ -426,13 +426,7 @@ impl Agent {
         if with_pictures {
             self.attach_tool_pictures(&conversation, &mut messages);
         }
-        let after_prompt = messages
-            .iter()
-            .position(|message| !matches!(message, ChatMessage::System(_)))
-            .unwrap_or(messages.len());
-        if !self.project.is_empty() {
-            messages.insert(after_prompt, ChatMessage::System(self.project.clone()));
-        }
+        insert_project(&mut messages, &self.project);
         let first_time = sources.map(|block| {
             messages.push(block.message());
             block.first_time
@@ -477,6 +471,26 @@ impl Agent {
         };
         // Only the last attempt is recorded: a failed one rarely gets usage reported.
         if let Some(usage) = output.usage {
+            // The log says what each call cost and when the provider's cache let go, so
+            // a drop can be told from the usage record afterwards.
+            let before = conversation
+                .last_prompt
+                .as_ref()
+                .map_or(0, |last| last.prompt_tokens);
+            tracing::info!(
+                prompt = usage.prompt_tokens,
+                cached = usage.cached_prompt_tokens,
+                written = usage.cache_write_tokens,
+                completion = usage.completion_tokens,
+                "model call"
+            );
+            if before > 4096 && usage.cached_prompt_tokens * 2 < before {
+                tracing::warn!(
+                    previous_prompt = before,
+                    cached = usage.cached_prompt_tokens,
+                    "prompt cache dropped: less than half of the last prompt was read from it"
+                );
+            }
             let call = ModelCall {
                 thread_id: self.thread_id.clone(),
                 turn_id: Some(turn.turn_id.clone()),
@@ -911,6 +925,19 @@ fn recorded_reasoning(config: &Config, output: &ModelOutput) -> Option<String> {
 
 /// A model copies the calls it sees in the thread. After a switch to a mode with fewer
 /// tools, it is told which of those it no longer has, so it does not reach for them.
+/// The project's text goes right after the leading system messages. Compaction places it
+/// the same way, so its request starts with the prefix the steps already cached.
+pub(super) fn insert_project(messages: &mut Vec<ChatMessage>, project: &str) {
+    if project.is_empty() {
+        return;
+    }
+    let after_prompt = messages
+        .iter()
+        .position(|message| !matches!(message, ChatMessage::System(_)))
+        .unwrap_or(messages.len());
+    messages.insert(after_prompt, ChatMessage::System(project.to_owned()));
+}
+
 fn missing_tools(messages: &[ChatMessage], tools: &[ToolSpec]) -> Option<String> {
     let mut missing: Vec<&str> = messages
         .iter()

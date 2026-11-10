@@ -148,34 +148,53 @@ impl Agent {
             bail!("nothing to summarize since the last summary");
         };
         let mut messages = conversation.chat_messages_through(through);
+        super::agent::insert_project(&mut messages, &self.project);
         let attached = self.state.sources(&self.thread_id).await?;
         messages.push(ChatMessage::System(sources_note(&attached)));
-        messages.push(ChatMessage::User(prompt));
+        messages.push(ChatMessage::User(format!(
+            "{prompt}\n\nAnswer with text only; do not call tools."
+        )));
         let choice = self.model.current().context("provider is unavailable")?;
         let config = self.config.current();
-        let request = ChatRequest {
-            model: &choice.model.id,
-            messages: &messages,
-            tools: &[],
-            max_output_tokens: choice.model.max_output,
-            effort: config.effort(),
-            cache_key: None,
+        // Same tools, project text and key as the steps, so the provider's cache of the
+        // thread serves this request too; without them the whole context is read cold.
+        let tools = self.tools.specs(&self.scope, &config);
+        let call = ModelCall {
+            thread_id: self.thread_id.clone(),
+            turn_id: turn.map(|turn| turn.turn_id.clone()),
+            purpose: CallPurpose::Compact,
+            compaction_id: conversation.compaction.as_ref().map(|c| c.compaction_id),
+            model: choice.model.id.clone(),
+            through_sequence: through,
         };
-        let (output, generated) = match self.call_model(&choice, request, &config, inbox).await {
-            Ok(called) => called,
-            Err(stop) => return Ok(Err(stop)),
-        };
-        if let Some(usage) = output.usage {
-            let call = ModelCall {
-                thread_id: self.thread_id.clone(),
-                turn_id: turn.map(|turn| turn.turn_id.clone()),
-                purpose: CallPurpose::Compact,
-                compaction_id: conversation.compaction.as_ref().map(|c| c.compaction_id),
-                model: choice.model.id.clone(),
-                through_sequence: through,
+        let mut called = None;
+        for tools in [&tools[..], &[]] {
+            let request = ChatRequest {
+                model: &choice.model.id,
+                messages: &messages,
+                tools,
+                max_output_tokens: choice.model.max_output,
+                effort: config.effort(),
+                cache_key: Some(&self.thread_id),
             };
-            self.state.record_usage(&call, usage).await?;
+            let (output, generated) = match self.call_model(&choice, request, &config, inbox).await
+            {
+                Ok(done) => done,
+                Err(stop) => return Ok(Err(stop)),
+            };
+            if let Some(usage) = output.usage {
+                self.state.record_usage(&call, usage).await?;
+            }
+            let wrote = !output.text.trim().is_empty();
+            called = Some((output, generated));
+            // A model that called a tool in place of writing is asked again without tools.
+            if wrote || tools.is_empty() {
+                break;
+            }
         }
+        let Some((output, generated)) = called else {
+            bail!("the model gave no answer");
+        };
         match generated {
             Err(stop) => return Ok(Err(stop)),
             Ok(result) => result?,
