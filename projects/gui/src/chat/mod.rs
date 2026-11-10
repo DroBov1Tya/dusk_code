@@ -98,6 +98,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     "toggle-right",
                     IconName::PanelRight,
                     |ws| &mut ws.right_hidden,
+                    "Show or hide the side panel",
                     cx,
                 )),
         )
@@ -151,12 +152,14 @@ fn panel_toggle(
     id: &'static str,
     icon: IconName,
     hidden: fn(&mut Workspace) -> &mut bool,
+    tip: &'static str,
     cx: &mut Context<Workspace>,
 ) -> Button {
     Button::new(id)
         .ghost()
         .small()
         .icon(icon)
+        .tooltip(tip)
         .on_click(cx.listener(move |ws, _, _, cx| {
             let hidden = hidden(ws);
             *hidden = !*hidden;

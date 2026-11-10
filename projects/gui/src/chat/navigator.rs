@@ -118,5 +118,7 @@ pub fn render(
             }
         }))
         .child(ticks)
-        .when_some(catalog, |nav, catalog| nav.child(on_top(catalog)))
+        .when_some(catalog, |nav, catalog| {
+            nav.child(on_top(crate::widgets::appear("navigator-list", catalog)))
+        })
 }

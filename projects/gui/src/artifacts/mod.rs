@@ -62,6 +62,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             .ghost()
             .small()
             .icon(IconName::RefreshCw)
+            .tooltip("Read the files again")
             .on_click(cx.listener(|ws, _, _, cx| ws.load_outputs(cx))),
     );
     let files: Vec<OutputFile> = ws

@@ -51,7 +51,10 @@ pub fn render(
             _ if busy => ("Restarting".to_owned(), warning),
             McpState::Off => ("Off".to_owned(), muted),
             McpState::Starting => ("Starting".to_owned(), warning),
-            McpState::Ready(tools) => (format!("Ready · {} tools", tools.len()), success),
+            McpState::Ready(tools) => (
+                format!("Ready · {}", widgets::count(tools.len(), "tool")),
+                success,
+            ),
             McpState::Failed(_) => ("Failed".to_owned(), danger),
         };
         let description = match &server.state {

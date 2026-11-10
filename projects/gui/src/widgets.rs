@@ -46,6 +46,11 @@ pub fn icon(name: IconName, color: Hsla) -> Icon {
     Icon::new(name).small().text_color(color)
 }
 
+/// "1 file", "2 files": a count with its noun in the plural unless it is one.
+pub fn count(n: usize, noun: &str) -> String {
+    format!("{n} {noun}{}", if n == 1 { "" } else { "s" })
+}
+
 /// A short label in a tinted pill, such as a chat's source.
 pub fn badge(text: impl Into<SharedString>, color: Hsla) -> Div {
     div()
@@ -71,6 +76,19 @@ pub fn muted(text: impl Into<SharedString>, cx: &App) -> Div {
 /// Give it an opaque background too, such as the theme's popover color.
 pub fn on_top(popup: impl IntoElement + 'static) -> Deferred {
     deferred(popup).with_priority(1)
+}
+
+/// A popup that fades in as it opens, in 140 ms: the click that opened it is answered at
+/// once, and the menu does not jump into place. It plays when the element first appears.
+pub fn appear<E>(id: impl Into<ElementId>, popup: E) -> AnimationElement<E>
+where
+    E: IntoElement + Styled + 'static,
+{
+    popup.with_animation(
+        id,
+        Animation::new(std::time::Duration::from_millis(140)).with_easing(ease_out_quint()),
+        |popup, delta| popup.opacity(delta),
+    )
 }
 
 /// `12.3k` for a token count.

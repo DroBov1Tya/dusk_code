@@ -363,9 +363,12 @@ fn run(
                 .text_color(muted)
                 .cursor_pointer()
                 .child(if open {
-                    format!("▾ {} steps", tools.len())
+                    format!("▾ {}", crate::widgets::count(tools.len(), "step"))
                 } else {
-                    format!("▸ {} earlier steps", tools.len() - 1)
+                    format!(
+                        "▸ {} earlier",
+                        crate::widgets::count(tools.len() - 1, "step")
+                    )
                 })
                 .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, start | RUN, cx))),
         );

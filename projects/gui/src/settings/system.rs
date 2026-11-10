@@ -47,8 +47,12 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
             .child(line("Pictures", "Kept for image cards", cx).child(mb(report.artifacts_bytes)))
             .child(line("Logs", "", cx).child(mb(report.logs_bytes)))
             .child(
-                line("Chats", &format!("{} messages", report.messages), cx)
-                    .child(report.threads.to_string()),
+                line(
+                    "Chats",
+                    &widgets::count(report.messages as usize, "message"),
+                    cx,
+                )
+                .child(report.threads.to_string()),
             )
             .child(
                 div().pt_3().child(

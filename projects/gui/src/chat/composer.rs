@@ -79,6 +79,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                         .ghost()
                         .xsmall()
                         .icon(IconName::Close)
+                        .tooltip("Remove the attachment")
                         .on_click(cx.listener(move |ws, _, _, cx| {
                             if index < ws.attachments.len() {
                                 ws.attachments.remove(index);
@@ -106,6 +107,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                         .ghost()
                         .xsmall()
                         .icon(IconName::Close)
+                        .tooltip("Remove the pasted text")
                         .on_click(cx.listener(move |ws, _, _, cx| {
                             if index < ws.pastes.len() {
                                 ws.pastes.remove(index);
@@ -263,7 +265,10 @@ const PASTE_THRESHOLD: usize = 1500;
 
 /// `pasted text · 120 lines`.
 pub fn paste_label(text: &str) -> String {
-    format!("pasted text \u{00B7} {} lines", text.lines().count())
+    format!(
+        "pasted text \u{00B7} {}",
+        crate::widgets::count(text.lines().count(), "line")
+    )
 }
 
 /// The profile and snippets an `@` word being typed may name; a click puts one in.
