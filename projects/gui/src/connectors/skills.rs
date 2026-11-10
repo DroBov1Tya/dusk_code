@@ -36,6 +36,7 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
                         .problem
                         .as_ref()
                         .map(|_| ("Problem".to_owned(), danger)),
+                    icon: None,
                 },
                 toggle(
                     format!("skill-{}", skill.name),

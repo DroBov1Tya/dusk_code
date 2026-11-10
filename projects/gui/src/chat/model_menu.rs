@@ -220,6 +220,55 @@ fn capitalize(text: &str) -> String {
 }
 
 impl Workspace {
+    /// The first models the menu lists, as `provider/model`, each picked by its digit.
+    fn first_models(&self) -> Vec<String> {
+        let current = self.status.model.clone().unwrap_or_default();
+        let provider = current.split('/').next().unwrap_or_default();
+        let mine = self
+            .providers
+            .iter()
+            .find(|p| p.name == provider)
+            .or(self.providers.first());
+        let Some((p, Ok(models))) = mine.map(|p| (p, &p.models)) else {
+            return Vec::new();
+        };
+        models
+            .iter()
+            .take(FIRST)
+            .map(|model| format!("{}/{}", p.name, model.id))
+            .collect()
+    }
+
+    /// While a menu over the model bar is open, Escape closes it; in the model menu
+    /// the digits 1-6 pick its models, before the text box takes them.
+    pub fn menu_keys(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+        let Some(picker) = self.picker else {
+            return;
+        };
+        let keys = &event.keystroke;
+        if keys.modifiers.modified() {
+            return;
+        }
+        if keys.key == "escape" {
+            cx.stop_propagation();
+            self.picker = None;
+            cx.notify();
+            return;
+        }
+        let digit = keys
+            .key
+            .parse::<usize>()
+            .ok()
+            .filter(|d| (1..=FIRST).contains(d));
+        if picker != Picker::Model {
+            return;
+        }
+        if let Some(name) = digit.and_then(|digit| self.first_models().get(digit - 1).cloned()) {
+            cx.stop_propagation();
+            self.choose_model(name, cx);
+        }
+    }
+
     /// Opens a submenu, or goes back to the menu alone when it is open.
     fn open_submenu(&mut self, submenu: Picker, cx: &mut Context<Self>) {
         self.picker = Some(if self.picker == Some(submenu) {

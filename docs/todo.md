@@ -38,8 +38,8 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [~] Per-thread access mode (core and GUI done; TUI under Parity)
 - [~] Version control settings: branch prefix and the like, named "version control",
       not "git" (core and GUI done; TUI settings left)
-- [~] Notifications and their settings (core toggles, TUI delivery and GUI settings done;
-      GUI delivery left)
+- [x] Notifications and their settings: core toggles, TUI bell, GUI system notifications
+      while the window is in the background (a click opens the chat)
 
 ## User context
 
@@ -126,11 +126,12 @@ Motion
       slow and beautiful
 
 From `gui-todo.md`
-- [ ] Core: an `icon` field on McpInfo
-- [~] Model menu: close on a click outside (done), keys 1-6 pick a model
+- [x] Core: an `icon` field on McpInfo (a picture in `~/.config/duskcode/icons/`, named
+      by `icon:` in the server's config)
+- [x] Model menu: close on a click outside, keys 1-6 pick a model, Escape closes
 - [ ] Linux build in OrbStack
-- [ ] Pasted screenshots saved to the project's attachments folder
-- [ ] Context details on click (core ready)
+- [x] Pasted screenshots become attachments (kept as the chat's sources on send)
+- [x] Context details on click: a part unfolds to its items, with use counts
 - [ ] Drag a chat to split the center in two
 - [ ] Project environment variables (secrets, never logged)
 

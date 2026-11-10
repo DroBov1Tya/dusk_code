@@ -14,6 +14,8 @@ pub struct Card {
     pub kind: String,
     pub description: String,
     pub state: Option<(String, Hsla)>,
+    /// A picture the core found for it; a letter tile otherwise.
+    pub icon: Option<std::path::PathBuf>,
 }
 
 pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
@@ -31,7 +33,15 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
         .bg(theme.muted)
         .cursor_pointer()
         .hover(|card| card.border_color(theme.muted_foreground.opacity(0.4)))
-        .child(icon_slot(&card.name, cx))
+        .child(match card.icon {
+            Some(path) => div()
+                .size(px(44.))
+                .flex_none()
+                .rounded_lg()
+                .overflow_hidden()
+                .child(img(path).size_full()),
+            None => icon_slot(&card.name, cx),
+        })
         .child(
             div()
                 .flex()

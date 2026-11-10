@@ -38,6 +38,7 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
                     kind: format!("Plugin {} · {}", plugin.version, plugin.parts.join(", ")),
                     description: plugin.description.clone(),
                     state,
+                    icon: None,
                 },
                 Switch::new(SharedString::from(format!("plugin-{name}")))
                     .checked(plugin.enabled)

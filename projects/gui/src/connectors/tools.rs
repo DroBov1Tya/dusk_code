@@ -46,6 +46,7 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
                         kind: format!("Built in · {}", kind.name()),
                         description: line,
                         state: None,
+                        icon: None,
                     },
                     toggle(
                         format!("tool-{}", tool.name),

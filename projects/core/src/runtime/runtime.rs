@@ -880,7 +880,15 @@ impl Runtime {
 
     /// Every MCP server in the config, with how it stands.
     pub fn mcp_servers(&self) -> Vec<McpInfo> {
-        self.launcher.mcp.infos(&self.launcher.config.current())
+        let config = self.launcher.config.current();
+        let icons = self.launcher.paths.config_root().join(ICONS_DIR);
+        let mut infos = self.launcher.mcp.infos(&config);
+        let servers = config.all_mcp();
+        for info in &mut infos {
+            let name = servers.get(&info.name).and_then(|server| server.icon());
+            info.icon = name.and_then(|name| icon_file(&icons, name));
+        }
+        infos
     }
 
     /// One MCP server as YAML to edit, `name:` and its fields.
@@ -1072,5 +1080,47 @@ impl Runtime {
             discovery.abort();
         }
         self.launcher.state.close().await;
+    }
+}
+
+/// Where the pictures of MCP servers are kept, under the config folder.
+const ICONS_DIR: &str = "icons";
+
+/// The picture `name` in `icons`: a plain file name of a PNG, JPEG or SVG that is a
+/// regular file there, never a path out of the folder or a link.
+fn icon_file(icons: &Path, name: &str) -> Option<PathBuf> {
+    let (stem, extension) = name.rsplit_once('.')?;
+    let picture = matches!(
+        extension.to_ascii_lowercase().as_str(),
+        "png" | "jpg" | "jpeg" | "svg"
+    );
+    if !picture || !crate::init::paths::is_plain_folder_name(stem) {
+        return None;
+    }
+    let path = icons.join(name);
+    std::fs::symlink_metadata(&path)
+        .is_ok_and(|metadata| metadata.is_file())
+        .then_some(path)
+}
+
+#[cfg(test)]
+mod icon_tests {
+    use super::*;
+
+    #[test]
+    fn an_icon_is_a_plain_picture_in_its_folder() {
+        let icons = crate::testing::temp_dir("mcp_icons");
+        std::fs::create_dir_all(&icons).unwrap();
+        std::fs::write(icons.join("acme.png"), b"png").unwrap();
+        std::fs::write(icons.join("notes.txt"), b"text").unwrap();
+        assert_eq!(icon_file(&icons, "acme.png"), Some(icons.join("acme.png")));
+        for name in ["../acme.png", "notes.txt", "missing.png", "a/b.png", ".png"] {
+            assert_eq!(icon_file(&icons, name), None, "{name}");
+        }
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink("/etc/hosts", icons.join("link.png")).unwrap();
+            assert_eq!(icon_file(&icons, "link.png"), None);
+        }
     }
 }

@@ -1,7 +1,10 @@
 //! What the shown chat's next request carries, as one bar in colored parts and a row
 //! per part: its tokens and its share of the window, then the free space.
 
-use dusk_protocol::command::{Answer, Command};
+use dusk_protocol::{
+    command::{Answer, Command},
+    context::ContextSection,
+};
 use gpui_kit::{component::ActiveTheme, *};
 
 use crate::{widgets, workspace::Workspace};
@@ -91,9 +94,66 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         )
         .child(bar);
     for (index, section) in parts.iter().enumerate() {
-        column = column.child(row(color(index), section.name.clone(), section.tokens));
+        let name = section.name.clone();
+        let open = ws.context_open.contains(&name);
+        column = column.child(
+            row(color(index), section.name.clone(), section.tokens)
+                .id(("context-part", index))
+                .cursor_pointer()
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    if !ws.context_open.remove(&name) {
+                        ws.context_open.insert(name.clone());
+                    }
+                    cx.notify();
+                })),
+        );
+        if open {
+            column = column.child(items(section, muted, cx));
+        }
     }
     column.child(row(track, "Free space".to_owned(), report.limit - used))
+}
+
+/// What a part is made of, largest first; skills and MCP tools also say how often
+/// they were used, here and in every chat.
+fn items(section: &ContextSection, muted: Hsla, cx: &App) -> Div {
+    let mut list = div().flex().flex_col().gap_1().pl_5().pb_1().text_xs();
+    if section.items.is_empty() {
+        return list.child(div().text_color(muted).child("nothing"));
+    }
+    for (name, tokens) in &section.items {
+        let uses = section
+            .details
+            .iter()
+            .find(|detail| &detail.name == name)
+            .map(|detail| {
+                format!(
+                    "used {} here, {} in all",
+                    detail.uses_in_chat, detail.uses_total
+                )
+            });
+        list = list.child(
+            div()
+                .flex()
+                .flex_row()
+                .gap_2()
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .flex_1()
+                        .min_w_0()
+                        .child(div().truncate().child(name.clone()))
+                        .children(uses.map(|uses| div().text_color(muted).child(uses))),
+                )
+                .child(
+                    div()
+                        .text_color(cx.theme().muted_foreground)
+                        .child(short(*tokens)),
+                ),
+        );
+    }
+    list
 }
 
 fn short(tokens: u64) -> String {
