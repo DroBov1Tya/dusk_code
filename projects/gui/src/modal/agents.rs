@@ -131,7 +131,7 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
             SharedString::from(format!("mascot-{id}")),
             &agent.state,
             color,
-            3.0,
+            2.3,
         ))
         .child(
             div()
