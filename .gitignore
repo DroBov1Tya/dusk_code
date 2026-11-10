@@ -1,5 +1,54 @@
+# Build output and packages
 /target/
+/dist/
+*.dmg
+*.app/
+*.AppImage
+*.deb
+*.rpm
+*.tar.gz
+*.zip
+
+# Eval runs
 /evals/results/
+
+# Secrets and local settings: never commit keys, tokens or a user's config
+.env
+.env.*
+*.pem
+*.key
+*.p12
+*.keystore
+config.yml
+config.yml.bak
+
+# Local data: databases, backups, logs, scratch
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.bak
+*.bak-*
+*.log
+*.orig
+*.rej
+*.swp
+*~
 test/
-.DS_Store
+tmp/
+scratch/
 .tree/
+
+# Editors and systems
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.iml
+
+# Other tools' local state and worktrees
+.claude/
+.codex/
+.opencode/
+.cursor/
+.aider*
