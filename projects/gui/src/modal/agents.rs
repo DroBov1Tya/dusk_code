@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use gpui_kit::{component::ActiveTheme, *};
 
+use dusk_protocol::agent::Zone;
+
 use crate::{
     chat::transcript::{Agent, AgentState},
     inspector::mascot,
@@ -14,40 +16,6 @@ use crate::{
     widgets,
     workspace::Workspace,
 };
-
-/// The zones in the order they are drawn, with the words in a role's name that put it
-/// there. The first zone that matches wins, so `cloud-security-specialist` is security.
-const ZONES: &[(&str, &[&str])] = &[
-    ("Security", &["security", "red-team", "appsec"]),
-    ("Testing and review", &["tester", "reviewer", "qa-"]),
-    (
-        "Infrastructure",
-        &[
-            "devops",
-            "sre",
-            "infrastructure",
-            "network",
-            "build-release",
-        ],
-    ),
-    ("Engineering", &["engineer", "architect", "docs"]),
-];
-const OTHER: &str = "General";
-/// The order the zones stand in on the stage.
-const ORDER: [&str; 5] = [
-    "Engineering",
-    "Security",
-    "Testing and review",
-    "Infrastructure",
-    OTHER,
-];
-
-fn zone(role: &str) -> &'static str {
-    ZONES
-        .iter()
-        .find(|(_, words)| words.iter().any(|word| role.contains(word)))
-        .map_or(OTHER, |(name, _)| name)
-}
 
 pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> Div {
     let Some(chat) = ws
@@ -70,13 +38,11 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
         theme.border,
     );
     let working = chat.agents.values().filter(|agent| agent.working).count();
-    let mut zones: Vec<(&str, Vec<(&String, &Agent)>)> =
-        ORDER.iter().map(|name| (*name, Vec::new())).collect();
+    let mut zones: Vec<(Zone, Vec<(&String, &Agent)>)> =
+        Zone::ALL.iter().map(|zone| (*zone, Vec::new())).collect();
     for (id, agent) in &chat.agents {
-        if let Some((_, members)) = zones
-            .iter_mut()
-            .find(|(name, _)| *name == zone(&agent.role))
-        {
+        let own = Zone::of(&agent.role);
+        if let Some((_, members)) = zones.iter_mut().find(|(zone, _)| *zone == own) {
             members.push((id, agent));
         }
     }
@@ -101,7 +67,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                     .items_center()
                     .gap_2()
                     .pb_1()
-                    .child(div().group_name().child(name))
+                    .child(div().group_name().child(name.name()))
                     .child(div().flex_1())
                     .child(
                         div()
@@ -253,20 +219,5 @@ fn clock(time: Duration) -> String {
             seconds / 60 % 60,
             seconds % 60
         ),
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::zone;
-
-    #[test]
-    fn a_role_stands_in_the_zone_of_its_work() {
-        assert_eq!(zone("cloud-security-specialist"), "Security");
-        assert_eq!(zone("qa-engineer"), "Testing and review");
-        assert_eq!(zone("web-tester"), "Testing and review");
-        assert_eq!(zone("sre-engineer"), "Infrastructure");
-        assert_eq!(zone("backend-engineer"), "Engineering");
-        assert_eq!(zone("general"), "General");
     }
 }

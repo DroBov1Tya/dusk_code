@@ -99,15 +99,12 @@ const fn frame(lift: i32, eyes: Eyes, tail: Tail, fx: Fx, ms: u64) -> Frame {
 
 /// What a tool's name says it does, for the thing the fox holds.
 fn tool_fx(name: &str, step: u8) -> Fx {
-    let has = |words: &[&str]| words.iter().any(|word| name.contains(word));
-    if has(&["search", "grep", "find", "glob"]) {
-        Fx::Lens(step)
-    } else if has(&["read", "fetch", "open", "load", "navigate", "snapshot"]) {
-        Fx::Page(step)
-    } else if has(&["write", "edit", "plan", "task", "remember", "name"]) {
-        Fx::Pencil(step)
-    } else {
-        Fx::Hammer(step == 1)
+    use dusk_protocol::agent::Doing;
+    match Doing::of_tool(name) {
+        Doing::Searching => Fx::Lens(step),
+        Doing::Reading => Fx::Page(step),
+        Doing::Planning => Fx::Pencil(step),
+        _ => Fx::Hammer(step == 1),
     }
 }
 
