@@ -8,6 +8,11 @@ testing.
 
 ### Added
 
+- Notifications reach the system's own area: the TUI and the GUI post a notice when
+  a chat finishes, fails, asks a question or waits for approval and the terminal or
+  window is not in front, with the sound where it is on (macOS Notification Center,
+  `notify-send` on Linux). The TUI now tracks whether its terminal is in front.
+
 - GUI: the right column is calmer. At first start only the plan, the todo and the
   agents are open, a folded module shows a few words of its state in its header, and
   which modules are folded is kept between runs.

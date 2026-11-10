@@ -109,6 +109,8 @@ pub struct App {
     pub entry_lines: Vec<(usize, usize)>,
     /// A short word for the status rule, such as "copied", until the next input.
     pub flash: Option<String>,
+    /// Whether the terminal is in front, when it says; none until it does.
+    pub focused: Option<bool>,
     /// The repository the client runs in, for the line under the box.
     pub git: Option<crate::host::git::GitSummary>,
     /// When Ctrl+C last cleared the box; another soon after quits.
@@ -239,6 +241,7 @@ impl App {
             drawn_top: 0,
             entry_lines: Vec::new(),
             flash: None,
+            focused: None,
             git: None,
             quit_armed: None,
             command_popup: None,

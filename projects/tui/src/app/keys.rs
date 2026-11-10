@@ -25,6 +25,14 @@ const QUIT_WINDOW: Duration = Duration::from_secs(5);
 impl App {
     pub fn handle(&mut self, event: Event) -> Action {
         match event {
+            Event::FocusGained => {
+                self.focused = Some(true);
+                Action::None
+            }
+            Event::FocusLost => {
+                self.focused = Some(false);
+                Action::None
+            }
             Event::Key(key) if key.kind == KeyEventKind::Press => self.key(key),
             Event::Paste(text) if matches!(self.panel, Some(Panel::Connect(_))) => {
                 if let Some(Panel::Connect(form)) = &mut self.panel {
