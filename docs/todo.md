@@ -64,22 +64,22 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 ## GUI
 
 Chat
-- [ ] A command block with a copy button also gets Run: runs in the terminal tool and
-      sends the output to the chat
-- [ ] Code blocks drawn as markdown code in the chat, copy button on each answer
-- [ ] Select text in messages
-- [ ] Click a picture to open it large over the window; a click outside closes it
-- [ ] Only the agent's last action shows; a click unfolds the rest, each unfolds again
-- [ ] Model screenshots go to a menu on the right, not into the chat
-- [ ] A large paste becomes an attached file, as in the TUI
-- [ ] Attachments above the composer, not under it
-- [ ] Send and + buttons a little larger
-- [ ] Under the composer: access mode (sandbox, arbiter, full), per chat, the setting
+- [x] A command block with a copy button also gets Run: the core runs it in the chat's
+      folder after a confirm, the output waits in the composer
+- [x] Code blocks drawn as markdown code in the chat, copy button on each answer
+- [x] Select text in messages
+- [x] Click a picture to open it large over the window; a click outside closes it
+- [x] Only the agent's last action shows; a click unfolds the rest, each unfolds again
+- [x] Model screenshots go to a menu on the right, not into the chat
+- [x] A large paste becomes an attached file, as in the TUI
+- [x] Attachments above the composer, not under it
+- [x] Send and + buttons a little larger
+- [x] Under the composer: access mode (sandbox, arbiter, full), per chat, the setting
       is the default; review that row so it is not crowded; mode shown, Tab switches
 - [x] Messages typed while the agent works wait above the composer, editable; they go
       as one message when the turn ends (as in the TUI), "Now" interrupts
 - [x] Tokens per second shown while the agent writes
-- [ ] Message navigator: opaque
+- [x] Message navigator: opaque
 
 Subagents
 - [ ] A button right of the composer with a status indicator; it opens a window with

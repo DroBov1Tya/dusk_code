@@ -670,6 +670,31 @@ impl Runtime {
         self.updates.found()
     }
 
+    /// Runs a command the user chose in the client, such as one from a code block, in
+    /// the chat's folder and confined as its tools are. The client asked the user first;
+    /// the output goes back to the client, not to the model.
+    pub async fn run_for_user(&self, thread_id: &str, command: &str) -> Result<String> {
+        let state = &self.launcher.state;
+        let thread = state
+            .load_thread(thread_id)
+            .await?
+            .with_context(|| format!("thread {thread_id} does not exist"))?;
+        let cwd = thread
+            .project
+            .map(PathBuf::from)
+            .context("the chat has no project folder")?;
+        let workspace = thread_start::workspace(state, &self.launcher.paths, thread_id).await?;
+        let context = crate::tools::ToolContext {
+            scope: Arc::new(self.launcher.scope(&cwd, &workspace)?),
+            config: self.config().current(),
+            progress: None,
+            approvals: None,
+            state: Some(Arc::clone(state)),
+            thread_id: thread_id.to_owned(),
+        };
+        crate::tools::console::run_for_user(command, &context).await
+    }
+
     /// `message` with its long pastes moved to the thread's sources.
     pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
         let workspace =

@@ -5,4 +5,4 @@ mod run_command;
 mod skill_saves;
 
 pub use jobs::Jobs;
-pub use run_command::{ProcessGroup, RunCommand, spawn};
+pub use run_command::{ProcessGroup, RunCommand, run_for_user, spawn};

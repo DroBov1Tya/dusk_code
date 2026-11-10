@@ -44,6 +44,7 @@ pub enum Right {
     Arbiter,
     Context,
     Activity,
+    Screenshots,
     Git,
     Files,
     Todo,
@@ -55,6 +56,7 @@ pub enum Right {
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
     Mode,
+    Access,
     Model,
     Effort,
     MoreModels,
@@ -88,6 +90,8 @@ pub struct Workspace {
     pub artifact_kind: Option<OutputKind>,
     pub search: Entity<InputState>,
     pub composer: Entity<TextareaState>,
+    /// Text for the composer, put there on the next frame, which has the window.
+    pub fill_composer: Option<String>,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     pub git: Option<GitInfo>,
@@ -107,6 +111,8 @@ pub struct Workspace {
     pub right_hidden: bool,
     /// Files to send with the next message.
     pub attachments: Vec<PathBuf>,
+    /// Long pasted texts, sent as the core's paste tags so it keeps them as files.
+    pub pastes: Vec<String>,
     /// Messages written while the agent works: each sits above the composer,
     /// editable, and goes in queue order when the turn ends.
     pub pending: Vec<chat::queue::Pending>,
@@ -204,6 +210,7 @@ impl Workspace {
             artifact_kind: None,
             search,
             composer,
+            fill_composer: None,
             notice: None,
             pending: Vec::new(),
             rates: HashMap::new(),
@@ -221,6 +228,7 @@ impl Workspace {
             left_hidden: false,
             right_hidden: false,
             attachments: Vec::new(),
+            pastes: Vec::new(),
             sent_rows: Vec::new(),
             navigator_open: false,
             secret_inputs: Vec::new(),
@@ -371,5 +379,7 @@ impl Render for Workspace {
             })
             .children(modal)
             .children(chat_menu)
+            .on_action(cx.listener(Self::copy_code))
+            .on_action(cx.listener(Self::ask_run))
     }
 }

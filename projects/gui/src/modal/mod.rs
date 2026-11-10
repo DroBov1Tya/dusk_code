@@ -50,6 +50,15 @@ pub enum Modal {
         thread_id: String,
         title: String,
     },
+    /// A picture large over the window; a click outside closes it.
+    Picture {
+        path: PathBuf,
+    },
+    /// A shell block from an answer, to run once the user says yes.
+    RunCode {
+        thread_id: String,
+        command: String,
+    },
 }
 
 /// The form that adds a project, or changes the one with `id`.
@@ -84,6 +93,21 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
+        Modal::Picture { path } => (
+            "Picture".to_owned(),
+            1100.,
+            div().p_3().child(
+                img(path.clone())
+                    .w_full()
+                    .max_h(px(760.))
+                    .object_fit(ObjectFit::Contain),
+            ),
+        ),
+        Modal::RunCode { command, .. } => (
+            "Run command".to_owned(),
+            640.,
+            run_code(&command.clone(), cx),
+        ),
         Modal::Arbiter => ("Arbiter".to_owned(), 1040., arbiter::render(ws, cx)),
         Modal::AgentChat { agent, name } => {
             let (agent, name) = (agent.clone(), name.clone());
@@ -162,4 +186,56 @@ impl Workspace {
         self.modal = None;
         cx.notify();
     }
+}
+
+/// The command in full before it runs: it came from the model.
+fn run_code(command: &str, cx: &mut Context<Workspace>) -> Div {
+    let theme = cx.theme();
+    let (muted, surface) = (theme.muted_foreground, theme.muted);
+    let mono = crate::theme::prefs(cx)
+        .mono_font
+        .clone()
+        .unwrap_or_else(|| "Menlo".to_owned());
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .p_5()
+        .child(
+            div()
+                .text_sm()
+                .text_color(muted)
+                .child("The model wrote this. It runs in the chat's folder, confined as the chat's tools are, and the output goes to the message box."),
+        )
+        .child(
+            div()
+                .id("run-code-text")
+                .max_h(px(280.))
+                .overflow_y_scroll()
+                .p_3()
+                .rounded_md()
+                .bg(surface)
+                .text_xs()
+                .font_family(mono)
+                .child(command.to_owned()),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .justify_end()
+                .gap_2()
+                .child(
+                    Button::new("run-code-cancel")
+                        .ghost()
+                        .label("Cancel")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
+                )
+                .child(
+                    Button::new("run-code-run")
+                        .primary()
+                        .label("Run")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.run_code(cx))),
+                ),
+        )
 }

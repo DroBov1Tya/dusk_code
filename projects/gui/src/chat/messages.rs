@@ -6,7 +6,10 @@
 use std::path::Path;
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName},
+    component::{
+        ActiveTheme, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -158,7 +161,11 @@ impl Workspace {
                         .py_2()
                         .rounded_xl()
                         .bg(surface)
-                        .child(text.clone())
+                        // Selectable like the answers; pastes and files show as labels.
+                        .child(links::markdown(
+                            SharedString::from(format!("user-{key}")),
+                            user_text(text),
+                        ))
                         .into_any_element(),
                     Item::Assistant { text, reasoning } => {
                         let unfolded = self.unfolded.contains(&(shown.clone(), at));
@@ -198,6 +205,21 @@ impl Workspace {
                                 text,
                                 cx,
                             ));
+                            let copied = text.clone();
+                            answer = answer.child(
+                                div().flex().flex_row().child(
+                                    Button::new(SharedString::from(format!("copy-{key}")))
+                                        .ghost()
+                                        .xsmall()
+                                        .icon(IconName::Copy)
+                                        .tooltip("Copy the answer")
+                                        .on_click(cx.listener(move |_, _, _, cx| {
+                                            cx.write_to_clipboard(ClipboardItem::new_string(
+                                                copied.clone(),
+                                            ))
+                                        })),
+                                ),
+                            );
                         }
                         answer.into_any_element()
                     }
@@ -228,6 +250,26 @@ impl Workspace {
             .child(lane(content))
             .into_any_element()
     }
+}
+
+/// A picture of the pictures folder. Only an ID of hex digits and dashes is taken, so
+/// it cannot name a path outside that folder.
+pub fn picture_path(folder: &Path, id: &str) -> Option<std::path::PathBuf> {
+    let valid = !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit() || c == '-');
+    valid.then(|| folder.join(id).join("image"))
+}
+
+/// A sent message as the user wrote it, each paste and kept file as a short label.
+fn user_text(text: &str) -> String {
+    use dusk_protocol::pasted::{Part, split};
+    split(text)
+        .into_iter()
+        .map(|part| match part {
+            Part::Text(text) => text.to_owned(),
+            Part::Pasted(pasted) => format!("`[{}]`", super::composer::paste_label(pasted)),
+            Part::Source(name) => format!("`[{name}]`"),
+        })
+        .collect()
 }
 
 /// A row at the chat's reading width, centered.
@@ -367,11 +409,11 @@ fn step(
 /// A picture from the pictures folder as a card: the picture on the left, its title and
 /// description beside it, a hairline under it to part it from the next. Only an ID of
 /// hex digits and dashes is taken, so it cannot name a path outside that folder.
-fn picture(folder: &Path, image: &Picture, cx: &App) -> AnyElement {
+fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> AnyElement {
     let id = &image.id;
-    if id.is_empty() || !id.chars().all(|c| c.is_ascii_hexdigit() || c == '-') {
+    let Some(path) = picture_path(folder, id) else {
         return div().into_any_element();
-    }
+    };
     let theme = cx.theme();
     let (border, muted, surface) = (theme.border, theme.muted_foreground, theme.muted);
     let mut text = div().flex().flex_col().gap_2().flex_1().min_w_0();
@@ -401,17 +443,23 @@ fn picture(folder: &Path, image: &Picture, cx: &App) -> AnyElement {
         .border_color(border)
         .child(
             div()
+                .id(SharedString::from(format!("picture-card-{id}")))
                 .w(px(220.))
                 .flex_none()
                 .rounded_xl()
                 .overflow_hidden()
                 .bg(surface)
+                .cursor_pointer()
                 .child(
-                    img(folder.join(id).join("image"))
+                    img(path.clone())
                         .w_full()
                         .max_h(px(320.))
                         .object_fit(ObjectFit::Cover),
-                ),
+                )
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.modal = Some(crate::modal::Modal::Picture { path: path.clone() });
+                    cx.notify();
+                })),
         )
         .child(text)
         .into_any_element()

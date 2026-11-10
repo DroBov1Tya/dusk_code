@@ -84,7 +84,7 @@ pub fn render(
                 .child(gpui_kit::component::input::Input::new(&ws.model_input)),
         );
     let side = match picker {
-        Picker::Model | Picker::Mode => None,
+        Picker::Model | Picker::Mode | Picker::Access => None,
         Picker::Effort => Some(efforts(effort, cx)),
         Picker::MoreModels => Some(all_models(ws, &current, cx)),
     };

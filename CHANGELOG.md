@@ -15,6 +15,11 @@ testing.
   the provider's config, shown next to the call count; never guessed. Providers that
   tell the balance to a plain key (DeepSeek, Kimi, OpenRouter, and LiteLLM with
   `balance: litellm`) show it in the model list.
+- Desktop chat: Copy and Run on code blocks (Run asks, runs in the chat's folder as
+  its tools would and puts the output in the message box), a copy button on answers,
+  selectable messages, pictures that open large, screenshots in a right column module,
+  long pastes as chips kept as files, attachments above the box, and the chat's own
+  access mode under it.
 - Per-chat access modes, version control and notification settings, name_session and
   plan_edit tools, a per-item context breakdown with use counts (core).
 

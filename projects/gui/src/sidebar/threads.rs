@@ -140,12 +140,14 @@ impl Workspace {
                 let history = threads.messages(&thread_id).await?;
                 let thread_id = threads.resume(&thread_id, cwd).await?;
                 let tasks = threads.tasks(&thread_id).await?;
-                anyhow::Ok((thread_id, history, tasks))
+                let access = threads.approvals(&thread_id).await?;
+                anyhow::Ok((thread_id, history, tasks, access))
             },
             |ws, result, cx| match result {
-                Ok((thread_id, history, tasks)) => {
+                Ok((thread_id, history, tasks, access)) => {
                     let mut chat = Transcript::from_history(&history);
                     chat.tasks = tasks;
+                    chat.access = access;
                     ws.chats.insert(thread_id.clone(), chat);
                     ws.show(thread_id, cx);
                 }

@@ -1,8 +1,10 @@
 //! The middle column: the shown chat's transcript, the cards that wait for the user,
 //! the composer and the bar under it.
 
+mod access_menu;
 mod approval;
-mod composer;
+pub mod code;
+pub mod composer;
 pub mod links;
 mod media;
 pub mod messages;
@@ -27,6 +29,10 @@ use gpui_kit::{
 use crate::{widgets, workspace::Workspace};
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+    if let Some(text) = ws.fill_composer.take() {
+        ws.composer
+            .update(cx, |composer, cx| composer.set_value(text, window, cx));
+    }
     let theme = cx.theme();
     let (border, danger) = (theme.border, theme.danger);
     let title = ws
