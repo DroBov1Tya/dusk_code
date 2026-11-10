@@ -238,6 +238,14 @@ fn diff(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(file) = ws.review.files.get(ws.review.selected) else {
         return div().flex_1();
     };
+    let (open_path, open_line) = (
+        file.path.clone(),
+        file.hunks
+            .iter()
+            .flat_map(|hunk| &hunk.lines)
+            .find_map(|line| line.new),
+    );
+    let can_open = file.kind != ChangeKind::Deleted;
     let title = div()
         .flex()
         .flex_row()
@@ -254,7 +262,22 @@ fn diff(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
             ChangeKind::Renamed => "renamed",
             ChangeKind::Conflicted => "conflict",
             ChangeKind::Modified => "modified",
-        }));
+        }))
+        .child(div().flex_1())
+        .when(can_open, |row| {
+            row.child(
+                Button::new("review-open-file")
+                    .ghost()
+                    .xsmall()
+                    .icon(IconName::File)
+                    .label("Open file")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        if let Some(dir) = ws.project_dir() {
+                            ws.open_file(dir.join(&open_path), open_line, cx);
+                        }
+                    })),
+            )
+        });
     let content = if ws.review.rows.is_empty() {
         let text = if file.binary {
             "Binary or too large to show."

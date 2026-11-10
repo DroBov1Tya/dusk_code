@@ -64,6 +64,8 @@ fn folder(ws: &Workspace, path: &str, depth: usize, column: &mut Div, cx: &mut C
         .on_click(cx.listener(move |ws, _, _, cx| {
             if is_dir {
                 ws.toggle_folder(target.clone(), cx);
+            } else if let Some(dir) = ws.project_dir() {
+                ws.open_file(dir.join(&target), None, cx);
             }
         }));
         *column = std::mem::replace(column, div()).child(row);

@@ -13,8 +13,10 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [ ] Look at the review page, the todo wrapping and the message list in the running app
       (none of it could be seen from the session: screenshots of the window do not work
       from the shell)
-- [ ] A file viewer in the center like an editor: line numbers, syntax colors, search,
-      opened from Files, from a diff and from a path in the chat
+- [x] A file viewer in the center like an editor: line numbers, syntax colors, folding, search
+      (Cmd+F), opened from Files and from the review page (Open file, at the first change)
+- [ ] File viewer: open a path clicked in the chat; Esc to go back; tabs for several files;
+      syntax colors with tree-sitter if syntect proves too coarse
 - [ ] A terminal pane in the window (a PTY and a terminal emulator such as alacritty_terminal,
       drawn with gpui); the TUI already is one. Several tabs, the chat's folder as its start
 - [ ] Keyboard for the review page (j/k between files, n/p between hunks, Esc back)

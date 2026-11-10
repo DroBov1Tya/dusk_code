@@ -18,6 +18,10 @@ testing.
 
 ### Added
 
+- GUI: a file viewer in the middle column, read-only, with line numbers, syntax colors,
+  folding and search. Opened from the Files module and from the review page. It adds the
+  `syntect` highlighter of the UI kit (new crates: syntect, two-face, fancy-regex, bincode;
+  `cargo audit` lists bincode as unmaintained, no new vulnerability).
 - Review of changes: the Changes module shows the lines added and removed, and opens a page
   with each file's diff (line numbers, green, red and grey lines). TUI: `/diff`. The core
   answers `Diff` for a project and for a chat's own folder, with the totals in `GitInfo`.

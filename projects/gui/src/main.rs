@@ -15,6 +15,7 @@ mod artifacts;
 mod chat;
 mod connectors;
 mod core;
+mod file_view;
 mod icon;
 mod inspector;
 mod modal;
