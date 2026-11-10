@@ -4,13 +4,14 @@
 //! folds on its header.
 
 mod activity;
-mod agents;
+pub mod agents;
 mod context;
 mod environment;
 mod files;
 mod git;
 mod glyph;
 mod jobs;
+pub mod mascot;
 mod screenshots;
 mod todo;
 
@@ -179,7 +180,9 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             gpui_kit::component::button::Button::new("arbiter-open")
                 .label("Open")
                 .on_click(cx.listener(|ws, _, _, cx| {
-                    ws.modal = Some(crate::modal::Modal::Arbiter);
+                    if let Some(thread_id) = ws.shown.clone() {
+                        ws.modal = Some(crate::modal::Modal::Arbiter { thread_id });
+                    }
                     cx.notify();
                 })),
         )

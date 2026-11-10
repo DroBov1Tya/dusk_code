@@ -96,11 +96,51 @@ pub enum ExchangeKind {
 pub const CHAT: &str = "chat";
 const ARBITER: &str = "arbiter";
 
-/// A subagent of the chat, as the right column shows it.
+/// A subagent of the chat, as the right column and the agents window show it.
 pub struct Agent {
+    /// The name drawn from its thread, such as `Ember-0c`.
     pub name: String,
+    /// The agent it works as, such as `general`.
+    pub role: String,
     pub task: String,
     pub working: bool,
+    pub state: AgentState,
+    pub started: Instant,
+    pub ended: Option<Instant>,
+}
+
+/// What a subagent does now, from the events of its thread.
+#[derive(Clone, PartialEq, Eq)]
+pub enum AgentState {
+    Thinking,
+    Writing,
+    Tool(String),
+    Done,
+    Failed,
+}
+
+impl Agent {
+    pub fn run_time(&self) -> std::time::Duration {
+        self.ended.unwrap_or_else(Instant::now) - self.started
+    }
+
+    fn follow(&mut self, event: &ThreadEvent) {
+        let state = match event {
+            ThreadEvent::TurnStarted(_) | ThreadEvent::ToolFinished { .. } => AgentState::Thinking,
+            ThreadEvent::Model(ModelEvent::Reasoning(_)) => AgentState::Thinking,
+            ThreadEvent::Model(ModelEvent::Text(_)) => AgentState::Writing,
+            ThreadEvent::ToolStarted(call) => AgentState::Tool(call.name.clone()),
+            ThreadEvent::Idle => AgentState::Done,
+            ThreadEvent::Failed(_) => AgentState::Failed,
+            _ => return,
+        };
+        self.working = !matches!(state, AgentState::Done | AgentState::Failed);
+        self.ended = match self.working {
+            true => None,
+            false => self.ended.or_else(|| Some(Instant::now())),
+        };
+        self.state = state;
+    }
 }
 
 #[derive(Default)]
@@ -243,13 +283,18 @@ impl Transcript {
                 task,
                 ..
             } => {
-                self.exchange(CHAT, &agent, ExchangeKind::Asked, &task);
+                let name = dusk_protocol::thread::agent_name(&thread_id);
+                self.exchange(CHAT, &name, ExchangeKind::Asked, &task);
                 self.agents.insert(
                     thread_id,
                     Agent {
-                        name: agent,
+                        name,
+                        role: agent,
                         task,
                         working: true,
+                        state: AgentState::Thinking,
+                        started: Instant::now(),
+                        ended: None,
                     },
                 );
             }
@@ -278,11 +323,7 @@ impl Transcript {
                     _ => {}
                 }
                 if let Some(agent) = self.agents.get_mut(&thread_id) {
-                    match &*event {
-                        ThreadEvent::TurnStarted(_) => agent.working = true,
-                        ThreadEvent::Idle | ThreadEvent::Failed(_) => agent.working = false,
-                        _ => {}
-                    }
+                    agent.follow(&event);
                 }
                 self.agent_chats.entry(thread_id).or_default().apply(*event);
             }
@@ -369,6 +410,10 @@ impl Transcript {
     }
 
     fn exchange(&mut self, from: &str, to: &str, kind: ExchangeKind, text: &str) {
+        // Each request to the arbiter and each answer sends a wave through its sphere.
+        if kind != ExchangeKind::Asked && kind != ExchangeKind::Reported {
+            self.arbiter_at = Some(Instant::now());
+        }
         self.exchanges.push(Exchange {
             at: Instant::now(),
             from: from.to_owned(),
@@ -385,7 +430,6 @@ impl Transcript {
             ExchangeKind::Denied
         };
         self.exchange(ARBITER, asker, kind, &format!("{what}: {reason}"));
-        self.arbiter_at = Some(Instant::now());
     }
 
     fn tool_mut(&mut self, call_id: &str) -> Option<&mut Tool> {

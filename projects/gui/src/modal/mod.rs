@@ -2,6 +2,7 @@
 //! One at a time; a click on the dimmed backdrop or the close button shuts it.
 
 mod agent_chat;
+mod agents;
 mod arbiter;
 mod chat_menu;
 pub mod detail;
@@ -41,7 +42,14 @@ pub enum Modal {
         agent: String,
         name: String,
     },
-    Arbiter,
+    /// The arbiter of one chat; another chat shown meanwhile does not change it.
+    Arbiter {
+        thread_id: String,
+    },
+    /// The chat's subagents by role.
+    Agents {
+        thread_id: String,
+    },
     Rename {
         thread_id: String,
         title: Entity<InputState>,
@@ -108,7 +116,22 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             640.,
             run_code(&command.clone(), cx),
         ),
-        Modal::Arbiter => ("Arbiter".to_owned(), 1040., arbiter::render(ws, cx)),
+        Modal::Arbiter { thread_id } => {
+            let thread_id = thread_id.clone();
+            (
+                "Arbiter".to_owned(),
+                1040.,
+                arbiter::render(ws, &thread_id, cx),
+            )
+        }
+        Modal::Agents { thread_id } => {
+            let thread_id = thread_id.clone();
+            (
+                "Subagents".to_owned(),
+                560.,
+                agents::render(ws, &thread_id, cx),
+            )
+        }
         Modal::AgentChat { agent, name } => {
             let (agent, name) = (agent.clone(), name.clone());
             (name, 760., agent_chat::render(ws, &agent, cx))
@@ -173,6 +196,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .justify_center()
             .pt(px(72.))
             .bg(gpui_kit::black().opacity(0.45))
+            // Nothing behind takes the mouse, scrolling included.
+            .occlude()
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|ws, _, _, cx| ws.close_modal(cx)),

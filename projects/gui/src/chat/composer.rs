@@ -155,6 +155,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                         .child(Textarea::new(&ws.composer).appearance(false)),
                 )
                 .children(rate)
+                .children(agents_button(ws, cx))
                 .child(button),
         )
         .children(attach)
@@ -191,6 +192,50 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 ws.next_mode(cx);
             }
         }))
+}
+
+/// The chat's subagents at a glance: how many, a dot lit while any works; a click
+/// opens them by role.
+fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    let chat = ws.shown_chat().filter(|chat| !chat.agents.is_empty())?;
+    let thread_id = ws.shown.clone()?;
+    let working = chat.agents.values().filter(|agent| agent.working).count();
+    let theme = cx.theme();
+    let dot = if working > 0 {
+        theme.primary
+    } else {
+        theme.muted_foreground.opacity(0.5)
+    };
+    Some(
+        div()
+            .relative()
+            .child(
+                Button::new("agents")
+                    .ghost()
+                    .icon(IconName::Bot)
+                    .label(chat.agents.len().to_string())
+                    .tooltip(if working > 0 {
+                        format!("{working} subagents at work")
+                    } else {
+                        "Subagents".to_owned()
+                    })
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.modal = Some(crate::modal::Modal::Agents {
+                            thread_id: thread_id.clone(),
+                        });
+                        cx.notify();
+                    })),
+            )
+            .child(
+                div()
+                    .absolute()
+                    .top(px(4.))
+                    .right(px(4.))
+                    .size(px(7.))
+                    .rounded_full()
+                    .bg(dot),
+            ),
+    )
 }
 
 /// Pastes longer than this, in characters, become a chip, as in the terminal client.
