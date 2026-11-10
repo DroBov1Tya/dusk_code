@@ -17,6 +17,11 @@ pub struct Outcome {
     pub seconds: u64,
     pub model_calls: u64,
     pub tokens: u64,
+    /// What the model wrote, its reasoning included, and that reasoning alone.
+    #[serde(default)]
+    pub output_tokens: u64,
+    #[serde(default)]
+    pub reasoning_tokens: u64,
     pub tool_calls: u64,
     pub tool_errors: u64,
     pub subagents: u64,
@@ -36,6 +41,8 @@ struct Totals {
     broken: usize,
     calls: f64,
     tokens: f64,
+    output: f64,
+    reasoning: f64,
     seconds: f64,
     errors: f64,
 }
@@ -54,6 +61,8 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
             .count(),
         calls: mean(|outcome| outcome.model_calls),
         tokens: mean(|outcome| outcome.tokens),
+        output: mean(|outcome| outcome.output_tokens),
+        reasoning: mean(|outcome| outcome.reasoning_tokens),
         seconds: mean(|outcome| outcome.seconds),
         errors: mean(|outcome| outcome.tool_errors),
     }
@@ -84,8 +93,16 @@ pub fn print(report: &Report) {
     let all: Vec<&Outcome> = report.outcomes.iter().collect();
     let sum = totals(&all);
     println!(
-        "passed {}/{}, {} without a verdict; mean {:.1} calls, {:.0} tokens, {:.1} tool errors, {:.0} s",
-        sum.passed, sum.runs, sum.broken, sum.calls, sum.tokens, sum.errors, sum.seconds
+        "passed {}/{}, {} without a verdict; mean {:.1} calls, {:.0} tokens, {:.0} out of which {:.0} reasoning, {:.1} tool errors, {:.0} s",
+        sum.passed,
+        sum.runs,
+        sum.broken,
+        sum.calls,
+        sum.tokens,
+        sum.output,
+        sum.reasoning,
+        sum.errors,
+        sum.seconds
     );
 }
 
@@ -115,8 +132,15 @@ pub fn compare(before: &Path, after: &Path) -> Result<()> {
         let all: Vec<&Outcome> = report.outcomes.iter().collect();
         let sum = totals(&all);
         println!(
-            "{label:<7} passed {}/{}; mean {:.1} calls, {:.0} tokens, {:.1} tool errors, {:.0} s",
-            sum.passed, sum.runs, sum.calls, sum.tokens, sum.errors, sum.seconds
+            "{label:<7} passed {}/{}; mean {:.1} calls, {:.0} tokens, {:.0} out of which {:.0} reasoning, {:.1} tool errors, {:.0} s",
+            sum.passed,
+            sum.runs,
+            sum.calls,
+            sum.tokens,
+            sum.output,
+            sum.reasoning,
+            sum.errors,
+            sum.seconds
         );
     }
     Ok(())

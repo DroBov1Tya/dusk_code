@@ -83,6 +83,8 @@ pub async fn all(options: &Options) -> Result<()> {
                 seconds: 0,
                 model_calls: 0,
                 tokens: 0,
+                output_tokens: 0,
+                reasoning_tokens: 0,
                 tool_calls: 0,
                 tool_errors: 0,
                 subagents: 0,
@@ -113,6 +115,8 @@ struct Watch {
     agents_at_work: BTreeSet<String>,
     /// The chat's latest counts; they take in those of its subagents.
     spent: u64,
+    output: u64,
+    reasoning: u64,
     model_calls: u64,
     tool_calls: u64,
     tool_errors: u64,
@@ -146,6 +150,8 @@ impl Watch {
             ThreadEvent::Question(_) => self.questions += 1,
             ThreadEvent::Tokens { tokens, .. } if thread.is_none() => {
                 self.spent = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
+                self.output = tokens.spent.completion_tokens;
+                self.reasoning = tokens.spent.reasoning_tokens;
                 self.model_calls = tokens.model_calls;
             }
             ThreadEvent::Model(ModelEvent::Text(text)) if thread.is_none() => {
@@ -234,6 +240,8 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         seconds,
         model_calls: watch.model_calls,
         tokens: watch.spent,
+        output_tokens: watch.output,
+        reasoning_tokens: watch.reasoning,
         tool_calls: watch.tool_calls,
         tool_errors: watch.tool_errors,
         subagents: watch.subagents,
