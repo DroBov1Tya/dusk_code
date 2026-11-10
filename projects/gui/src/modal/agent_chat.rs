@@ -42,6 +42,11 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .text_sm()
                 .child(text.clone())
                 .into_any_element(),
+            Item::Agent { from, text } => div()
+                .text_xs()
+                .text_color(muted)
+                .child(format!("{from} reported: {text}"))
+                .into_any_element(),
             Item::Assistant { text, .. } if !text.is_empty() => links::markdown(
                 SharedString::from(format!("agent-{agent}-{index}")),
                 text.clone(),

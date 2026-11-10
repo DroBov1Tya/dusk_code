@@ -14,6 +14,11 @@ use dusk_protocol::{
 
 pub enum Item {
     User(String),
+    /// What a subagent reported back: the agent's side of the chat, not the user's.
+    Agent {
+        from: String,
+        text: String,
+    },
     Assistant {
         text: String,
         reasoning: String,
@@ -182,6 +187,13 @@ impl Transcript {
     fn add_message(&mut self, message: &Message) {
         match message.role {
             MessageRole::System => {}
+            MessageRole::User if message.from_thread_id.is_some() => {
+                let from = message.from_thread_id.as_deref().unwrap_or_default();
+                self.items.push(Item::Agent {
+                    from: self.agent_name(from),
+                    text: message.content.clone(),
+                })
+            }
             MessageRole::User | MessageRole::Job => {
                 self.items.push(Item::User(message.content.clone()))
             }
@@ -237,7 +249,10 @@ impl Transcript {
                     .as_deref()
                     .map_or_else(|| "an agent".to_owned(), |id| self.agent_name(id));
                 self.exchange(&from, CHAT, ExchangeKind::Reported, &message.content);
-                self.items.push(Item::User(message.content));
+                self.items.push(Item::Agent {
+                    from,
+                    text: message.content,
+                });
             }
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
                 self.items.push(Item::User(message.content))
