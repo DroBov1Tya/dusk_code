@@ -32,8 +32,7 @@ use crate::{
 
 const START_TIMEOUT: Duration = Duration::from_secs(30);
 const CALL_TIMEOUT: Duration = Duration::from_secs(300);
-/// Tool descriptions go into every request, so a server's are bounded.
-const MAX_TOOLS: usize = 128;
+/// Tool descriptions go into every request, so each one is bounded.
 const MAX_DESCRIPTION_CHARS: usize = 1024;
 /// More than the model is shown of a result; the registry cuts it further.
 const MAX_RESULT_BYTES: usize = 1024 * 1024;
@@ -96,7 +95,6 @@ impl McpClient {
             .map_err(|error| anyhow!("cannot list the tools: {error}"))?;
         Ok(tools
             .into_iter()
-            .take(MAX_TOOLS)
             .map(|tool| RemoteTool {
                 name: tool.name.into_owned(),
                 description: tool

@@ -6,6 +6,12 @@ testing.
 
 ## Unreleased
 
+### Changed
+
+- No count limits on tools: a turn is no longer cut after 150 steps, one answer may call any
+  number of tools, and an MCP server's tools are no longer cut at 128. The user's stop and
+  context compaction end a long run.
+
 ### Added
 
 - GUI: what a subagent reports back is a folded card on the agent's side of the chat,
