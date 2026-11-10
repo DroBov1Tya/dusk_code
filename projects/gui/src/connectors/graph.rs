@@ -12,6 +12,7 @@ use dusk_protocol::{
 };
 use gpui_kit::{
     component::{ActiveTheme, IconName, Sizable, switch::Switch},
+    prelude::FluentBuilder,
     *,
 };
 
@@ -130,7 +131,8 @@ pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> 
         .flex()
         .flex_col()
         .gap_4()
-        .child(crumbs)
+        // At the top level the tab already says Agents; the trail shows once one is entered.
+        .when(!trail.is_empty(), |page| page.child(crumbs))
         .child(div().id("agents-level").overflow_x_scroll().child(picture));
     if children.is_empty() {
         page = page.child(widgets::muted("This agent asks no one of its own.", cx).px_0());

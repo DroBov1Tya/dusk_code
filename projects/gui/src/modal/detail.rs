@@ -9,7 +9,7 @@ use gpui_kit::{
 };
 
 use super::Modal;
-use crate::{chat::links, widgets, workspace::Workspace};
+use crate::{chat::links, ui::Type, widgets, workspace::Workspace};
 
 #[derive(Clone)]
 pub enum Detail {
@@ -179,12 +179,23 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                             .flex()
                             .flex_row()
                             .gap_3()
-                            .text_sm()
-                            .child(div().w(px(110.)).text_color(muted).child(key.clone()))
-                            .child(div().flex_1().child(value.clone())),
+                            .small()
+                            .child(
+                                div()
+                                    .w(px(120.))
+                                    .flex_none()
+                                    .text_color(muted)
+                                    .child(key.clone()),
+                            )
+                            .child(div().flex_1().min_w_0().child(value.clone())),
                     );
                 }
-                page.child(links::markdown("node-text", body(&file.text)))
+                page.child(
+                    div()
+                        .pt_2()
+                        .small()
+                        .child(links::markdown("node-text", body(&file.text))),
+                )
             }
         },
     }

@@ -6,7 +6,7 @@ use gpui_kit::{
 };
 
 use super::{card, grid, matches};
-use crate::{widgets, workspace::Workspace};
+use crate::workspace::Workspace;
 
 pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
     let warning = cx.theme().warning;
@@ -18,7 +18,12 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
         .cloned()
         .collect();
     if plugins.is_empty() {
-        return div().child(widgets::muted("No plugins installed.", cx));
+        return div().child(crate::ui::empty(
+            gpui_kit::component::IconName::Network,
+            "No plugins installed",
+            "Plugins bring skills, agents and tools; put one in rules/plugins/.",
+            cx,
+        ));
     }
     let mut cards = grid();
     for plugin in plugins {

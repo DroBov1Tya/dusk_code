@@ -8,6 +8,10 @@ testing.
 
 ### Changed
 
+- GUI Connectors: a title and a line about the page, the shelves as one segmented control with
+  the search on the same row, cards on the type scale with rounder corners, empty shelves say
+  what to do, the Agents shelf shows its trail only once an agent is entered, and the window of
+  a skill lines its facts up in one column and reads at the interface's size.
 - Rules about running commands, reading files, asking agents, asking the user and the task
   board are in each tool's description instead of the MAIN prompt (about 160 tokens fewer
   per request); no measurable change in the evals.

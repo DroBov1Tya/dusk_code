@@ -1,6 +1,7 @@
 //! A card of the connectors page: an icon slot, the name, what kind it is, a line of
 //! description, its state and its action.
 
+use crate::ui::Type;
 use dusk_protocol::thread::fnv1a;
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -25,9 +26,9 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
         .flex()
         .flex_row()
         .gap_3()
-        .p_3()
+        .p_4()
         .min_h(px(92.))
-        .rounded_lg()
+        .rounded_xl()
         .border_1()
         .border_color(theme.border)
         .bg(theme.muted)
@@ -51,19 +52,20 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
                 .min_w_0()
                 .child(
                     div()
+                        .body()
                         .font_weight(FontWeight::SEMIBOLD)
                         .truncate()
                         .child(card.name),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .meta()
                         .text_color(theme.muted_foreground)
                         .child(card.kind),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .small()
                         .text_color(theme.muted_foreground)
                         .line_clamp(2)
                         .text_ellipsis()
@@ -79,7 +81,7 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
                 .gap_2()
                 .children(
                     card.state
-                        .map(|(text, color)| div().text_xs().text_color(color).child(text)),
+                        .map(|(text, color)| div().meta().text_color(color).child(text)),
                 )
                 // The action keeps its clicks, so a switch does not open the card.
                 .child(
@@ -104,7 +106,7 @@ pub fn icon_slot(name: &str, cx: &App) -> Div {
     div()
         .size(px(44.))
         .flex_none()
-        .rounded_lg()
+        .rounded_xl()
         .bg(tile)
         .flex()
         .items_center()

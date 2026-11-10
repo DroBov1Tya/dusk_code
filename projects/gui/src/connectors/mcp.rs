@@ -39,8 +39,10 @@ pub fn render(
         .filter(|server| matches(query, &[&server.name, &server.target]))
         .collect();
     if servers.is_empty() {
-        return div().child(widgets::muted(
-            "No MCP servers. Add one to the config's mcp section.",
+        return div().child(crate::ui::empty(
+            IconName::Network,
+            "No MCP servers",
+            "Add one to the mcp section of the config; it appears here with its tools.",
             cx,
         ));
     }
