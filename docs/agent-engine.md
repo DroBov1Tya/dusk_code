@@ -59,5 +59,9 @@ Each tool less is a shorter prefix on every request and one fewer choice per ste
 - [ ] Compaction sends the thread's tools too, so its request reuses the cached prefix.
 - [x] Subagents: phases are optional; the runtime starts the task in planning and marks
       it done on the answer, so a subagent does not spend steps on bookkeeping.
+- [x] Think once, then act: the first step of a turn and a step after a failed tool
+      run at the effort set, steps that carry out the plan at a light one (low at most,
+      only when a level is set); the prompts ask for one plan, then tool calls, and
+      reasoning only on a surprise.
 - [ ] Compaction prepared before the limit, recent tail kept word for word.
 - [ ] An eval set (a Terminal-Bench subset through Harbor) to measure each change.

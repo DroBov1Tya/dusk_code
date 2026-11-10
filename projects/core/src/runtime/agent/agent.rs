@@ -41,6 +41,27 @@ use crate::{
     tools::{Progress, ToolKind, ToolRegistry, ToolScope},
 };
 
+/// The rhythm of a turn: think once, then act. The first step plans and a step after
+/// a failed tool works out why, both at the effort set; a step after tools that went
+/// as expected only carries out the plan, at a light effort, so the model does not
+/// reason at length before each obvious next call.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Pace {
+    #[default]
+    Plan,
+    Follow,
+    Rethink,
+}
+
+impl Pace {
+    pub fn effort(self, set: Option<Effort>) -> Option<Effort> {
+        match self {
+            Self::Follow => set.map(Effort::light),
+            Self::Plan | Self::Rethink => set,
+        }
+    }
+}
+
 /// Bounds a model that keeps calling tools; long tasks of small steps fit in it.
 const MAX_STEPS: usize = 150;
 /// A model call that fails before writing anything is tried this many times in all.
@@ -59,6 +80,8 @@ pub struct Agent {
     pub project: String,
     /// The model that refused pictures; the others still get them.
     pub pictures_refused: Mutex<Option<String>>,
+    /// Where the turn is: planning, carrying out, or working out a surprise.
+    pub pace: Mutex<Pace>,
     /// The question on the user's screen. Its answer joins the running turn instead of
     /// waiting for the next one.
     pub asking: Mutex<Option<String>>,
@@ -112,6 +135,7 @@ impl Agent {
         let turn = self.state.start_turn(&self.thread_id).await?;
         if let Some(turn) = &turn {
             info!("thread {} turn {} starts", self.thread_id, turn.turn_id);
+            *self.pace.lock() = Pace::Plan;
             self.emit(ThreadEvent::TurnStarted(turn.clone()));
             self.hook_notes(HookEvent::TurnStart, json!({})).await?;
             // A new task starts with planning; a paused one goes on.
@@ -427,7 +451,8 @@ impl Agent {
             messages.push(ChatMessage::System(note));
         }
         let choice = self.model.current().context("provider is unavailable")?;
-        let effort = self.effort(&config).await;
+        let set = self.effort(&config).await;
+        let effort = self.pace.lock().effort(set);
         let request = ChatRequest {
             model: &choice.model.id,
             messages: &messages,
@@ -610,6 +635,7 @@ impl Agent {
         inbox: &mut Inbox,
     ) -> Result<Option<Stop>> {
         let mut stop = None;
+        let mut surprised = false;
         for call in calls {
             let mut artifacts = Vec::new();
             let mut finished = None;
@@ -694,6 +720,7 @@ impl Agent {
                     warn!("cannot count the MCP tool use: {error:#}");
                 }
             }
+            surprised |= outcome != "succeeded";
             let stored = self.state.record_tool_result_with_outcome(
                 &turn.turn_id,
                 &call.id,
@@ -718,6 +745,11 @@ impl Agent {
                 });
             }
         }
+        *self.pace.lock() = if surprised {
+            Pace::Rethink
+        } else {
+            Pace::Follow
+        };
         Ok(stop)
     }
 
