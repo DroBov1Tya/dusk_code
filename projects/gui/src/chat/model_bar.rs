@@ -101,10 +101,13 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             widgets::short(limit)
         ))
         .child(super::ring::render(share, meter, border));
-    let menu = ws.picker.map(|picker| match picker {
-        Picker::Mode => super::mode_menu::render(ws, cx),
-        Picker::Access => super::access_menu::render(ws, cx),
-        picker => super::model_menu::render(ws, picker, &effort, cx),
+    let menu = ws.picker.map(|picker| {
+        let (key, menu) = match picker {
+            Picker::Mode => ("mode", super::mode_menu::render(ws, cx)),
+            Picker::Access => ("access", super::access_menu::render(ws, cx)),
+            picker => ("model", super::model_menu::render(ws, picker, &effort, cx)),
+        };
+        widgets::appear(format!("composer-menu-{key}"), menu)
     });
     div()
         .relative()

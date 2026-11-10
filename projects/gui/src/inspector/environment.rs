@@ -66,8 +66,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(line(
             IconName::Bot,
             format!(
-                "{} mode · {:?} approvals",
-                ws.status.mode, ws.status.approvals
+                "{} mode · {} approvals",
+                ws.status.mode,
+                ws.status.approvals.name()
             )
             .to_lowercase(),
         ))

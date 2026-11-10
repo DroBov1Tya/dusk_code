@@ -100,7 +100,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .child(ws.file.shown.clone()),
         )
         .child(div().text_xs().text_color(muted).child(match ws.file.load {
-            Load::Ready => format!("{} lines", ws.file.lines),
+            Load::Ready => widgets::count(ws.file.lines, "line"),
             _ => String::new(),
         }))
         .child(

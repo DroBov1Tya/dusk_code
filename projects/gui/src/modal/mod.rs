@@ -189,6 +189,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         .ghost()
                         .small()
                         .icon(IconName::Close)
+                        .tooltip("Close")
                         .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
                 ),
         )

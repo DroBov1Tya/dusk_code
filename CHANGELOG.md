@@ -8,6 +8,9 @@ testing.
 
 ### Changed
 
+- GUI polish: tooltips on every icon-only button, counts in the singular when they are one
+  ("1 tool", "1 line"), the approval mode shown by name ("full access", not "fullaccess"), and
+  the composer menus and the message list fade in over 140 ms.
 - Compaction sends the thread's tools, project text and cache key, so its request reads the
   cached prefix instead of the whole context cold.
 - The log has a `model call` line with prompt, cached, written and completion tokens, and a

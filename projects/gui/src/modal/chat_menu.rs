@@ -195,7 +195,10 @@ pub fn delete_files(count: usize, cx: &mut Context<Workspace>) -> Div {
         .flex_col()
         .gap_3()
         .p_5()
-        .child(format!("Delete all {count} files shown?"))
+        .child(format!(
+            "Delete all {} shown?",
+            crate::widgets::count(count, "file")
+        ))
         .child(
             div()
                 .text_sm()
