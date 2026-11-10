@@ -28,6 +28,9 @@ pub struct Prefs {
     pub mono_size: f32,
     /// Chats pinned to the top of the list, by thread ID.
     pub pinned: Vec<String>,
+    /// The right column's folded modules as the user left them; none before the first
+    /// choice, so the first start folds the heavy ones.
+    pub right_folded: Option<Vec<String>>,
 }
 
 impl Default for Prefs {
@@ -39,6 +42,7 @@ impl Default for Prefs {
             mono_font: None,
             mono_size: 13.,
             pinned: Vec::new(),
+            right_folded: None,
         }
     }
 }

@@ -22,6 +22,7 @@ use gpui_kit::{
 };
 
 use crate::{
+    chat::transcript::AgentState,
     settings::SettingsPage,
     widgets,
     workspace::{Center, Right, Workspace},
@@ -68,6 +69,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .font_weight(FontWeight::MEDIUM)
                     .child(*title),
             )
+            // A folded module still says how it stands.
+            .children(
+                (!open)
+                    .then(|| summary(ws, module))
+                    .flatten()
+                    .map(|text| div().text_xs().text_color(muted).child(text)),
+            )
             .child(widgets::icon(
                 if open {
                     IconName::ChevronDown
@@ -82,6 +90,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 } else {
                     ws.refresh_module(module, cx);
                 }
+                let kept: Vec<String> = ws.folded.iter().map(|m| m.key().to_owned()).collect();
+                crate::theme::change(cx, |prefs| prefs.right_folded = Some(kept));
                 cx.notify();
             }));
         let mut section = div()
@@ -150,6 +160,52 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         })),
                 ),
         )
+}
+
+/// A few words for a folded module's header: its count or its state.
+fn summary(ws: &Workspace, module: Right) -> Option<String> {
+    let chat = ws.shown_chat();
+    match module {
+        Right::Arbiter => {
+            let count = chat.map_or(0, |chat| chat.exchanges.len());
+            (count > 0).then(|| count.to_string())
+        }
+        Right::Statistics => ws
+            .context
+            .as_ref()
+            .map(|report| format!("{}%", report.total * 100 / report.limit.max(1))),
+        Right::Screenshots => chat.map(|chat| chat.screenshots.len().to_string()),
+        Right::Git => ws.git.as_ref().map(|git| {
+            let branch = git.branch.as_deref().unwrap_or("detached");
+            match git.changes.len() {
+                0 => branch.to_owned(),
+                changes => format!("{branch} \u{00B7} {changes}"),
+            }
+        }),
+        Right::Files | Right::Plan => None,
+        Right::Todo => chat.map(|chat| {
+            let items = chat.tasks.iter().flat_map(|task| &task.items);
+            let (done, all) = items.fold((0, 0), |(done, all), item| {
+                (done + usize::from(item.done), all + 1)
+            });
+            format!("{done}/{all}")
+        }),
+        Right::Agents => chat.map(|chat| {
+            let working = chat
+                .agents
+                .values()
+                .filter(|agent| !matches!(agent.state, AgentState::Done | AgentState::Failed))
+                .count();
+            match working {
+                0 => chat.agents.len().to_string(),
+                working => format!("{working} working"),
+            }
+        }),
+        Right::Jobs => {
+            let running = ws.jobs.iter().filter(|job| job.running).count();
+            (running > 0).then(|| format!("{running} running"))
+        }
+    }
 }
 
 /// The arbiter's tally, and the way into its window.
