@@ -399,11 +399,19 @@ fn context(tokens: &ThreadTokens) -> u64 {
 
 /// A line of what a tool was asked: its command, path or first argument.
 fn summary(arguments: &serde_json::Value) -> String {
-    let text = ["command", "path", "query", "url", "pattern", "task"]
-        .iter()
-        .find_map(|key| arguments.get(key).and_then(|value| value.as_str()))
-        .map(str::to_owned)
-        .unwrap_or_default();
+    let text = [
+        "description",
+        "command",
+        "path",
+        "query",
+        "url",
+        "pattern",
+        "task",
+    ]
+    .iter()
+    .find_map(|key| arguments.get(key).and_then(|value| value.as_str()))
+    .map(str::to_owned)
+    .unwrap_or_default();
     let line = text.lines().next().unwrap_or_default();
     line.chars().take(160).collect()
 }

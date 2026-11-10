@@ -23,6 +23,10 @@ testing.
   `run_command`, which the sandbox confines to the same folders. A skill saved by a
   command still gets its notice. The desktop client's per-chat Outputs module went with
   them.
+- `run_command` keeps the folder a command ended in for the next call (back to the
+  project when it left it), takes the user's shell PATH, so an app started from the Dock
+  finds cargo and the rest, waits 120 seconds by default, and takes a short description
+  the clients show.
 - Requests that fail without a clear cause are tried again, up to six times, with
   growing pauses and the provider's retry-after.
 - DeepSeek cache hits are counted.

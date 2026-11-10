@@ -2,7 +2,12 @@
 //! so everything it started is killed when it ends or times out. Foreground commands
 //! also stop with the turn; background commands belong to the runtime job manager.
 
-use std::{path::Path, process::Stdio, time::Duration};
+use std::{
+    path::{Path, PathBuf},
+    process::Stdio,
+    sync::atomic::{AtomicU64, Ordering},
+    time::Duration,
+};
 
 use anyhow::{Context, Result, bail, ensure};
 use schemars::JsonSchema;
@@ -10,8 +15,10 @@ use serde::Deserialize;
 use serde_json::Value;
 use tokio::{
     io::{AsyncRead, AsyncReadExt},
-    process::Child,
+    process::{Child, Command},
 };
+
+use parking_lot::Mutex;
 
 use crate::BoxFuture;
 use crate::config::ApprovalPolicy;
@@ -19,11 +26,12 @@ use crate::platform::{self, Confinement};
 use crate::tools::{
     schema,
     schema::parse_arguments,
-    scope::ToolScope,
+    scope::{Place, ToolScope},
     tool::{Tool, ToolContext, ToolKind},
 };
+use crate::util::fs::printable;
 
-const DEFAULT_TIMEOUT_SECONDS: u64 = 60;
+const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
 /// Each stream keeps its start and its end, where failures usually show.
 const HEAD_BYTES: usize = 8 * 1024;
@@ -32,12 +40,114 @@ const TAIL_BYTES: usize = 24 * 1024;
 #[derive(Default)]
 pub struct RunCommand {
     jobs: Option<crate::runtime::jobs::JobOwner>,
+    /// Where the last command ended, so a `cd` carries over to the next call. `None` is
+    /// the project folder.
+    dir: Mutex<Option<PathBuf>>,
 }
 
 impl RunCommand {
     pub fn with_jobs(jobs: crate::runtime::jobs::JobOwner) -> Self {
-        Self { jobs: Some(jobs) }
+        Self {
+            jobs: Some(jobs),
+            ..Self::default()
+        }
     }
+
+    /// The folder the next command starts in. One that is gone or outside the tools'
+    /// folders gives way to the project folder.
+    fn start_dir(&self, scope: &ToolScope) -> PathBuf {
+        let kept = self.dir.lock().clone();
+        kept.filter(|dir| inside(scope, dir))
+            .unwrap_or_else(|| scope.cwd().to_owned())
+    }
+
+    /// Keeps where the command ended; says so when that is outside and was not kept.
+    fn keep_dir(&self, scope: &ToolScope, ended: Option<PathBuf>) -> Option<String> {
+        let ended = ended?;
+        if inside(scope, &ended) {
+            *self.dir.lock() = (ended != scope.cwd()).then_some(ended);
+            return None;
+        }
+        *self.dir.lock() = None;
+        Some(format!(
+            "[the shell ended in {}, outside the project; the next command starts in {}]",
+            printable(&ended.to_string_lossy()),
+            scope.cwd().display()
+        ))
+    }
+
+    async fn start_job(
+        &self,
+        command: &str,
+        timeout: u64,
+        context: &ToolContext,
+    ) -> Result<String> {
+        let owner = self
+            .jobs
+            .as_ref()
+            .context("background jobs require a running thread")?;
+        let id = owner
+            .manager
+            .start(
+                &owner.thread_id,
+                command,
+                &self.start_dir(&context.scope),
+                confinement(context).await.as_ref(),
+                timeout,
+                context
+                    .progress
+                    .as_ref()
+                    .map(|progress| progress.call_id.as_str()),
+            )
+            .await?;
+        Ok(format!("background job started: job_id={id}"))
+    }
+
+    async fn run_here(
+        &self,
+        command: &str,
+        timeout: u64,
+        context: &ToolContext,
+    ) -> Result<crate::tools::ToolResult> {
+        let scope = &*context.scope;
+        let confinement = confinement(context).await;
+        let marker = scope.workspace().join(format!(
+            ".dusk-cwd-{}-{}",
+            std::process::id(),
+            NEXT_MARKER.fetch_add(1, Ordering::Relaxed)
+        ));
+        // The trap runs on every exit, `exit` in the command included.
+        let script = format!("trap 'pwd -P >| \"$DUSK_CWD_FILE\" 2>/dev/null' EXIT\n{command}");
+        let ran = run(
+            &script,
+            &self.start_dir(scope),
+            Some(&marker),
+            scope,
+            confinement.as_ref(),
+            timeout,
+        )
+        .await;
+        let ended = tokio::fs::read_to_string(&marker)
+            .await
+            .ok()
+            .map(|text| PathBuf::from(text.trim_end_matches('\n')));
+        // Gone already when the command never reached its end.
+        let _ = tokio::fs::remove_file(&marker).await;
+        let mut result = ran?;
+        if let Some(note) = self.keep_dir(scope, ended) {
+            result.content.push_str(&format!("\n{note}"));
+        }
+        Ok(result)
+    }
+}
+
+static NEXT_MARKER: AtomicU64 = AtomicU64::new(0);
+
+fn inside(scope: &ToolScope, dir: &Path) -> bool {
+    dir.is_dir()
+        && scope
+            .locate(&dir.to_string_lossy())
+            .is_ok_and(|(_, place)| place == Place::Inside)
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -45,13 +155,28 @@ impl RunCommand {
 struct RunCommandArguments {
     /// Shell command line.
     command: String,
-    /// Kill the command after this many seconds. Defaults to 60.
+    /// What the command does, in a few words, shown to the user.
+    #[allow(dead_code, reason = "the clients read it from the call")]
+    description: Option<String>,
+    /// Kill the command after this many seconds. Defaults to 120.
     #[schemars(range(min = 1, max = MAX_TIMEOUT_SECONDS))]
     timeout_seconds: Option<u64>,
     /// Return immediately and deliver completion to this agent automatically. Defaults to
     /// false.
     #[serde(default)]
     background: bool,
+}
+
+/// The arguments and the timeout, checked.
+fn parse(arguments: Value) -> Result<(RunCommandArguments, u64)> {
+    let arguments: RunCommandArguments = parse_arguments(arguments)?;
+    ensure!(!arguments.command.trim().is_empty(), "command is empty");
+    let timeout = arguments.timeout_seconds.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
+    ensure!(
+        (1..=MAX_TIMEOUT_SECONDS).contains(&timeout),
+        "timeout_seconds must be between 1 and {MAX_TIMEOUT_SECONDS}"
+    );
+    Ok((arguments, timeout))
 }
 
 impl Tool for RunCommand {
@@ -66,9 +191,11 @@ impl Tool for RunCommand {
     fn description(&self, context: &ToolContext) -> String {
         let scope = &*context.scope;
         format!(
-            "Run a command with sh -c in {}. Stdin is empty. Returns the exit code, stdout \
-             and stderr; a long stream keeps its first 8 KiB and last 24 KiB. A non-zero exit code is a failed result. Put \
-             temporary and downloaded files in {}. Change files here too: a quoted heredoc \
+            "Run a command with sh -c. The first starts in {}; the folder a command ends in \
+             carries over to the next, so `cd` once, not in every command. Stdin is empty. \
+             Returns the exit code, stdout and stderr; a long stream keeps its first 8 KiB \
+             and last 24 KiB. A non-zero exit code is a failed result. Put temporary and \
+             downloaded files in {}. Change files here too: a quoted heredoc \
              (cat > file <<'EOF') for a new file; for an edit, a short script that replaces \
              one exact, unique piece and fails otherwise; then check with git diff.",
             scope.cwd().display(),
@@ -85,84 +212,43 @@ impl Tool for RunCommand {
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
-        Box::pin(async move {
-            let scope = &*context.scope;
-            let arguments: RunCommandArguments = parse_arguments(arguments)?;
-            ensure!(!arguments.command.trim().is_empty(), "command is empty");
-            let timeout = arguments.timeout_seconds.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
-            ensure!(
-                (1..=MAX_TIMEOUT_SECONDS).contains(&timeout),
-                "timeout_seconds must be between 1 and {MAX_TIMEOUT_SECONDS}"
-            );
-            context.approve_command(&arguments.command).await?;
-            if arguments.background {
-                let owner = self
-                    .jobs
-                    .as_ref()
-                    .context("background jobs require a running thread")?;
-                let id = owner
-                    .manager
-                    .start(
-                        &owner.thread_id,
-                        &arguments.command,
-                        scope.cwd(),
-                        confinement(&context).await.as_ref(),
-                        timeout,
-                        context
-                            .progress
-                            .as_ref()
-                            .map(|progress| progress.call_id.as_str()),
-                    )
-                    .await?;
-                return Ok(format!("background job started: job_id={id}"));
-            }
-            let confinement = confinement(&context).await;
-            Ok(
-                run(&arguments.command, scope, confinement.as_ref(), timeout)
-                    .await?
-                    .content,
-            )
-        })
+        Box::pin(async move { Ok(self.call_result(arguments, context).await?.content) })
     }
+
     fn call_result<'a>(
         &'a self,
         arguments: Value,
         context: ToolContext,
     ) -> BoxFuture<'a, crate::tools::ToolResult> {
         Box::pin(async move {
-            let parsed: RunCommandArguments = parse_arguments(arguments.clone())?;
-            ensure!(!parsed.command.trim().is_empty(), "command is empty");
-            let timeout = parsed.timeout_seconds.unwrap_or(DEFAULT_TIMEOUT_SECONDS);
-            ensure!(
-                (1..=MAX_TIMEOUT_SECONDS).contains(&timeout),
-                "invalid timeout_seconds"
-            );
-            if parsed.background {
-                return Ok(crate::tools::ToolResult::text(
-                    self.call(arguments, context).await?,
-                ));
+            let (arguments, timeout) = parse(arguments)?;
+            context.approve_command(&arguments.command).await?;
+            platform::login_path::load().await;
+            if arguments.background {
+                let started = self
+                    .start_job(&arguments.command, timeout, &context)
+                    .await?;
+                return Ok(crate::tools::ToolResult::text(started));
             }
-            context.approve_command(&parsed.command).await?;
-            let confinement = confinement(&context).await;
-            run(
-                &parsed.command,
-                &context.scope,
-                confinement.as_ref(),
-                timeout,
-            )
-            .await
+            self.run_here(&arguments.command, timeout, &context).await
         })
     }
 }
 
 async fn run(
-    command: &str,
+    script: &str,
+    dir: &Path,
+    marker: Option<&Path>,
     scope: &ToolScope,
     confinement: Option<&Confinement>,
     timeout_seconds: u64,
 ) -> Result<crate::tools::ToolResult> {
     let skills = super::skill_saves::snapshot(scope).await;
-    let mut child = spawn(command, scope.cwd(), confinement)?;
+    let mut command = shell_command(script, dir, confinement)?;
+    if let Some(marker) = marker {
+        command.env("DUSK_CWD_FILE", marker);
+    }
+    let mut child = command.spawn().context("cannot start sh")?;
     let mut group = ProcessGroup(child.id());
     ensure!(group.0.is_some(), "command exited before it started");
     let stdout = child.stdout.take().context("stdout is not captured")?;
@@ -211,15 +297,25 @@ pub async fn confinement(context: &ToolContext) -> Option<Confinement> {
 }
 
 pub fn spawn(command: &str, cwd: &Path, confinement: Option<&Confinement>) -> Result<Child> {
-    platform::shell(command, confinement)?
+    shell_command(command, cwd, confinement)?
+        .spawn()
+        .context("cannot start sh")
+}
+
+/// The command ready to start, with the user's shell PATH when it was read.
+fn shell_command(command: &str, cwd: &Path, confinement: Option<&Confinement>) -> Result<Command> {
+    let mut shell = platform::shell(command, confinement)?;
+    if let Some(path) = platform::login_path::get() {
+        shell.env("PATH", path);
+    }
+    shell
         .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .process_group(0)
-        .kill_on_drop(true)
-        .spawn()
-        .context("cannot start sh")
+        .kill_on_drop(true);
+    Ok(shell)
 }
 
 /// Kills the whole group when dropped, so a cancelled or timed-out command leaves nothing
@@ -335,6 +431,28 @@ mod tests {
             .await
     }
 
+    /// A `cd` carries to the next call inside the project; one out of it does not.
+    #[tokio::test]
+    async fn the_folder_carries_over_only_inside_the_project() {
+        let scope = scope("shell-folder");
+        fs::create_dir_all(scope.cwd().join("sub")).unwrap();
+        let tool = RunCommand::default();
+        let run = |command: &str| tool.call(json!({ "command": command }), tool_context(&scope));
+        run("cd sub").await.unwrap();
+        let here = run("pwd -P").await.unwrap();
+        assert!(here.contains(&*scope.cwd().join("sub").to_string_lossy()));
+        let left = run("cd /").await.unwrap();
+        assert!(left.contains("outside the project"));
+        let back = run("pwd -P").await.unwrap();
+        assert!(back.contains(&*scope.cwd().to_string_lossy()));
+        assert!(!back.contains("/sub"));
+        assert_eq!(
+            fs::read_dir(scope.workspace()).unwrap().count(),
+            0,
+            "no marker left"
+        );
+    }
+
     /// A skill saved by a command gets the notice clients look for; invalid text does not.
     #[tokio::test]
     async fn a_command_that_saves_a_skill_reports_it() {
@@ -393,9 +511,16 @@ mod tests {
     async fn background_processes_do_not_outlive_the_command() {
         let scope = scope("shell_background");
         let started = std::time::Instant::now();
-        let output = run("sleep 30 & echo started", &scope, None, 10)
-            .await
-            .unwrap();
+        let output = run(
+            "sleep 30 & echo started",
+            scope.cwd(),
+            None,
+            &scope,
+            None,
+            10,
+        )
+        .await
+        .unwrap();
         assert!(output.content.contains("started"));
         assert!(
             started.elapsed() < Duration::from_secs(5),
