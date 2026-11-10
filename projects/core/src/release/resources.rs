@@ -44,6 +44,9 @@ pub fn root() -> Result<PathBuf> {
         validate(&root, None)?;
         return Ok(root);
     }
+    if let Some(root) = bundled() {
+        return Ok(root);
+    }
     // Only developer builds search the source tree. Release binaries contain no
     // build-machine path and never select resources from the current directory.
     #[cfg(debug_assertions)]
@@ -63,6 +66,24 @@ pub fn root() -> Result<PathBuf> {
         format!("resources for {VERSION} are missing or invalid; reinstall duskcode")
     })?;
     Ok(root)
+}
+
+/// The resources inside a macOS app bundle, beside its binary: an app from a disk
+/// image carries its own, as nothing else installed them.
+fn bundled() -> Option<PathBuf> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let binary = std::env::current_exe().and_then(fs::canonicalize).ok()?;
+    let contents = binary.parent()?.parent()?;
+    let in_bundle = binary.parent()?.file_name()? == "MacOS"
+        && contents.file_name()? == "Contents"
+        && contents
+            .parent()?
+            .extension()
+            .is_some_and(|extension| extension == "app");
+    let root = contents.join("Resources").join("resources");
+    (in_bundle && validate(&root, Some(VERSION)).is_ok()).then_some(root)
 }
 
 pub fn text(relative: &str) -> Result<String> {

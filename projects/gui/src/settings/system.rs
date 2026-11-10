@@ -114,18 +114,21 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
         };
         body = body.child(div().pt_3().text_sm().text_color(muted).child(stage));
     } else if update.newer {
+        // The app is replaced as a whole, from the release's disk image or installer:
+        // the in-place update carries the terminal client only.
+        let page = format!("{RELEASES}{tag}");
         body = body.child(
             div().pt_3().child(
-                Button::new("update-install")
+                Button::new("update-download")
                     .primary()
-                    .label(format!("Update to {tag}"))
+                    .label(format!("Get {tag}"))
                     .disabled(!update.ready)
                     .tooltip(if update.ready {
-                        "Download, verify and install it"
+                        "Opens the release; its .dmg holds the new app"
                     } else {
                         "Its build is not ready yet"
                     })
-                    .on_click(cx.listener(move |ws, _, _, cx| ws.install(tag.clone(), cx))),
+                    .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&page))),
             ),
         );
     } else {
@@ -184,18 +187,6 @@ impl Workspace {
                 }
                 Ok(_) => {}
                 Err(error) => ws.fail(error, cx),
-            },
-        );
-    }
-
-    fn install(&mut self, tag: String, cx: &mut Context<Self>) {
-        self.core.call(
-            cx,
-            move |client| async move { client.install_update(&tag).await },
-            |ws, result, cx| {
-                if let Err(error) = result {
-                    ws.fail(error, cx);
-                }
             },
         );
     }
