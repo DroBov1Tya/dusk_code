@@ -8,7 +8,8 @@
 //! - `settings=PAGE` (appearance, model, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
-//! - `modal=search|project|none`, `right=all`: open a window; unfold the right column;
+//! - `modal=search|project|agents|none`, `right=all`: open a window; unfold the right column;
+//! - `fake=agents`: six subagents of different roles at different points of their work;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
@@ -149,12 +150,62 @@ fn act(
         "modal" => match value {
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
+            "agents" => {
+                ws.modal = ws
+                    .shown
+                    .clone()
+                    .map(|thread_id| Modal::Agents { thread_id });
+            }
             _ => ws.modal = None,
         },
         "right" => {
             ws.folded.clear();
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
+        }
+        "fake" if value == "agents" => {
+            use dusk_protocol::{
+                model::{ModelEvent, ToolCall},
+                thread::ThreadEvent,
+            };
+            let roles = [
+                ("backend-engineer", "Add expiry to the cache"),
+                ("web-security-specialist", "Check the cache key handling"),
+                ("qa-engineer", "Write tests for expiry"),
+                ("code-reviewer", "Review the diff of src/lib.rs"),
+                ("sre-engineer", "Measure memory growth"),
+                ("general", "Summarize the findings"),
+            ];
+            if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
+                for (index, (role, task)) in roles.iter().enumerate() {
+                    let thread_id = format!("0000000{index}-fake");
+                    chat.apply(ThreadEvent::SubagentStarted {
+                        call_id: format!("call-{index}"),
+                        thread_id: thread_id.clone(),
+                        agent: (*role).into(),
+                        task: (*task).into(),
+                        effort: None,
+                    });
+                    let inner = match index {
+                        1 => Some(ThreadEvent::ToolStarted(ToolCall {
+                            id: "t1".into(),
+                            name: "search_files".into(),
+                            arguments: serde_json::json!({"pattern": "ttl"}),
+                        })),
+                        2 => Some(ThreadEvent::Model(ModelEvent::Text("fn expired".into()))),
+                        4 => Some(ThreadEvent::Idle),
+                        5 => Some(ThreadEvent::Failed("the provider is unavailable".into())),
+                        _ => None,
+                    };
+                    if let Some(event) = inner {
+                        chat.apply(ThreadEvent::Subagent {
+                            thread_id,
+                            event: Box::new(event),
+                        });
+                    }
+                }
+            }
+            cx.notify();
         }
         "fake" => {
             use dusk_protocol::{

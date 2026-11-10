@@ -55,12 +55,11 @@ pub enum Right {
     Touched,
     Plan,
     Todo,
-    Agents,
     Jobs,
 }
 
 impl Right {
-    const ALL: [Right; 10] = [
+    const ALL: [Right; 9] = [
         Right::Arbiter,
         Right::Statistics,
         Right::Screenshots,
@@ -69,7 +68,6 @@ impl Right {
         Right::Touched,
         Right::Plan,
         Right::Todo,
-        Right::Agents,
         Right::Jobs,
     ];
 
@@ -84,7 +82,6 @@ impl Right {
             Self::Touched => "touched",
             Self::Plan => "plan",
             Self::Todo => "todo",
-            Self::Agents => "agents",
             Self::Jobs => "jobs",
         }
     }

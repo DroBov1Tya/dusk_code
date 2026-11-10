@@ -136,7 +136,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             let thread_id = thread_id.clone();
             (
                 "Subagents".to_owned(),
-                560.,
+                640.,
                 agents::render(ws, &thread_id, cx),
             )
         }

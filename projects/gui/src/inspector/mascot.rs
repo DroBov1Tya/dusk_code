@@ -10,7 +10,6 @@ use crate::chat::transcript::AgentState;
 
 /// Cells per side; each sprite row has exactly this many characters.
 const GRID: usize = 10;
-const CELL: f32 = 2.4;
 
 type Sprite = [&'static str; GRID];
 
@@ -97,9 +96,16 @@ fn frames(state: &AgentState) -> [Sprite; 2] {
     }
 }
 
-pub fn render(id: impl Into<ElementId>, state: &AgentState, color: Hsla) -> impl IntoElement {
+/// The figure with each cell `unit` pixels wide, so it can stand small in a row or large
+/// on a stage.
+pub fn render(
+    id: impl Into<ElementId>,
+    state: &AgentState,
+    color: Hsla,
+    unit: f32,
+) -> impl IntoElement {
     let [first, second] = frames(state);
-    let side = px(GRID as f32 * CELL);
+    let side = px(GRID as f32 * unit);
     div().size(side).flex_none().with_animation(
         id,
         Animation::new(Duration::from_millis(700)).repeat(),
@@ -115,10 +121,10 @@ pub fn render(id: impl Into<ElementId>, state: &AgentState, color: Hsla) -> impl
                                     continue;
                                 }
                                 let origin = point(
-                                    bounds.origin.x + px(column as f32 * CELL),
-                                    bounds.origin.y + px(row as f32 * CELL),
+                                    bounds.origin.x + px(column as f32 * unit),
+                                    bounds.origin.y + px(row as f32 * unit),
                                 );
-                                let size = size(px(CELL), px(CELL));
+                                let size = size(px(unit), px(unit));
                                 window.paint_quad(fill(Bounds { origin, size }, color));
                             }
                         }
