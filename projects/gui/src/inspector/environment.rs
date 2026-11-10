@@ -76,10 +76,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 
 fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, hover) = (theme.muted_foreground, theme.accent);
+    let muted = theme.muted_foreground;
     let item = |id: &'static str, icon: IconName, label: &'static str, cx: &App| {
-        widgets::row(id, false, cx)
-            .hover(move |row| row.bg(hover))
+        widgets::menu_item(id, cx)
             .child(widgets::icon(icon, muted))
             .child(label)
     };

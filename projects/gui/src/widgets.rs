@@ -36,6 +36,25 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .hover(move |row| row.bg(hover))
 }
 
+/// A row of a menu or a window over the page. Its pointer color is the accent, as a menu's
+/// own surface is the very color a list's hover would be. Not `row` plus a second `hover`:
+/// a style can be given once.
+pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
+    let hover = cx.theme().accent;
+    div()
+        .id(id)
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .mx_1()
+        .px_2()
+        .h(px(crate::ui::ROW))
+        .rounded_lg()
+        .cursor_pointer()
+        .hover(move |row| row.bg(hover))
+}
+
 pub fn icon(name: IconName, color: Hsla) -> Icon {
     Icon::new(name).small().text_color(color)
 }
