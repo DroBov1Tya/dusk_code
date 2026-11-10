@@ -1,5 +1,6 @@
 //! The settings page: a menu of categories on the left, the chosen one on the right.
 
+pub mod about_me;
 mod appearance;
 mod behavior;
 mod system;
@@ -18,6 +19,7 @@ pub enum SettingsPage {
     Model,
     Chat,
     Safety,
+    AboutMe,
     Notifications,
     VersionControl,
     Memory,
@@ -31,6 +33,7 @@ const PAGES: &[(SettingsPage, IconName, &str)] = &[
     (SettingsPage::Model, IconName::Cpu, "Model"),
     (SettingsPage::Chat, IconName::Inbox, "Chat"),
     (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
+    (SettingsPage::AboutMe, IconName::User, "About me"),
     (SettingsPage::Notifications, IconName::Bell, "Notifications"),
     (
         SettingsPage::VersionControl,
@@ -84,6 +87,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .map_or("", |(.., label)| *label);
     let body = match ws.settings_page {
         SettingsPage::Appearance => appearance::render(ws, window, cx),
+        SettingsPage::AboutMe => about_me::render(ws, window, cx),
         SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
         page => behavior::render(ws, page, cx),
     };

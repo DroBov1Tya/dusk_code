@@ -94,6 +94,8 @@ pub struct Workspace {
     pub composer: Entity<TextareaState>,
     /// Text for the composer, put there on the next frame, which has the window.
     pub fill_composer: Option<String>,
+    /// The profile and snippets a message names with `@`, and their settings fields.
+    pub me: crate::settings::about_me::AboutMe,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     pub git: Option<GitInfo>,
@@ -193,8 +195,11 @@ impl Workspace {
             &composer,
             window,
             |this, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { shift: false, .. } = event {
-                    this.send(window, cx);
+                match event {
+                    InputEvent::PressEnter { shift: false, .. } => this.send(window, cx),
+                    // An `@` word lists what it may name above the box.
+                    InputEvent::Change => cx.notify(),
+                    _ => {}
                 }
             },
         )
@@ -225,6 +230,7 @@ impl Workspace {
             search,
             composer,
             fill_composer: None,
+            me: crate::settings::about_me::AboutMe::new(window, cx),
             notice: None,
             pending: Vec::new(),
             rates: HashMap::new(),
@@ -262,6 +268,7 @@ impl Workspace {
         workspace.pump_status(status, cx);
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
+        workspace.load_about_me(cx);
         workspace
     }
 

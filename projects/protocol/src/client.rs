@@ -12,6 +12,7 @@ use crate::{
     config::{ApprovalPolicy, ContextPolicy, ProviderKind},
     conversation::{LocalUnsent, Message},
     mcp::{McpInfo, McpStatus},
+    mentions::{Profile, Snippet},
     model::Effort,
     plugins::PluginInfo,
     project::{FileEntry, GitInfo, OutputFile, Project},
@@ -237,6 +238,14 @@ pub enum CatalogRequest {
     SignInMcp {
         name: String,
     },
+    Snippets,
+    /// Empty text removes the snippet.
+    SaveSnippet {
+        name: String,
+        text: String,
+    },
+    Profile,
+    SaveProfile(Profile),
 }
 
 /// A thread's background jobs and sources.
@@ -323,6 +332,8 @@ pub enum Response {
     Jobs(Vec<JobInfo>),
     Node(NodeText),
     Mcp(Vec<McpInfo>),
+    Snippets(Vec<Snippet>),
+    Profile(Profile),
     /// A thread's own approval mode, or none when it uses the default in settings.
     Approvals(Option<ApprovalPolicy>),
     Projects(Vec<Project>),

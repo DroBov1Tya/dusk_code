@@ -43,10 +43,11 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 
 ## User context
 
-- [ ] User profile (who I am, links to files such as a CV), each file with a "send"
-      flag, called with `@me` (TUI + GUI)
-- [ ] User `.md` snippets called as `@name` (e.g. `@video_1` with a script): a prompt
-      injection the user writes on purpose
+- [x] User profile (who I am, links to files such as a CV), each file with a "send"
+      flag, called with `@me` (TUI + GUI): `rules/me/ME.md`, edited in GUI Settings >
+      About me or as a file; `@` completes in both clients
+- [x] User `.md` snippets called as `@name` (e.g. `@video_1` with a script): a prompt
+      injection the user writes on purpose; `rules/snippets/<name>.md`
 - [ ] Pinned plan agreed between the user and the model: markdown, opened in the app,
       a view and an edit mode, on the right (GUI) and a command (TUI)
 
@@ -138,8 +139,8 @@ From `gui-todo.md`
 - [x] "done" sometimes does not fit (subagent rows past an hour, long tool lines)
 - [x] With effort off, do not print "thinking" for each action; show tps
 - [x] A typed own answer to a question wraps long lines
-- [~] Parity: background commands done (Ctrl+B, jobs panel); `@me` and `@name`, access
-      mode per chat, version control settings, pinned plan left
+- [~] Parity: background commands (Ctrl+B, jobs panel) and `@me`/`@name` (Tab
+      completes) done; access mode per chat, version control settings, pinned plan left
 
 ## Repository
 

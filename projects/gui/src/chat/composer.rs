@@ -47,6 +47,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
         });
     let navigator =
         (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, cx));
+    let mentions = mention_menu(ws, cx);
     let muted = cx.theme().muted_foreground;
     let mut chips = div().flex().flex_row().flex_wrap().gap_1();
     for (index, path) in ws.attachments.iter().enumerate() {
@@ -138,6 +139,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .bg(cx.theme().muted)
                 .relative()
                 .children(navigator)
+                .children(mentions)
                 .child(
                     Button::new("attach")
                         .ghost()
@@ -189,7 +191,11 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
             let keys = &event.keystroke;
             if keys.key == "tab" && !keys.modifiers.shift && !keys.modifiers.control {
                 cx.stop_propagation();
-                ws.next_mode(cx);
+                // Over a mention, Tab completes it, as in the TUI.
+                match ws.mention_matches(cx).first().cloned() {
+                    Some(name) => ws.complete_mention(name, cx),
+                    None => ws.next_mode(cx),
+                }
             }
         }))
 }
@@ -246,6 +252,38 @@ pub fn paste_label(text: &str) -> String {
     format!("pasted text \u{00B7} {} lines", text.lines().count())
 }
 
+/// The profile and snippets an `@` word being typed may name; a click puts one in.
+fn mention_menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    let names = ws.mention_matches(cx);
+    if names.is_empty() {
+        return None;
+    }
+    let theme = cx.theme();
+    let mut menu = div()
+        .absolute()
+        .bottom(relative(1.))
+        .left(px(48.))
+        .w(px(240.))
+        .p_1()
+        .flex()
+        .flex_col()
+        .rounded_xl()
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.popover)
+        .shadow_lg();
+    for (index, name) in names.into_iter().enumerate() {
+        let label = format!("@{name}");
+        menu = menu.child(
+            crate::widgets::row(("mention", index), index == 0, cx)
+                .text_sm()
+                .child(label)
+                .on_click(cx.listener(move |ws, _, _, cx| ws.complete_mention(name.clone(), cx))),
+        );
+    }
+    Some(menu)
+}
+
 /// Files first, then folders; each opens the system's own picker.
 fn attach_menu(cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
@@ -285,6 +323,53 @@ fn attach_menu(cx: &mut Context<Workspace>) -> Stateful<Div> {
 }
 
 impl Workspace {
+    /// Where the `@` word before the cursor starts, and what follows its `@`.
+    fn mention_word(&self, cx: &App) -> Option<(usize, String)> {
+        let composer = self.composer.read(cx);
+        let text = composer.value();
+        let before = text.get(..composer.cursor())?;
+        let start = before.rfind(char::is_whitespace).map_or(0, |at| {
+            at + before[at..].chars().next().map_or(1, char::len_utf8)
+        });
+        let typed = before[start..].strip_prefix('@')?;
+        typed
+            .chars()
+            .all(dusk_protocol::mentions::is_name_char)
+            .then(|| (start, typed.to_owned()))
+    }
+
+    /// What the `@` word being typed may go on to, `me` first, at most eight.
+    pub fn mention_matches(&self, cx: &App) -> Vec<String> {
+        let Some((_, typed)) = self.mention_word(cx) else {
+            return Vec::new();
+        };
+        self.me
+            .names()
+            .filter(|name| name.starts_with(typed.as_str()) && *name != typed)
+            .take(8)
+            .map(str::to_owned)
+            .collect()
+    }
+
+    /// Puts `@name ` in place of the `@` word being typed.
+    fn complete_mention(&mut self, name: String, cx: &mut Context<Self>) {
+        let Some((start, _)) = self.mention_word(cx) else {
+            return;
+        };
+        let Some(window) = cx.active_window() else {
+            return;
+        };
+        let composer = self.composer.clone();
+        let _ = window.update(cx, |_, window, cx| {
+            composer.update(cx, |composer, cx| {
+                let cursor = composer.cursor();
+                composer.set_selected_range(start..cursor, cx);
+                composer.replace(format!("@{name} "), window, cx);
+            });
+        });
+        cx.notify();
+    }
+
     /// Sends the composer's text to the shown chat, or to a new chat of the selected
     /// project when none is shown.
     pub fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {

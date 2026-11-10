@@ -15,10 +15,12 @@ use uuid::Uuid;
 
 use super::pasted::{Part, source_tag, split};
 use crate::{
+    catalog::mentions::{ME, Mentions},
     init::create_private_dir,
     providers::{ChatMessage, Picture},
     state::{Source, State, estimate_tokens},
 };
+use dusk_protocol::mentions::find as find_mentions;
 
 pub(crate) const FOLDER: &str = "sources";
 /// Larger files are refused; a chat folder is not a backup.
@@ -127,16 +129,80 @@ impl ThreadSources<'_> {
 
     /// A copy of the file at `path` among the chat's sources.
     pub async fn add_file(&self, path: &Path) -> Result<Source> {
-        let metadata = tokio::fs::metadata(path)
-            .await
-            .with_context(|| format!("cannot read {}", path.display()))?;
-        ensure!(metadata.is_file(), "{} is not a file", path.display());
-        ensure!(metadata.len() <= MAX_FILE_BYTES, "the file is over 64 MiB");
-        let bytes = tokio::fs::read(path).await.context("read the file")?;
-        let name = path
-            .file_name()
-            .map_or("file".into(), |name| clean_name(&name.to_string_lossy()));
+        let (name, bytes) = read_file(path).await?;
         self.store(&name, &bytes).await
+    }
+
+    /// `message` with each `@me` and `@name` it can resolve replaced by the tags of the
+    /// sources that hold them. An unknown name stays text, as a handle would.
+    pub async fn keep_mentions(&self, message: &str, mentions: &Mentions) -> Result<String> {
+        let mut kept = String::new();
+        for part in split(message) {
+            match part {
+                Part::Text(text) => kept.push_str(&self.mentions_in(text, mentions).await?),
+                Part::Source(name) => kept.push_str(&source_tag(name)),
+                Part::Pasted(text) => kept.push_str(&super::pasted::wrap(text)),
+            }
+        }
+        Ok(kept)
+    }
+
+    async fn mentions_in(&self, text: &str, mentions: &Mentions) -> Result<String> {
+        let mut kept = String::new();
+        let mut from = 0;
+        for (range, name) in find_mentions(text) {
+            let tags = self.mention(name, mentions).await?;
+            if tags.is_empty() {
+                continue;
+            }
+            kept.push_str(&text[from..range.start]);
+            kept.push_str(&tags);
+            from = range.end;
+        }
+        kept.push_str(&text[from..]);
+        Ok(kept)
+    }
+
+    /// The tags of what one mention brings: the profile and its files marked to send,
+    /// or a snippet.
+    async fn mention(&self, name: &str, mentions: &Mentions) -> Result<String> {
+        let mut tags = String::new();
+        if name == ME {
+            let profile = mentions.profile()?;
+            if !profile.about.trim().is_empty() {
+                let source = self.keep_once("me.md", profile.about.as_bytes()).await?;
+                tags.push_str(&source_tag(&source.name));
+            }
+            for file in profile.files.iter().filter(|file| file.send) {
+                let (name, bytes) = read_file(&file.path)
+                    .await
+                    .context("a file of the profile is gone; check it in the profile")?;
+                tags.push_str(&source_tag(&self.keep_once(&name, &bytes).await?.name));
+            }
+        } else if let Some(text) = mentions.snippet(name) {
+            let source = self
+                .keep_once(&format!("{name}.md"), text.as_bytes())
+                .await?;
+            tags.push_str(&source_tag(&source.name));
+        }
+        Ok(tags)
+    }
+
+    /// A source of `bytes` named `name`; the chat's own copy when it already has one, so
+    /// a profile named twice is read once.
+    async fn keep_once(&self, name: &str, bytes: &[u8]) -> Result<Source> {
+        let folder = self.folder();
+        for source in self.state.sources(self.thread_id).await? {
+            if source.name == name
+                && source.bytes == bytes.len() as u64
+                && tokio::fs::read(folder.join(&source.file))
+                    .await
+                    .is_ok_and(|kept| kept == bytes)
+            {
+                return Ok(source);
+            }
+        }
+        self.store(name, bytes).await
     }
 
     pub async fn remove(&self, id: &str) -> Result<()> {
@@ -176,6 +242,20 @@ impl ThreadSources<'_> {
         }
         Ok(Some(block))
     }
+}
+
+/// A file's clean name and bytes, refused when it is not a file or is too large.
+async fn read_file(path: &Path) -> Result<(String, Vec<u8>)> {
+    let metadata = tokio::fs::metadata(path)
+        .await
+        .with_context(|| format!("cannot read {}", path.display()))?;
+    ensure!(metadata.is_file(), "{} is not a file", path.display());
+    ensure!(metadata.len() <= MAX_FILE_BYTES, "the file is over 64 MiB");
+    let bytes = tokio::fs::read(path).await.context("read the file")?;
+    let name = path
+        .file_name()
+        .map_or("file".into(), |name| clean_name(&name.to_string_lossy()));
+    Ok((name, bytes))
 }
 
 async fn is_picture_file(path: &Path) -> bool {
@@ -419,6 +499,52 @@ mod tests {
             std::fs::read_dir(workspace.join(FOLDER)).unwrap().count(),
             0
         );
+    }
+
+    #[tokio::test]
+    async fn a_mention_brings_its_text_once_and_unsent_files_stay_home() {
+        use crate::catalog::mentions::{Profile, ProfileFile};
+        let state = temp_state("sources-mentions").await;
+        state.create_thread("thread", "test").await.unwrap();
+        let workspace = temp_dir("sources-mentions-workspace");
+        let sources = ThreadSources {
+            state: &state,
+            workspace: &workspace,
+            thread_id: "thread",
+        };
+        let rules = temp_dir("sources-mentions-rules");
+        let mentions = Mentions::new(&rules);
+        mentions.save_snippet("video_1", "SCRIPT").unwrap();
+        let files = temp_dir("sources-mentions-files");
+        std::fs::create_dir_all(&files).unwrap();
+        std::fs::write(files.join("cv.txt"), "CV").unwrap();
+        std::fs::write(files.join("diary.txt"), "PRIVATE").unwrap();
+        let file = |name: &str, send| ProfileFile {
+            path: files.join(name),
+            send,
+        };
+        let profile = Profile {
+            about: "ABOUT".into(),
+            files: vec![file("cv.txt", true), file("diary.txt", false)],
+        };
+        mentions.save_profile(&profile).unwrap();
+
+        let kept = sources
+            .keep_mentions("@me and @me, @video_1, mail a@video_1 @nobody", &mentions)
+            .await
+            .unwrap();
+        assert!(kept.contains("@nobody") && kept.contains("a@video_1"));
+        assert!(!kept.contains("@me") && !kept.contains(" @video_1"));
+        let names: Vec<_> = state
+            .sources("thread")
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|source| source.name)
+            .collect();
+        assert_eq!(names, ["me.md", "cv.txt", "video_1.md"]);
+        let block = sources.block(true).await.unwrap().unwrap();
+        assert!(block.text.contains("SCRIPT") && !block.text.contains("PRIVATE"));
     }
 
     #[tokio::test]

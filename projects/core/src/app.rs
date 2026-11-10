@@ -12,6 +12,7 @@ use dusk_protocol::client::Hello;
 pub use crate::tools::run_overlay_if_asked;
 pub use crate::{
     backup::archive::{RemovalGuard, RestoreGuard, recover, resolve_state_db, restore},
+    catalog::mentions::complete as complete_mention,
     init::{
         logs::{Telemetry, init as init_logs},
         paths::Paths,

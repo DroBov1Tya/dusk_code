@@ -1,10 +1,11 @@
 //! A path typed in the message, after a space or as a word with a second `/`, lists
-//! what its folder holds above the box; Tab walks the entries into the text. The core
+//! what its folder holds above the box; an `@` word lists the profile and snippets it
+//! may name. Tab walks the entries into the text. The core
 //! reads the folder; this keeps what it found for the word being typed.
 
 use std::env;
 
-use dusk_core::app::path_completion;
+use dusk_core::app::{Paths, complete_mention, path_completion};
 use dusk_protocol::paths::PathCompletion;
 
 use super::App;
@@ -37,8 +38,14 @@ impl App {
         if self.paths.as_ref().is_some_and(|popup| popup.word == word) {
             return;
         }
-        let cwd = env::current_dir().unwrap_or_default();
-        let found = path_completion::paths(&word, &cwd);
+        let found = if word.starts_with('@') {
+            Paths::from_home()
+                .map(|paths| complete_mention(&paths.rules_root(), &word))
+                .unwrap_or_default()
+        } else {
+            let cwd = env::current_dir().unwrap_or_default();
+            path_completion::paths(&word, &cwd)
+        };
         self.paths = (!found.entries.is_empty()).then_some(PathPopup {
             start,
             word,
@@ -56,7 +63,8 @@ impl App {
         });
         let word = &before[start..];
         let command = start == 0 && word.matches('/').count() < 2 && word.starts_with('/');
-        (path_completion::is_path(word) && !command).then(|| (start, word.to_owned()))
+        let mention = word.starts_with('@');
+        ((path_completion::is_path(word) || mention) && !command).then(|| (start, word.to_owned()))
     }
 
     /// Puts the next entry in place of the word. Returns whether Tab was used.

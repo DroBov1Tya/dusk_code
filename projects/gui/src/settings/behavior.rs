@@ -183,7 +183,10 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                     );
             }
         }
-        SettingsPage::Appearance | SettingsPage::Updates | SettingsPage::Usage => {}
+        SettingsPage::Appearance
+        | SettingsPage::AboutMe
+        | SettingsPage::Updates
+        | SettingsPage::Usage => {}
     }
     body
 }
