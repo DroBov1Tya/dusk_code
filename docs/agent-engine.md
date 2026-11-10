@@ -44,6 +44,8 @@ Each tool less is a shorter prefix on every request and one fewer choice per ste
 - [x] `read_file` reads a window: 2000 lines or 50 KiB from an offset.
 - [x] `run_command` keeps the first 8 KiB and the last 24 KiB of each stream.
 - [x] Write, edit and delete tools removed; the shell does it inside the sandbox.
+- [x] The shell keeps its folder between calls (56% of commands began with `cd`), takes
+      the user's PATH, and a call says what it does in a few words for the user.
 - [x] Prompt: batch independent calls in one step; think only about what decides the next
       step; no `sleep` polling, use background commands.
 - [ ] Run read-only tool calls of one step in parallel. Low gain: those tools take

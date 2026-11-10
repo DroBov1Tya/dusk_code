@@ -27,6 +27,7 @@ use crate::app::{
     Tone, Transcript, TranscriptHit, compact_number,
     paste::{self, Part},
 };
+use crate::ui::text::format::one_line;
 
 /// Image cards sit this far in, under their tool call.
 const CARD_INDENT: &str = "   ";
@@ -691,7 +692,20 @@ fn tool(
         ),
     };
     let name = Span::styled(call.name.clone(), fg(TEXT));
-    let header = Line::from(vec![mark, name, Span::raw("  "), status]);
+    // A command says what it does in a few words; the command itself is in the body.
+    let about = call
+        .arguments
+        .get("description")
+        .and_then(|text| text.as_str())
+        .map(|text| format!("  {}", one_line(text).chars().take(60).collect::<String>()))
+        .unwrap_or_default();
+    let header = Line::from(vec![
+        mark,
+        name,
+        Span::styled(about, fg(TEXT_MUTED)),
+        Span::raw("  "),
+        status,
+    ]);
     folded(header, open, || {
         let gutter = format!("   {GUTTER} ");
         let mut body = indent(

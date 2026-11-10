@@ -4,6 +4,7 @@
 mod detect;
 #[cfg(target_os = "linux")]
 mod linux;
+pub mod login_path;
 #[cfg(target_os = "macos")]
 mod macos;
 mod sandbox;
