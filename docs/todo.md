@@ -9,14 +9,17 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 ## Agent engine (core)
 
 - [x] Study why opencode 2.0 beats 1.19 on benchmarks (see `agent-engine.md`)
-- [ ] Work through the plan in `agent-engine.md`
+- [~] Work through the plan in `agent-engine.md` (most done; parallel read-only calls,
+      compaction with tools and early compaction left)
 - [x] Files are written, edited and deleted through `run_command`; the sandbox confines
       it to the same folders, and a skill saved by a command still gets its notice
 - [ ] Per-chat list of files a chat changed (the GUI Outputs module went with the
       write tools); could come from the core comparing `git status` around a command
-- [ ] Analyze how to make the agent faster without losing quality
-- [ ] Prompt caching: stable prefix (system, tools, memory) first, cache breakpoints,
-      count cache reads; spend fewer input tokens
+- [x] Analyze how to make the agent faster without losing quality (`agent-engine.md`,
+      measured with `projects/evals`)
+- [~] Prompt caching: stable prefix (system, tools, memory) first, cache breakpoints,
+      count cache reads; spend fewer input tokens (cache reads counted, `prompt_cache_key`
+      per thread, mode prompt changes only at a turn; compaction reusing the prefix left)
 - [x] Retries for failed requests without a clear error code (backoff, capped)
 - [x] Client-side token bucket per provider: `requests_per_minute` in its config
 - [x] A mode switch applies from the next turn: the tools at once, the mode's prompt
@@ -32,10 +35,11 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [x] `plan_edit` tool for the pinned plan
 - [x] Output tokens per second per agent (core events)
 - [x] Context report per item with usage counts
-- [~] Per-thread access mode (core done; UI below)
+- [~] Per-thread access mode (core and GUI done; TUI under Parity)
 - [~] Version control settings: branch prefix and the like, named "version control",
-      not "git" (core done; UI below)
-- [~] Notifications and their settings (core toggles done; delivery and UI below)
+      not "git" (core and GUI done; TUI settings left)
+- [~] Notifications and their settings (core toggles, TUI delivery and GUI settings done;
+      GUI delivery left)
 
 ## User context
 
@@ -122,7 +126,7 @@ Motion
 
 From `gui-todo.md`
 - [ ] Core: an `icon` field on McpInfo
-- [ ] Model menu: close on a click outside, keys 1-6 pick a model
+- [~] Model menu: close on a click outside (done), keys 1-6 pick a model
 - [ ] Linux build in OrbStack
 - [ ] Pasted screenshots saved to the project's attachments folder
 - [ ] Context details on click (core ready)
@@ -134,7 +138,8 @@ From `gui-todo.md`
 - [x] "done" sometimes does not fit (subagent rows past an hour, long tool lines)
 - [x] With effort off, do not print "thinking" for each action; show tps
 - [x] A typed own answer to a question wraps long lines
-- [ ] Parity: `@me` and `@name`, background commands, access mode per chat, pinned plan
+- [~] Parity: background commands done (Ctrl+B, jobs panel); `@me` and `@name`, access
+      mode per chat, version control settings, pinned plan left
 
 ## Repository
 
