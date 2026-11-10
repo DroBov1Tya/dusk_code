@@ -147,6 +147,14 @@ impl Effort {
         }
     }
 
+    /// For a step that only carries out a plan: low at most, never above this level.
+    pub fn light(self) -> Self {
+        match self {
+            Self::Off | Self::Minimal | Self::Low => self,
+            _ => Self::Low,
+        }
+    }
+
     /// `default` omits the parameter: the provider decides.
     pub fn parse(text: &str) -> Result<Option<Self>> {
         if text == "default" {

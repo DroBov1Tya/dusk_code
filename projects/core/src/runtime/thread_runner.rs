@@ -109,6 +109,7 @@ impl ThreadRunner {
             scope: setup.scope,
             project: setup.project,
             pictures_refused: Mutex::new(None),
+            pace: Mutex::default(),
             asking: Mutex::new(None),
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
@@ -508,6 +509,7 @@ mod tests {
     struct FakeProvider {
         scripts: Mutex<VecDeque<Vec<Step>>>,
         requests: Mutex<Vec<Vec<ChatMessage>>>,
+        efforts: Mutex<Vec<Option<crate::config::Effort>>>,
     }
 
     #[derive(Clone)]
@@ -545,6 +547,10 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push(request.messages.to_vec());
+            // Agent steps only: titles and summaries go without tools.
+            if !request.tools.is_empty() {
+                self.efforts.lock().unwrap().push(request.effort);
+            }
             let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
             if let Some(Step::Fail) = script.first() {
                 return Box::pin(async { Err(Transient("server busy".into()).into()) });
@@ -618,6 +624,7 @@ mod tests {
         Arc::new(FakeProvider {
             scripts: Mutex::new(scripts.into()),
             requests: Mutex::new(Vec::new()),
+            efforts: Mutex::new(Vec::new()),
         })
     }
 
@@ -1259,6 +1266,29 @@ mod tests {
                 (MessageRole::Tool, "ping".into()),
                 (MessageRole::Assistant, "got ping".into()),
             ]
+        );
+    }
+
+    /// The first step plans and a step after a failure works it out at the effort set;
+    /// steps that carry out the plan think lightly.
+    #[tokio::test]
+    async fn a_turn_thinks_once_then_acts() {
+        use crate::config::Effort;
+        let state = thread_state("pace").await;
+        let config = Arc::new(temp_live_config_with("pace_config", "effort: high\n"));
+        // A call that works, one to a tool that is not there, then the answer.
+        let provider = provider(vec![
+            vec![Step::Call("one"), Step::Done],
+            vec![Step::Tool("missing".into(), json!({})), Step::Done],
+            vec![Step::Text("done"), Step::Done],
+        ]);
+        let (runner, input, _output) = runner(&state, &provider, &config, model(None));
+        input.send("go").await.unwrap();
+        drop(input);
+        runner.run().await;
+        assert_eq!(
+            *provider.efforts.lock().unwrap(),
+            [Some(Effort::High), Some(Effort::Low), Some(Effort::High)]
         );
     }
 

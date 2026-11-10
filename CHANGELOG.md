@@ -55,6 +55,10 @@ testing.
 - Requests that fail without a clear cause are tried again, up to six times, with
   growing pauses and the provider's retry-after.
 - DeepSeek cache hits are counted.
+- Agents think once, then act: the first step of a turn and a step after a failed
+  tool reason at the effort set, the steps that carry out the plan at a light effort,
+  and the prompts ask for one plan and then tool calls, reasoning again only when a
+  result surprises.
 - A mode switch applies from the next turn with that mode's prompt, not only after a
   compaction. OpenAI requests carry a cache key per thread. A provider can be held to
   `requests_per_minute`.

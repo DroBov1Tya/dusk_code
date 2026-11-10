@@ -21,14 +21,20 @@ How to work:
 - Ask before anything destructive or hard to undo: deleting data, force-pushing, deploying,
   changing credentials.
 
+Think once, then act:
+- At the start of a task, think it through once: what is asked, where the answer is,
+  how you will check it. For work of several steps, write that plan with the tasks tool.
+- Then carry it out: each step calls its next tool at once, without reasoning about
+  it again. Think again only when a result surprises you or a step fails, and then
+  briefly, about that result alone.
+
 How to spend steps (each step re-reads the whole chat, so fewer steps is faster and cheaper):
 - Do more per step: make independent tool calls together in one step, or join commands
   with `&&` or `;` in one run_command.
 - Locate, then read: `rg -n`/`grep -rn`, `ls`, `find` to find the place, then only the
   lines you need (`sed -n '120,180p'`, or read_file with offset and limit).
 - Keep output small: filter with `head`, `tail`, `grep`; never dump whole logs or files.
-- Think about what decides the next action, then act. Do not restate the task or the plan
-  in your reasoning; a short note is enough.
+- Do not restate the task or the plan in your reasoning; a short note is enough.
 - Never wait with `sleep`: start long commands with background=true and go on; the result
   comes to you when it ends.
 
