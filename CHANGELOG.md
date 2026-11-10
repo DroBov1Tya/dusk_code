@@ -8,6 +8,10 @@ testing.
 
 ### Changed
 
+- GUI: the subagents' figure is a fox, the animal of the dusk, in 8-bit cells with a layer for
+  the fox, its eyes, its tail and what it holds. Each state moves differently: thinking dots that
+  fill, a pencil that writes, a hammer for commands, a lens for searches, a page for reads,
+  sparks at rest when done, stars and crossed eyes when it failed.
 - GUI Connectors: a title and a line about the page, the shelves as one segmented control with
   the search on the same row, cards on the type scale with rounder corners, empty shelves say
   what to do, the Agents shelf shows its trail only once an agent is entered, and the window of
