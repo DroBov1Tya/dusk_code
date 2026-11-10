@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 30] = [
+pub const KEYS: [(&str, &str); 31] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -26,6 +26,7 @@ pub const KEYS: [(&str, &str); 30] = [
     ("Drag", "select text and copy it; Esc clears"),
     ("Hover", "copy a message, edit one you sent"),
     ("Ctrl+R", "fold or unfold all thinking"),
+    ("Ctrl+B", "send the running command to the background"),
     ("PgUp / PgDn", "scroll the transcript; wheel works too"),
     ("Shift+PgUp/Dn", "scroll subagent cards"),
     ("Alt+PgUp/Dn", "scroll MCP tools"),

@@ -345,6 +345,16 @@ impl Transcript {
         }
     }
 
+    /// The newest command still running, which the user may send to the background.
+    pub fn running_command(&self) -> Option<String> {
+        self.entries.iter().rev().find_map(|entry| match entry {
+            Entry::Tool {
+                call, result: None, ..
+            } if call.name == "run_command" => Some(call.id.clone()),
+            _ => None,
+        })
+    }
+
     pub fn start_tool(&mut self, call: ToolCall) {
         self.push(Entry::Tool {
             call,

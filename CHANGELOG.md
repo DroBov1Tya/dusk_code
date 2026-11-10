@@ -15,6 +15,10 @@ testing.
   the provider's config, shown next to the call count; never guessed. Providers that
   tell the balance to a plain key (DeepSeek, Kimi, OpenRouter, and LiteLLM with
   `balance: litellm`) show it in the model list.
+- A command the agent runs can be sent to the background while it runs (Ctrl+B in the
+  terminal, "To background" in the desktop client): the agent goes on and gets the
+  result when the command ends. Background jobs now keep the start and the end of
+  their output.
 - Desktop chat: Copy and Run on code blocks (Run asks, runs in the chat's folder as
   its tools would and puts the output in the message box), a copy button on answers,
   selectable messages, pictures that open large, screenshots in a right column module,

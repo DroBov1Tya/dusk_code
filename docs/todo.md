@@ -21,9 +21,9 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [x] Client-side token bucket per provider: `requests_per_minute` in its config
 - [x] A mode switch applies from the next turn: the tools at once, the mode's prompt
       leads the next request
-- [ ] A command or agent code already running can be moved to the background by hand
-      (TUI + GUI)
-- [ ] `run_command` runs in the background: the chat stays writable while it works;
+- [x] A command or agent code already running can be moved to the background by hand
+      (TUI Ctrl+B, GUI "To background" on the running step)
+- [x] `run_command` runs in the background: the chat stays writable while it works;
       a running command can be moved to the background (TUI + GUI)
 - [ ] MCP code mode: the model writes one script that calls a set of MCP tools
 - [ ] Subagent answers are their own step on the agent's side (not the user's message),

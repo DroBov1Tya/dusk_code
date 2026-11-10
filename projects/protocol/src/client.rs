@@ -102,6 +102,12 @@ pub enum ThreadRequest {
     Cancel {
         thread_id: String,
     },
+    /// Sends a command the agent runs in the foreground, by its tool call, to the
+    /// background: the agent goes on and gets the result when it ends.
+    Background {
+        thread_id: String,
+        call_id: String,
+    },
     /// Runs a command the user confirmed, in the chat's folder; answers with its output.
     RunCommand {
         thread_id: String,

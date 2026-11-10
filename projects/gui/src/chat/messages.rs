@@ -10,6 +10,7 @@ use gpui_kit::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -372,7 +373,25 @@ fn step(
                     .font_family(mono.clone())
                     .child(tool.detail.clone()),
             )
-            .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx))),
+            .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx)))
+            // A long command can go on in the background while the agent works on.
+            .when(
+                tool.state == ToolState::Running && tool.name == "run_command",
+                |row| {
+                    let (thread_id, call_id) = (shown.to_owned(), tool.call_id.clone());
+                    row.child(
+                        Button::new(SharedString::from(format!("background-{shown}-{index}")))
+                            .ghost()
+                            .xsmall()
+                            .label("To background")
+                            .tooltip("The agent goes on; the result comes when it ends")
+                            .on_click(cx.listener(move |ws, _, _, cx| {
+                                cx.stop_propagation();
+                                ws.send_to_background(&thread_id, &call_id, cx);
+                            })),
+                    )
+                },
+            ),
     );
     if open {
         let block = |title: &'static str, text: &str| {
@@ -466,6 +485,23 @@ fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> AnyEl
 }
 
 impl Workspace {
+    fn send_to_background(&mut self, thread_id: &str, call_id: &str, cx: &mut Context<Self>) {
+        let (thread_id, call_id) = (thread_id.to_owned(), call_id.to_owned());
+        self.core.call(
+            cx,
+            move |client| async move {
+                client
+                    .threads()
+                    .send_to_background(&thread_id, &call_id)
+                    .await
+            },
+            |ws, result, cx| match result {
+                Ok(()) => ws.refresh_inspector(cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
     fn fold(&mut self, chat: &str, key: usize, cx: &mut Context<Self>) {
         let key = (chat.to_owned(), key);
         if !self.unfolded.remove(&key) {

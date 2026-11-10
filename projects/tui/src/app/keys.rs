@@ -159,6 +159,13 @@ impl App {
                 self.transcript.toggle_reasoning();
                 return Action::None;
             }
+            KeyCode::Char('b') if ctrl => {
+                match self.transcript.running_command() {
+                    Some(call_id) => return Action::Background(call_id),
+                    None => self.flash = Some("no command runs in the foreground".into()),
+                }
+                return Action::None;
+            }
             KeyCode::F(3) => {
                 if let Some(card) = self.subagents.last() {
                     return Action::OpenAgent(card.thread_id.clone());

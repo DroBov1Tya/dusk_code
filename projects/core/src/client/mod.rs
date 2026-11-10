@@ -226,6 +226,15 @@ impl Threads<'_> {
         .await
     }
 
+    /// Sends the agent's running command of `call_id` to the background.
+    pub async fn send_to_background(&self, thread_id: &str, call_id: &str) -> Result<()> {
+        self.done(ThreadRequest::Background {
+            thread_id: thread_id.to_owned(),
+            call_id: call_id.to_owned(),
+        })
+        .await
+    }
+
     /// Runs a command the user confirmed, in the chat's folder; returns its output.
     pub async fn run_command(&self, thread_id: &str, command: &str) -> Result<String> {
         let request = ThreadRequest::RunCommand {

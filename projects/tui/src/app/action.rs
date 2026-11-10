@@ -46,6 +46,8 @@ pub enum Action {
     RemoveSource(String),
     /// Ask a running background job of the open thread to stop.
     StopJob(String),
+    /// Send the agent's running command, by its tool call, to the background.
+    Background(String),
     SetContextPolicy(ContextPolicy),
     /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {

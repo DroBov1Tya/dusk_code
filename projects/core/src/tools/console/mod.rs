@@ -1,8 +1,9 @@
 //! Console tools: commands in the working directory, and the background ones.
 
 mod jobs;
+pub mod process;
 mod run_command;
 mod skill_saves;
 
 pub use jobs::Jobs;
-pub use run_command::{ProcessGroup, RunCommand, run_for_user, spawn};
+pub use run_command::{RunCommand, run_for_user};
