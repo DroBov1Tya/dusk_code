@@ -14,14 +14,24 @@ enum Block {
     Card { url: String, text: String },
 }
 
+/// An answer is read, not scanned: lines a little taller than the interface's.
+fn reading(text: impl IntoElement) -> AnyElement {
+    div()
+        .line_height(relative(1.65))
+        .child(text)
+        .into_any_element()
+}
+
 pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
     let blocks = split(text);
     if !blocks
         .iter()
         .any(|block| matches!(block, Block::Card { .. }))
     {
-        return links::markdown(SharedString::from(id.to_owned()), text.to_owned())
-            .into_any_element();
+        return reading(links::markdown(
+            SharedString::from(id.to_owned()),
+            text.to_owned(),
+        ));
     }
     let theme = cx.theme();
     let (border, surface) = (theme.border, theme.muted);
@@ -29,7 +39,7 @@ pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
     for (index, block) in blocks.into_iter().enumerate() {
         let key = SharedString::from(format!("{id}-{index}"));
         column = column.child(match block {
-            Block::Text(text) => links::markdown(key, text).into_any_element(),
+            Block::Text(text) => reading(links::markdown(key, text)),
             Block::Card { url, text } => div()
                 .flex()
                 .flex_row()

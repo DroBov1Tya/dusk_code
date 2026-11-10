@@ -9,6 +9,7 @@
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|none`, `right=all`: open a window; unfold the right column;
+//! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
@@ -154,6 +155,34 @@ fn act(
             ws.folded.clear();
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
+        }
+        "fake" => {
+            use dusk_protocol::{
+                thread::ThreadEvent,
+                tools::{ApprovalRequest, Question, Request},
+            };
+            let event = match value {
+                "question" => ThreadEvent::Question(Question {
+                    question: "Which cache should get() use for expired entries?".into(),
+                    options: vec![
+                        "Remove them when read (recommended)".into(),
+                        "Keep them and mark as stale".into(),
+                        "Evict on a timer".into(),
+                    ],
+                    multiple: false,
+                }),
+                _ => ThreadEvent::Approval(ApprovalRequest {
+                    id: 1,
+                    request: Request::Command {
+                        command: "cargo test --workspace".into(),
+                    },
+                    session: Some("cargo".into()),
+                }),
+            };
+            if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
+                chat.apply(event);
+            }
+            cx.notify();
         }
         "theme" => crate::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
         "file" => {

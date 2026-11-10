@@ -1,5 +1,6 @@
 //! The message box: Enter sends, Shift+Enter starts a new line, Stop ends the turn.
 
+use crate::ui::Type;
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -40,7 +41,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
         .filter(|rate| **rate > 0)
         .map(|rate| {
             div()
-                .text_xs()
+                .meta()
                 .text_color(cx.theme().muted_foreground)
                 .pb_1()
                 .child(format!("{rate} tok/s"))
@@ -64,7 +65,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .pl_2()
                 .rounded_md()
                 .bg(cx.theme().accent)
-                .text_xs()
+                .meta()
                 .child(crate::widgets::icon(
                     if path.is_dir() {
                         IconName::Folder
@@ -99,7 +100,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .pl_2()
                 .rounded_md()
                 .bg(cx.theme().accent)
-                .text_xs()
+                .meta()
                 .child(crate::widgets::icon(IconName::FileText, muted))
                 .child(paste_label(text))
                 .child(
@@ -295,7 +296,7 @@ fn mention_menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         let label = format!("@{name}");
         menu = menu.child(
             crate::widgets::row(("mention", index), index == 0, cx)
-                .text_sm()
+                .small()
                 .child(label)
                 .on_click(cx.listener(move |ws, _, _, cx| ws.complete_mention(name.clone(), cx))),
         );

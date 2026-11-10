@@ -139,7 +139,7 @@ impl Workspace {
                 .flex_row()
                 .items_center()
                 .gap_3()
-                .text_xs()
+                .meta()
                 .text_color(muted)
                 .child(working::render(
                     SharedString::from(format!("working-{shown}")),
@@ -176,7 +176,7 @@ impl Workspace {
                         let mut card = div().flex().flex_col().gap_2().child(
                             div()
                                 .id(SharedString::from(format!("agent-{key}")))
-                                .text_xs()
+                                .meta()
                                 .text_color(muted)
                                 .cursor_pointer()
                                 .truncate()
@@ -224,7 +224,7 @@ impl Workspace {
                                         .pl_3()
                                         .border_l_2()
                                         .border_color(border)
-                                        .text_xs()
+                                        .meta()
                                         .text_color(muted)
                                         .child(reasoning.clone()),
                                 );
@@ -256,7 +256,7 @@ impl Workspace {
                     }
                     Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
                     Item::Notice(text) => div()
-                        .text_xs()
+                        .meta()
                         .text_color(muted)
                         .child(text.clone())
                         .into_any_element(),
@@ -264,7 +264,7 @@ impl Workspace {
                         .px_3()
                         .py_2()
                         .rounded_md()
-                        .text_xs()
+                        .meta()
                         .text_color(danger)
                         .bg(danger.opacity(0.1))
                         .child(text.clone())
@@ -463,13 +463,13 @@ fn step(
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().text_xs().text_color(muted).child(title))
+                .child(div().meta().text_color(muted).child(title))
                 .child(
                     div()
                         .p_2()
                         .rounded_md()
                         .bg(surface)
-                        .text_xs()
+                        .meta()
                         .font_family(mono.clone())
                         .child(text.to_owned()),
                 )
@@ -515,7 +515,7 @@ fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> AnyEl
         ));
     }
     if image.title.is_none() && image.description.is_none() {
-        text = text.child(div().text_xs().text_color(muted).child("Picture"));
+        text = text.child(div().meta().text_color(muted).child("Picture"));
     }
     div()
         .flex()
