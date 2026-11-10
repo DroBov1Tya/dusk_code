@@ -69,6 +69,9 @@ cargo build --release -p dusk_gui
 - Saved chats through `/resume`, context summaries through `/compact`, and new threads
   from a summary through `/fork`.
 - Configuration and chat export through `/migrate`; archives include API keys.
+- Headless runs: `duskcode run "prompt"` prints the answer (`--json` adds the usage,
+  `--access`, `--project`, `--timeout`, `-` reads the prompt from stdin); progress goes to
+  stderr, an approval nobody can give is denied.
 - Release updates through `/update`, with stable and dev channels.
 
 ![duskcode terminal interface](docs/screenshots/01-overview.png)

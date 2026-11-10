@@ -18,6 +18,10 @@ testing.
 
 ### Added
 
+- `duskcode run "prompt"`: one prompt in a new chat, the answer on stdout, progress on stderr.
+  `--json` prints the answer with tokens, calls and tool counts; `--access`, `--project`,
+  `--timeout` and `-` for a prompt from stdin. Approvals are denied unless `--access`
+  allows them, questions get a note that nobody is there; exit 1 on failure or timeout.
 - GUI: what a subagent reports back is a folded card on the agent's side of the chat,
   with its name and first line, instead of a bubble that looked like the user's message.
 - The files a chat's commands changed in the project are kept per chat: the core compares

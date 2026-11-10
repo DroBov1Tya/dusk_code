@@ -9,6 +9,8 @@ pub enum Args {
         thread: Option<String>,
     },
     Remove,
+    /// One prompt in, the answer out, without the screen.
+    Headless(Headless),
     /// Restore data offline, before config, logs or SQLite are opened.
     Restore {
         archive: PathBuf,
@@ -21,6 +23,15 @@ pub enum Args {
     InstallResources {
         directory: PathBuf,
     },
+}
+
+pub struct Headless {
+    /// `-` reads the prompt from standard input.
+    pub prompt: String,
+    pub project: Option<PathBuf>,
+    pub access: Option<String>,
+    pub timeout_seconds: Option<u64>,
+    pub json: bool,
 }
 
 pub fn parse_args() -> Args {
@@ -57,6 +68,39 @@ pub fn parse_args() -> Args {
             "Remove duskcode, its resources, links and ~/.config/duskcode after one question",
         ))
         .subcommand(
+            Command::new("run")
+                .about("Run one prompt without the screen and print the answer")
+                .long_about("Runs one prompt in a new chat with your config and prints the answer to standard output; progress goes to standard error. A request for approval is denied unless --access allows it, and a question is answered with a note that nobody is there. Exit code 0: the turn completed; 1: it failed or timed out; 130: interrupted.")
+                .arg(Arg::new("prompt").required(true).value_name("PROMPT").help("The prompt, or - to read it from standard input"))
+                .arg(
+                    Arg::new("project")
+                        .long("project")
+                        .value_name("DIR")
+                        .value_parser(value_parser!(PathBuf))
+                        .help("The folder to work in (default: the current one)"),
+                )
+                .arg(
+                    Arg::new("access")
+                        .long("access")
+                        .value_name("MODE")
+                        .value_parser(["ask", "sandbox", "arbiter", "full"])
+                        .help("Approval mode of this chat (default: the one in the settings)"),
+                )
+                .arg(
+                    Arg::new("timeout")
+                        .long("timeout")
+                        .value_name("SECONDS")
+                        .value_parser(value_parser!(u64))
+                        .help("Stop the chat after this long and exit with 1"),
+                )
+                .arg(
+                    Arg::new("json")
+                        .long("json")
+                        .action(clap::ArgAction::SetTrue)
+                        .help("Print one JSON object with the answer and the usage"),
+                ),
+        )
+        .subcommand(
             Command::new("restore")
                 .about("Restore a private migration archive offline into absent or empty data roots")
                 .long_about("Restore a /migrate archive before starting duskcode. Close every other duskcode process first. Both ~/.config/duskcode and ~/Documents/duskcode must be absent or empty, real directories. Existing data is never merged or replaced. An interrupted restore blocks normal startup; use duskcode restore --recover to validate and finish its journaled installation. Archives include API keys and chat history; keep them private. Absolute project paths inside saved data are not rewritten.")
@@ -73,6 +117,15 @@ pub fn parse_args() -> Args {
                     .help("Validate and finish an interrupted restore from its private transaction journal")),
         )
         .get_matches();
+    if let Some(run) = matches.subcommand_matches("run") {
+        return Args::Headless(Headless {
+            prompt: run.get_one::<String>("prompt").expect("required").clone(),
+            project: run.get_one::<PathBuf>("project").cloned(),
+            access: run.get_one::<String>("access").cloned(),
+            timeout_seconds: run.get_one::<u64>("timeout").copied(),
+            json: run.get_flag("json"),
+        });
+    }
     if let Some(restore) = matches.subcommand_matches("restore") {
         if restore.get_flag("recover") {
             return Args::RecoverRestore;

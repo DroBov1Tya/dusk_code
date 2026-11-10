@@ -4,3 +4,4 @@ pub mod args;
 pub mod remove;
 pub mod resources;
 pub mod restore;
+pub mod run;
