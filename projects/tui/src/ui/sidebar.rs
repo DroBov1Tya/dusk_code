@@ -3,7 +3,9 @@
 
 use unicode_width::UnicodeWidthStr;
 
-use dusk_protocol::{mcp::McpState, work::AUTO_COMPACT_PERCENT, work::Task, work::ThreadTokens};
+use dusk_protocol::{
+    agent::Zone, mcp::McpState, work::AUTO_COMPACT_PERCENT, work::Task, work::ThreadTokens,
+};
 use ratatui::{
     Frame,
     layout::Rect,
@@ -319,9 +321,45 @@ impl Sidebar<'_> {
         let width = area.width.saturating_sub(8 + 2 * PAD) as usize;
         // When every agent does not fit in full, each takes two rows, so the last ones
         // still show what they work on. A blank row parts any two, or they run together.
-        let full_rows = self.app.subagents.len() * 4 - 1;
+        let zones = Zone::ALL
+            .iter()
+            .filter(|zone| {
+                self.app
+                    .subagents
+                    .iter()
+                    .any(|a| Zone::of(&a.agent) == **zone)
+            })
+            .count();
+        let full_rows = self.app.subagents.len() * 4 - 1 + zones;
         let compact = full_rows > area.height.saturating_sub(1) as usize;
-        for (index, agent) in self.app.subagents.iter().enumerate() {
+        // Agents stand in the zone of their work, those at work first.
+        let mut order: Vec<&_> = self.app.subagents.iter().collect();
+        order.sort_by_key(|a| {
+            (
+                Zone::ALL.iter().position(|z| *z == Zone::of(&a.agent)),
+                !a.is_working(),
+                a.started_at,
+            )
+        });
+        let mut last_zone = None;
+        for (index, agent) in order.iter().copied().enumerate() {
+            let zone = Zone::of(&agent.agent);
+            if last_zone != Some(zone) {
+                last_zone = Some(zone);
+                let at_work = order
+                    .iter()
+                    .filter(|a| Zone::of(&a.agent) == zone && a.is_working())
+                    .count();
+                let note = if at_work > 0 {
+                    format!(" \u{00B7} {at_work} at work")
+                } else {
+                    String::new()
+                };
+                lines.push(Line::from(Span::styled(
+                    format!(" {}{note}", zone.name()),
+                    bold(TEXT_SOFT),
+                )));
+            }
             let seed = identity(&agent.thread_id);
             let loader = Loader::new(seed);
             let color = loader.color();
@@ -333,7 +371,7 @@ impl Sidebar<'_> {
             let state = match (&agent.phase, agent.unavailable_at, running) {
                 (_, Some(_), _) => "unavailable",
                 (Some((phase, _)), _, _) => phase.name(),
-                (None, _, true) => "",
+                (None, _, true) => agent.doing.label(),
                 (None, _, false) => "done",
             };
             // Room left by the loader, the time and the status, as wide as they are now:
@@ -360,7 +398,7 @@ impl Sidebar<'_> {
                     ]
                     .concat(),
                 ));
-                if index + 1 < self.app.subagents.len() {
+                if index + 1 < order.len() {
                     lines.push(Line::default());
                 }
                 continue;
@@ -385,7 +423,7 @@ impl Sidebar<'_> {
                 ]
                 .concat(),
             ));
-            if index + 1 < self.app.subagents.len() {
+            if index + 1 < order.len() {
                 lines.push(Line::default());
             }
         }

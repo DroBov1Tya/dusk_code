@@ -9,8 +9,12 @@ use std::{
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_protocol::{
-    agent::AgentPhase, model::Effort, model::ModelEvent, thread::ARBITER_THREAD,
-    thread::ThreadEvent, work::ThreadTokens,
+    agent::{AgentPhase, Doing},
+    model::Effort,
+    model::ModelEvent,
+    thread::ARBITER_THREAD,
+    thread::ThreadEvent,
+    work::ThreadTokens,
 };
 use ratatui::layout::{Position, Rect};
 
@@ -39,6 +43,8 @@ pub struct SubagentView {
     pub tokens: ThreadTokens,
     /// Where it is in its work, with what it said about it.
     pub phase: Option<(AgentPhase, String)>,
+    /// What it does this moment, from its events.
+    pub doing: Doing,
     /// Its largest request.
     pub limit: u64,
     /// Text that came in recently, with when, for tokens per second.
@@ -307,6 +313,7 @@ impl App {
             tokens,
             limit,
             phase: None,
+            doing: Doing::Thinking,
             output: VecDeque::new(),
         });
     }
@@ -419,9 +426,16 @@ impl App {
             return;
         };
         match event {
-            ThreadEvent::Model(ModelEvent::Reasoning(text) | ModelEvent::Text(text)) => {
+            ThreadEvent::Model(ModelEvent::Reasoning(text)) => {
+                card.doing = Doing::Thinking;
                 card.record_output(text)
             }
+            ThreadEvent::Model(ModelEvent::Text(text)) => {
+                card.doing = Doing::Writing;
+                card.record_output(text)
+            }
+            ThreadEvent::ToolStarted(call) => card.doing = Doing::of_tool(&call.name),
+            ThreadEvent::ToolFinished { .. } => card.doing = Doing::Thinking,
             ThreadEvent::Tokens { tokens, limit } => {
                 card.tokens = *tokens;
                 card.limit = *limit;

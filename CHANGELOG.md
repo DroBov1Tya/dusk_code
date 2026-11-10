@@ -8,6 +8,11 @@ testing.
 
 ### Changed
 
+- Subagents in both clients from one source: the kind of work a role belongs to (engineering,
+  security, testing and review, infrastructure, general) and the word for what an agent does
+  now (thinking, writing, searching, reading, planning, running) are decided in
+  `dusk_protocol::agent`, not in a client. The GUI stage and the TUI side card both group by
+  them; the TUI card also shows the action word while an agent works.
 - GUI: the subagents' figure is a fox, the animal of the dusk, in 8-bit cells with a layer for
   the fox, its eyes, its tail and what it holds. Each state moves differently: thinking dots that
   fill, a pencil that writes, a hammer for commands, a lens for searches, a page for reads,
