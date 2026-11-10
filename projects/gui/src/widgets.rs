@@ -34,6 +34,7 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .cursor_pointer()
         .when(active, |row| row.bg(selected))
         .hover(move |row| row.bg(hover))
+        .focusable_row(cx)
 }
 
 /// A row of a menu or a window over the page. Its pointer color is the accent, as a menu's
@@ -53,6 +54,7 @@ pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
+        .focusable_row(cx)
 }
 
 pub fn icon(name: IconName, color: Hsla) -> Icon {
@@ -87,6 +89,25 @@ pub fn muted(text: impl Into<SharedString>, cx: &App) -> Div {
         .small()
         .text_color(cx.theme().muted_foreground)
         .child(text)
+}
+
+/// What every pressable row has: a place in the Tab order, a ring in the accent color while
+/// the keyboard is on it, and Enter or Space to press it. The ring is a border that is
+/// always there and clear until then, so the row does not move.
+pub trait Focusable: Sized {
+    fn focusable_row(self, cx: &App) -> Self;
+}
+
+impl Focusable for Stateful<Div> {
+    fn focusable_row(self, cx: &App) -> Self {
+        let ring = cx.theme().ring;
+        self.border_1()
+            .border_color(gpui_kit::transparent_black())
+            .key_context("Row")
+            .tab_stop(true)
+            .tab_index(0)
+            .focus_visible(move |style| style.border_color(ring))
+    }
 }
 
 /// A menu or a list that opens over the page: painted after everything else, so no text

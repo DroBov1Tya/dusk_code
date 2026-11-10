@@ -162,6 +162,9 @@ pub struct Workspace {
     pub git: Option<GitInfo>,
     pub touched: Vec<dusk_protocol::project::Change>,
     pub review: crate::review::Review,
+    /// The window's own focus: shortcuts reach the workspace from here when no box or row
+    /// has the keyboard.
+    pub focus: FocusHandle,
     pub file: crate::file_view::FileView,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,
@@ -311,6 +314,7 @@ impl Workspace {
             git: None,
             touched: Vec::new(),
             review: crate::review::Review::new(),
+            focus: cx.focus_handle(),
             file: crate::file_view::FileView::new(),
             mcp_restarting: HashSet::new(),
             files: BTreeMap::new(),
@@ -352,6 +356,7 @@ impl Workspace {
         workspace.reload_threads(cx);
         workspace.load_about_me(cx);
         Self::answer_notifications(cx);
+        window.focus(&workspace.focus, cx);
         workspace
     }
 
@@ -500,6 +505,15 @@ impl Render for Workspace {
             )
             .children(modal)
             .children(chat_menu)
+            .track_focus(&self.focus)
+            .key_context("Workspace")
+            .on_action(cx.listener(Self::on_new_chat))
+            .on_action(cx.listener(Self::on_focus_next))
+            .on_action(cx.listener(Self::on_focus_prev))
+            .on_action(cx.listener(Self::on_find_chat))
+            .on_action(cx.listener(Self::on_open_settings))
+            .on_action(cx.listener(Self::on_toggle_sidebar))
+            .on_action(cx.listener(Self::on_toggle_side_panel))
             .on_action(cx.listener(Self::copy_code))
             .on_action(cx.listener(Self::ask_run))
             .capture_key_down(cx.listener(Self::menu_keys))

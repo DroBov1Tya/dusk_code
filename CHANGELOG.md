@@ -58,6 +58,11 @@ testing.
 
 ### Added
 
+- GUI keyboard: shortcuts for a new chat (⌘N), finding a chat (⌘K), settings (⌘,), the sidebar
+  (⌘B) and the side panel (⌘⌥B), Ctrl instead of ⌘ off a Mac; they are listed on a new Keyboard
+  settings page. Escape closes what is on top, one thing a press: a window, a menu, the review;
+  with nothing open it leaves the message box, and then Tab and Shift+Tab walk the rows. A row
+  in focus has a ring in the accent color, and Enter or Space presses it.
 - `--features screenshot` for the GUI (development only): the window follows a script and
   saves PNG pictures of its pages, drawn in memory. See docs/gui-screenshots.md. It makes the
   lockfile list 26 more crates (gpui's test support); none is built without the feature, and

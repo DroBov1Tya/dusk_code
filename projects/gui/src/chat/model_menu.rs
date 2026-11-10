@@ -235,9 +235,9 @@ impl Workspace {
 
     /// While a menu over the model bar is open, Escape closes it; in the model menu
     /// the digits 1-6 pick its models, before the text box takes them.
-    pub fn menu_keys(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn menu_keys(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let Some(picker) = self.picker else {
-            self.page_keys(event, cx);
+            self.page_keys(event, window, cx);
             return;
         };
         let keys = &event.keystroke;
@@ -267,15 +267,25 @@ impl Workspace {
     /// Keys of the page in the middle: on the review, Up and Down choose the file and
     /// Escape goes back to the chat. Letters are left alone, so typing still reaches
     /// the boxes.
-    fn page_keys(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+    fn page_keys(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let keys = &event.keystroke;
-        if self.center != Center::Review || self.modal.is_some() || keys.modifiers.modified() {
+        if keys.modifiers.modified() {
             return;
         }
         match keys.key.as_str() {
-            "escape" => self.center = Center::Chat,
-            "down" => self.review.step(1),
-            "up" => self.review.step(-1),
+            "escape" => {
+                // Nothing open: Escape leaves the box for the window, from where Tab walks
+                // the rows.
+                if !self.close_top() {
+                    if self.focus.is_focused(window) {
+                        return;
+                    }
+                    window.focus(&self.focus, cx);
+                }
+            }
+            "down" | "up" if self.center == Center::Review && self.modal.is_none() => {
+                self.review.step(if keys.key == "down" { 1 } else { -1 })
+            }
             _ => return,
         }
         cx.stop_propagation();
