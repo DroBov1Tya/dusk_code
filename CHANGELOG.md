@@ -8,6 +8,9 @@ testing.
 
 ### Changed
 
+- Rules about running commands, reading files, asking agents, asking the user and the task
+  board are in each tool's description instead of the MAIN prompt (about 160 tokens fewer
+  per request); no measurable change in the evals.
 - GUI menus and windows: the search window shows the source of a chat as quiet text, not a chip,
   and asks for a title; the chat menu sets Delete apart; the effort menu uses the same text size
   as the menu it opens from.

@@ -103,3 +103,25 @@ What is left, by expected gain:
   the model does not re-run commands it no longer sees.
 - A longer cache lifetime on hosted providers (Anthropic one-hour TTL) for threads that
   pause between turns; costs twice the write price, so only for threads that come back.
+
+## Rules in tool descriptions (2026-11-10)
+
+The rules about running commands, reading, asking agents, asking the user and the task
+board moved from the MAIN prompt into the description of each tool, so they sit beside the
+choice they guide and appear only when the tool is on. MAIN went from 3,915 to 2,473 bytes;
+the descriptions grew by about 800 characters, so a request is about 160 tokens shorter.
+
+Measured on qwen3.8-flash with `projects/evals`, old code and prompt against new:
+
+| Set | Passed | Calls | Tokens | Tool errors |
+|---|---|---|---|---|
+| 6 tasks, 2 runs each | 7/12 and 6/12 | 4.8 and 3.5 | 94k and 69k | 0.6 and 0.2 |
+| 2 disputed tasks, 4 runs each | 4/8 and 4/8 | 4.0 and 4.1 | 77k and 80k | 0.0 and 0.1 |
+
+The 27% drop in the first set is not reliable: a run that times out counts as zero calls
+and zero tokens, and the new version had two such runs (`hard-ttl-cache`, which takes about
+as long as the 400 s limit with either prompt) against one. On the two tasks rerun with four
+runs each, the pass rate and the cost are the same. A run that answered with no tool at all
+happened with the old prompt as well. Reading: no measurable change in quality or in work
+done; the saving is the shorter prefix on every request. Too few runs to see a small
+difference either way.
