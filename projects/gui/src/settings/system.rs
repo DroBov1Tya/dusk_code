@@ -164,6 +164,7 @@ impl Workspace {
                     Err(error) => ws.fail(error, cx),
                 },
             ),
+            SettingsPage::AboutMe => self.load_about_me(cx),
             _ => {}
         }
     }

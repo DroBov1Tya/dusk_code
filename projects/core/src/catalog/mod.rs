@@ -3,5 +3,6 @@
 
 pub mod agents;
 pub mod graph;
+pub mod mentions;
 pub mod modes;
 pub mod skills;

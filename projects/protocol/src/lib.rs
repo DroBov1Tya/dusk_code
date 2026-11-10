@@ -9,7 +9,8 @@
 //! - `config`, `settings`, `providers`, `mcp`, `catalog`: what the settings show;
 //! - `project`: projects, their git state and files;
 //! - `update`, `system`, `paths`: releases, resource use and path completion;
-//! - `pasted`: how pasted text and sources are marked inside a message.
+//! - `pasted`: how pasted text and sources are marked inside a message;
+//! - `mentions`: the profile and snippets a message names with `@`.
 
 pub mod agent;
 pub mod artifact;
@@ -21,6 +22,7 @@ pub mod context;
 pub mod conversation;
 pub mod goal;
 pub mod mcp;
+pub mod mentions;
 pub mod model;
 pub mod pasted;
 pub mod paths;

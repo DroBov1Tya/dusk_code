@@ -11,6 +11,7 @@ mod serve;
 use std::{future::Future, path::PathBuf};
 
 use anyhow::{Result, anyhow, bail, ensure};
+use dusk_protocol::mentions::{Profile, Snippet};
 use dusk_protocol::{
     catalog::NodeText,
     client::{
@@ -484,6 +485,42 @@ impl Catalog<'_> {
 
     async fn node(&self, request: CatalogRequest) -> Result<NodeText> {
         self.0.node(Request::Catalog(request)).await
+    }
+
+    pub async fn snippets(&self) -> Result<Vec<Snippet>> {
+        match self
+            .0
+            .call(Request::Catalog(CatalogRequest::Snippets))
+            .await?
+        {
+            Response::Snippets(snippets) => Ok(snippets),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Empty text removes the snippet.
+    pub async fn save_snippet(&self, name: &str, text: &str) -> Result<()> {
+        let (name, text) = (name.to_owned(), text.to_owned());
+        self.0
+            .done(Request::Catalog(CatalogRequest::SaveSnippet { name, text }))
+            .await
+    }
+
+    pub async fn profile(&self) -> Result<Profile> {
+        match self
+            .0
+            .call(Request::Catalog(CatalogRequest::Profile))
+            .await?
+        {
+            Response::Profile(profile) => Ok(profile),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn save_profile(&self, profile: Profile) -> Result<()> {
+        self.0
+            .done(Request::Catalog(CatalogRequest::SaveProfile(profile)))
+            .await
     }
 }
 

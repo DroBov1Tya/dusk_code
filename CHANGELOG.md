@@ -8,6 +8,9 @@ testing.
 
 ### Added
 
+- `@me` and `@name` in a message: the profile (who you are, files marked to send) and
+  the user's snippets become the chat's sources when it is sent; `@` completes in the
+  TUI and GUI, and GUI Settings > About me edits both.
 - macOS releases carry the desktop client as Duskcode.app in a disk image, with the
   resources of its version inside the bundle, so it runs on a Mac with nothing else
   installed (`scripts/package-macos.sh`, signed ad hoc).

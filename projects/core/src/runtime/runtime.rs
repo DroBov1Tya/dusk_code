@@ -23,6 +23,7 @@ use crate::runtime::agent::{Input, Mailboxes};
 use crate::{
     catalog::agents::{AgentTree, Agents},
     catalog::graph::{AGENT_FILE, NodeText, SKILL_FILE, read_node_text, save_node_text},
+    catalog::mentions::Mentions,
     catalog::modes::Modes,
     catalog::skills::{self, SkillInfo},
     config::live::LiveConfig,
@@ -703,18 +704,22 @@ impl Runtime {
         crate::tools::console::run_for_user(command, &context).await
     }
 
-    /// `message` with its long pastes moved to the thread's sources.
+    /// `message` with its long pastes, and what its `@` mentions bring, moved to the
+    /// thread's sources.
     pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
         let workspace =
             thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
-        let state = &self.launcher.state;
-        ThreadSources {
-            state,
+        let sources = ThreadSources {
+            state: &self.launcher.state,
             workspace: &workspace,
             thread_id,
-        }
-        .keep_pastes(message)
-        .await
+        };
+        let kept = sources.keep_pastes(message).await?;
+        sources.keep_mentions(&kept, &self.mentions()).await
+    }
+
+    pub fn mentions(&self) -> Mentions {
+        Mentions::new(&self.launcher.paths.rules_root())
     }
 
     pub async fn sources(&self, thread_id: &str) -> Result<Vec<Source>> {

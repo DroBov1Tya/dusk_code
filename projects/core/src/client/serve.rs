@@ -314,6 +314,16 @@ impl Server {
                 Response::Node(runtime.save_agent(&name, &text).await?)
             }
             CatalogRequest::McpServers => Response::Mcp(runtime.mcp_servers()),
+            CatalogRequest::Snippets => Response::Snippets(runtime.mentions().snippets()?),
+            CatalogRequest::SaveSnippet { name, text } => {
+                runtime.mentions().save_snippet(&name, &text)?;
+                Response::Done
+            }
+            CatalogRequest::Profile => Response::Profile(runtime.mentions().profile()?),
+            CatalogRequest::SaveProfile(profile) => {
+                runtime.mentions().save_profile(&profile)?;
+                Response::Done
+            }
             CatalogRequest::McpServerText { name } => {
                 Response::Text(runtime.mcp_server_text(&name)?)
             }
