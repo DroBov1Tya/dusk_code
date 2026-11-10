@@ -78,7 +78,21 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
         )
         .child(
             line("Latest", &format!("{behind} ahead of this one"), cx).child(update.latest.clone()),
-        );
+        )
+        .child({
+            let dev = update.channel == dusk_protocol::update::Channel::Dev;
+            line(
+                "Dev builds",
+                "Every build of the main branch, before it is released",
+                cx,
+            )
+            .child(
+                gpui_kit::component::switch::Switch::new("update-dev")
+                    .checked(dev)
+                    .small()
+                    .on_click(cx.listener(|ws, on: &bool, _, cx| ws.set_channel(*on, cx))),
+            )
+        });
     let tag = update.latest.clone();
     let notes = format!("{RELEASES}{tag}");
     body = body.child(
@@ -149,6 +163,29 @@ impl Workspace {
             ),
             _ => {}
         }
+    }
+
+    /// Switches the update channel and asks again what is newest on it.
+    fn set_channel(&mut self, dev: bool, cx: &mut Context<Self>) {
+        let channel = if dev { "dev" } else { "stable" }.to_owned();
+        self.core.call(
+            cx,
+            move |client| async move {
+                client
+                    .command(Command::Update {
+                        channel: Some(channel),
+                    })
+                    .await
+            },
+            |ws, result, cx| match result {
+                Ok(Answer::Update(info)) => {
+                    ws.update = Some(info);
+                    cx.notify();
+                }
+                Ok(_) => {}
+                Err(error) => ws.fail(error, cx),
+            },
+        );
     }
 
     fn install(&mut self, tag: String, cx: &mut Context<Self>) {

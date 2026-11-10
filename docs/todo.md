@@ -80,6 +80,7 @@ Chat
       as one message when the turn ends (as in the TUI), "Now" interrupts
 - [x] Tokens per second shown while the agent writes
 - [x] Message navigator: opaque
+- [x] A round button over the composer scrolls to the newest message
 
 Subagents
 - [x] A button right of the composer with a status indicator; it opens a window with
@@ -95,25 +96,25 @@ Arbiter
       the center, points pull in as it passes and return, the whole mass breathing
 
 Left column
-- [ ] "duskcode" at the top left: "dusk" in a violet to sunset orange gradient
-- [ ] A working animation on chats where an agent runs
-- [ ] Right click menu: highlight the hovered item; menus near the bottom open upward
-- [ ] Delete button must not click through to the chat under it
-- [ ] A short fade when a chat is deleted
-- [ ] Delete all artifacts at once (confirmed)
+- [x] "duskcode" at the top left: "dusk" in a violet to sunset orange gradient
+- [x] A working animation on chats where an agent runs
+- [x] Right click menu: highlight the hovered item; menus near the bottom open upward
+- [x] Delete button must not click through to the chat under it
+- [x] A short fade when a chat is deleted
+- [x] Delete all artifacts at once (confirmed)
 
 Right column
-- [ ] Activity and Context inside one "Statistics" parent that folds as one
-- [ ] Environment path: a click opens a menu: Show in Finder, Open repo, Open in
+- [x] Activity and Context inside one "Statistics" parent that folds as one
+- [x] Environment path: a click opens a menu: Show in Finder, Open repo, Open in
       terminal, Copy path
 - [ ] Pinned plan module (see User context)
 - [ ] Less information at once overall: calmer, fewer simultaneous things
 
 Settings and updates
 - [x] App icon on a bare binary (Dock on macOS, app ID on Linux)
-- [ ] Notifications section
-- [ ] Version control section (branch prefix ...)
-- [ ] "new release!" label when an update exists; a dev update channel switch
+- [x] Notifications section
+- [x] Version control section (branch prefix ...)
+- [x] "new release!" label when an update exists; a dev update channel switch
 
 Motion
 - [ ] Animations that answer a user action are under 400 ms; purely visual ones may be

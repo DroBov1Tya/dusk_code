@@ -30,8 +30,7 @@ pub const WIDTH: f32 = 340.;
 
 const MODULES: &[(Right, &str)] = &[
     (Right::Arbiter, "Arbiter"),
-    (Right::Context, "Context"),
-    (Right::Activity, "Activity"),
+    (Right::Statistics, "Statistics"),
     (Right::Screenshots, "Screenshots"),
     (Right::Git, "Changes"),
     (Right::Files, "Files"),
@@ -91,8 +90,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         if open {
             let body = match module {
                 Right::Arbiter => arbiter_summary(ws, cx),
-                Right::Context => context::render(ws, cx),
-                Right::Activity => activity::render(ws, cx),
+                Right::Statistics => statistics(ws, cx),
                 Right::Screenshots => screenshots::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
@@ -188,6 +186,25 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         )
 }
 
+/// The context, then the activity, each under a small caption when it has anything.
+fn statistics(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let mut column = div().flex().flex_col().gap_3();
+    if ws.context.is_some() {
+        column = column
+            .child(widgets::caption("Context", cx))
+            .child(context::render(ws, cx));
+    }
+    if ws
+        .shown_chat()
+        .is_some_and(|chat| !chat.activity().is_empty())
+    {
+        column = column
+            .child(widgets::caption("Activity", cx))
+            .child(activity::render(ws, cx));
+    }
+    column
+}
+
 /// A hairline above every module but the first.
 trait WhenBorder {
     fn when_border(self, on: bool, color: Hsla) -> Self;
@@ -212,8 +229,9 @@ impl Workspace {
                 self.status.approvals == dusk_protocol::config::ApprovalPolicy::Arbiter
                     || chat.is_some_and(|chat| !chat.exchanges.is_empty())
             }
-            Right::Context => self.context.is_some(),
-            Right::Activity => chat.is_some_and(|chat| !chat.activity().is_empty()),
+            Right::Statistics => {
+                self.context.is_some() || chat.is_some_and(|chat| !chat.activity().is_empty())
+            }
             Right::Screenshots => chat.is_some_and(|chat| !chat.screenshots.is_empty()),
             Right::Git => self
                 .git
@@ -239,10 +257,9 @@ impl Workspace {
         match module {
             Right::Git => self.load_git(cx),
             Right::Files => self.load_folder(String::new(), cx),
-            Right::Context => self.load_context(cx),
+            Right::Statistics => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Arbiter | Right::Activity | Right::Screenshots | Right::Todo | Right::Agents => {
-            }
+            Right::Arbiter | Right::Screenshots | Right::Todo | Right::Agents => {}
         }
     }
 }

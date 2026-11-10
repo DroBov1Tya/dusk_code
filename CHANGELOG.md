@@ -15,6 +15,12 @@ testing.
   the provider's config, shown next to the call count; never guessed. Providers that
   tell the balance to a plain key (DeepSeek, Kimi, OpenRouter, and LiteLLM with
   `balance: litellm`) show it in the model list.
+- Desktop columns and settings: the duskcode name at the top, a breathing dot on
+  chats at work, a fade when a chat is deleted, a chat menu that opens upward near
+  the bottom and never clicks through, delete all artifacts shown, Statistics with
+  context and activity, a folder menu (show, open repo, terminal, copy path),
+  Notifications and Version control pages, a dev update switch and a "new release!"
+  label, and a round button that scrolls the chat to its newest message.
 - Desktop subagents: a button by the message box with a lit dot while any works opens
   them by role, each with a small 8-bit figure that thinks, walks, hammers, rests or
   fails; rows show name, role, state and run time on two lines; marks add

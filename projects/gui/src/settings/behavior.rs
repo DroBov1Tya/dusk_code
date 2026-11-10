@@ -49,6 +49,45 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                 ),
             );
         }
+        SettingsPage::Notifications => {
+            if let Some(settings) = ws.settings.clone() {
+                body = body
+                    .child(switch_line(
+                        "Notifications",
+                        "Tell when a turn ends or a question waits, while the window is away",
+                        settings.notifications,
+                        CoreSwitch::Notifications,
+                        cx,
+                    ))
+                    .child(switch_line(
+                        "Sound",
+                        "A short sound with each notification",
+                        settings.sound_notifications,
+                        CoreSwitch::SoundNotifications,
+                        cx,
+                    ));
+            }
+        }
+        SettingsPage::VersionControl => {
+            if let Some(settings) = ws.settings.clone() {
+                let prefix = settings.version_control.branch_prefix.clone();
+                let current = if prefix.is_empty() {
+                    "Branches the agents make have no prefix".to_owned()
+                } else {
+                    format!("Now: {prefix}")
+                };
+                body = body.child(
+                    line("Branch prefix", &current, cx)
+                        .child(div().w(px(200.)).child(Input::new(&ws.branch_input)))
+                        .child(
+                            Button::new("branch-prefix-save")
+                                .small()
+                                .label("Save")
+                                .on_click(cx.listener(|ws, _, _, cx| ws.save_branch_prefix(cx))),
+                        ),
+                );
+            }
+        }
         SettingsPage::Safety => {
             for (label, hint, policy) in [
                 (
@@ -223,6 +262,18 @@ impl Workspace {
                     Limit::Rounds => client.settings().max_goal_rounds(value as u32).await,
                 }
             },
+            |ws, result, cx| match result {
+                Ok(()) => ws.load_settings(cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
+    pub fn save_branch_prefix(&mut self, cx: &mut Context<Self>) {
+        let prefix = self.branch_input.read(cx).value().trim().to_owned();
+        self.core.call(
+            cx,
+            move |client| async move { client.settings().branch_prefix(&prefix).await },
             |ws, result, cx| match result {
                 Ok(()) => ws.load_settings(cx),
                 Err(error) => ws.fail(error, cx),

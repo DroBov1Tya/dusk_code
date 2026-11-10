@@ -31,6 +31,9 @@ pub struct GitInfo {
     pub ahead_behind: Option<(u64, u64)>,
     /// Paths relative to the project folder.
     pub changes: Vec<Change>,
+    /// The repository's page, from the `origin` remote: https, no credentials.
+    #[serde(default)]
+    pub web: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

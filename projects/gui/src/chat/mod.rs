@@ -102,10 +102,48 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 )),
         )
         .children(notice)
-        .child(div().flex_1().min_h_0().child(body))
+        .child(
+            div()
+                .relative()
+                .flex_1()
+                .min_h_0()
+                .child(body)
+                .children(to_bottom(ws, cx)),
+        )
         .child(approval::render(ws, cx))
         .child(composer::render(ws, window, cx))
         .child(model_bar::render(ws, cx))
+}
+
+/// A round button over the composer while the chat is scrolled up: one click goes
+/// to the newest message and follows the chat again.
+fn to_bottom(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    const SHOWN_PAST: f32 = 240.;
+    let max = ws.list.max_offset_for_scrollbar().y;
+    let scrolled = -ws.list.scroll_px_offset_for_scrollbar().y;
+    if max - scrolled < px(SHOWN_PAST) {
+        return None;
+    }
+    Some(
+        div()
+            .absolute()
+            .bottom(px(12.))
+            .left_0()
+            .right_0()
+            .flex()
+            .justify_center()
+            .child(
+                Button::new("to-bottom")
+                    .rounded(gpui_kit::component::button::ButtonRounded::Size(px(999.)))
+                    .icon(IconName::ArrowDown)
+                    .tooltip("To the newest message")
+                    .on_click(cx.listener(|ws, _, _, cx| {
+                        ws.list.scroll_to_end();
+                        ws.list.set_follow_mode(FollowMode::Tail);
+                        cx.notify();
+                    })),
+            ),
+    )
 }
 
 /// Shows or hides a side column.

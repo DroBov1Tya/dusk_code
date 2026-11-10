@@ -42,8 +42,8 @@ pub enum Center {
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Right {
     Arbiter,
-    Context,
-    Activity,
+    /// The context and the activity under one fold.
+    Statistics,
     Screenshots,
     Git,
     Files,
@@ -86,6 +86,8 @@ pub struct Workspace {
     /// The machine's font families, read once.
     pub fonts: Vec<String>,
     pub model_input: Entity<InputState>,
+    /// A new branch prefix, typed in the version control settings.
+    pub branch_input: Entity<InputState>,
     pub outputs: Vec<OutputFile>,
     pub artifact_kind: Option<OutputKind>,
     pub search: Entity<InputState>,
@@ -127,6 +129,10 @@ pub struct Workspace {
     pub agent_path: Vec<String>,
     /// The chat a right click opened the menu of, and where.
     pub chat_menu: Option<(String, Point<Pixels>)>,
+    /// Chats just deleted, fading out of the list before it is read again.
+    pub fading: std::collections::HashSet<String>,
+    /// The menu of the project folder in the right column is open.
+    pub path_menu: bool,
     pub system: Option<dusk_protocol::system::SystemReport>,
     pub update: Option<dusk_protocol::update::UpdateInfo>,
     /// Answers whose reasoning is unfolded, by chat and item index.
@@ -169,6 +175,13 @@ impl Workspace {
             }
         })
         .detach();
+        let branch_input = cx.new(|cx| InputState::new(window, cx).placeholder("such as dusk/"));
+        cx.subscribe_in(&branch_input, window, |ws, _, event: &InputEvent, _, cx| {
+            if let InputEvent::PressEnter { .. } = event {
+                ws.save_branch_prefix(cx);
+            }
+        })
+        .detach();
         let composer = cx.new(|cx| {
             let mut state = TextareaState::new(window, cx)
                 .auto_grow(2, 10)
@@ -206,6 +219,7 @@ impl Workspace {
             font_search,
             fonts: crate::theme::font_families(cx),
             model_input,
+            branch_input,
             outputs: Vec::new(),
             artifact_kind: None,
             search,
@@ -234,6 +248,8 @@ impl Workspace {
             secret_inputs: Vec::new(),
             agent_path: Vec::new(),
             chat_menu: None,
+            fading: Default::default(),
+            path_menu: false,
             system: None,
             update: None,
             unfolded: HashSet::new(),
@@ -358,7 +374,7 @@ impl Render for Workspace {
             Center::Settings => settings::render(self, window, cx).into_any_element(),
         };
         let modal = modal::render(self, window, cx);
-        let chat_menu = modal::chat_menu(self, cx);
+        let chat_menu = modal::chat_menu(self, window, cx);
         div()
             .relative()
             .size_full()

@@ -71,6 +71,22 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .take(300)
         .cloned()
         .collect();
+    if !files.is_empty() {
+        let paths: Vec<_> = files.iter().map(|file| file.path.clone()).collect();
+        tabs = tabs.child(
+            Button::new("artifacts-delete-all")
+                .ghost()
+                .small()
+                .icon(IconName::Delete)
+                .tooltip("Delete every file shown")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.modal = Some(crate::modal::Modal::DeleteFiles {
+                        paths: paths.clone(),
+                    });
+                    cx.notify();
+                })),
+        );
+    }
     let mut grid = div().grid().grid_cols(3).gap_3();
     for (index, file) in files.iter().enumerate() {
         grid = grid.child(card(index, file, cx));
@@ -179,6 +195,8 @@ fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Statefu
                         .icon(IconName::Delete)
                         .tooltip("Delete")
                         .on_click(cx.listener(move |ws, _, _, cx| {
+                            // The card under the button must not open the file.
+                            cx.stop_propagation();
                             ws.modal = Some(crate::modal::Modal::DeleteFile {
                                 path: doomed.clone(),
                             });

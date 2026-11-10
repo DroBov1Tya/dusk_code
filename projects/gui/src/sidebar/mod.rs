@@ -10,6 +10,7 @@ use gpui_kit::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -76,6 +77,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 ws.center == Center::Settings,
                 cx,
             )
+            .when_some(ws.status.available_update.clone(), |row, _| {
+                row.child(widgets::badge("new release!", cx.theme().primary))
+            })
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.center = Center::Settings;
                 ws.load_settings(cx);
@@ -90,17 +94,26 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .border_r_1()
         .border_color(border)
         .child(
-            div().flex().flex_row().justify_end().px_2().pt_2().child(
-                Button::new("sidebar-hide")
-                    .ghost()
-                    .small()
-                    .icon(IconName::PanelLeftClose)
-                    .tooltip("Hide the sidebar")
-                    .on_click(cx.listener(|ws, _, _, cx| {
-                        ws.left_hidden = true;
-                        cx.notify();
-                    })),
-            ),
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .justify_between()
+                .pl_4()
+                .pr_2()
+                .pt_2()
+                .child(wordmark(cx))
+                .child(
+                    Button::new("sidebar-hide")
+                        .ghost()
+                        .small()
+                        .icon(IconName::PanelLeftClose)
+                        .tooltip("Hide the sidebar")
+                        .on_click(cx.listener(|ws, _, _, cx| {
+                            ws.left_hidden = true;
+                            cx.notify();
+                        })),
+                ),
         )
         .child(nav)
         .child(
@@ -113,6 +126,30 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .child(projects::render(ws, window, cx))
                 .child(recent::render(ws, cx)),
         )
+}
+
+/// The name at the top: "dusk" from violet to a sunset orange, "code" plain.
+fn wordmark(cx: &App) -> Div {
+    // Violet, magenta, rose, orange: one hue per letter along the dusk sky.
+    const DUSK: [(f32, f32, f32); 4] = [
+        (268., 0.72, 0.66),
+        (300., 0.62, 0.64),
+        (338., 0.74, 0.64),
+        (24., 0.92, 0.60),
+    ];
+    let mut word = div()
+        .flex()
+        .flex_row()
+        .text_lg()
+        .font_weight(FontWeight::SEMIBOLD);
+    for (letter, (hue, saturation, lightness)) in "dusk".chars().zip(DUSK) {
+        word = word.child(
+            div()
+                .text_color(hsla(hue / 360., saturation, lightness, 1.))
+                .child(letter.to_string()),
+        );
+    }
+    word.child(div().text_color(cx.theme().foreground).child("code"))
 }
 
 /// The narrow column left when the sidebar is hidden: the same ways in, as icons.
