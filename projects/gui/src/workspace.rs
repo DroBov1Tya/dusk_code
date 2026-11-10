@@ -44,7 +44,6 @@ pub enum Right {
     Arbiter,
     Context,
     Activity,
-    Outputs,
     Git,
     Files,
     Todo,

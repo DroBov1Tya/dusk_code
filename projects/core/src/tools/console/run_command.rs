@@ -68,7 +68,9 @@ impl Tool for RunCommand {
         format!(
             "Run a command with sh -c in {}. Stdin is empty. Returns the exit code, stdout \
              and stderr; a long stream keeps its first 8 KiB and last 24 KiB. A non-zero exit code is a failed result. Put \
-             temporary and downloaded files in {}.",
+             temporary and downloaded files in {}. Change files here too: a quoted heredoc \
+             (cat > file <<'EOF') for a new file; for an edit, a short script that replaces \
+             one exact, unique piece and fails otherwise; then check with git diff.",
             scope.cwd().display(),
             scope.workspace().display()
         ) + if self.jobs.is_some() {
@@ -159,6 +161,7 @@ async fn run(
     confinement: Option<&Confinement>,
     timeout_seconds: u64,
 ) -> Result<crate::tools::ToolResult> {
+    let skills = super::skill_saves::snapshot(scope).await;
     let mut child = spawn(command, scope.cwd(), confinement)?;
     let mut group = ProcessGroup(child.id());
     ensure!(group.0.is_some(), "command exited before it started");
@@ -185,6 +188,12 @@ async fn run(
         if !text.is_empty() {
             output.push_str(&format!("\n{name}:\n{text}"));
         }
+    }
+    if let Some(before) = skills
+        && let Some(saved) = super::skill_saves::saved(scope, &before).await
+    {
+        // Last line, where clients look for it.
+        output.push_str(&format!("\n{}", saved.stored()));
     }
     Ok(crate::tools::ToolResult {
         content: output,
@@ -324,6 +333,30 @@ mod tests {
         RunCommand::default()
             .call(arguments, tool_context(scope))
             .await
+    }
+
+    /// A skill saved by a command gets the notice clients look for; invalid text does not.
+    #[tokio::test]
+    async fn a_command_that_saves_a_skill_reports_it() {
+        let skills = temp_dir("shell-skill-save").join("skills");
+        fs::create_dir_all(&skills).unwrap();
+        let scope = scope("shell-skill-save")
+            .share(&skills)
+            .with_skills(&skills);
+        let folder = skills.canonicalize().unwrap().join("greet");
+        let write = |text: &str| {
+            json!({ "command": format!(
+                "mkdir -p '{0}' && printf '%s' '{text}' > '{0}/SKILL.md'",
+                folder.display()
+            )})
+        };
+        let saved = run_tool(&scope, write("---\ndescription: Greets.\n---\nSay hi."))
+            .await
+            .unwrap();
+        let notice = crate::catalog::skills::SkillSave::from_result(&saved).unwrap();
+        assert_eq!(notice.name, "greet");
+        let invalid = run_tool(&scope, write("no front matter")).await.unwrap();
+        assert!(crate::catalog::skills::SkillSave::from_result(&invalid).is_none());
     }
 
     #[tokio::test]

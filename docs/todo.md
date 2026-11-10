@@ -10,9 +10,10 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 
 - [x] Study why opencode 2.0 beats 1.19 on benchmarks (see `agent-engine.md`)
 - [ ] Work through the plan in `agent-engine.md`
-- [ ] Bring the agent loop up to Claude Code level: explore with grep/find, read slices
-      (`sed -n`, line ranges), small edits, parallel reads, short summaries back to the
-      main agent; measure whether `command` can replace `write_file`/`edit_file`
+- [x] Files are written, edited and deleted through `run_command`; the sandbox confines
+      it to the same folders, and a skill saved by a command still gets its notice
+- [ ] Per-chat list of files a chat changed (the GUI Outputs module went with the
+      write tools); could come from the core comparing `git status` around a command
 - [ ] Analyze how to make the agent faster without losing quality
 - [ ] Prompt caching: stable prefix (system, tools, memory) first, cache breakpoints,
       count cache reads; spend fewer input tokens

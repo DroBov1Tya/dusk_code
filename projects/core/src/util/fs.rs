@@ -1,8 +1,8 @@
-//! Reading and writing regular files without following a link swapped in for one.
+//! Reading regular files without following a link swapped in for one.
 
 use std::{
     fs::{File, OpenOptions},
-    io::{Read, Write},
+    io::Read,
     path::Path,
 };
 
@@ -28,19 +28,6 @@ pub fn read_regular(path: &Path, max_bytes: u64) -> Result<Vec<u8>> {
         "file is larger than {max_bytes} bytes"
     );
     Ok(bytes)
-}
-
-/// Creates or replaces a regular file, with the same symlink and FIFO guard as `read_regular`.
-pub fn write_regular(path: &Path, bytes: &[u8]) -> Result<()> {
-    let mut file = open_no_follow(
-        OpenOptions::new().write(true).create(true).truncate(true),
-        path,
-    )?;
-    ensure!(
-        file.metadata().context("cannot write file")?.is_file(),
-        "not a regular file"
-    );
-    file.write_all(bytes).context("cannot write file")
 }
 
 /// Control characters in names or lines would reach the model and terminals as markup.

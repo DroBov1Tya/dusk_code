@@ -52,10 +52,10 @@ You are ... How you work: ...
 Dusk adds the common rules to every agent's prompt: how to treat what it reads, the format
 of its final report, and how to delegate. Write only what is particular to this agent.
 
-Tools: `read_file`, `search_files`, `write_file`, `edit_file`, `delete_file`, `run_command`,
-`jobs`, `read_history`, `tasks`, `load_skill`, `ask_agent`, and MCP tools as
-`<server>__<tool>`. A list leaves out MCP tools it does not name, and `run_command` can
-still change files: leaving out the file tools sets a role, it is not a sandbox.
+Tools: `read_file`, `search_files`, `run_command`, `jobs`, `read_history`, `tasks`,
+`load_skill`, `ask_agent`, and MCP tools as `<server>__<tool>`. A list leaves out MCP
+tools it does not name. Files change only through `run_command`: an agent without it
+can read but not write.
 
 ## MCP server
 

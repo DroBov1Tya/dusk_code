@@ -1,30 +1,13 @@
-//! Reading and writing text for the file tools, with notes when a skill is saved.
+//! Reading text for the file tools.
 
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
-use schemars::JsonSchema;
-use serde::Deserialize;
 
-use crate::util::fs::{read_regular, write_regular};
-use crate::{
-    catalog::{
-        graph::Node,
-        skills::{SkillSave, SkillSaveAction},
-    },
-    tools::ToolScope,
-};
+use crate::util::fs::read_regular;
 
 /// Larger files would not fit the result limit anyway.
 const MAX_READ_BYTES: u64 = 1024 * 1024;
-
-/// For tools that take only a path.
-#[derive(Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
-pub struct PathArguments {
-    /// The file.
-    pub path: String,
-}
 
 pub async fn read_text(path: &Path) -> Result<String> {
     let path = path.to_owned();
@@ -34,89 +17,26 @@ pub async fn read_text(path: &Path) -> Result<String> {
     String::from_utf8(bytes).map_err(|_| anyhow!("file is not valid UTF-8 text"))
 }
 
-pub async fn write_text(path: &Path, text: String) -> Result<()> {
-    let path = path.to_owned();
-    tokio::task::spawn_blocking(move || write_regular(&path, text.as_bytes()))
-        .await
-        .context("cannot write file")?
-}
-
-/// A notice is prepared from the old bytes, but emitted only after the write succeeds.
-/// Unreadable/oversized old files and invalid skill text do not establish a skill update.
-pub async fn skill_save(scope: &ToolScope, path: &Path, text: &str) -> Option<SkillSave> {
-    let name = scope.skill_name(path)?;
-    Node::check(text, &name).ok()?;
-    let action = match tokio::fs::symlink_metadata(path).await {
-        Ok(_) => {
-            let old = read_text(path).await.ok()?;
-            if old == text {
-                SkillSaveAction::Unchanged
-            } else {
-                SkillSaveAction::Updated
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => SkillSaveAction::Created,
-        Err(_) => return None,
-    };
-    Some(SkillSave { name, action })
-}
-
-pub fn with_skill_save(content: String, saved: Option<SkillSave>) -> String {
-    match saved {
-        Some(saved) => format!("{content}\n{}", saved.stored()),
-        None => content,
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::fs;
 
     use serde_json::json;
 
     use crate::{
         testing::{temp_dir, tool_context},
-        tools::{
-            Tool, ToolScope,
-            files::{DeleteFile, EditFile, ReadFile, WriteFile},
-        },
+        tools::{Tool, ToolScope, files::ReadFile},
     };
-
-    fn scope(name: &str) -> (ToolScope, PathBuf) {
-        let root = temp_dir(name);
-        let (cwd, workspace) = (root.join("cwd"), root.join("workspace"));
-        fs::create_dir_all(&cwd).unwrap();
-        fs::create_dir_all(&workspace).unwrap();
-        (ToolScope::new(&cwd, &workspace).unwrap(), root)
-    }
 
     #[tokio::test]
     async fn rejects_paths_outside_the_scope() {
-        let (scope, root) = scope("files_outside");
+        let root = temp_dir("files_outside");
+        let (cwd, workspace) = (root.join("cwd"), root.join("workspace"));
+        fs::create_dir_all(&cwd).unwrap();
+        fs::create_dir_all(&workspace).unwrap();
+        let scope = ToolScope::new(&cwd, &workspace).unwrap();
         fs::write(root.join("secret"), "x").unwrap();
-        let outside = "../secret";
-        assert!(
-            ReadFile
-                .call(json!({ "path": outside }), tool_context(&scope))
-                .await
-                .is_err()
-        );
-        let write = json!({ "path": outside, "content": "y" });
-        assert!(WriteFile.call(write, tool_context(&scope)).await.is_err());
-        let edit = json!({ "path": outside, "old_text": "x", "new_text": "y" });
-        assert!(EditFile.call(edit, tool_context(&scope)).await.is_err());
-        assert_eq!(fs::read_to_string(root.join("secret")).unwrap(), "x");
-    }
-
-    #[tokio::test]
-    async fn deletes_files_only() {
-        let (scope, _) = scope("files_delete");
-        fs::write(scope.cwd().join("a.txt"), "x").unwrap();
-        fs::create_dir(scope.cwd().join("dir")).unwrap();
-        let delete = |path: &str| DeleteFile.call(json!({ "path": path }), tool_context(&scope));
-        delete("a.txt").await.unwrap();
-        assert!(!scope.cwd().join("a.txt").exists());
-        assert!(delete("dir").await.is_err());
-        assert!(delete("../outside").await.is_err());
+        let read = json!({ "path": "../secret" });
+        assert!(ReadFile.call(read, tool_context(&scope)).await.is_err());
     }
 }

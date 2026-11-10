@@ -32,7 +32,6 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .flex_row()
             .gap_2()
             .child(stat(runs.to_string(), "tool runs"))
-            .child(stat(chat.outputs.len().to_string(), "files written"))
             .child(stat(chat.agents.len().to_string(), "agents asked")),
     );
     for (name, count) in activity.iter().take(8) {

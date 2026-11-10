@@ -50,10 +50,14 @@ impl ToolScope {
         self
     }
 
-    /// Identifies skills for file-write notices; does not grant access to the folder.
+    /// Identifies skills for save notices; does not grant access to the folder.
     pub(crate) fn with_skills(mut self, folder: &Path) -> Self {
         self.skills = folder.canonicalize().ok();
         self
+    }
+
+    pub(crate) fn skills(&self) -> Option<&Path> {
+        self.skills.as_deref()
     }
 
     pub(crate) fn skill_name(&self, path: &Path) -> Option<String> {
