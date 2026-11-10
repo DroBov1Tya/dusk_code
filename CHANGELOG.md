@@ -6,6 +6,11 @@ testing.
 
 ## Unreleased
 
+## 0.72.0 - 2026-11-10
+
+Full release after an end-to-end run on qwen3.8-flash (6 tasks, 2 runs each: 8 of 12 passed, 0.6
+tool errors a run, no regression against the earlier run of 7 of 12).
+
 ### Changed
 
 - Subagents in both clients from one source: the kind of work a role belongs to (engineering,
