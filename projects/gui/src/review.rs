@@ -46,6 +46,14 @@ impl Review {
         }
     }
 
+    /// The next file, or the one before it for -1; the first and last stay put.
+    pub fn step(&mut self, delta: isize) {
+        let next = self.selected.saturating_add_signed(delta);
+        if next < self.files.len() {
+            self.select(next);
+        }
+    }
+
     /// The rows of the chosen file, and the list measured anew.
     fn select(&mut self, index: usize) {
         self.selected = index.min(self.files.len().saturating_sub(1));

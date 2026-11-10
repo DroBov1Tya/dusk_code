@@ -18,6 +18,9 @@ testing.
 
 ### Added
 
+- GUI: a path in a code span of a chat message, such as `src/main.rs:42`, opens the file
+  viewer at that line; only relative paths in file-name characters are linked. On the review
+  page Up and Down choose the file and Escape goes back.
 - GUI: a file viewer in the middle column, read-only, with line numbers, syntax colors,
   folding and search. Opened from the Files module and from the review page. It adds the
   `syntect` highlighter of the UI kit (new crates: syntect, two-face, fancy-regex, bincode;

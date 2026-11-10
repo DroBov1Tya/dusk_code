@@ -15,11 +15,13 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
       from the shell)
 - [x] A file viewer in the center like an editor: line numbers, syntax colors, folding, search
       (Cmd+F), opened from Files and from the review page (Open file, at the first change)
-- [ ] File viewer: open a path clicked in the chat; Esc to go back; tabs for several files;
+- [x] A path in code in the chat (`src/main.rs:42`) opens the viewer at that line
+- [x] Review page: Up/Down choose the file, Esc goes back
+- [ ] File viewer: Esc to go back; tabs for several files;
       syntax colors with tree-sitter if syntect proves too coarse
 - [ ] A terminal pane in the window (a PTY and a terminal emulator such as alacritty_terminal,
       drawn with gpui); the TUI already is one. Several tabs, the chat's folder as its start
-- [ ] Keyboard for the review page (j/k between files, n/p between hunks, Esc back)
+- [ ] Keyboard for the review page: n/p between hunks (letters need a way to know no box has focus)
 - [ ] Side-by-side diff, collapsing of unchanged runs, word-level highlights
 - [ ] A full pass for polish: motion under 400 ms, one accent, hover and focus states on
       every control, empty states, density, icons, charts for usage

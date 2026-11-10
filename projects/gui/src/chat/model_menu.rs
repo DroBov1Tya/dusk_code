@@ -9,7 +9,7 @@ use gpui_kit::{
 
 use crate::{
     widgets,
-    workspace::{Picker, Workspace},
+    workspace::{Center, Picker, Workspace},
 };
 
 /// How many models of the current provider the menu lists before More models.
@@ -236,6 +236,7 @@ impl Workspace {
     /// the digits 1-6 pick its models, before the text box takes them.
     pub fn menu_keys(&mut self, event: &KeyDownEvent, _: &mut Window, cx: &mut Context<Self>) {
         let Some(picker) = self.picker else {
+            self.page_keys(event, cx);
             return;
         };
         let keys = &event.keystroke;
@@ -260,6 +261,24 @@ impl Workspace {
             cx.stop_propagation();
             self.choose_model(name, cx);
         }
+    }
+
+    /// Keys of the page in the middle: on the review, Up and Down choose the file and
+    /// Escape goes back to the chat. Letters are left alone, so typing still reaches
+    /// the boxes.
+    fn page_keys(&mut self, event: &KeyDownEvent, cx: &mut Context<Self>) {
+        let keys = &event.keystroke;
+        if self.center != Center::Review || self.modal.is_some() || keys.modifiers.modified() {
+            return;
+        }
+        match keys.key.as_str() {
+            "escape" => self.center = Center::Chat,
+            "down" => self.review.step(1),
+            "up" => self.review.step(-1),
+            _ => return,
+        }
+        cx.stop_propagation();
+        cx.notify();
     }
 
     /// Opens a submenu, or goes back to the menu alone when it is open.
