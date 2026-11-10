@@ -22,8 +22,10 @@ pub fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
         return;
     };
     let area = window(screen, 130);
-    let name = match editor.target {
+    let name = match &editor.target {
         EditorTarget::Plan => "pinned plan".to_owned(),
+        EditorTarget::Me => "@me".to_owned(),
+        EditorTarget::Snippet(name) => format!("@{name}"),
         EditorTarget::Paste(_) => paste::label(&editor.text.text),
     };
     let mut title = vec![Span::styled(format!(" {name} "), bold(DUSK))];
