@@ -174,6 +174,10 @@ pub enum SettingsRequest {
         base_url: String,
         api_key: Option<Secret>,
     },
+    /// Forgets a provider. Refused while its model is the chosen one.
+    RemoveProvider {
+        name: String,
+    },
     PluginEnabled {
         name: String,
         enabled: bool,

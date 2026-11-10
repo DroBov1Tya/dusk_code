@@ -36,7 +36,8 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                             .label("Use")
                             .on_click(cx.listener(|ws, _, _, cx| ws.use_typed_model(cx))),
                     ),
-                );
+                )
+                .child(super::providers::render(ws, cx));
         }
         SettingsPage::Chat => {
             body = body.child(

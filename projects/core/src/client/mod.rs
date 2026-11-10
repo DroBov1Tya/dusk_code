@@ -390,6 +390,12 @@ impl Settings<'_> {
         self.0.text(Request::Settings(request)).await
     }
 
+    /// Forgets a provider; refused while its model is the chosen one.
+    pub async fn remove_provider(&self, name: &str) -> Result<()> {
+        let name = name.to_owned();
+        self.done(SettingsRequest::RemoveProvider { name }).await
+    }
+
     pub async fn plugin_enabled(&self, name: &str, enabled: bool) -> Result<()> {
         let name = name.to_owned();
         self.done(SettingsRequest::PluginEnabled { name, enabled })

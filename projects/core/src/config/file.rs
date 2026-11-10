@@ -375,6 +375,15 @@ impl Config {
         self.providers.insert(name, provider);
     }
 
+    /// Forgets a provider and what was kept for its models. Whether it is in use is for
+    /// the caller to check.
+    pub fn remove_provider(&mut self, name: &str) -> bool {
+        let prefix = format!("{name}/");
+        self.model_contexts
+            .retain(|model, _| !model.starts_with(&prefix));
+        self.providers.remove(name).is_some()
+    }
+
     pub fn set_max_agents_at_work(&mut self, limit: usize) {
         self.limits.max_agents_at_work = limit;
     }
@@ -644,6 +653,25 @@ mod tests {
         }
         let off = parse("logging:\n  enabled: false\n").unwrap();
         assert!(!off.logging().enabled);
+    }
+
+    #[test]
+    fn removing_a_provider_takes_its_models_policies_with_it() {
+        let mut config = parse(
+            "providers:\n  a:\n    kind: openai_compatible\n    base_url: 'https://a/v1'\n    api_key: k\n  b:\n    kind: openai_compatible\n    base_url: 'https://b/v1'\n    api_key: k\n",
+        )
+        .unwrap();
+        config.set_context_policy("a", "m", ContextPolicy::Manual(1000));
+        config.set_context_policy("ab", "m", ContextPolicy::Manual(2000));
+        assert!(config.remove_provider("a"));
+        assert!(!config.remove_provider("a"));
+        assert_eq!(config.providers().keys().collect::<Vec<_>>(), ["b"]);
+        assert_eq!(config.context_policy("a", "m"), ContextPolicy::Auto);
+        // A name that only starts the same is another provider.
+        assert_eq!(
+            config.context_policy("ab", "m"),
+            ContextPolicy::Manual(2000)
+        );
     }
 
     #[test]

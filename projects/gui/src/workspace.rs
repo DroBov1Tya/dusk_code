@@ -161,6 +161,8 @@ pub struct Workspace {
     pub alerts: crate::notify::Alerts,
     /// The shown chat's pinned plan.
     pub plan: crate::inspector::plan::Plan,
+    /// The boxes that connect a provider, on the Model page.
+    pub provider_form: crate::settings::providers::Form,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     pub jobs: Vec<JobInfo>,
@@ -300,6 +302,7 @@ impl Workspace {
             context: None,
             alerts: Default::default(),
             plan: crate::inspector::plan::Plan::new(window, cx),
+            provider_form: crate::settings::providers::Form::new(window, cx),
             context_open: HashSet::new(),
             jobs: Vec::new(),
             settings: None,

@@ -33,6 +33,9 @@ impl App {
             }
             _ => {}
         }
+        if let Some(name) = trimmed.strip_prefix("/disconnect ") {
+            return Action::Disconnect(name.trim().to_owned());
+        }
         if trimmed == "/access" || trimmed.starts_with("/access ") {
             let name = trimmed["/access".len()..].trim();
             return Action::Access((!name.is_empty()).then(|| name.to_lowercase()));

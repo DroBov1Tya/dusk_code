@@ -67,7 +67,9 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
       DeepSeek, Kimi and OpenRouter by host, LiteLLM with `balance: litellm`
 - [x] DeepSeek cache hits counted (`prompt_cache_hit_tokens`)
 
-- [ ] Several providers at once in Models: add, use, remove
+- [x] Several providers at once in Models: add, use, remove (GUI Settings > Model lists
+      them with a Remove button and a form to connect another; TUI `/connect` and
+      `/disconnect name`; the provider of the chosen model cannot be removed)
 - [ ] STT (microphone button by send) and TTS (speaker button by a model answer)
 
 ## GUI

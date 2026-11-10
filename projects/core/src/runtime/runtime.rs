@@ -350,6 +350,27 @@ impl Runtime {
         Ok(name)
     }
 
+    /// Forgets a provider and its key. The provider of the chosen model stays: the chat
+    /// would lose its model under the user.
+    pub fn remove_provider(&self, name: &str) -> Result<()> {
+        let config = self.launcher.config.current();
+        ensure!(
+            config.providers().contains_key(name),
+            "no provider named {name}"
+        );
+        let in_use = config
+            .model()
+            .is_some_and(|model| model.starts_with(&format!("{name}/")));
+        ensure!(
+            !in_use,
+            "{name} holds the chosen model; choose a model of another provider first"
+        );
+        self.launcher.config.update(|config| {
+            config.remove_provider(name);
+        })?;
+        Ok(())
+    }
+
     /// Reads the agents folder now instead of at the next minute.
     pub async fn read_agents(&self) -> Result<()> {
         self.launcher.agents.scan().await

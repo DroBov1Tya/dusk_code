@@ -3,6 +3,7 @@
 pub mod about_me;
 mod appearance;
 mod behavior;
+pub mod providers;
 mod system;
 
 use gpui_kit::{
