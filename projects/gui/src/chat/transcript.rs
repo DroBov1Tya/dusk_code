@@ -13,7 +13,13 @@ use dusk_protocol::{
 };
 
 pub enum Item {
-    User(String),
+    /// `sequence` is the point /undo goes back to; only the user's own messages have one.
+    User {
+        text: String,
+        sequence: Option<u64>,
+    },
+    /// A shell block the user ran from an answer; `result` is empty while it runs.
+    Command(CommandRun),
     /// What a subagent reported back: the agent's side of the chat, not the user's.
     Agent {
         from: String,
@@ -28,6 +34,13 @@ pub enum Item {
     Image(Picture),
     Notice(String),
     Error(String),
+}
+
+pub struct CommandRun {
+    pub id: u64,
+    pub command: String,
+    pub started: Instant,
+    pub result: Option<Result<String, String>>,
 }
 
 pub struct Picture {
@@ -129,6 +142,13 @@ impl Agent {
         self.ended.unwrap_or_else(Instant::now) - self.started
     }
 
+    /// The user stopped it.
+    pub fn stop(&mut self) {
+        self.working = false;
+        self.state = AgentState::Done;
+        self.ended = self.ended.or_else(|| Some(Instant::now()));
+    }
+
     fn follow(&mut self, event: &ThreadEvent) {
         let state = match event {
             ThreadEvent::TurnStarted(_) | ThreadEvent::ToolFinished { .. } => AgentState::Thinking,
@@ -167,6 +187,9 @@ pub struct Transcript {
     pub title: Option<String>,
     /// Text the core gave back, such as after /undo, for the composer to offer again.
     pub offered: Option<String>,
+    /// Where the items are cut once the core confirms a rollback.
+    pub rollback_at: Option<usize>,
+    next_run: u64,
     /// What each subagent of the chat said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, Transcript>,
     /// What passed between the agents and the arbiter, oldest first.
@@ -194,9 +217,10 @@ impl Transcript {
                     text: message.content.clone(),
                 })
             }
-            MessageRole::User | MessageRole::Job => {
-                self.items.push(Item::User(message.content.clone()))
-            }
+            MessageRole::User | MessageRole::Job => self.items.push(Item::User {
+                text: message.content.clone(),
+                sequence: (message.role == MessageRole::User).then_some(message.sequence),
+            }),
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
                     self.items.push(Item::Assistant {
@@ -255,7 +279,11 @@ impl Transcript {
                 });
             }
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
-                self.items.push(Item::User(message.content))
+                let sequence = (message.role == MessageRole::User).then_some(message.sequence);
+                self.items.push(Item::User {
+                    text: message.content,
+                    sequence,
+                })
             }
             ThreadEvent::TurnStarted(_) => self.working = true,
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => self.working = false,
@@ -355,7 +383,10 @@ impl Transcript {
             ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Undone { text } => {
-                self.notice("Went back to an earlier message.");
+                // The core forgot the message and all after it; so does the view.
+                if let Some(at) = self.rollback_at.take() {
+                    self.items.truncate(at);
+                }
                 self.offered = Some(text);
             }
             ThreadEvent::Failed(error) => {
@@ -452,6 +483,29 @@ impl Transcript {
             Item::Tool(tool) if tool.call_id == call_id => Some(tool),
             _ => None,
         })
+    }
+
+    /// Starts showing a command the user ran; returns its ID for `finish_run`.
+    pub fn start_run(&mut self, command: String) -> u64 {
+        self.next_run += 1;
+        self.items.push(Item::Command(CommandRun {
+            id: self.next_run,
+            command,
+            started: Instant::now(),
+            result: None,
+        }));
+        self.next_run
+    }
+
+    pub fn finish_run(&mut self, id: u64, result: Result<String, String>) {
+        for item in &mut self.items {
+            if let Item::Command(run) = item
+                && run.id == id
+            {
+                run.result = Some(result);
+                return;
+            }
+        }
     }
 
     fn notice(&mut self, text: &str) {

@@ -14,7 +14,10 @@ use super::transcript::Transcript;
 use crate::workspace::Workspace;
 
 pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Div {
-    let working = ws.shown_chat().is_some_and(|chat| chat.working);
+    // Subagents may go on after the chat's own turn is over; Stop ends them too.
+    let working = ws
+        .shown_chat()
+        .is_some_and(|chat| chat.working || chat.agents.values().any(|agent| agent.working));
     let button = if working {
         Button::new("stop")
             .danger()
@@ -276,7 +279,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful
                 })
                 .build(window, cx)
             })
-            .child(crate::inspector::mascot::render(
+            .child(crate::inspector::mascot::render_fox(
                 "agents-lead",
                 &lead.1.state,
                 color,
@@ -581,13 +584,41 @@ impl Workspace {
         let Some(thread_id) = self.shown.clone() else {
             return;
         };
+        let (turn, agents) = self.shown_chat().map_or((false, Vec::new()), |chat| {
+            let agents = chat
+                .agents
+                .iter()
+                .filter(|(_, agent)| agent.working)
+                .map(|(id, _)| id.clone())
+                .collect();
+            (chat.working, agents)
+        });
+        let (chat_id, stopped) = (thread_id.clone(), agents.clone());
         self.core.call(
             cx,
-            move |client| async move { client.threads().cancel(&thread_id).await },
-            |ws, result, cx| {
-                if let Err(error) = result {
-                    ws.fail(error, cx);
+            move |client| async move {
+                let threads = client.threads();
+                if turn {
+                    threads.cancel(&thread_id).await?;
                 }
+                for agent in agents {
+                    threads.stop_agent(&agent).await?;
+                }
+                anyhow::Ok(())
+            },
+            move |ws, result, cx| match result {
+                Ok(()) => {
+                    // A stopped agent may end without another event; the view must not wait.
+                    if let Some(chat) = ws.chats.get_mut(&chat_id) {
+                        for id in &stopped {
+                            if let Some(agent) = chat.agents.get_mut(id) {
+                                agent.stop();
+                            }
+                        }
+                    }
+                    cx.notify();
+                }
+                Err(error) => ws.fail(error, cx),
             },
         );
     }

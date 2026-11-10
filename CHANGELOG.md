@@ -6,6 +6,13 @@ testing.
 
 ## Unreleased
 
+### Changed
+
+- gui: copy and go-back buttons on your messages (going back asks first and erases the message
+  and all after it); a Stop button while subagents work; Back in a subagent's chat; the
+  subagent fox stands centered; Run on a shell block starts at once and shows its output in
+  the chat under a filling bar; artifacts are rounded square tiles with a right-click menu.
+
 ## 0.72.0 - 2026-11-10
 
 Full release after an end-to-end run on qwen3.8-flash (6 tasks, 2 runs each: 8 of 12 passed, 0.6

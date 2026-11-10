@@ -16,7 +16,7 @@ use gpui_kit::{
 
 use super::{
     links,
-    transcript::{Item, Picture, Tool, ToolState},
+    transcript::{CommandRun, Item, Picture, Tool, ToolState},
     working,
 };
 use crate::{ui::Type, widgets, workspace::Workspace};
@@ -52,7 +52,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             }
             continue;
         }
-        if let Item::User(text) = &chat.items[index] {
+        if let Item::User { text, .. } = &chat.items[index] {
             sent.push((rows.len(), text.clone()));
         }
         rows.push(Row::Item(index));
@@ -155,19 +155,64 @@ impl Workspace {
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
                 match &chat.items[at] {
-                    Item::User(text) => div()
-                        .self_end()
-                        .max_w(px(600.))
-                        .px_4()
-                        .py_2()
-                        .rounded_xl()
-                        .bg(surface)
-                        // Selectable like the answers; pastes and files show as labels.
-                        .child(links::markdown(
-                            SharedString::from(format!("user-{key}")),
-                            user_text(text),
-                        ))
-                        .into_any_element(),
+                    Item::User { text, sequence } => {
+                        let group = SharedString::from(format!("user-row-{key}"));
+                        let mut tools = div()
+                            .flex()
+                            .flex_row()
+                            .gap_1()
+                            .invisible()
+                            .group_hover(group.clone(), |tools| tools.visible());
+                        let copied = text.clone();
+                        tools = tools.child(
+                            Button::new(SharedString::from(format!("copy-{key}")))
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Copy)
+                                .tooltip("Copy the message")
+                                .on_click(cx.listener(move |_, _, _, cx| {
+                                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
+                                })),
+                        );
+                        // The core refuses to go back inside a turn, so the button waits.
+                        if let (Some(sequence), false) = (*sequence, chat.working) {
+                            let (thread_id, text) = (shown.clone(), text.clone());
+                            tools = tools.child(
+                                Button::new(SharedString::from(format!("rollback-{key}")))
+                                    .ghost()
+                                    .xsmall()
+                                    .icon(IconName::Undo2)
+                                    .tooltip("Go back to this message")
+                                    .on_click(cx.listener(move |ws, _, _, cx| {
+                                        ws.ask_rollback(&thread_id, sequence, at, &text, cx)
+                                    })),
+                            );
+                        }
+                        div()
+                            .id(group.clone())
+                            .group(group)
+                            .self_end()
+                            .max_w(px(600.))
+                            .flex()
+                            .flex_col()
+                            .items_end()
+                            .gap_1()
+                            .child(
+                                div()
+                                    .px_4()
+                                    .py_2()
+                                    .rounded_xl()
+                                    .bg(surface)
+                                    // Selectable like the answers; pastes and files show as labels.
+                                    .child(links::markdown(
+                                        SharedString::from(format!("user-{key}")),
+                                        user_text(text),
+                                    )),
+                            )
+                            .child(tools)
+                            .into_any_element()
+                    }
+                    Item::Command(run) => command_card(&key, run, cx),
                     Item::Agent { from, text } => {
                         let unfolded = self.unfolded.contains(&(shown.clone(), at));
                         let id = shown.clone();
@@ -489,6 +534,67 @@ fn step(
     line
 }
 
+/// A command the user ran from an answer: its line, a bar that fills while it runs, then
+/// its output as a code block. A command has no known length, so the bar closes on the
+/// end like a kettle: fast at first, slower after, full only when the command is done.
+fn command_card(key: &str, run: &CommandRun, cx: &mut Context<Workspace>) -> AnyElement {
+    let theme = cx.theme();
+    let (muted, accent, danger, track) = (
+        theme.muted_foreground,
+        theme.primary,
+        theme.danger,
+        theme.border,
+    );
+    let mut card = div().flex().flex_col().gap_2().child(
+        div()
+            .meta()
+            .text_color(muted)
+            .child(format!("$ {}", run.command)),
+    );
+    match &run.result {
+        None => {
+            let started = run.started;
+            card = card.child(
+                div()
+                    .h(px(3.))
+                    .w_full()
+                    .rounded_full()
+                    .bg(track)
+                    .overflow_hidden()
+                    .child(
+                        div()
+                            .h_full()
+                            .rounded_full()
+                            .bg(accent)
+                            .w(relative(0.02))
+                            // The animation only drives the redraws; the width follows the clock.
+                            .with_animation(
+                                SharedString::from(format!("run-bar-{key}")),
+                                Animation::new(std::time::Duration::from_millis(250)).repeat(),
+                                move |bar, _| bar.w(relative(run_fraction(started.elapsed()))),
+                            ),
+                    ),
+            );
+        }
+        Some(Ok(output)) => {
+            let fenced = format!("```\n{}\n```", output.trim_end());
+            card = card.child(links::markdown(
+                SharedString::from(format!("command-{key}")),
+                fenced,
+            ));
+        }
+        Some(Err(error)) => {
+            card = card.child(div().meta().text_color(danger).child(error.clone()));
+        }
+    }
+    card.into_any_element()
+}
+
+/// How full the bar is after `elapsed`: `1 - e^(-t/6s)`, held below the end.
+fn run_fraction(elapsed: std::time::Duration) -> f32 {
+    (1. - (-elapsed.as_secs_f32() / 6.).exp()).clamp(0.02, 0.97)
+}
+
 /// A picture from the pictures folder as a card: the picture on the left, its title and
 /// description beside it, a hairline under it to part it from the next. Only an ID of
 /// hex digits and dashes is taken, so it cannot name a path outside that folder.
@@ -549,6 +655,60 @@ fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> AnyEl
 }
 
 impl Workspace {
+    fn ask_rollback(
+        &mut self,
+        thread_id: &str,
+        sequence: u64,
+        at: usize,
+        text: &str,
+        cx: &mut Context<Self>,
+    ) {
+        self.modal = Some(crate::modal::Modal::Rollback {
+            thread_id: thread_id.to_owned(),
+            sequence,
+            at,
+            text: text.to_owned(),
+        });
+        cx.notify();
+    }
+
+    /// Takes the chat back to before the message: the core forgets it and all after it,
+    /// and the view is cut when the core says so. The message returns to the box.
+    pub fn rollback(&mut self, cx: &mut Context<Self>) {
+        let Some(crate::modal::Modal::Rollback {
+            thread_id,
+            sequence,
+            at,
+            text,
+        }) = self.modal.take()
+        else {
+            return;
+        };
+        if let Some(chat) = self.chats.get_mut(&thread_id) {
+            chat.rollback_at = Some(at);
+        }
+        let id = thread_id.clone();
+        self.core.call(
+            cx,
+            move |client| async move {
+                client
+                    .threads()
+                    .send(&thread_id, format!("/undo {sequence}"), false)
+                    .await
+            },
+            move |ws, result, cx| match result {
+                Ok(()) => ws.fill_composer = Some(text),
+                Err(error) => {
+                    if let Some(chat) = ws.chats.get_mut(&id) {
+                        chat.rollback_at = None;
+                    }
+                    ws.fail(error, cx);
+                }
+            },
+        );
+        cx.notify();
+    }
+
     fn send_to_background(&mut self, thread_id: &str, call_id: &str, cx: &mut Context<Self>) {
         let (thread_id, call_id) = (thread_id.to_owned(), call_id.to_owned());
         self.core.call(
