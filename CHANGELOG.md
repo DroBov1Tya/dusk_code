@@ -13,11 +13,11 @@ testing.
   now (thinking, writing, searching, reading, planning, running) are decided in
   `dusk_protocol::agent`, not in a client. The GUI stage and the TUI side card both group by
   them; the TUI card also shows the action word while an agent works.
-- GUI: the subagents' figure is a fox, the animal of the dusk, in 8-bit cells: a symmetric chibi fox
-  seen from the front, with big cheeks, a cream face, a bushy tail beside it, and a curled one lying
-  down when its work is done. It is drawn in layers (body, tail, eyes, what it holds). It thinks with
-  eyes turned up and dots that fill, writes with a pencil, hammers for a command, holds a lens for a
-  search and a page for a read, and is dizzy under stars when it failed.
+- GUI: the subagents' figure is a fox, the animal of the dusk, down to the chest and as simple as
+  8-bit gets: 16 by 16 cells, symmetric by construction, two ears, a pointed face with a small
+  cream muzzle. It thinks with eyes turned up and dots that fill, writes with a pencil, hammers
+  for a command, holds a lens for a search and a page for a read, closes its eyes with sparks when
+  done, and is dizzy under stars when it failed.
 - GUI Connectors: a title and a line about the page, the shelves as one segmented control with
   the search on the same row, cards on the type scale with rounder corners, empty shelves say
   what to do, the Agents shelf shows its trail only once an agent is entered, and the window of

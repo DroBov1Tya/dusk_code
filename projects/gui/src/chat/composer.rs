@@ -280,7 +280,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful
                 "agents-lead",
                 &lead.1.state,
                 color,
-                1.5,
+                1.9,
             ))
             .child(
                 div()
