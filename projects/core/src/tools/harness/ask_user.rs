@@ -27,7 +27,8 @@ impl Tool for AskUser {
         format!(
             "Ask the user a question with options to choose from, when something missing \
              would change the result and you cannot find it out yourself; not at every step, \
-             and not for what has a sensible default. List the option you recommend first. \
+             and not for what has a sensible default. One question at a time, at most three \
+             in a row; afterwards say what you assumed. List the option you recommend first. \
              Set `multiple` when several options may be chosen. The \
              user can always write their own answer or decline. After calling it, end \
              your turn without writing more: the answer comes as the user's next message, \

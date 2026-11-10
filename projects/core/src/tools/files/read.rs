@@ -48,7 +48,8 @@ impl Tool for ReadFile {
         format!(
             "Read a UTF-8 text file. Returns up to {MAX_LINES} lines or 50 KiB from `offset` \
              (1-based, default 1); a note at the end says where to read on. For a large \
-             file, find the place with search_files first and read only that part. \
+             file, find the place with search_files first and read only that part. Read a \
+             file before you change it; do not read one again that you just wrote. \
              Relative paths resolve against {}.",
             scope.cwd().display()
         )

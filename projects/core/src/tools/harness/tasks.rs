@@ -130,7 +130,7 @@ impl Tool for Tasks {
 
     fn description(&self, _context: &ToolContext) -> String {
         "Your board for this work: write down the tasks you set yourself, each with its \
-         steps, and mark them done as you go. Plan with it before longer work, look at it \
+         steps, and mark them done as you go. Plan with it before work of several steps, look at it \
          after a pause or a summary of the conversation, and mark a step done as soon as it \
          is: the next step then starts, and the user sees how long each one took. A task is \
          done when all its steps are; mark it done yourself to close the rest. Actions: \

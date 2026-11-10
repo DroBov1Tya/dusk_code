@@ -250,11 +250,16 @@ impl Tool for RunCommand {
              and last 24 KiB. A non-zero exit code is a failed result. Put temporary and \
              downloaded files in {}. Change files here too: a quoted heredoc \
              (cat > file <<'EOF') for a new file; for an edit, a short script that replaces \
-             one exact, unique piece and fails otherwise; then check with git diff.",
+             one exact, unique piece and fails otherwise; then check with git diff. Do more \
+             per call: join commands with `&&` or `;`, and keep output small with `head`, \
+             `tail` or `grep`; never dump whole logs or files. Never wait with `sleep`. \
+             The project may hold environment variables the user set, such as API tokens: \
+             `env` lists them with the values masked; use them as `$NAME` and never print \
+             or copy a value.",
             scope.cwd().display(),
             scope.workspace().display()
         ) + if self.jobs.is_some() {
-            " Set background=true to start a job and continue immediately. Returns job_id after spawn; the result joins this agent automatically at a safe boundary, even after this turn ends. Jobs survive turn cancellation; use jobs(action=cancel) to stop one. At most 8 jobs per thread and 64 per runtime; commands are limited to 16 KiB. Incomplete jobs are never restarted after application restart."
+            " Set background=true to start a long command and continue immediately. Returns job_id after spawn; the result joins this agent automatically at a safe boundary, even after this turn ends. Jobs survive turn cancellation; use jobs(action=cancel) to stop one. At most 8 jobs per thread and 64 per runtime; commands are limited to 16 KiB. Incomplete jobs are never restarted after application restart."
         } else {
             ""
         }
