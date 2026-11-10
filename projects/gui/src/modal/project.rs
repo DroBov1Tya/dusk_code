@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use dusk_protocol::project::Project;
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName,
+        ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
         input::{Input, InputState, Textarea, TextareaState},
     },
@@ -69,8 +69,55 @@ pub fn render(form: &ProjectForm, cx: &mut Context<Workspace>) -> Div {
         .child(label(
             "Description: what the project is, for you and the agents",
         ))
-        .child(Textarea::new(&form.description).h(px(180.)))
+        .child(Textarea::new(&form.description).h(px(120.)))
+        .children(form.id.is_some().then(|| variables(form, cx)))
         .child(actions)
+}
+
+/// The names of the variables the project's commands run with, and a pair of boxes to
+/// add one. A value is typed masked and never read back.
+fn variables(form: &ProjectForm, cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let mut column = div().flex().flex_col().gap_1().child(div().h_2()).child(
+        div()
+            .text_xs()
+            .text_color(muted)
+            .child("Variables: for the commands that run in this project; values are secret"),
+    );
+    for (index, name) in form.env.iter().enumerate() {
+        let target = name.clone();
+        column = column.child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_2()
+                .text_sm()
+                .child(div().flex_1().child(name.clone()))
+                .child(div().text_color(muted).child("••••••"))
+                .child(
+                    Button::new(("env-remove", index))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .tooltip("Remove the variable")
+                        .on_click(cx.listener(move |ws, _, _, cx| ws.remove_env(&target, cx))),
+                ),
+        );
+    }
+    column.child(
+        div()
+            .flex()
+            .flex_row()
+            .gap_2()
+            .child(div().w(px(180.)).child(Input::new(&form.env_name)))
+            .child(div().flex_1().child(Input::new(&form.env_value)))
+            .child(
+                Button::new("env-add")
+                    .label("Set")
+                    .on_click(cx.listener(|ws, _, window, cx| ws.set_env(window, cx))),
+            ),
+    )
 }
 
 impl Workspace {
@@ -104,13 +151,80 @@ impl Workspace {
             state.set_value(description, window, cx);
             state
         });
+        let env_name = field("NAME", String::new(), window, cx);
+        let env_value = cx.new(|cx| {
+            InputState::new(window, cx)
+                .placeholder("value")
+                .masked(true)
+        });
+        let known = id.clone();
         self.modal = Some(Modal::Project(ProjectForm {
             id,
             name: field("My app", name, window, cx),
             description,
             dir: field("/Users/me/code/app", dir, window, cx),
+            env: Vec::new(),
+            env_name,
+            env_value,
         }));
+        if let Some(id) = known {
+            self.core.call(
+                cx,
+                move |client| async move { client.projects().env(&id).await },
+                |ws, result, cx| match result {
+                    Ok(names) => ws.show_env(names, cx),
+                    Err(error) => ws.fail(error, cx),
+                },
+            );
+        }
         cx.notify();
+    }
+
+    fn show_env(&mut self, names: Vec<String>, cx: &mut Context<Self>) {
+        if let Some(Modal::Project(form)) = &mut self.modal {
+            form.env = names;
+        }
+        cx.notify();
+    }
+
+    /// Sets the variable in the boxes, then empties them.
+    fn set_env(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(Modal::Project(form)) = &self.modal else {
+            return;
+        };
+        let Some(id) = form.id.clone() else {
+            return;
+        };
+        let name = form.env_name.read(cx).value().trim().to_owned();
+        let value = form.env_value.read(cx).value().to_string();
+        for field in [&form.env_name, &form.env_value] {
+            field.update(cx, |field, cx| field.set_value("", window, cx));
+        }
+        self.core.call(
+            cx,
+            move |client| async move { client.projects().set_env(&id, &name, &value).await },
+            |ws, result, cx| match result {
+                Ok(names) => ws.show_env(names, cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
+    fn remove_env(&mut self, name: &str, cx: &mut Context<Self>) {
+        let Some(Modal::Project(form)) = &self.modal else {
+            return;
+        };
+        let (Some(id), name) = (form.id.clone(), name.to_owned()) else {
+            return;
+        };
+        self.core.call(
+            cx,
+            move |client| async move { client.projects().remove_env(&id, &name).await },
+            |ws, result, cx| match result {
+                Ok(names) => ws.show_env(names, cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
     }
 
     fn browse_folder(&mut self, window: &mut Window, cx: &mut Context<Self>) {

@@ -8,6 +8,14 @@ testing.
 
 ### Added
 
+- Project variables: the GUI project form sets environment variables, such as API
+  tokens, for the commands that run in the project's folder, foreground or in the
+  background. Values are write-only, kept in the core's database, and masked in
+  everything a command prints, also at the point where long output is cut. Names that
+  change how programs load (`PATH`, `LD_*`, `DYLD_*`, `BASH_ENV`, `IFS`, `SHELL`, `ENV`,
+  `NODE_OPTIONS`) are refused. On Linux the sandbox cannot yet hide the database from a
+  command.
+
 - The chat's pinned plan is shared: the model keeps it with `plan_edit`, and the user
   reads and rewrites the same Markdown in the GUI's Plan module (also from the + menu)
   or with `/plan` in the TUI. It comes back with every message; saving empty text

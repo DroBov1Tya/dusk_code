@@ -380,6 +380,13 @@ impl Server {
                 description,
                 dir,
             } => Response::Project(project::save(state, id, &name, &description, &dir).await?),
+            ProjectRequest::Env { id } => Response::Names(project::env::names(state, &id).await?),
+            ProjectRequest::SetEnv { id, name, value } => {
+                Response::Names(project::env::set(state, &id, &name, &value.0).await?)
+            }
+            ProjectRequest::RemoveEnv { id, name } => {
+                Response::Names(project::env::remove(state, &id, &name).await?)
+            }
             ProjectRequest::Remove { id } => {
                 state.remove_project(&id).await?;
                 Response::Done

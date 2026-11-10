@@ -1,6 +1,7 @@
 //! Projects: folders the user names. A client sees git and files only inside a saved
 //! project's folder, and only through the paths `inside` lets through.
 
+pub mod env;
 mod files;
 mod git;
 mod outputs;

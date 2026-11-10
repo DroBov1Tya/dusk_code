@@ -626,6 +626,31 @@ impl Projects<'_> {
             .await
     }
 
+    /// The names of the project's environment variables.
+    pub async fn env(&self, id: &str) -> Result<Vec<String>> {
+        let id = id.to_owned();
+        self.names(ProjectRequest::Env { id }).await
+    }
+
+    /// Sets a variable for the commands that run in the project; answers with the names.
+    pub async fn set_env(&self, id: &str, name: &str, value: &str) -> Result<Vec<String>> {
+        let (id, name) = (id.to_owned(), name.to_owned());
+        let value = Secret(value.to_owned());
+        self.names(ProjectRequest::SetEnv { id, name, value }).await
+    }
+
+    pub async fn remove_env(&self, id: &str, name: &str) -> Result<Vec<String>> {
+        let (id, name) = (id.to_owned(), name.to_owned());
+        self.names(ProjectRequest::RemoveEnv { id, name }).await
+    }
+
+    async fn names(&self, request: ProjectRequest) -> Result<Vec<String>> {
+        match self.0.call(Request::Project(request)).await? {
+            Response::Names(names) => Ok(names),
+            other => Err(unexpected(other)),
+        }
+    }
+
     pub async fn git(&self, id: &str) -> Result<GitInfo> {
         let id = id.to_owned();
         match self

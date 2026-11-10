@@ -312,6 +312,21 @@ pub enum ProjectRequest {
     },
     /// The files under the workspace and the pictures folder, newest first.
     Outputs,
+    /// The names of the project's environment variables. Values are never sent back.
+    Env {
+        id: String,
+    },
+    /// Sets one variable for the project's commands; answers with the names.
+    SetEnv {
+        id: String,
+        name: String,
+        value: Secret,
+    },
+    /// Removes one; answers with the names left.
+    RemoveEnv {
+        id: String,
+        name: String,
+    },
     /// A text file for a preview, read only under the workspace, the pictures folder or
     /// a saved project, and only up to `MAX_PREVIEW_BYTES`.
     ReadOutput {
@@ -342,6 +357,8 @@ pub enum Response {
     Node(NodeText),
     Mcp(Vec<McpInfo>),
     Snippets(Vec<Snippet>),
+    /// Names, sorted: a project's environment variables.
+    Names(Vec<String>),
     /// The pinned plan, or none before one was written.
     Plan(Option<String>),
     Profile(Profile),

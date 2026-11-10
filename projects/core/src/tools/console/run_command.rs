@@ -28,7 +28,8 @@ use crate::tools::{
 };
 use crate::util::fs::printable;
 
-use super::process::Running;
+use super::process::{CommandEnv, Running};
+use crate::runtime::jobs::Launch;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
@@ -87,8 +88,11 @@ impl RunCommand {
             .start(
                 &owner.thread_id,
                 command,
-                &self.start_dir(&context.scope),
-                confinement(context).await.as_ref(),
+                Launch {
+                    cwd: &self.start_dir(&context.scope),
+                    confinement: confinement(context).await.as_ref(),
+                    env: &CommandEnv::default().secrets(project_env(context).await?),
+                },
                 timeout,
                 context
                     .progress
@@ -134,7 +138,9 @@ impl RunCommand {
         let ran = run(
             &script,
             &self.start_dir(scope),
-            Some(&marker),
+            &CommandEnv::default()
+                .var("DUSK_CWD_FILE", &marker)
+                .secrets(project_env(context).await?),
             scope,
             confinement.as_ref(),
             timeout,
@@ -281,18 +287,14 @@ enum Ran {
 async fn run(
     script: &str,
     dir: &Path,
-    marker: Option<&Path>,
+    env: &CommandEnv,
     scope: &ToolScope,
     confinement: Option<&Confinement>,
     timeout_seconds: u64,
     detach: Option<watch::Receiver<bool>>,
 ) -> Result<Ran> {
     let skills = super::skill_saves::snapshot(scope).await;
-    let env: Vec<(&str, &Path)> = marker
-        .map(|marker| ("DUSK_CWD_FILE", marker))
-        .into_iter()
-        .collect();
-    let mut running = Running::start(script, dir, confinement, &env)?;
+    let mut running = Running::start(script, dir, confinement, env)?;
     let detached = async {
         let Some(mut detach) = detach else {
             return std::future::pending().await;
@@ -355,7 +357,7 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
     let ran = run(
         command,
         scope.cwd(),
-        None,
+        &CommandEnv::default().secrets(project_env(context).await?),
         scope,
         confinement.as_ref(),
         DEFAULT_TIMEOUT_SECONDS,
@@ -366,6 +368,18 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
         Ran::Done(result) => Ok(result.content),
         Ran::Detached(_) => bail!("a command the user runs is never handed on"),
     }
+}
+
+/// The variables the user set for the project the command runs in. The project is the
+/// scope's folder, not the folder a `cd` moved the shell to.
+async fn project_env(context: &ToolContext) -> Result<Vec<(String, String)>> {
+    let Some(state) = &context.state else {
+        return Ok(Vec::new());
+    };
+    let Some(dir) = context.scope.cwd().to_str() else {
+        return Ok(Vec::new());
+    };
+    state.project_env_for_dir(dir).await
 }
 
 /// How the command is confined in sandbox mode, by the scope it runs in.
@@ -507,9 +521,17 @@ mod tests {
         });
         let started = std::time::Instant::now();
         let script = "echo before; sleep 0.4; echo after";
-        let ran = run(script, scope.cwd(), None, &scope, None, 10, Some(request))
-            .await
-            .unwrap();
+        let ran = run(
+            script,
+            scope.cwd(),
+            &CommandEnv::default(),
+            &scope,
+            None,
+            10,
+            Some(request),
+        )
+        .await
+        .unwrap();
         let Ran::Detached(mut running) = ran else {
             panic!("the command finished in the foreground");
         };
@@ -533,7 +555,7 @@ mod tests {
         let ran = run(
             "sleep 30 & echo started",
             scope.cwd(),
-            None,
+            &CommandEnv::default(),
             &scope,
             None,
             10,
@@ -549,5 +571,36 @@ mod tests {
             started.elapsed() < Duration::from_secs(5),
             "waited for the background job"
         );
+    }
+
+    #[tokio::test]
+    async fn a_project_variable_reaches_the_command_and_not_its_output() {
+        let scope = scope("shell_project_env");
+        let secrets = vec![
+            ("TOKEN".to_owned(), "s3cret-value".to_owned()),
+            ("MODE".to_owned(), "dev".to_owned()),
+        ];
+        let ran = run(
+            "echo \"token=$TOKEN\"; echo \"mode=$MODE\"; echo \"again=$TOKEN\" >&2",
+            scope.cwd(),
+            &CommandEnv::default().secrets(secrets),
+            &scope,
+            None,
+            10,
+            None,
+        )
+        .await
+        .unwrap();
+        let Ran::Done(output) = ran else {
+            panic!("nothing asked for the background");
+        };
+        let text = output.content;
+        assert!(!text.contains("s3cret-value"), "{text}");
+        assert!(
+            text.contains("token=***") && text.contains("again=***"),
+            "{text}"
+        );
+        // A short value is used, but not masked: it would blank ordinary words.
+        assert!(text.contains("mode=dev"), "{text}");
     }
 }

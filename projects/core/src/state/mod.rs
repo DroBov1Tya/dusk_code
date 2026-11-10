@@ -7,6 +7,7 @@
 mod agents;
 pub mod artifacts;
 mod db;
+mod project_env;
 mod projects;
 mod thread;
 mod usage;
