@@ -62,6 +62,10 @@ Each tool less is a shorter prefix on every request and one fewer choice per ste
 - [x] Think once, then act: the first step of a turn and a step after a failed tool
       run at the effort set, steps that carry out the plan at a light one (low at most,
       only when a level is set); the prompts ask for one plan, then tool calls, and
-      reasoning only on a surprise.
+      reasoning only on a surprise. Measured on qwen3.8-flash (6 eval tasks, 2 runs each,
+      effort medium, before vs after): reasoning tokens 2647 to 1681 (-36%), output
+      6613 to 4624 (-30%), all tokens 186k to 141k (-24%), calls 14.7 to 12.1, tool
+      errors 1.9 to 0.8; passed 9/12 to 8/12, the one lost run a 600 s timeout on
+      hard-log-forensics. Too few runs to call the pass rate; the token drop is clear.
 - [ ] Compaction prepared before the limit, recent tail kept word for word.
 - [ ] An eval set (a Terminal-Bench subset through Harbor) to measure each change.
