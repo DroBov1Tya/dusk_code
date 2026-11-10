@@ -50,39 +50,53 @@ impl OpenThread {
     /// never ring. Consuming the terminal event first also deduplicates a fatal error
     /// and a finish for the same turn, including while notifications are muted.
     pub fn apply(&mut self, app: &mut App, event: ThreadEvent) {
-        let notify = match &event {
+        let notice = match &event {
             ThreadEvent::TurnStarted(turn) => {
                 self.active_turn = Some(turn.turn_id.clone());
                 self.alerted = false;
-                false
+                None
             }
             ThreadEvent::TurnFinished(turn)
                 if self.active_turn.as_deref() == Some(turn.turn_id.as_str()) =>
             {
                 self.active_turn = None;
-                let notify = !self.alerted
-                    && matches!(turn.status, TurnStatus::Completed | TurnStatus::Failed);
+                let body = match turn.status {
+                    TurnStatus::Completed => Some("Done"),
+                    TurnStatus::Failed => Some("Failed"),
+                    TurnStatus::Running | TurnStatus::Interrupted => None,
+                };
+                let notice = body.filter(|_| !self.alerted);
                 self.alerted = true;
-                notify
+                notice
             }
             ThreadEvent::Failed(_) => {
                 self.active_turn = None;
-                let notify = !self.alerted;
+                let notice = (!self.alerted).then_some("Failed");
                 self.alerted = true;
-                notify
+                notice
             }
+            ThreadEvent::Approval(_) => Some("Waits for your approval"),
+            ThreadEvent::Question(_) => Some("Asks you a question"),
             ThreadEvent::Idle => {
                 // The previous request has settled. A later standalone runner failure
                 // is a new notification, even if no new model turn has started.
                 self.active_turn = None;
                 self.alerted = false;
-                false
+                None
             }
-            _ => false,
+            _ => None,
         };
         app.apply(event);
-        if notify && app.status.sound_notifications {
+        let Some(body) = notice else {
+            return;
+        };
+        if app.status.sound_notifications {
             crate::host::terminal::bell();
+        }
+        // The terminal in front shows it already.
+        if app.status.notifications && app.focused != Some(true) {
+            let title = app.title.clone().unwrap_or_else(|| "duskcode".to_owned());
+            dusk_core::app::notify::show(&title, body);
         }
     }
 }

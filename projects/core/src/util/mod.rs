@@ -2,4 +2,5 @@
 
 pub mod atomic;
 pub mod fs;
+pub mod notify;
 pub mod usage;

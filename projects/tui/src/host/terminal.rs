@@ -10,8 +10,9 @@ use std::{
 use anyhow::Result;
 use crossterm::{
     event::{
-        DisableBracketedPaste, DisableMouseCapture, EnableBracketedPaste, EnableMouseCapture,
-        KeyboardEnhancementFlags, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        DisableBracketedPaste, DisableFocusChange, DisableMouseCapture, EnableBracketedPaste,
+        EnableFocusChange, EnableMouseCapture, KeyboardEnhancementFlags,
+        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{SetTitle, supports_keyboard_enhancement},
@@ -22,7 +23,12 @@ pub fn enter() -> Result<DefaultTerminal> {
     let terminal = ratatui::init();
     // Asked before anything reads stdin; the query restores the raw mode it found.
     super::graphics::detect();
-    execute!(stdout(), EnableMouseCapture, EnableBracketedPaste)?;
+    execute!(
+        stdout(),
+        EnableMouseCapture,
+        EnableBracketedPaste,
+        EnableFocusChange
+    )?;
     if supports_keyboard_enhancement().unwrap_or(false) {
         execute!(
             stdout(),
@@ -38,7 +44,8 @@ pub fn leave() {
         stdout(),
         PopKeyboardEnhancementFlags,
         DisableMouseCapture,
-        DisableBracketedPaste
+        DisableBracketedPaste,
+        DisableFocusChange
     );
     ratatui::restore();
 }

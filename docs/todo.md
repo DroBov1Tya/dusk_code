@@ -38,8 +38,11 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [x] Per-thread access mode (core, GUI and TUI `/access`)
 - [x] Version control settings: branch prefix and the like, named "version control",
       not "git" (core, GUI and TUI settings)
-- [x] Notifications and their settings: core toggles, TUI bell, GUI system notifications
-      while the window is in the background (a click opens the chat)
+- [x] Notifications and their settings: core toggles; a chat that finishes, fails, asks or
+      waits for approval posts a system notice (macOS Notification Center, `notify-send`
+      on Linux) when the TUI's terminal or the GUI window is not in front, plus the
+      sound where the setting is on. The GUI bundle posts through the system center and
+      a click opens the chat
 
 ## User context
 
@@ -114,6 +117,8 @@ Right column
 - [x] Environment path: a click opens a menu: Show in Finder, Open repo, Open in
       terminal, Copy path
 - [x] Pinned plan module (see User context)
+- [x] Menus and lists that open over the page (navigator, model, mode, access, attach,
+      mentions, folder menu) are opaque, painted above everything, and take the mouse
 - [x] Less information at once overall: the right column starts with only the plan, the
       todo and the agents open; a folded module says how it stands in its header
       (percent, count, branch); the folds are kept between runs
@@ -157,3 +162,5 @@ From `gui-todo.md`
       under `~/.config/duskcode/session/` (project variables, as the provider keys in
       `config.yml` already). Keep secrets where the sandbox can deny them; macOS denies
       the folder already
+- [ ] Look at the right column, the popups and the question cards in the running app:
+      the last changes were made without seeing the window

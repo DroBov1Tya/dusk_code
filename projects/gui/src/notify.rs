@@ -58,16 +58,22 @@ impl Workspace {
         let Some(chat) = self.chats.get(thread_id) else {
             return;
         };
-        cx.show_system_notification(SystemNotification {
-            tag: thread_id.to_owned().into(),
-            title: chat
-                .title
-                .clone()
-                .unwrap_or_else(|| "duskcode".into())
-                .into(),
-            body: body.into(),
-            actions: Vec::new(),
-        });
+        let title = chat.title.clone().unwrap_or_else(|| "duskcode".into());
+        if self.status.sound_notifications {
+            dusk_core::app::notify::sound();
+        }
+        // Only an app bundle may post through the system's own center, and its click
+        // opens the chat; a bare binary, as in development, posts through a helper.
+        if bundled() {
+            cx.show_system_notification(SystemNotification {
+                tag: thread_id.to_owned().into(),
+                title: title.into(),
+                body: body.into(),
+                actions: Vec::new(),
+            });
+        } else {
+            dusk_core::app::notify::show(&title, body);
+        }
     }
 
     /// A click on a notification opens its chat in front.
@@ -79,4 +85,12 @@ impl Workspace {
             let _ = this.update(cx, |ws, cx| ws.open_chat(&thread_id, cx));
         });
     }
+}
+
+/// Whether this process runs from inside a macOS `.app`, or anywhere else, where the
+/// system's center takes notices from the program itself.
+fn bundled() -> bool {
+    !cfg!(target_os = "macos")
+        || std::env::current_exe()
+            .is_ok_and(|exe| exe.to_string_lossy().contains(".app/Contents/MacOS/"))
 }
