@@ -9,6 +9,7 @@
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|agents|none`, `right=all`: open a window; unfold the right column;
+//! - `detail=mcp|skill`: open the window of the first of those;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
@@ -117,6 +118,18 @@ fn act(
             cx.notify();
         }
         "review" => ws.open_review(cx),
+        "detail" => {
+            use crate::modal::detail::Detail;
+            let first = |names: Vec<String>| names.into_iter().next();
+            let detail = ws.settings.as_ref().and_then(|settings| match value {
+                "skill" => first(settings.skills.iter().map(|s| s.name.clone()).collect())
+                    .map(|name| Detail::Skill { name, file: None }),
+                _ => first(settings.mcp.iter().map(|m| m.name.clone()).collect()).map(Detail::Mcp),
+            });
+            if let Some(detail) = detail {
+                ws.open_detail(detail, cx);
+            }
+        }
         "settings" => {
             ws.settings_page = match value {
                 "model" => SettingsPage::Model,

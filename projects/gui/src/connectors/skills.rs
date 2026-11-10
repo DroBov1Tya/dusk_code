@@ -4,7 +4,7 @@ use dusk_protocol::{catalog::SkillKind, client::Switch as CoreSwitch, settings::
 use gpui_kit::{component::ActiveTheme, *};
 
 use super::{card, grid, matches, toggle};
-use crate::{modal::detail::Detail, widgets, workspace::Workspace};
+use crate::{modal::detail::Detail, workspace::Workspace};
 
 pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> Div {
     let danger = cx.theme().danger;
@@ -60,6 +60,11 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
     if any {
         cards
     } else {
-        div().child(widgets::muted("No skills match.", cx))
+        div().child(crate::ui::empty(
+            gpui_kit::component::IconName::Search,
+            "No skills match",
+            "Try another word, or clear the search.",
+            cx,
+        ))
     }
 }

@@ -44,13 +44,20 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         (Shelf::Agents, "Agents", 0),
     ];
     let theme = cx.theme();
-    let (foreground, muted, accent, border) = (
+    let (foreground, muted, raised, surface) = (
         theme.foreground,
         theme.muted_foreground,
-        theme.primary,
-        theme.border,
+        theme.accent,
+        theme.muted,
     );
-    let mut tabs = div().flex().flex_row().gap_6().px_6().pt_5();
+    // The shelves as one segmented control: one of them is always chosen.
+    let mut tabs = div()
+        .flex()
+        .flex_row()
+        .gap_0p5()
+        .p_0p5()
+        .rounded_lg()
+        .bg(surface);
     for (shelf, label, count) in counts {
         let active = ws.shelf == shelf;
         tabs = tabs.child(
@@ -59,17 +66,15 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .flex()
                 .flex_row()
                 .items_baseline()
-                .gap_1()
-                .pb_1()
+                .gap_1p5()
+                .px_3()
+                .py_1()
+                .rounded_md()
                 .cursor_pointer()
-                .border_b_2()
-                .border_color(if active {
-                    accent
-                } else {
-                    gpui_kit::transparent_black()
-                })
+                .small()
+                .font_weight(FontWeight::MEDIUM)
+                .when(active, |tab| tab.bg(raised))
                 .text_color(if active { foreground } else { muted })
-                .text_base()
                 .child(label)
                 .when_some((count > 0).then_some(count), |tab, count| {
                     tab.child(div().meta().text_color(muted).child(count.to_string()))
@@ -92,15 +97,30 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .id("connectors")
         .size_full()
         .overflow_y_scroll()
-        .child(tabs)
-        .child(div().h(px(1.)).mt_3().bg(border))
         .child(
             div()
-                .px_6()
-                .py_4()
-                .when(ws.shelf != Shelf::Agents, |page| {
-                    page.child(div().mb_4().child(Input::new(&ws.shelf_search)))
-                })
+                .px_8()
+                .py_6()
+                .flex()
+                .flex_col()
+                .child(crate::ui::page_title(
+                    "Connectors",
+                    "What the agents can reach: servers, skills, plugins, tools and other agents.",
+                    cx,
+                ))
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_4()
+                        .pb_4()
+                        .child(tabs)
+                        .child(div().flex_1())
+                        .when(ws.shelf != Shelf::Agents, |row| {
+                            row.child(div().w(px(280.)).child(Input::new(&ws.shelf_search)))
+                        }),
+                )
                 .child(body),
         )
 }
