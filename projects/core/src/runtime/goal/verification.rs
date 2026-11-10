@@ -568,7 +568,7 @@ mod tests {
         let old = proof(&state).await;
         result(
             &state,
-            "write_file",
+            "files__write_file",
             json!({"path":"src/lib.rs"}),
             "succeeded",
             None,
@@ -614,7 +614,7 @@ mod tests {
     async fn paused_file_and_shell_mutations_invalidate_proofs_before_resume() {
         for (name, arguments) in [
             (
-                "write_file",
+                "files__write_file",
                 json!({"path":"src/lib.rs","content":"changed"}),
             ),
             (
@@ -760,7 +760,7 @@ mod tests {
                     },
                     ToolCall {
                         id: "edit-after".into(),
-                        name: "write_file".into(),
+                        name: "files__write_file".into(),
                         arguments: json!({"path":"src/lib.rs"}),
                     },
                 ],

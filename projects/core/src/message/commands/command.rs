@@ -1,7 +1,5 @@
 //! What a command is: its parsing from a message, and its answer for a client.
 
-use std::path::PathBuf;
-
 use anyhow::{Context, Result, bail};
 
 use crate::{config::Effort, release::update::Channel};
@@ -48,7 +46,9 @@ pub async fn run_in_thread(command: Command, agent: &Agent, inbox: &mut Inbox) {
 pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
     match command {
         Command::Migrate { path } => Ok(Answer::Migrated(
-            runtime.migrate(path.as_deref().map(expand_home)).await?,
+            runtime
+                .migrate(path.as_deref().map(crate::util::fs::expand_home))
+                .await?,
         )),
         Command::Resume { cwd } => Ok(Answer::Threads(resume::run(runtime, cwd).await?)),
         Command::New => Ok(Answer::NewThread),
@@ -105,7 +105,9 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
             add,
         } => {
             if let Some(path) = add {
-                runtime.add_source(&thread_id, &expand_home(&path)).await?;
+                runtime
+                    .add_source(&thread_id, &crate::util::fs::expand_home(&path))
+                    .await?;
             }
             Ok(Answer::Sources(runtime.sources(&thread_id).await?))
         }
@@ -113,14 +115,6 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
         Command::Jobs {
             thread_id: Some(thread_id),
         } => Ok(Answer::Jobs(runtime.jobs(&thread_id).await?)),
-    }
-}
-
-/// A leading `~/` as people write it.
-fn expand_home(path: &str) -> PathBuf {
-    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
-        (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
-        _ => PathBuf::from(path),
     }
 }
 

@@ -14,6 +14,7 @@ use gpui_kit::{
     *,
 };
 
+use crate::widgets;
 use crate::workspace::{Picker, Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
@@ -94,7 +95,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         })
         .child(div().flex_1())
         .children(ws.shown_chat().and_then(|chat| chat.cost.clone()))
-        .child(format!("{} / {}", short(used), short(limit)))
+        .child(format!(
+            "{} / {}",
+            widgets::short(used),
+            widgets::short(limit)
+        ))
         .child(super::ring::render(share, meter, border));
     let menu = ws.picker.map(|picker| match picker {
         Picker::Mode => super::mode_menu::render(ws, cx),
@@ -109,15 +114,6 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 
 pub fn effort_name(effort: Effort) -> String {
     format!("{effort:?}").to_lowercase()
-}
-
-/// `12.3k` for a token count.
-fn short(tokens: u64) -> String {
-    match tokens {
-        0..1_000 => tokens.to_string(),
-        1_000..1_000_000 => format!("{:.1}k", tokens as f64 / 1e3),
-        _ => format!("{:.1}M", tokens as f64 / 1e6),
-    }
 }
 
 impl Workspace {
