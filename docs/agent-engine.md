@@ -56,7 +56,10 @@ Each tool less is a shorter prefix on every request and one fewer choice per ste
 - [x] Client-side token bucket per provider, so a goal loop cannot get the key banned.
 - [x] Cache: deepseek's cache hits counted; `prompt_cache_key` per thread for OpenAI;
       a mode switch changes the prefix once, at the next turn.
-- [ ] Compaction sends the thread's tools too, so its request reuses the cached prefix.
+- [x] Compaction sends the thread's tools, the project text and the thread's cache key, so
+      its request starts with the prefix the steps cached (it was read cold: 577k prompt
+      tokens in 3 calls, 0% cached); a model that calls a tool instead is asked again
+      without tools.
 - [x] Subagents: phases are optional; the runtime starts the task in planning and marks
       it done on the answer, so a subagent does not spend steps on bookkeeping.
 - [x] Think once, then act: the first step of a turn and a step after a failed tool
@@ -69,3 +72,34 @@ Each tool less is a shorter prefix on every request and one fewer choice per ste
       hard-log-forensics. Too few runs to call the pass rate; the token drop is clear.
 - [ ] Compaction prepared before the limit, recent tail kept word for word.
 - [ ] An eval set (a Terminal-Bench subset through Harbor) to measure each change.
+
+## Cache audit (2026-11-10, 5,600 answer calls on qwen3.8-flash)
+
+Read from `model_usage`; no per-call cache line existed in `core.log`, so this was
+reconstructed from the record. Since then each call logs `model call` with prompt, cached,
+written and completion tokens, and a `prompt cache dropped` warning when less than half of
+the last prompt was read from the cache.
+
+| Finding | Number | Reading |
+|---|---|---|
+| Prompt tokens read from cache | 93.3% (370M of 396M) | the prefix is stable; steady state is fine |
+| Median uncached tokens in a later step of a turn | 763, new result 843 | only the new tool result is read cold |
+| Misses over 5k tokens | 84% of all uncached tokens, 1,079 calls | losses are events, not drift |
+| Calls with zero cache and a prompt over 20k | 132 calls, 9.9M tokens (37% of misses) | clustered while two threads ran at once: one server cache slot, evicted by the other thread |
+| Misses after a gap over 5 minutes | 24% of misses | the cache aged out; unavoidable on a local server, a TTL on hosted ones |
+| Compaction calls | 3 calls, 577k prompt tokens, 0% cached | fixed: they now share the steps' prefix |
+| Share of stored content that is tool output | 86% (2.55M of 2.97M tokens) | each result is re-read on every later call, about 130 times over a long run |
+| Tool output by tool | `run_command` 1.61M, `read_file` 0.67M, `search_files` 0.11M | |
+
+What is left, by expected gain:
+
+- Interleaved threads on one local server. Fix is outside the core: run the server with
+  one slot per concurrent agent (`--parallel`), or lower the agent limit while a goal runs.
+  A per-thread slot hint (`id_slot`) would pin it, but only llama.cpp takes it, and other
+  providers reject unknown fields, so it needs a per-provider switch first.
+- Carry cost of old tool results: replace results older than N steps and larger than M
+  tokens with a one-line stub (what ran, its size, how to run it again). One cache break,
+  then a smaller prefix for the rest of the run. Not done: it needs the eval set to prove
+  the model does not re-run commands it no longer sees.
+- A longer cache lifetime on hosted providers (Anthropic one-hour TTL) for threads that
+  pause between turns; costs twice the write price, so only for threads that come back.

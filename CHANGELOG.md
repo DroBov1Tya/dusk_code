@@ -8,6 +8,10 @@ testing.
 
 ### Changed
 
+- Compaction sends the thread's tools, project text and cache key, so its request reads the
+  cached prefix instead of the whole context cold.
+- The log has a `model call` line with prompt, cached, written and completion tokens, and a
+  `prompt cache dropped` warning when less than half of the last prompt came from the cache.
 - No count limits on tools: a turn is no longer cut after 150 steps, one answer may call any
   number of tools, and an MCP server's tools are no longer cut at 128. The user's stop and
   context compaction end a long run.
