@@ -15,8 +15,6 @@ pub use dusk_protocol::model::{FinishReason, ModelEvent, ToolCall, Usage};
 
 /// Bounds memory for a provider that never finishes; every kind of output counts.
 const MAX_OUTPUT_BYTES: usize = 8 * 1024 * 1024;
-/// Tool calls one answer may make; real answers make a few.
-const MAX_TOOL_CALLS: usize = 128;
 
 /// A streamed model response.
 pub trait ChatStream: Send {
@@ -63,10 +61,6 @@ impl ModelOutput {
                     "tool calls arrived out of order"
                 );
                 ensure!(!name.trim().is_empty(), "tool call has no name");
-                ensure!(
-                    self.calls.len() < MAX_TOOL_CALLS,
-                    "model made more than {MAX_TOOL_CALLS} tool calls in one answer"
-                );
                 self.size += id.len() + name.len();
                 ensure!(self.size <= MAX_OUTPUT_BYTES, "model answer is too large");
                 self.calls.push(PendingCall {

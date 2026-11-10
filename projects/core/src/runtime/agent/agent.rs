@@ -62,8 +62,6 @@ impl Pace {
     }
 }
 
-/// Bounds a model that keeps calling tools; long tasks of small steps fit in it.
-const MAX_STEPS: usize = 150;
 /// A model call that fails before writing anything is tried this many times in all.
 const MAX_ATTEMPTS: u32 = 6;
 /// Doubles before each further attempt, up to `MAX_RETRY_DELAY`.
@@ -176,11 +174,10 @@ impl Agent {
         turn: &Turn,
         inbox: &mut Inbox,
     ) -> Result<(Option<Stop>, TurnStatus)> {
-        let mut outcome = TurnOutcome::Failed(format!(
-            "stopped after {MAX_STEPS} tool steps; what was done is kept, write to go on"
-        ));
+        // The user's stop and the context's compaction end a long run, not a step count.
+        let outcome;
         let mut stop = None;
-        for _ in 0..MAX_STEPS {
+        loop {
             // A failed step ends the turn as failed; the thread itself goes on.
             let end = match self.step(turn, inbox).await {
                 Ok(end) => end,
