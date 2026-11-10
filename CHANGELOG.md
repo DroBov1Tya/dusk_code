@@ -18,6 +18,11 @@ testing.
 
 ### Added
 
+- Review of changes: the Changes module shows the lines added and removed, and opens a page
+  with each file's diff (line numbers, green, red and grey lines). TUI: `/diff`. The core
+  answers `Diff` for a project and for a chat's own folder, with the totals in `GitInfo`.
+- A call repeated three times with the same result gets a note to change course; it stands
+  in for the removed step cap.
 - `duskcode run "prompt"`: one prompt in a new chat, the answer on stdout, progress on stderr.
   `--json` prints the answer with tokens, calls and tool counts; `--access`, `--project`,
   `--timeout` and `-` for a prompt from stdin. Approvals are denied unless `--access`

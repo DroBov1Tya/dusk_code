@@ -80,6 +80,8 @@ pub struct Agent {
     pub pictures_refused: Mutex<Option<String>>,
     /// Where the turn is: planning, carrying out, or working out a surprise.
     pub pace: Mutex<Pace>,
+    /// Calls repeated with the same result, to tell a stuck model.
+    pub repeats: Mutex<super::repeats::Repeats>,
     /// The question on the user's screen. Its answer joins the running turn instead of
     /// waiting for the next one.
     pub asking: Mutex<Option<String>>,
@@ -730,6 +732,14 @@ impl Agent {
                 {
                     warn!("cannot count the MCP tool use: {error:#}");
                 }
+            }
+            if finished.is_some()
+                && let Some(note) =
+                    self.repeats
+                        .lock()
+                        .note(&turn.turn_id, &call.name, &call.arguments, &content)
+            {
+                content.push_str(&format!("\n\n{note}"));
             }
             surprised |= outcome != "succeeded";
             let stored = self.state.record_tool_result_with_outcome(

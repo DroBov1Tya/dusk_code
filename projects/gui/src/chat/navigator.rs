@@ -40,7 +40,7 @@ pub fn render(
         let mut lines = div().flex().flex_col().gap_0p5();
         for (number, (row, text)) in sent.iter().enumerate() {
             let row = *row;
-            let words: String = text.split_whitespace().collect::<Vec<_>>().join(" ");
+            let words = super::messages::label(text);
             let mut preview: String = words.chars().take(PREVIEW).collect();
             if words.chars().count() > PREVIEW {
                 preview.push('…');

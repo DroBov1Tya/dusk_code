@@ -23,6 +23,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             div()
                 .px_3()
                 .pt_1()
+                .min_w_0()
                 .font_weight(FontWeight::MEDIUM)
                 .child(task.description.clone()),
         );
@@ -36,12 +37,18 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 div()
                     .flex()
                     .flex_row()
-                    .items_center()
+                    .items_start()
                     .gap_2()
                     .px_3()
                     .text_xs()
-                    .child(widgets::icon(icon, color))
-                    .child(item.description.clone()),
+                    // The text wraps inside the column instead of running past it.
+                    .child(
+                        div()
+                            .flex_shrink_0()
+                            .pt(px(1.))
+                            .child(widgets::icon(icon, color)),
+                    )
+                    .child(div().flex_1().min_w_0().child(item.description.clone())),
             );
         }
     }

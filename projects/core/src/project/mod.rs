@@ -1,6 +1,7 @@
 //! Projects: folders the user names. A client sees git and files only inside a saved
 //! project's folder, and only through the paths `inside` lets through.
 
+mod diff;
 pub mod env;
 mod files;
 mod git;
@@ -13,6 +14,7 @@ use dusk_protocol::project::{MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS, Project};
 
 use crate::state::State;
 
+pub use diff::diff;
 pub use files::list as files;
 pub use git::{changes as git_changes, info as git, switch_branch};
 pub use outputs::{delete as delete_output, list as outputs, read as read_output};

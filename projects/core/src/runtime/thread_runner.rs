@@ -110,6 +110,7 @@ impl ThreadRunner {
             project: setup.project,
             pictures_refused: Mutex::new(None),
             pace: Mutex::default(),
+            repeats: Mutex::default(),
             asking: Mutex::new(None),
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,

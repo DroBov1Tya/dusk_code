@@ -11,6 +11,7 @@ use unicode_width::UnicodeWidthStr;
 
 use super::connection::connection;
 use super::context::context;
+use super::diff;
 use super::help::help;
 use super::jobs::jobs;
 use super::models::models;
@@ -184,6 +185,25 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             context(report),
             None,
         ),
+        Panel::Diff(view) => {
+            let width = screen.width.saturating_sub(8).min(116) as usize;
+            let (lines, hints) = match view.open {
+                true => (
+                    diff::file(view, width),
+                    "up/down pgup/pgdn scroll  esc back to the files",
+                ),
+                false => (
+                    diff::list(view, width),
+                    "up/down choose  enter open  esc close",
+                ),
+            };
+            (
+                "changes",
+                hints,
+                lines,
+                (!view.open).then_some(view.selected),
+            )
+        }
         Panel::Models(list) => {
             let (lines, row) = models(list, screen.width.saturating_sub(8).min(72) as usize);
             (
@@ -195,7 +215,12 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         }
         Panel::Paste(_) | Panel::Agent(_) | Panel::Update { .. } => return,
     };
-    let width = screen.width.saturating_sub(4).min(76);
+    let cap = if matches!(app.panel, Some(Panel::Diff(_))) {
+        120
+    } else {
+        76
+    };
+    let width = screen.width.saturating_sub(4).min(cap);
     let height = (lines.len() as u16 + 2)
         .min(screen.height.saturating_sub(4))
         .max(3);
@@ -209,10 +234,13 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let skip = match &app.panel {
         // The context scrolls by its top row rather than following a selection.
         Some(Panel::Context { row, .. }) => (*row).min(lines.len().saturating_sub(inner)),
+        Some(Panel::Diff(view)) if view.open => view.scroll.min(lines.len().saturating_sub(inner)),
         _ => selected.map_or(0, |row| (row + 1).saturating_sub(inner)),
     };
-    if let Some(Panel::Context { row, .. }) = &mut app.panel {
-        *row = skip;
+    match &mut app.panel {
+        Some(Panel::Context { row, .. }) => *row = skip,
+        Some(Panel::Diff(view)) if view.open => view.scroll = skip,
+        _ => {}
     }
     if let Some(Panel::Connect(form)) = &mut app.panel {
         for (index, row) in connection_rows.into_iter().enumerate() {

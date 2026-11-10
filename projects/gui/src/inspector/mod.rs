@@ -8,7 +8,7 @@ pub mod agents;
 mod context;
 mod environment;
 mod files;
-mod git;
+pub mod git;
 mod glyph;
 mod jobs;
 pub mod mascot;

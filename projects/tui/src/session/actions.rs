@@ -14,6 +14,7 @@ use super::{
     run::InstallingUpdate,
     thread::{OpenThread, close, ensure_open, send},
 };
+use crate::app::DiffView;
 use crate::{
     app::{
         Action, AgentWindow, App, FileEditor, ModelList, Panel, PasteEditor, SwitchKind, Tone,
@@ -182,6 +183,26 @@ pub async fn apply(
                     app.panel = Some(Panel::Paste(PasteEditor::plan(text)));
                 }
                 Err(error) => app.error(format!("cannot read the plan: {error:#}")),
+            }
+        }
+        Action::Diff => {
+            let Some(thread_id) = app.thread_id.clone() else {
+                app.flash = Some("Send a message first; the changes belong to a chat".into());
+                return Ok(Flow::Go);
+            };
+            match client.work().diff(&thread_id, None).await {
+                Ok(files) if files.is_empty() => {
+                    app.flash = Some("No changes: the folder matches the last commit".into())
+                }
+                Ok(files) => {
+                    app.panel = Some(Panel::Diff(DiffView {
+                        files,
+                        selected: 0,
+                        open: false,
+                        scroll: 0,
+                    }))
+                }
+                Err(error) => app.error(format!("cannot read the changes: {error:#}")),
             }
         }
         Action::ChangedFiles => {

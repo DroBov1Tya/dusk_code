@@ -23,7 +23,7 @@ use dusk_protocol::{
     context::ContextReport,
     conversation::{LocalUnsent, Message},
     mcp::McpInfo,
-    project::{Change, FileEntry, GitInfo, OutputFile, Project},
+    project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::Thread,
     tools::Decision,
@@ -558,6 +558,19 @@ impl Work<'_> {
         }
     }
 
+    /// The changes in the folder the chat started in, file by file, or one file's.
+    pub async fn diff(&self, thread_id: &str, path: Option<&str>) -> Result<Vec<FileDiff>> {
+        let (thread_id, path) = (thread_id.to_owned(), path.map(str::to_owned));
+        match self
+            .0
+            .call(Request::Work(WorkRequest::Diff { thread_id, path }))
+            .await?
+        {
+            Response::Diff(files) => Ok(files),
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// The files the chat's commands changed in its project, by path.
     pub async fn changed_files(&self, thread_id: &str) -> Result<Vec<Change>> {
         let thread_id = thread_id.to_owned();
@@ -686,6 +699,19 @@ impl Projects<'_> {
         let (id, branch) = (id.to_owned(), branch.to_owned());
         let request = ProjectRequest::SwitchBranch { id, branch };
         self.0.done(Request::Project(request)).await
+    }
+
+    /// The project's changes file by file, or one file's.
+    pub async fn diff(&self, id: &str, path: Option<&str>) -> Result<Vec<FileDiff>> {
+        let (id, path) = (id.to_owned(), path.map(str::to_owned));
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::Diff { id, path }))
+            .await?
+        {
+            Response::Diff(files) => Ok(files),
+            other => Err(unexpected(other)),
+        }
     }
 
     /// The entries of `path`, a folder relative to the project's, `""` for its top.

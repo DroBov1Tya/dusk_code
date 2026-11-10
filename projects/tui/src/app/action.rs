@@ -42,6 +42,8 @@ pub enum Action {
     OpenPlan,
     /// `/files`: what this chat's commands changed in the project.
     ChangedFiles,
+    /// `/diff`: the folder's changes line by line.
+    Diff,
     /// `/me`: what `@me` says about the user, in the editor.
     OpenMe,
     /// `/snippet name`: a snippet for `@name`, new or as it is.
@@ -130,6 +132,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ),
         ("/plan", "read and edit this chat's pinned plan"),
         ("/files", "the files this chat's commands changed"),
+        ("/diff", "review the changes in this chat's folder"),
         (
             "/disconnect",
             "forget a provider and its key: /disconnect name",

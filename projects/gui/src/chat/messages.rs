@@ -303,6 +303,28 @@ fn user_text(text: &str) -> String {
         .collect()
 }
 
+/// A message as one short line for a list: attachments by name, and an answer to the
+/// agent's question as the answer alone.
+pub fn label(text: &str) -> String {
+    use dusk_protocol::pasted::{Part, split};
+    let text = match text
+        .strip_prefix("QUESTION: ")
+        .and_then(|rest| rest.split_once("\nANSWER: "))
+    {
+        Some((_, answer)) => format!("Answer: {answer}"),
+        None => text.to_owned(),
+    };
+    let plain: String = split(&text)
+        .into_iter()
+        .map(|part| match part {
+            Part::Text(text) => text.to_owned(),
+            Part::Pasted(pasted) => format!("[{}]", super::composer::paste_label(pasted)),
+            Part::Source(name) => format!("[{name}]"),
+        })
+        .collect();
+    plain.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
 /// A row at the chat's reading width, centered.
 fn lane(content: AnyElement) -> AnyElement {
     div()

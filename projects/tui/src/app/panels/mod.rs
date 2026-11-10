@@ -7,8 +7,8 @@ pub mod settings;
 
 pub use agents::{AgentWindow, SubagentView};
 pub use panel::{
-    Connection, JobsView, ModelList, Panel, PluginRow, Preset, Preview, SecretEntry, ThreadList,
-    step,
+    Connection, DiffView, JobsView, ModelList, Panel, PluginRow, Preset, Preview, SecretEntry,
+    ThreadList, step,
 };
 pub use settings::{
     AgentRow, FileButton, FileEditor, HitTarget, McpRow, SettingCategory, SettingsHit,
