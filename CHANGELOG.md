@@ -6,6 +6,12 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- TUI: `/access` sets the access mode of the chat (ask, sandbox, arbiter, full, or back
+  to the default), and a "version control" page in the settings edits the branch prefix.
+- GUI: the name in the sidebar reads Duskcode.
+
 ## 0.71.2 - 2026-11-10
 
 ### Added

@@ -32,6 +32,10 @@ impl App {
             }
             _ => {}
         }
+        if trimmed == "/access" || trimmed.starts_with("/access ") {
+            let name = trimmed["/access".len()..].trim();
+            return Action::Access((!name.is_empty()).then(|| name.to_lowercase()));
+        }
         // Connection secrets belong only in the masked form, never in recall/history.
         if trimmed.split_whitespace().next() == Some("/connect") {
             self.panel = Some(Panel::Connect(Connection::default()));

@@ -37,6 +37,8 @@ pub enum SettingCategory {
     Limits,
     /// Whether tools ask before leaving their folders and before commands.
     Access,
+    /// The prefix of the branch names the tool creates.
+    VersionControl,
     /// How the app looks and behaves on screen.
     Appearance,
     Updates,
@@ -44,7 +46,7 @@ pub enum SettingCategory {
 }
 
 impl SettingCategory {
-    pub const ALL: [Self; 11] = [
+    pub const ALL: [Self; 12] = [
         Self::Models,
         Self::Agents,
         Self::Skills,
@@ -53,6 +55,7 @@ impl SettingCategory {
         Self::Personalize,
         Self::Limits,
         Self::Access,
+        Self::VersionControl,
         Self::Appearance,
         Self::Updates,
         Self::System,
@@ -68,6 +71,7 @@ impl SettingCategory {
             Self::Personalize => "personalize",
             Self::Limits => "limits",
             Self::Access => "access",
+            Self::VersionControl => "version control",
             Self::Appearance => "appearance",
             Self::Updates => "updates",
             Self::System => "system",
@@ -121,6 +125,9 @@ pub struct SettingsView {
     pub effective_limit: u64,
     pub effort: Option<Effort>,
     pub manual_context: Option<Input>,
+    /// The branch prefix saved, and the box it is edited in while one is open.
+    pub branch_prefix: String,
+    pub branch_input: Option<Input>,
     pub model_error: Option<String>,
     pub max_agents_at_work: usize,
     pub max_goal_rounds: u32,
@@ -237,6 +244,8 @@ impl SettingsView {
             effective_limit: 0,
             effort: None,
             manual_context: None,
+            branch_prefix: settings.version_control.branch_prefix,
+            branch_input: None,
             model_error: None,
             max_agents_at_work: settings.max_agents_at_work,
             max_goal_rounds: settings.max_goal_rounds,
@@ -271,6 +280,7 @@ impl SettingsView {
         next.effective_limit = self.effective_limit;
         next.effort = self.effort;
         next.manual_context = self.manual_context.take();
+        next.branch_input = self.branch_input.take();
         next.model_error = self.model_error.take();
         next.category = self.category;
         next.selected = self.selected.min(next.len().saturating_sub(1));
@@ -292,6 +302,7 @@ impl SettingsView {
             Some(SettingCategory::Appearance) => 1,
             Some(SettingCategory::Updates) => 1,
             Some(SettingCategory::Access) => ACCESS_POLICIES.len() + 1,
+            Some(SettingCategory::VersionControl) => 1,
             Some(SettingCategory::System) => 1,
             Some(SettingCategory::Skills) => self.skills.len(),
             Some(SettingCategory::Mcp) => self.mcp_rows().len(),
@@ -342,6 +353,13 @@ impl SettingsView {
             6 => Some(Action::Command(Command::Effort { level: None })),
             _ => None,
         }
+    }
+
+    pub fn edit_branch_prefix(&mut self) {
+        let mut input = Input::default();
+        input.set(self.branch_prefix.clone());
+        input.select_all();
+        self.branch_input = Some(input);
     }
 
     fn edit_manual_context(&mut self) {
@@ -437,7 +455,9 @@ impl SettingsView {
                 self.work_history.enabled,
             ),
             SettingCategory::Personalize if row != 0 => return None,
-            SettingCategory::Limits | SettingCategory::Appearance => return None,
+            SettingCategory::Limits
+            | SettingCategory::Appearance
+            | SettingCategory::VersionControl => return None,
             SettingCategory::Personalize => {
                 (SwitchKind::Memory, "memory".into(), self.memory.enabled)
             }
@@ -575,6 +595,36 @@ impl App {
             return Action::None;
         };
         let ctrl = key.modifiers.contains(KeyModifiers::CONTROL);
+        if let Some(input) = &mut view.branch_input {
+            match key.code {
+                KeyCode::Esc => view.branch_input = None,
+                KeyCode::Enter => return Action::SetBranchPrefix(input.text.trim().to_owned()),
+                KeyCode::Char('a') if ctrl => input.select_all(),
+                KeyCode::Char(c) if !ctrl && c.is_ascii_graphic() => {
+                    input.insert(c.encode_utf8(&mut [0; 4]))
+                }
+                KeyCode::Backspace => input.backspace(),
+                KeyCode::Delete => input.delete(),
+                KeyCode::Left => {
+                    input.mark(false);
+                    input.left();
+                }
+                KeyCode::Right => {
+                    input.mark(false);
+                    input.right();
+                }
+                KeyCode::Home => {
+                    input.mark(false);
+                    input.home();
+                }
+                KeyCode::End => {
+                    input.mark(false);
+                    input.end();
+                }
+                _ => {}
+            }
+            return Action::None;
+        }
         if let Some(input) = &mut view.manual_context {
             match key.code {
                 KeyCode::Esc => {
@@ -656,6 +706,7 @@ impl App {
             {
                 view.edit_manual_context()
             }
+            (Some(SettingCategory::VersionControl), KeyCode::Enter) => view.edit_branch_prefix(),
             (Some(SettingCategory::Models), KeyCode::Enter | KeyCode::Char(' ')) => {
                 return view.model_action(view.selected).unwrap_or(Action::None);
             }
@@ -775,6 +826,17 @@ impl App {
 
     pub fn settings_paste(&mut self, pasted: &str) {
         if let Some(Panel::Settings(view)) = &mut self.panel
+            && let Some(input) = &mut view.branch_input
+        {
+            input.insert(
+                &pasted
+                    .chars()
+                    .filter(char::is_ascii_graphic)
+                    .collect::<String>(),
+            );
+            return;
+        }
+        if let Some(Panel::Settings(view)) = &mut self.panel
             && let Some(input) = &mut view.manual_context
         {
             if pasted.chars().all(|c| c.is_ascii_digit()) {
@@ -849,6 +911,12 @@ impl SettingsView {
                 self.selected = 0;
                 self.top = 0;
             }
+            Some(SettingCategory::VersionControl) => {
+                self.selected = row;
+                if self.branch_input.is_none() {
+                    self.edit_branch_prefix();
+                }
+            }
             Some(SettingCategory::Models) => {
                 self.selected = row;
                 if row == 5 {
@@ -898,6 +966,7 @@ impl SettingsView {
             | SettingCategory::Appearance
             | SettingCategory::Updates
             | SettingCategory::Access
+            | SettingCategory::VersionControl
             | SettingCategory::System => false,
         }
     }

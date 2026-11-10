@@ -35,9 +35,9 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
 - [x] `plan_edit` tool for the pinned plan
 - [x] Output tokens per second per agent (core events)
 - [x] Context report per item with usage counts
-- [~] Per-thread access mode (core and GUI done; TUI under Parity)
-- [~] Version control settings: branch prefix and the like, named "version control",
-      not "git" (core and GUI done; TUI settings left)
+- [x] Per-thread access mode (core, GUI and TUI `/access`)
+- [x] Version control settings: branch prefix and the like, named "version control",
+      not "git" (core, GUI and TUI settings)
 - [x] Notifications and their settings: core toggles, TUI bell, GUI system notifications
       while the window is in the background (a click opens the chat)
 
@@ -140,8 +140,9 @@ From `gui-todo.md`
 - [x] "done" sometimes does not fit (subagent rows past an hour, long tool lines)
 - [x] With effort off, do not print "thinking" for each action; show tps
 - [x] A typed own answer to a question wraps long lines
-- [~] Parity: background commands (Ctrl+B, jobs panel) and `@me`/`@name` (Tab
-      completes) done; access mode per chat, version control settings, pinned plan left
+- [~] Parity: background commands (Ctrl+B, jobs panel), `@me`/`@name` (Tab completes),
+      `/access` per chat and the version control settings done; editing the `@me`
+      profile and snippets, and the pinned plan, left
 
 ## Repository
 
