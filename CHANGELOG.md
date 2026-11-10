@@ -8,6 +8,9 @@ testing.
 
 ### Changed
 
+- GUI menus and windows: the search window shows the source of a chat as quiet text, not a chip,
+  and asks for a title; the chat menu sets Delete apart; the effort menu uses the same text size
+  as the menu it opens from.
 - GUI: the subagents moved out of the right column to a button beside the message box: the
   figure of the agent at work (or the latest), a count, a ring in the signal color while any
   works. It opens a stage with a zone for each kind of work (engineering, security, testing and
@@ -111,6 +114,10 @@ testing.
 - GUI: the name in the sidebar reads Duskcode.
 
 ### Fixed
+
+- GUI: the menu of a chat (right click) and the menu of the project path in the right column
+  stopped the window with a panic, "hover style already set": a row of a menu was given its
+  pointer color twice. Menu rows now come from `widgets::menu_item`.
 
 - GUI: menus and lists that open over the page (the message navigator, the model,
   mode, access and attach menus, the mention list, the folder menu) are painted above

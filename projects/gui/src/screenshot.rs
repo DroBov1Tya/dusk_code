@@ -11,19 +11,21 @@
 //! - `modal=search|project|agents|none`, `right=all`: open a window; unfold the right column;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
+//! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
+//!   open a menu or window of the chat;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
 
 use std::{path::PathBuf, time::Duration};
 
-use gpui_kit::*;
+use gpui_kit::{component::input::InputState, *};
 
 use crate::{
     connectors::Shelf,
     modal::Modal,
     settings::SettingsPage,
-    workspace::{Center, Workspace},
+    workspace::{Center, Picker, Workspace},
 };
 
 pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
@@ -158,6 +160,54 @@ fn act(
             }
             _ => ws.modal = None,
         },
+        "picker" => {
+            if ws.providers.is_empty() {
+                ws.load_models(cx);
+            }
+            ws.picker = Some(match value {
+                "mode" => Picker::Mode,
+                "access" => Picker::Access,
+                "effort" => Picker::Effort,
+                "more" => Picker::MoreModels,
+                _ => Picker::Model,
+            });
+            cx.notify();
+        }
+        "attach" => {
+            ws.attach_open = true;
+            cx.notify();
+        }
+        "menu" => {
+            let id = ws.shown.clone().unwrap_or_default();
+            match value {
+                "path" => ws.path_menu = true,
+                "delete" => {
+                    ws.modal = Some(Modal::Delete {
+                        thread_id: id,
+                        title: "Explain get() Function and Risk".into(),
+                    })
+                }
+                "rename" => {
+                    let title = cx.new(|cx| {
+                        let mut input = InputState::new(window, cx);
+                        input.set_value("Explain get() Function and Risk", window, cx);
+                        input
+                    });
+                    ws.modal = Some(Modal::Rename {
+                        thread_id: id,
+                        title,
+                    })
+                }
+                "run" => {
+                    ws.modal = Some(Modal::RunCode {
+                        thread_id: id,
+                        command: "cargo test --workspace && cargo clippy".into(),
+                    })
+                }
+                _ => ws.chat_menu = Some((id, point(px(320.), px(300.)))),
+            }
+            cx.notify();
+        }
         "right" => {
             ws.folded.clear();
             ws.right_hidden = false;

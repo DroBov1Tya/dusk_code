@@ -230,7 +230,8 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let search = cx.new(|cx| InputState::new(window, cx).placeholder("Search chats"));
+        let search =
+            cx.new(|cx| InputState::new(window, cx).placeholder("Find a chat by its title"));
         cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
             .detach();
         let shelf_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));

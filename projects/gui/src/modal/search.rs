@@ -2,6 +2,7 @@
 
 use gpui_kit::{
     component::{ActiveTheme, input::Input},
+    prelude::FluentBuilder,
     *,
 };
 
@@ -42,7 +43,14 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     ),
                 )
                 .children(project.map(|name| div().meta().text_color(muted).child(name)))
-                .child(widgets::badge(thread.source.clone(), muted))
+                .when(thread.source != "gui", |row| {
+                    row.child(
+                        div()
+                            .meta()
+                            .text_color(muted.opacity(0.8))
+                            .child(thread.source.clone()),
+                    )
+                })
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.modal = None;
                     ws.open_chat(&id, cx);

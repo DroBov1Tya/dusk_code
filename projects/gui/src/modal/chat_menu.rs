@@ -34,7 +34,7 @@ pub fn render(
         at.y
     };
     let theme = cx.theme();
-    let (muted, hover) = (theme.muted_foreground, theme.accent);
+    let muted = theme.muted_foreground;
     let pinned = theme::prefs(cx).pinned.contains(&thread_id);
     let (rename, pin, delete) = (thread_id.clone(), thread_id.clone(), thread_id);
     Some(
@@ -55,8 +55,7 @@ pub fn render(
             .bg(theme.popover)
             .shadow_lg()
             .child(
-                widgets::row("menu-rename", false, cx)
-                    .hover(move |row| row.bg(hover))
+                widgets::menu_item("menu-rename", cx)
                     .child(widgets::icon(IconName::Replace, muted))
                     .child("Rename")
                     .on_click(
@@ -64,15 +63,15 @@ pub fn render(
                     ),
             )
             .child(
-                widgets::row("menu-pin", false, cx)
-                    .hover(move |row| row.bg(hover))
+                widgets::menu_item("menu-pin", cx)
                     .child(widgets::icon(IconName::Star, muted))
                     .child(if pinned { "Unpin" } else { "Pin to the top" })
                     .on_click(cx.listener(move |ws, _, _, cx| ws.toggle_pin(&pin, cx))),
             )
+            // What cannot be undone stands apart.
+            .child(div().h(px(1.)).mx_2().my_1().bg(theme.border))
             .child(
-                widgets::row("menu-delete", false, cx)
-                    .hover(move |row| row.bg(hover))
+                widgets::menu_item("menu-delete", cx)
                     .text_color(theme.danger)
                     .child(widgets::icon(IconName::Delete, theme.danger))
                     .child("Delete")

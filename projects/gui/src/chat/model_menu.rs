@@ -120,7 +120,7 @@ fn panel(cx: &App) -> Div {
         .border_color(theme.border)
         .bg(theme.popover)
         .shadow_lg()
-        .small()
+        .body()
 }
 
 fn model_row(
