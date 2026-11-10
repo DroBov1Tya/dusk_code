@@ -316,6 +316,11 @@ impl Workspace {
                 self.refresh_module(*module, cx);
             }
         }
+        // The repository decides whether the Changes module shows at all, and the footer
+        // names it, so it is read even while the module is folded.
+        if self.folded.contains(&Right::Git) {
+            self.load_git(cx);
+        }
     }
 
     fn refresh_module(&mut self, module: Right, cx: &mut Context<Self>) {

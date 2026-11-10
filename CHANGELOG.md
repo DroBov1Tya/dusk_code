@@ -8,6 +8,11 @@ testing.
 
 ### Changed
 
+- GUI: code in the file viewer had the library's light-theme colors, so names were dark blue
+  on a dark page; each theme now has its own syntax colors from its palette.
+- GUI: the repository was read only while the Changes module was open, so a folded one left the
+  footer saying "no repository" and hid the module; it is read whenever a project is chosen.
+- GUI: the tint of added and removed lines in the review spans the whole row.
 - GUI polish: tooltips on every icon-only button, counts in the singular when they are one
   ("1 tool", "1 line"), the approval mode shown by name ("full access", not "fullaccess"), and
   the composer menus and the message list fade in over 140 ms.
@@ -21,6 +26,10 @@ testing.
 
 ### Added
 
+- `--features screenshot` for the GUI (development only): the window follows a script and
+  saves PNG pictures of its pages, drawn in memory. See docs/gui-screenshots.md. It makes the
+  lockfile list 26 more crates (gpui's test support); none is built without the feature, and
+  `cargo audit` shows no new advisory.
 - GUI: a path in a code span of a chat message, such as `src/main.rs:42`, opens the file
   viewer at that line; only relative paths in file-name characters are linked. On the review
   page Up and Down choose the file and Escape goes back.
