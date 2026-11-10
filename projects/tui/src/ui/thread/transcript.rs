@@ -325,7 +325,9 @@ impl TranscriptView<'_> {
         }
         match &self.app.activity {
             Activity::Idle => None,
-            Activity::Thinking => Some("thinking".into()),
+            // The pace changes every moment, so it stays in the status line: a new live
+            // step lays the transcript out again.
+            Activity::Thinking => Some(self.app.thinking_label().into()),
             Activity::Writing => Some("writing".into()),
             Activity::Tool(name) => Some(name.clone()),
             Activity::Compacting => Some("compacting".into()),
@@ -697,7 +699,14 @@ fn tool(
         .arguments
         .get("description")
         .and_then(|text| text.as_str())
-        .map(|text| format!("  {}", one_line(text).chars().take(60).collect::<String>()))
+        .map(|text| {
+            // Whatever is left after the mark, the name and the status, so the status
+            // always shows.
+            let used = mark.content.width() + name.content.width() + 2 + status.content.width();
+            let room = width.saturating_sub(used + 2);
+            format!("  {}", wrap::clip(&one_line(text), room.min(60)))
+        })
+        .filter(|about| about.trim().len() > 1)
         .unwrap_or_default();
     let header = Line::from(vec![
         mark,
