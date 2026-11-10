@@ -49,3 +49,15 @@ unicode-width = "0.2"
 dusk_core = { path = "projects/core" }
 dusk_protocol = { path = "projects/protocol" }
 dusk_telegram = { path = "projects/external/telegram" }
+
+# Dependencies carry no debug info in dev builds: it was most of target/ and nobody steps
+# into them. Our own crates keep line tables, enough for backtraces.
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
+# Stripped binaries are about a fifth smaller. No LTO: it costs minutes of CI per release.
+[profile.release]
+strip = true
