@@ -8,6 +8,7 @@ use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 
 use crate::{
     chat::transcript::Transcript,
+    ui::Type,
     widgets,
     workspace::{Center, Workspace},
 };
@@ -74,8 +75,13 @@ pub fn chat_row(
     let row = widgets::row(SharedString::from(format!("{prefix}-{id}")), shown, cx)
         .child(dot)
         .child(div().flex_1().min_w_0().truncate().child(title))
-        .when_some(source, |row, source| {
-            row.child(widgets::badge(source.to_owned(), accent))
+        .when_some(source.filter(|source| *source != "gui"), |row, source| {
+            row.child(
+                div()
+                    .meta()
+                    .text_color(muted.opacity(0.8))
+                    .child(source.to_owned()),
+            )
         })
         .on_click({
             let id = id.clone();

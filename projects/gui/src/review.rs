@@ -14,6 +14,7 @@ use gpui_kit::{
 
 use crate::{
     inspector::git::{change_color, change_letter},
+    ui::Type,
     widgets,
     workspace::{Center, Workspace},
 };
@@ -126,17 +127,22 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
                 .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
         );
     let body = if ws.review.files.is_empty() {
-        let text = if ws.review.loading {
-            "Reading the changes..."
+        let state = if ws.review.loading {
+            widgets::muted("Reading the changes...", cx)
         } else {
-            "No changes: the work tree matches the last commit."
+            crate::ui::empty(
+                IconName::Github,
+                "Nothing to review",
+                "The work tree matches the last commit.",
+                cx,
+            )
         };
         div()
             .flex_1()
             .flex()
             .items_center()
             .justify_center()
-            .child(widgets::muted(text, cx))
+            .child(state)
     } else {
         div()
             .flex_1()
@@ -160,7 +166,7 @@ fn stat(files: usize, added: u64, removed: u64, muted: Hsla, ok: Hsla, bad: Hsla
         .flex()
         .flex_row()
         .gap_2()
-        .text_sm()
+        .small()
         .child(
             div()
                 .text_color(muted)
@@ -198,12 +204,12 @@ fn files(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
                 .child(
                     div()
                         .w(px(12.))
-                        .text_xs()
+                        .meta()
                         .text_color(change_color(file.kind, cx))
                         .child(change_letter(file.kind)),
                 )
                 .child(
-                    div().flex_1().min_w_0().truncate().text_sm().child(
+                    div().flex_1().min_w_0().truncate().small().child(
                         div()
                             .flex()
                             .flex_row()
@@ -211,26 +217,16 @@ fn files(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
                             .child(name),
                     ),
                 )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(success)
-                        .child(if file.added > 0 {
-                            format!("+{}", file.added)
-                        } else {
-                            String::new()
-                        }),
-                )
-                .child(
-                    div()
-                        .text_xs()
-                        .text_color(danger)
-                        .child(if file.removed > 0 {
-                            format!("\u{2212}{}", file.removed)
-                        } else {
-                            String::new()
-                        }),
-                )
+                .child(div().meta().text_color(success).child(if file.added > 0 {
+                    format!("+{}", file.added)
+                } else {
+                    String::new()
+                }))
+                .child(div().meta().text_color(danger).child(if file.removed > 0 {
+                    format!("\u{2212}{}", file.removed)
+                } else {
+                    String::new()
+                }))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.review.select(index);
                     cx.notify();
@@ -261,9 +257,9 @@ fn diff(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
         .gap_2()
         .px_4()
         .py_2()
-        .text_sm()
+        .small()
         .child(file.path.clone())
-        .child(div().text_xs().text_color(muted).child(match file.kind {
+        .child(div().meta().text_color(muted).child(match file.kind {
             ChangeKind::Untracked => "new file",
             ChangeKind::Deleted => "deleted",
             ChangeKind::Added => "added",
@@ -327,6 +323,8 @@ fn row(ws: &Workspace, ix: usize, cx: &mut Context<Workspace>) -> AnyElement {
         .mono_font
         .clone()
         .unwrap_or_else(|| "Menlo".to_owned());
+    // The same size as the viewer's code, so a file reads alike in both.
+    let code_size = crate::theme::prefs(cx).mono_size;
     let Some(row) = ws.review.rows.get(ix) else {
         return div().into_any_element();
     };
@@ -346,7 +344,7 @@ fn row(ws: &Workspace, ix: usize, cx: &mut Context<Workspace>) -> AnyElement {
             .pt_3()
             .pb_2()
             .bg(surface.opacity(0.6))
-            .text_xs()
+            .text_size(px(code_size))
             .font_family(mono)
             .text_color(muted)
             .child(header.clone())
@@ -361,7 +359,7 @@ fn row(ws: &Workspace, ix: usize, cx: &mut Context<Workspace>) -> AnyElement {
                 .w_full()
                 .flex()
                 .flex_row()
-                .text_xs()
+                .text_size(px(code_size))
                 .font_family(mono)
                 .when_some(tint, |row, tint| row.bg(tint.opacity(0.12)))
                 .child(number(line.old))

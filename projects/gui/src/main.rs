@@ -26,6 +26,7 @@ mod screenshot;
 mod settings;
 mod sidebar;
 mod theme;
+mod ui;
 mod widgets;
 mod workspace;
 

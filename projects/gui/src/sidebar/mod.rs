@@ -16,6 +16,7 @@ use gpui_kit::{
 
 use crate::{
     modal::Modal,
+    ui::Type,
     widgets,
     workspace::{Center, Workspace},
 };
@@ -252,7 +253,9 @@ fn nav_row(
 ) -> Stateful<Div> {
     let muted = cx.theme().muted_foreground;
     widgets::row(id, active, cx)
-        .h(px(32.))
+        .h(px(crate::ui::NAV))
+        .body()
+        .font_weight(FontWeight::MEDIUM)
         .child(widgets::icon(icon, muted))
         .child(label)
 }

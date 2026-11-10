@@ -1,5 +1,6 @@
 //! Small pieces every column draws with.
 
+use crate::ui::Type;
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName, Sizable},
     prelude::FluentBuilder,
@@ -9,14 +10,7 @@ use gpui_kit::{
 /// A section's label: sentence case in the muted color, closer to its items than to
 /// the section above.
 pub fn caption(text: impl Into<SharedString>, cx: &App) -> Div {
-    div()
-        .px_4()
-        .pt_6()
-        .pb_2()
-        .text_xs()
-        .font_weight(FontWeight::MEDIUM)
-        .text_color(cx.theme().muted_foreground)
-        .child(text.into())
+    crate::ui::group(text, cx)
 }
 
 pub fn heading(text: impl Into<SharedString>, cx: &App) -> Div {
@@ -35,8 +29,8 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .gap_2()
         .mx_1()
         .px_2()
-        .h(px(32.))
-        .rounded_md()
+        .h(px(crate::ui::ROW))
+        .rounded_lg()
         .cursor_pointer()
         .when(active, |row| row.bg(selected))
         .hover(move |row| row.bg(hover))
@@ -62,13 +56,18 @@ pub fn badge(text: impl Into<SharedString>, color: Hsla) -> Div {
         .child(text.into())
 }
 
+/// A quiet line. One that ends in "..." is a wait, and gets the turning ring.
 pub fn muted(text: impl Into<SharedString>, cx: &App) -> Div {
+    let text = text.into();
+    if text.ends_with("...") {
+        return crate::ui::loading(&text, cx);
+    }
     div()
         .px_3()
         .py_2()
-        .text_xs()
+        .small()
         .text_color(cx.theme().muted_foreground)
-        .child(text.into())
+        .child(text)
 }
 
 /// A menu or a list that opens over the page: painted after everything else, so no text
@@ -86,7 +85,7 @@ where
 {
     popup.with_animation(
         id,
-        Animation::new(std::time::Duration::from_millis(140)).with_easing(ease_out_quint()),
+        Animation::new(crate::ui::OPEN).with_easing(ease_out_quint()),
         |popup, delta| popup.opacity(delta),
     )
 }
