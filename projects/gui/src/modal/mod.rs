@@ -66,10 +66,13 @@ pub enum Modal {
     Picture {
         path: PathBuf,
     },
-    /// A shell block from an answer, to run once the user says yes.
-    RunCode {
+    /// Going back to a message of the chat erases it and all after it; asks first.
+    Rollback {
         thread_id: String,
-        command: String,
+        sequence: u64,
+        /// The item the view is cut at.
+        at: usize,
+        text: String,
     },
 }
 
@@ -119,11 +122,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .object_fit(ObjectFit::Contain),
             ),
         ),
-        Modal::RunCode { command, .. } => (
-            "Run command".to_owned(),
-            640.,
-            run_code(&command.clone(), cx),
-        ),
+        Modal::Rollback { .. } => ("Go back".to_owned(), 480., rollback(cx)),
         Modal::Arbiter { thread_id } => {
             let thread_id = thread_id.clone();
             (
@@ -159,6 +158,23 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             (item.title().to_owned(), 720., detail::render(ws, &item, cx))
         }
     };
+    // A subagent's chat opens from the list of subagents; Back returns to it.
+    let back = matches!(ws.modal, Some(Modal::AgentChat { .. }))
+        .then(|| ws.shown.clone())
+        .flatten()
+        .map(|thread_id| {
+            Button::new("modal-back")
+                .ghost()
+                .small()
+                .icon(IconName::ArrowLeft)
+                .tooltip("Back to the subagents")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.modal = Some(Modal::Agents {
+                        thread_id: thread_id.clone(),
+                    });
+                    cx.notify();
+                }))
+        });
     let theme = cx.theme();
     let panel = div()
         .id("modal-panel")
@@ -183,7 +199,15 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .py_3()
                 .border_b_1()
                 .border_color(theme.border)
-                .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
+                .child(
+                    div()
+                        .flex()
+                        .flex_row()
+                        .items_center()
+                        .gap_2()
+                        .children(back)
+                        .child(div().font_weight(FontWeight::SEMIBOLD).child(title)),
+                )
                 .child(
                     Button::new("modal-close")
                         .ghost()
@@ -227,37 +251,19 @@ impl Workspace {
     }
 }
 
-/// The command in full before it runs: it came from the model.
-fn run_code(command: &str, cx: &mut Context<Workspace>) -> Div {
-    let theme = cx.theme();
-    let (muted, surface) = (theme.muted_foreground, theme.muted);
-    let mono = crate::theme::prefs(cx)
-        .mono_font
-        .clone()
-        .unwrap_or_else(|| "Menlo".to_owned());
+/// What going back costs, said before it happens: there is no way to bring it back.
+fn rollback(cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
     div()
         .flex()
         .flex_col()
         .gap_3()
         .p_5()
-        .child(
-            div()
-                .text_sm()
-                .text_color(muted)
-                .child("The model wrote this. It runs in the chat's folder, confined as the chat's tools are, and the output goes to the message box."),
-        )
-        .child(
-            div()
-                .id("run-code-text")
-                .max_h(px(280.))
-                .overflow_y_scroll()
-                .p_3()
-                .rounded_md()
-                .bg(surface)
-                .text_xs()
-                .font_family(mono)
-                .child(command.to_owned()),
-        )
+        .child("Go back to this message?")
+        .child(div().text_sm().text_color(muted).child(
+            "The message and everything after it are erased from the chat for good. \
+             Files the agents wrote stay. The message returns to the box.",
+        ))
         .child(
             div()
                 .flex()
@@ -265,16 +271,16 @@ fn run_code(command: &str, cx: &mut Context<Workspace>) -> Div {
                 .justify_end()
                 .gap_2()
                 .child(
-                    Button::new("run-code-cancel")
+                    Button::new("rollback-cancel")
                         .ghost()
                         .label("Cancel")
                         .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
                 )
                 .child(
-                    Button::new("run-code-run")
-                        .primary()
-                        .label("Run")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.run_code(cx))),
+                    Button::new("rollback-go")
+                        .danger()
+                        .label("Go back")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.rollback(cx))),
                 ),
         )
 }

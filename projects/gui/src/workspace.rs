@@ -207,6 +207,8 @@ pub struct Workspace {
     pub agent_path: Vec<String>,
     /// The chat a right click opened the menu of, and where.
     pub chat_menu: Option<(String, Point<Pixels>)>,
+    /// The artifact a right click opened the menu of, and where.
+    pub artifact_menu: Option<(PathBuf, Point<Pixels>)>,
     /// Chats just deleted, fading out of the list before it is read again.
     pub fading: std::collections::HashSet<String>,
     /// The menu of the project folder in the right column is open.
@@ -340,6 +342,7 @@ impl Workspace {
             secret_inputs: Vec::new(),
             agent_path: Vec::new(),
             chat_menu: None,
+            artifact_menu: None,
             fading: Default::default(),
             path_menu: false,
             system: None,
@@ -481,6 +484,7 @@ impl Render for Workspace {
         };
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
+        let artifact_menu = artifacts::menu(self, window, cx);
         div()
             .relative()
             .size_full()
@@ -505,6 +509,7 @@ impl Render for Workspace {
             )
             .children(modal)
             .children(chat_menu)
+            .children(artifact_menu)
             .track_focus(&self.focus)
             .key_context("Workspace")
             .on_action(cx.listener(Self::on_new_chat))
@@ -515,7 +520,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_sidebar))
             .on_action(cx.listener(Self::on_toggle_side_panel))
             .on_action(cx.listener(Self::copy_code))
-            .on_action(cx.listener(Self::ask_run))
+            .on_action(cx.listener(Self::run_code))
             .capture_key_down(cx.listener(Self::menu_keys))
     }
 }

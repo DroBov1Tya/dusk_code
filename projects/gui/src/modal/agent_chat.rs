@@ -34,7 +34,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
     }
     for (index, item) in chat.items.iter().enumerate() {
         column = column.child(match item {
-            Item::User(text) => div()
+            Item::User { text, .. } => div()
                 .px_3()
                 .py_2()
                 .rounded_lg()
@@ -71,6 +71,11 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                     .child(div().truncate().child(tool.detail.clone()))
                     .into_any_element()
             }
+            Item::Command(run) => div()
+                .text_xs()
+                .text_color(muted)
+                .child(format!("$ {}", run.command))
+                .into_any_element(),
             Item::Image(picture) => div()
                 .text_xs()
                 .text_color(muted)

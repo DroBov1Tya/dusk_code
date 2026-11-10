@@ -229,10 +229,12 @@ fn act(
                         title,
                     })
                 }
-                "run" => {
-                    ws.modal = Some(Modal::RunCode {
+                "rollback" => {
+                    ws.modal = Some(Modal::Rollback {
                         thread_id: id,
-                        command: "cargo test --workspace && cargo clippy".into(),
+                        sequence: 1,
+                        at: 0,
+                        text: String::new(),
                     })
                 }
                 _ => ws.chat_menu = Some((id, point(px(320.), px(300.)))),

@@ -316,12 +316,33 @@ pub fn render(
     color: Hsla,
     unit: f32,
 ) -> impl IntoElement {
+    draw(id, state, color, unit, W)
+}
+
+/// Only the fox, without the margin that holds what it carries, so it can stand in the
+/// middle of a button.
+pub fn render_fox(
+    id: impl Into<ElementId>,
+    state: &AgentState,
+    color: Hsla,
+    unit: f32,
+) -> impl IntoElement {
+    draw(id, state, color, unit, BODY[0].len())
+}
+
+fn draw(
+    id: impl Into<ElementId>,
+    state: &AgentState,
+    color: Hsla,
+    unit: f32,
+    columns: usize,
+) -> impl IntoElement {
     let frames = frames(state);
     let total: u64 = frames.iter().map(|frame| frame.ms).sum();
     let grids: Vec<Grid> = frames.iter().map(|frame| compose(*frame)).collect();
     let times: Vec<u64> = frames.iter().map(|frame| frame.ms).collect();
     div()
-        .w(px(W as f32 * unit))
+        .w(px(columns as f32 * unit))
         .h(px(H as f32 * unit))
         .flex_none()
         .with_animation(
@@ -343,7 +364,7 @@ pub fn render(
                         |_, _, _| {},
                         move |bounds, _, window, _| {
                             for (row, line) in grid.iter().enumerate() {
-                                for (column, cell) in line.iter().enumerate() {
+                                for (column, cell) in line.iter().take(columns).enumerate() {
                                     let Some(fill_color) = paint(*cell, color) else {
                                         continue;
                                     };

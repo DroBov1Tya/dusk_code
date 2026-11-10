@@ -1,6 +1,6 @@
 //! Buttons in the corner of a code block: Copy for every block, Run for shell code. Run
-//! asks first, since the code is the model's; the core runs it in the chat's folder,
-//! confined as the chat's tools are, and the output lands in the composer to send or not.
+//! starts at once; the core runs the code in the chat's folder, confined as the chat's
+//! tools are, and the output lands in the chat under a bar that fills while it runs.
 
 use gpui_kit::base::text::CodeBlock;
 use gpui_kit::{
@@ -11,7 +11,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{modal::Modal, workspace::Workspace};
+use crate::workspace::Workspace;
 
 /// Puts a code block's text on the clipboard.
 #[derive(Clone, PartialEq, Default, Debug, Action)]
@@ -20,7 +20,7 @@ pub struct CopyCode {
     pub text: String,
 }
 
-/// Asks to run a shell code block in the shown chat's folder.
+/// Runs a shell code block in the shown chat's folder.
 #[derive(Clone, PartialEq, Default, Debug, Action)]
 #[action(namespace = dusk, no_json)]
 pub struct RunCode {
@@ -83,36 +83,27 @@ impl Workspace {
         cx.write_to_clipboard(ClipboardItem::new_string(action.text.clone()));
     }
 
-    pub fn ask_run(&mut self, action: &RunCode, _: &mut Window, cx: &mut Context<Self>) {
+    pub fn run_code(&mut self, action: &RunCode, _: &mut Window, cx: &mut Context<Self>) {
         let Some(thread_id) = self.shown.clone() else {
             return;
         };
         if action.command.is_empty() {
             return;
         }
-        self.modal = Some(Modal::RunCode {
-            thread_id,
-            command: action.command.clone(),
-        });
-        cx.notify();
-    }
-
-    /// Runs the confirmed command; its output waits in the composer.
-    pub fn run_code(&mut self, cx: &mut Context<Self>) {
-        let Some(Modal::RunCode { thread_id, command }) = self.modal.take() else {
+        let Some(chat) = self.chats.get_mut(&thread_id) else {
             return;
         };
-        let shown = command.clone();
+        let command = action.command.clone();
+        let run = chat.start_run(command.clone());
+        let asked = thread_id.clone();
         self.core.call(
             cx,
-            move |client| async move { client.threads().run_command(&thread_id, &command).await },
-            move |ws, result, cx| match result {
-                Ok(output) => {
-                    ws.fill_composer =
-                        Some(format!("```\n$ {shown}\n{}\n```\n", output.trim_end()));
-                    cx.notify();
+            move |client| async move { client.threads().run_command(&asked, &command).await },
+            move |ws, result, cx| {
+                if let Some(chat) = ws.chats.get_mut(&thread_id) {
+                    chat.finish_run(run, result.map_err(|error| format!("{error:#}")));
                 }
-                Err(error) => ws.fail(error, cx),
+                cx.notify();
             },
         );
         cx.notify();
