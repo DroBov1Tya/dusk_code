@@ -53,10 +53,10 @@ Each tool less is a shorter prefix on every request and one fewer choice per ste
       what saves time, and the prompt asks for it.
 - [x] Retries: six attempts, backoff with jitter, `retry-after`, no retry after the answer
       started; stream errors without a clear cause count as transient.
-- [ ] Client-side token bucket per provider, so a goal loop cannot get the key banned.
-- [~] Cache: deepseek's cache hits counted; `prompt_cache_key` per thread for
-      OpenAI-compatible providers; the tool list is sent again when the mode changes,
-      without touching the cached prefix more than needed.
+- [x] Client-side token bucket per provider, so a goal loop cannot get the key banned.
+- [x] Cache: deepseek's cache hits counted; `prompt_cache_key` per thread for OpenAI;
+      a mode switch changes the prefix once, at the next turn.
+- [ ] Compaction sends the thread's tools too, so its request reuses the cached prefix.
 - [x] Subagents: phases are optional; the runtime starts the task in planning and marks
       it done on the answer, so a subagent does not spend steps on bookkeeping.
 - [ ] Compaction prepared before the limit, recent tail kept word for word.

@@ -29,6 +29,10 @@ pub struct ProviderConfig {
     /// Where the provider tells the balance; known hosts need no entry.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub balance: Option<BalanceApi>,
+    /// At most this many model calls a minute, after a burst of as many; no limit when
+    /// not set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub requests_per_minute: Option<u32>,
 }
 
 /// US dollars per million tokens, as the provider's price list gives them.

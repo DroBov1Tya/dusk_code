@@ -93,6 +93,7 @@ impl Arbiter {
             tools: &[],
             max_output_tokens: Some(MAX_ANSWER_TOKENS),
             effort: None,
+            cache_key: None,
         };
         let mut output = ModelOutput::default();
         generation::generate(choice.provider.as_ref(), request, &mut output, |_| {}).await?;

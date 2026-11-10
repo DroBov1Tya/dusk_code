@@ -34,6 +34,12 @@ testing.
 - Requests that fail without a clear cause are tried again, up to six times, with
   growing pauses and the provider's retry-after.
 - DeepSeek cache hits are counted.
+- A mode switch applies from the next turn with that mode's prompt, not only after a
+  compaction. OpenAI requests carry a cache key per thread. A provider can be held to
+  `requests_per_minute`.
+- The terminal client keeps a subagent's state and a tool's status in view on narrow
+  rows, wraps a long typed answer to a question, and with effort off says "reading"
+  with the pace in tokens per second.
 
 ## 0.71.1 - 2026-11-05
 

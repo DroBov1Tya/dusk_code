@@ -12,6 +12,7 @@ pub mod cost;
 mod errors;
 mod openai;
 pub mod output;
+mod rate;
 mod registry;
 mod request;
 mod transport;

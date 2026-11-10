@@ -24,6 +24,8 @@ pub struct CompletionRequest {
     max_completion_tokens: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     reasoning_effort: Option<&'static str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_cache_key: Option<String>,
     stream: bool,
     stream_options: StreamOptions,
 }
@@ -106,6 +108,11 @@ impl CompletionRequest {
             max_tokens: limit.filter(|_| !completion_tokens),
             max_completion_tokens: limit.filter(|_| completion_tokens),
             reasoning_effort: request.effort.map(Effort::wire_name),
+            // OpenAI itself only: other servers may refuse a field they do not know.
+            prompt_cache_key: request
+                .cache_key
+                .filter(|_| completion_tokens)
+                .map(str::to_owned),
             stream: true,
             stream_options: StreamOptions {
                 include_usage: true,

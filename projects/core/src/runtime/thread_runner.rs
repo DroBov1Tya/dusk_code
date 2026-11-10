@@ -629,9 +629,17 @@ mod tests {
         }
     }
 
+    const MAIN_PROMPT: &str = "You are the main agent of duskcode, working with the user in a chat.\n\
+         Answer directly and concisely, in the language the user writes in.\n";
+
+    /// A chat as `start_thread` makes it: its first message is the mode's prompt.
     async fn thread_state(name: &str) -> Arc<State> {
         let state = Arc::new(temp_state(name).await);
         state.create_thread("thread", "test").await.unwrap();
+        state
+            .add_system_message("thread", MAIN_PROMPT)
+            .await
+            .unwrap();
         state
     }
 
@@ -668,12 +676,7 @@ mod tests {
         };
         // The size of the real prompt must not decide what fits in these small limits.
         std::fs::create_dir_all(root.join("modes")).unwrap();
-        std::fs::write(
-            root.join("modes/MAIN.md"),
-            "You are the main agent of duskcode, working with the user in a chat.\n\
-             Answer directly and concisely, in the language the user writes in.\n",
-        )
-        .unwrap();
+        std::fs::write(root.join("modes/MAIN.md"), MAIN_PROMPT).unwrap();
         ThreadRunner::new(ThreadSetup {
             state: Arc::clone(state),
             model: Arc::new(ModelChoice::new(choice)),
@@ -702,10 +705,12 @@ mod tests {
         }
     }
 
+    /// The chat after its opening mode prompt.
     async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
         let messages = state.list_messages("thread").await.unwrap();
         messages
             .into_iter()
+            .skip(1)
             .map(|message| (message.role, message.content))
             .collect()
     }
@@ -1108,15 +1113,17 @@ mod tests {
     async fn a_growing_context_is_compacted_within_the_turn() {
         let state = thread_state("compact_auto").await;
         let config = live_config("runner_config");
-        let long = "a tool result long enough to push the context past the limit";
+        let long = "a tool result long enough to push the context past the limit, \
+                    and longer still, since the mode's prompt is in the context too, \
+                    so it takes a few more words than before to get there";
         let provider = provider(vec![
             vec![Step::Call(long), Step::Done],
             vec![Step::Text("used the tool"), Step::Done],
             vec![Step::Text("done"), Step::Done],
         ]);
-        // 16 tokens before the step and about 60 after it: past 80% of 60, within 60
-        // only after the summary.
-        let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(60)));
+        // About 50 tokens before the step, the prompt included, and about 130 after it:
+        // past 80% of 120, within 120 only after the summary.
+        let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(120)));
         input.send("go").await.unwrap();
         drop(input);
 
@@ -1252,6 +1259,38 @@ mod tests {
                 (MessageRole::Tool, "ping".into()),
                 (MessageRole::Assistant, "got ping".into()),
             ]
+        );
+    }
+
+    /// A switch of mode applies from the next turn: the new prompt leads the request.
+    #[tokio::test]
+    async fn the_next_turn_takes_up_a_new_mode() {
+        let state = thread_state("mode_switch").await;
+        let config = live_config("mode_switch_config");
+        let provider = provider(vec![
+            vec![Step::Text("one"), Step::Done],
+            vec![Step::Text("two"), Step::Done],
+        ]);
+        let (runner, input, _output) = runner(&state, &provider, &config, model(None));
+        let modes = runner.agent.modes_dir.clone();
+        input.send("first").await.unwrap();
+        let running = tokio::spawn(runner.run());
+        while provider.requests.lock().unwrap().is_empty() {
+            tokio::task::yield_now().await;
+        }
+        std::fs::write(modes.join("PLAN.md"), "Plan only.").unwrap();
+        config
+            .update(|config| config.set_mode("PLAN".into()))
+            .unwrap();
+        input.send("second").await.unwrap();
+        drop(input);
+        running.await.unwrap();
+
+        let requests = provider.requests.lock().unwrap();
+        assert_eq!(requests[0][0], ChatMessage::System(MAIN_PROMPT.into()));
+        assert_eq!(
+            requests.last().unwrap()[0],
+            ChatMessage::System("Plan only.".into())
         );
     }
 
