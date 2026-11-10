@@ -6,6 +6,10 @@ testing.
 
 ## Unreleased
 
+## 0.72.1 - 2026-11-10
+
+Pre-release: GUI work since 0.72.0.
+
 ### Changed
 
 - gui: copy and go-back buttons on your messages (going back asks first and erases the message
