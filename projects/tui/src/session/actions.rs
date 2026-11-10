@@ -184,6 +184,28 @@ pub async fn apply(
                 Err(error) => app.error(format!("cannot read the plan: {error:#}")),
             }
         }
+        Action::ChangedFiles => {
+            let Some(thread_id) = app.thread_id.clone() else {
+                app.flash = Some("Send a message first; the files belong to a chat".into());
+                return Ok(Flow::Go);
+            };
+            match client.work().changed_files(&thread_id).await {
+                Ok(files) if files.is_empty() => {
+                    app.flash = Some("No commands of this chat changed a file yet".into())
+                }
+                Ok(files) => {
+                    let shown: Vec<_> = files.iter().take(5).map(|f| f.path.as_str()).collect();
+                    let more = files.len() - shown.len();
+                    let tail = if more > 0 {
+                        format!(" +{more}")
+                    } else {
+                        String::new()
+                    };
+                    app.flash = Some(format!("Changed: {}{tail}", shown.join(", ")));
+                }
+                Err(error) => app.error(format!("cannot read the files: {error:#}")),
+            }
+        }
         Action::SavePlan(text) => {
             if let Some(thread_id) = app.thread_id.clone() {
                 match client.work().save_plan(&thread_id, &text).await {

@@ -10,6 +10,7 @@ mod db;
 mod project_env;
 mod projects;
 mod thread;
+mod thread_files;
 mod usage;
 
 pub use agents::{AgentPhase, Identity};

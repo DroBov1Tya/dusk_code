@@ -15,7 +15,7 @@ use crate::{
     mentions::{Profile, Snippet},
     model::Effort,
     plugins::PluginInfo,
-    project::{FileEntry, GitInfo, OutputFile, Project},
+    project::{Change, FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::{Thread, ThreadEvent},
     tools::Decision,
@@ -284,6 +284,10 @@ pub enum WorkRequest {
         thread_id: String,
         text: String,
     },
+    /// The files the chat's commands changed in its project.
+    ChangedFiles {
+        thread_id: String,
+    },
 }
 
 /// Projects, and the git state and files of one. Git and files are read only inside
@@ -372,6 +376,7 @@ pub enum Response {
     Project(Project),
     Git(GitInfo),
     Files(Vec<FileEntry>),
+    Changes(Vec<Change>),
     Outputs(Vec<OutputFile>),
     System(SystemReport),
     Answer(Box<Answer>),

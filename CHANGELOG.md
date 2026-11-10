@@ -8,6 +8,9 @@ testing.
 
 ### Added
 
+- The files a chat's commands changed in the project are kept per chat: the core compares
+  git's list of changes around each foreground command. GUI: a "Touched" module in the
+  right column; TUI: `/files`.
 - TUI: `/me` edits what `@me` says about you and `/snippet name` writes a snippet for
   `@name`, in the same editor as pasted text; empty text removes a snippet.
 

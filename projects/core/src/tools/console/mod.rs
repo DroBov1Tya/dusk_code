@@ -1,5 +1,6 @@
 //! Console tools: commands in the working directory, and the background ones.
 
+mod file_changes;
 mod jobs;
 pub mod process;
 mod run_command;

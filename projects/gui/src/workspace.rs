@@ -47,6 +47,8 @@ pub enum Right {
     Screenshots,
     Git,
     Files,
+    /// The files the shown chat's commands changed.
+    Touched,
     Plan,
     Todo,
     Agents,
@@ -54,12 +56,13 @@ pub enum Right {
 }
 
 impl Right {
-    const ALL: [Right; 9] = [
+    const ALL: [Right; 10] = [
         Right::Arbiter,
         Right::Statistics,
         Right::Screenshots,
         Right::Git,
         Right::Files,
+        Right::Touched,
         Right::Plan,
         Right::Todo,
         Right::Agents,
@@ -74,6 +77,7 @@ impl Right {
             Self::Screenshots => "screenshots",
             Self::Git => "git",
             Self::Files => "files",
+            Self::Touched => "touched",
             Self::Plan => "plan",
             Self::Todo => "todo",
             Self::Agents => "agents",
@@ -89,6 +93,7 @@ impl Right {
             Right::Screenshots,
             Right::Git,
             Right::Files,
+            Right::Touched,
             Right::Jobs,
         ]
         .into_iter()
@@ -154,6 +159,7 @@ pub struct Workspace {
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     pub git: Option<GitInfo>,
+    pub touched: Vec<dusk_protocol::project::Change>,
     /// Folder entries by folder, `""` for the project's top.
     pub files: BTreeMap<String, Vec<FileEntry>>,
     pub expanded: HashSet<String>,
@@ -297,6 +303,7 @@ impl Workspace {
             pending: Vec::new(),
             rates: HashMap::new(),
             git: None,
+            touched: Vec::new(),
             files: BTreeMap::new(),
             expanded: HashSet::new(),
             context: None,
@@ -384,6 +391,13 @@ impl Workspace {
                 );
                 self.notify_event(&thread_id, &event, cx);
                 self.watch_plan(&thread_id, &event, cx);
+                if matches!(
+                    *event,
+                    dusk_protocol::thread::ThreadEvent::ToolFinished { .. }
+                ) && self.shown.as_deref() == Some(thread_id.as_str())
+                {
+                    self.load_touched(cx);
+                }
                 let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     let was_working = chat.working;

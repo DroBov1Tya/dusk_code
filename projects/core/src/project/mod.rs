@@ -14,7 +14,7 @@ use dusk_protocol::project::{MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS, Project};
 use crate::state::State;
 
 pub use files::list as files;
-pub use git::{info as git, switch_branch};
+pub use git::{changes as git_changes, info as git, switch_branch};
 pub use outputs::{delete as delete_output, list as outputs, read as read_output};
 
 /// Saves a new project, or changes the one with `id`. The folder is stored resolved, so

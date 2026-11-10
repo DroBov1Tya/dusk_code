@@ -24,6 +24,7 @@ impl App {
                 return Action::None;
             }
             "/plan" => return Action::OpenPlan,
+            "/files" => return Action::ChangedFiles,
             "/me" => return Action::OpenMe,
             "/plugins" => {
                 self.panel = Some(Panel::Plugins {
