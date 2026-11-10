@@ -40,6 +40,8 @@ pub enum Action {
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// `/disconnect name`: forget a provider.
+    Disconnect(String),
     /// The plan as the editor saved it; empty text removes it.
     SavePlan(String),
     /// `/access`: this chat's own approval mode, or the one it has now when none is named.
@@ -119,6 +121,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "the plugins found, to switch on or off; they live in rules/plugins/",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
+        (
+            "/disconnect",
+            "forget a provider and its key: /disconnect name",
+        ),
         (
             "/access",
             "this chat's access: ask, sandbox, arbiter, full or default",

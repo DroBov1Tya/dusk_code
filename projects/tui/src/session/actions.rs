@@ -129,6 +129,10 @@ pub async fn apply(
             }
             Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
         },
+        Action::Disconnect(name) => match client.settings().remove_provider(&name).await {
+            Ok(()) => app.flash = Some(format!("Provider {name} forgotten")),
+            Err(error) => app.error(format!("cannot forget the provider: {error:#}")),
+        },
         Action::OpenPlan => {
             let Some(thread_id) = app.thread_id.clone() else {
                 app.flash = Some("Send a message first; the plan belongs to a chat".into());

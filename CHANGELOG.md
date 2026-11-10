@@ -8,6 +8,11 @@ testing.
 
 ### Added
 
+- Providers: the GUI's Model page lists the connected providers, each with what it
+  answered and a Remove button, and connects another from a form; the TUI has
+  `/disconnect name`. The provider of the chosen model stays until another model is
+  chosen.
+
 - Notifications reach the system's own area: the TUI and the GUI post a notice when
   a chat finishes, fails, asks a question or waits for approval and the terminal or
   window is not in front, with the sound where it is on (macOS Notification Center,

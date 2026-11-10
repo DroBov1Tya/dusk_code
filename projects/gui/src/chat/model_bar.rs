@@ -134,7 +134,7 @@ impl Workspace {
         cx.notify();
     }
 
-    fn load_models(&mut self, cx: &mut Context<Self>) {
+    pub fn load_models(&mut self, cx: &mut Context<Self>) {
         self.core.call(
             cx,
             |client| async move { client.command(Command::Model { name: None }).await },

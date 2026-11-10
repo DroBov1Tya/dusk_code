@@ -262,6 +262,7 @@ impl Server {
                 let name = runtime.connect_provider(kind, name, base_url, api_key)?;
                 return Ok(Response::Text(name));
             }
+            SettingsRequest::RemoveProvider { name } => runtime.remove_provider(&name)?,
             SettingsRequest::PluginEnabled { name, enabled } => {
                 runtime.set_plugin_enabled(&name, enabled)?;
             }
