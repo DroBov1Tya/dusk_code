@@ -9,7 +9,7 @@ use ratatui::{
 use unicode_width::UnicodeWidthStr;
 
 use super::frame::window;
-use crate::app::{App, EditorButton, EditorHit, Panel, paste};
+use crate::app::{App, EditorButton, EditorHit, EditorTarget, Panel, paste};
 use crate::ui::windows::{
     input,
     theme::{ACCENT, DUSK, HAIRLINE, NEGATIVE, RAISED, TEXT_SOFT, bold, fg},
@@ -22,10 +22,11 @@ pub fn draw_paste(frame: &mut Frame, screen: Rect, app: &mut App) {
         return;
     };
     let area = window(screen, 130);
-    let mut title = vec![Span::styled(
-        format!(" {} ", paste::label(&editor.text.text)),
-        bold(DUSK),
-    )];
+    let name = match editor.target {
+        EditorTarget::Plan => "pinned plan".to_owned(),
+        EditorTarget::Paste(_) => paste::label(&editor.text.text),
+    };
+    let mut title = vec![Span::styled(format!(" {name} "), bold(DUSK))];
     if editor.changed() {
         title.push(Span::styled("changed ", fg(ACCENT)));
     }

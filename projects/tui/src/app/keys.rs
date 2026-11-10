@@ -64,8 +64,7 @@ impl App {
                 Action::None
             }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Paste(_))) => {
-                self.editor_mouse(mouse);
-                Action::None
+                self.editor_mouse(mouse)
             }
             Event::Mouse(mouse) if matches!(self.panel, Some(Panel::Update { .. })) => {
                 let pressed = mouse.kind == MouseEventKind::Down(MouseButton::Left);
@@ -707,7 +706,7 @@ impl App {
                 }
                 return Action::None;
             }
-            Panel::Paste(_) => self.editor_key(key),
+            Panel::Paste(_) => return self.editor_key(key),
             Panel::Agent(_) => return self.agent_window_key(key),
             Panel::Models(list) => match key.code {
                 _ if up || down => {

@@ -48,8 +48,9 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
       About me or as a file; `@` completes in both clients
 - [x] User `.md` snippets called as `@name` (e.g. `@video_1` with a script): a prompt
       injection the user writes on purpose; `rules/snippets/<name>.md`
-- [ ] Pinned plan agreed between the user and the model: markdown, opened in the app,
-      a view and an edit mode, on the right (GUI) and a command (TUI)
+- [x] Pinned plan agreed between the user and the model: markdown, opened in the app,
+      a view and an edit mode, on the right (GUI) and a command (TUI): `plan.md` among the
+      chat's pinned sources; GUI Plan module (also from the + menu), TUI `/plan`
 
 ## Providers and voice
 
@@ -112,7 +113,7 @@ Right column
 - [x] Activity and Context inside one "Statistics" parent that folds as one
 - [x] Environment path: a click opens a menu: Show in Finder, Open repo, Open in
       terminal, Copy path
-- [ ] Pinned plan module (see User context)
+- [x] Pinned plan module (see User context)
 - [ ] Less information at once overall: calmer, fewer simultaneous things
 
 Settings and updates
@@ -141,8 +142,8 @@ From `gui-todo.md`
 - [x] With effort off, do not print "thinking" for each action; show tps
 - [x] A typed own answer to a question wraps long lines
 - [~] Parity: background commands (Ctrl+B, jobs panel), `@me`/`@name` (Tab completes),
-      `/access` per chat and the version control settings done; editing the `@me`
-      profile and snippets, and the pinned plan, left
+      `/access` per chat and the version control settings done; the pinned plan
+      (`/plan`) done; editing the `@me` profile and snippets left
 
 ## Repository
 

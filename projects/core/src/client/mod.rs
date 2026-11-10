@@ -540,6 +540,26 @@ impl Work<'_> {
         }
     }
 
+    pub async fn plan(&self, thread_id: &str) -> Result<Option<String>> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::Plan { thread_id }))
+            .await?
+        {
+            Response::Plan(plan) => Ok(plan),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Rewrites the plan; empty text removes it.
+    pub async fn save_plan(&self, thread_id: &str, text: &str) -> Result<()> {
+        let (thread_id, text) = (thread_id.to_owned(), text.to_owned());
+        self.0
+            .done(Request::Work(WorkRequest::SavePlan { thread_id, text }))
+            .await
+    }
+
     pub async fn job_output(&self, thread_id: &str, job_id: &str) -> Result<String> {
         let (thread_id, job_id) = (thread_id.to_owned(), job_id.to_owned());
         let request = Request::Work(WorkRequest::JobOutput { thread_id, job_id });

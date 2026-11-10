@@ -23,6 +23,7 @@ impl App {
                 self.panel = Some(Panel::Unsent { selected: 0 });
                 return Action::None;
             }
+            "/plan" => return Action::OpenPlan,
             "/plugins" => {
                 self.panel = Some(Panel::Plugins {
                     selected: 0,

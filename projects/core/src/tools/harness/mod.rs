@@ -16,7 +16,9 @@ pub use display_image::DisplayImage;
 pub use goal::GoalTool;
 pub use load_skill::LoadSkill;
 pub use name_session::NameSession;
-pub use plan_edit::PlanEdit;
+pub use plan_edit::{
+    PLAN_NAME, PlanEdit, clear as clear_plan, read as read_plan, save as save_plan,
+};
 pub use read_history::ReadHistory;
 pub use remember::Remember;
 pub(crate) use remember::project_folder;

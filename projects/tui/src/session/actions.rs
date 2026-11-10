@@ -15,7 +15,10 @@ use super::{
     thread::{OpenThread, close, ensure_open, send},
 };
 use crate::{
-    app::{Action, AgentWindow, App, FileEditor, ModelList, Panel, SwitchKind, Tone, Transcript},
+    app::{
+        Action, AgentWindow, App, FileEditor, ModelList, Panel, PasteEditor, SwitchKind, Tone,
+        Transcript,
+    },
     ui,
 };
 
@@ -126,6 +129,32 @@ pub async fn apply(
             }
             Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
         },
+        Action::OpenPlan => {
+            let Some(thread_id) = app.thread_id.clone() else {
+                app.flash = Some("Send a message first; the plan belongs to a chat".into());
+                return Ok(Flow::Go);
+            };
+            match client.work().plan(&thread_id).await {
+                Ok(plan) => {
+                    let text = plan.unwrap_or_default();
+                    app.panel = Some(Panel::Paste(PasteEditor::plan(text)));
+                }
+                Err(error) => app.error(format!("cannot read the plan: {error:#}")),
+            }
+        }
+        Action::SavePlan(text) => {
+            if let Some(thread_id) = app.thread_id.clone() {
+                match client.work().save_plan(&thread_id, &text).await {
+                    Ok(()) => {
+                        app.flash = Some(match text.trim().is_empty() {
+                            true => "Plan removed".to_owned(),
+                            false => "Plan saved; the model reads it with every message".to_owned(),
+                        })
+                    }
+                    Err(error) => app.error(format!("cannot save the plan: {error:#}")),
+                }
+            }
+        }
         Action::Access(name) => {
             let Some(thread_id) = app.thread_id.clone() else {
                 app.flash = Some("Send a message first; the access mode belongs to a chat".into());

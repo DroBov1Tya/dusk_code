@@ -17,8 +17,9 @@ use crate::{
     tools::{Tool, ToolContext, schema, schema::parse_arguments},
 };
 
-/// The name the plan goes by when the call gives none.
-const DEFAULT_NAME: &str = "plan.md";
+/// The name the plan goes by; clients show the source of this name.
+pub const PLAN_NAME: &str = "plan.md";
+const MAX_PLAN_BYTES: usize = 256 * 1024;
 
 pub struct PlanEdit {
     state: Arc<State>,
@@ -65,55 +66,111 @@ impl Tool for PlanEdit {
                 .title
                 .as_deref()
                 .map(sources::clean_name)
-                .unwrap_or_else(|| DEFAULT_NAME.to_owned());
-            let bytes = arguments.content.as_bytes();
-            let folder = context.scope.workspace().join(sources::FOLDER);
-            let existing = self
-                .state
-                .sources(&self.thread_id)
-                .await?
-                .into_iter()
-                .find(|source| source.name == name);
-            match existing {
-                Some(source) => {
-                    let path = folder.join(&source.file);
-                    write(&path, bytes).await?;
-                    self.state
-                        .set_source_bytes(&self.thread_id, &source.source_id, bytes.len() as u64)
-                        .await?;
-                    Ok(format!(
-                        "the pinned plan {name} is updated ({} bytes)",
-                        bytes.len()
-                    ))
+                .unwrap_or_else(|| PLAN_NAME.to_owned());
+            let saved = save(
+                &self.state,
+                context.scope.workspace(),
+                &self.thread_id,
+                &name,
+                &arguments.content,
+            )
+            .await?;
+            Ok(match saved {
+                Saved::Updated { bytes } => {
+                    format!("the pinned plan {name} is updated ({bytes} bytes)")
                 }
-                None => {
-                    crate::init::create_private_dir(&folder)?;
-                    let source_id = Uuid::now_v7().to_string();
-                    // The end of the ID differs between sources added together.
-                    let tail = source_id[source_id.len() - 6..].to_owned();
-                    let source = Source {
-                        source_id,
-                        name: name.clone(),
-                        file: format!("{tail}-{name}"),
-                        bytes: bytes.len() as u64,
-                        pinned: false,
-                        delivered: false,
-                    };
-                    write(&folder.join(&source.file), bytes).await?;
-                    self.state.add_source(&self.thread_id, &source).await?;
-                    // `add_source` records new sources unpinned; the plan starts pinned.
-                    self.state
-                        .pin_source(&self.thread_id, &source.source_id, true)
-                        .await?;
-                    Ok(format!(
-                        "the pinned plan {name} is created ({} bytes, source #{})",
-                        bytes.len(),
-                        &source.source_id[source.source_id.len() - 8..]
-                    ))
-                }
-            }
+                Saved::Created { bytes, source_id } => format!(
+                    "the pinned plan {name} is created ({bytes} bytes, source #{})",
+                    &source_id[source_id.len() - 8..]
+                ),
+            })
         })
     }
+}
+
+pub enum Saved {
+    Created { bytes: usize, source_id: String },
+    Updated { bytes: usize },
+}
+
+/// Writes the plan named `name` among the chat's sources: the first time as a new
+/// pinned source, later over the same file.
+pub async fn save(
+    state: &State,
+    workspace: &Path,
+    thread_id: &str,
+    name: &str,
+    content: &str,
+) -> Result<Saved> {
+    ensure!(content.len() <= MAX_PLAN_BYTES, "the plan is over 256 KiB");
+    let bytes = content.as_bytes();
+    let folder = workspace.join(sources::FOLDER);
+    let existing = state
+        .sources(thread_id)
+        .await?
+        .into_iter()
+        .find(|source| source.name == name);
+    if let Some(source) = existing {
+        write(&folder.join(&source.file), bytes).await?;
+        state
+            .set_source_bytes(thread_id, &source.source_id, bytes.len() as u64)
+            .await?;
+        return Ok(Saved::Updated { bytes: bytes.len() });
+    }
+    crate::init::create_private_dir(&folder)?;
+    let source_id = Uuid::now_v7().to_string();
+    // The end of the ID differs between sources added together.
+    let tail = source_id[source_id.len() - 6..].to_owned();
+    let source = Source {
+        source_id,
+        name: name.to_owned(),
+        file: format!("{tail}-{name}"),
+        bytes: bytes.len() as u64,
+        pinned: false,
+        delivered: false,
+    };
+    write(&folder.join(&source.file), bytes).await?;
+    state.add_source(thread_id, &source).await?;
+    // `add_source` records new sources unpinned; the plan starts pinned.
+    state.pin_source(thread_id, &source.source_id, true).await?;
+    Ok(Saved::Created {
+        bytes: bytes.len(),
+        source_id: source.source_id,
+    })
+}
+
+/// The chat's plan, or none before one was written.
+pub async fn read(state: &State, workspace: &Path, thread_id: &str) -> Result<Option<String>> {
+    let Some(source) = plan_source(state, thread_id).await? else {
+        return Ok(None);
+    };
+    let path = workspace.join(sources::FOLDER).join(&source.file);
+    let text = tokio::fs::read_to_string(&path)
+        .await
+        .with_context(|| format!("read the plan {}", path.display()))?;
+    Ok(Some(text))
+}
+
+/// Drops the plan, as the user's empty edit asks.
+pub async fn clear(state: &State, workspace: &Path, thread_id: &str) -> Result<()> {
+    if let Some(source) = plan_source(state, thread_id).await? {
+        sources::ThreadSources {
+            state,
+            workspace,
+            thread_id,
+        }
+        .remove(&source.source_id)
+        .await?;
+    }
+    Ok(())
+}
+
+async fn plan_source(state: &State, thread_id: &str) -> Result<Option<Source>> {
+    Ok(state
+        .sources(thread_id)
+        .await?
+        .into_iter()
+        .find(|source| source.name == PLAN_NAME))
 }
 
 async fn write(path: &Path, bytes: &[u8]) -> Result<()> {
@@ -156,5 +213,39 @@ mod tests {
         assert!(after[0].pinned);
         assert_eq!(after[0].bytes, "# Plan\n- more".len() as u64);
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "# Plan\n- more");
+    }
+
+    #[tokio::test]
+    async fn the_user_reads_rewrites_and_clears_the_same_plan_the_model_pins() {
+        let state = Arc::new(temp_state("plan_user").await);
+        state.create_thread("thread", "test").await.unwrap();
+        let root = temp_dir("plan_user_scope");
+        std::fs::create_dir_all(&root).unwrap();
+        assert_eq!(read(&state, &root, "thread").await.unwrap(), None);
+
+        save(&state, &root, "thread", PLAN_NAME, "# Plan\n- a")
+            .await
+            .unwrap();
+        assert_eq!(
+            read(&state, &root, "thread").await.unwrap().as_deref(),
+            Some("# Plan\n- a")
+        );
+        save(&state, &root, "thread", PLAN_NAME, "# Plan\n- b")
+            .await
+            .unwrap();
+        let sources = state.sources("thread").await.unwrap();
+        assert_eq!(sources.len(), 1);
+        assert!(sources[0].pinned);
+
+        let too_big = "x".repeat(MAX_PLAN_BYTES + 1);
+        assert!(
+            save(&state, &root, "thread", PLAN_NAME, &too_big)
+                .await
+                .is_err()
+        );
+
+        clear(&state, &root, "thread").await.unwrap();
+        assert_eq!(read(&state, &root, "thread").await.unwrap(), None);
+        assert!(state.sources("thread").await.unwrap().is_empty());
     }
 }

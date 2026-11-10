@@ -12,6 +12,7 @@ mod git;
 mod glyph;
 mod jobs;
 pub mod mascot;
+pub mod plan;
 mod screenshots;
 mod todo;
 
@@ -34,12 +35,13 @@ const MODULES: &[(Right, &str)] = &[
     (Right::Screenshots, "Screenshots"),
     (Right::Git, "Changes"),
     (Right::Files, "Files"),
+    (Right::Plan, "Plan"),
     (Right::Todo, "Todo"),
     (Right::Agents, "Agents"),
     (Right::Jobs, "Jobs"),
 ];
 
-pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (panel, border, muted) = (theme.sidebar, theme.sidebar_border, theme.muted_foreground);
     let mut column = div().flex().flex_col().pb_6();
@@ -94,6 +96,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 Right::Screenshots => screenshots::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
+                Right::Plan => plan::render(ws, window, cx),
                 Right::Todo => todo::render(ws, cx),
                 Right::Agents => agents::render(ws, cx),
                 Right::Jobs => jobs::render(ws, cx),
@@ -238,6 +241,7 @@ impl Workspace {
                 .as_ref()
                 .is_some_and(|git| git.branch.is_some() || !git.branches.is_empty()),
             Right::Files => self.project.is_some(),
+            Right::Plan => plan::has_content(self),
             Right::Todo => chat.is_some_and(|chat| !chat.tasks.is_empty()),
             Right::Agents => chat.is_some_and(|chat| !chat.agents.is_empty()),
             Right::Jobs => !self.jobs.is_empty(),
@@ -259,6 +263,7 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Statistics => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
+            Right::Plan => self.load_plan(cx),
             Right::Arbiter | Right::Screenshots | Right::Todo | Right::Agents => {}
         }
     }

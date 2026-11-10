@@ -29,7 +29,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
             .tooltip("Send")
             .on_click(cx.listener(|ws, _, window, cx| ws.send(window, cx)))
     };
-    let attach = ws.attach_open.then(|| attach_menu(cx));
+    let attach = ws.attach_open.then(|| attach_menu(ws.shown.is_some(), cx));
     let queued = super::queue::render(ws, cx);
     // Output speed while the agent writes, from the core's rate events.
     let rate = ws
@@ -299,7 +299,7 @@ fn mention_menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
 }
 
 /// Files first, then folders; each opens the system's own picker.
-fn attach_menu(cx: &mut Context<Workspace>) -> Stateful<Div> {
+fn attach_menu(has_chat: bool, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     div()
         .id("attach-menu")
@@ -321,6 +321,18 @@ fn attach_menu(cx: &mut Context<Workspace>) -> Stateful<Div> {
                 .child("Files")
                 .on_click(cx.listener(|ws, _, window, cx| ws.attach(false, window, cx))),
         )
+        .children(has_chat.then(|| {
+            crate::widgets::row("attach-plan", false, cx)
+                .child(crate::widgets::icon(
+                    IconName::FileText,
+                    theme.muted_foreground,
+                ))
+                .child("Plan")
+                .on_click(cx.listener(|ws, _, _, cx| {
+                    ws.attach_open = false;
+                    ws.edit_plan(cx);
+                }))
+        }))
         .child(
             crate::widgets::row("attach-folders", false, cx)
                 .child(crate::widgets::icon(
