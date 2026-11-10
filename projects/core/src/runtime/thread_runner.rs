@@ -477,11 +477,6 @@ impl ThreadOutput {
     pub async fn next_event(&mut self) -> Option<ThreadEvent> {
         self.events.recv().await
     }
-
-    /// An event that has already arrived, without waiting.
-    pub fn ready_event(&mut self) -> Option<ThreadEvent> {
-        self.events.try_recv().ok()
-    }
 }
 
 #[cfg(test)]

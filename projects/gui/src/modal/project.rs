@@ -1,8 +1,6 @@
 //! The project form: a name, a description to write at length, and a folder typed in
 //! or picked with the system's own folder dialog.
 
-use std::path::PathBuf;
-
 use dusk_protocol::project::Project;
 use gpui_kit::{
     component::{
@@ -265,7 +263,7 @@ impl Workspace {
         let id = form.id.clone();
         let name = form.name.read(cx).value().to_string();
         let description = form.description.read(cx).value().to_string();
-        let dir = expand_home(form.dir.read(cx).value().trim());
+        let dir = dusk_core::app::expand_home(form.dir.read(cx).value().trim());
         self.core.call(
             cx,
             move |client| async move { client.projects().save(id, name, description, dir).await },
@@ -295,13 +293,5 @@ impl Workspace {
                 Err(error) => ws.fail(error, cx),
             },
         );
-    }
-}
-
-/// `~/code` as the user types it; the core resolves the rest.
-fn expand_home(path: &str) -> PathBuf {
-    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
-        (Some(rest), Some(home)) => PathBuf::from(home).join(rest),
-        _ => PathBuf::from(path),
     }
 }

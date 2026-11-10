@@ -62,19 +62,11 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
             );
         }
         page = page
-            .child(widgets::caption(capitalize(kind.name()), cx).px_0())
+            .child(widgets::caption(widgets::capitalize(kind.name()), cx).px_0())
             .child(cards);
     }
     page.child(div().pt_2().text_xs().text_color(muted).child(format!(
         "Switches apply to the {} mode. MCP tools are under Connectors.",
         settings.mode
     )))
-}
-
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }

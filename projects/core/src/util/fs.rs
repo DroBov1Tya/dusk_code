@@ -45,3 +45,11 @@ fn open_no_follow(options: &mut OpenOptions, path: &Path) -> Result<File> {
     }
     options.open(path).context("cannot open file")
 }
+
+/// A leading `~/` as people write it; the rest stays as typed.
+pub fn expand_home(path: &str) -> std::path::PathBuf {
+    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => std::path::PathBuf::from(home).join(rest),
+        _ => std::path::PathBuf::from(path),
+    }
+}

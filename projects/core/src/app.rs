@@ -24,7 +24,7 @@ pub use crate::{
         update::{VERSION, update_now},
     },
     state::artifacts::ArtifactStore,
-    util::{notify, usage::process as process_usage},
+    util::{fs::expand_home, notify, usage::process as process_usage},
 };
 use crate::{
     client::{self, Client},

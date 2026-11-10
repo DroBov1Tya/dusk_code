@@ -65,7 +65,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .w(px(56.))
                     .text_right()
                     .text_color(muted)
-                    .child(short(tokens)),
+                    .child(widgets::short(tokens)),
             )
             .child(
                 div()
@@ -88,8 +88,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(format!("{:.0}% used", share(report.total) * 100.))
                 .child(div().text_color(muted).child(format!(
                     "{} / {}",
-                    short(report.total),
-                    short(report.limit)
+                    widgets::short(report.total),
+                    widgets::short(report.limit)
                 ))),
         )
         .child(bar);
@@ -149,19 +149,11 @@ fn items(section: &ContextSection, muted: Hsla, cx: &App) -> Div {
                 .child(
                     div()
                         .text_color(cx.theme().muted_foreground)
-                        .child(short(*tokens)),
+                        .child(widgets::short(*tokens)),
                 ),
         );
     }
     list
-}
-
-fn short(tokens: u64) -> String {
-    match tokens {
-        0..1_000 => tokens.to_string(),
-        1_000..1_000_000 => format!("{:.1}k", tokens as f64 / 1e3),
-        _ => format!("{:.1}M", tokens as f64 / 1e6),
-    }
 }
 
 impl Workspace {

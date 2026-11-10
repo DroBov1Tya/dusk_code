@@ -51,7 +51,7 @@ pub fn render(
             submenu_row(
                 "menu-effort",
                 "Effort",
-                Some(capitalize(effort)),
+                Some(widgets::capitalize(effort)),
                 picker == Picker::Effort,
                 cx,
             )
@@ -176,7 +176,7 @@ fn efforts(effort: &str, cx: &mut Context<Workspace>) -> Div {
         list = list.child(
             widgets::row(SharedString::from(format!("effort-{level}")), false, cx)
                 .py_1p5()
-                .child(div().flex_1().child(capitalize(level)))
+                .child(div().flex_1().child(widgets::capitalize(level)))
                 .when(*level == effort, |row| {
                     row.child(widgets::icon(IconName::Check, accent))
                 })
@@ -210,14 +210,6 @@ fn all_models(ws: &Workspace, current: &str, cx: &mut Context<Workspace>) -> Div
         }
     }
     panel(cx).w(px(320.)).child(scroll)
-}
-
-fn capitalize(text: &str) -> String {
-    let mut chars = text.chars();
-    chars
-        .next()
-        .map(|first| first.to_uppercase().chain(chars).collect())
-        .unwrap_or_default()
 }
 
 impl Workspace {

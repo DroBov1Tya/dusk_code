@@ -222,6 +222,8 @@ impl Config {
         self.appearance.idle_screen_minutes = minutes.min(Appearance::MAX_IDLE_SCREEN_MINUTES);
     }
 
+    /// Whether the file switches the tool on, whatever the mode; the tests read it back.
+    #[cfg(test)]
     pub fn tool_enabled(&self, name: &str) -> bool {
         self.tools.get(name).copied().unwrap_or(true)
     }
