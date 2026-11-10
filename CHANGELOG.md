@@ -17,8 +17,12 @@ testing.
 ### Changed
 
 - Agents spend fewer steps and tokens: files are read a window at a time, commands keep
-  the end of their output, a failed edit shows the lines it missed, subagents no longer
-  report phases by hand, and the prompts ask for more work per step.
+  the end of their output, subagents no longer report phases by hand, and the prompts
+  ask for more work per step.
+- `write_file`, `edit_file` and `delete_file` are gone: files change through
+  `run_command`, which the sandbox confines to the same folders. A skill saved by a
+  command still gets its notice. The desktop client's per-chat Outputs module went with
+  them.
 - Requests that fail without a clear cause are tried again, up to six times, with
   growing pauses and the provider's retry-after.
 - DeepSeek cache hits are counted.

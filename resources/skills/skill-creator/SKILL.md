@@ -21,9 +21,10 @@ creating another entry for the same procedure.
 ## Save it
 
 The skill root is the parent of this skill's folder, supplied when it was loaded.
-Create `<skill-root>/<short-name>/SKILL.md` using `write_file`, or make a focused edit
-using `edit_file`. Successful file-tool saves produce Dusk's skill-save notice;
-shell writes do not. Do not claim a save succeeded before the tool confirms it.
+Create `<skill-root>/<short-name>/SKILL.md` with `run_command` (a quoted heredoc,
+`cat > file <<'EOF'`), or make a focused edit with a short script. When the command
+leaves a valid skill, Dusk adds a skill-save notice to its result; without the notice the
+file does not read as a skill. Do not claim a save succeeded before the notice.
 
 Use a short lowercase name with digits and hyphens. Dusk identifies skills by folder;
 `description` is required. For a user-owned skill, omit `source`, `author`, and `license`

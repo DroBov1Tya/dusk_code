@@ -35,14 +35,15 @@ fit duskcode, from its source at v2.2.6:
 
 The evidence on tool design (Codex, Terminus, Vercel d0): models do best with
 the interface they were trained on. Fewer, generic tools win when the generic tool is
-the shell; reading and editing still gain from dedicated tools with limits, line windows
-and clear errors. So duskcode keeps one edit tool and lets the shell do the rest.
+the shell. So duskcode keeps a read tool with limits and line windows, and every change
+to files goes through `run_command`, confined by the sandbox like any other command.
+Each tool less is a shorter prefix on every request and one fewer choice per step.
 
 ## Plan, by gain
 
 - [x] `read_file` reads a window: 2000 lines or 50 KiB from an offset.
 - [x] `run_command` keeps the first 8 KiB and the last 24 KiB of each stream.
-- [x] `edit_file` miss shows the nearest lines; CRLF-tolerant match.
+- [x] Write, edit and delete tools removed; the shell does it inside the sandbox.
 - [x] Prompt: batch independent calls in one step; think only about what decides the next
       step; no `sleep` polling, use background commands.
 - [ ] Run read-only tool calls of one step in parallel. Low gain: those tools take

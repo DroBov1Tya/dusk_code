@@ -357,7 +357,7 @@ impl Transcript {
         let mut saved = None;
         let running = self.entries.iter_mut().rev().find_map(|entry| match entry {
             Entry::Tool { call, result, .. } if call.id == call_id && result.is_none() => {
-                if !finished.is_error && matches!(call.name.as_str(), "write_file" | "edit_file") {
+                if !finished.is_error && call.name == "run_command" {
                     saved = SkillSave::from_result(&finished.content);
                 }
                 Some(result)

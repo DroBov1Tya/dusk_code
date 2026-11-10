@@ -1,7 +1,7 @@
 //! What one chat shows, built from its history and then from its live events. Plain
 //! data, so the drawing code only reads it.
 
-use std::{collections::BTreeMap, path::PathBuf, time::Instant};
+use std::{collections::BTreeMap, time::Instant};
 
 use dusk_protocol::{
     artifact::ImageArtifact,
@@ -115,8 +115,6 @@ pub struct Transcript {
     pub title: Option<String>,
     /// Text the core gave back, such as after /undo, for the composer to offer again.
     pub offered: Option<String>,
-    /// Files the chat wrote or edited, oldest first, as the tools were given them.
-    pub outputs: Vec<PathBuf>,
     /// What each subagent of the chat said and did, by its thread ID.
     pub agent_chats: BTreeMap<String, Transcript>,
     /// What passed between the agents and the arbiter, oldest first.
@@ -148,7 +146,6 @@ impl Transcript {
                     });
                 }
                 for call in &message.tool_calls {
-                    self.note_output(&call.name, &call.arguments);
                     self.items.push(Item::Tool(Tool {
                         call_id: call.id.clone(),
                         name: call.name.clone(),
@@ -191,7 +188,6 @@ impl Transcript {
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => {
-                self.note_output(&call.name, &call.arguments);
                 self.items.push(Item::Tool(Tool {
                     detail: summary(&call.arguments),
                     arguments: clip(&call.arguments.to_string()),
@@ -343,19 +339,6 @@ impl Transcript {
             .collect();
         counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
         counts
-    }
-
-    /// Writing tools leave a file the user may want to open.
-    fn note_output(&mut self, tool: &str, arguments: &serde_json::Value) {
-        if !matches!(tool, "write_file" | "edit_file") {
-            return;
-        }
-        let Some(path) = arguments.get("path").and_then(|path| path.as_str()) else {
-            return;
-        };
-        let path = PathBuf::from(path);
-        self.outputs.retain(|known| *known != path);
-        self.outputs.push(path);
     }
 
     fn agent_name(&self, thread_id: &str) -> String {
