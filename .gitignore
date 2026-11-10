@@ -12,6 +12,12 @@
 # Eval runs
 /evals/results/
 
+# Working notes: plans, the todo list and analyses stay on the machine of whoever keeps them
+/docs/todo.md
+/docs/gui-todo.md
+/docs/frontier-gap.md
+/docs/weak-models.md
+
 # Secrets and local settings: never commit keys, tokens or a user's config
 .env
 .env.*
