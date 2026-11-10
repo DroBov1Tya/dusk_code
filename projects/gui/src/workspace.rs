@@ -103,6 +103,9 @@ pub struct Workspace {
     pub files: BTreeMap<String, Vec<FileEntry>>,
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
+    pub alerts: crate::notify::Alerts,
+    /// Parts of the context unfolded to what they are made of, by name.
+    pub context_open: HashSet<String>,
     pub jobs: Vec<JobInfo>,
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
@@ -238,6 +241,8 @@ impl Workspace {
             files: BTreeMap::new(),
             expanded: HashSet::new(),
             context: None,
+            alerts: Default::default(),
+            context_open: HashSet::new(),
             jobs: Vec::new(),
             settings: None,
             providers: Vec::new(),
@@ -269,6 +274,7 @@ impl Workspace {
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
         workspace.load_about_me(cx);
+        Self::answer_notifications(cx);
         workspace
     }
 
@@ -315,6 +321,7 @@ impl Workspace {
                     *event,
                     dusk_protocol::thread::ThreadEvent::TitleChanged { .. }
                 );
+                self.notify_event(&thread_id, &event, cx);
                 let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     let was_working = chat.working;
@@ -404,5 +411,6 @@ impl Render for Workspace {
             .children(chat_menu)
             .on_action(cx.listener(Self::copy_code))
             .on_action(cx.listener(Self::ask_run))
+            .capture_key_down(cx.listener(Self::menu_keys))
     }
 }

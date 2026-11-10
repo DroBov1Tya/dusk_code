@@ -168,9 +168,23 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
             };
             let mut found = false;
             for entry in item.entries() {
-                if let ClipboardEntry::ExternalPaths(paths) = entry {
-                    ws.attachments.extend(paths.paths().iter().cloned());
-                    found = true;
+                match entry {
+                    ClipboardEntry::ExternalPaths(paths) => {
+                        ws.attachments.extend(paths.paths().iter().cloned());
+                        found = true;
+                    }
+                    // A screenshot becomes a file; on send the core copies it among the
+                    // chat's sources, as it does a dropped picture.
+                    ClipboardEntry::Image(image)
+                        if matches!(image.format, ImageFormat::Png | ImageFormat::Jpeg) =>
+                    {
+                        match ws.keep_pasted_image(image) {
+                            Ok(path) => ws.attachments.push(path),
+                            Err(error) => ws.fail(error, cx),
+                        }
+                        found = true;
+                    }
+                    _ => {}
                 }
             }
             // A long text becomes a chip; the core keeps it as a file of the chat.
@@ -323,6 +337,33 @@ fn attach_menu(cx: &mut Context<Workspace>) -> Stateful<Div> {
 }
 
 impl Workspace {
+    /// Writes a pasted picture next to the core's pictures, readable by this user only.
+    fn keep_pasted_image(&self, image: &Image) -> anyhow::Result<std::path::PathBuf> {
+        use anyhow::Context as _;
+        let folder = self.status.artifacts_dir.join("pasted");
+        let mut builder = std::fs::DirBuilder::new();
+        builder.recursive(true);
+        #[cfg(unix)]
+        std::os::unix::fs::DirBuilderExt::mode(&mut builder, 0o700);
+        builder
+            .create(&folder)
+            .context("cannot create the pasted pictures folder")?;
+        let stamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_millis());
+        let path = folder.join(format!("pasted-{stamp}.{}", image.format.extension()));
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        std::os::unix::fs::OpenOptionsExt::mode(&mut options, 0o600);
+        let mut file = options
+            .open(&path)
+            .context("cannot save the pasted picture")?;
+        std::io::Write::write_all(&mut file, &image.bytes)
+            .context("cannot save the pasted picture")?;
+        Ok(path)
+    }
+
     /// Where the `@` word before the cursor starts, and what follows its `@`.
     fn mention_word(&self, cx: &App) -> Option<(usize, String)> {
         let composer = self.composer.read(cx);
@@ -385,7 +426,12 @@ impl Workspace {
             if !text.is_empty() {
                 text.push('\n');
             }
-            text.push_str(&path.display().to_string());
+            // A path with spaces goes quoted, so the core reads it as one.
+            let path = path.display().to_string();
+            match path.contains(char::is_whitespace) && !path.contains('"') {
+                true => text.push_str(&format!("\"{path}\"")),
+                false => text.push_str(&path),
+            }
         }
         if text.is_empty() {
             return;

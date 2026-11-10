@@ -8,6 +8,11 @@ testing.
 
 ### Added
 
+- GUI: system notifications when a chat finishes, fails or asks while the window is in
+  the background; a pasted screenshot becomes an attachment; a part of the context
+  unfolds to what it is made of; digits 1-6 pick a model in the model menu.
+- MCP servers take an `icon:`, a picture in `~/.config/duskcode/icons/`, shown on their
+  card.
 - `@me` and `@name` in a message: the profile (who you are, files marked to send) and
   the user's snippets become the chat's sources when it is sent; `@` completes in the
   TUI and GUI, and GUI Settings > About me edits both.

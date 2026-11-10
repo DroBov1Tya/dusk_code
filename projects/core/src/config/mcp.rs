@@ -27,6 +27,9 @@ pub struct StdioServerConfig {
     pub args: Vec<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub env: BTreeMap<String, String>,
+    /// A picture in the config's `icons` folder, by file name, shown on its card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 /// A remote server over Streamable HTTP. `headers` go with every request and may hold
@@ -39,6 +42,9 @@ pub struct HttpServerConfig {
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub headers: BTreeMap<String, String>,
+    /// A picture in the config's `icons` folder, by file name, shown on its card.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
 }
 
 impl McpServerConfig {
@@ -53,6 +59,13 @@ impl McpServerConfig {
         match self {
             Self::Stdio(server) => server.enabled = enabled,
             Self::Http(server) => server.enabled = enabled,
+        }
+    }
+
+    pub fn icon(&self) -> Option<&str> {
+        match self {
+            Self::Stdio(server) => server.icon.as_deref(),
+            Self::Http(server) => server.icon.as_deref(),
         }
     }
 

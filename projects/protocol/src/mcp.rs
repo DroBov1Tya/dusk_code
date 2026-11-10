@@ -29,6 +29,9 @@ pub struct McpInfo {
     pub state: McpState,
     /// The tools of a ready server, by the name the model calls; empty otherwise.
     pub tools: Vec<McpToolInfo>,
+    /// Its picture, a file the core found in the config's `icons` folder.
+    #[serde(default)]
+    pub icon: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

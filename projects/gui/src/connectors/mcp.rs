@@ -87,6 +87,7 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
                     kind: kind.to_owned(),
                     description,
                     state: Some((state, color)),
+                    icon: server.icon.clone(),
                 },
                 actions,
                 cx,
