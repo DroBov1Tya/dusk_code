@@ -255,6 +255,7 @@ fn act(
                 ("qa-engineer", "Write tests for expiry"),
                 ("code-reviewer", "Review the diff of src/lib.rs"),
                 ("sre-engineer", "Measure memory growth"),
+                ("docs", "Read the old notes"),
                 ("general", "Summarize the findings"),
             ];
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
@@ -274,8 +275,18 @@ fn act(
                             arguments: serde_json::json!({"pattern": "ttl"}),
                         })),
                         2 => Some(ThreadEvent::Model(ModelEvent::Text("fn expired".into()))),
+                        3 => Some(ThreadEvent::ToolStarted(ToolCall {
+                            id: "t3".into(),
+                            name: "run_command".into(),
+                            arguments: serde_json::json!({"command": "cargo test"}),
+                        })),
                         4 => Some(ThreadEvent::Idle),
-                        5 => Some(ThreadEvent::Failed("the provider is unavailable".into())),
+                        5 => Some(ThreadEvent::ToolStarted(ToolCall {
+                            id: "t5".into(),
+                            name: "read_file".into(),
+                            arguments: serde_json::json!({"path": "notes.md"}),
+                        })),
+                        6 => Some(ThreadEvent::Failed("the provider is unavailable".into())),
                         _ => None,
                     };
                     if let Some(event) = inner {
