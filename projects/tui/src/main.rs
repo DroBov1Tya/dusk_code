@@ -36,6 +36,7 @@ async fn main() -> Result<()> {
     }
     let (paths, state_db, thread) = match args::parse_args() {
         Args::Run { state_db, thread } => (Paths::from_home()?, state_db, thread),
+        Args::Headless(options) => return cli::run::run(options).await,
         Args::Restore { archive } => return cli::restore::run(&archive),
         Args::RecoverRestore => return cli::restore::recover(),
         Args::Remove => return cli::remove::run(&Paths::from_home()?),

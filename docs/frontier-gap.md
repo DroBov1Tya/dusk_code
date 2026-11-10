@@ -13,7 +13,7 @@ on it).
 | Gap | What they do | duskcode now | Evidence |
 |---|---|---|---|
 | Measuring every change | Teams run a benchmark per change (Terminal-Bench, SWE-style sets) and trade pass rate against cost | 12 small eval tasks, 2 runs each; a pass rate cannot be read from that | measured |
-| Headless mode | `claude -p`, `codex exec`, `opencode run`: one prompt in, result out; the way benchmarks, CI and scripts drive an agent | none found: the binary starts the TUI or the GUI | check |
+| Headless mode | `claude -p`, `codex exec`, `opencode run`: one prompt in, result out; the way benchmarks, CI and scripts drive an agent | `duskcode run "prompt"` (done); evals still drive the core directly | measured |
 | Old tool output | opencode prunes old tool outputs; Claude Code can clear stale tool results | every result stays until compaction; 86% of stored content is tool output, re-read about 130 times in a long run | measured / check |
 | Lazy tool loading | Claude Code loads MCP tool definitions on demand when they grow large | all enabled tools go in every request; the 128-tool cap is gone, so a big MCP server now costs every call | check |
 | Feedback after an edit | opencode feeds language-server diagnostics back; the shell tools of all of them show test output | the model learns of a type error only if it runs the build; 7% of edits failed on "found 0 matches" before the edit tools were removed | measured / check |
@@ -36,8 +36,8 @@ on it).
 1. **An eval run that can be trusted.** A Terminal-Bench subset through Harbor, with
    pass rate, tokens, time and cost per task, run before and after each change below.
    Without it every item here is a guess.
-2. **A headless mode** (`duskcode run "prompt"` printing the answer and a JSON usage
-   line). It is also what 1 needs.
+2. ~~A headless mode~~ done: `duskcode run`, with `--json` usage. The eval runner can use
+   it to run a task the way a user would.
 3. **Stub old tool results.** Replace a result older than N steps and larger than M
    tokens with one line (what ran, size, how to see it again). One cache break, then a
    smaller prefix for the rest of the run. Prove with 1 that the model does not re-run
