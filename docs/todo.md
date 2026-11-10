@@ -29,6 +29,9 @@ Marks: `[x]` done, `[~]` core done or partly done, `[ ]` open.
       (TUI Ctrl+B, GUI "To background" on the running step)
 - [x] `run_command` runs in the background: the chat stays writable while it works;
       a running command can be moved to the background (TUI + GUI)
+- [ ] Frontier gaps (`frontier-gap.md`): trusted eval run (Terminal-Bench subset), headless
+      `run` mode, stubbing old tool results, MCP tools loaded on demand, a cheap model per
+      role, diagnostics after edits, patch tool experiment, background compaction
 - [ ] MCP code mode: the model writes one script that calls a set of MCP tools
 - [x] Subagent answers are their own step on the agent's side (not the user's message),
       foldable, outside the thinking/tools fold (GUI; the TUI already did)
