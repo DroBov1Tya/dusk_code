@@ -49,7 +49,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_col()
         .child(line(IconName::Folder, name))
-        .child(div().relative().child(folder).children(menu))
+        .child(
+            div()
+                .relative()
+                .child(folder)
+                .children(menu.map(crate::widgets::on_top)),
+        )
         .child(line(IconName::Github, branch))
         .child(line(
             IconName::Cpu,

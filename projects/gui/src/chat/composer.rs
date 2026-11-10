@@ -139,7 +139,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .bg(cx.theme().muted)
                 .relative()
                 .children(navigator)
-                .children(mentions)
+                .children(mentions.map(crate::widgets::on_top))
                 .child(
                     Button::new("attach")
                         .ghost()
@@ -160,7 +160,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .children(agents_button(ws, cx))
                 .child(button),
         )
-        .children(attach)
+        .children(attach.map(crate::widgets::on_top))
         // Files copied in the file manager arrive as files, not as their names.
         .capture_action(cx.listener(|ws, _: &Paste, _, cx| {
             let Some(item) = cx.read_from_clipboard() else {
@@ -304,6 +304,7 @@ fn attach_menu(has_chat: bool, cx: &mut Context<Workspace>) -> Stateful<Div> {
     div()
         .id("attach-menu")
         .absolute()
+        .occlude()
         .bottom(px(64.))
         .left(px(24.))
         .w(px(220.))

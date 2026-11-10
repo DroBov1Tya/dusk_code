@@ -65,3 +65,10 @@ pub fn muted(text: impl Into<SharedString>, cx: &App) -> Div {
         .text_color(cx.theme().muted_foreground)
         .child(text.into())
 }
+
+/// A menu or a list that opens over the page: painted after everything else, so no text
+/// or button beside it shows through, and it takes the mouse so nothing below reacts.
+/// Give it an opaque background too, such as the theme's popover color.
+pub fn on_top(popup: impl IntoElement + 'static) -> Deferred {
+    deferred(popup).with_priority(1)
+}

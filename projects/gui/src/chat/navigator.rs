@@ -5,7 +5,7 @@
 
 use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 
-use crate::workspace::Workspace;
+use crate::{widgets::on_top, workspace::Workspace};
 
 const TICKS: usize = 4;
 /// The first words that fit a catalog line.
@@ -96,6 +96,7 @@ pub fn render(
             .border_color(border)
             .bg(panel)
             .shadow_lg()
+            .occlude()
             .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
                 ws.navigator_open = *hovered;
                 cx.notify();
@@ -117,5 +118,5 @@ pub fn render(
             }
         }))
         .child(ticks)
-        .when_some(catalog, |nav, catalog| nav.child(catalog))
+        .when_some(catalog, |nav, catalog| nav.child(on_top(catalog)))
 }
