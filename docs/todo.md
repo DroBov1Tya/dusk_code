@@ -101,7 +101,7 @@ Arbiter
       the center, points pull in as it passes and return, the whole mass breathing
 
 Left column
-- [x] "duskcode" at the top left: "dusk" in a violet to sunset orange gradient
+- [x] "Duskcode" at the top left: "Dusk" in a violet to sunset orange gradient
 - [x] A working animation on chats where an agent runs
 - [x] Right click menu: highlight the hovered item; menus near the bottom open upward
 - [x] Delete button must not click through to the chat under it

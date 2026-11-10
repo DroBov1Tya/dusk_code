@@ -128,7 +128,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         )
 }
 
-/// The name at the top: "dusk" from violet to a sunset orange, "code" plain.
+/// The name at the top: "Dusk" from violet to a sunset orange, "code" plain.
 fn wordmark(cx: &App) -> Div {
     // Violet, magenta, rose, orange: one hue per letter along the dusk sky.
     const DUSK: [(f32, f32, f32); 4] = [
@@ -142,7 +142,7 @@ fn wordmark(cx: &App) -> Div {
         .flex_row()
         .text_lg()
         .font_weight(FontWeight::SEMIBOLD);
-    for (letter, (hue, saturation, lightness)) in "dusk".chars().zip(DUSK) {
+    for (letter, (hue, saturation, lightness)) in "Dusk".chars().zip(DUSK) {
         word = word.child(
             div()
                 .text_color(hsla(hue / 360., saturation, lightness, 1.))
