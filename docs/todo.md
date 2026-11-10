@@ -1,6 +1,6 @@
 # Todo
 
-The working list after 0.71.1 (user requests, 2026-11-10). GUI-only history and the
+The working list after 0.71.2 (user requests, 2026-11-10). GUI-only history and the
 framework notes live in `gui-todo.md`. Rules: the client only draws and calls the core;
 TUI and GUI stay at parity; no release, tag or version bump without the user's order.
 

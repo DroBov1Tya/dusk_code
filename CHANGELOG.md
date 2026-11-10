@@ -6,6 +6,8 @@ testing.
 
 ## Unreleased
 
+## 0.71.2 - 2026-11-10
+
 ### Added
 
 - GUI: system notifications when a chat finishes, fails or asks while the window is in
