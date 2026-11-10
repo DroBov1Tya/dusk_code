@@ -6,6 +6,7 @@ use gpui_kit::{component::text::TextView, *};
 pub fn markdown(id: impl Into<ElementId>, text: String) -> TextView {
     TextView::markdown(id, text)
         .selectable(true)
+        .code_block_actions(super::code::actions)
         .on_link_click(|url, _, _, cx| {
             if is_web(url) {
                 cx.open_url(url);

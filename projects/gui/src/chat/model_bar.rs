@@ -10,6 +10,7 @@ use gpui_kit::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -81,12 +82,23 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     ws.toggle_picker(Picker::Mode, cx);
                 })),
         )
+        .when(ws.shown.is_some(), |bar| {
+            bar.child(
+                Button::new("access")
+                    .ghost()
+                    .xsmall()
+                    .label(super::access_menu::current(ws).name())
+                    .tooltip("What this chat's tools may do without asking")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Access, cx))),
+            )
+        })
         .child(div().flex_1())
         .children(ws.shown_chat().and_then(|chat| chat.cost.clone()))
         .child(format!("{} / {}", short(used), short(limit)))
         .child(super::ring::render(share, meter, border));
     let menu = ws.picker.map(|picker| match picker {
         Picker::Mode => super::mode_menu::render(ws, cx),
+        Picker::Access => super::access_menu::render(ws, cx),
         picker => super::model_menu::render(ws, picker, &effort, cx),
     });
     div().relative().child(bar).children(menu)

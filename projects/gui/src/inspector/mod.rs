@@ -11,6 +11,7 @@ mod files;
 mod git;
 mod glyph;
 mod jobs;
+mod screenshots;
 mod todo;
 
 use gpui_kit::{
@@ -30,6 +31,7 @@ const MODULES: &[(Right, &str)] = &[
     (Right::Arbiter, "Arbiter"),
     (Right::Context, "Context"),
     (Right::Activity, "Activity"),
+    (Right::Screenshots, "Screenshots"),
     (Right::Git, "Changes"),
     (Right::Files, "Files"),
     (Right::Todo, "Todo"),
@@ -90,6 +92,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 Right::Arbiter => arbiter_summary(ws, cx),
                 Right::Context => context::render(ws, cx),
                 Right::Activity => activity::render(ws, cx),
+                Right::Screenshots => screenshots::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
                 Right::Todo => todo::render(ws, cx),
@@ -208,6 +211,7 @@ impl Workspace {
             }
             Right::Context => self.context.is_some(),
             Right::Activity => chat.is_some_and(|chat| !chat.activity().is_empty()),
+            Right::Screenshots => chat.is_some_and(|chat| !chat.screenshots.is_empty()),
             Right::Git => self
                 .git
                 .as_ref()
@@ -234,7 +238,8 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Context => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
-            Right::Arbiter | Right::Activity | Right::Todo | Right::Agents => {}
+            Right::Arbiter | Right::Activity | Right::Screenshots | Right::Todo | Right::Agents => {
+            }
         }
     }
 }

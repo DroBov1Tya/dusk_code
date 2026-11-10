@@ -65,6 +65,16 @@ pub struct Launcher {
 }
 
 impl Launcher {
+    /// Where a thread's tools act: its project and workspace, the skills and agents
+    /// folders, never the rest of the config folder.
+    pub fn scope(&self, cwd: &Path, workspace: &Path) -> Result<ToolScope> {
+        Ok(ToolScope::new(cwd, workspace)?
+            .protect(self.paths.config_root())
+            .share(&self.paths.skills_dir())
+            .with_skills(&self.paths.skills_dir())
+            .share(&self.paths.agents_dir()))
+    }
+
     /// `agent` is the agent the thread works as, `None` for a chat or the general agent;
     /// `depth` counts the agents above it.
     pub fn setup(
@@ -81,13 +91,7 @@ impl Launcher {
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
-            scope: Arc::new(
-                ToolScope::new(cwd, workspace)?
-                    .protect(self.paths.config_root())
-                    .share(&self.paths.skills_dir())
-                    .with_skills(&self.paths.skills_dir())
-                    .share(&self.paths.agents_dir()),
-            ),
+            scope: Arc::new(self.scope(cwd, workspace)?),
             project: project::context(cwd),
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),

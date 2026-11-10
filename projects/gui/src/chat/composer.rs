@@ -17,7 +17,6 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
     let button = if working {
         Button::new("stop")
             .danger()
-            .small()
             .rounded(ButtonRounded::Size(px(999.)))
             .icon(IconName::Square)
             .tooltip("Stop")
@@ -25,7 +24,6 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
     } else {
         Button::new("send")
             .primary()
-            .small()
             .rounded(ButtonRounded::Size(px(999.)))
             .icon(IconName::ArrowUp)
             .tooltip("Send")
@@ -89,7 +87,34 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 ),
         );
     }
-    let chips = (!ws.attachments.is_empty()).then_some(chips);
+    for (index, text) in ws.pastes.iter().enumerate() {
+        chips = chips.child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .pl_2()
+                .rounded_md()
+                .bg(cx.theme().accent)
+                .text_xs()
+                .child(crate::widgets::icon(IconName::FileText, muted))
+                .child(paste_label(text))
+                .child(
+                    Button::new(("unpaste", index))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .on_click(cx.listener(move |ws, _, _, cx| {
+                            if index < ws.pastes.len() {
+                                ws.pastes.remove(index);
+                            }
+                            cx.notify();
+                        })),
+                ),
+        );
+    }
+    let chips = (!ws.attachments.is_empty() || !ws.pastes.is_empty()).then_some(chips);
     div()
         .relative()
         .px_6()
@@ -98,6 +123,8 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
         .mx_auto()
         .w_full()
         .children(queued)
+        // What goes with the message sits above the box, where it is read first.
+        .children(chips.map(|chips| div().pb_2().child(chips)))
         .child(
             div()
                 .flex()
@@ -114,7 +141,6 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .child(
                     Button::new("attach")
                         .ghost()
-                        .small()
                         .rounded(ButtonRounded::Size(px(999.)))
                         .icon(IconName::Plus)
                         .tooltip("Attach files or folders")
@@ -132,7 +158,6 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .child(button),
         )
         .children(attach)
-        .children(chips.map(|chips| div().pt_2().child(chips)))
         // Files copied in the file manager arrive as files, not as their names.
         .capture_action(cx.listener(|ws, _: &Paste, _, cx| {
             let Some(item) = cx.read_from_clipboard() else {
@@ -144,6 +169,14 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                     ws.attachments.extend(paths.paths().iter().cloned());
                     found = true;
                 }
+            }
+            // A long text becomes a chip; the core keeps it as a file of the chat.
+            if !found
+                && let Some(text) = item.text()
+                && text.chars().count() > PASTE_THRESHOLD
+            {
+                ws.pastes.push(text);
+                found = true;
             }
             if found {
                 cx.stop_propagation();
@@ -158,6 +191,14 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 ws.next_mode(cx);
             }
         }))
+}
+
+/// Pastes longer than this, in characters, become a chip, as in the terminal client.
+const PASTE_THRESHOLD: usize = 1500;
+
+/// `pasted text · 120 lines`.
+pub fn paste_label(text: &str) -> String {
+    format!("pasted text \u{00B7} {} lines", text.lines().count())
 }
 
 /// Files first, then folders; each opens the system's own picker.
@@ -203,6 +244,12 @@ impl Workspace {
     /// project when none is shown.
     pub fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut text = self.composer.read(cx).value().trim().to_owned();
+        for pasted in std::mem::take(&mut self.pastes) {
+            if !text.is_empty() {
+                text.push('\n');
+            }
+            text.push_str(&dusk_protocol::pasted::wrap(&pasted));
+        }
         // Attached files go as their paths; the core keeps them among the chat's sources.
         for path in std::mem::take(&mut self.attachments) {
             if !text.is_empty() {

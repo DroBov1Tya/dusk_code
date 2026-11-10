@@ -102,6 +102,11 @@ pub enum ThreadRequest {
     Cancel {
         thread_id: String,
     },
+    /// Runs a command the user confirmed, in the chat's folder; answers with its output.
+    RunCommand {
+        thread_id: String,
+        command: String,
+    },
     /// Stops the thread's turn and waits for it to end, so it can be opened again.
     Close {
         thread_id: String,

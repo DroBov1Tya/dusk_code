@@ -289,6 +289,32 @@ async fn run(
     })
 }
 
+/// Most a command the user runs from the client may be, as for background jobs.
+const MAX_USER_COMMAND_BYTES: usize = 16 * 1024;
+
+/// Runs a command the user confirmed in the client, confined as the thread's tools are.
+/// Its yes was the approval, so nothing is asked again.
+pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String> {
+    ensure!(!command.trim().is_empty(), "command is empty");
+    ensure!(
+        command.len() <= MAX_USER_COMMAND_BYTES,
+        "command is longer than {MAX_USER_COMMAND_BYTES} bytes"
+    );
+    platform::login_path::load().await;
+    let confinement = confinement(context).await;
+    let scope = &*context.scope;
+    let ran = run(
+        command,
+        scope.cwd(),
+        None,
+        scope,
+        confinement.as_ref(),
+        DEFAULT_TIMEOUT_SECONDS,
+    )
+    .await?;
+    Ok(ran.content)
+}
+
 /// How the command is confined in sandbox mode, by the scope it runs in.
 pub async fn confinement(context: &ToolContext) -> Option<Confinement> {
     let scope = &*context.scope;

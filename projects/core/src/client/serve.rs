@@ -170,6 +170,9 @@ impl Server {
                 }
                 Response::Done
             }
+            ThreadRequest::RunCommand { thread_id, command } => {
+                Response::Text(runtime.run_for_user(&thread_id, &command).await?)
+            }
             ThreadRequest::Cancel { thread_id } => {
                 self.open_thread(&thread_id)?.input.cancel().await?;
                 Response::Done

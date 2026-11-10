@@ -17,13 +17,15 @@ pub fn render(
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, foreground, panel, border, raised) = (
+    let (muted, foreground, mut panel, border, raised) = (
         theme.muted_foreground,
         theme.foreground,
         theme.popover,
         theme.border,
         theme.accent,
     );
+    // Opaque, so the chat behind does not show through the list.
+    panel.a = 1.0;
     let mut ticks = div().flex().flex_col().gap_1p5().py_1();
     for _ in 0..TICKS.min(sent.len()) {
         ticks = ticks.child(

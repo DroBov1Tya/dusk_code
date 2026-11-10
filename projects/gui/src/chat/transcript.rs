@@ -110,6 +110,11 @@ pub struct Transcript {
     pub tokens: Option<(u64, u64)>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
+    /// Screenshots the model took to see the screen, oldest first: they go to the right
+    /// column, not into the chat, which keeps the pictures it chose to show.
+    pub screenshots: Vec<Picture>,
+    /// The chat's own access mode; `None` follows the default in settings.
+    pub access: Option<dusk_protocol::config::ApprovalPolicy>,
     pub tasks: Vec<Task>,
     pub agents: BTreeMap<String, Agent>,
     pub approvals: Vec<ApprovalRequest>,
@@ -166,8 +171,21 @@ impl Transcript {
                 }
             }
         }
-        for artifact in &message.artifacts {
-            self.items.push(Item::Image(artifact.into()));
+        let call_id = message.tool_call_id.as_deref().unwrap_or_default();
+        self.add_pictures(call_id, &message.artifacts);
+    }
+
+    /// Pictures a tool returned: those `display_image` shows go into the chat, the rest
+    /// are screenshots for the right column.
+    fn add_pictures(&mut self, call_id: &str, artifacts: &[ImageArtifact]) {
+        let shown = self
+            .tool_mut(call_id)
+            .is_none_or(|tool| tool.name == "display_image");
+        for artifact in artifacts {
+            match shown {
+                true => self.items.push(Item::Image(artifact.into())),
+                false => self.screenshots.push(artifact.into()),
+            }
         }
     }
 
@@ -208,9 +226,7 @@ impl Transcript {
                     };
                     tool.output = clip(&result.content);
                 }
-                for artifact in &result.artifacts {
-                    self.items.push(Item::Image(artifact.into()));
-                }
+                self.add_pictures(&call_id, &result.artifacts);
             }
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = Some((context(&tokens), limit));
