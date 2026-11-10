@@ -114,7 +114,9 @@ Right column
 - [x] Environment path: a click opens a menu: Show in Finder, Open repo, Open in
       terminal, Copy path
 - [x] Pinned plan module (see User context)
-- [ ] Less information at once overall: calmer, fewer simultaneous things
+- [x] Less information at once overall: the right column starts with only the plan, the
+      todo and the agents open; a folded module says how it stands in its header
+      (percent, count, branch); the folds are kept between runs
 
 Settings and updates
 - [x] App icon on a bare binary (Dock on macOS, app ID on Linux)

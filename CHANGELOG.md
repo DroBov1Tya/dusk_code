@@ -8,6 +8,10 @@ testing.
 
 ### Added
 
+- GUI: the right column is calmer. At first start only the plan, the todo and the
+  agents are open, a folded module shows a few words of its state in its header, and
+  which modules are folded is kept between runs.
+
 - GUI: the options of a question from the agent are numbered cards, the chosen one
   outlined.
 

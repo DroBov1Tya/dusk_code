@@ -53,6 +53,60 @@ pub enum Right {
     Jobs,
 }
 
+impl Right {
+    const ALL: [Right; 9] = [
+        Right::Arbiter,
+        Right::Statistics,
+        Right::Screenshots,
+        Right::Git,
+        Right::Files,
+        Right::Plan,
+        Right::Todo,
+        Right::Agents,
+        Right::Jobs,
+    ];
+
+    /// The name the choice of folding is kept under.
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Arbiter => "arbiter",
+            Self::Statistics => "statistics",
+            Self::Screenshots => "screenshots",
+            Self::Git => "git",
+            Self::Files => "files",
+            Self::Plan => "plan",
+            Self::Todo => "todo",
+            Self::Agents => "agents",
+            Self::Jobs => "jobs",
+        }
+    }
+
+    /// What the work itself is about stays open; the rest opens when asked.
+    fn folded_at_first() -> HashSet<Right> {
+        [
+            Right::Arbiter,
+            Right::Statistics,
+            Right::Screenshots,
+            Right::Git,
+            Right::Files,
+            Right::Jobs,
+        ]
+        .into_iter()
+        .collect()
+    }
+
+    /// The modules folded as the user left them, or at first start.
+    pub fn folded_from(kept: Option<&[String]>) -> HashSet<Right> {
+        match kept {
+            Some(keys) => Self::ALL
+                .into_iter()
+                .filter(|module| keys.iter().any(|key| key == module.key()))
+                .collect(),
+            None => Self::folded_at_first(),
+        }
+    }
+}
+
 /// The model menu over the composer, and which of its submenus is open.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Picker {
@@ -224,7 +278,7 @@ impl Workspace {
             center: Center::Chat,
             shelf: Shelf::Connectors,
             shelf_search,
-            folded: [Right::Files, Right::Jobs].into_iter().collect(),
+            folded: Right::folded_from(crate::theme::prefs(cx).right_folded.as_deref()),
             modal: None,
             settings_page: SettingsPage::Appearance,
             font_search,
