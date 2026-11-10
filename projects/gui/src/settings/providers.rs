@@ -55,7 +55,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_col()
         .pt_4()
-        .child(widgets::caption("Providers", cx));
+        .child(widgets::caption("Providers", cx).px_0());
     if ws.providers.is_empty() {
         column = column.child(widgets::muted("Asking the providers...", cx).px_0());
     }
@@ -80,7 +80,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(
             div()
                 .pt_6()
-                .child(widgets::caption("Connect a provider", cx)),
+                .child(widgets::caption("Connect a provider", cx).px_0()),
         )
         .child(
             div().text_sm().text_color(muted).child(

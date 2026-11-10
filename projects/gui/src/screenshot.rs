@@ -5,6 +5,11 @@
 //! - `wait=MS`: let the core answer and the window draw;
 //! - `project=N`, `thread=N`: choose the Nth project or chat of the lists;
 //! - `center=chat|review|settings|connectors|artifacts`; `review`: open the review page;
+//! - `settings=PAGE` (appearance, model, chat, safety, me, notifications, vcs, memory,
+//!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
+//!   `artifacts`: open the page as a click would, with its data;
+//! - `modal=search|project|none`, `right=all`: open a window; unfold the right column;
+//! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
 
@@ -12,7 +17,12 @@ use std::{path::PathBuf, time::Duration};
 
 use gpui_kit::*;
 
-use crate::workspace::{Center, Workspace};
+use crate::{
+    connectors::Shelf,
+    modal::Modal,
+    settings::SettingsPage,
+    workspace::{Center, Workspace},
+};
 
 pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
     let (window, workspace) = opened;
@@ -54,7 +64,10 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                 "quit" => break,
                 other => {
                     let (other, value) = (other.to_owned(), value.to_owned());
-                    workspace.update(cx, |ws, cx| act(ws, &other, &value, cx));
+                    let workspace = workspace.clone();
+                    let _ = cx.update_window(window, move |_, window, cx| {
+                        workspace.update(cx, |ws, cx| act(ws, window, &other, &value, cx));
+                    });
                 }
             }
         }
@@ -63,7 +76,13 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
     .detach();
 }
 
-fn act(ws: &mut Workspace, name: &str, value: &str, cx: &mut Context<Workspace>) {
+fn act(
+    ws: &mut Workspace,
+    window: &mut Window,
+    name: &str,
+    value: &str,
+    cx: &mut Context<Workspace>,
+) {
     match name {
         "project" => {
             let id = value
@@ -94,6 +113,49 @@ fn act(ws: &mut Workspace, name: &str, value: &str, cx: &mut Context<Workspace>)
             cx.notify();
         }
         "review" => ws.open_review(cx),
+        "settings" => {
+            ws.settings_page = match value {
+                "model" => SettingsPage::Model,
+                "chat" => SettingsPage::Chat,
+                "safety" => SettingsPage::Safety,
+                "me" => SettingsPage::AboutMe,
+                "notifications" => SettingsPage::Notifications,
+                "vcs" => SettingsPage::VersionControl,
+                "memory" => SettingsPage::Memory,
+                "advanced" => SettingsPage::Advanced,
+                "updates" => SettingsPage::Updates,
+                "usage" => SettingsPage::Usage,
+                _ => SettingsPage::Appearance,
+            };
+            ws.center = Center::Settings;
+            ws.load_settings(cx);
+        }
+        "shelf" => {
+            ws.shelf = match value {
+                "skills" => Shelf::Skills,
+                "plugins" => Shelf::Plugins,
+                "tools" => Shelf::Tools,
+                "agents" => Shelf::Agents,
+                _ => Shelf::Connectors,
+            };
+            ws.center = Center::Connectors;
+            ws.load_settings(cx);
+        }
+        "artifacts" => {
+            ws.center = Center::Artifacts;
+            ws.load_outputs(cx);
+        }
+        "modal" => match value {
+            "search" => ws.modal = Some(Modal::Search),
+            "project" => ws.open_form(None, window, cx),
+            _ => ws.modal = None,
+        },
+        "right" => {
+            ws.folded.clear();
+            ws.right_hidden = false;
+            ws.refresh_inspector(cx);
+        }
+        "theme" => crate::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
         "file" => {
             let (path, line) = match value.rsplit_once(':') {
                 Some((path, line)) if line.parse::<u32>().is_ok() => (path, line.parse().ok()),

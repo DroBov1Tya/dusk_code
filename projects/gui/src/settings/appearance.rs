@@ -167,7 +167,9 @@ fn font_row(
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let shown = family.clone();
+    // A fixed height: a decorative face would otherwise make its row shorter or taller.
     widgets::row(SharedString::from(format!("font-{label}")), chosen, cx)
+        .h(px(32.))
         .child(
             div()
                 .flex_1()

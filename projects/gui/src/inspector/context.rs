@@ -15,15 +15,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     };
     let theme = cx.theme();
     let (muted, track, foreground) = (theme.muted_foreground, theme.border, theme.foreground);
-    // One color per part, the largest first; the rest share a quiet grey.
-    let colors = [
-        theme.primary,
-        theme.cyan,
-        theme.success,
-        theme.warning,
-        theme.magenta,
-        theme.blue,
-    ];
+    // One color per part, the largest first; the rest share a quiet grey. Fixed hues, six
+    // apart from each other in every theme, so no two parts look alike whatever the accent.
+    let lightness = if theme.is_dark() { 0.66 } else { 0.42 };
+    let colors = [0.74, 0.5, 0.4, 0.11, 0.93, 0.6].map(|hue| hsla(hue, 0.6, lightness, 1.));
     let limit = report.limit.max(1) as f32;
     let share = |tokens: u64| (tokens as f32 / limit).min(1.);
     let mut parts: Vec<_> = report.sections.iter().collect();

@@ -66,6 +66,7 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
                         .text_xs()
                         .text_color(theme.muted_foreground)
                         .line_clamp(2)
+                        .text_ellipsis()
                         .child(card.description),
                 ),
         )
