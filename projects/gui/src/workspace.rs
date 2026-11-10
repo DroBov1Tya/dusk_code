@@ -493,9 +493,13 @@ impl Render for Workspace {
                 }
             })
             .child(div().flex_1().min_w_0().h_full().child(center))
-            .when(!self.right_hidden, |row| {
-                row.child(inspector::render(self, window, cx))
-            })
+            // The side column belongs to the work: pages about the app itself have the
+            // whole width.
+            .when(
+                !self.right_hidden
+                    && matches!(self.center, Center::Chat | Center::Review | Center::File),
+                |row| row.child(inspector::render(self, window, cx)),
+            )
             .children(modal)
             .children(chat_menu)
             .on_action(cx.listener(Self::copy_code))

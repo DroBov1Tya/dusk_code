@@ -5,7 +5,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 /// How many chats the search shows.
 const SHOWN: usize = 40;
@@ -41,7 +41,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                             .unwrap_or_else(|| "New chat".to_owned()),
                     ),
                 )
-                .children(project.map(|name| div().text_xs().text_color(muted).child(name)))
+                .children(project.map(|name| div().meta().text_color(muted).child(name)))
                 .child(widgets::badge(thread.source.clone(), muted))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.modal = None;

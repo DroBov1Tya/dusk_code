@@ -25,6 +25,7 @@ use gpui_kit::{
 use crate::{
     chat::transcript::AgentState,
     settings::SettingsPage,
+    ui::Type,
     widgets,
     workspace::{Center, Right, Workspace},
 };
@@ -67,7 +68,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .child(
                 div()
                     .flex_1()
-                    .text_sm()
+                    .small()
                     .font_weight(FontWeight::MEDIUM)
                     .child(*title),
             )
@@ -76,7 +77,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 (!open)
                     .then(|| summary(ws, module))
                     .flatten()
-                    .map(|text| div().text_xs().text_color(muted).child(text)),
+                    .map(|text| div().meta().text_color(muted).child(text)),
             )
             .child(widgets::icon(
                 if open {

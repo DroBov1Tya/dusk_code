@@ -10,7 +10,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 const KINDS: &[(Option<OutputKind>, &str)] = &[
     (None, "All"),
@@ -50,7 +50,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .border_color(if active { accent } else { transparent_black() })
                 .text_color(if active { foreground } else { muted })
                 .child(*label)
-                .child(div().text_xs().text_color(muted).child(count.to_string()))
+                .child(div().meta().text_color(muted).child(count.to_string()))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.artifact_kind = kind;
                     cx.notify();
@@ -93,8 +93,10 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         grid = grid.child(card(index, file, cx));
     }
     let body = if files.is_empty() {
-        widgets::muted(
-            "Nothing here yet. Files the agents write in the workspace show here.",
+        crate::ui::empty(
+            IconName::LayoutDashboard,
+            "No files yet",
+            "Files the agents write in the workspace appear here.",
             cx,
         )
         .into_any_element()
@@ -172,10 +174,10 @@ fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Statefu
                 .gap_0p5()
                 .px_3()
                 .py_2()
-                .child(div().text_sm().truncate().child(name))
+                .child(div().small().truncate().child(name))
                 .child(
                     div()
-                        .text_xs()
+                        .meta()
                         .text_color(muted)
                         .truncate()
                         .child(format!("{folder} · {}", size(file.bytes))),

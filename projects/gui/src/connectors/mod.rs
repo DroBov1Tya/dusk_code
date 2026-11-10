@@ -19,7 +19,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Shelf {
@@ -72,7 +72,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .text_base()
                 .child(label)
                 .when_some((count > 0).then_some(count), |tab, count| {
-                    tab.child(div().text_xs().text_color(muted).child(count.to_string()))
+                    tab.child(div().meta().text_color(muted).child(count.to_string()))
                 })
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.shelf = shelf;

@@ -12,7 +12,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SettingsPage {
@@ -53,7 +53,7 @@ const PAGES: &[(SettingsPage, IconName, &str)] = &[
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (border, muted, foreground) = (theme.border, theme.muted_foreground, theme.foreground);
+    let (border, muted) = (theme.border, theme.muted_foreground);
     let mut menu = div()
         .w(px(232.))
         .h_full()
@@ -107,20 +107,27 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(
-                        div()
-                            .flex()
-                            .flex_row()
-                            .gap_2()
-                            .text_sm()
-                            .text_color(muted)
-                            .child("Settings")
-                            .child("›")
-                            .child(div().text_color(foreground).child(title)),
-                    )
+                    .child(crate::ui::page_title(title, about(ws.settings_page), cx))
                     .child(body),
             ),
     )
+}
+
+/// What a page is for, in one line under its title.
+fn about(page: SettingsPage) -> &'static str {
+    match page {
+        SettingsPage::Appearance => "Theme and fonts, kept on this machine.",
+        SettingsPage::Model => "The models the chat can use, and the servers that give them.",
+        SettingsPage::Chat => "How a new chat starts: its mode and what it may do.",
+        SettingsPage::Safety => "What the agents may do without asking.",
+        SettingsPage::AboutMe => "What the agents know about you, and snippets for @names.",
+        SettingsPage::Notifications => "How you hear that a chat needs you.",
+        SettingsPage::VersionControl => "Branches the agents create, and how they are named.",
+        SettingsPage::Memory => "What is remembered between chats, and how much context is kept.",
+        SettingsPage::Advanced => "Limits and timings. The defaults suit most work.",
+        SettingsPage::Updates => "The version you run and the newest one.",
+        SettingsPage::Usage => "What duskcode takes from this machine.",
+    }
 }
 
 /// A setting: its name and what it does on the left, its control on the right.
@@ -140,7 +147,7 @@ pub fn line(label: &str, hint: &str, cx: &App) -> Div {
                 .flex_col()
                 .flex_1()
                 .gap_0p5()
-                .child(label.to_owned())
+                .child(div().body().child(label.to_owned()))
                 .when_hint(hint, theme.muted_foreground),
         )
 }
@@ -154,7 +161,7 @@ impl Hint for Div {
         if hint.is_empty() {
             self
         } else {
-            self.child(div().text_xs().text_color(color).child(hint.to_owned()))
+            self.child(div().small().text_color(color).child(hint.to_owned()))
         }
     }
 }

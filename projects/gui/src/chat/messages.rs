@@ -19,7 +19,7 @@ use super::{
     transcript::{Item, Picture, Tool, ToolState},
     working,
 };
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 /// Keys of unfolded things share one set: answers by index, runs and steps apart.
 const RUN: usize = 1 << 40;
@@ -206,7 +206,7 @@ impl Workspace {
                             answer = answer.child(
                                 div()
                                     .id(SharedString::from(format!("reasoning-{key}")))
-                                    .text_xs()
+                                    .small()
                                     .text_color(muted)
                                     .cursor_pointer()
                                     .child(if unfolded {
@@ -351,15 +351,22 @@ fn run(
     tools: &[&Tool],
     cx: &mut Context<Workspace>,
 ) -> Div {
-    let muted = cx.theme().muted_foreground;
+    let (muted, border) = (cx.theme().muted_foreground, cx.theme().border);
     let open = ws.unfolded.contains(&(shown.to_owned(), start | RUN));
-    let mut block = div().flex().flex_col().gap_1();
+    // The steps of a run sit on a rail: they are a sequence, and read apart from the answer.
+    let mut block = div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .pl_3()
+        .border_l_1()
+        .border_color(border);
     if tools.len() > 1 {
         let id = shown.to_owned();
         block = block.child(
             div()
                 .id(SharedString::from(format!("run-{shown}-{start}")))
-                .text_xs()
+                .small()
                 .text_color(muted)
                 .cursor_pointer()
                 .child(if open {
@@ -388,17 +395,18 @@ fn step(
     cx: &mut Context<Workspace>,
 ) -> Div {
     let theme = cx.theme();
-    let (muted, success, danger, accent, surface) = (
+    let (muted, success, danger, signal, surface) = (
         theme.muted_foreground,
         theme.success,
         theme.danger,
-        theme.primary,
+        theme.warning,
         theme.muted,
     );
     let open = ws.unfolded.contains(&(shown.to_owned(), index | STEP));
     let (icon, color) = match tool.state {
-        ToolState::Running => (IconName::LoaderCircle, accent),
-        ToolState::Done => (IconName::Check, success),
+        // The signal color is for work going on; what is done recedes.
+        ToolState::Running => (IconName::LoaderCircle, signal),
+        ToolState::Done => (IconName::Check, success.opacity(0.7)),
         ToolState::Failed => (IconName::CircleX, danger),
     };
     let id = shown.to_owned();
@@ -413,13 +421,14 @@ fn step(
             .flex_row()
             .items_center()
             .gap_2()
-            .text_xs()
+            .small()
             .text_color(muted)
             .cursor_pointer()
             .child(widgets::icon(icon, color))
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
+                    .text_color(theme.foreground.opacity(0.85))
                     .child(tool.name.clone()),
             )
             .child(

@@ -8,6 +8,14 @@ testing.
 
 ### Changed
 
+- GUI design system (`ui.rs`): one type scale in rems (meta, small, body, title, group name), a
+  4 px spacing grid, three motion times, and shared pieces: group names, page titles, a turning
+  ring for every wait, empty states with an icon and a next step. Applied to the sidebar,
+  module headers, settings (each page has a title and a line saying what it is for), the review
+  and the connector tabs. The steps of a chat run sit on a rail, the running one in the
+  signal color and the finished ones receding. Chat source is quiet text, none for the GUI.
+  Pages about the app itself (settings, connectors, artifacts) use the full width: the side
+  column shows only with a chat, the review or a file.
 - GUI, from a pass over every page in pictures: card descriptions end in an ellipsis instead of
   being cut mid-letter; the "+N" of an agent's links is no longer cut off; the Changes module
   has no second "Changes" heading; the context legend uses six fixed hues, so "tools" and
