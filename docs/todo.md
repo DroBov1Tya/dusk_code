@@ -152,9 +152,9 @@ From `gui-todo.md`
 - [x] "done" sometimes does not fit (subagent rows past an hour, long tool lines)
 - [x] With effort off, do not print "thinking" for each action; show tps
 - [x] A typed own answer to a question wraps long lines
-- [~] Parity: background commands (Ctrl+B, jobs panel), `@me`/`@name` (Tab completes),
-      `/access` per chat and the version control settings done; the pinned plan
-      (`/plan`) done; editing the `@me` profile and snippets left
+- [x] Parity: background commands (Ctrl+B, jobs panel), `@me`/`@name` (Tab completes;
+      `/me` and `/snippet name` edit them, the profile's files are set in the GUI),
+      `/access` per chat, the version control settings, the pinned plan (`/plan`)
 
 ## Repository
 

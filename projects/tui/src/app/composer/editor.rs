@@ -7,12 +7,16 @@ use super::{App, Input, Panel};
 use crate::app::Action;
 
 /// What the editor's text goes back to on save.
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub enum EditorTarget {
     /// The chip of the box with this index.
     Paste(usize),
     /// The chat's pinned plan.
     Plan,
+    /// What `@me` says about the user.
+    Me,
+    /// The snippet `@name` brings in.
+    Snippet(String),
 }
 
 pub struct PasteEditor {
@@ -53,6 +57,14 @@ impl PasteEditor {
     /// The chat's plan, to read and rewrite.
     pub fn plan(text: String) -> Self {
         Self::of(EditorTarget::Plan, text)
+    }
+
+    pub fn me(text: String) -> Self {
+        Self::of(EditorTarget::Me, text)
+    }
+
+    pub fn snippet(name: String, text: String) -> Self {
+        Self::of(EditorTarget::Snippet(name), text)
     }
 
     fn of(target: EditorTarget, text: String) -> Self {
@@ -164,11 +176,13 @@ impl App {
             EditorButton::KeepEditing => editor.confirming = false,
             EditorButton::Close | EditorButton::Discard => self.panel = None,
             EditorButton::Save => {
-                let (target, text) = (editor.target, editor.text.text.clone());
+                let (target, text) = (editor.target.clone(), editor.text.text.clone());
                 self.panel = None;
                 match target {
                     EditorTarget::Paste(index) => self.input.replace_paste(index, text),
                     EditorTarget::Plan => return Action::SavePlan(text),
+                    EditorTarget::Me => return Action::SaveMe(text),
+                    EditorTarget::Snippet(name) => return Action::SaveSnippet(name, text),
                 }
             }
         }

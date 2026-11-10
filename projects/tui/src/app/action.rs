@@ -40,6 +40,12 @@ pub enum Action {
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// `/me`: what `@me` says about the user, in the editor.
+    OpenMe,
+    /// `/snippet name`: a snippet for `@name`, new or as it is.
+    OpenSnippet(String),
+    SaveMe(String),
+    SaveSnippet(String, String),
     /// `/disconnect name`: forget a provider.
     Disconnect(String),
     /// The plan as the editor saved it; empty text removes it.
@@ -125,6 +131,11 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "/disconnect",
             "forget a provider and its key: /disconnect name",
         ),
+        (
+            "/me",
+            "what @me says about you; its files are set in the GUI",
+        ),
+        ("/snippet", "write a snippet for @name: /snippet name"),
         (
             "/access",
             "this chat's access: ask, sandbox, arbiter, full or default",

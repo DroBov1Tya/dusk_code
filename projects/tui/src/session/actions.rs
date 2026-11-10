@@ -133,6 +133,44 @@ pub async fn apply(
             Ok(()) => app.flash = Some(format!("Provider {name} forgotten")),
             Err(error) => app.error(format!("cannot forget the provider: {error:#}")),
         },
+        Action::OpenMe => match client.catalog().profile().await {
+            Ok(profile) => app.panel = Some(Panel::Paste(PasteEditor::me(profile.about))),
+            Err(error) => app.error(format!("cannot read the profile: {error:#}")),
+        },
+        Action::SaveMe(text) => {
+            let saved = async {
+                let mut profile = client.catalog().profile().await?;
+                profile.about = text;
+                client.catalog().save_profile(profile).await
+            }
+            .await;
+            match saved {
+                Ok(()) => app.flash = Some("@me saved".to_owned()),
+                Err(error) => app.error(format!("cannot save the profile: {error:#}")),
+            }
+        }
+        Action::OpenSnippet(name) => match client.catalog().snippets().await {
+            Ok(snippets) => {
+                let text = snippets
+                    .into_iter()
+                    .find(|snippet| snippet.name == name)
+                    .map(|snippet| snippet.text)
+                    .unwrap_or_default();
+                app.panel = Some(Panel::Paste(PasteEditor::snippet(name, text)));
+            }
+            Err(error) => app.error(format!("cannot read the snippets: {error:#}")),
+        },
+        Action::SaveSnippet(name, text) => {
+            match client.catalog().save_snippet(&name, &text).await {
+                Ok(()) => {
+                    app.flash = Some(match text.trim().is_empty() {
+                        true => format!("@{name} removed"),
+                        false => format!("@{name} saved"),
+                    })
+                }
+                Err(error) => app.error(format!("cannot save the snippet: {error:#}")),
+            }
+        }
         Action::OpenPlan => {
             let Some(thread_id) = app.thread_id.clone() else {
                 app.flash = Some("Send a message first; the plan belongs to a chat".into());

@@ -8,6 +8,9 @@ testing.
 
 ### Added
 
+- TUI: `/me` edits what `@me` says about you and `/snippet name` writes a snippet for
+  `@name`, in the same editor as pasted text; empty text removes a snippet.
+
 - Providers: the GUI's Model page lists the connected providers, each with what it
   answered and a Remove button, and connects another from a form; the TUI has
   `/disconnect name`. The provider of the chosen model stays until another model is

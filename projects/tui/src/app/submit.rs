@@ -24,6 +24,7 @@ impl App {
                 return Action::None;
             }
             "/plan" => return Action::OpenPlan,
+            "/me" => return Action::OpenMe,
             "/plugins" => {
                 self.panel = Some(Panel::Plugins {
                     selected: 0,
@@ -32,6 +33,9 @@ impl App {
                 return Action::None;
             }
             _ => {}
+        }
+        if let Some(name) = trimmed.strip_prefix("/snippet ") {
+            return Action::OpenSnippet(name.trim().trim_start_matches('@').to_owned());
         }
         if let Some(name) = trimmed.strip_prefix("/disconnect ") {
             return Action::Disconnect(name.trim().to_owned());
