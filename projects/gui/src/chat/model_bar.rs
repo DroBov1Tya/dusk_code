@@ -82,6 +82,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 })),
         )
         .child(div().flex_1())
+        .children(ws.shown_chat().and_then(|chat| chat.cost.clone()))
         .child(format!("{} / {}", short(used), short(limit)))
         .child(super::ring::render(share, meter, border));
     let menu = ws.picker.map(|picker| match picker {

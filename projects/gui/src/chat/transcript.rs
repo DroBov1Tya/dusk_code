@@ -108,6 +108,8 @@ pub struct Transcript {
     pub items: Vec<Item>,
     pub working: bool,
     pub tokens: Option<(u64, u64)>,
+    /// What the chat cost so far, when any call's cost is known.
+    pub cost: Option<String>,
     pub tasks: Vec<Task>,
     pub agents: BTreeMap<String, Agent>,
     pub approvals: Vec<ApprovalRequest>,
@@ -210,7 +212,10 @@ impl Transcript {
                     self.items.push(Item::Image(artifact.into()));
                 }
             }
-            ThreadEvent::Tokens { tokens, limit } => self.tokens = Some((context(&tokens), limit)),
+            ThreadEvent::Tokens { tokens, limit } => {
+                self.tokens = Some((context(&tokens), limit));
+                self.cost = tokens.cost();
+            }
             ThreadEvent::ModelSelected { input_limit, .. } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
                 self.tokens = Some((used, input_limit));

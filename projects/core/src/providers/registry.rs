@@ -15,7 +15,7 @@ use super::{
 };
 use crate::{
     BoxFuture,
-    config::{Config, ProviderConfig, ProviderKind},
+    config::{Config, Price, ProviderConfig, ProviderKind},
     providers::output::inline_tags::TagSplitter,
 };
 
@@ -37,6 +37,7 @@ pub struct ProviderRegistry {
 pub struct Provider {
     adapter: ProviderAdapter,
     inline_tags: bool,
+    prices: BTreeMap<String, Price>,
 }
 
 enum ProviderAdapter {
@@ -48,6 +49,8 @@ struct ProviderStream {
     adapter: StreamAdapter,
     tags: Option<TagSplitter>,
     pending: VecDeque<ModelEvent>,
+    /// The model's price, for a usage report that comes without a cost.
+    price: Option<Price>,
 }
 
 enum StreamAdapter {
@@ -81,6 +84,9 @@ pub fn validate_provider(settings: &ProviderConfig) -> Result<()> {
 
 impl Provider {
     pub fn new(settings: &ProviderConfig) -> Result<Self> {
+        for (model, price) in &settings.prices {
+            super::cost::check(model, price)?;
+        }
         let adapter = match settings.kind {
             ProviderKind::OpenAiCompatible | ProviderKind::OpenAi => {
                 ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
@@ -90,6 +96,7 @@ impl Provider {
         Ok(Self {
             adapter,
             inline_tags: settings.inline_tags,
+            prices: settings.prices.clone(),
         })
     }
 }
@@ -106,6 +113,7 @@ impl ModelProvider for Provider {
 
     fn stream_chat<'a>(&'a self, request: ChatRequest<'a>) -> BoxFuture<'a, Box<dyn ChatStream>> {
         Box::pin(async move {
+            let price = self.prices.get(request.model).copied();
             let adapter = match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => {
                     StreamAdapter::OpenAiCompatible(adapter.stream_chat(request).await?)
@@ -118,6 +126,7 @@ impl ModelProvider for Provider {
                 adapter,
                 tags: self.inline_tags.then(TagSplitter::default),
                 pending: VecDeque::new(),
+                price,
             };
             Ok(Box::new(stream) as Box<dyn ChatStream>)
         })
@@ -131,10 +140,15 @@ impl ChatStream for ProviderStream {
                 if let Some(event) = self.pending.pop_front() {
                     return Ok(Some(event));
                 }
-                let event = match &mut self.adapter {
+                let mut event = match &mut self.adapter {
                     StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
                     StreamAdapter::Anthropic(stream) => stream.next_event().await?,
                 };
+                if let (Some(ModelEvent::Usage(usage)), Some(price)) = (&mut event, &self.price)
+                    && usage.cost.is_none()
+                {
+                    usage.cost = super::cost::priced(price, usage);
+                }
                 let Some(tags) = &mut self.tags else {
                     return Ok(event);
                 };

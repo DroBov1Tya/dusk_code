@@ -129,10 +129,13 @@ impl Sidebar<'_> {
         } else {
             "last turn"
         };
-        let calls = match model_calls {
+        let mut calls = match model_calls {
             1 => " \u{00B7} 1 call".to_owned(),
             calls => format!(" \u{00B7} {calls} calls"),
         };
+        if let Some(cost) = self.app.tokens.cost() {
+            calls.push_str(&format!(" \u{00B7} {cost}"));
+        }
         let rate = self
             .app
             .approximate_tokens_per_second()

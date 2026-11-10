@@ -8,6 +8,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
+    cost,
     errors::{Transient, UnsupportedEffort},
     output::{FinishReason, ModelEvent, Usage},
     transport::sse::SseDecoder,
@@ -122,6 +123,10 @@ struct WireUsage {
     completion_tokens_details: Option<CompletionDetails>,
     /// DeepSeek reports cache hits here, and may leave out the details above.
     prompt_cache_hit_tokens: Option<u64>,
+    /// OpenRouter's cost of the call in dollars.
+    cost: Option<f64>,
+    /// xAI's cost of the call in ten-billionths of a dollar.
+    cost_in_usd_ticks: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -202,6 +207,11 @@ impl CompletionParser {
                     .completion_tokens_details
                     .and_then(|details| details.reasoning_tokens)
                     .unwrap_or(0),
+                cache_write_tokens: 0,
+                cost: usage
+                    .cost_in_usd_ticks
+                    .map(cost::reported_ticks)
+                    .or_else(|| usage.cost.and_then(cost::reported_usd)),
             }));
         }
         Ok(events)
@@ -274,6 +284,16 @@ mod tests {
     }
 
     #[test]
+    fn a_reported_cost_comes_with_the_usage() {
+        let body = "data: {\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":1,\"cost\":0.0042}}\n\n";
+        let events = CompletionParser::default().feed(body.as_bytes()).unwrap();
+        let [ModelEvent::Usage(usage)] = events.as_slice() else {
+            panic!("one usage event");
+        };
+        assert_eq!(usage.cost.map(|cost| cost.micro_usd), Some(4_200));
+    }
+
+    #[test]
     fn emits_reasoning_text_finish_and_usage_in_order() {
         let body = [
             chunk(r#"{"role":"assistant","content":""}"#),
@@ -302,6 +322,7 @@ mod tests {
                     cached_prompt_tokens: 3,
                     completion_tokens: 2,
                     reasoning_tokens: 1,
+                    ..Usage::default()
                 }),
             ]
         );

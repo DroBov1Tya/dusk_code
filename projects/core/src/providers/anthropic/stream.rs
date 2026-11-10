@@ -210,6 +210,7 @@ impl MessageParser {
             let written = usage.cache_creation_input_tokens.unwrap_or(0);
             self.usage.prompt_tokens = input + cached + written;
             self.usage.cached_prompt_tokens = cached;
+            self.usage.cache_write_tokens = written;
         }
         if let Some(output) = usage.output_tokens {
             self.usage.completion_tokens = output;
@@ -289,6 +290,7 @@ mod tests {
                     cached_prompt_tokens: 90,
                     completion_tokens: 42,
                     reasoning_tokens: 0,
+                    ..Usage::default()
                 }),
                 ModelEvent::Finished(FinishReason::ToolCalls),
             ]

@@ -193,7 +193,11 @@ fn all_models(ws: &Workspace, current: &str, cx: &mut Context<Workspace>) -> Div
         .flex_col()
         .overflow_y_scroll();
     for provider in &ws.providers {
-        scroll = scroll.child(widgets::heading(provider.name.clone(), cx));
+        let heading = match &provider.balance {
+            Some(Ok(balance)) => format!("{} \u{00B7} {}", provider.name, balance.text()),
+            _ => provider.name.clone(),
+        };
+        scroll = scroll.child(widgets::heading(heading, cx));
         match &provider.models {
             Ok(models) => {
                 for model in models {

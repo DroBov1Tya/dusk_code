@@ -269,14 +269,26 @@ pub async fn check_providers(config: &Config) -> Result<Vec<ProviderStatus>> {
         let Some(provider) = registry.provider(&name) else {
             continue;
         };
+        let settings = config.all_providers().get(&name).cloned();
         checks.spawn(async move {
-            let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models()).await;
+            let balance = async {
+                match &settings {
+                    Some(settings) => crate::providers::balance::fetch(settings).await,
+                    None => None,
+                }
+            };
+            let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models());
+            let (listed, balance) = tokio::join!(listed, balance);
             let models = match listed {
                 Ok(Ok(models)) => Ok(models),
                 Ok(Err(error)) => Err(format!("{error:#}")),
                 Err(_) => Err("no answer in time".into()),
             };
-            ProviderStatus { name, models }
+            ProviderStatus {
+                name,
+                models,
+                balance,
+            }
         });
     }
     let mut statuses = checks.join_all().await;

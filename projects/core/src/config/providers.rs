@@ -1,6 +1,6 @@
 //! Model providers as the config lists them; the API key is never shown.
 
-use std::fmt;
+use std::{collections::BTreeMap, fmt};
 
 use serde::{Deserialize, Serialize};
 
@@ -23,6 +23,36 @@ pub struct ProviderConfig {
     /// then travels unencrypted, so it is never on by default.
     #[serde(default, skip_serializing_if = "is_false")]
     pub allow_http: bool,
+    /// Prices by model ID, for providers that do not report the cost of a call.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub prices: BTreeMap<String, Price>,
+    /// Where the provider tells the balance; known hosts need no entry.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance: Option<BalanceApi>,
+}
+
+/// US dollars per million tokens, as the provider's price list gives them.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Price {
+    pub input: f64,
+    /// Input served from the cache; the plain input price when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cached_input: Option<f64>,
+    /// Input written to the cache; the plain input price when not given.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_write: Option<f64>,
+    pub output: f64,
+}
+
+/// The balance endpoints a plain API key may read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum BalanceApi {
+    Deepseek,
+    Kimi,
+    Openrouter,
+    Litellm,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]

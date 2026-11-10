@@ -182,7 +182,7 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
             Span::styled(format!("context {percent:.0}%"), bold(share_color)),
             Span::styled(
                 format!(
-                    " {} / {}  {DOT}  in {}  out {}  cache {}  think {}  {DOT}  calls {}  {DOT}  ",
+                    " {} / {}  {DOT}  in {}  out {}  cache {}  think {}  {DOT}  calls {}{}  {DOT}  ",
                     compact_number(tokens.context),
                     compact_number(card.limit),
                     compact_number(tokens.spent.prompt_tokens),
@@ -190,6 +190,10 @@ fn numbers(app: &App, thread_id: &str, width: usize) -> [Vec<Span<'static>>; 3] 
                     compact_number(tokens.spent.cached_prompt_tokens),
                     compact_number(tokens.spent.reasoning_tokens),
                     tokens.model_calls,
+                    tokens
+                        .cost()
+                        .map(|cost| format!("  {DOT}  {cost}"))
+                        .unwrap_or_default(),
                 ),
                 fg(TEXT_SOFT),
             ),

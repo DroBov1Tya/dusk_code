@@ -80,6 +80,27 @@ pub struct ThreadTokens {
     /// subagents it asked.
     pub spent: Usage,
     pub model_calls: u64,
+    /// The summed cost of the calls whose cost is known.
+    #[serde(default)]
+    pub cost_micro_usd: u64,
+    /// Calls with no known cost: the provider did not report it and no price was set.
+    #[serde(default)]
+    pub unpriced_calls: u64,
+}
+
+impl ThreadTokens {
+    /// What the thread cost, as `$0.42`; `+` when some calls have no known cost. None
+    /// when no call has one, so free and local models show nothing.
+    pub fn cost(&self) -> Option<String> {
+        if self.unpriced_calls >= self.model_calls {
+            return None;
+        }
+        let more = if self.unpriced_calls > 0 { "+" } else { "" };
+        Some(format!(
+            "{}{more}",
+            crate::model::Cost::dollars(self.cost_micro_usd)
+        ))
+    }
 }
 
 /// Estimated tokens by who wrote them.
