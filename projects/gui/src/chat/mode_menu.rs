@@ -15,6 +15,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let mut list = div()
         .id("mode-menu")
         .absolute()
+        .occlude()
         .bottom(px(40.))
         .left(px(160.))
         .w(px(360.))

@@ -32,6 +32,13 @@ testing.
   to the default), and a "version control" page in the settings edits the branch prefix.
 - GUI: the name in the sidebar reads Duskcode.
 
+### Fixed
+
+- GUI: menus and lists that open over the page (the message navigator, the model,
+  mode, access and attach menus, the mention list, the folder menu) are painted above
+  everything, so the text and buttons beside them no longer show through, and they
+  stop the mouse from reaching what is under them.
+
 ## 0.71.2 - 2026-11-10
 
 ### Added

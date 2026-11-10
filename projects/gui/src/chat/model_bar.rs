@@ -101,7 +101,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         Picker::Access => super::access_menu::render(ws, cx),
         picker => super::model_menu::render(ws, picker, &effort, cx),
     });
-    div().relative().child(bar).children(menu)
+    div()
+        .relative()
+        .child(bar)
+        .children(menu.map(crate::widgets::on_top))
 }
 
 pub fn effort_name(effort: Effort) -> String {

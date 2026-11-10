@@ -48,6 +48,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let mut list = div()
         .id("access-menu")
         .absolute()
+        .occlude()
         .bottom(px(40.))
         .left(px(240.))
         .w(px(320.))

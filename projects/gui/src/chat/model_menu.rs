@@ -91,6 +91,7 @@ pub fn render(
     div()
         .id("model-menu")
         .absolute()
+        .occlude()
         .bottom(px(40.))
         .left(px(24.))
         .flex()
