@@ -341,6 +341,7 @@ fn row(ws: &Workspace, ix: usize, cx: &mut Context<Workspace>) -> AnyElement {
     };
     match row {
         Row::Hunk(header) => div()
+            .w_full()
             .px_4()
             .py_1()
             .mt_2()
@@ -357,6 +358,7 @@ fn row(ws: &Workspace, ix: usize, cx: &mut Context<Workspace>) -> AnyElement {
                 DiffKind::Context => (None, " ", muted),
             };
             div()
+                .w_full()
                 .flex()
                 .flex_row()
                 .text_xs()

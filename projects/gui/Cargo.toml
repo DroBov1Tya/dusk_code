@@ -9,8 +9,17 @@ license.workspace = true
 name = "duskcode-gui"
 path = "src/main.rs"
 
+[features]
+# A development tool: the window can save pictures of its pages from a script, with no
+# screen-recording permission. See `screenshot.rs`.
+screenshot = ["dep:image", "dep:gpui_pre", "dep:gpui_pre_platform"]
+
 [dependencies]
 anyhow.workspace = true
+image = { workspace = true, optional = true }
+# Only for the screenshot tool: the same versions gpui-kit uses, with the in-memory renderer.
+gpui_pre = { package = "gpui-pre", version = "=0.3.11", features = ["test-support"], optional = true }
+gpui_pre_platform = { package = "gpui-pre-platform", version = "=0.3.11", features = ["test-support"], optional = true }
 dusk_core.workspace = true
 dusk_protocol.workspace = true
 gpui-kit = { version = "=0.9.0", features = ["syntect"] }

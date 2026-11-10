@@ -21,6 +21,8 @@ mod inspector;
 mod modal;
 mod notify;
 mod review;
+#[cfg(feature = "screenshot")]
+mod screenshot;
 mod settings;
 mod sidebar;
 mod theme;
@@ -84,9 +86,15 @@ fn main() -> Result<()> {
             let opened = gpui_kit::open_window(options, cx, |window, cx| {
                 cx.new(|cx| workspace::Workspace::new(core, home, events, status, window, cx))
             });
-            if let Err(error) = opened {
-                tracing::error!("cannot open the window: {error:#}");
-                cx.quit();
+            match opened {
+                #[cfg(feature = "screenshot")]
+                Ok(handle) => screenshot::run(handle, cx),
+                #[cfg(not(feature = "screenshot"))]
+                Ok(_) => {}
+                Err(error) => {
+                    tracing::error!("cannot open the window: {error:#}");
+                    cx.quit();
+                }
             }
             cx.on_window_closed(|cx, _| cx.quit()).detach();
             cx.on_app_quit(move |_| {

@@ -110,6 +110,47 @@ fn apply(cx: &mut App) {
     cx.refresh_windows();
 }
 
+/// The colors of code in the viewer, from the same palette, so code reads on the theme's
+/// own background. The library's default is a light theme's, which left names dark blue
+/// on a dark page.
+fn highlight(p: &Palette) -> Value {
+    // The one hue the palettes share for names of functions: a calm blue for each mode.
+    let function = if p.dark { "#8fb4f5" } else { "#1d4ed8" };
+    let color = |value: &str| json!({ "color": value });
+    json!({
+        "editor.background": p.background,
+        "editor.foreground": p.foreground,
+        "editor.line_number": p.muted,
+        "editor.active_line_number": p.foreground,
+        "editor.active_line.background": format!("{}80", p.raised),
+        "syntax": {
+            "keyword": color(p.accent),
+            "title": color(p.accent),
+            "tag": color(p.accent),
+            "function": color(function),
+            "type": color(p.warning),
+            "constructor": color(p.warning),
+            "attribute": color(p.warning),
+            "string": color(p.success),
+            "string.escape": color(p.warning),
+            "string.regex": color(p.warning),
+            "number": color(p.danger),
+            "boolean": color(p.danger),
+            "constant": color(p.danger),
+            "comment": { "color": p.muted, "font_style": "italic" },
+            "comment.doc": { "color": p.muted, "font_style": "italic" },
+            "property": color(p.foreground),
+            "variable": color(p.foreground),
+            "variable.special": color(p.secondary),
+            "operator": color(p.secondary),
+            "punctuation": color(p.secondary),
+            "punctuation.bracket": color(p.secondary),
+            "punctuation.delimiter": color(p.secondary),
+            "embedded": color(p.foreground),
+        },
+    })
+}
+
 /// Spreads the palette's few colors over the component library's many.
 fn config(p: &Palette, prefs: &Prefs) -> Value {
     let hairline = format!("{}14", p.foreground);
@@ -185,6 +226,7 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         "mono_font.size": prefs.mono_size,
         "colors": colors,
     });
+    config["highlight"] = highlight(p);
     if let Some(font) = &prefs.font {
         config["font.family"] = json!(font);
     }
