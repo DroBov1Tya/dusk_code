@@ -5,7 +5,7 @@
 
 use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
 
-use crate::{widgets::on_top, workspace::Workspace};
+use crate::{ui::Type, widgets::on_top, workspace::Workspace};
 
 const TICKS: usize = 4;
 /// The first words that fit a catalog line.
@@ -61,7 +61,7 @@ pub fn render(
                         div()
                             .flex_none()
                             .w(px(24.))
-                            .text_xs()
+                            .meta()
                             .text_color(muted)
                             .child((number + 1).to_string()),
                     )
@@ -70,7 +70,7 @@ pub fn render(
                             .flex_1()
                             .min_w_0()
                             .truncate()
-                            .text_xs()
+                            .meta()
                             .text_color(foreground.opacity(0.9))
                             .child(preview),
                     )

@@ -7,7 +7,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
@@ -65,7 +65,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .meta()
                                 .text_color(muted)
                                 .line_clamp(2)
                                 .child(mode.summary.clone()),

@@ -26,7 +26,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     if let Some(text) = ws.fill_composer.take() {
@@ -55,7 +55,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .px_3()
             .py_2()
             .rounded_md()
-            .text_xs()
+            .meta()
             .text_color(danger)
             .bg(danger.opacity(0.1))
             .cursor_pointer()
@@ -86,6 +86,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .border_color(border)
                 .child(
                     div()
+                        .body()
                         .font_weight(FontWeight::SEMIBOLD)
                         .truncate()
                         .child(title),

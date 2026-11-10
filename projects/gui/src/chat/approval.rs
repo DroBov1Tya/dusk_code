@@ -1,6 +1,6 @@
 //! What waits for the user: a tool's request for a yes, and a question of the agent.
 
-use dusk_protocol::tools::Decision;
+use dusk_protocol::tools::{Decision, Request};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -10,7 +10,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let mut cards = div()
@@ -52,10 +52,35 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .label("Deny")
                 .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Deny, cx))),
         );
+        // A command is shown as code, in full: it came from the model and is about to run.
+        let what = match &request.request {
+            Request::Command { command } => {
+                let mono = crate::theme::prefs(cx)
+                    .mono_font
+                    .clone()
+                    .unwrap_or_else(|| "Menlo".to_owned());
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child("The agent wants to run")
+                    .child(
+                        div()
+                            .px_3()
+                            .py_2()
+                            .rounded_lg()
+                            .bg(cx.theme().background)
+                            .small()
+                            .font_family(mono)
+                            .child(command.clone()),
+                    )
+            }
+            other => div().child(other.describe("The agent")),
+        };
         cards = cards.child(
             card(border, surface)
                 .border_color(warning)
-                .child(request.request.describe("The agent"))
+                .child(what)
                 .child(buttons),
         );
     }
@@ -78,7 +103,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .rounded_full()
                     .border_1()
                     .border_color(if picked { primary } else { border })
-                    .text_xs()
+                    .meta()
                     .text_color(if picked { primary } else { muted })
                     .child((index + 1).to_string())
                     .into_any_element()
@@ -109,16 +134,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .font_weight(FontWeight::MEDIUM)
                     .child(question.question.clone()),
             )
-            .child(
-                div()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(if question.multiple {
-                        "Pick any. Or write your own answer below."
-                    } else {
-                        "Pick one. Or write your own answer below."
-                    }),
-            )
+            .child(div().meta().text_color(muted).child(if question.multiple {
+                "Pick any. Or write your own answer below."
+            } else {
+                "Pick one. Or write your own answer below."
+            }))
             .child(options);
         if question.multiple {
             card = card.child(

@@ -8,6 +8,9 @@ testing.
 
 ### Changed
 
+- GUI chat: answers have a taller line, the type scale is used all through, the model in the bar
+  is shown without its provider and cut to a length the bar holds (the full name in the tip), a
+  command waiting for approval is shown as code.
 - GUI design system (`ui.rs`): one type scale in rems (meta, small, body, title, group name), a
   4 px spacing grid, three motion times, and shared pieces: group names, page titles, a turning
   ring for every wait, empty states with an icon and a next step. Applied to the sidebar,

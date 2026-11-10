@@ -8,7 +8,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::{widgets, workspace::Workspace};
+use crate::{ui::Type, widgets, workspace::Workspace};
 
 const CHOICES: [(Option<ApprovalPolicy>, &str, &str); 5] = [
     (None, "Default", "As set in Safety"),
@@ -83,7 +83,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
                         .flex_1()
                         .gap_0p5()
                         .child(div().font_weight(FontWeight::MEDIUM).child(label))
-                        .child(div().text_xs().text_color(muted).child(hint)),
+                        .child(div().meta().text_color(muted).child(hint)),
                 )
                 .when(own == policy, |row| {
                     row.child(widgets::icon(IconName::Check, accent))

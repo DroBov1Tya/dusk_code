@@ -1,6 +1,7 @@
 //! Under the composer: the model and the effort, each with its picker, and how full
 //! the context is.
 
+use crate::ui::Type;
 use dusk_protocol::{
     command::{Answer, Command},
     model::Effort,
@@ -60,14 +61,15 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex_row()
         .items_center()
         .gap_2()
-        .text_xs()
+        .meta()
         .text_color(muted)
         .child(
             Button::new("pick-model")
                 .ghost()
                 .xsmall()
                 .icon(IconName::Cpu)
-                .label(format!("{model} · {effort}"))
+                .label(format!("{} · {effort}", short_model(&model)))
+                .tooltip(model.clone())
                 .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Model, cx))),
         )
         .child(
@@ -182,4 +184,14 @@ impl Workspace {
         );
         cx.notify();
     }
+}
+
+/// The model without its provider prefix, cut to a length the bar holds.
+fn short_model(name: &str) -> String {
+    let name = name.rsplit('/').next().unwrap_or(name);
+    if name.chars().count() <= 30 {
+        return name.to_owned();
+    }
+    let head: String = name.chars().take(29).collect();
+    format!("{head}\u{2026}")
 }

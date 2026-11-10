@@ -8,6 +8,7 @@ use gpui_kit::{
 };
 
 use crate::{
+    ui::Type,
     widgets,
     workspace::{Center, Picker, Workspace},
 };
@@ -77,7 +78,7 @@ pub fn render(
                 .gap_1()
                 .child(
                     div()
-                        .text_xs()
+                        .meta()
                         .text_color(cx.theme().muted_foreground)
                         .child("A model the server does not list"),
                 )
@@ -119,7 +120,7 @@ fn panel(cx: &App) -> Div {
         .border_color(theme.border)
         .bg(theme.popover)
         .shadow_lg()
-        .text_sm()
+        .small()
 }
 
 fn model_row(
@@ -142,7 +143,7 @@ fn model_row(
         .when(!chosen && key.is_some(), |row| {
             row.child(
                 div()
-                    .text_xs()
+                    .meta()
                     .text_color(muted)
                     .child(key.unwrap_or_default().to_string()),
             )
