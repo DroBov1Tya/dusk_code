@@ -82,16 +82,16 @@ Chat
 - [x] Message navigator: opaque
 
 Subagents
-- [ ] A button right of the composer with a status indicator; it opens a window with
+- [x] A button right of the composer with a status indicator; it opens a window with
       subagents grouped by role, live state (thinking, tool...) with a small 8-bit
       mascot animation per state
-- [ ] Names and run time on subagent rows; shorter rows
-- [ ] Richer generated figures (advanced math curves; keep pentagrams)
+- [x] Names and run time on subagent rows; shorter rows
+- [x] Richer generated figures (spirographs, Maurer roses, superformula; stars stay)
 
 Arbiter
-- [ ] One arbiter window per chat, not shared
-- [ ] Its scroll does not move the chat behind it
-- [ ] Much slower rotation; on each request a "resonant sphere": a compression wave from
+- [x] One arbiter window per chat, not shared
+- [x] Its scroll does not move the chat behind it (no modal passes the mouse through)
+- [x] Much slower rotation; on each request a "resonant sphere": a compression wave from
       the center, points pull in as it passes and return, the whole mass breathing
 
 Left column

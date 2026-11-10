@@ -18,7 +18,7 @@ use crate::{
 /// How many exchanges the timeline shows.
 const SHOWN: usize = 80;
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (muted, border, accent, success, danger, warning, foreground) = (
         theme.muted_foreground,
@@ -29,10 +29,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         theme.warning,
         theme.foreground,
     );
-    let Some(chat) = ws.shown_chat() else {
+    let Some(chat) = ws.chats.get(thread_id) else {
         return div()
             .p_5()
-            .child(widgets::muted("Open a chat to see its arbiter.", cx));
+            .child(widgets::muted("This chat is closed.", cx));
     };
     let count = |kind: ExchangeKind| chat.exchanges.iter().filter(|e| e.kind == kind).count();
     let (asked, allowed, denied) = (
@@ -91,22 +91,19 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .items_center()
         .gap_3()
         .child(sphere::render(
-            "arbiter-sphere",
+            SharedString::from(format!("arbiter-sphere-{thread_id}")),
             chat.arbiter_at,
             accent,
             warning,
         ))
-        .child(
-            div()
-                .text_sm()
-                .text_color(muted)
-                .child(match ws.status.approvals {
-                    dusk_protocol::config::ApprovalPolicy::Arbiter => {
-                        "The arbiter answers the approvals"
-                    }
-                    _ => "The arbiter is off; approvals come to you",
-                }),
-        )
+        .child(div().text_sm().text_color(muted).child(
+            match chat.access.unwrap_or(ws.status.approvals) {
+                dusk_protocol::config::ApprovalPolicy::Arbiter => {
+                    "The arbiter answers the approvals"
+                }
+                _ => "The arbiter is off; approvals come to you",
+            },
+        ))
         .child(
             div()
                 .flex()
