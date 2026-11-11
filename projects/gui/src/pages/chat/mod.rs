@@ -181,9 +181,11 @@ fn panel_toggle(
 
 fn empty(ws: &Workspace, cx: &App) -> Div {
     let text = if ws.projects.is_empty() {
-        "Add a project on the left to start."
+        "Add a project on the left to start.".to_owned()
+    } else if let Some(project) = ws.selected_project() {
+        format!("Write a message to start a chat in {}.", project.name)
     } else {
-        "Pick a chat on the left, or start one with + next to a project."
+        "Write a message to start a chat, or pick one on the left.".to_owned()
     };
     div()
         .size_full()

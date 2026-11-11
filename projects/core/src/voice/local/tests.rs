@@ -81,6 +81,26 @@ fn choosing_a_model_drops_the_other_of_its_kind_only() {
     assert_eq!(voice.chosen().into_iter().collect::<Vec<_>>(), [tts.id]);
 }
 
+#[tokio::test]
+async fn a_cancelled_install_leaves_nothing_but_an_installed_model_stays() {
+    let (voice, _dir) = local_voice("voice-local-cancel");
+    assert!(voice.cancel("../x").await.is_err());
+    let model = &MODELS[0];
+    // A half-made install: some files, no marker.
+    std::fs::create_dir_all(voice.dir(model).join("venv")).unwrap();
+    voice.stage(model, "Installing packages");
+    voice.cancel(model.id).await.unwrap();
+    assert!(!voice.dir(model).exists());
+    let listed = voice.list(&Default::default()).await;
+    assert_eq!(listed.models[0].state, LocalState::NotInstalled);
+    // One that was installed before, and is only being started again.
+    std::fs::create_dir_all(voice.dir(model)).unwrap();
+    std::fs::write(voice.dir(model).join(super::install::READY), b"1").unwrap();
+    voice.stage(model, "Starting the server");
+    voice.cancel(model.id).await.unwrap();
+    assert!(voice.installed(model));
+}
+
 #[test]
 fn the_server_is_ready_only_by_its_own_line() {
     assert!(is_ready(r#"{"stage":"ready","port":8000}"#));

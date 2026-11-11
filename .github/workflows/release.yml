@@ -73,7 +73,13 @@ jobs:
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: musl
         if: contains(matrix.target, 'musl')
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+        # A mirror that does not answer fails a run of 45 minutes; try again a few times.
+        run: |
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=5 musl-tools && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
       - name: Build
         shell: bash
         # The desktop client builds with the terminal one in a single call on macOS, so
@@ -148,10 +154,14 @@ jobs:
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
       - name: Libraries of the window
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends clang cmake pkg-config curl imagemagick \
-            libasound2-dev libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
-            libx11-xcb-dev libxcb1-dev libvulkan-dev libssl-dev libzstd-dev
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=5 --no-install-recommends \
+              clang cmake pkg-config curl imagemagick \
+              libasound2-dev libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+              libx11-xcb-dev libxcb1-dev libvulkan-dev libssl-dev libzstd-dev && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
       - name: Build
         run: cargo build --release --locked -p dusk_gui
       - name: Package

@@ -13,6 +13,8 @@ pub enum VoiceRequest {
     /// Installs a model with `uv`, starts it and sets the chat's speech to it. Answers at
     /// once; `Models` shows the progress.
     Install { id: String },
+    /// Stops an install that is under way and deletes what it had made.
+    Cancel { id: String },
     /// Stops a model, deletes it and what it downloaded.
     Remove { id: String },
 }

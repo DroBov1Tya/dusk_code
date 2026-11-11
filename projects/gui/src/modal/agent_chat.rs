@@ -1,16 +1,14 @@
 //! A subagent's chat, to read: what it was asked, what it said and the steps it took,
 //! live while it works. It is the parent chat's to steer, so there is no composer.
 
-use gpui_kit::{
-    component::{ActiveTheme, IconName},
-    *,
-};
+use gpui_kit::{component::ActiveTheme, *};
 
 use super::Modal;
 use crate::{
     pages::chat::{
         links,
-        transcript::{Item, ToolState, Transcript},
+        messages::{run, steps},
+        transcript::{Item, Transcript},
     },
     ui::widgets,
     workspace::Workspace,
@@ -18,13 +16,7 @@ use crate::{
 
 pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (muted, surface, success, danger, accent) = (
-        theme.muted_foreground,
-        theme.muted,
-        theme.success,
-        theme.danger,
-        theme.primary,
-    );
+    let (muted, surface, accent) = (theme.muted_foreground, theme.muted, theme.primary);
     let mut column = div().flex().flex_col().gap_3().p_5();
     let Some(chat) = ws.shown_chat().and_then(|chat| chat.agent_chats.get(agent)) else {
         return column.child(widgets::muted("Loading...", cx));
@@ -32,7 +24,23 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
     if chat.items.is_empty() {
         return column.child(widgets::muted("Nothing yet.", cx));
     }
-    for (index, item) in chat.items.iter().enumerate() {
+    let mut index = 0;
+    while index < chat.items.len() {
+        let item = &chat.items[index];
+        // The steps are folded as in the chat: the latest shows, the earlier ones unfold.
+        if let Item::Tool(_) = item {
+            let start = index;
+            while index < chat.items.len() && matches!(chat.items[index], Item::Tool(_)) {
+                index += 1;
+            }
+            let tools = steps(&chat.items[start..index]);
+            if !tools.is_empty() {
+                column = column.child(run(ws, agent, start, &tools, cx));
+            }
+            continue;
+        }
+        let at = index;
+        index += 1;
         column = column.child(match item {
             Item::User { text, .. } => div()
                 .px_3()
@@ -48,29 +56,12 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .child(format!("{from} reported: {text}"))
                 .into_any_element(),
             Item::Assistant { text, .. } if !text.is_empty() => links::markdown(
-                SharedString::from(format!("agent-{agent}-{index}")),
+                SharedString::from(format!("agent-{agent}-{at}")),
                 text.clone(),
             )
             .into_any_element(),
             Item::Assistant { .. } => div().into_any_element(),
-            Item::Tool(tool) => {
-                let (icon, color) = match tool.state {
-                    ToolState::Running => (IconName::LoaderCircle, accent),
-                    ToolState::Done => (IconName::Check, success),
-                    ToolState::Failed => (IconName::CircleX, danger),
-                };
-                div()
-                    .flex()
-                    .flex_row()
-                    .gap_2()
-                    .items_center()
-                    .text_xs()
-                    .text_color(muted)
-                    .child(widgets::icon(icon, color))
-                    .child(tool.name.clone())
-                    .child(div().truncate().child(tool.detail.clone()))
-                    .into_any_element()
-            }
+            Item::Tool(_) => div().into_any_element(),
             Item::Command(run) => div()
                 .text_xs()
                 .text_color(muted)

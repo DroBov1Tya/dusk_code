@@ -310,7 +310,7 @@ fn is_picture(path: &std::path::Path) -> bool {
 /// The chat's subagents at a glance, beside the box: the figure of the one that works (or
 /// the latest), a count, and a ring in the signal color while any works. A click opens
 /// the stage where each is seen at work.
-fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
+fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat().filter(|chat| !chat.agents.is_empty())?;
     let thread_id = ws.shown.clone()?;
     let working = chat.agents.values().filter(|agent| agent.working).count();
@@ -328,44 +328,62 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful
         theme.muted,
     );
     let color = if working > 0 { signal } else { muted };
+    let tile = div()
+        .id("agents")
+        .size(px(AGENTS_BUTTON))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded_xl()
+        .border_1()
+        .border_color(if working > 0 {
+            signal.opacity(0.7)
+        } else {
+            border
+        })
+        .bg(surface)
+        .cursor_pointer()
+        .hover(|button| button.border_color(muted.opacity(0.6)))
+        .tooltip(move |window, cx| {
+            gpui_kit::component::tooltip::Tooltip::new(if working > 0 {
+                format!("{working} subagents at work")
+            } else {
+                "Subagents".to_owned()
+            })
+            .build(window, cx)
+        })
+        .child(crate::columns::inspector::mascot::render_fox(
+            "agents-lead",
+            &lead.1.state,
+            color,
+            1.9,
+        ))
+        .on_click(cx.listener(move |ws, _, _, cx| {
+            ws.modal = Some(crate::modal::Modal::Agents {
+                thread_id: thread_id.clone(),
+            });
+            cx.notify();
+        }));
+    // The count sits on the border of the tile's corner: its centre is on the arc of the
+    // rounded corner, which is 3.5 px in from the corner for a radius of 12, so the box
+    // keeps 5.5 px of room above and to the right for the badge's half (9 px).
+    const BADGE_ROOM: f32 = 5.5;
     Some(
         div()
-            .id("agents")
             .relative()
-            .size(px(AGENTS_BUTTON))
             .flex_none()
-            .flex()
-            .items_center()
-            .justify_center()
-            .rounded_xl()
-            .border_1()
-            .border_color(if working > 0 {
-                signal.opacity(0.7)
-            } else {
-                border
-            })
-            .bg(surface)
-            .cursor_pointer()
-            .hover(|button| button.border_color(muted.opacity(0.6)))
-            .tooltip(move |window, cx| {
-                gpui_kit::component::tooltip::Tooltip::new(if working > 0 {
-                    format!("{working} subagents at work")
-                } else {
-                    "Subagents".to_owned()
-                })
-                .build(window, cx)
-            })
-            .child(crate::columns::inspector::mascot::render_fox(
-                "agents-lead",
-                &lead.1.state,
-                color,
-                1.9,
-            ))
+            .pt(px(BADGE_ROOM))
+            .pr(px(BADGE_ROOM))
+            // The room is outside the layout: the tile stays where it was, at its size.
+            .mt(px(-BADGE_ROOM))
+            .mr(px(-BADGE_ROOM))
+            .child(tile)
             .child(
                 div()
                     .absolute()
-                    .top(px(-6.))
-                    .right(px(-6.))
+                    .top_0()
+                    .right_0()
                     .min_w(px(18.))
                     .h(px(18.))
                     .px_1()
@@ -380,13 +398,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful
                     .border_1()
                     .border_color(border)
                     .child(chat.agents.len().to_string()),
-            )
-            .on_click(cx.listener(move |ws, _, _, cx| {
-                ws.modal = Some(crate::modal::Modal::Agents {
-                    thread_id: thread_id.clone(),
-                });
-                cx.notify();
-            })),
+            ),
     )
 }
 
