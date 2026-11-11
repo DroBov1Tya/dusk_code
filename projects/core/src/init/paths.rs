@@ -25,6 +25,8 @@ const MAX_FOLDER_NAME: usize = 64;
 pub struct Paths {
     config_root: PathBuf,
     workspace_root: PathBuf,
+    /// Where what is installed lives: the models of speech, which are large.
+    data_root: PathBuf,
 }
 
 impl Paths {
@@ -33,19 +35,28 @@ impl Paths {
         let home = std::env::var_os("HOME").ok_or_else(|| anyhow!("HOME is not set"))?;
         let home = PathBuf::from(home);
         ensure!(home.is_absolute(), "HOME must be an absolute path");
-        Ok(Self::new(home.join(CONFIG_ROOT), home.join(WORKSPACE_ROOT)))
+        let mut paths = Self::new(home.join(CONFIG_ROOT), home.join(WORKSPACE_ROOT));
+        paths.data_root = crate::release::resources::data_root()?;
+        Ok(paths)
     }
 
     /// The same layout under other roots, e.g. for tests.
     pub fn new(config_root: impl Into<PathBuf>, workspace_root: impl Into<PathBuf>) -> Self {
+        let config_root = config_root.into();
         Self {
-            config_root: config_root.into(),
+            data_root: config_root.join("data"),
+            config_root,
             workspace_root: workspace_root.into(),
         }
     }
 
     pub fn config_root(&self) -> &Path {
         &self.config_root
+    }
+
+    /// The speech models installed on this machine.
+    pub fn voice_root(&self) -> PathBuf {
+        self.data_root.join("voice")
     }
 
     pub fn rules_root(&self) -> PathBuf {

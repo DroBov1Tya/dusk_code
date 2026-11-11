@@ -15,6 +15,15 @@ impl Server {
                 Response::Text(self.runtime.transcribe(&audio).await?)
             }
             VoiceRequest::Speak { text } => Response::Card(self.runtime.speak(&text).await?),
+            VoiceRequest::Models => Response::VoiceModels(self.runtime.voice_models().await),
+            VoiceRequest::Install { id } => {
+                self.runtime.install_voice_model(&id).await?;
+                Response::Done
+            }
+            VoiceRequest::Remove { id } => {
+                self.runtime.remove_voice_model(&id).await?;
+                Response::Done
+            }
         })
     }
 }

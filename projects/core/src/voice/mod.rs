@@ -5,6 +5,7 @@
 //! the key stays with the server it was given to.
 
 mod endpoint;
+mod local;
 mod markdown;
 mod multipart;
 mod send;
@@ -14,5 +15,6 @@ mod tests;
 mod transcribe;
 
 pub use endpoint::check_endpoint;
+pub use local::LocalVoice;
 pub use speak::speak;
 pub use transcribe::transcribe;

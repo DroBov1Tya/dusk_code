@@ -35,6 +35,7 @@ pub enum Response {
     Profile(Profile),
     Secrets(SecretsInfo),
     Voice(VoiceSettings),
+    VoiceModels(crate::config::VoiceModels),
     /// What a check of a provider found.
     Provider(crate::model::ProviderStatus),
     /// A sound or picture card the core made.

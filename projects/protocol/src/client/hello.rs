@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Raised whenever a request, a response or an event changes shape.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// The first thing a client says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -11,6 +11,7 @@ mod provider;
 mod secrets;
 mod version_control;
 mod voice;
+mod voice_models;
 
 pub use mcp::{McpInfo, McpState, McpStatus, McpToolInfo};
 pub use memory::{Memory, WorkHistory, default_memory_chars, yes};
@@ -24,3 +25,4 @@ pub use version_control::VersionControl;
 pub use voice::{
     MAX_RECORDING_BYTES, MAX_SPEECH_CHARS, STT_KEY, TTS_KEY, VoiceEndpoint, VoiceSettings,
 };
+pub use voice_models::{LocalState, SpeechKind, VoiceModel, VoiceModels};

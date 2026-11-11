@@ -83,4 +83,18 @@ impl Runtime {
         }
         Ok(card)
     }
+
+    /// The speech models of this machine and where each is.
+    pub async fn voice_models(&self) -> dusk_protocol::config::VoiceModels {
+        self.local_voice.list(&self.voice_settings()).await
+    }
+
+    /// Installs a model, starts it and sets the speech to it; the call returns at once.
+    pub async fn install_voice_model(&self, id: &str) -> Result<()> {
+        self.local_voice.install(id).await
+    }
+
+    pub async fn remove_voice_model(&self, id: &str) -> Result<()> {
+        self.local_voice.remove(id).await
+    }
 }
