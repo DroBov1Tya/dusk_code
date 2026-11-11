@@ -52,7 +52,8 @@ fn main() -> Result<()> {
         protocol: PROTOCOL_VERSION,
         client: THREAD_SOURCE.to_owned(),
     };
-    let client = runtime.block_on(app::start(paths, None, hello))?;
+    let hub = runtime.block_on(app::start_hub(paths, None))?;
+    let client = hub.attach(hello)?;
     let (client, events, status) = core::split(client);
     let shutdown = Arc::clone(&client);
     let runtime = Arc::new(runtime);
@@ -68,7 +69,7 @@ fn main() -> Result<()> {
             keys::bind(cx);
             platform::icon::set_dock_icon();
             ui::theme::init(look_file, cx);
-            let core = core::Core::new(client, Arc::clone(&runtime));
+            let core = core::Core::new(client, Arc::clone(&runtime), Arc::clone(&hub));
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),
                 titlebar: Some(TitlebarOptions {

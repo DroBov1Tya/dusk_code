@@ -63,7 +63,12 @@ impl WebServer {
     /// The address to open: the token is in the fragment, which a browser never sends
     /// anywhere. Shown to the user once; never logged.
     pub fn sign_in_url(&self) -> String {
-        format!("http://{}/#{}", self.addr, self.token)
+        // A browser cannot open "any address"; the machine's own name reaches it.
+        let host = match self.addr.ip().is_unspecified() {
+            true => format!("localhost:{}", self.addr.port()),
+            false => self.addr.to_string(),
+        };
+        format!("http://{host}/#{}", self.token)
     }
 
     pub fn is_exposed(&self) -> bool {

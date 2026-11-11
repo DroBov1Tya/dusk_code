@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{net::IpAddr, path::PathBuf};
 
 use clap::{Arg, Command, value_parser};
 
@@ -7,6 +7,8 @@ pub enum Args {
         state_db: Option<PathBuf>,
         /// Open this thread instead of a new one.
         thread: Option<String>,
+        /// Serve the web client beside the terminal one.
+        web: Option<WebOptions>,
     },
     Remove(RemoveOptions),
     /// One prompt in, the answer out, without the screen.
@@ -23,6 +25,14 @@ pub enum Args {
     InstallResources {
         directory: PathBuf,
     },
+}
+
+/// Where `--web` serves, and who may reach it.
+pub struct WebOptions {
+    pub bind: IpAddr,
+    pub port: u16,
+    /// Names, with port, a request may use besides the bound address.
+    pub allow_hosts: Vec<String>,
 }
 
 /// What `duskcode remove` was asked: the desktop client runs it without the question.
@@ -57,6 +67,38 @@ pub fn parse_args() -> Args {
                 .long("thread")
                 .value_name("ID")
                 .help("Open a thread instead of starting a new one"),
+        )
+        .arg(
+            Arg::new("web")
+                .long("web")
+                .action(clap::ArgAction::SetTrue)
+                .help("Also serve the web client; the address to open is printed once"),
+        )
+        .arg(
+            Arg::new("port")
+                .long("port")
+                .value_name("PORT")
+                .value_parser(value_parser!(u16))
+                .default_value("7878")
+                .requires("web")
+                .help("Port of the web client"),
+        )
+        .arg(
+            Arg::new("bind")
+                .long("bind")
+                .value_name("ADDRESS")
+                .value_parser(value_parser!(IpAddr))
+                .default_value("127.0.0.1")
+                .requires("web")
+                .help("Address of the web client; anything but a loopback address opens it to the network"),
+        )
+        .arg(
+            Arg::new("allow-host")
+                .long("allow-host")
+                .value_name("HOST:PORT")
+                .action(clap::ArgAction::Append)
+                .requires("web")
+                .help("A host name a request may use besides the bound address, such as one behind a proxy"),
         )
         .arg(
             Arg::new("update")
@@ -173,8 +215,20 @@ pub fn parse_args() -> Args {
     if matches.get_flag("update") {
         return Args::Update;
     }
+    let web = matches.get_flag("web").then(|| WebOptions {
+        bind: matches
+            .get_one::<IpAddr>("bind")
+            .copied()
+            .unwrap_or(IpAddr::from([127, 0, 0, 1])),
+        port: matches.get_one::<u16>("port").copied().unwrap_or(7878),
+        allow_hosts: matches
+            .get_many::<String>("allow-host")
+            .map(|hosts| hosts.cloned().collect())
+            .unwrap_or_default(),
+    });
     Args::Run {
         state_db: matches.get_one::<PathBuf>("state-db").cloned(),
         thread: matches.get_one::<String>("thread").cloned(),
+        web,
     }
 }

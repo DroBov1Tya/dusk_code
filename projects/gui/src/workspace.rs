@@ -187,6 +187,10 @@ pub struct Workspace {
     pub voice_models: Option<dusk_protocol::config::VoiceModels>,
     /// A poll of the models is waiting; there is one at a time.
     pub voice_polling: bool,
+    /// The web server of this window's core, while the switch in Advanced is on.
+    pub web: Option<dusk_web::WebServer>,
+    /// The server is starting or stopping.
+    pub web_busy: bool,
     pub voice_form: crate::pages::connectors::voice::VoiceForm,
     pub token_box: crate::pages::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
@@ -353,6 +357,8 @@ impl Workspace {
             voice: None,
             voice_models: None,
             voice_polling: false,
+            web: None,
+            web_busy: false,
             voice_form: crate::pages::connectors::voice::VoiceForm::new(window, cx),
             token_box: crate::pages::settings::TokenBox::new(window, cx),
             context_open: HashSet::new(),

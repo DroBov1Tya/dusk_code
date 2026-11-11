@@ -3,7 +3,7 @@
 
 use dusk_protocol::{client::Switch as CoreSwitch, config::ApprovalPolicy};
 use gpui_kit::{
-    component::{Sizable, button::Button, input::Input, switch::Switch},
+    component::{Disableable, Sizable, button::Button, input::Input, switch::Switch},
     *,
 };
 
@@ -152,6 +152,8 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                         CoreSwitch::Logging,
                         cx,
                     ))
+                    .child(web_line(ws, cx))
+                    .children(web_address(ws, cx))
                     .child(
                         line(
                             "Agents at work at once",
@@ -232,6 +234,44 @@ fn stepper(
         )
 }
 
+/// The switch that serves this core to browsers on this machine.
+fn web_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    line(
+        "Web access",
+        "Opens the chats in a browser on this machine, beside this window",
+        cx,
+    )
+    .child(
+        Switch::new("web-access")
+            .checked(ws.web.is_some())
+            .disabled(ws.web_busy)
+            .small()
+            .on_click(cx.listener(|ws, on: &bool, _, cx| ws.set_web(*on, cx))),
+    )
+}
+
+/// While the server runs: the address to open once, with the token of this run in it.
+fn web_address(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    let url = ws.web.as_ref()?.sign_in_url();
+    let copied = url.clone();
+    Some(
+        line(
+            "Address",
+            "Open it once; the part after # is the sign-in token of this run",
+            cx,
+        )
+        .child(div().max_w(px(360.)).child(url))
+        .child(
+            Button::new("web-copy")
+                .small()
+                .label("Copy")
+                .on_click(cx.listener(move |_, _, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
+                })),
+        ),
+    )
+}
+
 fn switch_line(
     label: &'static str,
     hint: &str,
@@ -248,6 +288,42 @@ fn switch_line(
 }
 
 impl Workspace {
+    /// Starts or stops the web server of this core. It listens on this machine only.
+    fn set_web(&mut self, on: bool, cx: &mut Context<Self>) {
+        if self.web_busy {
+            return;
+        }
+        self.web_busy = true;
+        if on {
+            self.core.call_hub(
+                cx,
+                |hub| async move { dusk_web::start(hub, dusk_web::Config::default()).await },
+                |ws, result, cx| {
+                    ws.web_busy = false;
+                    match result {
+                        Ok(server) => ws.web = Some(server),
+                        Err(error) => ws.fail(error, cx),
+                    }
+                    cx.notify();
+                },
+            );
+        } else if let Some(server) = self.web.take() {
+            self.core.call_hub(
+                cx,
+                |_| async move {
+                    server.stop().await;
+                    anyhow::Ok(())
+                },
+                |ws, _, cx| {
+                    ws.web_busy = false;
+                    cx.notify();
+                },
+            );
+        } else {
+            self.web_busy = false;
+        }
+    }
+
     pub fn next_mode(&mut self, cx: &mut Context<Self>) {
         self.core.call(
             cx,

@@ -18,6 +18,7 @@ use anyhow::Result;
 use cli::args::{self, Args};
 use dusk_core::app::Paths;
 use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
+use std::sync::Arc;
 use tracing::{error, info};
 
 #[tokio::main]
@@ -34,8 +35,12 @@ async fn main() -> Result<()> {
             other => anyhow::bail!("no built-in platform {}", other.unwrap_or("named")),
         };
     }
-    let (paths, state_db, thread) = match args::parse_args() {
-        Args::Run { state_db, thread } => (Paths::from_home()?, state_db, thread),
+    let (paths, state_db, thread, web) = match args::parse_args() {
+        Args::Run {
+            state_db,
+            thread,
+            web,
+        } => (Paths::from_home()?, state_db, thread, web),
         Args::Headless(options) => return cli::run::run(options).await,
         Args::Restore { archive } => return cli::restore::run(&archive),
         Args::RecoverRestore => return cli::restore::recover(),
@@ -76,10 +81,23 @@ async fn main() -> Result<()> {
         protocol: PROTOCOL_VERSION,
         client: session::THREAD_SOURCE.to_owned(),
     };
-    let mut client = dusk_core::app::start(paths, state_db, hello).await?;
+    let hub = dusk_core::app::start_hub(paths, state_db).await?;
+    let mut client = hub.attach(hello)?;
+    let web = match web {
+        Some(options) => {
+            let server = cli::web::start(Arc::clone(&hub), options).await?;
+            cli::web::wait_for_enter().await;
+            Some(server)
+        }
+        None => None,
+    };
     let terminal = host::terminal::enter()?;
     let result = session::run(&mut client, terminal, thread).await;
     host::terminal::leave();
+    // Browsers go first, so none of them calls a core that has stopped.
+    if let Some(server) = web {
+        server.stop().await;
+    }
     client.shutdown().await;
     match &result {
         Ok(()) => info!("duskcode exits"),
