@@ -32,6 +32,9 @@ use tracing::warn;
 /// How long a closing thread may take to stop its turn and finish.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a thread whose clients all vanished keeps running.
+const ORPHAN_GRACE: Duration = Duration::from_secs(60);
+
 /// How often the status is read again for what changes in the background, such as a
 /// model found over the network or an MCP server that settled.
 const STATUS_PERIOD: Duration = Duration::from_millis(100);
@@ -65,6 +68,9 @@ struct OpenThread {
     input: ThreadInput,
     forward: JoinHandle<()>,
     clients: HashSet<ClientId>,
+    /// When the last client that kept it open went away; a turn gets `ORPHAN_GRACE` to be
+    /// picked up again, as after a reload, before it is stopped.
+    orphaned: Option<std::time::Instant>,
 }
 
 pub struct Server {
@@ -130,7 +136,10 @@ impl Server {
                         let _ = reply.send(response);
                     }
                 },
-                _ = clock.tick() => self.refresh_status(),
+                _ = clock.tick() => {
+                    self.refresh_status();
+                    self.close_orphans().await;
+                }
             }
         };
         let threads: Vec<String> = self.threads.keys().cloned().collect();

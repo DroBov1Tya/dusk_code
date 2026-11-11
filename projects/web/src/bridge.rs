@@ -19,18 +19,27 @@ const IN_FLIGHT: usize = 32;
 
 /// The WebSocket close code for data the server does not take.
 const UNSUPPORTED: u16 = 1003;
+const POLICY: u16 = 1008;
+
+/// How often an open stream is checked for a live session.
+const SESSION_CHECK: Duration = Duration::from_secs(20);
 
 /// Carries one browser until it leaves, the core stops or `stop` fires.
-pub async fn run(mut socket: WebSocket, hub: Arc<Hub>, mut stop: watch::Receiver<bool>) {
+pub async fn run(
+    mut socket: WebSocket,
+    hub: Arc<Hub>,
+    mut stop: watch::Receiver<bool>,
+    signed_in: impl Fn() -> bool,
+) {
     match attach(&hub) {
         Ok((client, events)) => {
-            if let Err(error) = carry(&mut socket, client, events, &mut stop).await {
+            if let Err(error) = carry(&mut socket, client, events, &mut stop, &signed_in).await {
                 debug!("web stream ended: {error:#}");
             }
         }
         Err(error) => warn!("cannot attach a browser: {error:#}"),
     }
-    let _ = socket.send(Message::Close(None)).await;
+    let _ = tokio::time::timeout(SEND_TIMEOUT, socket.send(Message::Close(None))).await;
 }
 
 fn attach(
@@ -52,7 +61,9 @@ async fn carry(
     client: Arc<Client>,
     mut events: mpsc::UnboundedReceiver<dusk_protocol::client::Event>,
     stop: &mut watch::Receiver<bool>,
+    signed_in: &impl Fn() -> bool,
 ) -> Result<()> {
+    let mut recheck = tokio::time::interval(SESSION_CHECK);
     let mut status = client.status.clone();
     let (replies, mut answers) = mpsc::unbounded_channel::<ServerFrame>();
     let permits = Arc::new(Semaphore::new(IN_FLIGHT));
@@ -61,6 +72,12 @@ async fn carry(
     loop {
         tokio::select! {
             _ = stop.changed() => return Ok(()),
+            _ = recheck.tick() => {
+                // Signing out, or a session that ran out, ends the stream too.
+                if !signed_in() {
+                    return refuse(socket, POLICY, "signed out").await;
+                }
+            }
             message = socket.recv() => {
                 let Some(message) = message else { return Ok(()) };
                 match message.context("the stream broke")? {

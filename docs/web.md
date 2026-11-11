@@ -33,26 +33,36 @@ The status is one `watch` every client reads. The web server attaches one client
 
 ## Security model
 
-- Binds 127.0.0.1 by default. Another address needs `--bind` (and `--allow-host` for names
-  behind a proxy) and prints a warning: the traffic is plain HTTP, put TLS in front of it.
+- Binds 127.0.0.1 by default. Another address needs `--bind` and prints a warning. Reaching it
+  from another machine also needs `--allow-host <name:port>` for each name the browser uses.
+  The traffic is plain HTTP and the Origin rule accepts `http://` only, so a TLS proxy in front
+  of it does not work yet; use it on a network you trust. The token is as strong as a shell on
+  the machine: anyone holding it can run commands through the agents.
 - A random 256-bit token per run, compared in constant time, exchanged for an opaque session
   id (256 bits, in memory, 12 h idle, at most 32). The cookie is `HttpOnly; SameSite=Strict`,
   and `__Host-` with `Secure` where the page is on a loopback name (browsers accept it there).
   Nothing is kept in `localStorage` except the theme name. Five failed sign-ins in a minute lock
-  that peer out.
-- `Host` is checked on every request (DNS rebinding); `Origin` on every POST and on the
-  WebSocket upgrade (cross-site WebSocket hijacking), and a missing one is refused there.
+  that TCP peer out (behind a proxy that is everyone). The token works for the whole run. An
+  open stream is checked every 20 s: signing out or an expired session ends it.
+- `Host` is checked on every request (DNS rebinding); `Origin` on every request that is not a
+  plain GET and on the WebSocket upgrade (cross-site WebSocket hijacking), a missing one is
+  refused there, and any `Origin` that is present must match.
 - Strict CSP (`default-src 'none'`, scripts only from the same origin plus the hash of trunk's
   loader, `wasm-unsafe-eval`, `frame-ancestors 'none'`), `nosniff`, `no-referrer`, no store.
 - A frame over 32 MiB or one that is not a request closes the stream; 32 requests at once per
   browser, 16 browsers.
 - The bridge refuses `Shutdown`: stopping the core is for the process that started the server.
-- Secrets never reach the page: the protocol does not carry them out; the page only sends
-  new values (password inputs) and shows whether one is set.
+  Nothing else is held back: a signed-in browser can do what the desktop app can, including
+  running commands, adding MCP servers and saving projects (parity, not a boundary).
+- Provider keys, plugin secrets and project variables never reach the page: the page only sends
+  new values (password inputs) and shows whether one is set. Known gap: the text of an MCP
+  server's config, opened for editing, includes its `env` and `headers` values.
 - Model output is markdown drawn with DOM text nodes: raw HTML is shown as text, links are
   http(s) only and open with `noopener`, pictures in markdown are not fetched.
-- Cards and outputs are served by ID or by a path the core's own preview rule allows, and only
-  as pictures or sounds.
+- Cards are served by ID from the artifact folder (typed by their bytes); outputs by a path the
+  core's preview rule allows, and only as pictures.
+- A browser that goes away does not stop its running turn at once: a thread nobody keeps open
+  gets 60 s to be picked up again (a reload), then it is stopped.
 
 ## Parity with the desktop app
 
@@ -78,6 +88,13 @@ Done = works in the browser and was checked against a real core. Computer use is
 - [ ] Uninstall and restore (they are for the machine, not for a browser)
 - [ ] Picking a project folder with a browser dialog (the path is typed; it is a path on the
       machine that runs the core)
+
+## Known limits
+
+Event queues per client are unbounded (a browser that accepts a frame every few seconds is
+kept); every request frame may be up to 32 MiB, because a recording is the largest one; the
+card routes check a file and then read it (an agent that can write the artifact folder could
+race a symlink in); an image request attaches a short-lived client to the core.
 
 ## Checked and not checked
 

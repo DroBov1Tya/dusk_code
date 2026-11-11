@@ -224,11 +224,12 @@ async fn socket(
         return StatusCode::SERVICE_UNAVAILABLE.into_response();
     };
     let (hub, stop) = (Arc::clone(&shared.hub), shared.stop.clone());
+    let (checker, cookies) = (Arc::clone(&shared), headers);
     upgrade
         .max_message_size(bridge::MAX_FRAME)
         .max_frame_size(bridge::MAX_FRAME)
         .on_upgrade(move |socket| async move {
-            bridge::run(socket, hub, stop).await;
+            bridge::run(socket, hub, stop, move || checker.auth.signed_in(&cookies)).await;
             drop(permit);
         })
 }

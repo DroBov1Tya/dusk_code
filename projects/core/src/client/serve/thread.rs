@@ -22,6 +22,7 @@ impl Server {
                     && !open.forward.is_finished()
                 {
                     open.clients.insert(self.caller);
+                    open.orphaned = None;
                     return Ok(Response::Opened { thread_id });
                 }
                 self.close(&thread_id).await;
@@ -147,6 +148,7 @@ impl Server {
                 input,
                 forward,
                 clients,
+                orphaned: None,
             },
         );
         Response::Opened { thread_id }
@@ -185,11 +187,19 @@ impl Server {
         self.sources.remove(&client);
         self.subscribers.lock().retain(|(id, _)| *id != client);
         let ids: Vec<String> = self.threads.keys().cloned().collect();
+        // A client that is gone, unlike one that closes a thread, may be a browser that
+        // reloads: its threads run on for a while before they are stopped.
         for thread_id in ids {
-            self.release(&thread_id, client).await;
+            if let Some(open) = self.threads.get_mut(&thread_id)
+                && open.clients.remove(&client)
+                && open.clients.is_empty()
+            {
+                open.orphaned = Some(std::time::Instant::now());
+            }
         }
     }
 
+    /// A client that asked to close the thread: it ends now if nobody else keeps it.
     async fn release(&mut self, thread_id: &str, client: ClientId) {
         let Some(open) = self.threads.get_mut(thread_id) else {
             return;
@@ -197,6 +207,22 @@ impl Server {
         open.clients.remove(&client);
         if open.clients.is_empty() {
             self.close(thread_id).await;
+        }
+    }
+
+    /// Stops the threads nobody has kept open for longer than the grace.
+    pub(super) async fn close_orphans(&mut self) {
+        let stale: Vec<String> = self
+            .threads
+            .iter()
+            .filter(|(_, open)| {
+                open.orphaned
+                    .is_some_and(|at| at.elapsed() > super::ORPHAN_GRACE)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for thread_id in stale {
+            self.close(&thread_id).await;
         }
     }
 }

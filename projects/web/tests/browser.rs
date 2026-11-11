@@ -14,7 +14,18 @@ async fn server() -> (WebServer, std::path::PathBuf) {
     let root = std::env::temp_dir().join(format!("dusk-web-{}-{n}", std::process::id()));
     let paths = Paths::new(root.join("config"), root.join("work"));
     let hub = start_hub(paths, Some(root.join("state.db"))).await.unwrap();
-    (start(hub, Config::default()).await.unwrap(), root)
+    (
+        start(
+            hub,
+            Config {
+                bind: ([127, 0, 0, 1], 0).into(),
+                ..Config::default()
+            },
+        )
+        .await
+        .unwrap(),
+        root,
+    )
 }
 
 /// One raw HTTP/1.1 exchange; the whole answer as text.
