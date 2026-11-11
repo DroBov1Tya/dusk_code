@@ -218,6 +218,13 @@ impl ModelChoice {
         current.revision = Arc::new(());
     }
 
+    /// No model is selected, and discovery started before this must not select one.
+    pub fn clear(&self) {
+        let mut current = self.current.write();
+        current.choice = None;
+        current.revision = Arc::new(());
+    }
+
     pub fn revision(&self) -> Arc<()> {
         Arc::clone(&self.current.read().revision)
     }

@@ -139,6 +139,7 @@ impl State {
                         | "read_history"
                         | "load_skill"
                         | "display_image"
+                        | "display_audio"
                         | "tasks"
                         | "remember"
                         | "ask_user"
@@ -193,7 +194,7 @@ impl State {
         turn_id: &str,
         call_id: &str,
         content: String,
-        artifacts: Vec<crate::state::artifacts::ImageArtifact>,
+        artifacts: Vec<crate::state::artifacts::Card>,
     ) -> Result<Message> {
         self.record_tool_result_with_outcome(turn_id, call_id, content, artifacts, "unknown", None)
             .await
@@ -204,7 +205,7 @@ impl State {
         turn_id: &str,
         call_id: &str,
         content: String,
-        artifacts: Vec<crate::state::artifacts::ImageArtifact>,
+        artifacts: Vec<crate::state::artifacts::Card>,
         outcome: &str,
         exit_code: Option<i32>,
     ) -> Result<Message> {

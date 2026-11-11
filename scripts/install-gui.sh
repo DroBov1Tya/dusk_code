@@ -37,6 +37,42 @@ stage=""
 trap 'rm -rf "$work"; [ -z "$stage" ] || rm -f "$stage"' EXIT
 
 built=""
+# A release on a Mac is the signed app in a disk image. It is fetched here with curl, which
+# puts no quarantine mark on it, so macOS opens it without the Privacy & Security step a
+# browser download needs. It updates itself from then on.
+if [ "$(uname -s)" = "Darwin" ] && { [ -n "${DUSKCODE_VERSION:-}" ] || [ -z "$here" ] || [ ! -f "$here/projects/gui/Cargo.toml" ]; }; then
+  version="${DUSKCODE_VERSION:-latest}"
+  if [ "$version" = "latest" ]; then
+    api="https://api.github.com/repos/$repo/releases/latest"
+  else
+    api="https://api.github.com/repos/$repo/releases/tags/$version"
+  fi
+  curl -fsSL --proto '=https' --tlsv1.2 -o "$work/release.json" "$api" \
+    || fail "cannot read the $version release from GitHub"
+  tag="$(tr ',' '\n' < "$work/release.json" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+  image="Duskcode-${tag#v}-macos-arm64.dmg"
+  expected="$(tr ',' '\n' < "$work/release.json" | awk -v name="\"$image\"" '
+    index($0, "\"name\"") && index($0, name) { found = 1; next }
+    found && /"digest":/ { sub(/.*"sha256:/, ""); sub(/".*/, ""); print; exit }
+    found && /"name":/ { exit }')"
+  [ -n "$expected" ] || fail "${tag:-the release} has no $image yet; try again in a few minutes"
+  curl -fL -sS --proto '=https' --tlsv1.2 -o "$work/$image" \
+    "https://github.com/$repo/releases/download/$tag/$image" || fail "cannot download $image"
+  [ "$(shasum -a 256 "$work/$image" | cut -d ' ' -f 1)" = "$expected" ] || fail "checksum mismatch"
+  mkdir -p "$work/mount" "$HOME/Applications"
+  hdiutil attach -nobrowse -readonly -noverify -mountpoint "$work/mount" "$work/$image" >/dev/null \
+    || fail "cannot open the disk image"
+  rm -rf "$HOME/Applications/Duskcode.app.new"
+  ditto "$work/mount/Duskcode.app" "$HOME/Applications/Duskcode.app.new" \
+    || { hdiutil detach -force "$work/mount" >/dev/null 2>&1; fail "cannot copy the app"; }
+  hdiutil detach -force "$work/mount" >/dev/null 2>&1 || true
+  xattr -dr com.apple.quarantine "$HOME/Applications/Duskcode.app.new" 2>/dev/null || true
+  rm -rf "$HOME/Applications/Duskcode.app"
+  mv "$HOME/Applications/Duskcode.app.new" "$HOME/Applications/Duskcode.app"
+  say "+ $HOME/Applications/Duskcode.app"
+  printf '\n  %s is ready; open it from Launchpad or Spotlight\n\n' "$tag"
+  exit 0
+fi
 if [ -n "$here" ] && [ -f "$here/projects/gui/Cargo.toml" ] && [ -z "${DUSKCODE_VERSION:-}" ]; then
   command -v cargo >/dev/null 2>&1 || fail "cargo is needed to build from source: https://rustup.rs"
   say "building from $here (a few minutes the first time)"
@@ -100,6 +136,8 @@ case "$(uname -s)" in
 </dict></plist>
 PLIST
     ln -sf "$installed" "$bundle/Contents/MacOS/duskcode-gui"
+    # Apple silicon runs only signed code; a build made here is signed ad hoc.
+    codesign --force --sign - "$installed" >/dev/null 2>&1 || true
     if [ -f "$icon" ] && command -v iconutil >/dev/null 2>&1; then
       set_dir="$work/icon.iconset"
       mkdir -p "$set_dir"

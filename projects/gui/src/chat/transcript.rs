@@ -4,7 +4,7 @@
 use std::{collections::BTreeMap, time::Instant};
 
 use dusk_protocol::{
-    artifact::ImageArtifact,
+    artifact::Card,
     conversation::{Message, MessageRole},
     model::ModelEvent,
     thread::ThreadEvent,
@@ -32,6 +32,8 @@ pub enum Item {
     Tool(Tool),
     /// A picture a tool or a message carries, by its ID in the pictures folder.
     Image(Picture),
+    /// A sound a tool carries, to play in the chat.
+    Audio(Clip),
     Notice(String),
     Error(String),
 }
@@ -43,14 +45,34 @@ pub struct CommandRun {
     pub result: Option<Result<String, String>>,
 }
 
+/// A sound card: its ID in the artifact folder, how it is labeled and how long it plays.
+pub struct Clip {
+    pub id: String,
+    pub title: Option<String>,
+    pub mime: String,
+    pub duration: Option<std::time::Duration>,
+}
+
+impl From<&Card> for Clip {
+    fn from(card: &Card) -> Self {
+        Self {
+            id: card.id.clone(),
+            title: card.title.clone(),
+            mime: card.mime_type.clone(),
+            duration: (card.duration_ms > 0)
+                .then(|| std::time::Duration::from_millis(card.duration_ms)),
+        }
+    }
+}
+
 pub struct Picture {
     pub id: String,
     pub title: Option<String>,
     pub description: Option<String>,
 }
 
-impl From<&ImageArtifact> for Picture {
-    fn from(artifact: &ImageArtifact) -> Self {
+impl From<&Card> for Picture {
+    fn from(artifact: &Card) -> Self {
         Self {
             id: artifact.id.clone(),
             title: artifact.title.clone(),
@@ -253,11 +275,15 @@ impl Transcript {
 
     /// Pictures a tool returned: those `display_image` shows go into the chat, the rest
     /// are screenshots for the right column.
-    fn add_pictures(&mut self, call_id: &str, artifacts: &[ImageArtifact]) {
+    fn add_pictures(&mut self, call_id: &str, artifacts: &[Card]) {
         let shown = self
             .tool_mut(call_id)
             .is_none_or(|tool| tool.name == "display_image");
         for artifact in artifacts {
+            if artifact.kind == dusk_protocol::artifact::CardKind::Audio {
+                self.items.push(Item::Audio(artifact.into()));
+                continue;
+            }
             match shown {
                 true => self.items.push(Item::Image(artifact.into())),
                 false => self.screenshots.push(artifact.into()),

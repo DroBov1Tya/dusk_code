@@ -19,10 +19,12 @@ pub use crate::{
     },
     message::path_completion,
     release::{
+        app_update::running_bundle,
         complete::{Step, complete, ensure_installed},
         resources::{data_root, install_snapshot},
         update::{VERSION, update_now},
     },
+    secrets::forget_all as forget_secrets,
     state::artifacts::ArtifactStore,
     util::{fs::expand_home, notify, usage::process as process_usage},
 };

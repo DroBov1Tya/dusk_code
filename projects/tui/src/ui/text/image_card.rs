@@ -1,7 +1,7 @@
 //! Typed root image results as ordinary terminal cells. No terminal graphics escapes
 //! or link detection: half blocks participate in clipping, scrolling and selection.
 
-use dusk_protocol::artifact::ImageArtifact;
+use dusk_protocol::artifact::Card;
 use image::{
     Rgba,
     imageops::{self, FilterType},
@@ -35,7 +35,7 @@ pub struct Preview {
 
 pub fn render(
     transcript: &Transcript,
-    artifact: &ImageArtifact,
+    artifact: &Card,
     width: usize,
 ) -> (Vec<Line<'static>>, Option<Preview>) {
     let width = width.max(2);

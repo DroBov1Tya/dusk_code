@@ -170,6 +170,7 @@ impl Workspace {
             ),
             SettingsPage::AboutMe => self.load_about_me(cx),
             SettingsPage::Model => self.load_models(cx),
+            SettingsPage::Secrets => self.load_secrets(cx),
             _ => {}
         }
     }
@@ -193,6 +194,35 @@ impl Workspace {
                 }
                 Ok(_) => {}
                 Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+}
+
+impl Workspace {
+    /// Fetches the release the core found, once, when the app can replace itself: the new
+    /// copy waits in place and a button in the sidebar restarts into it.
+    pub fn fetch_update(&mut self, cx: &mut Context<Self>) {
+        let Some(tag) = self.status.available_update.clone() else {
+            return;
+        };
+        if self.status.install.is_some()
+            || self.update_tried.as_deref() == Some(tag.as_str())
+            || dusk_core::app::running_bundle().is_none()
+        {
+            return;
+        }
+        self.update_tried = Some(tag.clone());
+        let asked = tag.clone();
+        self.core.call(
+            cx,
+            move |client| async move { client.install_update(&asked).await },
+            move |ws, result, cx| {
+                match result {
+                    Ok(_) => ws.update_ready = Some(tag),
+                    Err(error) => tracing::warn!("background update failed: {error:#}"),
+                }
+                cx.notify();
             },
         );
     }

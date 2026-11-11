@@ -23,7 +23,7 @@ use crate::tools::{Tool, ToolContext, ToolResult, schema, schema::parse_argument
 use crate::util::fs::{printable, read_regular};
 use crate::{
     BoxFuture,
-    state::artifacts::{ArtifactStore, ImageArtifact, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES},
+    state::artifacts::{ArtifactStore, Card, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -111,7 +111,7 @@ impl DisplayImage {
         // No detached task writes artifacts. Dropping a cancelled fetch/decode future
         // discards its result; only a fully awaited success reaches this commit.
         let artifact = self.store.save(
-            ImageArtifact {
+            Card {
                 id: String::new(),
                 title,
                 description,
@@ -121,6 +121,7 @@ impl DisplayImage {
                 byte_len: 0,
                 sha256: String::new(),
                 for_model: false,
+                ..Default::default()
             },
             &decoded.original,
             &decoded.thumbnail,

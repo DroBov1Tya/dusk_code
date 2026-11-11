@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use dusk_protocol::artifact::ImageArtifact;
+use dusk_protocol::artifact::Card;
 use image::{DynamicImage, imageops::FilterType};
 use ratatui::{
     Frame,
@@ -91,7 +91,7 @@ impl Pictures {
         area: Rect,
         card: Size,
         skip: u16,
-        artifact: &ImageArtifact,
+        artifact: &Card,
         decode: impl FnOnce() -> Option<DynamicImage>,
     ) {
         let Some(Some(picker)) = PICKER.get() else {
@@ -133,7 +133,7 @@ impl Pictures {
     fn fitted(
         &self,
         picker: &Picker,
-        artifact: &ImageArtifact,
+        artifact: &Card,
         card: Size,
         decode: impl FnOnce() -> Option<DynamicImage>,
     ) -> Option<Arc<DynamicImage>> {

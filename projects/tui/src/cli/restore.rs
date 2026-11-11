@@ -9,7 +9,7 @@ pub fn run(archive_path: &Path) -> Result<()> {
     let paths = Paths::from_home()?;
     app::restore(&paths, archive_path)?;
     println!(
-        "Restored config and chats to {} and {}.\nThe archive contains API keys and chat history; keep it private.\nSaved absolute project paths are unchanged. Start duskcode normally when ready.",
+        "Restored config and chats to {} and {}.\nThe archive contains chat history; keep it private. Keys kept in the system keychain are not in it: enter them again.\nSaved absolute project paths are unchanged. Start duskcode normally when ready.",
         paths.config_root().display(),
         paths.workspace_root().display(),
     );

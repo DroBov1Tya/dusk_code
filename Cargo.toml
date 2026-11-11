@@ -24,6 +24,10 @@ tracing-subscriber = { version = "0.3", default-features = false, features = ["f
 uuid = { version = "1", features = ["v4", "v7"] }
 sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio", "sqlite-bundled", "macros", "migrate"] }
 parking_lot = "0.12"
+# The system keychain; exact, since it holds the keys of every provider.
+keyring = "=4.2.0"
+# Playing the sounds in a chat; only what a chat plays, no recording.
+rodio = { version = "=0.23.0", default-features = false, features = ["playback", "flac", "mp3", "mp4", "vorbis", "wav"] }
 nix = { version = "0.31", default-features = false, features = ["signal"] }
 ratatui = "0.30.2"
 base64 = "0.22.1"

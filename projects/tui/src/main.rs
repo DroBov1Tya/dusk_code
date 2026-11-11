@@ -39,7 +39,7 @@ async fn main() -> Result<()> {
         Args::Headless(options) => return cli::run::run(options).await,
         Args::Restore { archive } => return cli::restore::run(&archive),
         Args::RecoverRestore => return cli::restore::recover(),
-        Args::Remove => return cli::remove::run(&Paths::from_home()?),
+        Args::Remove(options) => return cli::remove::run(&Paths::from_home()?, &options),
         Args::InstallResources { directory } => {
             // The installer's archive is checked against the tag first; offline it stands.
             match dusk_core::app::complete(&directory, dusk_core::app::VERSION).await {

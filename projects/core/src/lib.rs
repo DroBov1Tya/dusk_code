@@ -29,6 +29,7 @@ mod project;
 mod providers;
 mod release;
 mod runtime;
+mod secrets;
 mod state;
 mod tools;
 mod util;

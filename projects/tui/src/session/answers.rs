@@ -32,7 +32,7 @@ pub async fn answer(
             app.panel = None;
             app.flash = None;
             app.transcript.notice(format!(
-                "Archive saved: {}\nContains API keys and chat history; keep it private.\nRestore offline with duskcode restore <archive> into empty data roots. Saved absolute project paths are unchanged.",
+                "Archive saved: {}\nContains chat history; keep it private. Keys kept in the system keychain are not in it: enter them again after a restore.\nRestore offline with duskcode restore <archive> into empty data roots. Saved absolute project paths are unchanged.",
                 path.display()
             ), Tone::Info);
         }

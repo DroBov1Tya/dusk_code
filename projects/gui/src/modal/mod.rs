@@ -66,6 +66,10 @@ pub enum Modal {
     Picture {
         path: PathBuf,
     },
+    /// Removing duskcode from the machine, in steps.
+    Uninstall(crate::settings::uninstall::Uninstall),
+    /// Forgetting every connected provider, after a yes.
+    RemoveProviders,
     /// Going back to a message of the chat erases it and all after it; asks first.
     Rollback {
         thread_id: String,
@@ -121,6 +125,16 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .max_h(px(760.))
                     .object_fit(ObjectFit::Contain),
             ),
+        ),
+        Modal::Uninstall(state) => (
+            "Remove duskcode".to_owned(),
+            520.,
+            crate::settings::uninstall::render(state, cx),
+        ),
+        Modal::RemoveProviders => (
+            "Remove all providers".to_owned(),
+            480.,
+            crate::settings::providers::confirm_remove_all(cx),
         ),
         Modal::Rollback { .. } => ("Go back".to_owned(), 480., rollback(cx)),
         Modal::Arbiter { thread_id } => {

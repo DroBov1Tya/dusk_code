@@ -51,11 +51,26 @@ impl Form {
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let current = ws.status.model.clone().unwrap_or_default();
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .pt_4()
-        .child(widgets::caption("Providers", cx).px_0());
+    let mut column = div().flex().flex_col().pt_4().child(
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .child(widgets::caption("Providers", cx).px_0().flex_1())
+            .when(!ws.providers.is_empty(), |row| {
+                row.child(
+                    Button::new("provider-remove-all")
+                        .small()
+                        .ghost()
+                        .label("Remove all")
+                        .tooltip("Forget every provider and its key")
+                        .on_click(cx.listener(|ws, _, _, cx| {
+                            ws.modal = Some(crate::modal::Modal::RemoveProviders);
+                            cx.notify();
+                        })),
+                )
+            }),
+    );
     if ws.providers.is_empty() {
         column = column.child(widgets::muted("Asking the providers...", cx).px_0());
     }
@@ -108,6 +123,40 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                                 cx.listener(|ws, _, window, cx| ws.connect_provider(window, cx)),
                             ),
                     ),
+                ),
+        )
+}
+
+/// What the one button forgets, said before it does.
+pub fn confirm_remove_all(cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .p_5()
+        .child("Remove every connected provider?")
+        .child(div().text_sm().text_color(muted).child(
+            "Their API keys are forgotten and the chosen model is cleared. Chats stay, but \
+             cannot be continued until a provider is connected again.",
+        ))
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .justify_end()
+                .gap_2()
+                .child(
+                    Button::new("providers-cancel")
+                        .ghost()
+                        .label("Cancel")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
+                )
+                .child(
+                    Button::new("providers-remove-all")
+                        .danger()
+                        .label("Remove all")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.remove_all_providers(cx))),
                 ),
         )
 }
@@ -173,6 +222,19 @@ impl Workspace {
                 Err(error) => ws.fail(error, cx),
             },
         );
+    }
+
+    fn remove_all_providers(&mut self, cx: &mut Context<Self>) {
+        self.modal = None;
+        self.core.call(
+            cx,
+            |client| async move { client.settings().remove_all_providers().await },
+            |ws, result, cx| match result {
+                Ok(()) => ws.load_models(cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+        cx.notify();
     }
 
     fn remove_provider(&mut self, name: &str, cx: &mut Context<Self>) {

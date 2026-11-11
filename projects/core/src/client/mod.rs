@@ -396,6 +396,25 @@ impl Settings<'_> {
         self.done(SettingsRequest::RemoveProvider { name }).await
     }
 
+    /// Forgets every provider and the chosen model.
+    pub async fn remove_all_providers(&self) -> Result<()> {
+        self.done(SettingsRequest::RemoveAllProviders).await
+    }
+
+    /// Keeps the Hugging Face token in the system keychain.
+    pub async fn set_secret(&self, name: &str, value: &str) -> Result<()> {
+        let request = SettingsRequest::SetSecret {
+            name: name.to_owned(),
+            value: Secret(value.to_owned()),
+        };
+        self.done(request).await
+    }
+
+    pub async fn delete_secret(&self, name: &str) -> Result<()> {
+        let name = name.to_owned();
+        self.done(SettingsRequest::DeleteSecret { name }).await
+    }
+
     pub async fn plugin_enabled(&self, name: &str, enabled: bool) -> Result<()> {
         let name = name.to_owned();
         self.done(SettingsRequest::PluginEnabled { name, enabled })
@@ -510,6 +529,18 @@ impl Catalog<'_> {
         self.0
             .done(Request::Catalog(CatalogRequest::SaveSnippet { name, text }))
             .await
+    }
+
+    /// Which secrets are set, never their values.
+    pub async fn secrets(&self) -> Result<dusk_protocol::secrets::SecretsInfo> {
+        match self
+            .0
+            .call(Request::Catalog(CatalogRequest::Secrets))
+            .await?
+        {
+            Response::Secrets(info) => Ok(info),
+            other => Err(unexpected(other)),
+        }
     }
 
     pub async fn profile(&self) -> Result<Profile> {

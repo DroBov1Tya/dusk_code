@@ -33,8 +33,8 @@ use crate::{
     state::artifacts::ArtifactStore,
     state::{Identity, State, Thread, TurnStatus, estimate_tokens},
     tools::{
-        AgentState, Approvals, AskAgent, AskUser, DisplayImage, GoalTool, Jobs, McpTool,
-        MessageParent, NameSession, PlanEdit, ReadHistory, Remember, RunCommand, Tasks,
+        AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
+        McpTool, MessageParent, NameSession, PlanEdit, ReadHistory, Remember, RunCommand, Tasks,
         ToolRegistry, ToolScope,
     },
 };
@@ -176,6 +176,9 @@ impl Launcher {
                 thread_id.to_owned(),
             )));
             tools.add(Box::new(DisplayImage::new(ArtifactStore::new(
+                self.paths.artifacts_dir(),
+            ))));
+            tools.add(Box::new(DisplayAudio::new(ArtifactStore::new(
                 self.paths.artifacts_dir(),
             ))));
         }

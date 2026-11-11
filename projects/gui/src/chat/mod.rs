@@ -3,6 +3,7 @@
 
 mod access_menu;
 mod approval;
+pub mod audio;
 pub mod code;
 pub mod composer;
 pub mod links;
@@ -74,6 +75,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .size_full()
         .flex()
         .flex_col()
+        // Files and pictures dragged in from outside go with the next message.
+        .drag_over::<ExternalPaths>(|style, _, _, cx| style.bg(cx.theme().primary.opacity(0.06)))
+        .on_drop(cx.listener(|ws, paths: &ExternalPaths, _, cx| {
+            ws.attachments.extend(paths.paths().iter().cloned());
+            cx.notify();
+        }))
         .child(
             div()
                 .h(px(44.))
@@ -114,7 +121,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         )
         .child(approval::render(ws, cx))
         .child(composer::render(ws, window, cx))
-        .child(model_bar::render(ws, cx))
+        .child(div().h(px(12.)))
 }
 
 /// A round button over the composer while the chat is scrolled up: one click goes

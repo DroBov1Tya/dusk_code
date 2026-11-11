@@ -114,7 +114,10 @@ impl Runtime {
         let state = Arc::new(State::open(&state_db).await?);
         let mailboxes = Arc::new(Mailboxes::default());
         let jobs = JobManager::new(Arc::clone(&state), Arc::clone(&mailboxes), &state_db).await?;
-        let config = Arc::new(LiveConfig::load(paths.config_file())?);
+        let config = Arc::new(LiveConfig::load_with(
+            paths.config_file(),
+            crate::secrets::Keychain::open(paths.config_root()),
+        )?);
         let choice = match Choice::configured(&config.current()) {
             Ok(choice) => choice,
             Err(error) => {
@@ -322,7 +325,8 @@ impl Runtime {
         let provider = ProviderConfig {
             kind,
             base_url,
-            api_key: ApiKey(api_key.unwrap_or_default()),
+            // A pasted key often carries a newline or a space, which the provider rejects.
+            api_key: ApiKey(checked_key(api_key.unwrap_or_default())?),
             inline_tags: false,
             allow_http: false,
             prices: Default::default(),
@@ -368,6 +372,85 @@ impl Runtime {
         self.launcher.config.update(|config| {
             config.remove_provider(name);
         })?;
+        Ok(())
+    }
+
+    /// Which secrets are set, never their values. The keychain is asked off the async
+    /// workers, as it may wait for the user to unlock it.
+    pub async fn secrets_info(&self) -> dusk_protocol::secrets::SecretsInfo {
+        use dusk_protocol::secrets::{HUGGINGFACE, SecretInfo, SecretsInfo};
+        let config = self.config();
+        let store = config.secrets().cloned();
+        let mut problem = None;
+        let mut token = false;
+        if let Some(store) = store.clone() {
+            match tokio::task::spawn_blocking(move || store.get(HUGGINGFACE)).await {
+                Ok(Ok(found)) => token = found.is_some(),
+                Ok(Err(error)) => problem = Some(format!("{error:#}")),
+                Err(error) => problem = Some(error.to_string()),
+            }
+        }
+        let mut entries = vec![SecretInfo {
+            name: HUGGINGFACE.to_owned(),
+            label: "Hugging Face token".to_owned(),
+            set: token,
+            editable: store.is_some(),
+        }];
+        for (name, provider) in config.current().providers() {
+            entries.push(SecretInfo {
+                name: crate::secrets::provider_key(name),
+                label: format!("API key of {name}"),
+                set: !provider.api_key.0.is_empty(),
+                editable: false,
+            });
+        }
+        SecretsInfo {
+            keychain: store.is_some(),
+            problem,
+            entries,
+        }
+    }
+
+    /// Keeps the Hugging Face token. Provider keys go with their providers; no other name
+    /// is taken.
+    pub async fn set_secret(&self, name: &str, value: &str) -> Result<()> {
+        ensure!(
+            name == crate::secrets::HUGGINGFACE,
+            "{name} is not a secret to set here"
+        );
+        let value = checked_key(value.to_owned())?;
+        ensure!(!value.is_empty(), "a token is not empty");
+        let store = self
+            .config()
+            .secrets()
+            .context("this machine has no system keychain to keep it in")?
+            .clone();
+        let name = name.to_owned();
+        tokio::task::spawn_blocking(move || store.set(&name, &value))
+            .await
+            .context("the keychain call stopped")?
+    }
+
+    pub async fn delete_secret(&self, name: &str) -> Result<()> {
+        ensure!(
+            name == crate::secrets::HUGGINGFACE,
+            "{name} is not a secret to clear here"
+        );
+        let Some(store) = self.config().secrets().cloned() else {
+            return Ok(());
+        };
+        let name = name.to_owned();
+        tokio::task::spawn_blocking(move || store.delete(&name))
+            .await
+            .context("the keychain call stopped")?
+    }
+
+    /// Forgets every provider and its key, and with them the chosen model.
+    pub fn remove_all_providers(&self) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.remove_all_providers())?;
+        self.launcher.model.clear();
         Ok(())
     }
 
@@ -1166,6 +1249,17 @@ fn icon_file(icons: &Path, name: &str) -> Option<PathBuf> {
     std::fs::symlink_metadata(&path)
         .is_ok_and(|metadata| metadata.is_file())
         .then_some(path)
+}
+
+/// A key or token as it is kept: trimmed, since a pasted one often carries a newline or a
+/// space, and refused when it is not plain text of a sane size.
+fn checked_key(key: String) -> Result<String> {
+    let key = key.trim().to_owned();
+    ensure!(
+        key.len() <= 4096 && !key.chars().any(char::is_control),
+        "a key is text of up to 4096 characters, without control characters"
+    );
+    Ok(key)
 }
 
 #[cfg(test)]

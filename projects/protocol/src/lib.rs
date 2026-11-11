@@ -29,6 +29,7 @@ pub mod paths;
 pub mod plugins;
 pub mod project;
 pub mod providers;
+pub mod secrets;
 pub mod settings;
 pub mod system;
 pub mod thread;

@@ -52,76 +52,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
     let navigator =
         (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, cx));
     let mentions = mention_menu(ws, cx);
-    let muted = cx.theme().muted_foreground;
-    let mut chips = div().flex().flex_row().flex_wrap().gap_1();
-    for (index, path) in ws.attachments.iter().enumerate() {
-        let name = path
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string());
-        chips = chips.child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_1()
-                .pl_2()
-                .rounded_md()
-                .bg(cx.theme().accent)
-                .meta()
-                .child(crate::widgets::icon(
-                    if path.is_dir() {
-                        IconName::Folder
-                    } else {
-                        IconName::File
-                    },
-                    muted,
-                ))
-                .child(name)
-                .child(
-                    Button::new(("unattach", index))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Close)
-                        .tooltip("Remove the attachment")
-                        .on_click(cx.listener(move |ws, _, _, cx| {
-                            if index < ws.attachments.len() {
-                                ws.attachments.remove(index);
-                            }
-                            cx.notify();
-                        })),
-                ),
-        );
-    }
-    for (index, text) in ws.pastes.iter().enumerate() {
-        chips = chips.child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_1()
-                .pl_2()
-                .rounded_md()
-                .bg(cx.theme().accent)
-                .meta()
-                .child(crate::widgets::icon(IconName::FileText, muted))
-                .child(paste_label(text))
-                .child(
-                    Button::new(("unpaste", index))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Close)
-                        .tooltip("Remove the pasted text")
-                        .on_click(cx.listener(move |ws, _, _, cx| {
-                            if index < ws.pastes.len() {
-                                ws.pastes.remove(index);
-                            }
-                            cx.notify();
-                        })),
-                ),
-        );
-    }
-    let chips = (!ws.attachments.is_empty() || !ws.pastes.is_empty()).then_some(chips);
+    let chips = strip(ws, cx);
     div()
         .relative()
         .px_6()
@@ -130,8 +61,6 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
         .mx_auto()
         .w_full()
         .children(queued)
-        // What goes with the message sits above the box, where it is read first.
-        .children(chips.map(|chips| div().pb_2().child(chips)))
         .child(
             div()
                 .flex()
@@ -140,37 +69,52 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 .gap_2()
                 .child(
                     div().flex_1().min_w_0().child(
+                        // One card: what goes with the message on top, the text under it
+                        // across the whole width, and a row of controls at the bottom.
+                        // The card grows upward, as the box sits at the foot of the chat.
                         div()
                             .flex()
-                            .flex_row()
-                            .items_end()
-                            .gap_2()
-                            .p_2()
-                            .rounded_xl()
+                            .flex_col()
+                            .rounded_2xl()
                             .border_1()
                             .border_color(cx.theme().border)
                             .bg(cx.theme().muted)
+                            .shadow_sm()
                             .relative()
                             .children(navigator)
                             .children(mentions.map(crate::widgets::on_top))
+                            .children(chips)
                             .child(
-                                Button::new("attach")
-                                    .ghost()
-                                    .rounded(ButtonRounded::Size(px(999.)))
-                                    .icon(IconName::Plus)
-                                    .tooltip("Attach files or folders")
-                                    .on_click(cx.listener(|ws, _, _, cx| {
-                                        ws.attach_open = !ws.attach_open;
-                                        cx.notify();
-                                    })),
+                                div()
+                                    .w_full()
+                                    .px_2()
+                                    .pt_1()
+                                    .child(Textarea::new(&ws.composer).appearance(false)),
                             )
                             .child(
                                 div()
-                                    .flex_1()
-                                    .child(Textarea::new(&ws.composer).appearance(false)),
-                            )
-                            .children(rate)
-                            .child(button),
+                                    .flex()
+                                    .flex_row()
+                                    .items_center()
+                                    .gap_2()
+                                    .px_2()
+                                    .pb_2()
+                                    .child(
+                                        Button::new("attach")
+                                            .ghost()
+                                            .rounded(ButtonRounded::Size(px(999.)))
+                                            .icon(IconName::Plus)
+                                            .tooltip("Attach files or folders")
+                                            .on_click(cx.listener(|ws, _, _, cx| {
+                                                ws.attach_open = !ws.attach_open;
+                                                cx.notify();
+                                            })),
+                                    )
+                                    .child(super::model_bar::render(ws, cx))
+                                    .children(rate)
+                                    .child(super::model_bar::models(ws, cx))
+                                    .child(button),
+                            ),
                     ),
                 )
                 // The subagents stand beside the box, not in it: they are not part of what
@@ -229,6 +173,120 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 }
             }
         }))
+}
+
+const THUMB: f32 = 64.;
+
+/// What goes with the message, in a row above the text that scrolls sideways: pictures as
+/// thumbnails, other files and long pastes as chips, each with a button that drops it.
+fn strip(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
+    if ws.attachments.is_empty() && ws.pastes.is_empty() {
+        return None;
+    }
+    let theme = cx.theme();
+    let (muted, raised, border) = (theme.muted_foreground, theme.accent, theme.border);
+    let mut row = div()
+        .id("attachments")
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .px_3()
+        .pt_3()
+        .overflow_x_scroll();
+    for (index, path) in ws.attachments.iter().enumerate() {
+        let name = path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        let remove = Button::new(("unattach", index))
+            .ghost()
+            .xsmall()
+            .icon(IconName::Close)
+            .tooltip("Remove the attachment")
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                if index < ws.attachments.len() {
+                    ws.attachments.remove(index);
+                }
+                cx.notify();
+            }));
+        row = row.child(if is_picture(path) {
+            div()
+                .relative()
+                .flex_none()
+                .size(px(THUMB))
+                .rounded_xl()
+                .overflow_hidden()
+                .border_1()
+                .border_color(border)
+                .child(img(path.clone()).size_full().object_fit(ObjectFit::Cover))
+                .child(div().absolute().top_0().right_0().child(remove))
+        } else {
+            div()
+                .flex()
+                .flex_none()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .h(px(THUMB))
+                .pl_3()
+                .rounded_xl()
+                .bg(raised)
+                .meta()
+                .child(crate::widgets::icon(
+                    if path.is_dir() {
+                        IconName::Folder
+                    } else {
+                        IconName::File
+                    },
+                    muted,
+                ))
+                .child(name)
+                .child(remove)
+        });
+    }
+    for (index, text) in ws.pastes.iter().enumerate() {
+        row = row.child(
+            div()
+                .flex()
+                .flex_none()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .h(px(THUMB))
+                .pl_3()
+                .rounded_xl()
+                .bg(raised)
+                .meta()
+                .child(crate::widgets::icon(IconName::FileText, muted))
+                .child(paste_label(text))
+                .child(
+                    Button::new(("unpaste", index))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Close)
+                        .tooltip("Remove the pasted text")
+                        .on_click(cx.listener(move |ws, _, _, cx| {
+                            if index < ws.pastes.len() {
+                                ws.pastes.remove(index);
+                            }
+                            cx.notify();
+                        })),
+                ),
+        );
+    }
+    Some(row)
+}
+
+fn is_picture(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| {
+            matches!(
+                extension.to_ascii_lowercase().as_str(),
+                "png" | "jpg" | "jpeg" | "gif" | "webp" | "bmp"
+            )
+        })
 }
 
 /// The chat's subagents at a glance, beside the box: the figure of the one that works (or
