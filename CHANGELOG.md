@@ -6,6 +6,10 @@ testing.
 
 ## Unreleased
 
+### Changed
+
+- gui: a new app icon, 1024 px with transparent corners.
+
 ## 0.72.2 - 2026-11-11
 
 Pre-release: secrets in the keychain, sound cards, self-update, uninstall and the new composer.
