@@ -1,7 +1,7 @@
 //! Secrets in the system keychain: macOS Keychain, the Secret Service on Linux, the
 //! Credential Manager on Windows. A secret has a name and a text value; the names are
 //! `provider/<name>` for a provider's API key and `huggingface` for the Hugging Face
-//! token. Without a keychain nothing is stored here, and the provider keys stay in the
+//! token. All of them live in one keychain item, the vault, so the user is asked once. Without a keychain nothing is stored here, and the provider keys stay in the
 //! private config file as they were.
 
 use anyhow::{Result, ensure};
@@ -12,6 +12,7 @@ mod forget;
 mod keychain;
 #[cfg(test)]
 mod memory;
+mod vault;
 
 pub use forget::forget_all;
 pub use keychain::Keychain;
