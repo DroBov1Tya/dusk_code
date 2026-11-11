@@ -169,7 +169,10 @@ fn act(
                 "skills" => Shelf::Skills,
                 "plugins" => Shelf::Plugins,
                 "tools" => Shelf::Tools,
-                "voice" => Shelf::Voice,
+                "voice" => {
+                    ws.load_voice_models(cx);
+                    Shelf::Voice
+                }
                 "agents" => Shelf::Agents,
                 _ => Shelf::Connectors,
             };

@@ -18,6 +18,7 @@ use gpui_kit::{
 };
 
 mod form;
+mod models;
 mod setup;
 
 pub use form::VoiceForm;
@@ -56,6 +57,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .child(div().small().text_color(muted).child(
             "Speech goes through any server that speaks the OpenAI audio API: a hosted account, \
              or a model run on this machine. Keys are kept in the system keychain.",
+        ))
+        .child(models::render(ws, cx))
+        .child(heading(
+            "Or connect a server",
+            "A hosted account, or any server of yours that speaks the OpenAI audio API.",
+            cx,
         ))
         .child(sources(cx))
         .child(
@@ -122,12 +129,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         );
     page = page
         .child(heading(
-            "Models worth trying",
+            "Other models",
             "Run one behind a server that speaks the OpenAI audio API, then point the boxes \
              above at it. A token for gated models is set in Settings, Secrets.",
             cx,
         ))
-        .child(models(cx));
+        .child(other_models(cx));
     page
 }
 
@@ -183,7 +190,7 @@ fn sources(cx: &mut Context<Workspace>) -> Div {
 }
 
 /// The models to try, as tiles that open their page on Hugging Face.
-fn models(cx: &mut Context<Workspace>) -> Div {
+fn other_models(cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let mut column = div().flex().flex_col().gap_3();
     for (title, items) in [("Recognition", RECOGNITION), ("Synthesis", SYNTHESIS)] {

@@ -90,8 +90,11 @@ pub fn render(
                 })
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.shelf = shelf;
-                    if shelf == Shelf::Voice && ws.voice.is_none() {
-                        ws.load_voice(cx);
+                    if shelf == Shelf::Voice {
+                        if ws.voice.is_none() {
+                            ws.load_voice(cx);
+                        }
+                        ws.load_voice_models(cx);
                     }
                     cx.notify();
                 })),
