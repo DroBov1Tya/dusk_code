@@ -24,9 +24,12 @@ pub struct Keychain;
 /// service of its own for any other folder, so that a second install, a test run or a
 /// throwaway HOME never shares or deletes the keys of the first.
 fn service_for(root: &Path) -> String {
-    let standard =
-        std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".config/duskcode"));
-    if standard.as_deref() == Some(root) {
+    // A link or a relative path to the same folder is the same install.
+    let root = std::fs::canonicalize(root).unwrap_or_else(|_| root.to_path_buf());
+    let standard = std::env::var_os("HOME")
+        .map(|home| PathBuf::from(home).join(".config/duskcode"))
+        .map(|path| std::fs::canonicalize(&path).unwrap_or(path));
+    if standard.as_deref() == Some(root.as_path()) {
         return SERVICE.to_owned();
     }
     let digest = Sha256::digest(root.as_os_str().as_encoded_bytes());
@@ -107,7 +110,11 @@ impl Keychain {
                 let backend = KeyringBackend {
                     service: service_for(root),
                 };
-                Some(Arc::new(Vault::new(Box::new(backend), legacy_names(root))))
+                Some(Arc::new(Vault::new(
+                    Box::new(backend),
+                    legacy_names(root),
+                    Some(root.join("secrets.lock")),
+                )))
             }
             Err(error) => {
                 warn!("no system keychain; keys cannot be moved out of the config file: {error}");

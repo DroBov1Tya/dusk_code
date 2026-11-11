@@ -26,6 +26,9 @@ pub trait SecretStore: Send + Sync {
     fn set(&self, name: &str, value: &str) -> Result<()>;
     /// A secret that is not there is already deleted.
     fn delete(&self, name: &str) -> Result<()>;
+    /// Forgets what was read, so the next `get` asks the keychain again: another process may
+    /// have changed a secret since.
+    fn refresh(&self) {}
 }
 
 /// The name a provider's API key is kept under.

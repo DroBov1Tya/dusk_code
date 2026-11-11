@@ -76,6 +76,10 @@ impl LiveConfig {
     /// Reads the file now, for example after something was added through a client.
     pub fn reload(&self) -> Result<()> {
         let mut loaded = self.lock_loaded();
+        // Another process may have changed a key since: ask the keychain again.
+        if let Some(store) = &self.secrets {
+            store.refresh();
+        }
         self.read_from_disk(&mut loaded)
     }
 
@@ -135,6 +139,10 @@ impl LiveConfig {
         }
         // Remembered before parsing, so a broken version is reported once, not every tick.
         *loaded = stamp;
+        // A change of the file may come with a change of a key made by another process.
+        if let Some(store) = &self.secrets {
+            store.refresh();
+        }
         self.read_from_disk(&mut loaded)
     }
 
