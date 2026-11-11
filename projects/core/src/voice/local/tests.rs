@@ -96,3 +96,53 @@ fn the_tail_of_a_failure_keeps_whole_characters() {
     assert!(said.contains(tail.trim()));
     assert_eq!(uv::tail(b"  short \n"), "short");
 }
+
+/// The whole road with the real thing: `uv`, the packages, the weights, the server and the
+/// speech clients. Slow and large, so it runs on request:
+/// `cargo test -p dusk_core local_models_talk -- --ignored --nocapture`.
+#[tokio::test(flavor = "multi_thread")]
+#[ignore = "installs real models with uv: needs the network and about 3 GB"]
+async fn local_models_talk_to_each_other() {
+    use dusk_protocol::config::{STT_KEY, TTS_KEY};
+    let (voice, _dir) = local_voice("voice-local-real");
+    let voice = Arc::new(voice);
+    for model in MODELS {
+        voice.install(model.id).await.unwrap();
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            let listed = voice.list(&Default::default()).await;
+            let state = &listed
+                .models
+                .iter()
+                .find(|m| m.id == model.id)
+                .unwrap()
+                .state;
+            println!("{}: {state:?}", model.id);
+            match state {
+                LocalState::Installing(_) => {}
+                LocalState::Running => break,
+                other => panic!("{other:?}"),
+            }
+        }
+    }
+    let settings = voice.config.current().voice().clone();
+    let store = voice.config.secrets().unwrap().clone();
+    let (stt, tts) = (settings.stt.unwrap(), settings.tts.unwrap());
+    let said = "Hello from the local voice server.";
+    let sound = crate::voice::speak(&tts, store.get(TTS_KEY).unwrap().as_deref(), said)
+        .await
+        .unwrap();
+    assert!(sound.starts_with(b"RIFF"));
+    let text = crate::voice::transcribe(&stt, store.get(STT_KEY).unwrap().as_deref(), &sound)
+        .await
+        .unwrap();
+    println!("heard: {text}");
+    assert!(text.to_lowercase().contains("hello"));
+    for model in MODELS {
+        voice.remove(model.id).await.unwrap();
+        assert!(!voice.dir(model).exists());
+    }
+    let after = voice.config.current().voice().clone();
+    assert!(after.stt.is_none() && after.tts.is_none());
+    assert!(voice.chosen().is_empty());
+}

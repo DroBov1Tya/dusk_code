@@ -91,6 +91,7 @@ tools/  (49)
   harness/  (11)
 util/  (5)
 voice/  (8)
+  local/  (7)
 ```
 
 ### gui
