@@ -55,12 +55,14 @@ async fn a_model_that_is_not_installed_is_listed_as_such() {
 #[tokio::test]
 async fn a_model_the_settings_point_at_is_in_use() {
     let (voice, _dir) = local_voice("voice-local-use");
-    let mut settings = dusk_protocol::config::VoiceSettings::default();
-    settings.tts = Some(VoiceEndpoint {
-        base_url: "http://127.0.0.1:1/v1".into(),
-        model: "kokoro-82m".into(),
-        voice: None,
-    });
+    let settings = dusk_protocol::config::VoiceSettings {
+        tts: Some(VoiceEndpoint {
+            base_url: "http://127.0.0.1:1/v1".into(),
+            model: "kokoro-82m".into(),
+            voice: None,
+        }),
+        ..Default::default()
+    };
     let listed = voice.list(&settings).await;
     let used: Vec<_> = listed.models.iter().filter(|model| model.in_use).collect();
     assert_eq!(used.len(), 1);
