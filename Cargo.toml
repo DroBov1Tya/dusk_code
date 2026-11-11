@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["projects/core", "projects/evals", "projects/external/telegram", "projects/gui", "projects/protocol", "projects/tui"]
+members = ["projects/core", "projects/evals", "projects/external/telegram", "projects/gui", "projects/protocol", "projects/tui", "projects/web", "projects/web-ui"]
 default-members = ["projects/tui"]
 
 [workspace.package]
@@ -50,6 +50,11 @@ opentelemetry-otlp = { version = "0.33", default-features = false, features = ["
 tracing-opentelemetry = { version = "0.34", default-features = false }
 sha1 = "0.11"
 unicode-width = "0.2"
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws"] }
+getrandom = "0.3"
+subtle = "2.6"
+rust-embed = "8"
+dusk_web = { path = "projects/web" }
 dusk_core = { path = "projects/core" }
 dusk_protocol = { path = "projects/protocol" }
 dusk_telegram = { path = "projects/external/telegram" }

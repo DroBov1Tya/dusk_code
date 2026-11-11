@@ -29,12 +29,18 @@ pub use crate::{
     util::{fs::expand_home, notify, usage::process as process_usage},
 };
 use crate::{
-    client::{self, Client},
+    client::{self, Client, Hub},
     runtime::Runtime,
 };
+use std::sync::Arc;
 
 /// Starts the core over `paths` and serves the client that said `hello`.
 pub async fn start(paths: Paths, state_db: Option<PathBuf>, hello: Hello) -> Result<Client> {
     let runtime = Runtime::start(paths, state_db).await?;
     client::serve(runtime, hello)
+}
+
+/// Starts the core over `paths` for several clients: each one attaches to the hub.
+pub async fn start_hub(paths: Paths, state_db: Option<PathBuf>) -> Result<Arc<Hub>> {
+    Ok(Hub::start(Runtime::start(paths, state_db).await?))
 }

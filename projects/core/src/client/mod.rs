@@ -218,6 +218,15 @@ impl Client {
         }
     }
 
+    /// Any request as it comes, for a bridge to a remote client; a failure is the
+    /// `Response::Error` the core would give.
+    pub async fn request(&self, request: Request) -> Response {
+        match self.send(request).await {
+            Ok(response) => response,
+            Err(_) => Response::Error("the core has stopped".to_owned()),
+        }
+    }
+
     /// Closes every thread and stops the core; returns once it has stopped. Every call
     /// after it fails.
     pub async fn shutdown(&self) {

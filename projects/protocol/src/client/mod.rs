@@ -3,6 +3,7 @@
 
 mod command;
 mod event;
+mod frame;
 mod hello;
 mod request;
 mod response;
@@ -11,6 +12,7 @@ mod status;
 
 pub use command::{Answer, COMMANDS, Command, parse};
 pub use event::Event;
+pub use frame::{RequestFrame, ServerFrame};
 pub use hello::{Hello, PROTOCOL_VERSION};
 pub use request::{
     CatalogRequest, ProjectRequest, ProviderTarget, Request, SettingsRequest, Switch,
