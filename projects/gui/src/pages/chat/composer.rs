@@ -14,7 +14,7 @@ use gpui_kit::{
 use super::transcript::Transcript;
 use crate::workspace::Workspace;
 
-pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     // Subagents may go on after the chat's own turn is over; Stop ends them too.
     let working = ws
         .shown_chat()
@@ -114,7 +114,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                                     .child(super::model_bar::render(ws, cx))
                                     .children(rate)
                                     .child(mic_button(ws, cx))
-                                    .child(super::model_bar::models(ws, cx))
+                                    .child(super::model_bar::models(ws, window, cx))
                                     .child(button),
                             ),
                     ),

@@ -93,7 +93,15 @@ pub fn render(
 impl Workspace {
     /// Opens a file in the viewer; text is asked of the core.
     pub fn view_file(&mut self, path: PathBuf, cx: &mut Context<Self>) {
-        let kind = kind(&path);
+        let kind = if self
+            .outputs
+            .iter()
+            .any(|file| file.path == path && file.kind == OutputKind::Image)
+        {
+            OutputKind::Image
+        } else {
+            kind(&path)
+        };
         let content = match kind {
             OutputKind::Image => ViewerContent::Image,
             OutputKind::Document | OutputKind::Other if !is_text_like(&path) => {

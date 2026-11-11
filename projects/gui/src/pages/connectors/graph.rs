@@ -1,8 +1,5 @@
-//! The agents, one level at a time: the agent in focus on the left, its own children on
-//! the right joined by curves. A child with children of its own is entered, with a
-//! breadcrumb back. Links to agents elsewhere in the tree are chips on the card, both
-//! ways ("asks", "asked by"), never edges across the picture: crossing edges are what
-//! made the whole tree at once unreadable.
+//! The focused agent and its direct reports. Breadcrumbs keep navigation in the
+//! hierarchy; relationship chips link to agents elsewhere in the tree.
 
 use std::collections::BTreeMap;
 
@@ -16,20 +13,22 @@ use gpui_kit::{
     *,
 };
 
-use crate::{modal::detail::Detail, ui::widgets, workspace::Workspace};
+use crate::{
+    modal::detail::Detail,
+    ui::{
+        Type,
+        widgets::{self, Focusable},
+    },
+    workspace::Workspace,
+};
 
-const CARD_W: f32 = 300.;
-const CARD_H: f32 = 88.;
-const GAP: f32 = 12.;
-const FOCUS_W: f32 = 240.;
-const BRIDGE: f32 = 96.;
+const CARD_W: f32 = 288.;
 
 pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (muted, border, accent, danger, surface) = (
+    let (muted, border, danger, surface) = (
         theme.muted_foreground,
         theme.border,
-        theme.primary,
         theme.danger,
         theme.muted,
     );
@@ -51,89 +50,55 @@ pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> 
             ));
     }
     let children = &focus.children;
-    let height = (children.len().max(1) as f32) * (CARD_H + GAP);
-    let focus_y = height / 2. - CARD_H / 2.;
-    let ends: Vec<(f32, f32)> = (0..children.len())
-        .map(|index| {
-            (
-                focus_y + CARD_H / 2.,
-                index as f32 * (CARD_H + GAP) + CARD_H / 2.,
-            )
-        })
-        .collect();
-    let edges = canvas(
-        |_, _, _| {},
-        move |bounds, _, window, _| {
-            let origin = bounds.origin;
-            let at = |x: f32, y: f32| point(origin.x + px(x), origin.y + px(y));
-            let mut path = PathBuilder::stroke(px(1.5));
-            for (from, to) in &ends {
-                path.move_to(at(FOCUS_W, *from));
-                path.cubic_bezier_to(
-                    at(FOCUS_W + BRIDGE, *to),
-                    at(FOCUS_W + BRIDGE / 2., *from),
-                    at(FOCUS_W + BRIDGE / 2., *to),
-                );
-            }
-            if let Ok(path) = path.build() {
-                window.paint_path(path, border);
-            }
-        },
-    )
-    .absolute()
-    .size_full();
-    let focus_card = div()
-        .absolute()
-        .left_0()
-        .top(px(focus_y))
-        .w(px(FOCUS_W))
-        .h(px(CARD_H))
-        .p_3()
+    let summary = div()
         .flex()
-        .flex_col()
-        .justify_center()
-        .gap_1()
+        .items_center()
+        .flex_wrap()
+        .gap_3()
+        .px_4()
+        .py_3()
         .rounded_lg()
-        .border_1()
-        .border_color(accent)
         .bg(surface)
+        .child(widgets::icon(IconName::Network, muted))
         .child(
             div()
-                .font_weight(FontWeight::SEMIBOLD)
-                .child(focus.name.clone()),
+                .min_w_0()
+                .flex_1()
+                .child(
+                    div()
+                        .body()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(focus.name.clone()),
+                )
+                .when(!trail.is_empty(), |summary| {
+                    summary.child(
+                        div()
+                            .small()
+                            .text_color(muted)
+                            .line_clamp(2)
+                            .child(focus.description.clone()),
+                    )
+                }),
         )
         .child(
             div()
-                .text_xs()
+                .small()
                 .text_color(muted)
-                .line_clamp(2)
-                .child(if trail.is_empty() {
-                    "The chat asks these agents.".to_owned()
-                } else {
-                    focus.description.clone()
-                }),
+                .child(widgets::count(children.len(), "direct agent")),
         );
-    let mut picture = div()
-        .relative()
-        .w(px(FOCUS_W + BRIDGE + CARD_W))
-        .h(px(height))
-        .child(edges)
-        .child(focus_card);
-    for (index, child) in children.iter().enumerate() {
-        picture = picture.child(
-            card(child, &paths, &asked_by, cx)
-                .absolute()
-                .left(px(FOCUS_W + BRIDGE))
-                .top(px(index as f32 * (CARD_H + GAP))),
-        );
+    let mut cards = div().flex().flex_wrap().gap_3();
+    for child in children {
+        cards = cards.child(card(child, &paths, &asked_by, cx));
     }
     let mut page = div()
         .flex()
         .flex_col()
-        .gap_4()
-        // At the top level the tab already says Agents; the trail shows once one is entered.
+        .gap_3()
         .when(!trail.is_empty(), |page| page.child(crumbs))
-        .child(div().id("agents-level").overflow_x_scroll().child(picture));
+        .child(summary)
+        .when(!children.is_empty(), |page| {
+            page.child(div().pl_3().border_l_1().border_color(border).child(cards))
+        });
     if children.is_empty() {
         page = page.child(widgets::muted("This agent asks no one of its own.", cx).px_0());
     }
@@ -191,8 +156,9 @@ fn card(
                     "chip-{}-{label}-{target}",
                     node.name
                 )))
+                .focusable_row(cx)
                 .flex_none()
-                .max_w(px(100.))
+                .max_w(px(112.))
                 .truncate()
                 .px_1p5()
                 .rounded_sm()
@@ -202,6 +168,7 @@ fn card(
                 .cursor_pointer()
                 .child(format!("{label} {target}"))
                 .on_click(cx.listener(move |ws, _, _, cx| {
+                    cx.stop_propagation();
                     if let Some(path) = &path {
                         // Shows the level the linked agent sits on.
                         let mut parent = path.clone();
@@ -226,8 +193,10 @@ fn card(
     let switch_name = name.clone();
     div()
         .id(SharedString::from(format!("agent-{name}")))
+        .focusable_row(cx)
         .w(px(CARD_W))
-        .h(px(CARD_H))
+        .max_w_full()
+        .min_h(px(72.))
         .px_3()
         .py_2()
         .flex()
@@ -285,7 +254,7 @@ fn card(
                 .truncate()
                 .child(node.description.clone()),
         )
-        .child(chips)
+        .when(!links.is_empty(), |card| card.child(chips))
         // Enters an agent with children of its own; opens the file of one without.
         .on_click(cx.listener(move |ws, _, _, cx| {
             if inside > 0 {

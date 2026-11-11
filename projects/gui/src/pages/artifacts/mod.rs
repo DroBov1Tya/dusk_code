@@ -1,17 +1,21 @@
 //! The files the agents made, in the middle column: by kind (text, pictures, documents
 //! and the rest), newest first. Pictures show as thumbnails; any file opens in the viewer.
 
-use dusk_protocol::project::{OutputFile, OutputKind};
+use dusk_protocol::project::{OutputFile, OutputKind, OutputPreview};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
+    prelude::FluentBuilder,
     *,
 };
 
 use crate::{
-    ui::{Type, widgets},
+    ui::{
+        Type,
+        widgets::{self, Focusable},
+    },
     workspace::Workspace,
 };
 
@@ -25,13 +29,14 @@ const KINDS: &[(Option<OutputKind>, &str)] = &[
 
 pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
-    let (foreground, muted, accent, border) = (
-        theme.foreground,
-        theme.muted_foreground,
-        theme.primary,
-        theme.border,
-    );
-    let mut tabs = div().flex().flex_row().items_center().gap_6().px_6().pt_5();
+    let (foreground, muted, border) = (theme.foreground, theme.muted_foreground, theme.border);
+    let mut tabs = div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_2()
+        .px_6()
+        .pt_5();
     for (kind, label) in KINDS {
         let kind = *kind;
         let count = ws
@@ -41,16 +46,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             .count();
         let active = ws.artifact_kind == kind;
         tabs = tabs.child(
-            div()
-                .id(*label)
-                .flex()
-                .flex_row()
-                .items_baseline()
-                .gap_1()
-                .pb_1()
-                .cursor_pointer()
-                .border_b_2()
-                .border_color(if active { accent } else { transparent_black() })
+            widgets::row(*label, active, cx)
+                .h(px(34.))
+                .gap_2()
+                .px_3()
+                .body()
                 .text_color(if active { foreground } else { muted })
                 .child(*label)
                 .child(div().meta().text_color(muted).child(count.to_string()))
@@ -91,9 +91,18 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 })),
         );
     }
-    let mut grid = div().grid().grid_cols(5).gap_4();
+    let mut images = div().flex().flex_wrap().gap_3();
+    let mut documents = div().flex().flex_wrap().gap_2();
+    let mut has_images = false;
+    let mut has_documents = false;
     for (index, file) in files.iter().enumerate() {
-        grid = grid.child(card(index, file, cx));
+        if file.kind == OutputKind::Image {
+            has_images = true;
+            images = images.child(card(index, file, cx));
+        } else {
+            has_documents = true;
+            documents = documents.child(card(index, file, cx));
+        }
     }
     let body = if files.is_empty() {
         crate::ui::empty(
@@ -104,7 +113,21 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         )
         .into_any_element()
     } else {
-        grid.into_any_element()
+        let groups = ws.artifact_kind.is_none() && has_images && has_documents;
+        let mut items = div().flex().flex_col().gap_3();
+        if has_images {
+            if groups {
+                items = items.child(div().group_name().child("Images"));
+            }
+            items = items.child(images);
+        }
+        if has_documents {
+            if groups {
+                items = items.child(div().group_name().pt_2().child("Files"));
+            }
+            items = items.child(documents);
+        }
+        items.into_any_element()
     };
     div()
         .id("artifacts")
@@ -134,54 +157,78 @@ fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Statefu
         .and_then(|parent| parent.file_name())
         .map(|name| name.to_string_lossy().into_owned())
         .unwrap_or_default();
-    let preview = match file.kind {
-        OutputKind::Image => img(file.path.clone())
-            .size_full()
-            .object_fit(ObjectFit::Cover)
-            .into_any_element(),
-        kind => div()
+    let image = file.kind == OutputKind::Image;
+    let icon = match file.kind {
+        OutputKind::Image => IconName::LayoutDashboard,
+        OutputKind::Text => IconName::FileText,
+        OutputKind::Document => IconName::BookOpen,
+        _ => IconName::File,
+    };
+    let placeholder = move || {
+        div()
             .size_full()
             .flex()
             .items_center()
             .justify_center()
-            .child(widgets::icon(
-                match kind {
-                    OutputKind::Text => IconName::FileText,
-                    OutputKind::Document => IconName::BookOpen,
-                    _ => IconName::File,
-                },
-                muted,
-            ))
-            .into_any_element(),
+            .child(widgets::icon(icon.clone(), muted))
+            .into_any_element()
+    };
+    let source = match &file.preview {
+        OutputPreview::Original if image => Some(&file.path),
+        OutputPreview::Thumbnail(path) if image => Some(path),
+        _ => None,
+    };
+    let preview = if let Some(source) = source {
+        img(source.clone())
+            .size_full()
+            .object_fit(ObjectFit::Contain)
+            .with_loading(placeholder.clone())
+            .with_fallback(placeholder)
+            .into_any_element()
+    } else {
+        placeholder()
     };
     let path = file.path.clone();
     let doomed = file.path.clone();
     let menu_path = file.path.clone();
     div()
         .id(("artifact", index))
+        .focusable_row(cx)
         .group("artifact")
         .relative()
         .flex()
-        .flex_col()
-        .rounded_2xl()
+        .when(image, |tile| tile.w(px(164.)).flex_col())
+        .when(!image, |tile| tile.w(px(250.)))
+        .max_w_full()
+        .items_center()
+        .rounded_lg()
         .border_1()
         .border_color(border)
         .bg(surface)
         .overflow_hidden()
         .cursor_pointer()
         .hover(move |card| card.bg(raised))
-        // A tile is a square window onto the file; the click opens it whole.
         .child(
-            div()
-                .w_full()
-                .aspect_square()
-                .overflow_hidden()
-                .child(preview),
+            if image {
+                div().w_full().h(px(108.)).bg(theme.background)
+            } else {
+                div()
+                    .size(px(36.))
+                    .ml_2()
+                    .flex_none()
+                    .rounded_md()
+                    .bg(theme.background)
+            }
+            .overflow_hidden()
+            .child(preview),
         )
         .child(
             div()
                 .flex()
                 .flex_col()
+                .flex_1()
+                .min_w_0()
+                .w_full()
                 .gap_0p5()
                 .px_3()
                 .py_2()
