@@ -68,22 +68,26 @@ pub fn root() -> Result<PathBuf> {
     Ok(root)
 }
 
-/// The resources inside a macOS app bundle, beside its binary: an app from a disk
-/// image carries its own, as nothing else installed them.
+/// The resources that come with the program: inside a macOS app bundle, beside its binary,
+/// or in an AppImage and any other install that keeps them in `share/duskcode/resources`
+/// next to its `bin`. An app from a disk image or an AppImage carries its own, as nothing
+/// else installed them.
 fn bundled() -> Option<PathBuf> {
-    if !cfg!(target_os = "macos") {
-        return None;
-    }
     let binary = std::env::current_exe().and_then(fs::canonicalize).ok()?;
-    let contents = binary.parent()?.parent()?;
-    let in_bundle = binary.parent()?.file_name()? == "MacOS"
-        && contents.file_name()? == "Contents"
-        && contents
-            .parent()?
-            .extension()
-            .is_some_and(|extension| extension == "app");
-    let root = contents.join("Resources").join("resources");
-    (in_bundle && validate(&root, Some(VERSION)).is_ok()).then_some(root)
+    let folder = binary.parent()?;
+    let root = if cfg!(target_os = "macos") {
+        let contents = folder.parent()?;
+        let in_bundle = folder.file_name()? == "MacOS"
+            && contents.file_name()? == "Contents"
+            && contents
+                .parent()?
+                .extension()
+                .is_some_and(|extension| extension == "app");
+        in_bundle.then(|| contents.join("Resources").join("resources"))?
+    } else {
+        folder.parent()?.join("share/duskcode/resources")
+    };
+    validate(&root, Some(VERSION)).is_ok().then_some(root)
 }
 
 pub fn text(relative: &str) -> Result<String> {
