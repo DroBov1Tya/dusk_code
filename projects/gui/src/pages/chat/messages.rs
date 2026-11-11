@@ -7,7 +7,7 @@ use std::path::Path;
 
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, IconName, Sizable,
+        ActiveTheme, Colorize, Disableable, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -20,7 +20,10 @@ use super::{
     working,
 };
 use crate::{
-    ui::{Type, widgets},
+    ui::{
+        Type,
+        widgets::{self, Focusable},
+    },
     workspace::Workspace,
 };
 
@@ -55,7 +58,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             }
             continue;
         }
-        if let Item::User { text, .. } = &chat.items[index] {
+        if let Item::User {
+            text,
+            sequence: Some(_),
+        } = &chat.items[index]
+        {
             sent.push((rows.len(), text.clone()));
         }
         rows.push(Row::Item(index));
@@ -253,28 +260,25 @@ impl Workspace {
                         if !reasoning.trim().is_empty() {
                             let id = shown.clone();
                             answer = answer.child(
-                                div()
-                                    .id(SharedString::from(format!("reasoning-{key}")))
-                                    .small()
-                                    .text_color(muted)
-                                    .cursor_pointer()
-                                    .child(if unfolded {
-                                        "▾ Thinking"
-                                    } else {
-                                        "▸ Thinking"
-                                    })
-                                    .on_click(
-                                        cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx)),
-                                    ),
+                                disclosure(
+                                    SharedString::from(format!("reasoning-{key}")),
+                                    unfolded,
+                                    cx,
+                                )
+                                .aria_label("Thinking")
+                                .child(disclosure_icon(unfolded, step_muted(cx)))
+                                .child("Thinking")
+                                .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx))),
                             );
                             if unfolded {
                                 answer = answer.child(
                                     div()
+                                        .ml_4()
                                         .pl_3()
-                                        .border_l_2()
+                                        .border_l_1()
                                         .border_color(border)
-                                        .meta()
-                                        .text_color(muted)
+                                        .small()
+                                        .text_color(step_muted(cx))
                                         .child(reasoning.clone()),
                                 );
                             }
@@ -354,8 +358,18 @@ impl Workspace {
                 }
             }
         };
-        let top = if ix == 0 { 24. } else { 8. };
-        let bottom = if ix + 1 == self.rows.len() { 24. } else { 8. };
+        let activity = matches!(row, Row::Run { .. })
+            || matches!(row, Row::Item(at) if matches!(
+                &chat.items[at],
+                Item::Assistant { text, reasoning } if text.is_empty() && !reasoning.trim().is_empty()
+            ));
+        let gutter = if activity { 3. } else { 8. };
+        let top = if ix == 0 { 24. } else { gutter };
+        let bottom = if ix + 1 == self.rows.len() {
+            24.
+        } else {
+            gutter
+        };
         div()
             .pt(px(top))
             .pb(px(bottom))
@@ -432,32 +446,20 @@ pub fn run(
     tools: &[&Tool],
     cx: &mut Context<Workspace>,
 ) -> Div {
-    let (muted, border) = (cx.theme().muted_foreground, cx.theme().border);
     let open = ws.unfolded.contains(&(shown.to_owned(), start | RUN));
-    // The steps of a run sit on a rail: they are a sequence, and read apart from the answer.
-    let mut block = div()
-        .flex()
-        .flex_col()
-        .gap_1()
-        .pl_3()
-        .border_l_1()
-        .border_color(border);
+    let mut block = div().flex().flex_col().gap_1();
     if tools.len() > 1 {
         let id = shown.to_owned();
+        let label = if open {
+            widgets::count(tools.len(), "step")
+        } else {
+            format!("{} earlier", widgets::count(tools.len() - 1, "step"))
+        };
         block = block.child(
-            div()
-                .id(SharedString::from(format!("run-{shown}-{start}")))
-                .small()
-                .text_color(muted)
-                .cursor_pointer()
-                .child(if open {
-                    format!("▾ {}", crate::ui::widgets::count(tools.len(), "step"))
-                } else {
-                    format!(
-                        "▸ {} earlier",
-                        crate::ui::widgets::count(tools.len() - 1, "step")
-                    )
-                })
+            disclosure(SharedString::from(format!("run-{shown}-{start}")), open, cx)
+                .aria_label(label.clone())
+                .child(disclosure_icon(open, step_muted(cx)))
+                .child(label)
                 .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, start | RUN, cx))),
         );
     }
@@ -468,6 +470,43 @@ pub fn run(
     block
 }
 
+fn step_muted(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    theme.foreground.mix_oklab(theme.muted_foreground, 0.16)
+}
+
+fn disclosure(id: impl Into<ElementId>, open: bool, cx: &App) -> Stateful<Div> {
+    let hover = cx.theme().list_hover;
+    div()
+        .id(id)
+        .focusable_row(cx)
+        .role(Role::Button)
+        .aria_expanded(open)
+        .flex()
+        .items_center()
+        .gap_2()
+        .min_h(px(26.))
+        .min_w_0()
+        .px_2()
+        .rounded_md()
+        .small()
+        .text_color(step_muted(cx))
+        .cursor_pointer()
+        .when(open, |row| row.bg(hover))
+        .hover(move |row| row.bg(hover))
+}
+
+fn disclosure_icon(open: bool, color: Hsla) -> impl IntoElement {
+    widgets::icon(
+        if open {
+            IconName::ChevronDown
+        } else {
+            IconName::ChevronRight
+        },
+        color,
+    )
+}
+
 fn step(
     ws: &Workspace,
     shown: &str,
@@ -476,68 +515,71 @@ fn step(
     cx: &mut Context<Workspace>,
 ) -> Div {
     let theme = cx.theme();
-    let (muted, success, danger, signal, surface) = (
-        theme.muted_foreground,
-        theme.success,
-        theme.danger,
-        theme.warning,
-        theme.muted,
-    );
+    let muted = step_muted(cx);
+    let surface = theme.muted;
     let open = ws.unfolded.contains(&(shown.to_owned(), index | STEP));
-    let (icon, color) = match tool.state {
-        // The signal color is for work going on; what is done recedes.
-        ToolState::Running => (IconName::LoaderCircle, signal),
-        ToolState::Done => (IconName::Check, success.opacity(0.7)),
-        ToolState::Failed => (IconName::CircleX, danger),
+    let (icon, color, status) = match tool.state {
+        ToolState::Running => (IconName::LoaderCircle, theme.warning, "Running"),
+        ToolState::Done => (IconName::Check, muted, "Completed"),
+        ToolState::Failed => (IconName::CircleX, theme.danger, "Failed"),
     };
     let id = shown.to_owned();
     let mono = crate::ui::theme::prefs(cx)
         .mono_font
         .clone()
         .unwrap_or_else(|| "Menlo".to_owned());
-    let mut line = div().flex().flex_col().child(
+    let detail = tool.detail.trim();
+    let summary = if detail.is_empty() {
+        tool.name.replace('_', " ")
+    } else {
+        detail.to_owned()
+    };
+    let button = disclosure(
+        SharedString::from(format!("step-{shown}-{index}")),
+        open,
+        cx,
+    )
+    .flex_1()
+    .aria_label(format!("{summary}, {}, {status}", tool.name))
+    .child(widgets::icon(icon, color))
+    .child(
         div()
-            .id(SharedString::from(format!("step-{shown}-{index}")))
-            .flex()
-            .flex_row()
-            .items_center()
-            .gap_2()
-            .small()
-            .text_color(muted)
-            .cursor_pointer()
-            .child(widgets::icon(icon, color))
-            .child(
-                div()
-                    .font_weight(FontWeight::MEDIUM)
-                    .text_color(theme.foreground.opacity(0.85))
-                    .child(tool.name.clone()),
-            )
-            .child(
-                div()
-                    .truncate()
-                    .font_family(mono.clone())
-                    .child(tool.detail.clone()),
-            )
-            .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx)))
-            // A long command can go on in the background while the agent works on.
-            .when(
-                tool.state == ToolState::Running && tool.name == "run_command",
-                |row| {
-                    let (thread_id, call_id) = (shown.to_owned(), tool.call_id.clone());
-                    row.child(
-                        Button::new(SharedString::from(format!("background-{shown}-{index}")))
-                            .ghost()
-                            .xsmall()
-                            .label("To background")
-                            .tooltip("The agent goes on; the result comes when it ends")
-                            .on_click(cx.listener(move |ws, _, _, cx| {
-                                cx.stop_propagation();
-                                ws.send_to_background(&thread_id, &call_id, cx);
-                            })),
-                    )
-                },
-            ),
-    );
+            .flex_1()
+            .min_w_0()
+            .truncate()
+            .text_color(theme.foreground)
+            .child(summary),
+    )
+    .child(
+        div()
+            .max_w(relative(0.30))
+            .truncate()
+            .meta()
+            .font_family(mono.clone())
+            .child(tool.name.clone()),
+    )
+    .when(tool.state == ToolState::Failed, |row| {
+        row.child(div().meta().text_color(color).child(status))
+    })
+    .child(disclosure_icon(open, muted))
+    .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx)));
+    let mut row = div().flex().items_center().gap_2().child(button);
+    // A long command can go on in the background while the agent works on.
+    if tool.state == ToolState::Running && tool.name == "run_command" {
+        let (thread_id, call_id) = (shown.to_owned(), tool.call_id.clone());
+        row = row.child(
+            Button::new(SharedString::from(format!("background-{shown}-{index}")))
+                .ghost()
+                .xsmall()
+                .label("To background")
+                .tooltip("The agent goes on; the result comes when it ends")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    cx.stop_propagation();
+                    ws.send_to_background(&thread_id, &call_id, cx);
+                })),
+        );
+    }
+    let mut line = div().flex().flex_col().child(row);
     if open {
         let block = |title: &'static str, text: &str| {
             div()
@@ -559,7 +601,7 @@ fn step(
             .flex()
             .flex_col()
             .gap_2()
-            .pl_6()
+            .pl_4()
             .pt_1()
             .child(block("Arguments", &tool.arguments));
         if !tool.output.is_empty() {

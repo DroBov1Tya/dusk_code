@@ -14,6 +14,9 @@ use gpui_kit::{
 use super::transcript::Transcript;
 use crate::workspace::Workspace;
 
+pub(super) const WIDTH: f32 = 780.;
+pub(super) const AGENTS_BUTTON: f32 = 52.;
+
 pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     // Subagents may go on after the chat's own turn is over; Stop ends them too.
     let working = ws
@@ -51,14 +54,14 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .child(format!("{rate} tok/s"))
         });
     let navigator =
-        (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, cx));
+        (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, window, cx));
     let mentions = mention_menu(ws, cx);
     let chips = strip(ws, cx);
     div()
         .relative()
         .px_6()
         .pt_2()
-        .max_w(px(780.))
+        .max_w(px(WIDTH))
         .mx_auto()
         .w_full()
         .children(queued)
@@ -327,7 +330,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let color = if working > 0 { signal } else { muted };
     let tile = div()
         .id("agents")
-        .size(px(52.))
+        .size(px(AGENTS_BUTTON))
         .flex_none()
         .flex()
         .items_center()
@@ -365,12 +368,16 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     // The count sits on the border of the tile's corner: its centre is on the arc of the
     // rounded corner, which is 3.5 px in from the corner for a radius of 12, so the box
     // keeps 5.5 px of room above and to the right for the badge's half (9 px).
+    const BADGE_ROOM: f32 = 5.5;
     Some(
         div()
             .relative()
             .flex_none()
-            .pt(px(5.5))
-            .pr(px(5.5))
+            .pt(px(BADGE_ROOM))
+            .pr(px(BADGE_ROOM))
+            // The room is outside the layout: the tile stays where it was, at its size.
+            .mt(px(-BADGE_ROOM))
+            .mr(px(-BADGE_ROOM))
             .child(tile)
             .child(
                 div()
