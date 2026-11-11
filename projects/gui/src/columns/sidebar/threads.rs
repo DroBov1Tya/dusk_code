@@ -114,24 +114,26 @@ impl Workspace {
                 .is_some_and(|title| title.to_lowercase().contains(&query))
     }
 
-    /// A new chat in a project's folder, or in the workspace root without one.
-    pub fn new_chat(&mut self, project_id: Option<&str>, _: &mut Window, cx: &mut Context<Self>) {
+    /// A new chat in a project's folder, or in the workspace root without one. Only its
+    /// window opens: the thread is made when the first message is sent.
+    pub fn new_chat(
+        &mut self,
+        project_id: Option<&str>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.select_project(project_id, cx);
-        let dir = self
-            .selected_project()
-            .map_or_else(|| self.home.clone(), |project| project.dir.clone());
-        self.core.call(
-            cx,
-            move |client| async move { client.threads().start(dir).await },
-            |ws, result, cx| match result {
-                Ok(thread_id) => {
-                    ws.chats.insert(thread_id.clone(), Transcript::default());
-                    ws.show(thread_id, cx);
-                    ws.reload_threads(cx);
-                }
-                Err(error) => ws.fail(error, cx),
-            },
-        );
+        self.shown = None;
+        self.center = Center::Chat;
+        self.context = None;
+        self.jobs.clear();
+        self.plan.text = None;
+        self.plan.editing = false;
+        self.touched.clear();
+        self.refresh_inspector(cx);
+        self.composer
+            .update(cx, |composer, cx| composer.focus(window, cx));
+        cx.notify();
     }
 
     pub fn open_chat(&mut self, thread_id: &str, cx: &mut Context<Self>) {
