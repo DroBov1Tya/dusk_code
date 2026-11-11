@@ -15,7 +15,7 @@ use crate::{
 
 use super::{McpClient, RemoteTool, TokenFile, check_url, oauth};
 
-pub use dusk_protocol::mcp::{McpInfo, McpState, McpStatus, McpToolInfo};
+pub use dusk_protocol::config::{McpInfo, McpState, McpStatus, McpToolInfo};
 
 /// A server that started, with its tools.
 pub struct McpServer {

@@ -8,7 +8,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-pub use dusk_protocol::paths::{PathCompletion, PathEntry};
+pub use dusk_protocol::project::{PathCompletion, PathEntry};
 
 /// Names alone are cheap to read; only matches are looked at further.
 const MAX_SCANNED: usize = 50_000;

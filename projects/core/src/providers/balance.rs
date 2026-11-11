@@ -11,7 +11,7 @@ use crate::config::{BalanceApi, ProviderConfig};
 
 use super::transport::http;
 
-pub use dusk_protocol::providers::Balance;
+pub use dusk_protocol::model::Balance;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_BODY_BYTES: usize = 64 * 1024;

@@ -1,6 +1,6 @@
 //! Sending what is typed: commands, messages, the queue and recall.
 
-use dusk_protocol::{command, command::Command};
+use dusk_protocol::client::{Command, parse};
 
 use super::{Action, Activity, App, Connection, Panel, Tone};
 
@@ -54,7 +54,7 @@ impl App {
         }
         // The core says what a command is; ones that do not run in the thread come
         // back from it as something to show.
-        let command = command::parse(&text);
+        let command = parse(&text);
         if let Some(Ok(command)) = &command
             && !command.runs_in_thread()
         {

@@ -8,7 +8,7 @@ use ratatui::{
 };
 use unicode_width::UnicodeWidthStr;
 
-use dusk_protocol::update::InstallStage;
+use dusk_protocol::release::InstallStage;
 
 use crate::app::{App, Panel};
 use crate::ui::windows::{

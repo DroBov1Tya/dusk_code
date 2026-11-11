@@ -13,7 +13,7 @@ use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, Card, MAX_AUDIO_BYTES},
 };
-use dusk_protocol::artifact::CardKind;
+use dusk_protocol::tools::CardKind;
 
 pub struct DisplayAudio {
     store: ArtifactStore,
@@ -112,6 +112,23 @@ impl Tool for DisplayAudio {
     ) -> BoxFuture<'a, ToolResult> {
         Box::pin(async move { self.display(parse_arguments(arguments)?, context).await })
     }
+}
+
+/// Keeps a sound some server made as a card: checked by its first bytes like a file.
+pub fn save_sound(store: &ArtifactStore, bytes: &[u8], title: Option<String>) -> Result<Card> {
+    let Some(sound) = sniff(bytes) else {
+        anyhow::bail!("the speech server did not send a sound of a known kind");
+    };
+    store.save_audio(
+        Card {
+            title,
+            mime_type: sound.mime_type.into(),
+            kind: CardKind::Audio,
+            duration_ms: sound.duration_ms,
+            ..Card::default()
+        },
+        bytes,
+    )
 }
 
 /// What the first bytes say a file is, or `None` when they are no sound this takes.

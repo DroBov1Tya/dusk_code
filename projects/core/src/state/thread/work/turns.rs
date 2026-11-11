@@ -17,7 +17,7 @@ use super::{
 };
 use crate::providers::ToolCall;
 
-pub use dusk_protocol::work::{Turn, TurnStatus};
+pub use dusk_protocol::thread::{Turn, TurnStatus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]

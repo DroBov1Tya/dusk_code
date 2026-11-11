@@ -19,7 +19,7 @@ use crate::{
     providers::output::inline_tags::TagSplitter,
 };
 
-pub use dusk_protocol::providers::Model;
+pub use dusk_protocol::model::Model;
 
 /// What the agent needs from a model provider. Tests put a scripted model behind it.
 pub trait ModelProvider: Send + Sync {

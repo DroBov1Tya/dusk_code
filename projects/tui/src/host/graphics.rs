@@ -11,7 +11,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use dusk_protocol::artifact::Card;
+use dusk_protocol::tools::Card;
 use image::{DynamicImage, imageops::FilterType};
 use ratatui::{
     Frame,

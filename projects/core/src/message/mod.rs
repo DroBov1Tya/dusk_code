@@ -3,6 +3,5 @@
 //! write inline. Providers only move bytes; the meaning of a message is worked out here.
 
 pub mod commands;
-pub use dusk_protocol::pasted;
 pub mod path_completion;
 pub mod sources;

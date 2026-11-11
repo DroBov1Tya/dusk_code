@@ -1,6 +1,9 @@
 //! How the core's events change the client state.
 
-use dusk_protocol::{model::ModelEvent, thread::ThreadEvent, work::TurnStatus};
+use dusk_protocol::{
+    model::ModelEvent,
+    thread::{ThreadEvent, TurnStatus},
+};
 
 use super::{Activity, App, Entry, Focus, Poll, Tone, compact_number};
 

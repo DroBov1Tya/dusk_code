@@ -1,34 +1,26 @@
 //! duskcode-gui: the desktop client. It only draws and calls the core through the
-//! protocol, the same way the TUI does:
+//! protocol, the same way the TUI does. The tree follows what the window is made of:
 //! - `core`: the bridge from the window to the core's client;
 //! - `workspace`: the window's state and its three columns;
-//! - `sidebar`: projects, chats, recent chats and search, on the left;
-//! - `connectors`: MCP servers, skills, plugins, tools and the agents' graph;
-//! - `chat`: the transcript, the composer and the bar under it, in the middle;
-//! - `inspector`: git, files, context, todo, agents and jobs, on the right;
-//! - `artifacts`: the files the agents made, by kind, in the middle column;
-//! - `modal`: what opens over the window: search, a new project, a file viewer;
-//! - `settings`: the settings page with its category menu;
-//! - `theme`: the color themes and fonts.
+//! - `columns`: the side columns: the `sidebar` (projects, chats, search) and the
+//!   `inspector` (git, files, context, todo, agents, jobs);
+//! - `pages`: what the middle column shows: the `chat`, the `artifacts` the agents made, the
+//!   `connectors` (servers, skills, plugins, tools, speech), the `settings`, the `review` of
+//!   changes and a `file` in full;
+//! - `modal`: what opens over the window: search, a new project, a file viewer, confirmations;
+//! - `ui`: the design system: its scale and pieces, the `widgets` and the `theme`;
+//! - `platform`: what the window takes from the machine: the icon and notifications;
+//! - `keys`: the keyboard shortcuts.
 
-mod artifacts;
-mod chat;
-mod connectors;
+mod columns;
 mod core;
-mod file_view;
-mod icon;
-mod inspector;
 mod keys;
 mod modal;
-mod notify;
-mod review;
+mod pages;
+mod platform;
 #[cfg(feature = "screenshot")]
 mod screenshot;
-mod settings;
-mod sidebar;
-mod theme;
 mod ui;
-mod widgets;
 mod workspace;
 
 use std::sync::Arc;
@@ -74,8 +66,8 @@ fn main() -> Result<()> {
         .run(move |cx| {
             gpui_kit::init(cx);
             keys::bind(cx);
-            icon::set_dock_icon();
-            theme::init(look_file, cx);
+            platform::icon::set_dock_icon();
+            ui::theme::init(look_file, cx);
             let core = core::Core::new(client, Arc::clone(&runtime));
             let options = WindowOptions {
                 window_bounds: Some(WindowBounds::centered(size(px(1440.), px(900.)), cx)),
@@ -83,7 +75,7 @@ fn main() -> Result<()> {
                     title: Some("duskcode".into()),
                     ..Default::default()
                 }),
-                app_id: Some(icon::APP_ID.to_owned()),
+                app_id: Some(platform::icon::APP_ID.to_owned()),
                 ..Default::default()
             };
             let opened = gpui_kit::open_window(options, cx, |window, cx| {

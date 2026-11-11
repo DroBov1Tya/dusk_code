@@ -7,7 +7,7 @@ use ratatui::{style::Color, text::Span};
 use super::theme::fg;
 
 /// The core names agents; their loaders and colors come from the same seed.
-pub use dusk_protocol::{thread::agent_name, thread::name_seed as identity};
+pub use dusk_protocol::thread::{agent_name, name_seed as identity};
 
 const WIDTH: usize = 5;
 const HEIGHT: usize = 3;

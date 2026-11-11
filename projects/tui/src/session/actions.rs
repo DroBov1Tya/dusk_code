@@ -5,7 +5,9 @@ use std::env;
 use anyhow::Result;
 use dusk_core::client::Client;
 use dusk_protocol::{
-    client::Switch, command::Command, config::ApprovalPolicy, update::InstallProgress,
+    client::{Command, Switch},
+    config::ApprovalPolicy,
+    release::InstallProgress,
 };
 use ratatui::DefaultTerminal;
 

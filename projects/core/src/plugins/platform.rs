@@ -306,7 +306,7 @@ impl<'a> Session<'a> {
                 // Pictures for the model, such as screenshots, stay in the thread; a sound is
                 // for a client that plays it, and no platform takes one yet.
                 let pictures = result.artifacts.iter().filter(|card| {
-                    !card.for_model && card.kind == dusk_protocol::artifact::CardKind::Image
+                    !card.for_model && card.kind == dusk_protocol::tools::CardKind::Image
                 });
                 for card in pictures {
                     let caption = [&card.title, &card.description]

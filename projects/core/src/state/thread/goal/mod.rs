@@ -8,7 +8,7 @@ mod verification;
 
 use super::{State, timestamp_ms};
 
-pub use dusk_protocol::goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
+pub use dusk_protocol::thread::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 
 fn decode(row: SqliteRow) -> Result<Goal> {
     let rounds: i64 = row.try_get("rounds")?;

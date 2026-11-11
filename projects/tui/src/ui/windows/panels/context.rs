@@ -2,7 +2,7 @@
 
 use ratatui::text::{Line, Span};
 
-use dusk_protocol::context::ContextReport;
+use dusk_protocol::thread::ContextReport;
 
 use crate::app::compact_number;
 use crate::ui::windows::theme::{TEXT, bold, dim};

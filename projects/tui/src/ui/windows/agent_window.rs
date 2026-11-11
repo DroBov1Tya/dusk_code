@@ -1,7 +1,7 @@
 //! One subagent's thread in a window over the screen: its numbers at the top, beside its
 //! loader, and below them its conversation and actions as they happen.
 
-use dusk_protocol::work::AUTO_COMPACT_PERCENT;
+use dusk_protocol::thread::AUTO_COMPACT_PERCENT;
 use ratatui::{
     Frame,
     layout::Rect,

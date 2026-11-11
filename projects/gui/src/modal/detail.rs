@@ -2,14 +2,18 @@
 //! switches, a skill or an agent with its file, a plugin with what it brings, a tool
 //! with what it tells the model.
 
-use dusk_protocol::{catalog::NodeText, client::Switch as CoreSwitch, mcp::McpState};
+use dusk_protocol::{catalog::NodeText, client::Switch as CoreSwitch, config::McpState};
 use gpui_kit::{
     component::{ActiveTheme, Sizable, input::InputState, switch::Switch},
     *,
 };
 
 use super::Modal;
-use crate::{chat::links, ui::Type, widgets, workspace::Workspace};
+use crate::{
+    pages::chat::links,
+    ui::{Type, widgets},
+    workspace::Workspace,
+};
 
 #[derive(Clone)]
 pub enum Detail {

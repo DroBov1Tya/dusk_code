@@ -27,7 +27,7 @@ use crate::{
     mcp::McpServers,
 };
 
-pub use dusk_protocol::plugins::PluginInfo;
+pub use dusk_protocol::config::PluginInfo;
 
 const PLUGINS_DIR: &str = "plugins";
 /// Beside the rules, so updates that replace shipped plugins never touch it.

@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::util::fs::read_regular;
 
-pub use dusk_protocol::artifact::Card;
+pub use dusk_protocol::tools::Card;
 
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
@@ -103,6 +103,15 @@ impl ArtifactStore {
             let _ = fs::remove_dir_all(&directory);
         }
         saved.map(|()| card)
+    }
+
+    /// Deletes a card's files; a card that is already gone is fine.
+    pub fn remove(&self, card: &Card) {
+        if let Ok(path) = self.file(card, "audio")
+            && let Some(directory) = path.parent()
+        {
+            let _ = fs::remove_dir_all(directory);
+        }
     }
 
     /// Where the sound of `card` lies, for a client to play.

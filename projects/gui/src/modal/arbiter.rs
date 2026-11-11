@@ -10,8 +10,8 @@ use gpui_kit::{
 
 use super::sphere;
 use crate::{
-    chat::transcript::{CHAT, ExchangeKind},
-    widgets,
+    pages::chat::transcript::{CHAT, ExchangeKind},
+    ui::widgets,
     workspace::Workspace,
 };
 

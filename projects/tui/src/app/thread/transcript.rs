@@ -12,8 +12,10 @@ use std::{
 
 use super::paste;
 use dusk_protocol::{
-    artifact::Card, catalog::SkillSave, catalog::SkillSaveAction, conversation::Message,
-    conversation::MessageRole, model::ToolCall, tools::ToolResult,
+    catalog::{SkillSave, SkillSaveAction},
+    model::ToolCall,
+    thread::{Message, MessageRole},
+    tools::{Card, ToolResult},
 };
 
 pub enum Entry {

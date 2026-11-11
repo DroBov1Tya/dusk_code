@@ -14,7 +14,7 @@ use gpui_kit::{
 };
 
 use super::Modal;
-use crate::{chat::links, widgets, workspace::Workspace};
+use crate::{pages::chat::links, ui::widgets, workspace::Workspace};
 
 pub enum ViewerContent {
     Loading,
@@ -65,7 +65,7 @@ pub fn render(
         }
         ViewerContent::Text(text) => div()
             .font_family(
-                crate::theme::prefs(cx)
+                crate::ui::theme::prefs(cx)
                     .mono_font
                     .clone()
                     .unwrap_or_else(|| "Menlo".to_owned()),

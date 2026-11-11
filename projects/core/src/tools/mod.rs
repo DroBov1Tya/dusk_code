@@ -29,7 +29,7 @@ pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
 pub use console::{Jobs, RunCommand};
 pub use harness::{
     AskUser, DisplayAudio, DisplayImage, GoalTool, NameSession, PlanEdit, Question, ReadHistory,
-    Remember, Tasks,
+    Remember, Tasks, save_sound,
 };
 pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_plan};
 pub use mcp::McpTool;
