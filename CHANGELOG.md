@@ -6,6 +6,11 @@ testing.
 
 ## Unreleased
 
+## 0.72.3 - 2026-11-11
+
+Pre-release: speech through any OpenAI-compatible server, and the whole code tree laid out
+by domain.
+
 ### Added
 
 - Voice: speech through any server that speaks the OpenAI audio API, a hosted account or a model
@@ -17,6 +22,10 @@ testing.
 ### Changed
 
 - gui: a new app icon, 1024 px with transparent corners.
+- The code is laid out by domain, with no change in behavior: the protocol is ten domains with
+  submodules, the core's secrets, voice, client, runtime, agent and config are directory
+  modules, the GUI is pages, columns, ui and platform, and the biggest TUI files are split by
+  what they draw. See docs/structure.md.
 
 ## 0.72.2 - 2026-11-11
 
