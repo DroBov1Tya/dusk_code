@@ -8,7 +8,7 @@ use image::{DynamicImage, ImageFormat, codecs::jpeg::JpegEncoder};
 use parking_lot::Mutex;
 use uuid::Uuid;
 
-use super::{Desktop, Keys, Point, Rect, Window};
+use super::{Desktop, Keys, Point, Rect, Window, WindowSnapshot};
 use crate::state::artifacts::{ArtifactStore, Card};
 
 /// Windows named in a failed lookup at most.
@@ -27,7 +27,7 @@ struct View {
     width: f64,
     height: f64,
     /// A window capture (or its crop) must still address the same visible window.
-    window: Option<(u32, Rect)>,
+    window: Option<WindowSnapshot>,
 }
 
 /// A part of the last screenshot, in its pixels.
@@ -163,10 +163,10 @@ impl Screen {
                 x < view.width && y < view.height,
                 "click coordinates must be inside the screenshot"
             );
-            let (_, bounds) = view
+            let window = view
                 .window
                 .context("take a screenshot of the selected window first")?;
-            session.press(at, bounds)?;
+            session.press(at, window)?;
             Desktop.mark_click(at);
             return Ok(());
         }
@@ -193,11 +193,19 @@ impl Screen {
             .try_lock()
             .context("a screen action is still running")?;
         self.ensure_scope(expected_scope)?;
-        let previous = if expected_scope.is_some() {
-            // A failed scoped capture must not retain stale coordinates.
-            self.view.lock().take()
-        } else {
-            *self.view.lock()
+        let previous = {
+            let mut view = self.view.lock();
+            let previous = *view;
+            if cfg!(target_os = "macos")
+                && (expected_scope.is_some()
+                    || matches!(target, Target::Window(_))
+                    || matches!(target, Target::Region(_))
+                        && previous.is_some_and(|view| view.window.is_some()))
+            {
+                // A failed window capture must not leave old coordinates active.
+                *view = None;
+            }
+            previous
         };
         let mut window: Option<Window> = None;
         #[cfg(target_os = "macos")]
@@ -214,7 +222,7 @@ impl Screen {
         let rect = match &target {
             Target::Display => match &window {
                 Some(window) => {
-                    captured_window = Some((window.id, window.bounds));
+                    captured_window = Some(window.into());
                     window.bounds
                 }
                 None => Desktop.display()?,
@@ -222,7 +230,7 @@ impl Screen {
             Target::Window(name) => {
                 let found = find_window(name)?;
                 let bounds = found.bounds;
-                captured_window = Some((found.id, bounds));
+                captured_window = Some((&found).into());
                 window = Some(found);
                 bounds
             }
@@ -231,11 +239,14 @@ impl Screen {
                 let from = view.point(region.x, region.y)?;
                 view.point(region.x + region.width, region.y + region.height)?;
                 captured_window = view.window;
-                if let Some(found) = &window {
-                    ensure!(
-                        view.window == Some((found.id, found.bounds)),
-                        "the captured window moved or resized; take a new screenshot"
-                    );
+                #[cfg(target_os = "macos")]
+                match (&window, view.window) {
+                    (Some(found), previous) => ensure!(
+                        previous == Some(found.into()),
+                        "the captured window changed; take a new screenshot"
+                    ),
+                    (None, Some(previous)) => window = Some(window_for_capture(previous)?),
+                    (None, None) => {}
                 }
                 Rect {
                     x: from.x,
@@ -261,12 +272,16 @@ impl Screen {
         #[cfg(target_os = "macos")]
         let mut image = image;
         #[cfg(target_os = "macos")]
-        if let (Some(session), Some(window)) = (&session, &window) {
-            let current = session.inspect()?;
-            ensure!(
-                current.bounds == window.bounds,
-                "the window moved during capture; take a new screenshot"
-            );
+        if let Some(window) = &window {
+            let expected = WindowSnapshot::from(window);
+            if let Some(session) = &session {
+                ensure!(
+                    WindowSnapshot::from(&session.inspect()?) == expected,
+                    "the window changed during capture; take a new screenshot"
+                );
+            } else {
+                window_for_capture(expected)?;
+            }
             if matches!(target, Target::Region(_)) {
                 image = crop_window(&image, window.bounds, rect)?;
             }
@@ -321,15 +336,15 @@ impl Screen {
 
     /// Independent activation of a captured window must not hit a covering window,
     /// or use coordinates left behind when the captured window moved or resized.
-    pub fn independent_point(&self, x: f64, y: f64) -> Result<(Point, Option<(u32, Rect)>)> {
+    fn independent_point(&self, x: f64, y: f64) -> Result<(Point, Option<WindowSnapshot>)> {
         let view = self.view()?;
         let at = view.point(x, y)?;
         ensure!(
             x < view.width && y < view.height,
             "click coordinates must be inside the screenshot, not its far edge"
         );
-        if let Some((id, bounds)) = view.window {
-            Desktop.ensure_window_at(at, id, bounds)?;
+        if let Some(window) = view.window {
+            Desktop.ensure_window_at(at, window)?;
         }
         Ok((at, view.window))
     }
@@ -365,6 +380,15 @@ impl Screen {
             thumbnail.get_ref(),
         )
     }
+}
+
+#[cfg(target_os = "macos")]
+fn window_for_capture(expected: WindowSnapshot) -> Result<Window> {
+    Desktop
+        .windows()?
+        .into_iter()
+        .find(|window| WindowSnapshot::from(window) == expected)
+        .context("the captured window closed, moved or resized; take a new screenshot")
 }
 
 /// Crop the captured window pixels, never the display behind/above it.

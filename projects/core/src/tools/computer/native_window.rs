@@ -10,7 +10,7 @@ use core_foundation::{
     string::CFString,
 };
 
-use super::{Desktop, Point, Rect, Window, accessibility::*};
+use super::{Desktop, Point, Rect, Window, WindowSnapshot, accessibility::*};
 
 const MAX_WINDOWS: usize = 128;
 
@@ -23,7 +23,7 @@ pub(super) struct NativeWindow {
 
 enum Request {
     Inspect(Sender<Result<Window>>),
-    Press(Point, Rect, Sender<Result<()>>),
+    Press(Point, WindowSnapshot, Sender<Result<()>>),
 }
 
 impl NativeWindow {
@@ -50,8 +50,8 @@ impl NativeWindow {
                         Request::Inspect(reply) => {
                             let _ = reply.send(pinned.inspect());
                         }
-                        Request::Press(at, bounds, reply) => {
-                            let _ = reply.send(pinned.press(at, bounds));
+                        Request::Press(at, window, reply) => {
+                            let _ = reply.send(pinned.press(at, window));
                         }
                     }
                 }
@@ -76,10 +76,10 @@ impl NativeWindow {
         result.recv().context("window session stopped")?
     }
 
-    pub fn press(&self, at: Point, bounds: Rect) -> Result<()> {
+    pub fn press(&self, at: Point, window: WindowSnapshot) -> Result<()> {
         let (reply, result) = mpsc::channel();
         self.requests
-            .send(Request::Press(at, bounds, reply))
+            .send(Request::Press(at, window, reply))
             .context("window session stopped")?;
         result.recv().context("window session stopped")?
     }
@@ -120,7 +120,7 @@ impl Pinned {
         Ok(current)
     }
 
-    fn press(&self, at: Point, bounds: Rect) -> Result<()> {
+    fn press(&self, at: Point, expected: WindowSnapshot) -> Result<()> {
         ensure!(
             [at.x, at.y]
                 .into_iter()
@@ -128,9 +128,10 @@ impl Pinned {
             "invalid window coordinates"
         );
         ensure!(
-            self.inspect()?.bounds == bounds,
-            "the selected window moved or resized; take a new screenshot"
+            WindowSnapshot::from(&self.inspect()?) == expected,
+            "the selected window changed; take a new screenshot"
         );
+        let bounds = expected.bounds;
         ensure!(
             (bounds.x..bounds.x + bounds.width).contains(&at.x)
                 && (bounds.y..bounds.y + bounds.height).contains(&at.y),
@@ -155,7 +156,7 @@ impl Pinned {
             "the accessible control is outside the selected window; no action was sent"
         );
         ensure!(
-            self.inspect()?.bounds == bounds,
+            WindowSnapshot::from(&self.inspect()?) == expected,
             "the selected window changed; no action was sent"
         );
         // The final identity check and the remote action cannot be atomic. The

@@ -20,6 +20,13 @@ the agent checks the focus before it types. A control that cannot be pressed thi
 returns an error. Take a new screenshot if the captured window moved or changed size.
 Outside a window session, a covering window also causes the click to be refused.
 
+For a window session, call `window_session` with `{"action":"list"}`. Then use
+`{"action":"select","window_id":123,"pid":456}` with the IDs from that list.
+`screenshot {}` and regions of that picture show only the selected window, even
+when another app covers it. Click using the latest picture's coordinates. A press
+can bring the app to the foreground. The session disables shared keyboard and
+pointer input. Use `{"action":"release"}` with `window_session` to end it.
+
 After a confirmed press, duskcode draws an amber ring at the target's screen
 coordinates and leaves its own cursor there for ten seconds. The overlay passes
 mouse input through and works in a selected window session too. If another window

@@ -76,6 +76,26 @@ pub struct Window {
     pub bounds: Rect,
 }
 
+/// Window identity and geometry when a screenshot was taken.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct WindowSnapshot {
+    id: u32,
+    #[cfg(target_os = "macos")]
+    pid: i32,
+    bounds: Rect,
+}
+
+impl From<&Window> for WindowSnapshot {
+    fn from(window: &Window) -> Self {
+        Self {
+            id: window.id,
+            #[cfg(target_os = "macos")]
+            pid: window.pid,
+            bounds: window.bounds,
+        }
+    }
+}
+
 /// One key with its modifiers, by a name every desktop knows: see [`screen::keys`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Keys {

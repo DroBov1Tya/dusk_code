@@ -14,7 +14,7 @@ use std::{
 
 use anyhow::{Context, Result, bail, ensure};
 
-use super::{Keys, Point, Rect, Window, click::PointerMode};
+use super::{Keys, Point, Rect, Window, WindowSnapshot, click::PointerMode};
 
 /// Windows looked at at most, so a crowded desktop stays quick to list.
 const MAX_WINDOWS: usize = 64;
@@ -307,7 +307,7 @@ impl Desktop {
     }
 
     /// Only a press without the pointer checks the window under it, and Linux has none.
-    pub fn ensure_window_at(&self, _at: Point, _id: u32, _bounds: Rect) -> Result<()> {
+    pub fn ensure_window_at(&self, _at: Point, _expected: WindowSnapshot) -> Result<()> {
         bail!("a click without the pointer is not possible on Linux")
     }
 
@@ -340,7 +340,7 @@ impl Desktop {
         right: bool,
         count: i64,
         mode: PointerMode,
-        expected_window: Option<(u32, Rect)>,
+        expected_window: Option<WindowSnapshot>,
     ) -> Result<()> {
         let _ = expected_window;
         mode.validate_click(right, count)?;
