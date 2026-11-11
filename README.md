@@ -108,6 +108,7 @@ duskcode TUI
 | `~/.config/duskcode/mcp-auth/` | MCP OAuth tokens |
 | `~/Documents/duskcode/` | Chat workspaces and files; `projects/` holds project memory |
 | `~/.local/share/duskcode/` | Default installation directory; the installer also supports `XDG_DATA_HOME` |
+| `~/.local/share/duskcode/voice/` | Speech models installed from Connectors, Voice: a Python environment and weights for each |
 
 `DUSKCODE_LOG` sets the log level. Logging can be disabled with `logging.enabled: false`;
 optional OpenTelemetry tracing is configured under `logging.traces`.

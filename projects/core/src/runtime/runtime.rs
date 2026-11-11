@@ -45,6 +45,8 @@ pub struct Runtime {
     /// same card and the artifact folder does not fill; the oldest goes when it is full.
     pub(super) speech:
         parking_lot::Mutex<std::collections::VecDeque<(String, dusk_protocol::tools::Card)>>,
+    /// Speech models installed on this machine, and the servers that run them.
+    pub(super) local_voice: Arc<crate::voice::LocalVoice>,
     pub(super) state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
     pub(super) _restore_guard: Option<crate::backup::archive::RestoreGuard>,
@@ -96,6 +98,14 @@ impl Runtime {
         } else {
             info!("no model selected; local history is available");
         }
+        let local_voice = Arc::new(crate::voice::LocalVoice::new(
+            paths.voice_root(),
+            Arc::clone(&config),
+        ));
+        tokio::spawn({
+            let local_voice = Arc::clone(&local_voice);
+            async move { local_voice.autostart().await }
+        });
         let config_check = tokio::spawn(Arc::clone(&config).watch(CONFIG_CHECK_PERIOD));
         let agents = Agents::new(paths.agents_dir(), Arc::clone(&state));
         if let Err(error) = agents.scan().await {
@@ -193,6 +203,7 @@ impl Runtime {
             model_discovery,
             updated_builtin: initialized.builtin.updated,
             speech: Default::default(),
+            local_voice,
             state_db,
         })
     }

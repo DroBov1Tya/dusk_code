@@ -120,6 +120,34 @@ impl Client {
         }
     }
 
+    /// The speech models of this machine and where each is.
+    pub async fn voice_models(&self) -> Result<dusk_protocol::config::VoiceModels> {
+        let request = Request::Voice(dusk_protocol::client::VoiceRequest::Models);
+        match self.call(request).await? {
+            Response::VoiceModels(models) => Ok(models),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Installs a model, starts it and sets the speech to it. Returns when it is begun.
+    pub async fn install_voice_model(&self, id: &str) -> Result<()> {
+        let request =
+            Request::Voice(dusk_protocol::client::VoiceRequest::Install { id: id.to_owned() });
+        match self.call(request).await? {
+            Response::Done => Ok(()),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    pub async fn remove_voice_model(&self, id: &str) -> Result<()> {
+        let request =
+            Request::Voice(dusk_protocol::client::VoiceRequest::Remove { id: id.to_owned() });
+        match self.call(request).await? {
+            Response::Done => Ok(()),
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// Reads a text aloud; the sound is a card of the artifact store.
     pub async fn speak(&self, text: &str) -> Result<dusk_protocol::tools::Card> {
         let request = Request::Voice(dusk_protocol::client::VoiceRequest::Speak {

@@ -10,9 +10,12 @@ use gpui_kit::{
     *,
 };
 
-use super::{card, check::Check};
+use super::check::Check;
 use crate::{
-    ui::{Type, widgets},
+    ui::{
+        Type,
+        widgets::{self, card},
+    },
     workspace::Workspace,
 };
 

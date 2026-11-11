@@ -146,3 +146,31 @@ pub fn capitalize(text: &str) -> String {
         .map(|first| first.to_uppercase().chain(chars).collect())
         .unwrap_or_default()
 }
+
+/// A card: the one surface the page is built of.
+pub fn card(cx: &App) -> Div {
+    let theme = cx.theme();
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .p_4()
+        .rounded_xl()
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.muted)
+}
+
+/// A field's label above its box.
+pub fn labeled(label: &'static str, hint: &'static str, cx: &App) -> Div {
+    let muted = cx.theme().muted_foreground;
+    div().flex().flex_col().gap_1().child(
+        div()
+            .flex()
+            .flex_row()
+            .items_baseline()
+            .gap_2()
+            .child(div().small().font_weight(FontWeight::MEDIUM).child(label))
+            .child(div().meta().text_color(muted).child(hint)),
+    )
+}

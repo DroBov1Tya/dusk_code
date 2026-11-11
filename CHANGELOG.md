@@ -4,6 +4,24 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- Voice: speech models that run on this machine, installed with one click. On Apple Silicon:
+  Qwen3-ASR, Whisper large-v3-turbo (recognition), Qwen3-TTS and VoxCPM2 (reading aloud) on
+  the GPU with MLX, and Kokoro 82M; elsewhere Whisper and Kokoro on the CPU. The app asks `uv`
+  for a Python environment under `~/.local/share/duskcode/voice/`, installs the pinned
+  packages, downloads the weights (with the Hugging Face token, if set), starts
+  `resources/voice/server.py` on a loopback port behind a token made for each run, points the
+  speech settings at it, and starts it again with the app. Remove deletes the model and what
+  it downloaded. `uv` must be installed; the page says so (protocol 8).
+
+### Changed
+
+- The Voice shelf follows the style of Settings: cards, large labeled fields, tiles.
+- Reading aloud asks the server for wav, not mp3: any server of the audio API can make it.
+
 ## 0.72.6 - 2026-11-11 (pre-release)
 
 ### Changed

@@ -97,6 +97,7 @@ impl Workspace {
         self.shelf = crate::pages::connectors::Shelf::Voice;
         self.load_settings(cx);
         self.load_voice(cx);
+        self.load_voice_models(cx);
     }
 
     pub fn load_voice(&mut self, cx: &mut Context<Self>) {

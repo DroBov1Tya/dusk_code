@@ -17,7 +17,8 @@ pub async fn speak(endpoint: &VoiceEndpoint, key: Option<&str>, text: &str) -> R
     let mut body = serde_json::json!({
         "model": endpoint.model.trim(),
         "input": text,
-        "response_format": "mp3",
+        // Every server that speaks the audio API can make it, and it needs no encoder.
+        "response_format": "wav",
     });
     if let Some(voice) = endpoint
         .voice
