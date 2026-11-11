@@ -10,7 +10,7 @@ use dusk_protocol::{
         ThreadRequest, WorkRequest,
     },
     config::ApprovalPolicy,
-    update::{Channel, InstallProgress},
+    release::{Channel, InstallProgress},
 };
 use tokio::{
     sync::{mpsc, oneshot, watch},
@@ -230,8 +230,8 @@ impl Server {
         })
     }
 
-    async fn voice(&self, request: dusk_protocol::voice::VoiceRequest) -> Result<Response> {
-        use dusk_protocol::voice::VoiceRequest;
+    async fn voice(&self, request: dusk_protocol::client::VoiceRequest) -> Result<Response> {
+        use dusk_protocol::client::VoiceRequest;
         Ok(match request {
             VoiceRequest::Transcribe { audio } => {
                 Response::Text(self.runtime.transcribe(&audio).await?)

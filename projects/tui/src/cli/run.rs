@@ -13,9 +13,8 @@ use dusk_protocol::{
     client::{Event, Hello, PROTOCOL_VERSION},
     config::ApprovalPolicy,
     model::ModelEvent,
-    thread::ThreadEvent,
+    thread::{ThreadEvent, TurnStatus},
     tools::Decision,
-    work::TurnStatus,
 };
 
 use super::args::Headless;

@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow, ensure};
 use sha2::{Digest, Sha256};
 use tracing::warn;
 
-pub use dusk_protocol::secrets::HUGGINGFACE;
+pub use dusk_protocol::config::HUGGINGFACE;
 
 const SERVICE: &str = "duskcode";
 const MAX_NAME: usize = 200;

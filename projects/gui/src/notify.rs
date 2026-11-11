@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use dusk_protocol::{thread::ThreadEvent, work::TurnStatus};
+use dusk_protocol::thread::{ThreadEvent, TurnStatus};
 use gpui_kit::*;
 
 use crate::workspace::Workspace;

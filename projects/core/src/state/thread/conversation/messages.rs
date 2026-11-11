@@ -7,7 +7,7 @@ use uuid::Uuid;
 use super::{State, timestamp_ms};
 use crate::{providers::ToolCall, state::artifacts::Card};
 
-pub use dusk_protocol::conversation::{Message, MessageRole};
+pub use dusk_protocol::thread::{Message, MessageRole};
 
 /// A message about to be stored. The constructors allow only valid combinations.
 #[derive(Debug, Clone, PartialEq, Eq)]

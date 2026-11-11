@@ -2,7 +2,7 @@
 //! same `/goal` commands the user can type. A draft with proposed criteria is approved
 //! or sent back for changes from there.
 
-use dusk_protocol::{goal::Goal, goal::GoalStatus};
+use dusk_protocol::thread::{Goal, GoalStatus};
 
 use super::{Action, App, Focus, Tone};
 

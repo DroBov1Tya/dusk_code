@@ -3,7 +3,7 @@
 use std::{cell::RefCell, collections::VecDeque, io::Cursor, sync::Arc};
 
 use dusk_core::app::ArtifactStore;
-use dusk_protocol::artifact::Card;
+use dusk_protocol::tools::Card;
 use image::{DynamicImage, ImageFormat, ImageReader, Limits, RgbaImage};
 
 const CACHE_SIZE: usize = 32;

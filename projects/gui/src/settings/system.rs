@@ -1,8 +1,8 @@
 //! Two pages about the program itself: its updates, and what this window's process uses.
 
 use dusk_protocol::{
-    command::{Answer, Command},
-    update::InstallStage,
+    client::{Answer, Command},
+    release::InstallStage,
 };
 use gpui_kit::{
     component::{
@@ -84,7 +84,7 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
             line("Latest", &format!("{behind} ahead of this one"), cx).child(update.latest.clone()),
         )
         .child({
-            let dev = update.channel == dusk_protocol::update::Channel::Dev;
+            let dev = update.channel == dusk_protocol::release::Channel::Dev;
             line(
                 "Dev builds",
                 "Every build of the main branch, before it is released",

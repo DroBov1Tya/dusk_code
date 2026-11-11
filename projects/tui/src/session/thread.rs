@@ -5,7 +5,7 @@ use std::env;
 
 use anyhow::Result;
 use dusk_core::client::Client;
-use dusk_protocol::{thread::ThreadEvent, work::TurnStatus};
+use dusk_protocol::thread::{ThreadEvent, TurnStatus};
 
 use crate::app::App;
 

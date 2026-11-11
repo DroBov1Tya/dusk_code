@@ -9,7 +9,7 @@ use sqlx::Row;
 use super::State;
 use crate::state::MessageRole;
 
-pub use dusk_protocol::conversation::UndoPoint;
+pub use dusk_protocol::thread::UndoPoint;
 
 impl State {
     /// The user's own messages, oldest first; messages from agents are not points.

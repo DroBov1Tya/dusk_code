@@ -2,7 +2,7 @@
 //! way to forget it, and a form that connects another one. The key is typed masked and
 //! goes to the core only.
 
-use dusk_protocol::{config::ProviderKind, providers::ProviderStatus};
+use dusk_protocol::{config::ProviderKind, model::ProviderStatus};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Sizable,

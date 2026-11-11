@@ -18,7 +18,7 @@ use crate::{
     runtime::ThreadEvent,
 };
 
-pub use dusk_protocol::settings::ToolKind;
+pub use dusk_protocol::config::ToolKind;
 
 /// What a tool sees: where it may act and the settings of the current step.
 /// Owned, so a call can keep it across awaits and hand it on without lifetimes.

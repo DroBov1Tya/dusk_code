@@ -3,7 +3,7 @@
 //! denies; the core closes a request whose call is gone.
 
 use crossterm::event::{KeyCode, KeyEvent};
-use dusk_protocol::{tools::ApprovalRequest, tools::Decision, tools::Request};
+use dusk_protocol::tools::{ApprovalRequest, Decision, Request};
 
 use super::{Action, App};
 

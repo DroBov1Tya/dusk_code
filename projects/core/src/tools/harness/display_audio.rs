@@ -13,7 +13,7 @@ use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, Card, MAX_AUDIO_BYTES},
 };
-use dusk_protocol::artifact::CardKind;
+use dusk_protocol::tools::CardKind;
 
 pub struct DisplayAudio {
     store: ArtifactStore,

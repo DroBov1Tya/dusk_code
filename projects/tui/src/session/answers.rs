@@ -5,7 +5,7 @@ use std::time::Instant;
 
 use dusk_core::client::Client;
 use dusk_protocol::{
-    command::{Answer, Command},
+    client::{Answer, Command},
     model::Effort,
 };
 

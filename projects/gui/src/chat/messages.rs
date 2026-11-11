@@ -356,7 +356,7 @@ pub fn picture_path(folder: &Path, id: &str) -> Option<std::path::PathBuf> {
 
 /// A sent message as the user wrote it, each paste and kept file as a short label.
 fn user_text(text: &str) -> String {
-    use dusk_protocol::pasted::{Part, split};
+    use dusk_protocol::thread::{Part, split};
     split(text)
         .into_iter()
         .map(|part| match part {
@@ -370,7 +370,7 @@ fn user_text(text: &str) -> String {
 /// A message as one short line for a list: attachments by name, and an answer to the
 /// agent's question as the answer alone.
 pub fn label(text: &str) -> String {
-    use dusk_protocol::pasted::{Part, split};
+    use dusk_protocol::thread::{Part, split};
     let text = match text
         .strip_prefix("QUESTION: ")
         .and_then(|rest| rest.split_once("\nANSWER: "))

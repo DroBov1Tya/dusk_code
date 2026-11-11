@@ -8,11 +8,15 @@ use std::{collections::BTreeSet, time::Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
 use dusk_protocol::{
-    catalog::AgentNode, catalog::AgentTree, catalog::NodeText, catalog::Problem,
-    catalog::SkillInfo, command::Command, config::ApprovalPolicy, config::ContextPolicy,
-    config::ContextPreset, config::Memory, config::WorkHistory, mcp::McpInfo, mcp::McpState,
-    mcp::McpToolInfo, model::Effort, settings::Settings, settings::ToolInfo, system::SystemReport,
-    update::Channel,
+    catalog::{AgentNode, AgentTree, NodeText, Problem, SkillInfo},
+    client::Command,
+    config::{
+        ApprovalPolicy, ContextPolicy, ContextPreset, McpInfo, McpState, McpToolInfo, Memory,
+        Settings, ToolInfo, WorkHistory,
+    },
+    model::Effort,
+    release::Channel,
+    system::SystemReport,
 };
 
 use super::{Panel, step};

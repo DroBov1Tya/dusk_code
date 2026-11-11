@@ -3,8 +3,9 @@
 //! Skills open beside the list: what their front matter says on top, the raw file below.
 
 use dusk_protocol::{
-    catalog::SkillInfo, catalog::SkillKind, config::ApprovalPolicy, config::ContextPolicy,
-    config::ContextPreset, mcp::McpInfo, mcp::McpState, mcp::McpToolInfo, update::Channel,
+    catalog::{SkillInfo, SkillKind},
+    config::{ApprovalPolicy, ContextPolicy, ContextPreset, McpInfo, McpState, McpToolInfo},
+    release::Channel,
 };
 use ratatui::{
     Frame,

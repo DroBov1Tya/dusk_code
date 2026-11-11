@@ -1,7 +1,7 @@
 //! The "About me" page: who the user is and the files `@me` attaches, then the
 //! snippets each `@name` brings. The core keeps both as files under its rules folder.
 
-use dusk_protocol::mentions::{Profile, ProfileFile, Snippet, is_name};
+use dusk_protocol::config::{Profile, ProfileFile, Snippet, is_name};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -53,7 +53,7 @@ impl AboutMe {
 
     /// The names a message can mention, `me` first.
     pub fn names(&self) -> impl Iterator<Item = &str> {
-        std::iter::once(dusk_protocol::mentions::ME)
+        std::iter::once(dusk_protocol::config::ME)
             .chain(self.snippets.iter().map(|snippet| snippet.name.as_str()))
     }
 }
@@ -312,7 +312,7 @@ impl Workspace {
             .trim_start_matches('@')
             .to_owned();
         let text = self.me.snippet_text.read(cx).value().to_string();
-        if !is_name(&name) || name == dusk_protocol::mentions::ME {
+        if !is_name(&name) || name == dusk_protocol::config::ME {
             self.fail(
                 anyhow::anyhow!("a snippet name is letters, digits, - and _, and not \"me\""),
                 cx,

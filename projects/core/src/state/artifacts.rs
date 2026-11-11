@@ -8,7 +8,7 @@ use uuid::Uuid;
 
 use crate::util::fs::read_regular;
 
-pub use dusk_protocol::artifact::Card;
+pub use dusk_protocol::tools::Card;
 
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;

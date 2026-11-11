@@ -13,14 +13,14 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use image::{ImageFormat, ImageReader, Limits, codecs::jpeg::JpegEncoder};
 use uuid::Uuid;
 
-use super::pasted::{Part, source_tag, split};
 use crate::{
     catalog::mentions::{ME, Mentions},
     init::create_private_dir,
     providers::{ChatMessage, Picture},
     state::{Source, State, estimate_tokens},
 };
-use dusk_protocol::mentions::find as find_mentions;
+use dusk_protocol::config::find as find_mentions;
+use dusk_protocol::thread::{Part, source_tag, split, wrap};
 
 pub(crate) const FOLDER: &str = "sources";
 /// Larger files are refused; a chat folder is not a backup.
@@ -141,7 +141,7 @@ impl ThreadSources<'_> {
             match part {
                 Part::Text(text) => kept.push_str(&self.mentions_in(text, mentions).await?),
                 Part::Source(name) => kept.push_str(&source_tag(name)),
-                Part::Pasted(text) => kept.push_str(&super::pasted::wrap(text)),
+                Part::Pasted(text) => kept.push_str(&wrap(text)),
             }
         }
         Ok(kept)
@@ -471,7 +471,7 @@ mod tests {
             workspace: &workspace,
             thread_id: "thread",
         };
-        let message = format!("look: {}", super::super::pasted::wrap("SECRET BODY"));
+        let message = format!("look: {}", wrap("SECRET BODY"));
         let kept = sources.keep_pastes(&message).await.unwrap();
         assert!(!kept.contains("SECRET BODY") && kept.contains("pasted-1.txt"));
 

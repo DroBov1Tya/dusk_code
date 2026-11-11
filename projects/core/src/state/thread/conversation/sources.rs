@@ -5,7 +5,7 @@ use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{State, timestamp_ms};
 
-pub use dusk_protocol::conversation::Source;
+pub use dusk_protocol::thread::Source;
 
 /// A row of `sources`; the type lives in the protocol, so it cannot be `FromRow` here.
 fn source_from_row(row: SqliteRow) -> sqlx::Result<Source> {

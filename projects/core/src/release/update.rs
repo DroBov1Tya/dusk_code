@@ -20,7 +20,7 @@ use tokio::sync::watch;
 
 use crate::{config::Config, init::paths::Paths};
 
-pub use dusk_protocol::update::{Channel, InstallProgress, InstallStage, UpdateInfo};
+pub use dusk_protocol::release::{Channel, InstallProgress, InstallStage, UpdateInfo};
 
 pub(super) const REPOSITORY: &str = "DroBov1Tya/dusk_code";
 const API: &str = "https://api.github.com/repos";

@@ -520,7 +520,7 @@ impl Workspace {
         let typed = before[start..].strip_prefix('@')?;
         typed
             .chars()
-            .all(dusk_protocol::mentions::is_name_char)
+            .all(dusk_protocol::config::is_name_char)
             .then(|| (start, typed.to_owned()))
     }
 
@@ -564,7 +564,7 @@ impl Workspace {
             if !text.is_empty() {
                 text.push('\n');
             }
-            text.push_str(&dusk_protocol::pasted::wrap(&pasted));
+            text.push_str(&dusk_protocol::thread::wrap(&pasted));
         }
         // Attached files go as their paths; the core keeps them among the chat's sources.
         for path in std::mem::take(&mut self.attachments) {

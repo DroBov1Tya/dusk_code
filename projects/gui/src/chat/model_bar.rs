@@ -3,7 +3,7 @@
 
 use crate::ui::Type;
 use dusk_protocol::{
-    command::{Answer, Command},
+    client::{Answer, Command},
     model::Effort,
 };
 use gpui_kit::{

@@ -18,10 +18,10 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use serde::Deserialize;
 
-pub use dusk_protocol::mentions::{ME, Profile, ProfileFile, Snippet, is_name};
+pub use dusk_protocol::config::{ME, Profile, ProfileFile, Snippet, is_name};
 use dusk_protocol::{
-    mentions::is_name_char,
-    paths::{PathCompletion, PathEntry},
+    config::is_name_char,
+    project::{PathCompletion, PathEntry},
 };
 
 use super::graph::{read_text, split_front_matter};

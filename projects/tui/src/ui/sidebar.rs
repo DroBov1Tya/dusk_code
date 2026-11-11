@@ -4,7 +4,9 @@
 use unicode_width::UnicodeWidthStr;
 
 use dusk_protocol::{
-    agent::Zone, mcp::McpState, work::AUTO_COMPACT_PERCENT, work::Task, work::ThreadTokens,
+    agent::Zone,
+    config::McpState,
+    thread::{AUTO_COMPACT_PERCENT, Task, ThreadTokens},
 };
 use ratatui::{
     Frame,

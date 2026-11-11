@@ -8,7 +8,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-pub use dusk_protocol::context::{ContextItemDetail, ContextReport, ContextSection, ContextSource};
+pub use dusk_protocol::thread::{ContextItemDetail, ContextReport, ContextSection, ContextSource};
 
 use crate::{
     providers::ToolSpec,

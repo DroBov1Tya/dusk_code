@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::{State, timestamp_ms};
 
-pub use dusk_protocol::work::{Task, TaskItem};
+pub use dusk_protocol::thread::{Task, TaskItem};
 
 /// What an ID the agent gave turned out to be.
 enum Found {

@@ -2,7 +2,7 @@
 //! that reads answers aloud. Any server that speaks the OpenAI audio API will do: a hosted
 //! account, or a model run on this machine. Keys go to the keychain, never the config file.
 
-use dusk_protocol::voice::{STT_KEY, TTS_KEY, VoiceEndpoint, VoiceSettings};
+use dusk_protocol::config::{STT_KEY, TTS_KEY, VoiceEndpoint, VoiceSettings};
 use gpui_kit::{
     component::{
         ActiveTheme, Sizable,

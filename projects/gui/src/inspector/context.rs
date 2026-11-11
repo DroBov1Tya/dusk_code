@@ -2,8 +2,8 @@
 //! per part: its tokens and its share of the window, then the free space.
 
 use dusk_protocol::{
-    command::{Answer, Command},
-    context::ContextSection,
+    client::{Answer, Command},
+    thread::ContextSection,
 };
 use gpui_kit::{component::ActiveTheme, *};
 

@@ -10,10 +10,7 @@ mod skills;
 mod tools;
 pub mod voice;
 
-use dusk_protocol::{
-    client::Switch as CoreSwitch,
-    command::{Answer, Command},
-};
+use dusk_protocol::client::{Answer, Command, Switch as CoreSwitch};
 use gpui_kit::{
     component::{ActiveTheme, Sizable, input::Input, switch::Switch},
     prelude::FluentBuilder,

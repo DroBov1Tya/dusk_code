@@ -2,7 +2,10 @@
 
 use std::{collections::HashSet, time::Duration};
 
-use dusk_protocol::{client::Switch as CoreSwitch, mcp::McpState, settings::Settings};
+use dusk_protocol::{
+    client::Switch as CoreSwitch,
+    config::{McpState, Settings},
+};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, IconName, Sizable,

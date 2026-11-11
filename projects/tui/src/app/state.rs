@@ -7,8 +7,9 @@ use std::{
 
 use dusk_protocol::client::Status;
 use dusk_protocol::{
-    conversation::LocalUnsent, conversation::Message, conversation::MessageRole, goal::Goal,
-    mcp::McpStatus, model::Effort, work::JobInfo, work::Task, work::ThreadTokens,
+    config::McpStatus,
+    model::Effort,
+    thread::{Goal, JobInfo, LocalUnsent, Message, MessageRole, Task, ThreadTokens},
 };
 use ratatui::layout::Rect;
 

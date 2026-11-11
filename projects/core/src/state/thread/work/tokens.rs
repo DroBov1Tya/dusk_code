@@ -9,7 +9,7 @@ use super::{State, messages::read_tokens, timestamp_ms};
 
 use crate::providers::{Usage, cost::CostSource};
 
-pub use dusk_protocol::work::ThreadTokens;
+pub use dusk_protocol::thread::ThreadTokens;
 
 /// Which call a usage report belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]

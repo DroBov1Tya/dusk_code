@@ -10,7 +10,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, ensure};
-use dusk_protocol::voice::VoiceSettings;
+use dusk_protocol::config::VoiceSettings;
 use serde::{Deserialize, Serialize};
 
 use crate::{

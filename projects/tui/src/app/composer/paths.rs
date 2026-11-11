@@ -6,7 +6,7 @@
 use std::env;
 
 use dusk_core::app::{Paths, complete_mention, path_completion};
-use dusk_protocol::paths::PathCompletion;
+use dusk_protocol::project::PathCompletion;
 
 use super::App;
 

@@ -1,6 +1,6 @@
 //! Skills as cards, with their source and switch.
 
-use dusk_protocol::{catalog::SkillKind, client::Switch as CoreSwitch, settings::Settings};
+use dusk_protocol::{catalog::SkillKind, client::Switch as CoreSwitch, config::Settings};
 use gpui_kit::{component::ActiveTheme, *};
 
 use super::{card, grid, matches, toggle};

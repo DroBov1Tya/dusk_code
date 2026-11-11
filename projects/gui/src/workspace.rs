@@ -8,12 +8,10 @@ use std::{
 
 use dusk_protocol::{
     client::{Event, Status},
-    context::ContextReport,
+    config::Settings,
+    model::ProviderStatus,
     project::{FileEntry, GitInfo, OutputFile, OutputKind, Project},
-    providers::ProviderStatus,
-    settings::Settings,
-    thread::Thread,
-    work::JobInfo,
+    thread::{ContextReport, JobInfo, Thread},
 };
 use gpui_kit::{
     component::{
@@ -178,9 +176,9 @@ pub struct Workspace {
     /// The boxes that connect a provider, on the Model page.
     pub provider_form: crate::settings::providers::Form,
     /// Which secrets are set, read when the Secrets page opens.
-    pub secrets: Option<dusk_protocol::secrets::SecretsInfo>,
+    pub secrets: Option<dusk_protocol::config::SecretsInfo>,
     /// The speech servers that are set up, and the boxes that edit them.
-    pub voice: Option<dusk_protocol::voice::VoiceSettings>,
+    pub voice: Option<dusk_protocol::config::VoiceSettings>,
     pub voice_form: crate::connectors::voice::VoiceForm,
     pub token_box: crate::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
@@ -231,7 +229,7 @@ pub struct Workspace {
     /// The menu of the project folder in the right column is open.
     pub path_menu: bool,
     pub system: Option<dusk_protocol::system::SystemReport>,
-    pub update: Option<dusk_protocol::update::UpdateInfo>,
+    pub update: Option<dusk_protocol::release::UpdateInfo>,
     /// Answers whose reasoning is unfolded, by chat and item index.
     pub unfolded: HashSet<(String, usize)>,
     /// The shown chat's transcript as a virtual list, and the rows it holds.

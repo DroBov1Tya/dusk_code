@@ -3,7 +3,7 @@
 
 use dusk_protocol::{
     client::Switch as CoreSwitch,
-    settings::{Settings, ToolKind},
+    config::{Settings, ToolKind},
 };
 use gpui_kit::{component::ActiveTheme, *};
 

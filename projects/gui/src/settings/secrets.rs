@@ -1,7 +1,7 @@
 //! The secrets page: which secrets the system keychain holds, never their values. The
 //! Hugging Face token is set and cleared here; provider keys go with their providers.
 
-use dusk_protocol::secrets::{HUGGINGFACE, SecretInfo};
+use dusk_protocol::config::{HUGGINGFACE, SecretInfo};
 use gpui_kit::{
     component::{
         ActiveTheme, Sizable,

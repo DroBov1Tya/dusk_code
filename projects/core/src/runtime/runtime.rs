@@ -70,7 +70,7 @@ pub struct Runtime {
     updated_builtin: Vec<String>,
     /// The latest sounds made by reading aloud, by what was asked, so asking again plays the
     /// same card and the artifact folder does not fill; the oldest goes when it is full.
-    speech: parking_lot::Mutex<std::collections::VecDeque<(String, dusk_protocol::artifact::Card)>>,
+    speech: parking_lot::Mutex<std::collections::VecDeque<(String, dusk_protocol::tools::Card)>>,
     state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
     _restore_guard: Option<crate::backup::archive::RestoreGuard>,
@@ -381,8 +381,8 @@ impl Runtime {
 
     /// Which secrets are set, never their values. The keychain is asked off the async
     /// workers, as it may wait for the user to unlock it.
-    pub async fn secrets_info(&self) -> dusk_protocol::secrets::SecretsInfo {
-        use dusk_protocol::secrets::{HUGGINGFACE, SecretInfo, SecretsInfo};
+    pub async fn secrets_info(&self) -> dusk_protocol::config::SecretsInfo {
+        use dusk_protocol::config::{HUGGINGFACE, SecretInfo, SecretsInfo};
         let config = self.config();
         let store = config.secrets().cloned();
         let mut problem = None;
@@ -402,11 +402,11 @@ impl Runtime {
         }];
         for (name, label) in [
             (
-                dusk_protocol::voice::STT_KEY,
+                dusk_protocol::config::STT_KEY,
                 "Key of the speech recognition server",
             ),
             (
-                dusk_protocol::voice::TTS_KEY,
+                dusk_protocol::config::TTS_KEY,
                 "Key of the speech synthesis server",
             ),
         ] {
@@ -469,12 +469,12 @@ impl Runtime {
             .context("the keychain call stopped")?
     }
 
-    pub fn voice_settings(&self) -> dusk_protocol::voice::VoiceSettings {
+    pub fn voice_settings(&self) -> dusk_protocol::config::VoiceSettings {
         self.config().current().voice().clone()
     }
 
     /// Saves the speech servers after checking their addresses.
-    pub fn set_voice(&self, voice: dusk_protocol::voice::VoiceSettings) -> Result<()> {
+    pub fn set_voice(&self, voice: dusk_protocol::config::VoiceSettings) -> Result<()> {
         for endpoint in [&voice.stt, &voice.tts].into_iter().flatten() {
             crate::voice::check_endpoint(endpoint)?;
         }
@@ -498,17 +498,17 @@ impl Runtime {
             .voice_settings()
             .stt
             .context("speech recognition is not set up: see Connectors, Voice")?;
-        let key = self.voice_key(dusk_protocol::voice::STT_KEY).await?;
+        let key = self.voice_key(dusk_protocol::config::STT_KEY).await?;
         crate::voice::transcribe(&endpoint, key.as_deref(), audio).await
     }
 
     /// Reads a text aloud; the sound is kept as a card of the artifact store.
-    pub async fn speak(&self, text: &str) -> Result<dusk_protocol::artifact::Card> {
+    pub async fn speak(&self, text: &str) -> Result<dusk_protocol::tools::Card> {
         let endpoint = self
             .voice_settings()
             .tts
             .context("speech synthesis is not set up: see Connectors, Voice")?;
-        let key = self.voice_key(dusk_protocol::voice::TTS_KEY).await?;
+        let key = self.voice_key(dusk_protocol::config::TTS_KEY).await?;
         let asked = speech_key(&endpoint, text);
         if let Some((_, card)) = self.speech.lock().iter().find(|(known, _)| *known == asked) {
             return Ok(card.clone());
@@ -690,7 +690,7 @@ impl Runtime {
     }
 
     /// Every mode with the first sentence of its prompt, for a client to describe it.
-    pub fn mode_infos(&self) -> Vec<dusk_protocol::settings::ModeInfo> {
+    pub fn mode_infos(&self) -> Vec<dusk_protocol::config::ModeInfo> {
         let dir = self.launcher.paths.modes_dir();
         self.modes()
             .into_iter()
@@ -700,7 +700,7 @@ impl Runtime {
                 let flat = prompt.split_whitespace().collect::<Vec<_>>().join(" ");
                 let end = flat.find(". ").map_or(flat.len(), |at| at + 1);
                 let summary = flat[..end].chars().take(200).collect();
-                dusk_protocol::settings::ModeInfo { name, summary }
+                dusk_protocol::config::ModeInfo { name, summary }
             })
             .collect()
     }
@@ -1337,7 +1337,7 @@ fn icon_file(icons: &Path, name: &str) -> Option<PathBuf> {
 const SPEECH_CACHE: usize = 8;
 
 /// What a reading is known by: the server, the model, the voice and the text.
-fn speech_key(endpoint: &dusk_protocol::voice::VoiceEndpoint, text: &str) -> String {
+fn speech_key(endpoint: &dusk_protocol::config::VoiceEndpoint, text: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut hash = Sha256::new();
     for part in [
@@ -1357,7 +1357,7 @@ fn speech_key(endpoint: &dusk_protocol::voice::VoiceEndpoint, text: &str) -> Str
 
 /// The secrets a user sets by hand: the Hugging Face token and the keys of the speech servers.
 fn is_user_secret(name: &str) -> bool {
-    use dusk_protocol::voice::{STT_KEY, TTS_KEY};
+    use dusk_protocol::config::{STT_KEY, TTS_KEY};
     [crate::secrets::HUGGINGFACE, STT_KEY, TTS_KEY].contains(&name)
 }
 

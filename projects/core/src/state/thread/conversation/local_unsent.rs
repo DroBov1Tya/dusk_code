@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 use super::{State, timestamp_ms};
 
-pub use dusk_protocol::conversation::LocalUnsent;
+pub use dusk_protocol::thread::LocalUnsent;
 
 impl State {
     pub async fn add_local_unsent(&self, thread_id: &str, content: &str) -> Result<LocalUnsent> {

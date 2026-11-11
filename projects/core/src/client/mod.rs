@@ -11,23 +11,18 @@ mod serve;
 use std::{future::Future, path::PathBuf};
 
 use anyhow::{Result, anyhow, bail, ensure};
-use dusk_protocol::mentions::{Profile, Snippet};
+use dusk_protocol::config::{Profile, Snippet};
 use dusk_protocol::{
     catalog::NodeText,
     client::{
-        CatalogRequest, Event, Hello, PROTOCOL_VERSION, ProjectRequest, Request, Response, Secret,
-        SettingsRequest, Status, Switch, ThreadRequest, WorkRequest,
+        Answer, CatalogRequest, Command, Event, Hello, PROTOCOL_VERSION, ProjectRequest, Request,
+        Response, Secret, SettingsRequest, Status, Switch, ThreadRequest, WorkRequest,
     },
-    command::{Answer, Command},
-    config::{ApprovalPolicy, ContextPolicy, ProviderKind},
-    context::ContextReport,
-    conversation::{LocalUnsent, Message},
-    mcp::McpInfo,
+    config::{ApprovalPolicy, ContextPolicy, McpInfo, ProviderKind},
     project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
-    thread::Thread,
+    thread::{ContextReport, JobInfo, LocalUnsent, Message, Task, Thread},
     tools::Decision,
-    work::{JobInfo, Task},
 };
 use tokio::sync::{mpsc, oneshot, watch};
 
@@ -123,7 +118,7 @@ impl Client {
 
     /// The text of a WAV recording, by the speech recognition server.
     pub async fn transcribe(&self, audio: Vec<u8>) -> Result<String> {
-        let request = Request::Voice(dusk_protocol::voice::VoiceRequest::Transcribe { audio });
+        let request = Request::Voice(dusk_protocol::client::VoiceRequest::Transcribe { audio });
         match self.call(request).await? {
             Response::Text(text) => Ok(text),
             other => Err(unexpected(other)),
@@ -131,8 +126,8 @@ impl Client {
     }
 
     /// Reads a text aloud; the sound is a card of the artifact store.
-    pub async fn speak(&self, text: &str) -> Result<dusk_protocol::artifact::Card> {
-        let request = Request::Voice(dusk_protocol::voice::VoiceRequest::Speak {
+    pub async fn speak(&self, text: &str) -> Result<dusk_protocol::tools::Card> {
+        let request = Request::Voice(dusk_protocol::client::VoiceRequest::Speak {
             text: text.to_owned(),
         });
         match self.call(request).await? {
@@ -431,7 +426,7 @@ impl Settings<'_> {
     }
 
     /// Saves the speech servers; their keys go through `set_secret`.
-    pub async fn set_voice(&self, voice: dusk_protocol::voice::VoiceSettings) -> Result<()> {
+    pub async fn set_voice(&self, voice: dusk_protocol::config::VoiceSettings) -> Result<()> {
         self.done(SettingsRequest::Voice(voice)).await
     }
 
@@ -557,7 +552,7 @@ impl Catalog<'_> {
     }
 
     /// The speech servers that are set up.
-    pub async fn voice(&self) -> Result<dusk_protocol::voice::VoiceSettings> {
+    pub async fn voice(&self) -> Result<dusk_protocol::config::VoiceSettings> {
         match self.0.call(Request::Catalog(CatalogRequest::Voice)).await? {
             Response::Voice(voice) => Ok(voice),
             other => Err(unexpected(other)),
@@ -565,7 +560,7 @@ impl Catalog<'_> {
     }
 
     /// Which secrets are set, never their values.
-    pub async fn secrets(&self) -> Result<dusk_protocol::secrets::SecretsInfo> {
+    pub async fn secrets(&self) -> Result<dusk_protocol::config::SecretsInfo> {
         match self
             .0
             .call(Request::Catalog(CatalogRequest::Secrets))

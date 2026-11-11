@@ -7,7 +7,7 @@
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail, ensure};
-use dusk_protocol::voice::{MAX_RECORDING_BYTES, MAX_SPEECH_CHARS, VoiceEndpoint};
+use dusk_protocol::config::{MAX_RECORDING_BYTES, MAX_SPEECH_CHARS, VoiceEndpoint};
 use serde::Deserialize;
 
 use crate::providers::transport::http;

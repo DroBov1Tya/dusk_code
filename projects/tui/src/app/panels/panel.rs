@@ -3,9 +3,10 @@
 use ratatui::layout::Rect;
 
 use dusk_protocol::{
-    config::ProviderKind, context::ContextReport, conversation::Message, conversation::MessageRole,
-    conversation::Source, conversation::UndoPoint, providers::ProviderStatus, thread::Thread,
-    update::InstallProgress, update::UpdateInfo, work::JobInfo,
+    config::ProviderKind,
+    model::ProviderStatus,
+    release::{InstallProgress, UpdateInfo},
+    thread::{ContextReport, JobInfo, Message, MessageRole, Source, Thread, UndoPoint},
 };
 
 use super::{AgentWindow, SettingsView};

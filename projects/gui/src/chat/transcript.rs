@@ -4,12 +4,9 @@
 use std::{collections::BTreeMap, time::Instant};
 
 use dusk_protocol::{
-    artifact::Card,
-    conversation::{Message, MessageRole},
     model::ModelEvent,
-    thread::ThreadEvent,
-    tools::{ApprovalRequest, Question},
-    work::{Task, ThreadTokens},
+    thread::{Message, MessageRole, Task, ThreadEvent, ThreadTokens},
+    tools::{ApprovalRequest, Card, Question},
 };
 
 pub enum Item {
@@ -280,7 +277,7 @@ impl Transcript {
             .tool_mut(call_id)
             .is_none_or(|tool| tool.name == "display_image");
         for artifact in artifacts {
-            if artifact.kind == dusk_protocol::artifact::CardKind::Audio {
+            if artifact.kind == dusk_protocol::tools::CardKind::Audio {
                 self.items.push(Item::Audio(artifact.into()));
                 continue;
             }

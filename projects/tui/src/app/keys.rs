@@ -6,7 +6,7 @@ use crossterm::event::{
 };
 use std::time::{Duration, Instant};
 
-use dusk_protocol::{command::Command, update::InstallStage};
+use dusk_protocol::{client::Command, release::InstallStage};
 
 use super::{
     Action, App, Focus, Panel, commands,

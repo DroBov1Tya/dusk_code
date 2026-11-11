@@ -9,7 +9,7 @@ use crate::runtime::{
     agent::{Agent, Inbox},
 };
 
-pub use dusk_protocol::command::{Answer, Command, parse};
+pub use dusk_protocol::client::{Answer, Command, parse};
 
 use super::{compact, goal, model, resume, settings, undo};
 

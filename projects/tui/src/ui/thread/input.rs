@@ -19,7 +19,7 @@ use super::{
     transcript::spinner,
     wrap,
 };
-use dusk_protocol::{config::ApprovalPolicy, goal::GoalStatus, tools::Decision};
+use dusk_protocol::{config::ApprovalPolicy, thread::GoalStatus, tools::Decision};
 
 use crate::app::{
     Activity, App, ApprovalHit, ChipHit, Focus, GoalButton, GoalHit, Input, InputRow, PollHit,

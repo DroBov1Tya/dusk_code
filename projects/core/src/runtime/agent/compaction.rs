@@ -16,7 +16,7 @@ use crate::{
     runtime::thread::thread_start::{NO_PROMPT, read_prompt},
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
-pub use dusk_protocol::work::AUTO_COMPACT_PERCENT;
+pub use dusk_protocol::thread::AUTO_COMPACT_PERCENT;
 
 /// Names listed in the note; a thread with more attached is rare.
 const MAX_LISTED_SOURCES: usize = 200;

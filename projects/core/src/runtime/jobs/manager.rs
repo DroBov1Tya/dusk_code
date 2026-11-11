@@ -21,7 +21,7 @@ use crate::{
     tools::console::process::{CommandEnv, HeadTail, Running},
 };
 
-pub use dusk_protocol::work::JobInfo;
+pub use dusk_protocol::thread::JobInfo;
 
 const MAX_RUNNING: usize = 64;
 const MAX_RUNNING_PER_THREAD: usize = 8;

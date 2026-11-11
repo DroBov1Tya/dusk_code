@@ -18,7 +18,7 @@ use crate::{
     providers::{Model, ModelProvider, ProviderRegistry},
 };
 
-pub use dusk_protocol::providers::ProviderStatus;
+pub use dusk_protocol::model::ProviderStatus;
 
 /// A provider that does not list its models within this time counts as down.
 const CHECK_TIMEOUT: Duration = Duration::from_secs(8);

@@ -9,7 +9,7 @@ use super::{
     messages::{decode_message, estimate_tokens, read_tokens},
 };
 
-pub use dusk_protocol::conversation::Compaction;
+pub use dusk_protocol::thread::Compaction;
 
 impl State {
     pub async fn add_compaction(
