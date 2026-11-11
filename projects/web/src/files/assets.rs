@@ -38,7 +38,17 @@ pub fn get(path: &str) -> Option<Asset> {
 
 /// The CSP sources allowing exactly the scripts the page inlines, which is the loader
 /// trunk writes; any other inline script stays blocked.
+/// Computed once in a release build, where the bundle cannot change; a debug build reads
+/// the files from disk, so a rebuilt page keeps its own hash.
 pub fn inline_script_sources() -> String {
+    static CACHE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    if cfg!(debug_assertions) {
+        return compute_script_sources();
+    }
+    CACHE.get_or_init(compute_script_sources).clone()
+}
+
+fn compute_script_sources() -> String {
     let Some(page) = get("index.html") else {
         return String::new();
     };

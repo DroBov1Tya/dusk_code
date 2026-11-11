@@ -1,11 +1,10 @@
 //! The routes, and starting and stopping the server.
 
 use crate::{
-    assets,
     auth::{Auth, Login},
-    bridge, cards,
+    bridge,
+    files::{assets, cards, outputs},
     guard::{self, Hosts},
-    outputs,
 };
 use anyhow::{Context, Result};
 use axum::{

@@ -5,7 +5,8 @@ use anyhow::{Context, Result};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use dusk_core::client::{Client, Hub};
 use dusk_protocol::client::{
-    Hello, PROTOCOL_VERSION, Request, RequestFrame, Response, ServerFrame,
+    CatalogRequest, Hello, PROTOCOL_VERSION, Request, RequestFrame, Response, ServerFrame,
+    VoiceRequest,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Semaphore, mpsc, watch};
@@ -82,7 +83,7 @@ async fn carry(
                 let Some(message) = message else { return Ok(()) };
                 match message.context("the stream broke")? {
                     Message::Text(text) => match serde_json::from_str::<RequestFrame>(&text) {
-                        Ok(frame) => dispatch(frame, &client, &permits, &replies),
+                        Ok(frame) => dispatch(frame, text.len(), &client, &permits, &replies),
                         Err(error) => {
                             return refuse(socket, UNSUPPORTED, &format!("not a request: {error}")).await;
                         }
@@ -109,12 +110,13 @@ async fn carry(
 /// Runs a request on its own task, so a slow one does not hold the stream.
 fn dispatch(
     frame: RequestFrame,
+    size: usize,
     client: &Arc<Client>,
     permits: &Arc<Semaphore>,
     replies: &mpsc::UnboundedSender<ServerFrame>,
 ) {
     let RequestFrame { id, request } = frame;
-    if let Some(refusal) = refused(&request) {
+    if let Some(refusal) = refused(&request, size) {
         let response = Response::Error(refusal.to_owned());
         let _ = replies.send(ServerFrame::Response { id, response });
         return;
@@ -132,11 +134,23 @@ fn dispatch(
     });
 }
 
+/// The size of an ordinary request; only a recording to transcribe may be larger.
+const MAX_REQUEST: usize = 1024 * 1024;
+
 /// What a browser may not ask, though the protocol has it: stopping the core is for the
-/// process that started the server.
-fn refused(request: &Request) -> Option<&'static str> {
+/// process that started the server, an MCP server's config text holds its keys and tokens,
+/// and a request over the ordinary size is only for a recording.
+fn refused(request: &Request, size: usize) -> Option<&'static str> {
     match request {
         Request::Shutdown => Some("a browser cannot stop the core"),
+        Request::Catalog(CatalogRequest::McpServerText { .. }) => {
+            Some("the config of an MCP server holds its secrets; edit it in the desktop app")
+        }
+        Request::Catalog(CatalogRequest::SaveMcpServer { old: Some(_), .. }) => {
+            Some("an existing MCP server is edited in the desktop app")
+        }
+        Request::Voice(VoiceRequest::Transcribe { .. }) => None,
+        _ if size > MAX_REQUEST => Some("the request is too large"),
         _ => None,
     }
 }
@@ -169,7 +183,27 @@ mod tests {
 
     #[test]
     fn a_browser_cannot_stop_the_core() {
-        assert!(refused(&Request::Shutdown).is_some());
-        assert!(refused(&Request::Thread(ThreadRequest::List)).is_none());
+        assert!(refused(&Request::Shutdown, 10).is_some());
+        assert!(refused(&Request::Thread(ThreadRequest::List), 10).is_none());
+    }
+
+    #[test]
+    fn mcp_secrets_stay_in_the_core_and_only_a_recording_may_be_large() {
+        let read = Request::Catalog(CatalogRequest::McpServerText { name: "x".into() });
+        assert!(refused(&read, 10).is_some());
+        let edit = Request::Catalog(CatalogRequest::SaveMcpServer {
+            old: Some("x".into()),
+            text: String::new(),
+        });
+        assert!(refused(&edit, 10).is_some());
+        let add = Request::Catalog(CatalogRequest::SaveMcpServer {
+            old: None,
+            text: String::new(),
+        });
+        assert!(refused(&add, 10).is_none());
+        let list = Request::Thread(ThreadRequest::List);
+        assert!(refused(&list, MAX_REQUEST + 1).is_some());
+        let audio = Request::Voice(VoiceRequest::Transcribe { audio: vec![] });
+        assert!(refused(&audio, MAX_REQUEST + 1).is_none());
     }
 }

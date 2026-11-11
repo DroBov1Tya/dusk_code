@@ -2,7 +2,7 @@
 //! one the core applies to previews: only files of the workspace, the artifact folder or a
 //! saved project; and only pictures leave, so a text file is never served as data.
 
-use crate::cards::sniff;
+use super::cards::sniff;
 use dusk_core::client::Hub;
 use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
 use std::{
