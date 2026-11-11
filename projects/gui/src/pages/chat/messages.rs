@@ -107,7 +107,7 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
 }
 
 /// The steps a run shows: a picture card stands for the step that showed it.
-fn steps(items: &[Item]) -> Vec<&Tool> {
+pub fn steps(items: &[Item]) -> Vec<&Tool> {
     items
         .iter()
         .filter_map(|item| match item {
@@ -411,7 +411,7 @@ fn lane(content: AnyElement) -> AnyElement {
 }
 
 /// A run of steps: the latest one, and the count of the others to unfold.
-fn run(
+pub fn run(
     ws: &Workspace,
     shown: &str,
     start: usize,

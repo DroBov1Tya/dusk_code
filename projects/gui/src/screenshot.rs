@@ -11,6 +11,7 @@
 //! - `modal=search|project|agents|none`, `right=all`: open a window; unfold the right column;
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
+//!   `fake=agentchat`: open the chat of one, with a run of steps;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
@@ -307,6 +308,41 @@ fn act(
                     }
                 }
             }
+            cx.notify();
+        }
+        "fake" if value == "agentchat" => {
+            // A subagent's chat with a run of steps and an answer, in the window.
+            use crate::pages::chat::transcript::{Item, Tool, ToolState, Transcript};
+            let step = |index: usize, name: &str, detail: &str| {
+                Item::Tool(Tool {
+                    call_id: format!("c{index}"),
+                    name: name.into(),
+                    detail: detail.into(),
+                    arguments: format!("{{\"path\": \"{detail}\"}}"),
+                    output: "ok".into(),
+                    state: ToolState::Done,
+                })
+            };
+            let mut inner = Transcript::default();
+            inner.items.push(Item::User {
+                text: "Add expiry to the cache".into(),
+                sequence: Some(1),
+            });
+            inner.items.push(step(1, "read_file", "src/cache.rs"));
+            inner.items.push(step(2, "search_files", "ttl"));
+            inner.items.push(step(3, "run_command", "cargo test"));
+            inner.items.push(step(4, "run_command", "cargo clippy"));
+            inner.items.push(Item::Assistant {
+                text: "Entries now expire after the time set in `ttl`; the tests pass.".into(),
+                reasoning: String::new(),
+            });
+            if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
+                chat.agent_chats.insert("fake-agent".into(), inner);
+            }
+            ws.modal = Some(Modal::AgentChat {
+                agent: "fake-agent".into(),
+                name: "backend-engineer".into(),
+            });
             cx.notify();
         }
         "demo" => {
