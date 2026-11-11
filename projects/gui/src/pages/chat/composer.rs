@@ -14,6 +14,9 @@ use gpui_kit::{
 use super::transcript::Transcript;
 use crate::workspace::Workspace;
 
+pub(super) const WIDTH: f32 = 780.;
+pub(super) const AGENTS_BUTTON: f32 = 52.;
+
 pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     // Subagents may go on after the chat's own turn is over; Stop ends them too.
     let working = ws
@@ -51,14 +54,14 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .child(format!("{rate} tok/s"))
         });
     let navigator =
-        (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, cx));
+        (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, window, cx));
     let mentions = mention_menu(ws, cx);
     let chips = strip(ws, cx);
     div()
         .relative()
         .px_6()
         .pt_2()
-        .max_w(px(780.))
+        .max_w(px(WIDTH))
         .mx_auto()
         .w_full()
         .children(queued)
@@ -329,7 +332,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful
         div()
             .id("agents")
             .relative()
-            .size(px(52.))
+            .size(px(AGENTS_BUTTON))
             .flex_none()
             .flex()
             .items_center()

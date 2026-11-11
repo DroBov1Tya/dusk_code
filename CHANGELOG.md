@@ -4,6 +4,16 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Changed
+
+- Desktop chat gives tool actions and their status a clearer, more compact layout.
+- Message history shows the current position and lists sent messages without background job
+  results.
+- The Models menu highlights the current model, shows full names on hover and adapts its
+  submenus to the space beside the composer.
+
 ## 0.72.7 - 2026-11-11 (pre-release)
 
 ### Added

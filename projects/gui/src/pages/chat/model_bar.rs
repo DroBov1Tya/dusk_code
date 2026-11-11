@@ -122,7 +122,7 @@ pub fn models(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> D
     let menu = menu.map(|picker| {
         popup(
             "model",
-            super::model_menu::render(ws, picker, &effort, window.viewport_size(), cx),
+            super::model_menu::render(ws, picker, &effort, window, cx),
         )
     });
     div()
