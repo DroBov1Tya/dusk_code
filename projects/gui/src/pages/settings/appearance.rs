@@ -2,81 +2,91 @@
 
 use gpui_kit::{
     component::{
-        ActiveTheme, Colorize, Sizable,
+        ActiveTheme, Colorize, IconName, Sizable,
         button::{Button, ButtonVariants},
         input::Input,
     },
+    prelude::FluentBuilder,
     *,
 };
 
-use super::line;
+use super::{section, section_hint_color};
 use crate::{
-    ui::{theme, widgets},
+    ui::{
+        Type, theme,
+        widgets::{self, Focusable},
+    },
     workspace::Workspace,
 };
 
 pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let prefs = theme::prefs(cx).clone();
-    let mut themes = div().grid().grid_cols(3).gap_3().pt_2();
+    let hover = cx.theme().accent;
+    let mut themes = div().flex().flex_wrap().gap_3();
     for palette in theme::PALETTES {
         let name = palette.name;
         let chosen = name == prefs.theme;
-        let swatch = |color: &str| div().size_3().rounded_full().bg(hex(color));
         themes = themes.child(
             div()
                 .id(SharedString::from(format!("theme-{name}")))
+                .focusable_row(cx)
                 .flex()
                 .flex_col()
-                .gap_3()
-                .p_3()
+                // Keep the same column width on a row with fewer themes.
+                .w(px(200.))
+                .max_w_full()
+                .gap_2()
+                .p_2()
                 .rounded_lg()
-                .border_1()
                 .border_color(if chosen {
-                    hex(palette.accent)
+                    cx.theme().ring
                 } else {
                     cx.theme().border
                 })
-                .bg(hex(palette.background))
+                .bg(cx.theme().background)
                 .cursor_pointer()
+                .hover(move |tile| tile.bg(hover))
                 .child(
                     div()
-                        .h(px(44.))
-                        .rounded_md()
-                        .bg(hex(palette.panel))
+                        .h(px(52.))
                         .flex()
-                        .flex_col()
-                        .gap_1()
-                        .p_2()
+                        .overflow_hidden()
+                        .rounded_md()
+                        .bg(hex(palette.background))
+                        .child(div().w(relative(0.24)).bg(hex(palette.panel)))
                         .child(
                             div()
-                                .h(px(6.))
-                                .w(relative(0.6))
-                                .rounded_sm()
-                                .bg(hex(palette.muted)),
-                        )
-                        .child(
-                            div()
-                                .h(px(6.))
-                                .w(relative(0.4))
-                                .rounded_sm()
-                                .bg(hex(palette.accent)),
+                                .flex_1()
+                                .flex()
+                                .items_center()
+                                .justify_between()
+                                .gap_2()
+                                .px_3()
+                                .text_size(rems(1.3))
+                                .text_color(hex(palette.foreground))
+                                .child("Aa")
+                                .child(
+                                    div()
+                                        .size_3()
+                                        .flex_shrink_0()
+                                        .rounded_full()
+                                        .bg(hex(palette.accent)),
+                                ),
                         ),
                 )
                 .child(
                     div()
                         .flex()
-                        .flex_row()
                         .items_center()
+                        .justify_between()
                         .gap_1()
-                        .child(
-                            div()
-                                .flex_1()
-                                .text_sm()
-                                .text_color(hex(palette.foreground))
-                                .child(name),
-                        )
-                        .child(swatch(palette.surface))
-                        .child(swatch(palette.accent)),
+                        .px_1()
+                        .h_6()
+                        .group_name()
+                        .child(name)
+                        .when(chosen, |row| {
+                            row.child(widgets::icon(IconName::Check, cx.theme().primary))
+                        }),
                 )
                 .on_click(cx.listener(move |_, _, _, cx| {
                     theme::change(cx, |prefs| prefs.theme = name.to_owned());
@@ -84,11 +94,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         );
     }
     let sizes = |current: f32, options: &'static [f32], mono: bool, cx: &mut Context<Workspace>| {
-        let mut row = div().flex().flex_row().gap_1();
+        let mut row = div().flex().flex_wrap().gap_1();
         for &size in options {
             row = row.child(
                 Button::new(SharedString::from(format!("size-{mono}-{size}")))
-                    .xsmall()
+                    .compact()
                     .when_selected(size == current)
                     .label(format!("{size:.0}"))
                     .on_click(cx.listener(move |_, _, _, cx| {
@@ -107,13 +117,12 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     let query = ws.font_search.read(cx).value().trim().to_lowercase();
     let mut fonts = div()
         .id("fonts")
-        .max_h(px(220.))
+        .max_h(px(236.))
         .overflow_y_scroll()
         .flex()
         .flex_col()
         .rounded_md()
-        .border_1()
-        .border_color(cx.theme().border)
+        .bg(cx.theme().background)
         .p_1();
     let current = prefs.font.clone();
     fonts = fonts.child(font_row("System default", None, current.is_none(), cx));
@@ -126,41 +135,76 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         let chosen = current.as_deref() == Some(family.as_str());
         fonts = fonts.child(font_row(family, Some(family.clone()), chosen, cx));
     }
+    let current_label = current.as_deref().unwrap_or("System default");
+    let font_controls = div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(
+            div()
+                .flex()
+                .flex_wrap()
+                .items_center()
+                .justify_between()
+                .gap_2()
+                .child(div().body().child("Interface font"))
+                .child(
+                    div()
+                        .small()
+                        .text_color(section_hint_color(cx))
+                        .child(current_label.to_owned()),
+                ),
+        )
+        .child(
+            Input::new(&ws.font_search)
+                .large()
+                .aria_label("Find a font"),
+        )
+        .child(fonts);
     div()
         .flex()
         .flex_col()
-        .child(widgets::caption("Theme", cx).px_0())
-        .child(themes)
-        .child(widgets::caption("Fonts", cx).px_0())
+        .gap_4()
+        .child(section("Theme", "", cx).child(themes))
         .child(
-            line("Interface size", "Text in every column", cx).child(sizes(
-                prefs.font_size,
-                theme::FONT_SIZES,
-                false,
-                cx,
-            )),
+            section("Typography", "", cx)
+                .child(type_size(
+                    "Interface size",
+                    "Text in every column",
+                    sizes(prefs.font_size, theme::FONT_SIZES, false, cx),
+                    cx,
+                ))
+                .child(type_size(
+                    "Code size",
+                    "Commands, paths and code",
+                    sizes(prefs.mono_size, theme::MONO_SIZES, true, cx),
+                    cx,
+                ))
+                .child(font_controls),
         )
+}
+
+fn type_size(label: &str, hint: &str, control: Div, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .justify_between()
+        .gap_2()
         .child(
-            line("Code size", "Commands, paths and code", cx).child(sizes(
-                prefs.mono_size,
-                theme::MONO_SIZES,
-                true,
-                cx,
-            )),
+            div()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .child(div().body().child(label.to_owned()))
+                .child(
+                    div()
+                        .small()
+                        .text_color(section_hint_color(cx))
+                        .child(hint.to_owned()),
+                ),
         )
-        .child(line(
-            "Interface font",
-            &format!(
-                "Now {}",
-                prefs
-                    .font
-                    .clone()
-                    .unwrap_or_else(|| "the system font".to_owned())
-            ),
-            cx,
-        ))
-        .child(div().pt_2().child(Input::new(&ws.font_search)))
-        .child(div().pt_2().child(fonts))
+        .child(control)
 }
 
 fn font_row(
@@ -169,10 +213,11 @@ fn font_row(
     chosen: bool,
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
+    let accent = cx.theme().primary;
     let shown = family.clone();
     // A fixed height: a decorative face would otherwise make its row shorter or taller.
     widgets::row(SharedString::from(format!("font-{label}")), chosen, cx)
-        .h(px(32.))
+        .h(px(36.))
         .child(
             div()
                 .flex_1()
@@ -180,6 +225,9 @@ fn font_row(
                 .when_font(shown)
                 .child(label.to_owned()),
         )
+        .when(chosen, |row| {
+            row.child(widgets::icon(IconName::Check, accent))
+        })
         .on_click(cx.listener(move |_, _, _, cx| {
             let family = family.clone();
             theme::change(cx, |prefs| prefs.font = family);

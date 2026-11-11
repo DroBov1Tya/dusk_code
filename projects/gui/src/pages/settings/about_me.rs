@@ -4,17 +4,21 @@
 use dusk_protocol::config::{Profile, ProfileFile, Snippet, is_name};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        IconName, Sizable,
         button::{Button, ButtonVariants},
         input::{Input, InputState, Textarea, TextareaState},
         switch::Switch,
+        tooltip::Tooltip,
     },
     prelude::FluentBuilder,
     *,
 };
 
-use super::line;
-use crate::{ui::widgets, workspace::Workspace};
+use super::{section, section_hint_color};
+use crate::{
+    ui::{Type, widgets},
+    workspace::Workspace,
+};
 
 pub struct AboutMe {
     pub profile: Option<Profile>,
@@ -72,42 +76,43 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .snippet_text
             .update(cx, |input, cx| input.set_value(text, window, cx));
     }
-    let muted = cx.theme().muted_foreground;
+    let muted = section_hint_color(cx);
     let Some(profile) = &ws.me.profile else {
         return div().child(widgets::muted("Reading...", cx).px_0());
     };
-    let mut body = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(widgets::caption("@me", cx))
-        .child(
-            div()
-                .text_sm()
-                .text_color(muted)
-                .child("Write @me in a message to send this, with the files marked to send."),
-        )
-        .child(
-            div()
-                .p_2()
-                .rounded_md()
-                .border_1()
-                .border_color(cx.theme().border)
-                .child(Textarea::new(&ws.me.about).appearance(false)),
-        );
+    let mut body = section(
+        "@me profile",
+        "Write @me in a message to send this, with the files marked to send.",
+        cx,
+    )
+    .child(Textarea::new(&ws.me.about).large().aria_label("About me"));
     for (index, file) in profile.files.iter().enumerate() {
+        let path = file.path.display().to_string();
         let name = file.path.file_name().map_or_else(
             || file.path.display().to_string(),
             |name| name.to_string_lossy().into_owned(),
         );
-        body = body.child(
-            line(&name, &file.path.display().to_string(), cx)
-                .child(div().text_xs().text_color(muted).child("send"))
-                .child(
-                    Switch::new(("me-send", index))
-                        .checked(file.send)
-                        .small()
-                        .on_click(cx.listener(move |ws, on: &bool, _, cx| {
+        body =
+            body.child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap_2()
+                    .child(
+                        div()
+                            .id(("me-file", index))
+                            .flex_1()
+                            .min_w_0()
+                            .tooltip({
+                                let path = path.clone();
+                                move |window, cx| Tooltip::new(path.clone()).build(window, cx)
+                            })
+                            .child(div().body().truncate().child(name))
+                            .child(div().small().text_color(muted).truncate().child(path)),
+                    )
+                    .child(div().small().text_color(muted).child("Send"))
+                    .child(Switch::new(("me-send", index)).checked(file.send).on_click(
+                        cx.listener(move |ws, on: &bool, _, cx| {
                             if let Some(file) = ws
                                 .me
                                 .profile
@@ -117,62 +122,60 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                                 file.send = *on;
                             }
                             cx.notify();
-                        })),
-                )
-                .child(
-                    Button::new(("me-remove", index))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::Close)
-                        .tooltip("Remove from the profile")
-                        .on_click(cx.listener(move |ws, _, _, cx| {
-                            if let Some(profile) = ws.me.profile.as_mut()
-                                && index < profile.files.len()
-                            {
-                                profile.files.remove(index);
-                            }
-                            cx.notify();
-                        })),
-                ),
-        );
+                        }),
+                    ))
+                    .child(
+                        Button::new(("me-remove", index))
+                            .ghost()
+                            .icon(IconName::Close)
+                            .tooltip("Remove from the profile")
+                            .on_click(cx.listener(move |ws, _, _, cx| {
+                                if let Some(profile) = ws.me.profile.as_mut()
+                                    && index < profile.files.len()
+                                {
+                                    profile.files.remove(index);
+                                }
+                                cx.notify();
+                            })),
+                    ),
+            );
     }
     body = body.child(
         div()
             .flex()
-            .flex_row()
+            .items_center()
+            .justify_between()
+            .flex_wrap()
             .gap_2()
-            .pt_1()
             .child(
                 Button::new("me-add")
-                    .small()
                     .icon(IconName::Plus)
                     .label("Add files")
                     .on_click(cx.listener(|ws, _, _, cx| ws.add_profile_files(cx))),
             )
             .child(
                 Button::new("me-save")
-                    .small()
                     .primary()
-                    .label("Save")
+                    .label("Save profile")
                     .on_click(cx.listener(|ws, _, _, cx| ws.save_profile(cx))),
             ),
     );
-    body.child(div().pt_6().child(widgets::caption("Snippets", cx)))
-        .child(div().text_sm().text_color(muted).child(
-            "Write @name in a message to bring a snippet in, such as a script or a checklist.",
-        ))
+    div()
+        .flex()
+        .flex_col()
+        .gap_4()
+        .child(body)
         .child(snippets(ws, cx))
 }
 
 /// The snippets by name, and the editor of the open one.
 fn snippets(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let mut names = div().flex().flex_row().flex_wrap().gap_1();
+    let mut names = div().flex().flex_row().flex_wrap().gap_2();
     for (index, snippet) in ws.me.snippets.iter().enumerate() {
         let name = snippet.name.clone();
         let open = ws.me.open.as_deref() == Some(name.as_str());
         names = names.child(
             Button::new(("snippet", index))
-                .small()
                 .when(open, |button| button.primary())
                 .when(!open, |button| button.ghost())
                 .label(format!("@{name}"))
@@ -181,10 +184,8 @@ fn snippets(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     }
     names = names.child(
         Button::new("snippet-new")
-            .small()
-            .ghost()
             .icon(IconName::Plus)
-            .label("New")
+            .label("New snippet")
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.me.open = None;
                 ws.me.fill_snippet = Some((String::new(), String::new()));
@@ -193,7 +194,6 @@ fn snippets(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     );
     let delete = ws.me.open.is_some().then(|| {
         Button::new("snippet-delete")
-            .small()
             .ghost()
             .label("Delete")
             .on_click(cx.listener(|ws, _, _, cx| {
@@ -202,34 +202,45 @@ fn snippets(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 }
             }))
     });
-    div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .child(names)
-        .child(div().w(px(240.)).child(Input::new(&ws.me.snippet_name)))
-        .child(
-            div()
-                .p_2()
-                .rounded_md()
-                .border_1()
-                .border_color(cx.theme().border)
-                .child(Textarea::new(&ws.me.snippet_text).appearance(false)),
-        )
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .gap_2()
-                .child(
-                    Button::new("snippet-save")
-                        .small()
-                        .primary()
-                        .label("Save")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.save_snippet(cx))),
-                )
-                .children(delete),
-        )
+    section(
+        "Snippets",
+        "Write @name in a message to bring a snippet in, such as a script or a checklist.",
+        cx,
+    )
+    .child(names)
+    .child(
+        div()
+            .flex()
+            .flex_col()
+            .gap_1()
+            .max_w(px(280.))
+            .child(div().group_name().child("Snippet name"))
+            .child(
+                Input::new(&ws.me.snippet_name)
+                    .large()
+                    .aria_label("Snippet name"),
+            ),
+    )
+    .child(
+        Textarea::new(&ws.me.snippet_text)
+            .large()
+            .aria_label("Snippet text"),
+    )
+    .child(
+        div()
+            .flex()
+            .items_center()
+            .justify_end()
+            .flex_wrap()
+            .gap_2()
+            .children(delete)
+            .child(
+                Button::new("snippet-save")
+                    .primary()
+                    .label("Save snippet")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.save_snippet(cx))),
+            ),
+    )
 }
 
 impl Workspace {
