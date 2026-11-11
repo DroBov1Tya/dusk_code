@@ -25,7 +25,7 @@ use core_graphics::{
     },
 };
 
-use super::{Keys, Point, Rect, Window, click::PointerMode, cursor::Cursor};
+use super::{Keys, Point, Rect, Window, WindowSnapshot, click::PointerMode, cursor::Cursor};
 
 /// Between the events of one action, so apps see them as a person's.
 const PAUSE: Duration = Duration::from_millis(30);
@@ -65,7 +65,7 @@ fn front_window_at(at: Point) -> Option<Window> {
 
 /// Resolve the topmost visual window and require its owner and geometry to be unique.
 /// AX does not expose a public CGWindowID, so ambiguous mappings are unsafe to press.
-pub fn independent_window(at: Point) -> Result<(u32, i32, Rect)> {
+pub fn independent_window(at: Point) -> Result<WindowSnapshot> {
     let overlay = Cursor::shared().pid().map(i64::from);
     let windows = visible_windows();
     let front = windows
@@ -81,11 +81,7 @@ pub fn independent_window(at: Point) -> Result<(u32, i32, Rect)> {
             == 1,
         "the target window cannot be identified unambiguously; no action was sent"
     );
-    Ok((
-        front.window.id,
-        i32::try_from(front.pid).context("invalid window owner")?,
-        bounds,
-    ))
+    Ok((&front.window).into())
 }
 
 fn covers(bounds: Rect, at: Point) -> bool {
@@ -364,11 +360,11 @@ impl Desktop {
 
     /// Refuses a click into a window screenshot once that window moved, changed size or is
     /// covered at `at`.
-    pub fn ensure_window_at(&self, at: Point, id: u32, bounds: Rect) -> Result<()> {
+    pub fn ensure_window_at(&self, at: Point, expected: WindowSnapshot) -> Result<()> {
         let front = front_window_at(at)
             .context("the captured window is no longer visible here; take a new screenshot")?;
         ensure!(
-            front.id == id && front.bounds == bounds,
+            WindowSnapshot::from(&front) == expected,
             "the captured window moved, resized or is covered here; take a new screenshot"
         );
         Ok(())
@@ -391,7 +387,7 @@ impl Desktop {
         right: bool,
         count: i64,
         mode: PointerMode,
-        expected_window: Option<(u32, Rect)>,
+        expected_window: Option<WindowSnapshot>,
     ) -> Result<()> {
         mode.validate_click(right, count)?;
         if mode == PointerMode::Independent {

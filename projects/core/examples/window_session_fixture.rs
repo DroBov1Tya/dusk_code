@@ -175,6 +175,7 @@ mod fixture {
                         "sibling" => sibling.orderFrontRegardless(),
                         "unsibling" => sibling.orderOut(None),
                         "move" => window.setFrameOrigin(CGPoint::new(150.0, 120.0)),
+                        "reset" => window.setFrameOrigin(CGPoint::new(100.0, 100.0)),
                         "resize" => window.setContentSize(CGSize::new(400.0, 250.0)),
                         "title" => window.setTitle(&NSString::from_str("Renamed target")),
                         "minimize" => window.miniaturize(None),

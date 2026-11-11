@@ -9,7 +9,7 @@ use core_foundation::{
 
 use core_graphics::geometry::{CGPoint, CGSize};
 
-use super::{Point, Rect};
+use super::{Point, Rect, WindowSnapshot};
 
 // AXUIElement is an opaque Core Foundation object. Each Create/Copy result below is
 // owned by a CFType and released on every exit path, on the blocking worker thread.
@@ -47,7 +47,7 @@ unsafe extern "C" {
 /// Press the exact accessible element at a global, top-left-relative display point.
 /// No ancestor search, application activation, event injection or fallback: a failure
 /// must not turn into a physical click, and an uncertain action must never be retried.
-pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
+pub fn press(at: Point, expected_window: Option<WindowSnapshot>) -> Result<()> {
     ensure!(
         [at.x, at.y]
             .into_iter()
@@ -72,14 +72,14 @@ pub fn press(at: Point, expected_window: Option<(u32, Rect)>) -> Result<()> {
         // A system-wide lookup may fail even when an application exposes its own AX
         // tree. Restrict the second lookup to the current frontmost window's PID;
         // verify_target still binds the result to that exact window before AXPress.
-        let (window_id, pid, bounds) = super::macos::independent_window(at)?;
+        let window = super::macos::independent_window(at)?;
         if let Some(expected) = expected_window {
             ensure!(
-                (window_id, bounds) == expected,
+                window == expected,
                 "the captured window changed or is covered; no action was sent"
             );
         }
-        let app = owned(unsafe { AXUIElementCreateApplication(pid) })
+        let app = owned(unsafe { AXUIElementCreateApplication(window.pid) })
             .context("cannot inspect the target application; no action was sent")?;
         check(
             unsafe { AXUIElementSetMessagingTimeout(app.as_CFTypeRef(), AX_TIMEOUT_SECONDS) },
@@ -133,12 +133,13 @@ pub fn check_hit_test(code: i32) -> Result<()> {
 fn verify_target(
     element: AXUIElementRef,
     at: Point,
-    expected_window: Option<(u32, Rect)>,
+    expected_window: Option<WindowSnapshot>,
 ) -> Result<()> {
-    let (window_id, pid, bounds) = super::macos::independent_window(at)?;
+    let expected_front = super::macos::independent_window(at)?;
+    let WindowSnapshot { pid, bounds, .. } = expected_front;
     if let Some(expected) = expected_window {
         ensure!(
-            (window_id, bounds) == expected,
+            expected_front == expected,
             "the captured window changed or is covered; no action was sent"
         );
     }
@@ -180,7 +181,7 @@ fn verify_target(
     ensure_unique_match(matching, target_matches)?;
     // Recheck frontmost geometry after the AX queries, not only before them.
     ensure!(
-        super::macos::independent_window(at)? == (window_id, pid, bounds),
+        super::macos::independent_window(at)? == expected_front,
         "the window changed during the click; no action was sent"
     );
     Ok(())
