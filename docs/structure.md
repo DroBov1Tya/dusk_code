@@ -111,6 +111,35 @@ ui/  (4)
   theme/  (2)
 ```
 
+### web
+
+```
+auth/  (4)
+files/  (4)
+```
+
+The library both `tui` and `gui` link to serve browsers; it has no binary of its own and the
+built bundle is embedded in each of them. `auth` (token, sessions, limit), `files` (`assets`:
+the bundle embedded from `web-ui/dist`; `cards`, `outputs`: pictures and sounds), `guard`
+(host, origin, security headers), `bridge` (one WebSocket per browser), `server` (routes,
+start, stop). Everything else is the core's.
+
+### web-ui
+
+```
+api/  (8)
+chat/  (14)
+  data/  (2)
+  inspector/  (7)
+pages/  (28)
+  connectors/  (8)
+  settings/  (11)
+```
+
+The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls by domain,
+`state` what the whole page knows, `chat/data` the transcript as plain data (testable without a
+browser), `markdown` model output as DOM text only. It draws and calls; it decides nothing.
+
 ### tui
 
 ```

@@ -80,6 +80,9 @@ jobs:
             sleep $((attempt * 20))
           done
           exit 1
+      - name: Web client
+        # Embedded in the binary by the build that follows.
+        run: scripts/build-web.sh
       - name: Build
         shell: bash
         # The desktop client builds with the terminal one in a single call on macOS, so
@@ -162,6 +165,8 @@ jobs:
             sleep $((attempt * 20))
           done
           exit 1
+      - name: Web client
+        run: scripts/build-web.sh
       - name: Build
         run: cargo build --release --locked -p dusk_gui
       - name: Package

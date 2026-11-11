@@ -17,6 +17,7 @@ crossterm.workspace = true
 dusk_core.workspace = true
 dusk_protocol.workspace = true
 dusk_telegram.workspace = true
+dusk_web.workspace = true
 futures.workspace = true
 image.workspace = true
 ratatui.workspace = true

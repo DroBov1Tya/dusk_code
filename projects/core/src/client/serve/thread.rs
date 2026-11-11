@@ -1,10 +1,11 @@
 //! Requests about one thread: opening, sending, closing.
 
 use super::{CLOSE_TIMEOUT, OpenThread, Server};
+use super::{ClientId, Subscribers};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
-use std::sync::Arc;
+use std::{collections::HashSet, sync::Arc};
 use tracing::warn;
 
 impl Server {
@@ -12,16 +13,34 @@ impl Server {
         let runtime = Arc::clone(&self.runtime);
         Ok(match request {
             ThreadRequest::New { cwd } => {
-                let handle = runtime.new_thread(&self.source, &cwd).await?;
+                let handle = runtime.new_thread(self.source(), &cwd).await?;
                 self.open(handle)
             }
             ThreadRequest::Resume { thread_id, cwd } => {
+                // A thread another client keeps open runs on; this one just joins it.
+                if let Some(open) = self.threads.get_mut(&thread_id)
+                    && !open.forward.is_finished()
+                {
+                    open.clients.insert(self.caller);
+                    open.orphaned = None;
+                    return Ok(Response::Opened { thread_id });
+                }
+                // Whoever kept the ended thread open keeps it after it starts again.
+                let members = self
+                    .threads
+                    .get(&thread_id)
+                    .map(|open| open.clients.clone())
+                    .unwrap_or_default();
                 self.close(&thread_id).await;
                 let handle = runtime.resume_thread(&thread_id, &cwd).await?;
-                self.open(handle)
+                let opened = self.open(handle);
+                if let Some(open) = self.threads.get_mut(&thread_id) {
+                    open.clients.extend(members);
+                }
+                opened
             }
             ThreadRequest::Fork { summary, cwd } => {
-                let handle = runtime.fork_thread(&self.source, &summary, &cwd).await?;
+                let handle = runtime.fork_thread(self.source(), &summary, &cwd).await?;
                 self.open(handle)
             }
             ThreadRequest::List => Response::Threads(runtime.list_threads().await?),
@@ -66,7 +85,7 @@ impl Server {
                 Response::Done
             }
             ThreadRequest::Close { thread_id } => {
-                self.close(&thread_id).await;
+                self.leave(&thread_id).await;
                 Response::Done
             }
             ThreadRequest::StopAgent { thread_id } => {
@@ -120,7 +139,7 @@ impl Server {
             input,
             mut output,
         } = handle;
-        let events = self.events.clone();
+        let subscribers = Arc::clone(&self.subscribers);
         let id = thread_id.clone();
         let forward = tokio::spawn(async move {
             while let Some(event) = output.next_event().await {
@@ -128,14 +147,20 @@ impl Server {
                     thread_id: id.clone(),
                     event: Box::new(event),
                 };
-                if events.send(event).is_err() {
-                    return;
-                }
+                publish(&subscribers, event);
             }
-            let _ = events.send(Event::Ended { thread_id: id });
+            publish(&subscribers, Event::Ended { thread_id: id });
         });
-        self.threads
-            .insert(thread_id.clone(), OpenThread { input, forward });
+        let clients = HashSet::from([self.caller]);
+        self.threads.insert(
+            thread_id.clone(),
+            OpenThread {
+                input,
+                forward,
+                clients,
+                orphaned: None,
+            },
+        );
         Response::Opened { thread_id }
     }
 
@@ -147,7 +172,10 @@ impl Server {
 
     /// Stops the thread's turn and waits for its task to end, so it can be opened again.
     pub(super) async fn close(&mut self, thread_id: &str) {
-        let Some(OpenThread { input, forward }) = self.threads.remove(thread_id) else {
+        let Some(OpenThread {
+            input, mut forward, ..
+        }) = self.threads.remove(thread_id)
+        else {
             return;
         };
         if forward.is_finished() {
@@ -156,6 +184,115 @@ impl Server {
         // Cancelling a thread that already ended has nothing to stop.
         let _ = input.cancel().await;
         drop(input);
-        let _ = tokio::time::timeout(CLOSE_TIMEOUT, forward).await;
+        // A task that does not finish is cut, so it cannot go on beside a new one.
+        if tokio::time::timeout(CLOSE_TIMEOUT, &mut forward)
+            .await
+            .is_err()
+        {
+            forward.abort();
+        }
+    }
+}
+
+impl Server {
+    /// The caller stops using the thread; it closes when no other client keeps it open.
+    async fn leave(&mut self, thread_id: &str) {
+        let caller = self.caller;
+        self.release(thread_id, caller).await;
+    }
+
+    /// A client went away: it leaves every thread, and the ones nobody keeps close.
+    pub(super) async fn detach(&mut self, client: ClientId) {
+        self.sources.remove(&client);
+        self.subscribers.lock().retain(|(id, _)| *id != client);
+        let ids: Vec<String> = self.threads.keys().cloned().collect();
+        // A client that is gone, unlike one that closes a thread, may be a browser that
+        // reloads: its threads run on for a while before they are stopped.
+        for thread_id in ids {
+            if let Some(open) = self.threads.get_mut(&thread_id)
+                && open.clients.remove(&client)
+                && open.clients.is_empty()
+            {
+                open.orphaned = Some(std::time::Instant::now());
+            }
+        }
+    }
+
+    /// A client that asked to close the thread: it ends now if nobody else keeps it.
+    async fn release(&mut self, thread_id: &str, client: ClientId) {
+        let Some(open) = self.threads.get_mut(thread_id) else {
+            return;
+        };
+        open.clients.remove(&client);
+        if open.clients.is_empty() {
+            self.close(thread_id).await;
+        }
+    }
+
+    /// Stops the threads nobody has kept open for longer than the grace.
+    pub(super) async fn close_orphans(&mut self) {
+        let stale: Vec<String> = self
+            .threads
+            .iter()
+            .filter(|(_, open)| {
+                open.orphaned
+                    .is_some_and(|at| at.elapsed() > super::ORPHAN_GRACE)
+            })
+            .map(|(id, _)| id.clone())
+            .collect();
+        for thread_id in stale {
+            self.close(&thread_id).await;
+        }
+    }
+}
+
+/// Gives the event to every attached client, dropping the queues of the gone ones.
+fn publish(subscribers: &Subscribers, event: Event) {
+    subscribers
+        .lock()
+        .retain(|(_, queue)| queue.send(event.clone()).is_ok());
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio::sync::mpsc;
+
+    fn ended(thread_id: &str) -> Event {
+        Event::Ended {
+            thread_id: thread_id.to_owned(),
+        }
+    }
+
+    #[test]
+    fn every_attached_client_gets_each_event_in_order() {
+        let subscribers = Subscribers::default();
+        let (first, mut first_events) = mpsc::unbounded_channel();
+        let (second, mut second_events) = mpsc::unbounded_channel();
+        subscribers.lock().push((1, first));
+        subscribers.lock().push((2, second));
+
+        publish(&subscribers, ended("a"));
+        publish(&subscribers, ended("b"));
+
+        for events in [&mut first_events, &mut second_events] {
+            assert_eq!(events.try_recv().unwrap(), ended("a"));
+            assert_eq!(events.try_recv().unwrap(), ended("b"));
+        }
+    }
+
+    #[test]
+    fn a_gone_client_is_dropped_and_the_others_keep_receiving() {
+        let subscribers = Subscribers::default();
+        let (gone, gone_events) = mpsc::unbounded_channel();
+        let (stays, mut stays_events) = mpsc::unbounded_channel();
+        subscribers.lock().push((1, gone));
+        subscribers.lock().push((2, stays));
+        drop(gone_events);
+
+        publish(&subscribers, ended("a"));
+
+        assert_eq!(subscribers.lock().len(), 1);
+        assert_eq!(stays_events.try_recv().unwrap(), ended("a"));
     }
 }

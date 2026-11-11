@@ -1,0 +1,9 @@
+[build]
+target = "index.html"
+dist = "dist"
+# Files are named by their hash, so the server may cache them hard.
+filehash = true
+
+[tools]
+# Pinned: the version the lockfile resolves, so a build is the same everywhere.
+wasm_bindgen = "0.2.130"

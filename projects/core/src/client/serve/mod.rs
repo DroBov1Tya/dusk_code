@@ -17,7 +17,12 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use dusk_protocol::client::{Event, Request, Response, Status};
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use parking_lot::Mutex;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+    time::Duration,
+};
 use tokio::{
     sync::{mpsc, oneshot, watch},
     task::JoinHandle,
@@ -27,62 +32,101 @@ use tracing::warn;
 /// How long a closing thread may take to stop its turn and finish.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// How long a thread whose clients all vanished keeps running.
+const ORPHAN_GRACE: Duration = Duration::from_secs(60);
+
 /// How often the status is read again for what changes in the background, such as a
 /// model found over the network or an MCP server that settled.
 const STATUS_PERIOD: Duration = Duration::from_millis(100);
 
+/// Who is attached to the core; ids are never reused within a run.
+pub type ClientId = u64;
+
+/// Where the events of open threads go: one queue for each attached client.
+pub type Subscribers = Arc<Mutex<Vec<(ClientId, mpsc::UnboundedSender<Event>)>>>;
+
+pub enum Message {
+    /// A client joined; `source` is the name its threads carry.
+    Attach {
+        client: ClientId,
+        source: String,
+    },
+    Call(Call),
+    /// A client went away: it leaves every thread it had open.
+    Detach(ClientId),
+}
+
 pub struct Call {
+    pub client: ClientId,
     pub request: Request,
     pub reply: oneshot::Sender<Response>,
 }
 
-/// An open thread: where its input goes and the task that forwards its events.
+/// An open thread: where its input goes, the task that forwards its events to every
+/// subscriber and the clients that keep it open.
 struct OpenThread {
     input: ThreadInput,
     forward: JoinHandle<()>,
+    clients: HashSet<ClientId>,
+    /// When the last client that kept it open went away; a turn gets `ORPHAN_GRACE` to be
+    /// picked up again, as after a reload, before it is stopped.
+    orphaned: Option<std::time::Instant>,
 }
 
 pub struct Server {
     runtime: Arc<Runtime>,
-    /// The client's name, the source of the threads it creates.
-    source: String,
-    events: mpsc::UnboundedSender<Event>,
+    /// The name of each attached client, the source of the threads it creates.
+    sources: HashMap<ClientId, String>,
+    /// The client whose request is being answered.
+    caller: ClientId,
+    subscribers: Subscribers,
     status: Arc<watch::Sender<Status>>,
     threads: HashMap<String, OpenThread>,
 }
 
 impl Server {
-    pub fn new(
-        runtime: Runtime,
-        source: String,
-        events: mpsc::UnboundedSender<Event>,
-    ) -> (Self, watch::Receiver<Status>) {
+    pub fn new(runtime: Runtime, subscribers: Subscribers) -> (Self, watch::Receiver<Status>) {
         let status = read_status(&runtime, None);
         let (sender, receiver) = watch::channel(status);
         let server = Self {
             runtime: Arc::new(runtime),
-            source,
-            events,
+            sources: HashMap::new(),
+            caller: 0,
+            subscribers,
             status: Arc::new(sender),
             threads: HashMap::new(),
         };
         (server, receiver)
     }
 
+    /// The name of the client being answered.
+    pub(super) fn source(&self) -> &str {
+        self.sources
+            .get(&self.caller)
+            .map_or("client", String::as_str)
+    }
+
     /// Answers calls until the client asks to shut down or goes away, then closes every
     /// thread and stops the runtime.
-    pub async fn run(mut self, mut calls: mpsc::UnboundedReceiver<Call>) {
+    pub async fn run(mut self, mut calls: mpsc::UnboundedReceiver<Message>) {
         let mut clock = tokio::time::interval(STATUS_PERIOD);
         clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let last = loop {
             tokio::select! {
                 call = calls.recv() => match call {
                     None => break None,
-                    Some(Call { request: Request::Shutdown, reply }) => break Some(reply),
-                    Some(Call { request: Request::InstallUpdate { tag }, reply }) => {
+                    Some(Message::Attach { client, source }) => {
+                        self.sources.insert(client, source);
+                    }
+                    Some(Message::Detach(client)) => self.detach(client).await,
+                    Some(Message::Call(Call { request: Request::Shutdown, reply, .. })) => {
+                        break Some(reply);
+                    }
+                    Some(Message::Call(Call { request: Request::InstallUpdate { tag }, reply, .. })) => {
                         self.install_update(tag, reply);
                     }
-                    Some(Call { request, reply }) => {
+                    Some(Message::Call(Call { client, request, reply })) => {
+                        self.caller = client;
                         let response = match self.handle(request).await {
                             Ok(response) => response,
                             Err(error) => Response::Error(format!("{error:#}")),
@@ -92,7 +136,10 @@ impl Server {
                         let _ = reply.send(response);
                     }
                 },
-                _ = clock.tick() => self.refresh_status(),
+                _ = clock.tick() => {
+                    self.refresh_status();
+                    self.close_orphans().await;
+                }
             }
         };
         let threads: Vec<String> = self.threads.keys().cloned().collect();

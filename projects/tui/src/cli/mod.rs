@@ -5,3 +5,4 @@ pub mod remove;
 pub mod resources;
 pub mod restore;
 pub mod run;
+pub mod web;

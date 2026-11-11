@@ -4,7 +4,7 @@
 use std::{future::Future, sync::Arc};
 
 use anyhow::Result;
-use dusk_core::client::Client;
+use dusk_core::client::{Client, Hub};
 use dusk_protocol::client::{Event, Status};
 use gpui_kit::*;
 use tokio::sync::{mpsc, watch};
@@ -27,11 +27,39 @@ pub fn split(
 pub struct Core {
     client: Arc<Client>,
     runtime: Arc<tokio::runtime::Runtime>,
+    /// The running core, which other clients such as the web server attach to.
+    hub: Arc<Hub>,
 }
 
 impl Core {
-    pub fn new(client: Arc<Client>, runtime: Arc<tokio::runtime::Runtime>) -> Self {
-        Self { client, runtime }
+    pub fn new(client: Arc<Client>, runtime: Arc<tokio::runtime::Runtime>, hub: Arc<Hub>) -> Self {
+        Self {
+            client,
+            runtime,
+            hub,
+        }
+    }
+
+    /// Like `call`, for work on the hub itself, such as starting the web server.
+    pub fn call_hub<V, T, F, Fut>(
+        &self,
+        cx: &mut Context<V>,
+        call: F,
+        done: impl FnOnce(&mut V, Result<T>, &mut Context<V>) + 'static,
+    ) where
+        V: 'static,
+        T: Send + 'static,
+        F: FnOnce(Arc<Hub>) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<T>> + Send + 'static,
+    {
+        let task = self.runtime.spawn(call(Arc::clone(&self.hub)));
+        cx.spawn(async move |view, cx| {
+            let result = task
+                .await
+                .unwrap_or_else(|error| Err(anyhow::anyhow!("the call failed: {error}")));
+            let _ = view.update(cx, |view, cx| done(view, result, cx));
+        })
+        .detach();
     }
 
     /// Runs `call` against the core, then `done` on the view with its result.
