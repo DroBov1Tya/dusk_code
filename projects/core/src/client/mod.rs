@@ -6,7 +6,14 @@ use dusk_protocol::{
     system::SystemReport,
     thread::ContextReport,
 };
-use std::{future::Future, path::PathBuf};
+use std::{
+    future::Future,
+    path::PathBuf,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
 use tokio::sync::{mpsc, oneshot, watch};
 
 mod catalog;
@@ -16,7 +23,7 @@ mod settings;
 mod threads;
 mod work;
 
-use serve::{Call, Server};
+use serve::{Call, ClientId, Message, Server, Subscribers};
 
 pub use catalog::Catalog;
 pub use projects::Projects;
@@ -24,23 +31,59 @@ pub use settings::Settings;
 pub use threads::Threads;
 pub use work::Work;
 
-/// Starts the core's side of the protocol over `runtime` for the client that said
-/// `hello`.
+/// Starts the core's side of the protocol over `runtime` for the one client that said
+/// `hello`. The core stops when that client goes away.
 pub fn serve(runtime: Runtime, hello: Hello) -> Result<Client> {
-    ensure!(
-        hello.protocol == PROTOCOL_VERSION,
-        "the client speaks protocol {}, the core {PROTOCOL_VERSION}",
-        hello.protocol
-    );
-    let (calls, inbox) = mpsc::unbounded_channel();
-    let (events_sender, events) = mpsc::unbounded_channel();
-    let (server, status) = Server::new(runtime, hello.client, events_sender);
-    tokio::spawn(server.run(inbox));
-    Ok(Client {
-        events,
-        status,
-        calls,
-    })
+    Hub::start(runtime).attach(hello)
+}
+
+/// The running core, which any number of clients attach to. Every client sees the events
+/// of every open thread; the core stops when the last client and the hub are gone, or
+/// when one of them asks it to shut down.
+pub struct Hub {
+    calls: mpsc::UnboundedSender<Message>,
+    subscribers: Subscribers,
+    status: watch::Receiver<Status>,
+    next_client: AtomicU64,
+}
+
+impl Hub {
+    pub fn start(runtime: Runtime) -> Arc<Self> {
+        let (calls, inbox) = mpsc::unbounded_channel();
+        let subscribers = Subscribers::default();
+        let (server, status) = Server::new(runtime, Arc::clone(&subscribers));
+        tokio::spawn(server.run(inbox));
+        Arc::new(Self {
+            calls,
+            subscribers,
+            status,
+            next_client: AtomicU64::new(1),
+        })
+    }
+
+    /// Attaches the client that said `hello`.
+    pub fn attach(self: &Arc<Self>, hello: Hello) -> Result<Client> {
+        ensure!(
+            hello.protocol == PROTOCOL_VERSION,
+            "the client speaks protocol {}, the core {PROTOCOL_VERSION}",
+            hello.protocol
+        );
+        let id = self.next_client.fetch_add(1, Ordering::Relaxed);
+        let (queue, events) = mpsc::unbounded_channel();
+        // Subscribed before the core hears of the client, so no event is missed.
+        self.subscribers.lock().push((id, queue));
+        let attach = Message::Attach {
+            client: id,
+            source: hello.client,
+        };
+        ensure!(self.calls.send(attach).is_ok(), "the core has stopped");
+        Ok(Client {
+            events,
+            status: self.status.clone(),
+            id,
+            hub: Arc::clone(self),
+        })
+    }
 }
 
 pub struct Client {
@@ -48,7 +91,14 @@ pub struct Client {
     pub events: mpsc::UnboundedReceiver<Event>,
     /// The latest status; `changed` wakes when the core sends a new one.
     pub status: watch::Receiver<Status>,
-    calls: mpsc::UnboundedSender<Call>,
+    id: ClientId,
+    hub: Arc<Hub>,
+}
+
+impl Drop for Client {
+    fn drop(&mut self) {
+        let _ = self.hub.calls.send(Message::Detach(self.id));
+    }
 }
 
 impl Client {
@@ -202,7 +252,12 @@ impl Client {
     fn send(&self, request: Request) -> oneshot::Receiver<Response> {
         let (reply, answer) = oneshot::channel();
         // A stopped core drops the call, and the receiver says so.
-        let _ = self.calls.send(Call { request, reply });
+        let call = Call {
+            client: self.id,
+            request,
+            reply,
+        };
+        let _ = self.hub.calls.send(Message::Call(call));
         answer
     }
 }
