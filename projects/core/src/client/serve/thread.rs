@@ -25,9 +25,19 @@ impl Server {
                     open.orphaned = None;
                     return Ok(Response::Opened { thread_id });
                 }
+                // Whoever kept the ended thread open keeps it after it starts again.
+                let members = self
+                    .threads
+                    .get(&thread_id)
+                    .map(|open| open.clients.clone())
+                    .unwrap_or_default();
                 self.close(&thread_id).await;
                 let handle = runtime.resume_thread(&thread_id, &cwd).await?;
-                self.open(handle)
+                let opened = self.open(handle);
+                if let Some(open) = self.threads.get_mut(&thread_id) {
+                    open.clients.extend(members);
+                }
+                opened
             }
             ThreadRequest::Fork { summary, cwd } => {
                 let handle = runtime.fork_thread(self.source(), &summary, &cwd).await?;
@@ -162,7 +172,10 @@ impl Server {
 
     /// Stops the thread's turn and waits for its task to end, so it can be opened again.
     pub(super) async fn close(&mut self, thread_id: &str) {
-        let Some(OpenThread { input, forward, .. }) = self.threads.remove(thread_id) else {
+        let Some(OpenThread {
+            input, mut forward, ..
+        }) = self.threads.remove(thread_id)
+        else {
             return;
         };
         if forward.is_finished() {
@@ -171,7 +184,13 @@ impl Server {
         // Cancelling a thread that already ended has nothing to stop.
         let _ = input.cancel().await;
         drop(input);
-        let _ = tokio::time::timeout(CLOSE_TIMEOUT, forward).await;
+        // A task that does not finish is cut, so it cannot go on beside a new one.
+        if tokio::time::timeout(CLOSE_TIMEOUT, &mut forward)
+            .await
+            .is_err()
+        {
+            forward.abort();
+        }
     }
 }
 
