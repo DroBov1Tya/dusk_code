@@ -94,6 +94,10 @@ impl Runtime {
         self.local_voice.install(id).await
     }
 
+    pub async fn cancel_voice_model(&self, id: &str) -> Result<()> {
+        self.local_voice.cancel(id).await
+    }
+
     pub async fn remove_voice_model(&self, id: &str) -> Result<()> {
         self.local_voice.remove(id).await
     }

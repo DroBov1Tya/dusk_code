@@ -286,7 +286,9 @@ impl Workspace {
                                 cx,
                             ));
                             let (copied, spoken) = (text.clone(), text.clone());
-                            let busy = self.synthesizing;
+                            let listening = self.audio.listening.as_deref() == Some(key.as_str());
+                            let (spoken_key, other_busy) =
+                                (key.clone(), self.audio.listening.is_some() && !listening);
                             answer = answer.child(
                                 div()
                                     .flex()
@@ -308,12 +310,24 @@ impl Workspace {
                                         Button::new(SharedString::from(format!("listen-{key}")))
                                             .ghost()
                                             .xsmall()
-                                            .icon(IconName::Play)
-                                            .label(if busy { "Preparing..." } else { "Listen" })
-                                            .disabled(busy)
-                                            .tooltip("Read the answer aloud")
+                                            .icon(if listening {
+                                                IconName::Square
+                                            } else {
+                                                IconName::Play
+                                            })
+                                            .label(if listening { "Stop" } else { "Listen" })
+                                            .disabled(other_busy)
+                                            .tooltip(if listening {
+                                                "Stop reading"
+                                            } else {
+                                                "Read the answer aloud"
+                                            })
                                             .on_click(cx.listener(move |ws, _, _, cx| {
-                                                ws.speak_answer(&spoken, cx)
+                                                if listening {
+                                                    ws.stop_listening(cx);
+                                                } else {
+                                                    ws.speak_answer(&spoken_key, &spoken, cx);
+                                                }
                                             })),
                                     ),
                             );

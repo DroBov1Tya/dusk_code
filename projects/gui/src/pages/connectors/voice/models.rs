@@ -123,7 +123,15 @@ fn model_card(model: &VoiceModel, uv_found: bool, cx: &mut Context<Workspace>) -
                     .on_click(cx.listener(move |ws, _, _, cx| ws.install_voice_model(&id, cx))),
             );
         }
-        LocalState::Installing(_) => {}
+        LocalState::Installing(_) => {
+            let id = id.clone();
+            actions = actions.child(
+                button("Cancel", "cancel")
+                    .outline()
+                    .tooltip("Stop the install and delete what it made")
+                    .on_click(cx.listener(move |ws, _, _, cx| ws.cancel_voice_model(&id, cx))),
+            );
+        }
     }
     let remove = id.clone();
     actions = actions.when(
@@ -245,6 +253,20 @@ impl Workspace {
         self.core.call(
             cx,
             move |client| async move { client.install_voice_model(&id).await },
+            |ws, result, cx| {
+                if let Err(error) = result {
+                    ws.fail(error, cx);
+                }
+                ws.load_voice_models(cx);
+            },
+        );
+    }
+
+    fn cancel_voice_model(&mut self, id: &str, cx: &mut Context<Self>) {
+        let id = id.to_owned();
+        self.core.call(
+            cx,
+            move |client| async move { client.cancel_voice_model(&id).await },
             |ws, result, cx| {
                 if let Err(error) = result {
                     ws.fail(error, cx);

@@ -20,6 +20,10 @@ impl Server {
                 self.runtime.install_voice_model(&id).await?;
                 Response::Done
             }
+            VoiceRequest::Cancel { id } => {
+                self.runtime.cancel_voice_model(&id).await?;
+                Response::Done
+            }
             VoiceRequest::Remove { id } => {
                 self.runtime.remove_voice_model(&id).await?;
                 Response::Done

@@ -139,6 +139,15 @@ impl Client {
         }
     }
 
+    pub async fn cancel_voice_model(&self, id: &str) -> Result<()> {
+        let request =
+            Request::Voice(dusk_protocol::client::VoiceRequest::Cancel { id: id.to_owned() });
+        match self.call(request).await? {
+            Response::Done => Ok(()),
+            other => Err(unexpected(other)),
+        }
+    }
+
     pub async fn remove_voice_model(&self, id: &str) -> Result<()> {
         let request =
             Request::Voice(dusk_protocol::client::VoiceRequest::Remove { id: id.to_owned() });

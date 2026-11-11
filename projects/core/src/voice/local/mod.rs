@@ -33,6 +33,8 @@ pub struct LocalVoice {
     root: PathBuf,
     config: Arc<LiveConfig>,
     jobs: Mutex<HashMap<&'static str, Job>>,
+    /// What stops an install that is under way.
+    tasks: Mutex<HashMap<&'static str, tokio::task::AbortHandle>>,
     running: tokio::sync::Mutex<HashMap<&'static str, Running>>,
 }
 
@@ -42,6 +44,7 @@ impl LocalVoice {
             root,
             config,
             jobs: Mutex::default(),
+            tasks: Mutex::default(),
             running: Default::default(),
         }
     }
@@ -102,8 +105,9 @@ impl LocalVoice {
             jobs.insert(model.id, Job::Installing("Starting".into()));
         }
         let this = Arc::clone(self);
-        tokio::spawn(async move {
+        let task = tokio::spawn(async move {
             let done = this.set_up(model).await;
+            this.tasks.lock().remove(model.id);
             let mut jobs = this.jobs.lock();
             match done {
                 Ok(()) => jobs.remove(model.id),
@@ -113,6 +117,24 @@ impl LocalVoice {
                 }
             };
         });
+        self.tasks.lock().insert(model.id, task.abort_handle());
+        Ok(())
+    }
+
+    /// Stops an install that is under way. Its programs stop with it, and what it had made
+    /// is deleted unless the model was installed before.
+    pub async fn cancel(&self, id: &str) -> Result<()> {
+        let model = find(id).ok_or_else(|| anyhow::anyhow!("no speech model {id}"))?;
+        if let Some(task) = self.tasks.lock().remove(model.id) {
+            task.abort();
+        }
+        self.jobs.lock().remove(model.id);
+        if !self.installed(model) {
+            let dir = self.dir(model);
+            if dir.exists() {
+                tokio::fs::remove_dir_all(&dir).await?;
+            }
+        }
         Ok(())
     }
 
