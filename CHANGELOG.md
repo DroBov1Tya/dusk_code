@@ -4,6 +4,15 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## 0.72.6 - 2026-11-11 (pre-release)
+
+### Changed
+
+- Desktop composer menus (model, mode, access) and the queue follow one keyboard and visual
+  rhythm; the connectors graph and cards are tidier.
+- The artifacts gallery shows one entry per managed image with a bounded thumbnail; file
+  actions still use the original. Outputs carry a preview (`OutputPreview`, optional field).
+
 ## 0.72.5 - 2026-11-11 (pre-release)
 
 ### Changed
