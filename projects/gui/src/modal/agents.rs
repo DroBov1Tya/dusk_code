@@ -10,10 +10,9 @@ use gpui_kit::{component::ActiveTheme, *};
 use dusk_protocol::agent::Zone;
 
 use crate::{
-    chat::transcript::{Agent, AgentState},
-    inspector::mascot,
-    ui::Type,
-    widgets,
+    columns::inspector::mascot,
+    pages::chat::transcript::{Agent, AgentState},
+    ui::{Type, widgets},
     workspace::Workspace,
 };
 

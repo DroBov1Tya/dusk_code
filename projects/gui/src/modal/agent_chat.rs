@@ -8,11 +8,11 @@ use gpui_kit::{
 
 use super::Modal;
 use crate::{
-    chat::{
+    pages::chat::{
         links,
         transcript::{Item, ToolState, Transcript},
     },
-    widgets,
+    ui::widgets,
     workspace::Workspace,
 };
 

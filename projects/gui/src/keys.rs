@@ -142,7 +142,7 @@ pub fn page(cx: &mut Context<Workspace>) -> Div {
     let mut body = div().flex().flex_col();
     for (binding, what) in SHORTCUTS {
         body = body.child(
-            crate::settings::line(what, "", cx).child(
+            crate::pages::settings::line(what, "", cx).child(
                 div()
                     .px_2()
                     .py_0p5()
@@ -153,7 +153,7 @@ pub fn page(cx: &mut Context<Workspace>) -> Div {
             ),
         );
     }
-    body.child(crate::widgets::muted(
+    body.child(crate::ui::widgets::muted(
         "Escape leaves the message box; then Tab moves through the rows, and Enter or Space presses the one in focus.",
         cx,
     ))

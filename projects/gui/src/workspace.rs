@@ -24,8 +24,13 @@ use gpui_kit::{
 use tokio::sync::{mpsc, watch};
 
 use crate::{
-    artifacts, chat, chat::transcript::Transcript, connectors, connectors::Shelf, core::Core,
-    file_view, inspector, modal, modal::Modal, review, settings, settings::SettingsPage, sidebar,
+    columns::{inspector, sidebar},
+    core::Core,
+    modal::{self, Modal},
+    pages::{
+        artifacts, chat, chat::transcript::Transcript, connectors, connectors::Shelf, review,
+        settings, settings::SettingsPage,
+    },
 };
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -154,33 +159,33 @@ pub struct Workspace {
     /// Text for the composer, put there on the next frame, which has the window.
     pub fill_composer: Option<String>,
     /// The profile and snippets a message names with `@`, and their settings fields.
-    pub me: crate::settings::about_me::AboutMe,
+    pub me: crate::pages::settings::about_me::AboutMe,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
     pub git: Option<GitInfo>,
     pub touched: Vec<dusk_protocol::project::Change>,
-    pub review: crate::review::Review,
+    pub review: crate::pages::review::Review,
     /// The window's own focus: shortcuts reach the workspace from here when no box or row
     /// has the keyboard.
     pub focus: FocusHandle,
-    pub file: crate::file_view::FileView,
+    pub file: crate::pages::file::FileView,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,
     /// Folder entries by folder, `""` for the project's top.
     pub files: BTreeMap<String, Vec<FileEntry>>,
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
-    pub alerts: crate::notify::Alerts,
+    pub alerts: crate::platform::notify::Alerts,
     /// The shown chat's pinned plan.
-    pub plan: crate::inspector::plan::Plan,
+    pub plan: crate::columns::inspector::plan::Plan,
     /// The boxes that connect a provider, on the Model page.
-    pub provider_form: crate::settings::providers::Form,
+    pub provider_form: crate::pages::settings::providers::Form,
     /// Which secrets are set, read when the Secrets page opens.
     pub secrets: Option<dusk_protocol::config::SecretsInfo>,
     /// The speech servers that are set up, and the boxes that edit them.
     pub voice: Option<dusk_protocol::config::VoiceSettings>,
-    pub voice_form: crate::connectors::voice::VoiceForm,
-    pub token_box: crate::settings::TokenBox,
+    pub voice_form: crate::pages::connectors::voice::VoiceForm,
+    pub token_box: crate::pages::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     pub jobs: Vec<JobInfo>,
@@ -218,9 +223,9 @@ pub struct Workspace {
     /// The release the app fetched in the background and put in place; it runs after a
     /// restart.
     pub update_ready: Option<String>,
-    pub audio: crate::chat::audio::Audio,
+    pub audio: crate::pages::chat::audio::Audio,
     /// The microphone is on and its words go to the message box.
-    pub dictation: Option<crate::chat::dictation::Dictation>,
+    pub dictation: Option<crate::pages::chat::dictation::Dictation>,
     /// An answer is being turned into sound, to be played.
     pub synthesizing: bool,
     /// The release a background fetch was started for, so one failing is not retried at
@@ -234,7 +239,7 @@ pub struct Workspace {
     pub unfolded: HashSet<(String, usize)>,
     /// The shown chat's transcript as a virtual list, and the rows it holds.
     pub list: ListState,
-    pub rows: Vec<crate::chat::messages::Row>,
+    pub rows: Vec<crate::pages::chat::messages::Row>,
     /// The chat the list was built for; another one starts it anew.
     pub list_chat: Option<String>,
     /// A row changed height, as when folded: measure every row again.
@@ -312,11 +317,11 @@ impl Workspace {
             center: Center::Chat,
             shelf: Shelf::Connectors,
             shelf_search,
-            folded: Right::folded_from(crate::theme::prefs(cx).right_folded.as_deref()),
+            folded: Right::folded_from(crate::ui::theme::prefs(cx).right_folded.as_deref()),
             modal: None,
             settings_page: SettingsPage::Appearance,
             font_search,
-            fonts: crate::theme::font_families(cx),
+            fonts: crate::ui::theme::font_families(cx),
             model_input,
             branch_input,
             outputs: Vec::new(),
@@ -324,26 +329,26 @@ impl Workspace {
             search,
             composer,
             fill_composer: None,
-            me: crate::settings::about_me::AboutMe::new(window, cx),
+            me: crate::pages::settings::about_me::AboutMe::new(window, cx),
             notice: None,
             pending: Vec::new(),
             rates: HashMap::new(),
             git: None,
             touched: Vec::new(),
-            review: crate::review::Review::new(),
+            review: crate::pages::review::Review::new(),
             focus: cx.focus_handle(),
-            file: crate::file_view::FileView::new(),
+            file: crate::pages::file::FileView::new(),
             mcp_restarting: HashSet::new(),
             files: BTreeMap::new(),
             expanded: HashSet::new(),
             context: None,
             alerts: Default::default(),
-            plan: crate::inspector::plan::Plan::new(window, cx),
-            provider_form: crate::settings::providers::Form::new(window, cx),
+            plan: crate::columns::inspector::plan::Plan::new(window, cx),
+            provider_form: crate::pages::settings::providers::Form::new(window, cx),
             secrets: None,
             voice: None,
-            voice_form: crate::connectors::voice::VoiceForm::new(window, cx),
-            token_box: crate::settings::TokenBox::new(window, cx),
+            voice_form: crate::pages::connectors::voice::VoiceForm::new(window, cx),
+            token_box: crate::pages::settings::TokenBox::new(window, cx),
             context_open: HashSet::new(),
             jobs: Vec::new(),
             settings: None,
@@ -505,7 +510,7 @@ impl Render for Workspace {
             Center::Connectors => connectors::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
             Center::Review => review::render(self, cx).into_any_element(),
-            Center::File => file_view::render(self, window, cx).into_any_element(),
+            Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
         };
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);

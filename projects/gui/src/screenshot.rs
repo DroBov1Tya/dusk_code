@@ -24,9 +24,8 @@ use std::{path::PathBuf, time::Duration};
 use gpui_kit::{component::input::InputState, *};
 
 use crate::{
-    connectors::Shelf,
     modal::Modal,
-    settings::SettingsPage,
+    pages::{connectors::Shelf, settings::SettingsPage},
     workspace::{Center, Picker, Workspace},
 };
 
@@ -232,7 +231,7 @@ fn act(
                 }
                 "voice" => {
                     ws.modal = Some(Modal::VoiceMissing {
-                        speech: crate::connectors::voice::Speech::Recognition,
+                        speech: crate::pages::connectors::voice::Speech::Recognition,
                     })
                 }
                 "rollback" => {
@@ -309,7 +308,7 @@ fn act(
         }
         "demo" => {
             // A chat that holds a sound card, to look at the player.
-            use crate::chat::transcript::{Clip, Item, Transcript};
+            use crate::pages::chat::transcript::{Clip, Item, Transcript};
             let mut chat = Transcript::default();
             chat.items.push(Item::User {
                 text: "Say it once more, slower".into(),
@@ -353,7 +352,7 @@ fn act(
             }
             cx.notify();
         }
-        "theme" => crate::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
+        "theme" => crate::ui::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
         "file" => {
             let (path, line) = match value.rsplit_once(':') {
                 Some((path, line)) if line.parse::<u32>().is_ok() => (path, line.parse().ok()),

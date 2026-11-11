@@ -6,7 +6,10 @@ use gpui_kit::{
     *,
 };
 
-use crate::{ui::Type, widgets, workspace::Workspace};
+use crate::{
+    ui::{Type, widgets},
+    workspace::Workspace,
+};
 
 /// How many chats the search shows.
 const SHOWN: usize = 40;

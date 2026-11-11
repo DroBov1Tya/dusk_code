@@ -9,7 +9,11 @@ use gpui_kit::{
 };
 
 use super::Modal;
-use crate::{chat::links, ui::Type, widgets, workspace::Workspace};
+use crate::{
+    pages::chat::links,
+    ui::{Type, widgets},
+    workspace::Workspace,
+};
 
 #[derive(Clone)]
 pub enum Detail {

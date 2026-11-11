@@ -14,7 +14,10 @@ use super::Modal;
 
 /// How long a deleted chat takes to fade from the list.
 pub const FADE: std::time::Duration = std::time::Duration::from_millis(220);
-use crate::{theme, widgets, workspace::Workspace};
+use crate::{
+    ui::{theme, widgets},
+    workspace::Workspace,
+};
 
 /// The small menu at the pointer, over everything.
 /// Tall enough for the three rows and the padding.
@@ -196,7 +199,7 @@ pub fn delete_files(count: usize, cx: &mut Context<Workspace>) -> Div {
         .p_5()
         .child(format!(
             "Delete all {} shown?",
-            crate::widgets::count(count, "file")
+            crate::ui::widgets::count(count, "file")
         ))
         .child(
             div()

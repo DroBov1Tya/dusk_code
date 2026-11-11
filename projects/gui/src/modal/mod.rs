@@ -68,10 +68,10 @@ pub enum Modal {
     },
     /// A speech button was pressed with no server connected for it.
     VoiceMissing {
-        speech: crate::connectors::voice::Speech,
+        speech: crate::pages::connectors::voice::Speech,
     },
     /// Removing duskcode from the machine, in steps.
-    Uninstall(crate::settings::uninstall::Uninstall),
+    Uninstall(crate::pages::settings::uninstall::Uninstall),
     /// Forgetting every connected provider, after a yes.
     RemoveProviders,
     /// Going back to a message of the chat erases it and all after it; asks first.
@@ -133,17 +133,17 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Uninstall(state) => (
             "Remove duskcode".to_owned(),
             520.,
-            crate::settings::uninstall::render(state, cx),
+            crate::pages::settings::uninstall::render(state, cx),
         ),
         Modal::RemoveProviders => (
             "Remove all providers".to_owned(),
             480.,
-            crate::settings::providers::confirm_remove_all(cx),
+            crate::pages::settings::providers::confirm_remove_all(cx),
         ),
         Modal::VoiceMissing { speech } => (
             "Voice".to_owned(),
             480.,
-            crate::connectors::voice::missing(*speech, cx),
+            crate::pages::connectors::voice::missing(*speech, cx),
         ),
         Modal::Rollback { .. } => ("Go back".to_owned(), 480., rollback(cx)),
         Modal::Arbiter { thread_id } => {
