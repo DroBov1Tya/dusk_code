@@ -5,6 +5,7 @@
 //! verification; the arbiter; and the background jobs.
 
 pub mod agent;
+mod api;
 pub mod arbiter;
 mod events;
 pub mod goal;
