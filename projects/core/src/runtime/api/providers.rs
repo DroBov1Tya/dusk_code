@@ -5,7 +5,10 @@ use crate::{
     config::{ApiKey, ProviderConfig, ProviderKind},
     providers::Provider,
 };
-use anyhow::{Result, ensure};
+use anyhow::{Context, Result, ensure};
+use dusk_protocol::{client::ProviderTarget, model::ProviderStatus};
+
+use super::super::model_choice::check_provider;
 use std::sync::Arc;
 
 /// A provider's name is this long at most; it shows in `provider/model`.
@@ -22,7 +25,87 @@ pub(super) fn checked_key(key: String) -> Result<String> {
     Ok(key)
 }
 
+/// A provider as typed in a form, checked without a network request.
+fn new_provider(
+    kind: ProviderKind,
+    base_url: String,
+    api_key: Option<String>,
+) -> Result<ProviderConfig> {
+    let provider = ProviderConfig {
+        kind,
+        base_url,
+        // A pasted key often carries a newline or a space, which the provider rejects.
+        api_key: ApiKey(checked_key(api_key.unwrap_or_default())?),
+        inline_tags: false,
+        allow_http: false,
+        prices: Default::default(),
+        balance: None,
+        requests_per_minute: None,
+    };
+    crate::providers::validate_provider(&provider)?;
+    Ok(provider)
+}
+
 impl Runtime {
+    /// Asks a provider whether it answers: one typed in a form and not saved, or a saved one.
+    /// Nothing is saved or changed.
+    pub async fn check_provider(&self, target: ProviderTarget) -> Result<ProviderStatus> {
+        let (name, settings) = match target {
+            ProviderTarget::New {
+                kind,
+                base_url,
+                api_key,
+            } => (
+                String::new(),
+                new_provider(kind, base_url, api_key.map(|key| key.0))?,
+            ),
+            ProviderTarget::Saved { name } => {
+                let settings = self
+                    .launcher
+                    .config
+                    .current()
+                    .all_providers()
+                    .get(&name)
+                    .cloned()
+                    .with_context(|| format!("no provider named {name}"))?;
+                (name, settings)
+            }
+        };
+        let provider = Arc::new(Provider::new(&settings)?);
+        Ok(check_provider(name, provider, Some(settings)).await)
+    }
+
+    /// Builds the connection of a saved provider anew, with a new key when one is given. The
+    /// answer of the provider is for `check_provider` to find out.
+    pub fn reconnect_provider(&self, name: &str, api_key: Option<String>) -> Result<()> {
+        let saved = self
+            .launcher
+            .config
+            .current()
+            .providers()
+            .get(name)
+            .cloned()
+            .with_context(|| format!("no provider of the config file is named {name}"))?;
+        let provider = match api_key {
+            Some(key) => {
+                let key = checked_key(key)?;
+                ensure!(!key.is_empty(), "a new key is not empty");
+                let mut changed = saved;
+                changed.api_key = ApiKey(key);
+                crate::providers::validate_provider(&changed)?;
+                let kept = changed.clone();
+                self.launcher
+                    .config
+                    .update(|config| config.set_provider(name.to_owned(), kept))?;
+                changed
+            }
+            None => saved,
+        };
+        let adapter = Arc::new(Provider::new(&provider)?);
+        self.launcher.model.replace_provider(name, adapter);
+        Ok(())
+    }
+
     /// Adds a provider to the private YAML config under `name`, or the next free
     /// `provider-N`, and returns the name. A model is chosen separately through
     /// `/model`; saving makes no network request.
@@ -42,18 +125,7 @@ impl Runtime {
                 "a name is up to {MAX_PROVIDER_NAME} characters, without / or control characters"
             );
         }
-        let provider = ProviderConfig {
-            kind,
-            base_url,
-            // A pasted key often carries a newline or a space, which the provider rejects.
-            api_key: ApiKey(checked_key(api_key.unwrap_or_default())?),
-            inline_tags: false,
-            allow_http: false,
-            prices: Default::default(),
-            balance: None,
-            requests_per_minute: None,
-        };
-        crate::providers::validate_provider(&provider)?;
+        let provider = new_provider(kind, base_url, api_key)?;
         let adapter = Arc::new(Provider::new(&provider)?);
         let mut chosen = Err(anyhow::anyhow!("a provider with this name exists"));
         self.launcher.config.update(|config| {
@@ -102,5 +174,85 @@ impl Runtime {
             .update(|config| config.remove_all_providers())?;
         self.launcher.model.clear();
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
+
+    use super::*;
+
+    /// A server on this machine that answers any request with `status` and `body`.
+    async fn serve(status: &'static str, body: &'static str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}/v1", listener.local_addr().unwrap());
+        tokio::spawn(async move {
+            loop {
+                let Ok((mut socket, _)) = listener.accept().await else {
+                    return;
+                };
+                let mut buffer = [0u8; 4096];
+                let _ = socket.read(&mut buffer).await;
+                let reply = format!(
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    body.len()
+                );
+                let _ = socket.write_all(reply.as_bytes()).await;
+            }
+        });
+        base
+    }
+
+    async fn check(base_url: String, key: &str) -> ProviderStatus {
+        let settings = new_provider(
+            ProviderKind::OpenAiCompatible,
+            base_url,
+            Some(key.to_owned()),
+        )
+        .unwrap();
+        let provider = Arc::new(Provider::new(&settings).unwrap());
+        check_provider(String::new(), provider, Some(settings)).await
+    }
+
+    #[tokio::test]
+    async fn a_server_that_lists_its_models_answers() {
+        let base = serve("200 OK", r#"{"data":[{"id":"a"},{"id":"b"}]}"#).await;
+        let status = check(base, "sk-test").await;
+        assert_eq!(status.models.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_server_that_refuses_the_key_is_told_apart_from_one_that_answers() {
+        let base = serve("401 Unauthorized", r#"{"error":"bad key"}"#).await;
+        let error = check(base, "sk-wrong").await.models.unwrap_err();
+        assert!(
+            error.contains("401") || error.contains("rejected"),
+            "{error}"
+        );
+        assert!(!error.contains("sk-wrong"), "{error}");
+    }
+
+    #[tokio::test]
+    async fn a_new_provider_is_checked_by_its_address_before_any_request() {
+        assert!(
+            new_provider(
+                ProviderKind::OpenAiCompatible,
+                "http://example.com/v1".into(),
+                None
+            )
+            .is_err()
+        );
+        assert!(
+            new_provider(
+                ProviderKind::OpenAiCompatible,
+                "https://api.example.com/v1".into(),
+                Some("a\nb".into())
+            )
+            .is_err()
+        );
     }
 }

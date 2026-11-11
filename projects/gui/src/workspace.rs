@@ -179,7 +179,7 @@ pub struct Workspace {
     /// The shown chat's pinned plan.
     pub plan: crate::columns::inspector::plan::Plan,
     /// The boxes that connect a provider, on the Model page.
-    pub provider_form: crate::pages::settings::providers::Form,
+    pub providers_page: crate::pages::settings::providers::State,
     /// Which secrets are set, read when the Secrets page opens.
     pub secrets: Option<dusk_protocol::config::SecretsInfo>,
     /// The speech servers that are set up, and the boxes that edit them.
@@ -344,7 +344,7 @@ impl Workspace {
             context: None,
             alerts: Default::default(),
             plan: crate::columns::inspector::plan::Plan::new(window, cx),
-            provider_form: crate::pages::settings::providers::Form::new(window, cx),
+            providers_page: crate::pages::settings::providers::State::new(window, cx),
             secrets: None,
             voice: None,
             voice_form: crate::pages::connectors::voice::VoiceForm::new(window, cx),

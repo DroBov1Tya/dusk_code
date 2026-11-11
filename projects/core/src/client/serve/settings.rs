@@ -42,6 +42,14 @@ impl Server {
                 let name = runtime.connect_provider(kind, name, base_url, api_key)?;
                 return Ok(Response::Text(name));
             }
+            SettingsRequest::CheckProvider(target) => {
+                return Ok(Response::Provider(runtime.check_provider(target).await?));
+            }
+            SettingsRequest::ReconnectProvider { name, api_key } => {
+                runtime.reconnect_provider(&name, api_key.map(|key| key.0))?;
+                let target = dusk_protocol::client::ProviderTarget::Saved { name };
+                return Ok(Response::Provider(runtime.check_provider(target).await?));
+            }
             SettingsRequest::RemoveProvider { name } => runtime.remove_provider(&name)?,
             SettingsRequest::RemoveAllProviders => runtime.remove_all_providers()?,
             SettingsRequest::SetSecret { name, value } => {

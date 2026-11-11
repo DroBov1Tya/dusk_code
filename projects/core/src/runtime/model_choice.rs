@@ -277,28 +277,35 @@ pub async fn check_providers(config: &Config) -> Result<Vec<ProviderStatus>> {
             continue;
         };
         let settings = config.all_providers().get(&name).cloned();
-        checks.spawn(async move {
-            let balance = async {
-                match &settings {
-                    Some(settings) => crate::providers::balance::fetch(settings).await,
-                    None => None,
-                }
-            };
-            let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models());
-            let (listed, balance) = tokio::join!(listed, balance);
-            let models = match listed {
-                Ok(Ok(models)) => Ok(models),
-                Ok(Err(error)) => Err(format!("{error:#}")),
-                Err(_) => Err("no answer in time".into()),
-            };
-            ProviderStatus {
-                name,
-                models,
-                balance,
-            }
-        });
+        checks.spawn(check_provider(name, provider, settings));
     }
     let mut statuses = checks.join_all().await;
     statuses.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(statuses)
+}
+
+/// Asks one provider for its models and its balance, within the check's time.
+pub async fn check_provider(
+    name: String,
+    provider: Arc<crate::providers::Provider>,
+    settings: Option<crate::config::ProviderConfig>,
+) -> ProviderStatus {
+    let balance = async {
+        match &settings {
+            Some(settings) => crate::providers::balance::fetch(settings).await,
+            None => None,
+        }
+    };
+    let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models());
+    let (listed, balance) = tokio::join!(listed, balance);
+    let models = match listed {
+        Ok(Ok(models)) => Ok(models),
+        Ok(Err(error)) => Err(format!("{error:#}")),
+        Err(_) => Err("no answer in time".into()),
+    };
+    ProviderStatus {
+        name,
+        models,
+        balance,
+    }
 }

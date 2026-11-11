@@ -33,6 +33,15 @@ pub enum SettingsRequest {
         base_url: String,
         api_key: Option<Secret>,
     },
+    /// Asks a provider for its models and balance, to see whether it answers; nothing is
+    /// saved. Answers with `Response::Provider`.
+    CheckProvider(ProviderTarget),
+    /// Rebuilds a saved provider's connection, with a new key when one is given, and checks
+    /// it. Answers with `Response::Provider`.
+    ReconnectProvider {
+        name: String,
+        api_key: Option<Secret>,
+    },
     /// Forgets a provider. Refused while its model is the chosen one.
     RemoveProvider {
         name: String,
@@ -78,4 +87,17 @@ pub enum Switch {
     Notifications,
     /// Whether notifications ring the terminal bell.
     SoundNotifications,
+}
+
+/// Which provider a check asks: one typed in a form and not saved yet, or a saved one.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProviderTarget {
+    New {
+        kind: ProviderKind,
+        base_url: String,
+        api_key: Option<Secret>,
+    },
+    Saved {
+        name: String,
+    },
 }
