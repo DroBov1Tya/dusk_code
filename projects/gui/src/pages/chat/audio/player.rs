@@ -14,6 +14,11 @@ pub struct Audio {
     pub(super) ticking: bool,
     /// The sound a click on `...` opened the menu of, and where.
     pub menu: Option<(PathBuf, Point<Pixels>)>,
+    /// The answer being read aloud, by its key, from the click on Listen until it ends or
+    /// is stopped.
+    pub listening: Option<String>,
+    /// Counts the readings begun, so a sound that arrives after a stop is not played.
+    pub(super) readings: u64,
 }
 
 pub(super) struct Now {
@@ -31,35 +36,56 @@ pub(super) fn sound_path(folder: &std::path::Path, id: &str) -> Option<PathBuf> 
 
 impl Workspace {
     /// Reads an answer aloud: the core makes the sound, and it plays at once.
-    pub fn speak_answer(&mut self, text: &str, cx: &mut Context<Self>) {
-        if self.synthesizing {
+    pub fn speak_answer(&mut self, key: &str, text: &str, cx: &mut Context<Self>) {
+        if self.audio.listening.is_some() {
             return;
         }
-        let text = text.to_owned();
+        let (key, text) = (key.to_owned(), text.to_owned());
         self.when_voice_ready(
             crate::pages::connectors::voice::Speech::Synthesis,
             cx,
-            Box::new(move |ws, cx| ws.read_aloud(text, cx)),
+            Box::new(move |ws, cx| ws.read_aloud(key, text, cx)),
         );
     }
 
-    fn read_aloud(&mut self, text: String, cx: &mut Context<Self>) {
-        if self.synthesizing {
+    fn read_aloud(&mut self, key: String, text: String, cx: &mut Context<Self>) {
+        if self.audio.listening.is_some() {
             return;
         }
+        self.audio.readings += 1;
+        let reading = self.audio.readings;
+        self.audio.listening = Some(key.clone());
         self.synthesizing = true;
         self.core.call(
             cx,
             move |client| async move { client.speak(&text).await },
-            |ws, result, cx| {
+            move |ws, result, cx| {
+                // A stop since the click means nobody waits for this sound any more.
+                if ws.audio.readings != reading || ws.audio.listening.is_none() {
+                    return;
+                }
                 ws.synthesizing = false;
                 match result {
-                    Ok(card) => ws.toggle_clip(&card.id, cx),
-                    Err(error) => ws.fail(error, cx),
+                    Ok(card) => {
+                        ws.toggle_clip(&card.id, cx);
+                        ws.audio.listening = Some(key);
+                    }
+                    Err(error) => {
+                        ws.audio.listening = None;
+                        ws.fail(error, cx);
+                    }
                 }
                 cx.notify();
             },
         );
+        cx.notify();
+    }
+
+    /// Stops the answer that is being prepared or read aloud.
+    pub fn stop_listening(&mut self, cx: &mut Context<Self>) {
+        self.audio.listening = None;
+        self.audio.now = None;
+        self.synthesizing = false;
         cx.notify();
     }
 
@@ -98,6 +124,7 @@ impl Workspace {
         let sink = self.audio.sink.as_ref().context("no sound output")?;
         // The sound that played before stops with its player.
         self.audio.now = None;
+        self.audio.listening = None;
         let player = Player::connect_new(sink.mixer());
         player.append(source);
         self.audio.now = Some(Now {
@@ -147,6 +174,7 @@ impl Workspace {
                     };
                     if ended {
                         ws.audio.now = None;
+                        ws.audio.listening = None;
                         ws.audio.ticking = false;
                     }
                     cx.notify();
