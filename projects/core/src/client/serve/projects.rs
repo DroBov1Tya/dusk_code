@@ -41,9 +41,9 @@ impl Server {
             ProjectRequest::Files { id, path } => {
                 Response::Files(project::files(&project::find(state, &id).await?, &path).await?)
             }
-            ProjectRequest::Outputs => {
-                Response::Outputs(project::outputs(self.output_roots()).await?)
-            }
+            ProjectRequest::Outputs => Response::Outputs(
+                project::outputs(self.output_roots(), self.runtime.paths().artifacts_dir()).await?,
+            ),
             ProjectRequest::DeleteOutput { path } => {
                 project::delete_output(&path, &self.output_roots()).await?;
                 Response::Done

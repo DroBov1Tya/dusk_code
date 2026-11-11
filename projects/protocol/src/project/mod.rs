@@ -32,6 +32,6 @@ mod git;
 mod path;
 
 pub use diff::{DiffKind, DiffLine, DiffStat, FileDiff, Hunk};
-pub use files::{FileEntry, MAX_PREVIEW_BYTES, OutputFile, OutputKind};
+pub use files::{FileEntry, MAX_PREVIEW_BYTES, OutputFile, OutputKind, OutputPreview};
 pub use git::{Change, ChangeKind, GitInfo, Worktree};
 pub use path::{PathCompletion, PathEntry};

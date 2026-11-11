@@ -191,6 +191,7 @@ pub struct Workspace {
     pub jobs: Vec<JobInfo>,
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
+    pub models_loading: bool,
     pub picker: Option<Picker>,
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.
@@ -353,6 +354,7 @@ impl Workspace {
             jobs: Vec::new(),
             settings: None,
             providers: Vec::new(),
+            models_loading: false,
             picker: None,
             picker_closed: None,
             picked: Vec::new(),
