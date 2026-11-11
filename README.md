@@ -114,6 +114,30 @@ optional OpenTelemetry tracing is configured under `logging.traces`.
 `DUSKCODE_GRAPHICS=kitty|iterm2|sixel` selects a terminal image protocol.
 `duskcode remove` starts the interactive uninstaller.
 
+## Secrets, privacy, and trust
+
+Everything stays on your machine unless you point it elsewhere.
+
+- **API keys and tokens live in the system keychain** (macOS Keychain, Secret Service on
+  Linux), in one item named `vault` under the service `duskcode`. They are never written to
+  `config.yml`, logs, chat history, or backups, and they are not shown in the interface or
+  sent to a model. Keys found in an older `config.yml` move into the keychain on first start.
+  The same goes for the Hugging Face token and the voice (speech-to-text, text-to-speech)
+  keys. MCP OAuth tokens are kept locally in `~/.config/duskcode/mcp-auth/`.
+- **No project servers.** There is no account, no analytics, and no telemetry. The program
+  talks only to the model providers, voice servers, and MCP servers you configure, and to
+  GitHub to look for a newer release (the request carries no chat data). Local servers work:
+  point a provider at `http://localhost:...` and nothing leaves the machine. Tracing
+  (`logging.traces`) is off unless you set an endpoint yourself.
+- **Chats, memory, and artifacts are local files**: a SQLite database under
+  `~/.config/duskcode/session/` and workspaces under `~/Documents/duskcode/`. `duskcode remove`
+  deletes them, together with the keychain item.
+- **The code is fully open (MIT).** Anyone can download it, read it, and check these claims.
+  If you do not trust the release binaries on GitHub, build from source as shown under
+  [Install](#install) (`cargo build --release`, plus `-p dusk_gui` for the desktop client),
+  change what you like, and run your own build. `Cargo.lock` is committed, so a build uses
+  the same dependency versions as a release.
+
 ## Limitations
 
 - The project is pre-1.0; commands, configuration, and database schema may change.

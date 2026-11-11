@@ -4,10 +4,12 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
-## Unreleased
+## 0.72.5 - 2026-11-11 (pre-release)
 
 ### Changed
 
+- README: a section on where keys and tokens are kept, what leaves the machine, and how to
+  build the project yourself.
 - Desktop settings give the Hugging Face token, credentials, profile, snippets, themes and
   fonts clearer layouts and larger controls while keeping the Dusk palette.
 - macOS window sessions capture only the selected window, including when another window
