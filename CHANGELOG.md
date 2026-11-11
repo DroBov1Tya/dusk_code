@@ -12,6 +12,8 @@ testing.
   fonts clearer layouts and larger controls while keeping the Dusk palette.
 - macOS window sessions capture only the selected window, including when another window
   covers it. Regions and click coordinates stay tied to the selected window.
+- Subagent foxes stay in place as their eyes and tools animate. Completion and error effects
+  play once, and tool details stay inside the sprite.
 
 ## 0.72.4 - 2026-11-11 (pre-release)
 
