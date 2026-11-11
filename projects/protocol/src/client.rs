@@ -16,6 +16,7 @@ use crate::{
     model::Effort,
     plugins::PluginInfo,
     project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project},
+    secrets::SecretsInfo,
     system::SystemReport,
     thread::{Thread, ThreadEvent},
     tools::Decision,
@@ -24,7 +25,7 @@ use crate::{
 };
 
 /// Raised whenever a request, a response or an event changes shape.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// The first thing a client says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -178,6 +179,16 @@ pub enum SettingsRequest {
     RemoveProvider {
         name: String,
     },
+    /// Forgets every provider and the chosen model.
+    RemoveAllProviders,
+    /// Keeps a secret in the system keychain; only the names the core knows are taken.
+    SetSecret {
+        name: String,
+        value: Secret,
+    },
+    DeleteSecret {
+        name: String,
+    },
     PluginEnabled {
         name: String,
         enabled: bool,
@@ -250,6 +261,8 @@ pub enum CatalogRequest {
     },
     Profile,
     SaveProfile(Profile),
+    /// Which secrets are set, without their values.
+    Secrets,
 }
 
 /// A thread's background jobs and sources.
@@ -382,6 +395,7 @@ pub enum Response {
     /// The pinned plan, or none before one was written.
     Plan(Option<String>),
     Profile(Profile),
+    Secrets(SecretsInfo),
     /// A thread's own approval mode, or none when it uses the default in settings.
     Approvals(Option<ApprovalPolicy>),
     Projects(Vec<Project>),

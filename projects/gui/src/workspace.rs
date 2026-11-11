@@ -177,6 +177,9 @@ pub struct Workspace {
     pub plan: crate::inspector::plan::Plan,
     /// The boxes that connect a provider, on the Model page.
     pub provider_form: crate::settings::providers::Form,
+    /// Which secrets are set, read when the Secrets page opens.
+    pub secrets: Option<dusk_protocol::secrets::SecretsInfo>,
+    pub token_box: crate::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     pub jobs: Vec<JobInfo>,
@@ -211,6 +214,13 @@ pub struct Workspace {
     pub artifact_menu: Option<(PathBuf, Point<Pixels>)>,
     /// Chats just deleted, fading out of the list before it is read again.
     pub fading: std::collections::HashSet<String>,
+    /// The release the app fetched in the background and put in place; it runs after a
+    /// restart.
+    pub update_ready: Option<String>,
+    pub audio: crate::chat::audio::Audio,
+    /// The release a background fetch was started for, so one failing is not retried at
+    /// every status change.
+    pub update_tried: Option<String>,
     /// The menu of the project folder in the right column is open.
     pub path_menu: bool,
     pub system: Option<dusk_protocol::system::SystemReport>,
@@ -325,6 +335,8 @@ impl Workspace {
             alerts: Default::default(),
             plan: crate::inspector::plan::Plan::new(window, cx),
             provider_form: crate::settings::providers::Form::new(window, cx),
+            secrets: None,
+            token_box: crate::settings::TokenBox::new(window, cx),
             context_open: HashSet::new(),
             jobs: Vec::new(),
             settings: None,
@@ -343,6 +355,9 @@ impl Workspace {
             agent_path: Vec::new(),
             chat_menu: None,
             artifact_menu: None,
+            update_ready: None,
+            audio: Default::default(),
+            update_tried: None,
             fading: Default::default(),
             path_menu: false,
             system: None,
@@ -384,6 +399,7 @@ impl Workspace {
                 let next = status.borrow_and_update().clone();
                 let alive = this.update(cx, |this, cx| {
                     this.status = next;
+                    this.fetch_update(cx);
                     cx.notify();
                 });
                 if alive.is_err() {
@@ -485,6 +501,7 @@ impl Render for Workspace {
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
         let artifact_menu = artifacts::menu(self, window, cx);
+        let audio_menu = chat::audio::menu(self, window, cx);
         div()
             .relative()
             .size_full()
@@ -510,6 +527,7 @@ impl Render for Workspace {
             .children(modal)
             .children(chat_menu)
             .children(artifact_menu)
+            .children(audio_menu)
             .track_focus(&self.focus)
             .key_context("Workspace")
             .on_action(cx.listener(Self::on_new_chat))

@@ -301,6 +301,24 @@ fn act(
             }
             cx.notify();
         }
+        "demo" => {
+            // A chat that holds a sound card, to look at the player.
+            use crate::chat::transcript::{Clip, Item, Transcript};
+            let mut chat = Transcript::default();
+            chat.items.push(Item::User {
+                text: "Say it once more, slower".into(),
+                sequence: Some(1),
+            });
+            chat.items.push(Item::Audio(Clip {
+                id: "0192-ab".into(),
+                title: Some("scales-voice-b-revised.mp3".into()),
+                mime: "audio/mpeg".into(),
+                duration: Some(Duration::from_secs(6)),
+            }));
+            ws.chats.insert("demo".into(), chat);
+            ws.shown = Some("demo".into());
+            cx.notify();
+        }
         "fake" => {
             use dusk_protocol::{
                 thread::ThreadEvent,

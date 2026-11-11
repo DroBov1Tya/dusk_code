@@ -5,7 +5,7 @@ use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 use uuid::Uuid;
 
 use super::{State, timestamp_ms};
-use crate::{providers::ToolCall, state::artifacts::ImageArtifact};
+use crate::{providers::ToolCall, state::artifacts::Card};
 
 pub use dusk_protocol::conversation::{Message, MessageRole};
 
@@ -17,7 +17,7 @@ pub struct NewMessage {
     reasoning: Option<String>,
     tool_calls: Vec<ToolCall>,
     tool_call_id: Option<String>,
-    artifacts: Vec<ImageArtifact>,
+    artifacts: Vec<Card>,
     from_thread_id: Option<String>,
     from_job_id: Option<String>,
 }
@@ -225,7 +225,7 @@ impl NewMessage {
         }
     }
 
-    pub fn with_artifacts(mut self, artifacts: Vec<ImageArtifact>) -> Self {
+    pub fn with_artifacts(mut self, artifacts: Vec<Card>) -> Self {
         self.artifacts = artifacts;
         self
     }

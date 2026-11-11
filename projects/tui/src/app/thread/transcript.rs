@@ -12,7 +12,7 @@ use std::{
 
 use super::paste;
 use dusk_protocol::{
-    artifact::ImageArtifact, catalog::SkillSave, catalog::SkillSaveAction, conversation::Message,
+    artifact::Card, catalog::SkillSave, catalog::SkillSaveAction, conversation::Message,
     conversation::MessageRole, model::ToolCall, tools::ToolResult,
 };
 
@@ -120,7 +120,7 @@ pub struct ShownPreview {
     pub area: Rect,
     pub card: Size,
     pub skip: u16,
-    pub artifact: ImageArtifact,
+    pub artifact: Card,
 }
 
 /// An image preview in the lines: its first line, its column and size in cells.
@@ -130,7 +130,7 @@ pub struct ImageSpot {
     pub column: u16,
     pub width: u16,
     pub height: u16,
-    pub artifact: ImageArtifact,
+    pub artifact: Card,
 }
 
 /// Revisions come from one counter, so a new transcript never matches an old one.

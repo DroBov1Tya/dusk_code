@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{artifact::ImageArtifact, model::ToolCall};
+use crate::{artifact::Card, model::ToolCall};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Message {
@@ -19,7 +19,7 @@ pub struct Message {
     /// Set exactly on tool messages: the call they answer.
     pub tool_call_id: Option<String>,
     /// Image cards for clients. Never included in model context or URL detection.
-    pub artifacts: Vec<ImageArtifact>,
+    pub artifacts: Vec<Card>,
     /// For a user message another agent sent: the thread it came from.
     pub from_thread_id: Option<String>,
     /// A process completion, distinct from user input and system instructions.

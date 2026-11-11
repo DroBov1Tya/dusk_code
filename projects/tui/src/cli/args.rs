@@ -8,7 +8,7 @@ pub enum Args {
         /// Open this thread instead of a new one.
         thread: Option<String>,
     },
-    Remove,
+    Remove(RemoveOptions),
     /// One prompt in, the answer out, without the screen.
     Headless(Headless),
     /// Restore data offline, before config, logs or SQLite are opened.
@@ -23,6 +23,13 @@ pub enum Args {
     InstallResources {
         directory: PathBuf,
     },
+}
+
+/// What `duskcode remove` was asked: the desktop client runs it without the question.
+pub struct RemoveOptions {
+    pub assume_yes: bool,
+    /// Also delete the chats' files in the workspace folder.
+    pub files: bool,
 }
 
 pub struct Headless {
@@ -64,9 +71,24 @@ pub fn parse_args() -> Args {
                 .value_parser(value_parser!(PathBuf))
                 .hide(true),
         )
-        .subcommand(Command::new("remove").about(
-            "Remove duskcode, its resources, links and ~/.config/duskcode after one question",
-        ))
+        .subcommand(
+            Command::new("remove")
+                .about(
+                    "Remove duskcode, its resources, links and ~/.config/duskcode after one question",
+                )
+                .arg(
+                    Arg::new("yes")
+                        .long("yes")
+                        .action(clap::ArgAction::SetTrue)
+                        .hide(true),
+                )
+                .arg(
+                    Arg::new("files")
+                        .long("files")
+                        .action(clap::ArgAction::SetTrue)
+                        .hide(true),
+                ),
+        )
         .subcommand(
             Command::new("run")
                 .about("Run one prompt without the screen and print the answer")
@@ -142,8 +164,11 @@ pub fn parse_args() -> Args {
             directory: directory.clone(),
         };
     }
-    if matches.subcommand_matches("remove").is_some() {
-        return Args::Remove;
+    if let Some(remove) = matches.subcommand_matches("remove") {
+        return Args::Remove(RemoveOptions {
+            assume_yes: remove.get_flag("yes"),
+            files: remove.get_flag("files"),
+        });
     }
     if matches.get_flag("update") {
         return Args::Update;

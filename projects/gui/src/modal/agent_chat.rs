@@ -76,6 +76,11 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .text_color(muted)
                 .child(format!("$ {}", run.command))
                 .into_any_element(),
+            Item::Audio(clip) => div()
+                .text_xs()
+                .text_color(muted)
+                .child(clip.title.clone().unwrap_or_else(|| "A sound".to_owned()))
+                .into_any_element(),
             Item::Image(picture) => div()
                 .text_xs()
                 .text_color(muted)

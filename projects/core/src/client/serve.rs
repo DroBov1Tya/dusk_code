@@ -110,7 +110,7 @@ impl Server {
     async fn handle(&mut self, request: Request) -> Result<Response> {
         match request {
             Request::Thread(request) => self.thread(request).await,
-            Request::Settings(request) => self.settings(request),
+            Request::Settings(request) => self.settings(request).await,
             Request::Catalog(request) => self.catalog(request).await,
             Request::Work(request) => self.work(request).await,
             Request::Project(request) => self.project(request).await,
@@ -229,7 +229,7 @@ impl Server {
         })
     }
 
-    fn settings(&self, request: SettingsRequest) -> Result<Response> {
+    async fn settings(&self, request: SettingsRequest) -> Result<Response> {
         let runtime = &self.runtime;
         match request {
             SettingsRequest::ContextPolicy(policy) => {
@@ -263,6 +263,11 @@ impl Server {
                 return Ok(Response::Text(name));
             }
             SettingsRequest::RemoveProvider { name } => runtime.remove_provider(&name)?,
+            SettingsRequest::RemoveAllProviders => runtime.remove_all_providers()?,
+            SettingsRequest::SetSecret { name, value } => {
+                runtime.set_secret(&name, &value.0).await?
+            }
+            SettingsRequest::DeleteSecret { name } => runtime.delete_secret(&name).await?,
             SettingsRequest::PluginEnabled { name, enabled } => {
                 runtime.set_plugin_enabled(&name, enabled)?;
             }
@@ -321,6 +326,7 @@ impl Server {
                 Response::Done
             }
             CatalogRequest::Profile => Response::Profile(runtime.mentions().profile()?),
+            CatalogRequest::Secrets => Response::Secrets(runtime.secrets_info().await),
             CatalogRequest::SaveProfile(profile) => {
                 runtime.mentions().save_profile(&profile)?;
                 Response::Done

@@ -4,7 +4,10 @@ pub mod about_me;
 mod appearance;
 mod behavior;
 pub mod providers;
+mod secrets;
+pub use secrets::TokenBox;
 mod system;
+pub mod uninstall;
 
 use gpui_kit::{
     component::{ActiveTheme, IconName},
@@ -28,6 +31,7 @@ pub enum SettingsPage {
     Advanced,
     Updates,
     Usage,
+    Secrets,
 }
 
 const PAGES: &[(SettingsPage, IconName, &str)] = &[
@@ -35,6 +39,7 @@ const PAGES: &[(SettingsPage, IconName, &str)] = &[
     (SettingsPage::Model, IconName::Cpu, "Model"),
     (SettingsPage::Chat, IconName::Inbox, "Chat"),
     (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
+    (SettingsPage::Secrets, IconName::Eye, "Secrets"),
     (SettingsPage::AboutMe, IconName::User, "About me"),
     (SettingsPage::Notifications, IconName::Bell, "Notifications"),
     (SettingsPage::Keyboard, IconName::SquareTerminal, "Keyboard"),
@@ -54,6 +59,7 @@ const PAGES: &[(SettingsPage, IconName, &str)] = &[
 ];
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+    ws.token_box.settle(window, cx);
     let theme = cx.theme();
     let (border, muted) = (theme.border, theme.muted_foreground);
     let mut menu = div()
@@ -93,6 +99,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         SettingsPage::AboutMe => about_me::render(ws, window, cx),
         SettingsPage::Keyboard => crate::keys::page(cx),
         SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
+        SettingsPage::Secrets => secrets::render(ws, cx),
         page => behavior::render(ws, page, cx),
     };
     div().size_full().flex().flex_row().child(menu).child(
@@ -131,6 +138,7 @@ fn about(page: SettingsPage) -> &'static str {
         SettingsPage::Advanced => "Limits and timings. The defaults suit most work.",
         SettingsPage::Updates => "The version you run and the newest one.",
         SettingsPage::Usage => "What duskcode takes from this machine.",
+        SettingsPage::Secrets => "Keys and tokens, kept in the system keychain.",
     }
 }
 

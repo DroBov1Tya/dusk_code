@@ -74,7 +74,7 @@ impl ToolRegistry {
     pub fn add(&mut self, tool: Box<dyn Tool>) {
         // This name belongs to the core tool, including when an MCP server attempts
         // to expose a colliding name in a child thread.
-        if tool.name() == "display_image" && !tool.root_only() {
+        if matches!(tool.name(), "display_image" | "display_audio") && !tool.root_only() {
             return;
         }
         let name = tool.name().to_owned();

@@ -3,7 +3,7 @@
 use std::{cell::RefCell, collections::VecDeque, io::Cursor, sync::Arc};
 
 use dusk_core::app::ArtifactStore;
-use dusk_protocol::artifact::ImageArtifact;
+use dusk_protocol::artifact::Card;
 use image::{DynamicImage, ImageFormat, ImageReader, Limits, RgbaImage};
 
 const CACHE_SIZE: usize = 32;
@@ -13,7 +13,7 @@ const DECODE_LIMIT: u64 = 2 * 1024 * 1024;
 const ORIGINAL_EDGE: u32 = 8192;
 const ORIGINAL_LIMIT: u64 = 64 * 1024 * 1024;
 
-type Thumbnail = (ImageArtifact, Option<Arc<RgbaImage>>);
+type Thumbnail = (Card, Option<Arc<RgbaImage>>);
 
 #[derive(Default)]
 pub struct Images {
@@ -34,7 +34,7 @@ impl Images {
     }
 
     /// Missing and damaged thumbnails are cached too, so redraws never retry I/O.
-    pub fn thumbnail(&self, artifact: &ImageArtifact) -> Option<Arc<RgbaImage>> {
+    pub fn thumbnail(&self, artifact: &Card) -> Option<Arc<RgbaImage>> {
         let mut cache = self.cache.borrow_mut();
         if let Some(index) = cache.iter().position(|(known, _)| known == artifact) {
             let cached = cache.remove(index)?;
@@ -51,7 +51,7 @@ impl Images {
     }
 
     /// The stored image itself, for terminals that draw it in full; read from disk only.
-    pub fn original(&self, artifact: &ImageArtifact) -> Option<DynamicImage> {
+    pub fn original(&self, artifact: &Card) -> Option<DynamicImage> {
         let bytes = self.store.as_ref()?.read(artifact).ok()?;
         let format = match artifact.mime_type.as_str() {
             "image/png" => ImageFormat::Png,
@@ -67,7 +67,7 @@ impl Images {
         reader.decode().ok()
     }
 
-    fn read(&self, artifact: &ImageArtifact) -> Option<RgbaImage> {
+    fn read(&self, artifact: &Card) -> Option<RgbaImage> {
         let store = self.store.as_ref()?;
         // Validate the original as well: a stale thumbnail must not hide a missing or
         // corrupt durable artifact. Neither read can trigger a network request.

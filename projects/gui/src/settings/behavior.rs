@@ -183,12 +183,14 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                         )),
                     );
             }
+            body = body.child(super::uninstall::section(cx));
         }
         SettingsPage::Appearance
         | SettingsPage::AboutMe
         | SettingsPage::Keyboard
         | SettingsPage::Updates
-        | SettingsPage::Usage => {}
+        | SettingsPage::Usage
+        | SettingsPage::Secrets => {}
     }
     body
 }

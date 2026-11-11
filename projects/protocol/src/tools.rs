@@ -5,7 +5,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::artifact::ImageArtifact;
+use crate::artifact::Card;
 
 /// How long a question and its options may be, and how many options it has.
 pub const MAX_QUESTION_CHARS: usize = 300;
@@ -20,7 +20,7 @@ pub struct ToolResult {
     pub is_error: bool,
     /// Set only by the foreground shell runner, never inferred from output text.
     pub exit_code: Option<i32>,
-    pub artifacts: Vec<ImageArtifact>,
+    pub artifacts: Vec<Card>,
 }
 
 impl ToolResult {

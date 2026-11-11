@@ -81,8 +81,12 @@ impl Release {
 
     /// The SHA-256 of this target's archive, in lowercase hex.
     fn digest(&self) -> Option<String> {
-        let archive = format!("duskcode-{TARGET}.tar.gz");
-        let asset = self.assets.iter().find(|asset| asset.name == archive)?;
+        self.digest_of(&format!("duskcode-{TARGET}.tar.gz"))
+    }
+
+    /// The SHA-256 of the asset called `name`, in lowercase hex.
+    pub(super) fn digest_of(&self, name: &str) -> Option<String> {
+        let asset = self.assets.iter().find(|asset| asset.name == name)?;
         let hex = asset.digest.as_deref()?.strip_prefix("sha256:")?;
         Some(hex.to_ascii_lowercase())
     }
@@ -183,6 +187,10 @@ pub async fn install_with_progress(
         tag.starts_with('v') && version(tag).is_some(),
         "invalid version {tag}"
     );
+    // The desktop app updates as a whole bundle; the terminal client as one binary.
+    if let Some(bundle) = super::app_update::running_bundle() {
+        return super::app_update::install(tag, bundle, progress).await;
+    }
     ensure!(!TARGET.is_empty(), "this build does not know its target");
     let client = client()?;
     let release = get_json::<Release>(&client, &format!("releases/tags/{tag}"))
@@ -289,6 +297,31 @@ pub(super) fn client() -> Result<Client> {
         .https_only(true)
         .build()
         .context("cannot set up HTTPS")
+}
+
+/// The release tagged `tag`.
+pub(super) async fn release(client: &Client, tag: &str) -> Result<Release> {
+    get_json::<Release>(client, &format!("releases/tags/{tag}"))
+        .await
+        .with_context(|| format!("cannot read release {tag}"))
+}
+
+/// Where a release keeps the asset `name`.
+pub(super) fn asset_url(tag: &str, name: &str) -> String {
+    format!("{DOWNLOADS}/{REPOSITORY}/releases/download/{tag}/{name}")
+}
+
+/// Downloads `url`, reporting how far it got.
+pub(super) async fn fetch(
+    client: &Client,
+    url: &str,
+    progress: &watch::Sender<InstallProgress>,
+) -> Result<Vec<u8>> {
+    download(client, url, progress).await
+}
+
+pub(super) fn sha256_hex(bytes: &[u8]) -> String {
+    hex(&Sha256::digest(bytes))
 }
 
 async fn get_json<T: serde::de::DeserializeOwned>(client: &Client, path: &str) -> Result<T> {

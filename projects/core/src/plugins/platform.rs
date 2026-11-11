@@ -303,8 +303,12 @@ impl<'a> Session<'a> {
             }
             ThreadEvent::ToolFinished { result, .. } => {
                 let store = ArtifactStore::new(self.launcher.paths.artifacts_dir());
-                // Pictures for the model, such as screenshots, stay in the thread.
-                for card in result.artifacts.iter().filter(|card| !card.for_model) {
+                // Pictures for the model, such as screenshots, stay in the thread; a sound is
+                // for a client that plays it, and no platform takes one yet.
+                let pictures = result.artifacts.iter().filter(|card| {
+                    !card.for_model && card.kind == dusk_protocol::artifact::CardKind::Image
+                });
+                for card in pictures {
                     let caption = [&card.title, &card.description]
                         .into_iter()
                         .flatten()

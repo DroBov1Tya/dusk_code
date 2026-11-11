@@ -2,6 +2,7 @@
 //! questions to the user and images shown to them.
 
 mod ask_user;
+mod display_audio;
 mod display_image;
 mod goal;
 mod load_skill;
@@ -12,6 +13,7 @@ mod remember;
 mod tasks;
 
 pub use ask_user::{AskUser, Question};
+pub use display_audio::DisplayAudio;
 pub use display_image::DisplayImage;
 pub use goal::GoalTool;
 pub use load_skill::LoadSkill;

@@ -9,7 +9,7 @@ use parking_lot::Mutex;
 use uuid::Uuid;
 
 use super::{Desktop, Keys, Point, Rect, Window};
-use crate::state::artifacts::{ArtifactStore, ImageArtifact};
+use crate::state::artifacts::{ArtifactStore, Card};
 
 /// Windows named in a failed lookup at most.
 const MAX_LISTED_WINDOWS: usize = 20;
@@ -187,11 +187,7 @@ impl Screen {
 
     /// The display, a region of the last screenshot or one window, as a picture for
     /// the model, with what to tell it about the picture's size.
-    pub fn capture(
-        &self,
-        target: Target,
-        expected_scope: Option<&str>,
-    ) -> Result<(ImageArtifact, String)> {
+    pub fn capture(&self, target: Target, expected_scope: Option<&str>) -> Result<(Card, String)> {
         let _operation = self
             .operation
             .try_lock()
@@ -342,7 +338,7 @@ impl Screen {
         (*self.view.lock()).context("take a screenshot first: coordinates come from it")
     }
 
-    fn save(&self, picture: &DynamicImage) -> Result<ImageArtifact> {
+    fn save(&self, picture: &DynamicImage) -> Result<Card> {
         let mut jpeg = Vec::new();
         JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY)
             .encode_image(&picture.to_rgb8())
@@ -353,7 +349,7 @@ impl Screen {
             .write_to(&mut thumbnail, ImageFormat::Png)
             .context("cannot encode the screenshot thumbnail")?;
         self.artifacts.save(
-            ImageArtifact {
+            Card {
                 id: String::new(),
                 title: Some("screenshot".into()),
                 description: None,
@@ -363,6 +359,7 @@ impl Screen {
                 byte_len: 0,
                 sha256: String::new(),
                 for_model: true,
+                ..Default::default()
             },
             &jpeg,
             thumbnail.get_ref(),

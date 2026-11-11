@@ -6,6 +6,39 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- `display_audio`: the agent can put a sound in the chat as a card with a play button, a bar
+  that takes a click to jump, the time and a menu for the file. MP3, WAV, OGG, FLAC and M4A, up
+  to 32 MB, recognized by their first bytes. The picture record `ImageArtifact` is now `Card`
+  and carries a kind and a duration; old records read as pictures. Telegram gets no sounds yet.
+- Secrets in the system keychain (macOS Keychain, Secret Service, Credential Manager). Provider
+  API keys move out of config.yml on the first start and are read back into memory; if the
+  keychain refuses, they stay in the file. Settings, Secrets lists what is set, never a
+  value, and keeps the Hugging Face token (protocol 5). `duskcode remove` clears the
+  keychain entries; a /migrate archive no longer carries the keys.
+- gui: the desktop app finds a newer release, downloads its disk image in the background,
+  checks it against GitHub's digest, swaps the app bundle in place and offers "Restart to
+  update". It never gets the quarantine mark, so macOS does not ask again.
+- gui: Settings, Advanced, Remove duskcode: three steps and a typed word, then
+  `duskcode remove --yes` runs in the background after the window closes. Chat files in
+  ~/Documents/duskcode stay unless asked for.
+- gui: a single Remove all button for the connected providers (protocol 4).
+- gui: files and pictures dropped on the chat go with the next message; attachments show as a
+  row of thumbnails above the text that scrolls sideways.
+- install-gui.sh on a Mac installs the released app with curl, without the quarantine mark.
+
+### Changed
+
+- gui: the composer is one card: the text across its whole width, and a row below with
+  the mode, the access, the context meter, a Models button and Send. The Models button opens
+  the models and the effort upward. Headers of the side column have icons.
+
+### Fixed
+
+- A provider connected in the desktop app answered 401 when its pasted key carried a
+  trailing newline or space; the core now trims the key.
+
 ## 0.72.1 - 2026-11-10
 
 Pre-release: GUI work since 0.72.0.

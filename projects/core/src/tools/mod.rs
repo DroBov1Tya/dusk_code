@@ -28,7 +28,8 @@ pub use computer::run_overlay_if_asked;
 pub use computer::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
 pub use console::{Jobs, RunCommand};
 pub use harness::{
-    AskUser, DisplayImage, GoalTool, NameSession, PlanEdit, Question, ReadHistory, Remember, Tasks,
+    AskUser, DisplayAudio, DisplayImage, GoalTool, NameSession, PlanEdit, Question, ReadHistory,
+    Remember, Tasks,
 };
 pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_plan};
 pub use mcp::McpTool;

@@ -20,8 +20,8 @@ use crate::{
 
 use super::sections::{is_zero, yes};
 use super::{
-    Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, McpServerConfig, Memory,
-    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory,
+    ApiKey, Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, McpServerConfig,
+    Memory, Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory,
 };
 
 /// MCP server names are this long at most.
@@ -126,6 +126,22 @@ impl Config {
     /// The providers of the file; [`Config::all_providers`] adds the plugins' ones.
     pub fn providers(&self) -> &BTreeMap<String, ProviderConfig> {
         &self.providers
+    }
+
+    /// The providers' API keys, to be moved to a secret store or filled from one.
+    pub fn provider_keys_mut(&mut self) -> impl Iterator<Item = (&String, &mut ApiKey)> {
+        self.providers
+            .iter_mut()
+            .map(|(name, provider)| (name, &mut provider.api_key))
+    }
+
+    /// A copy that carries no API key: what is written to the file when a keychain keeps them.
+    pub fn without_keys(&self) -> Self {
+        let mut config = self.clone();
+        for (_, key) in config.provider_keys_mut() {
+            *key = ApiKey::default();
+        }
+        config
     }
 
     /// The MCP servers of the file; [`Config::all_mcp`] adds the plugins' ones.
@@ -382,6 +398,13 @@ impl Config {
         self.model_contexts
             .retain(|model, _| !model.starts_with(&prefix));
         self.providers.remove(name).is_some()
+    }
+
+    /// Forgets every provider and the chosen model, which belonged to one of them.
+    pub fn remove_all_providers(&mut self) {
+        self.providers.clear();
+        self.model_contexts.clear();
+        self.model = None;
     }
 
     pub fn set_max_agents_at_work(&mut self, limit: usize) {

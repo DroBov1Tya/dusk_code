@@ -1,5 +1,5 @@
-//! Under the composer: the model and the effort, each with its picker, and how full
-//! the context is.
+//! In the composer's bottom row: the model and the effort, the mode and the access, each
+//! with its picker opening upward from its own chip, and how full the context is.
 
 use crate::ui::Type;
 use dusk_protocol::{
@@ -27,14 +27,6 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         theme.danger,
         theme.border,
     );
-    let model = ws.status.model.clone().unwrap_or_else(|| {
-        if ws.status.discovering_model {
-            "looking for a model...".to_owned()
-        } else {
-            "no model".to_owned()
-        }
-    });
-    let effort = ws.status.effort.map_or("default".to_owned(), effort_name);
     let (used, limit) = ws
         .shown_chat()
         .and_then(|chat| chat.tokens)
@@ -51,48 +43,56 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     } else {
         accent
     };
-    let bar = div()
-        .px_6()
-        .py_2()
-        .max_w(px(780.))
-        .mx_auto()
-        .w_full()
+    let (mode_menu, access_menu) = match ws.picker {
+        Some(Picker::Mode) => (Some(popup("mode", super::mode_menu::render(ws, cx))), None),
+        Some(Picker::Access) => (
+            None,
+            Some(popup("access", super::access_menu::render(ws, cx))),
+        ),
+        _ => (None, None),
+    };
+    div()
+        .flex_1()
+        .min_w_0()
         .flex()
         .flex_row()
         .items_center()
-        .gap_2()
+        .gap_1()
         .meta()
         .text_color(muted)
         .child(
-            Button::new("pick-model")
-                .ghost()
-                .xsmall()
-                .icon(IconName::Cpu)
-                .label(format!("{} · {effort}", short_model(&model)))
-                .tooltip(model.clone())
-                .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Model, cx))),
-        )
-        .child(
-            Button::new("mode")
-                .ghost()
-                .xsmall()
-                .label(format!("{} mode", ws.status.mode.to_lowercase()))
-                .tooltip("Pick a mode; Tab walks them")
-                .on_click(cx.listener(|ws, _, _, cx| {
-                    if ws.settings.is_none() {
-                        ws.load_settings(cx);
-                    }
-                    ws.toggle_picker(Picker::Mode, cx);
-                })),
+            div()
+                .relative()
+                .child(
+                    Button::new("mode")
+                        .ghost()
+                        .xsmall()
+                        .label(format!("{} mode", ws.status.mode.to_lowercase()))
+                        .tooltip("Pick a mode; Tab walks them")
+                        .on_click(cx.listener(|ws, _, _, cx| {
+                            if ws.settings.is_none() {
+                                ws.load_settings(cx);
+                            }
+                            ws.toggle_picker(Picker::Mode, cx);
+                        })),
+                )
+                .children(mode_menu),
         )
         .when(ws.shown.is_some(), |bar| {
             bar.child(
-                Button::new("access")
-                    .ghost()
-                    .xsmall()
-                    .label(super::access_menu::current(ws).name())
-                    .tooltip("What this chat's tools may do without asking")
-                    .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Access, cx))),
+                div()
+                    .relative()
+                    .child(
+                        Button::new("access")
+                            .ghost()
+                            .xsmall()
+                            .label(super::access_menu::current(ws).name())
+                            .tooltip("What this chat's tools may do without asking")
+                            .on_click(
+                                cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Access, cx)),
+                            ),
+                    )
+                    .children(access_menu),
             )
         })
         .child(div().flex_1())
@@ -102,19 +102,45 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             widgets::short(used),
             widgets::short(limit)
         ))
-        .child(super::ring::render(share, meter, border));
-    let menu = ws.picker.map(|picker| {
-        let (key, menu) = match picker {
-            Picker::Mode => ("mode", super::mode_menu::render(ws, cx)),
-            Picker::Access => ("access", super::access_menu::render(ws, cx)),
-            picker => ("model", super::model_menu::render(ws, picker, &effort, cx)),
-        };
-        widgets::appear(format!("composer-menu-{key}"), menu)
+        .child(super::ring::render(share, meter, border))
+}
+
+/// The Models button at the right of the composer's row: one click opens the models and
+/// the effort, upward from the button.
+pub fn models(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let model = ws.status.model.clone().unwrap_or_else(|| {
+        if ws.status.discovering_model {
+            "looking for a model...".to_owned()
+        } else {
+            "no model".to_owned()
+        }
     });
+    let effort = ws.status.effort.map_or("default".to_owned(), effort_name);
+    let menu = ws
+        .picker
+        .filter(|picker| !matches!(picker, Picker::Mode | Picker::Access));
+    let menu =
+        menu.map(|picker| popup("model", super::model_menu::render(ws, picker, &effort, cx)));
     div()
         .relative()
-        .child(bar)
-        .children(menu.map(crate::widgets::on_top))
+        .child(
+            Button::new("pick-model")
+                .ghost()
+                .xsmall()
+                .icon(IconName::Cpu)
+                .label("Models")
+                .tooltip(format!("{} \u{00B7} {effort}", short_model(&model)))
+                .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Model, cx))),
+        )
+        .children(menu)
+}
+
+/// A picker's menu, faded in and painted over everything.
+fn popup<E>(key: &str, menu: E) -> Deferred
+where
+    E: IntoElement + Styled + 'static,
+{
+    widgets::on_top(widgets::appear(format!("composer-menu-{key}"), menu))
 }
 
 pub fn effort_name(effort: Effort) -> String {

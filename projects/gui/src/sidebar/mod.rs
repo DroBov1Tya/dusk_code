@@ -26,12 +26,27 @@ pub const WIDTH: f32 = 272.;
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (panel, border) = (theme.sidebar, theme.sidebar_border);
+    let restart = ws.update_ready.clone().map(|tag| {
+        nav_row(
+            "nav-restart",
+            IconName::RefreshCw,
+            "Restart to update",
+            false,
+            cx,
+        )
+        .text_color(cx.theme().primary)
+        .tooltip(move |window, cx| {
+            gpui_kit::component::tooltip::Tooltip::new(format!("{tag} is ready")).build(window, cx)
+        })
+        .on_click(cx.listener(|_, _, _, cx| cx.restart()))
+    });
     let nav = div()
         .flex()
         .flex_col()
         .gap_0p5()
         .px_2()
         .pt_3()
+        .children(restart)
         .child(
             nav_row("nav-new", IconName::Plus, "New chat", false, cx)
                 .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),

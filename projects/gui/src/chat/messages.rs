@@ -109,7 +109,8 @@ fn steps(items: &[Item]) -> Vec<&Tool> {
         .iter()
         .filter_map(|item| match item {
             Item::Tool(tool)
-                if !(tool.name == "display_image" && tool.state == ToolState::Done) =>
+                if !(matches!(tool.name.as_str(), "display_image" | "display_audio")
+                    && tool.state == ToolState::Done) =>
             {
                 Some(tool)
             }
@@ -300,6 +301,7 @@ impl Workspace {
                         answer.into_any_element()
                     }
                     Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
+                    Item::Audio(clip) => super::audio::card(self, &key, clip, cx),
                     Item::Notice(text) => div()
                         .meta()
                         .text_color(muted)

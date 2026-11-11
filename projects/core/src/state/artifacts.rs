@@ -8,10 +8,11 @@ use uuid::Uuid;
 
 use crate::util::fs::read_regular;
 
-pub use dusk_protocol::artifact::ImageArtifact;
+pub use dusk_protocol::artifact::Card;
 
 pub const MAX_IMAGE_BYTES: usize = 8 * 1024 * 1024;
 pub const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
+pub const MAX_AUDIO_BYTES: usize = 32 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct ArtifactStore {
@@ -25,7 +26,7 @@ impl ArtifactStore {
 
     /// Reads only a local attachment. A missing/corrupt file is an unavailable card;
     /// callers must show a placeholder and must never refetch the source URL.
-    pub fn read(&self, artifact: &ImageArtifact) -> Result<Vec<u8>> {
+    pub fn read(&self, artifact: &Card) -> Result<Vec<u8>> {
         let bytes = read_regular(&self.file(artifact, "image")?, MAX_IMAGE_BYTES as u64)?;
         ensure!(
             bytes.len() as u64 == artifact.byte_len,
@@ -46,25 +47,20 @@ impl ArtifactStore {
     }
 
     /// Where the original of `artifact` lies, for a platform to send it on.
-    pub fn path(&self, artifact: &ImageArtifact) -> Result<PathBuf> {
+    pub fn path(&self, artifact: &Card) -> Result<PathBuf> {
         self.file(artifact, "image")
     }
 
     /// A small PNG suitable for terminal rendering. The original remains available
     /// through `read`, but a client need not decode a full-resolution image again.
-    pub fn read_thumbnail(&self, artifact: &ImageArtifact) -> Result<Vec<u8>> {
+    pub fn read_thumbnail(&self, artifact: &Card) -> Result<Vec<u8>> {
         read_regular(
             &self.file(artifact, "thumbnail.png")?,
             MAX_THUMBNAIL_BYTES as u64,
         )
     }
 
-    pub fn save(
-        &self,
-        mut artifact: ImageArtifact,
-        bytes: &[u8],
-        thumbnail: &[u8],
-    ) -> Result<ImageArtifact> {
+    pub fn save(&self, mut artifact: Card, bytes: &[u8], thumbnail: &[u8]) -> Result<Card> {
         ensure!(
             bytes.len() <= MAX_IMAGE_BYTES,
             "image exceeds storage limit"
@@ -90,7 +86,31 @@ impl ArtifactStore {
         saved
     }
 
-    fn file(&self, artifact: &ImageArtifact, name: &str) -> Result<PathBuf> {
+    /// Keeps a sound as the file `audio` of a new card. The caller has checked its format.
+    pub fn save_audio(&self, mut card: Card, bytes: &[u8]) -> Result<Card> {
+        ensure!(
+            bytes.len() <= MAX_AUDIO_BYTES,
+            "audio exceeds storage limit"
+        );
+        card.id = Uuid::now_v7().to_string();
+        card.byte_len = bytes.len() as u64;
+        card.sha256 = digest(bytes);
+        fs::create_dir_all(&self.root).context("create artifact store")?;
+        let directory = self.root.join(&card.id);
+        fs::create_dir(&directory).context("create audio artifact directory")?;
+        let saved = write_new(&directory.join("audio"), bytes);
+        if saved.is_err() {
+            let _ = fs::remove_dir_all(&directory);
+        }
+        saved.map(|()| card)
+    }
+
+    /// Where the sound of `card` lies, for a client to play.
+    pub fn audio_path(&self, card: &Card) -> Result<PathBuf> {
+        self.file(card, "audio")
+    }
+
+    fn file(&self, artifact: &Card, name: &str) -> Result<PathBuf> {
         let parsed = Uuid::parse_str(&artifact.id).context("invalid image artifact ID")?;
         ensure!(
             parsed.to_string() == artifact.id,

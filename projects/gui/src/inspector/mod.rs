@@ -61,6 +61,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .h(px(36.))
             .px_4()
             .cursor_pointer()
+            // Every header starts with its icon, on the grid of the rows below.
+            .child(widgets::icon(module_icon(module), muted))
             .child(
                 div()
                     .flex_1()
@@ -159,6 +161,20 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         })),
                 ),
         )
+}
+
+fn module_icon(module: Right) -> IconName {
+    match module {
+        Right::Arbiter => IconName::Eye,
+        Right::Statistics => IconName::ChartPie,
+        Right::Screenshots => IconName::Frame,
+        Right::Git => IconName::Github,
+        Right::Files => IconName::Folder,
+        Right::Touched => IconName::FileText,
+        Right::Plan => IconName::Map,
+        Right::Todo => IconName::CircleCheck,
+        Right::Jobs => IconName::SquareTerminal,
+    }
 }
 
 /// A few words for a folded module's header: its count or its state.

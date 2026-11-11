@@ -97,7 +97,10 @@ impl Workspace {
         if self.modal.take().is_some() {
             return true;
         }
-        if self.chat_menu.take().is_some() || self.artifact_menu.take().is_some() {
+        if self.chat_menu.take().is_some()
+            || self.artifact_menu.take().is_some()
+            || self.audio.menu.take().is_some()
+        {
             return true;
         }
         if std::mem::take(&mut self.path_menu) || std::mem::take(&mut self.attach_open) {
