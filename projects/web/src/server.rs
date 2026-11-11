@@ -32,6 +32,9 @@ const MAX_BROWSERS: usize = 16;
 const LOGIN_BODY_LIMIT: usize = 1024;
 const STOP_WAIT: Duration = Duration::from_secs(3);
 
+/// The port the web client is served on unless the user chooses another.
+pub const DEFAULT_PORT: u16 = 8080;
+
 pub struct Config {
     /// Where to listen. Loopback unless the user asked for more.
     pub bind: SocketAddr,
@@ -43,7 +46,7 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            bind: SocketAddr::from(([127, 0, 0, 1], 0)),
+            bind: SocketAddr::from(([127, 0, 0, 1], DEFAULT_PORT)),
             allowed_hosts: Vec::new(),
         }
     }
@@ -95,9 +98,13 @@ struct Shared {
 
 /// Starts serving the web client of `hub` on `config.bind`.
 pub async fn start(hub: Arc<Hub>, config: Config) -> Result<WebServer> {
-    let listener = TcpListener::bind(config.bind)
-        .await
-        .with_context(|| format!("cannot listen on {}", config.bind))?;
+    let listener = TcpListener::bind(config.bind).await.with_context(|| {
+        format!(
+            "port {} is busy or not allowed on {}; choose another port",
+            config.bind.port(),
+            config.bind.ip()
+        )
+    })?;
     let addr = listener.local_addr()?;
     let auth = Auth::new()?;
     let token = auth.token().to_owned();

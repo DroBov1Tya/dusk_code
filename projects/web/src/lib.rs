@@ -18,4 +18,4 @@ mod guard;
 mod outputs;
 mod server;
 
-pub use server::{Config, WebServer, start};
+pub use server::{Config, DEFAULT_PORT, WebServer, start};

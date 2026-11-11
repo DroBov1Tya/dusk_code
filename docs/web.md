@@ -9,11 +9,11 @@ WebSocket per browser to the core.
 
 ```sh
 scripts/build-web.sh                 # wasm32 target, trunk 0.21.14, writes projects/web-ui/dist
-cargo +1.99.1 run -p dusk_tui -- --web            # serves 127.0.0.1:7878
+cargo +1.99.1 run -p dusk_tui -- --web            # serves 127.0.0.1:8080
 cargo +1.99.1 run -p dusk_tui -- --web --port 9000
 ```
 
-`--web` prints an address such as `http://127.0.0.1:7878/#<token>` before the terminal screen
+`--port N` chooses the port (default 8080); a busy port is an error, never a silent switch. `--web` prints an address such as `http://127.0.0.1:8080/#<token>` before the terminal screen
 is taken. Open it once. The page reads the token from the fragment (a browser never sends it
 anywhere), clears it from the address bar and trades it for a session cookie. The desktop app
 does the same from Settings > Advanced > Web access (loopback only).

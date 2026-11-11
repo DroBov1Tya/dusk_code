@@ -79,7 +79,7 @@ pub fn parse_args() -> Args {
                 .long("port")
                 .value_name("PORT")
                 .value_parser(value_parser!(u16))
-                .default_value("7878")
+                .default_value("8080")
                 .requires("web")
                 .help("Port of the web client"),
         )
@@ -220,7 +220,10 @@ pub fn parse_args() -> Args {
             .get_one::<IpAddr>("bind")
             .copied()
             .unwrap_or(IpAddr::from([127, 0, 0, 1])),
-        port: matches.get_one::<u16>("port").copied().unwrap_or(7878),
+        port: matches
+            .get_one::<u16>("port")
+            .copied()
+            .unwrap_or(dusk_web::DEFAULT_PORT),
         allow_hosts: matches
             .get_many::<String>("allow-host")
             .map(|hosts| hosts.cloned().collect())

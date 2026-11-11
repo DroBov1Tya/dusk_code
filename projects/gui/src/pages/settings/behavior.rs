@@ -241,6 +241,7 @@ fn web_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         "Opens the chats in a browser on this machine, beside this window",
         cx,
     )
+    .child(div().w(px(80.)).child(Input::new(&ws.web_port)))
     .child(
         Switch::new("web-access")
             .checked(ws.web.is_some())
@@ -293,11 +294,28 @@ impl Workspace {
         if self.web_busy {
             return;
         }
+        let typed = self.web_port.read(cx).value().trim().to_owned();
+        let port = match typed.as_str() {
+            "" => dusk_web::DEFAULT_PORT,
+            text => match text.parse::<u16>() {
+                Ok(port) if port > 0 => port,
+                _ => {
+                    self.fail(anyhow::anyhow!("{text:?} is not a port number"), cx);
+                    return;
+                }
+            },
+        };
         self.web_busy = true;
         if on {
             self.core.call_hub(
                 cx,
-                |hub| async move { dusk_web::start(hub, dusk_web::Config::default()).await },
+                move |hub| async move {
+                    let config = dusk_web::Config {
+                        bind: ([127, 0, 0, 1], port).into(),
+                        ..dusk_web::Config::default()
+                    };
+                    dusk_web::start(hub, config).await
+                },
                 |ws, result, cx| {
                     ws.web_busy = false;
                     match result {

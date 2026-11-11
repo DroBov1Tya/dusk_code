@@ -152,6 +152,8 @@ pub struct Workspace {
     pub model_input: Entity<InputState>,
     /// A new branch prefix, typed in the version control settings.
     pub branch_input: Entity<InputState>,
+    /// The port the web server listens on, typed beside its switch.
+    pub web_port: Entity<InputState>,
     pub outputs: Vec<OutputFile>,
     pub artifact_kind: Option<OutputKind>,
     pub search: Entity<InputState>,
@@ -284,6 +286,7 @@ impl Workspace {
             }
         })
         .detach();
+        let web_port = cx.new(|cx| InputState::new(window, cx).placeholder("8080"));
         let branch_input = cx.new(|cx| InputState::new(window, cx).placeholder("such as dusk/"));
         cx.subscribe_in(&branch_input, window, |ws, _, event: &InputEvent, _, cx| {
             if let InputEvent::PressEnter { .. } = event {
@@ -332,6 +335,7 @@ impl Workspace {
             fonts: crate::ui::theme::font_families(cx),
             model_input,
             branch_input,
+            web_port,
             outputs: Vec::new(),
             artifact_kind: None,
             search,
