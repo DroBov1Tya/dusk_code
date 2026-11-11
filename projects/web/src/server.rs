@@ -5,12 +5,13 @@ use crate::{
     auth::{Auth, Login},
     bridge, cards,
     guard::{self, Hosts},
+    outputs,
 };
 use anyhow::{Context, Result};
 use axum::{
     Json, Router,
     body::Body,
-    extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State, WebSocketUpgrade},
+    extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State, WebSocketUpgrade},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -88,7 +89,6 @@ struct Shared {
     hub: Arc<Hub>,
     auth: Auth,
     hosts: Hosts,
-    script_sources: String,
     browsers: Arc<Semaphore>,
     stop: watch::Receiver<bool>,
 }
@@ -106,7 +106,6 @@ pub async fn start(hub: Arc<Hub>, config: Config) -> Result<WebServer> {
         hub,
         auth,
         hosts: Hosts::for_bind(addr, &config.allowed_hosts),
-        script_sources: assets::inline_script_sources(),
         browsers: Arc::new(Semaphore::new(MAX_BROWSERS)),
         stop: stopped.clone(),
     });
@@ -119,6 +118,7 @@ pub async fn start(hub: Arc<Hub>, config: Config) -> Result<WebServer> {
         .route("/api/session", get(session))
         .route("/api/ws", get(socket))
         .route("/api/card/{id}/{part}", get(card))
+        .route("/api/output", get(output))
         .fallback(get(file))
         .layer(middleware::from_fn_with_state(Arc::clone(&shared), gate))
         .with_state(shared);
@@ -157,7 +157,8 @@ async fn gate(State(shared): State<Arc<Shared>>, request: Request, next: Next) -
     };
     guard::secure(
         response.headers_mut(),
-        &shared.script_sources,
+        // Read from the page as it is served, so a rebuilt page keeps its own hash.
+        &assets::inline_script_sources(),
         shared.hosts.first(),
     );
     response
@@ -238,6 +239,29 @@ async fn card(
         return StatusCode::NOT_FOUND.into_response();
     };
     let Some((bytes, kind)) = cards::read(&path).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut response = Response::new(Body::from(bytes));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(kind));
+    response
+}
+
+#[derive(Deserialize)]
+struct OutputQuery {
+    path: String,
+}
+
+async fn output(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    Query(query): Query<OutputQuery>,
+) -> Response {
+    if !shared.auth.signed_in(&headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let Some((bytes, kind)) = outputs::read_picture(&shared.hub, &query.path).await else {
         return StatusCode::NOT_FOUND.into_response();
     };
     let mut response = Response::new(Body::from(bytes));

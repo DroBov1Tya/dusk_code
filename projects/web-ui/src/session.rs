@@ -63,6 +63,10 @@ async fn fetch(method: &str, path: &str, body: Option<String>) -> Result<u16, St
 fn js_error(error: JsValue) -> String {
     error
         .as_string()
-        .or_else(|| js_sys::Reflect::get(&error, &"message".into()).ok()?.as_string())
+        .or_else(|| {
+            js_sys::Reflect::get(&error, &"message".into())
+                .ok()?
+                .as_string()
+        })
         .unwrap_or_else(|| "the browser refused the request".to_owned())
 }

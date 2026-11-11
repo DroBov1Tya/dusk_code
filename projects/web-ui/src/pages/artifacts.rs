@@ -1,6 +1,10 @@
 //! The files the agents made: pictures, documents and text, with a preview where there is one.
 
-use crate::{api, sidebar::confirm, ui::{run, size, when}};
+use crate::{
+    api,
+    sidebar::confirm,
+    ui::{run, size, when},
+};
 use dusk_protocol::project::{OutputFile, OutputKind};
 use leptos::prelude::*;
 
@@ -60,7 +64,9 @@ pub fn Artifacts() -> impl IntoView {
 pub fn encode(text: &str) -> String {
     text.bytes()
         .map(|b| match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => (b as char).to_string(),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'_' | b'.' | b'~' => {
+                (b as char).to_string()
+            }
             _ => format!("%{b:02X}"),
         })
         .collect()

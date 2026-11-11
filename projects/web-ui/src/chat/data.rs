@@ -13,8 +13,14 @@ use std::collections::BTreeMap;
 pub enum Item {
     User(String),
     /// What a subagent reported back.
-    Agent { from: String, text: String },
-    Assistant { text: String, reasoning: String },
+    Agent {
+        from: String,
+        text: String,
+    },
+    Assistant {
+        text: String,
+        reasoning: String,
+    },
     Tool(Tool),
     Image(Shown),
     Audio(Shown),
@@ -51,7 +57,7 @@ pub struct Tool {
     pub state: ToolState,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ToolState {
     Running,
     Done,

@@ -9,7 +9,10 @@ use crate::{
     state::{View, state},
     ui::{compact, run},
 };
-use dusk_protocol::{project::{Change, ChangeKind, FileDiff}, thread::{ContextReport, JobInfo}};
+use dusk_protocol::{
+    project::{Change, ChangeKind, FileDiff},
+    thread::{ContextReport, JobInfo},
+};
 use leptos::prelude::*;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -72,7 +75,9 @@ fn PlanTab(id: String) -> impl IntoView {
     let editing = RwSignal::new(false);
     let draft = RwSignal::new(String::new());
     let thread = id.clone();
-    run(async move { api::plan(&thread).await }, move |text| plan.set(text.unwrap_or_default()));
+    run(async move { api::plan(&thread).await }, move |text| {
+        plan.set(text.unwrap_or_default())
+    });
     let save_id = id.clone();
     view! {
         <div class="plan">
@@ -106,7 +111,11 @@ fn PlanTab(id: String) -> impl IntoView {
 #[component]
 fn TasksTab(id: String) -> impl IntoView {
     let app = state();
-    let tasks = Signal::derive(move || app.chat(&id).map(|c| c.with(|c| c.tasks.clone())).unwrap_or_default());
+    let tasks = Signal::derive(move || {
+        app.chat(&id)
+            .map(|c| c.with(|c| c.tasks.clone()))
+            .unwrap_or_default()
+    });
     view! {
         <div class="tasks">
             <Show when=move || !tasks.get().is_empty() fallback=|| view! { <p class="muted">"No tasks."</p> }>
@@ -127,7 +136,11 @@ fn TasksTab(id: String) -> impl IntoView {
 fn AgentsTab(id: String) -> impl IntoView {
     let app = state();
     let thread = id.clone();
-    let agents = Signal::derive(move || app.chat(&thread).map(|c| c.with(|c| c.agents.clone())).unwrap_or_default());
+    let agents = Signal::derive(move || {
+        app.chat(&thread)
+            .map(|c| c.with(|c| c.agents.clone()))
+            .unwrap_or_default()
+    });
     view! {
         <div class="agents">
             <Show when=move || !agents.get().is_empty() fallback=|| view! { <p class="muted">"No subagents in this chat."</p> }>
@@ -189,14 +202,20 @@ fn ChangesTab(id: String) -> impl IntoView {
     let thread = id.clone();
     let load = move || {
         let thread = thread.clone();
-        run(async move { api::changed_files(&thread).await }, move |list| changes.set(list));
+        run(
+            async move { api::changed_files(&thread).await },
+            move |list| changes.set(list),
+        );
     };
     load();
     let show = {
         let id = id.clone();
         move |path: Option<String>| {
             let id = id.clone();
-            run(async move { api::chat_diff(&id, path).await }, move |files| diff.set(files));
+            run(
+                async move { api::chat_diff(&id, path).await },
+                move |files| diff.set(files),
+            );
         }
     };
     let show_all = show.clone();
@@ -229,7 +248,9 @@ fn JobsTab(id: String) -> impl IntoView {
     let thread = id.clone();
     let reload = move || {
         let thread = thread.clone();
-        run(async move { api::jobs(&thread).await }, move |list| jobs.set(list));
+        run(async move { api::jobs(&thread).await }, move |list| {
+            jobs.set(list)
+        });
     };
     reload();
     view! {
@@ -273,7 +294,10 @@ fn ContextTab(id: String) -> impl IntoView {
     let report = RwSignal::new(None::<ContextReport>);
     let load = move || {
         let id = id.clone();
-        run(async move { api::context_report(Some(id)).await }, move |r| report.set(Some(r)));
+        run(
+            async move { api::context_report(Some(id)).await },
+            move |r| report.set(Some(r)),
+        );
     };
     load();
     view! {

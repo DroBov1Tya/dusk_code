@@ -57,6 +57,7 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
                     <span class="muted">{move || project_name().unwrap_or_default()}</span>
                 </div>
                 <ChatBar id=id.clone() chat />
+                {id.clone().map(|id| view! { <ChatMenu id /> })}
             </header>
             <Transcript chat />
             <approval::Approvals chat />
@@ -75,15 +76,19 @@ fn ChatBar(id: Option<String>, chat: ChatSignal) -> impl IntoView {
             .with(|s| s.as_ref().and_then(|s| s.model.clone()))
             .unwrap_or_else(|| "no model".to_owned())
     };
-    let mode = move || app.status.with(|s| s.as_ref().map(|s| s.mode.clone())).unwrap_or_default();
+    let mode = move || {
+        app.status
+            .with(|s| s.as_ref().map(|s| s.mode.clone()))
+            .unwrap_or_default()
+    };
     let context = move || {
         chat.with(|c| c.tokens)
             .map(|(used, limit)| format!("{} / {}", compact(used), compact(limit)))
     };
     let share = move || {
         chat.with(|c| c.tokens)
-            .map(|(used, limit)| if limit == 0 { 0 } else { (used * 100 / limit).min(100) })
-            .unwrap_or(0)
+            .and_then(|(used, limit)| (used * 100).checked_div(limit))
+            .map_or(0, |percent| percent.min(100))
     };
     let access = move || match chat.with(|c| c.access) {
         None => "default",
@@ -134,6 +139,37 @@ fn ChatBar(id: Option<String>, chat: ChatSignal) -> impl IntoView {
             })}
             {move || chat.with(|c| c.cost.clone()).map(|cost| view! { <span class="muted">{cost}</span> })}
             <Show when=move || voice::speaking()><span class="muted">"speaking…"</span></Show>
+        </div>
+    }
+}
+
+/// Rename, close and delete of the chat.
+#[component]
+fn ChatMenu(id: String) -> impl IntoView {
+    let app = state();
+    let rename = {
+        let id = id.clone();
+        move |_| {
+            let Some(title) = web_sys::window()
+                .and_then(|w| w.prompt_with_message("New title").ok().flatten())
+                .filter(|t| !t.trim().is_empty())
+            else {
+                return;
+            };
+            let id = id.clone();
+            run(async move { api::rename(&id, title).await }, move |()| {
+                app.refresh()
+            });
+        }
+    };
+    let close = {
+        let id = id.clone();
+        move |_| app.close_chat(id.clone())
+    };
+    view! {
+        <div class="chat-menu">
+            <button class="icon" title="Rename this chat" on:click=rename>"Rename"</button>
+            <button class="icon" title="Stop using it here; it stays in the list" on:click=close>"Close"</button>
         </div>
     }
 }

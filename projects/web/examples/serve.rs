@@ -6,7 +6,10 @@ use dusk_web::{Config, start};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let port: u16 = std::env::args().nth(1).and_then(|p| p.parse().ok()).unwrap_or(0);
+    let port: u16 = std::env::args()
+        .nth(1)
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(0);
     let hub = start_hub(Paths::from_home()?, None).await?;
     let config = Config {
         bind: ([127, 0, 0, 1], port).into(),

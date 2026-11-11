@@ -30,7 +30,7 @@ pub async fn read(path: &Path) -> Option<(Vec<u8>, &'static str)> {
     Some((bytes, kind))
 }
 
-fn sniff(bytes: &[u8]) -> &'static str {
+pub fn sniff(bytes: &[u8]) -> &'static str {
     match bytes {
         [0x89, b'P', b'N', b'G', ..] => "image/png",
         [0xff, 0xd8, 0xff, ..] => "image/jpeg",

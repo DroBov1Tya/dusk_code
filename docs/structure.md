@@ -111,6 +111,27 @@ ui/  (4)
   theme/  (2)
 ```
 
+### web
+
+```
+auth/  (3)
+```
+
+The server for browsers: `guard` (host, origin, security headers), `assets` (the bundle
+embedded from `web-ui/dist`), `bridge` (one WebSocket per browser), `cards` and `outputs`
+(pictures and sounds by ID), `server` (routes, start, stop). Everything else is the core's.
+
+### web-ui
+
+```
+chat/  (6)
+pages/  (6)
+```
+
+The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls,
+`state` what the whole page knows, `chat/data` the transcript as plain data (testable without a
+browser), `markdown` model output as DOM text only. It draws and calls; it decides nothing.
+
 ### tui
 
 ```

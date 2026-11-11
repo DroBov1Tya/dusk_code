@@ -109,7 +109,8 @@ label > input, label > textarea { display: block; width: 100%; margin-top: 4px; 
 /* Chat */
 .chat { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .chat-head { padding: 12px 20px 8px; display: flex; flex-direction: column; gap: 6px; }
-.chat-title-line { display: flex; align-items: baseline; gap: 10px; }
+.chat-title-line { display: flex; align-items: baseline; gap: 10px; padding-right: 130px; }
+.chat-title-line h2 { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .context { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
 .meter { width: 60px; height: 4px; background: var(--raised); border-radius: 2px; overflow: hidden; display: inline-block; }
@@ -227,3 +228,6 @@ label > input, label > textarea { display: block; width: 100%; margin-top: 4px; 
   .app { grid-template-columns: 1fr; }
   .sidebar, .inspector { display: none; }
 }
+.chat-menu { display: flex; gap: 4px; position: absolute; right: 16px; top: 12px; }
+.chat-head { position: relative; }
+.section input, .section select { margin: 4px 6px 4px 0; }

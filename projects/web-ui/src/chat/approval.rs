@@ -1,6 +1,10 @@
 //! What a chat waits on: a tool's request for a yes, and a question the agent asks.
 
-use crate::{api, state::{Chat, state}, ui::run};
+use crate::{
+    api,
+    state::{Chat, state},
+    ui::run,
+};
 use dusk_protocol::tools::{ApprovalRequest, Decision};
 use leptos::prelude::*;
 
@@ -52,7 +56,8 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
             let reply = for_answer.answer(&chosen.get_untracked(), &own.get_untracked());
             app.send(id.clone(), reply, false);
             chat.update(|c| c.question = None);
-            (chosen.set(Vec::new()), own.set(String::new()));
+            chosen.set(Vec::new());
+            own.set(String::new());
         };
         let decline = move |_| {
             let reply = for_decline.declined(&own.get_untracked());

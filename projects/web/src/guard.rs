@@ -48,7 +48,7 @@ impl Hosts {
 
     fn allows(&self, host: &str) -> bool {
         let host = host.to_ascii_lowercase();
-        self.0.iter().any(|allowed| *allowed == host)
+        self.0.contains(&host)
     }
 
     pub fn first(&self) -> &str {

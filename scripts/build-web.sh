@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Builds the web client into projects/web-ui/dist, which the next `cargo build` embeds in
+# the binary. Needs the wasm32 target and trunk; both are installed here when missing.
+set -euo pipefail
+
+TRUNK_VERSION=0.21.14
+here="$(cd "$(dirname "$0")/.." && pwd)"
+
+rustup target add wasm32-unknown-unknown
+if ! command -v trunk >/dev/null 2>&1 || [[ "$(trunk --version)" != "trunk $TRUNK_VERSION" ]]; then
+  cargo install trunk --locked --version "$TRUNK_VERSION"
+fi
+cd "$here/projects/web-ui"
+trunk build --release --locked

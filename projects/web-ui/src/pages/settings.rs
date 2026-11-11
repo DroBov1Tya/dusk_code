@@ -102,7 +102,10 @@ fn Appearance() -> impl IntoView {
 }
 
 #[component]
-fn ChatPage(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn ChatPage(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     view! {
         <h2>"Chat"</h2>
         <p class="muted">"How a new chat starts: its mode and what it may do."</p>
@@ -115,7 +118,7 @@ fn ChatPage(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send 
                         run(api::set(SettingsRequest::Mode(name)), move |()| reload());
                     }>
                         {p.modes.clone().into_iter().map(|m| view! {
-                            <option value=m.name.clone() selected=m.name == p.mode>{format!("{} — {}", m.name, m.summary)}</option>
+                            <option value=m.name.clone() selected=m.name == p.mode title=m.summary.clone()>{m.name.clone()}</option>
                         }).collect_view()}
                     </select>
                 </Section>
@@ -147,7 +150,10 @@ fn ApprovalPicker(current: ApprovalPolicy) -> impl IntoView {
 }
 
 #[component]
-fn Safety(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn Safety(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     let _ = reload;
     view! {
         <h2>"Safety"</h2>
@@ -157,7 +163,10 @@ fn Safety(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + 
 }
 
 #[component]
-fn Notifications(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn Notifications(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     view! {
         <h2>"Notifications"</h2>
         <p class="muted">"How you hear that a chat needs you. These apply to the desktop app and the terminal."</p>
@@ -176,7 +185,10 @@ fn Notifications(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + 
 }
 
 #[component]
-fn VersionControl(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn VersionControl(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     view! {
         <h2>"Version control"</h2>
         <p class="muted">"Branches the agents create, and how they are named."</p>
@@ -217,7 +229,10 @@ fn number_row(
 }
 
 #[component]
-fn Memory(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn Memory(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     let app = state();
     let _ = app;
     view! {
@@ -243,7 +258,10 @@ fn Memory(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + 
 #[component]
 fn ContextPicker() -> impl IntoView {
     let app = state();
-    let current = move || app.status.with(|s| s.as_ref().and_then(|s| s.context_policy));
+    let current = move || {
+        app.status
+            .with(|s| s.as_ref().and_then(|s| s.context_policy))
+    };
     let pick = move |ev| {
         let value = event_target_value(&ev);
         let policy = match value.as_str() {
@@ -271,7 +289,10 @@ fn ContextPicker() -> impl IntoView {
 }
 
 #[component]
-fn Advanced(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn Advanced(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     view! {
         <h2>"Advanced"</h2>
         <p class="muted">"Limits and timings. The defaults suit most work."</p>
@@ -303,7 +324,11 @@ fn ModelPage() -> impl IntoView {
         busy.set(true);
         run(api::command(Command::Model { name: None }), move |answer| {
             busy.set(false);
-            if let Answer::Providers { current: now, providers: list } = answer {
+            if let Answer::Providers {
+                current: now,
+                providers: list,
+            } = answer
+            {
                 current.set(now);
                 providers.set(list);
             }
@@ -374,7 +399,9 @@ fn ConnectProvider(done: impl Fn() + Clone + Send + Sync + 'static) -> impl Into
         RwSignal::new(String::new()),
     );
     let connect = move |_| {
-        let api_key = Some(key.get_untracked()).filter(|k| !k.is_empty()).map(dusk_protocol::client::Secret);
+        let api_key = Some(key.get_untracked())
+            .filter(|k| !k.is_empty())
+            .map(dusk_protocol::client::Secret);
         let request = SettingsRequest::Connect {
             kind: kind.get_untracked(),
             name: Some(name.get_untracked()).filter(|n| !n.is_empty()),
@@ -484,11 +511,13 @@ fn AboutMe() -> impl IntoView {
 fn Updates() -> impl IntoView {
     let app = state();
     let info = RwSignal::new(None::<dusk_protocol::release::UpdateInfo>);
-    let check = move || run(api::command(Command::Update { channel: None }), move |a| {
-        if let Answer::Update(u) = a {
-            info.set(Some(u));
-        }
-    });
+    let check = move || {
+        run(api::command(Command::Update { channel: None }), move |a| {
+            if let Answer::Update(u) = a {
+                info.set(Some(u));
+            }
+        })
+    };
     check();
     let progress = move || app.status.with(|s| s.as_ref().and_then(|s| s.install));
     view! {

@@ -84,7 +84,10 @@ fn Editor(
 }
 
 #[component]
-fn Agents(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn Agents(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     let open = RwSignal::new(None::<String>);
     let text = RwSignal::new(String::new());
     let edit = move |name: String| {
@@ -123,7 +126,11 @@ fn node_view(
 ) -> impl IntoView {
     let name = node.name.clone();
     let (toggle, edit_name) = (name.clone(), name.clone());
-    let children: Vec<_> = node.children.into_iter().map(|c| node_view(c, reload.clone(), edit).into_any()).collect();
+    let children: Vec<_> = node
+        .children
+        .into_iter()
+        .map(|c| node_view(c, reload.clone(), edit).into_any())
+        .collect();
     let reload_toggle = reload.clone();
     view! {
         <li>
@@ -142,7 +149,10 @@ fn node_view(
 }
 
 #[component]
-fn Skills(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn Skills(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     let open = RwSignal::new(None::<String>);
     let text = RwSignal::new(String::new());
     view! {
@@ -296,7 +306,10 @@ fn Plugins() -> impl IntoView {
 
 /// Tools by kind. Computer use is the desktop app's, and has no switch here.
 #[component]
-fn Tools(panel: RwSignal<Option<Settings>>, reload: impl Fn() + Clone + Send + Sync + 'static) -> impl IntoView {
+fn Tools(
+    panel: RwSignal<Option<Settings>>,
+    reload: impl Fn() + Clone + Send + Sync + 'static,
+) -> impl IntoView {
     view! {
         {move || panel.get().map(|p| {
             let reload = reload.clone();
@@ -332,14 +345,25 @@ fn Voice() -> impl IntoView {
         run(api::voice_settings(), move |s| settings.set(s));
     };
     load();
-    // Installing runs on its own; keep asking while any model installs.
+    // Installing runs on its own; keep asking while any model installs, until the page goes.
+    let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+    on_cleanup({
+        let alive = std::sync::Arc::clone(&alive);
+        move || alive.store(false, std::sync::atomic::Ordering::Relaxed)
+    });
     spawn_local(async move {
-        loop {
+        while alive.load(std::sync::atomic::Ordering::Relaxed) {
             sleep(2000).await;
-            if models.with_untracked(|m| m.models.iter().any(|m| matches!(m.state, LocalState::Installing(_)))) {
-                if let Ok(next) = api::voice_models().await {
-                    models.set(next);
-                }
+            if !alive.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
+            let installing = models.with_untracked(|m| {
+                m.models
+                    .iter()
+                    .any(|m| matches!(m.state, LocalState::Installing(_)))
+            });
+            if installing && let Ok(next) = api::voice_models().await {
+                models.set(next);
             }
         }
     });
@@ -402,13 +426,23 @@ fn Voice() -> impl IntoView {
 }
 
 #[component]
-fn EndpointForm(title: &'static str, settings: RwSignal<VoiceSettings>, kind: SpeechKind) -> impl IntoView {
-    let read = move |s: &VoiceSettings| match kind {
-        SpeechKind::Recognition => s.stt.clone(),
-        SpeechKind::Synthesis => s.tts.clone(),
-    }
-    .unwrap_or_default();
-    let (url, model, voice) = (RwSignal::new(String::new()), RwSignal::new(String::new()), RwSignal::new(String::new()));
+fn EndpointForm(
+    title: &'static str,
+    settings: RwSignal<VoiceSettings>,
+    kind: SpeechKind,
+) -> impl IntoView {
+    let read = move |s: &VoiceSettings| {
+        match kind {
+            SpeechKind::Recognition => s.stt.clone(),
+            SpeechKind::Synthesis => s.tts.clone(),
+        }
+        .unwrap_or_default()
+    };
+    let (url, model, voice) = (
+        RwSignal::new(String::new()),
+        RwSignal::new(String::new()),
+        RwSignal::new(String::new()),
+    );
     Effect::new(move |_| {
         let endpoint = settings.with(read);
         url.set(endpoint.base_url);
@@ -427,7 +461,9 @@ fn EndpointForm(title: &'static str, settings: RwSignal<VoiceSettings>, kind: Sp
             SpeechKind::Recognition => next.stt = endpoint,
             SpeechKind::Synthesis => next.tts = endpoint,
         }
-        run(api::set(SettingsRequest::Voice(next.clone())), move |()| settings.set(next));
+        run(api::set(SettingsRequest::Voice(next.clone())), move |()| {
+            settings.set(next)
+        });
     };
     view! {
         <Row name=title hint="Base URL, model and, for speech, a voice">

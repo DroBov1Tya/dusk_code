@@ -4,6 +4,23 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- The web client: the chats, projects, files, review, connectors (MCP, skills, plugins,
+  tools, agents, voice) and settings of the desktop app in a browser, written in Rust with
+  Leptos and built with trunk (`scripts/build-web.sh`). `duskcode --web [--port N]` serves it
+  beside the terminal client, and Settings > Advanced > Web access does the same from the
+  desktop app. It listens on 127.0.0.1; the address printed once carries a token of this run
+  that is traded for a session cookie. See `docs/web.md`.
+- One core, several clients: the web, the desktop and the terminal clients can be attached to
+  the same running core and see the same chats live. A chat closes only when the last client
+  that opened it leaves it.
+- Protocol: `RequestFrame` and `ServerFrame` carry requests, responses, events and status
+  over a message stream; `Status.workspace_dir` says where a chat without a project works
+  (still protocol 9).
+
 ## 0.72.7 - 2026-11-11 (pre-release)
 
 ### Added

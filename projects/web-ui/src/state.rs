@@ -53,7 +53,8 @@ thread_local! {
 /// The page's state. Kept apart from the component tree, so a handler can read it
 /// wherever it runs.
 pub fn state() -> AppState {
-    APP.with(|app| app.get()).expect("the shell installs the state first")
+    APP.with(|app| app.get())
+        .expect("the shell installs the state first")
 }
 
 pub fn install(app: AppState) {
@@ -78,14 +79,26 @@ impl AppState {
     }
 
     /// Opens the stream to the core and keeps the lists fresh.
-    pub fn connect(self) {
+    /// `signed_out` runs when the stream keeps failing because the session is gone, as
+    /// after the server restarted.
+    pub fn connect(self, signed_out: impl Fn() + 'static) {
+        let signed_out = std::rc::Rc::new(signed_out);
         link::connect(Handlers {
             on_event: Box::new(move |event| self.on_event(event)),
             on_status: Box::new(move |status| self.status.set(Some(status))),
             on_conn: Box::new(move |conn| {
                 self.conn.set(conn);
-                if conn == Conn::Online {
-                    self.after_connect();
+                match conn {
+                    Conn::Online => self.after_connect(),
+                    Conn::Lost => {
+                        let signed_out = std::rc::Rc::clone(&signed_out);
+                        spawn_local(async move {
+                            if !crate::session::is_signed_in().await {
+                                signed_out();
+                            }
+                        });
+                    }
+                    Conn::Connecting => {}
                 }
             }),
         });
@@ -94,7 +107,9 @@ impl AppState {
     fn after_connect(self) {
         self.refresh();
         // A stream that broke took its open threads with it; join them again.
-        let open: Vec<String> = self.chats.with_untracked(|chats| chats.keys().cloned().collect());
+        let open: Vec<String> = self
+            .chats
+            .with_untracked(|chats| chats.keys().cloned().collect());
         for thread_id in open {
             spawn_local(async move {
                 let cwd = self.cwd_of(&thread_id);
@@ -112,12 +127,24 @@ impl AppState {
         }
     }
 
+    /// Shows a message over the page for a few seconds.
     pub fn fail(self, message: impl Into<String>) {
-        self.toast.set(Some(message.into()));
+        let message = message.into();
+        self.toast.set(Some(message.clone()));
+        spawn_local(async move {
+            crate::ui::sleep(8000).await;
+            // Only its own message goes away; a newer one stays its full time.
+            self.toast.update(|now| {
+                if now.as_deref() == Some(message.as_str()) {
+                    *now = None;
+                }
+            });
+        });
     }
 
     pub fn chat(self, thread_id: &str) -> Option<Chat> {
-        self.chats.with_untracked(|chats| chats.get(thread_id).copied())
+        self.chats
+            .with_untracked(|chats| chats.get(thread_id).copied())
     }
 
     /// Reloads the sidebar lists.
@@ -141,6 +168,10 @@ impl AppState {
                     .threads
                     .with_untracked(|threads| threads.iter().any(|t| t.id == thread_id));
                 let renamed = matches!(*event, ThreadEvent::TitleChanged { .. });
+                // /fork wrote its summary: the new chat starts from it.
+                if let ThreadEvent::Forked { summary } = &*event {
+                    self.fork(thread_id.clone(), summary.clone());
+                }
                 match self.chat(&thread_id) {
                     Some(chat) => chat.update(|data| data.apply(*event)),
                     None if !listed => self.refresh(),
@@ -255,6 +286,22 @@ impl AppState {
         self.view.set(View::Chat(Some(thread_id.clone())));
         self.refresh();
         Ok(thread_id)
+    }
+
+    fn fork(self, from: String, summary: String) {
+        spawn_local(async move {
+            let cwd = self.cwd_of(&from);
+            match api::fork(summary, cwd).await {
+                Ok(thread_id) => {
+                    self.chats.update(|chats| {
+                        chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));
+                    });
+                    self.view.set(View::Chat(Some(thread_id)));
+                    self.refresh();
+                }
+                Err(error) => self.fail(error),
+            }
+        });
     }
 
     /// Stops using a chat on this page; the core closes it when no client keeps it.

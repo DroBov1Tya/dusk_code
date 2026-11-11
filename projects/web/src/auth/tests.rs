@@ -12,7 +12,7 @@ fn cookie_header(set_cookie: &str) -> HeaderMap {
 #[test]
 fn the_token_signs_in_and_the_cookie_is_locked_down() {
     let auth = Auth::new().unwrap();
-    let Login::Granted(set) = auth.login(&auth.token().to_owned(), "peer", true) else {
+    let Login::Granted(set) = auth.login(auth.token(), "peer", true) else {
         panic!("the right token was refused");
     };
     for part in [
@@ -41,7 +41,7 @@ fn a_wrong_token_or_a_forged_cookie_gets_nothing() {
 #[test]
 fn logout_ends_the_session() {
     let auth = Auth::new().unwrap();
-    let Login::Granted(set) = auth.login(&auth.token().to_owned(), "peer", false) else {
+    let Login::Granted(set) = auth.login(auth.token(), "peer", false) else {
         panic!("the right token was refused");
     };
     let headers = cookie_header(&set);

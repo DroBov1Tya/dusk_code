@@ -30,7 +30,8 @@ fn draw(root: &Element, source: &str) {
     };
     root.set_text_content(None);
     let mut stack: Vec<Element> = vec![root.clone()];
-    let options = Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
+    let options =
+        Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     for event in Parser::new_ext(source, options) {
         match event {
             Event::Start(tag) => {

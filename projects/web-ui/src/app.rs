@@ -22,6 +22,7 @@ enum Auth {
 #[component]
 pub fn App() -> impl IntoView {
     let auth = RwSignal::new(Auth::Checking);
+    reload_on_new_address();
     spawn_local(async move {
         let result = match session::take_fragment_token() {
             Some(token) => session::sign_in(&token).await.map(|()| true),
@@ -38,6 +39,20 @@ pub fn App() -> impl IntoView {
         Auth::SignedOut(note) => view! { <SignIn note auth /> }.into_any(),
         Auth::SignedIn => view! { <Shell auth /> }.into_any(),
     }
+}
+
+/// A new token in the address bar (the page was not reloaded) starts the page over.
+fn reload_on_new_address() {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let reload = wasm_bindgen::closure::Closure::<dyn FnMut()>::new(|| {
+        if let Some(window) = web_sys::window() {
+            let _ = window.location().reload();
+        }
+    });
+    window.set_onhashchange(Some(wasm_bindgen::JsCast::unchecked_ref(reload.as_ref())));
+    reload.forget();
 }
 
 #[component]
@@ -75,9 +90,12 @@ fn SignIn(note: Option<String>, auth: RwSignal<Auth>) -> impl IntoView {
 fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
     let app = AppState::new();
     crate::state::install(app);
-    app.connect();
+    app.connect(move || {
+        auth.set(Auth::SignedOut(Some(
+            "The session ended. Sign in again.".into(),
+        )))
+    });
     Effect::new(move |_| theme::apply(&app.theme.get()));
-    let _ = auth;
     view! {
         <div class="app">
             <Sidebar />

@@ -22,13 +22,25 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
     Effect::new(move |_| {
         if let Some(open) = editing.get() {
             name.set(open.as_ref().map(|p| p.name.clone()).unwrap_or_default());
-            description.set(open.as_ref().map(|p| p.description.clone()).unwrap_or_default());
-            dir.set(open.as_ref().map(|p| p.dir.display().to_string()).unwrap_or_default());
+            description.set(
+                open.as_ref()
+                    .map(|p| p.description.clone())
+                    .unwrap_or_default(),
+            );
+            dir.set(
+                open.as_ref()
+                    .map(|p| p.dir.display().to_string())
+                    .unwrap_or_default(),
+            );
         }
     });
     let save = move |_| {
         let id = editing.get_untracked().flatten().map(|p| p.id);
-        let (n, d, p) = (name.get_untracked(), description.get_untracked(), dir.get_untracked());
+        let (n, d, p) = (
+            name.get_untracked(),
+            description.get_untracked(),
+            dir.get_untracked(),
+        );
         run(api::save_project(id, n, d, p), move |_| {
             editing.set(None);
             app.refresh();
@@ -39,10 +51,13 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
             return;
         };
         if confirm("Remove this project from duskcode? Its folder stays as it is.") {
-            run(async move { api::remove_project(&project.id).await }, move |()| {
-                editing.set(None);
-                app.refresh();
-            });
+            run(
+                async move { api::remove_project(&project.id).await },
+                move |()| {
+                    editing.set(None);
+                    app.refresh();
+                },
+            );
         }
     };
     view! {
@@ -99,7 +114,9 @@ fn GitSection(id: String) -> impl IntoView {
         let id = id.clone();
         move || {
             let id = id.clone();
-            run(async move { api::git(&id).await }, move |git| info.set(Some(git)));
+            run(async move { api::git(&id).await }, move |git| {
+                info.set(Some(git))
+            });
         }
     };
     load();
@@ -107,14 +124,20 @@ fn GitSection(id: String) -> impl IntoView {
         let (id, load) = (id.clone(), load.clone());
         move |ev| {
             let (id, branch, load) = (id.clone(), event_target_value(&ev), load.clone());
-            run(async move { api::switch_branch(&id, branch).await }, move |()| load());
+            run(
+                async move { api::switch_branch(&id, branch).await },
+                move |()| load(),
+            );
         }
     };
     let show = {
         let id = id.clone();
         move |path: Option<String>| {
             let id = id.clone();
-            run(async move { api::project_diff(&id, path).await }, move |files| diff.set(files));
+            run(
+                async move { api::project_diff(&id, path).await },
+                move |files| diff.set(files),
+            );
         }
     };
     let show_all = show.clone();
@@ -160,7 +183,9 @@ fn FolderList(id: String, path: String) -> impl IntoView {
     let entries = RwSignal::new(Vec::<FileEntry>::new());
     {
         let (id, path) = (id.clone(), path.clone());
-        run(async move { api::files(&id, path).await }, move |list| entries.set(list));
+        run(async move { api::files(&id, path).await }, move |list| {
+            entries.set(list)
+        });
     }
     view! {
         <ul class="tree">
@@ -192,7 +217,9 @@ fn EnvSection(id: String) -> impl IntoView {
     let (name, value) = (RwSignal::new(String::new()), RwSignal::new(String::new()));
     {
         let id = id.clone();
-        run(async move { api::env_names(&id).await }, move |list| names.set(list));
+        run(async move { api::env_names(&id).await }, move |list| {
+            names.set(list)
+        });
     }
     let add = {
         let id = id.clone();
@@ -200,7 +227,8 @@ fn EnvSection(id: String) -> impl IntoView {
             let (id, n, v) = (id.clone(), name.get_untracked(), value.get_untracked());
             run(async move { api::set_env(&id, n, v).await }, move |list| {
                 names.set(list);
-                (name.set(String::new()), value.set(String::new()));
+                name.set(String::new());
+                value.set(String::new());
             });
         }
     };

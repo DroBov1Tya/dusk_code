@@ -12,7 +12,6 @@ use dusk_protocol::{
         ApprovalPolicy, McpInfo, Profile, SecretsInfo, Settings, Snippet, VoiceModels,
         VoiceSettings,
     },
-    model::ProviderStatus,
     project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project},
     system::SystemReport,
     thread::{ContextReport, JobInfo, Message, Task, Thread},
@@ -154,11 +153,6 @@ pub async fn set_approvals(thread_id: &str, policy: Option<ApprovalPolicy>) -> R
 pub async fn get_approvals(thread_id: &str) -> Res<Option<ApprovalPolicy>> {
     let thread_id = thread_id.to_owned();
     ask!(thread(ThreadRequest::GetApprovals { thread_id }), Response::Approvals(a) => a)
-}
-
-pub async fn run_command(thread_id: &str, command: String) -> Res<String> {
-    let thread_id = thread_id.to_owned();
-    ask!(thread(ThreadRequest::RunCommand { thread_id, command }), Response::Text(t) => t)
 }
 
 // Work of a thread
@@ -315,10 +309,6 @@ pub async fn next_mode() -> Res<String> {
 
 pub async fn number(call: SettingsRequest) -> Res<u64> {
     ask!(settings(call), Response::Number(n) => n)
-}
-
-pub async fn check_provider(call: SettingsRequest) -> Res<ProviderStatus> {
-    ask!(settings(call), Response::Provider(p) => p)
 }
 
 pub async fn connect_provider(call: SettingsRequest) -> Res<String> {

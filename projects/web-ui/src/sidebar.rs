@@ -40,7 +40,10 @@ pub fn Sidebar() -> impl IntoView {
     });
     let loose = move || {
         let dirs: Vec<String> = app.projects.with(|projects| {
-            projects.iter().map(|p| p.dir.display().to_string()).collect()
+            projects
+                .iter()
+                .map(|p| p.dir.display().to_string())
+                .collect()
         });
         listed
             .get()
@@ -84,6 +87,12 @@ pub fn Sidebar() -> impl IntoView {
                 <NavButton label="Connectors" target=View::Connectors(Tab::Agents) />
                 <NavButton label="Artifacts" target=View::Artifacts />
                 <NavButton label="Settings" target=View::Settings(Page::Appearance) />
+                <button class="nav-item" on:click=move |_| leptos::task::spawn_local(async {
+                    crate::session::sign_out().await;
+                    if let Some(window) = web_sys::window() {
+                        let _ = window.location().reload();
+                    }
+                })>"Sign out"</button>
                 {move || app.status.with(|s| s.as_ref().and_then(|s| s.available_update.clone())).map(|tag| view! {
                     <button class="update" on:click=move |_| app.view.set(View::Settings(Page::Updates))>
                         {format!("Update {tag}")}
@@ -144,10 +153,7 @@ fn ChatRow(thread: Thread) -> impl IntoView {
     };
     let working = {
         let id = id.clone();
-        move || {
-            app.chat(&id)
-                .is_some_and(|chat| chat.with(|c| c.working))
-        }
+        move || app.chat(&id).is_some_and(|chat| chat.with(|c| c.working))
     };
     let title = chat_title(&thread);
     let open_id = id.clone();

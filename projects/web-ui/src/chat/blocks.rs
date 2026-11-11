@@ -1,7 +1,11 @@
 //! The transcript: the items of a chat, with runs of tool steps folded into one line.
 
-use super::data::{Agent, ChatData, Entry, Item, Shown, Tool, ToolState};
-use crate::{markdown::Markdown, state::{Chat, state}, voice};
+use super::data::{ChatData, Entry, Item, Shown, Tool, ToolState};
+use crate::{
+    markdown::Markdown,
+    state::{Chat, state},
+    voice,
+};
 use dusk_protocol::thread::{Part, split};
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
@@ -15,7 +19,10 @@ enum Block {
 
 /// The block that starts at the item numbered `first`.
 fn block_at(chat: &ChatData, first: u64) -> Option<Block> {
-    let at = chat.items.binary_search_by_key(&first, |entry| entry.id).ok()?;
+    let at = chat
+        .items
+        .binary_search_by_key(&first, |entry| entry.id)
+        .ok()?;
     let entry = &chat.items[at];
     if !matches!(entry.item, Item::Tool(_)) {
         return Some(Block::One(entry.clone()));
@@ -59,7 +66,8 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
             return;
         };
         let element: &web_sys::Element = div.unchecked_ref();
-        let near_end = element.scroll_height() - element.scroll_top() - element.client_height() < 160;
+        let near_end =
+            element.scroll_height() - element.scroll_top() - element.client_height() < 160;
         if near_end {
             request_animation_frame(move || element_to_end(&scroller));
         }
@@ -170,8 +178,13 @@ fn copy(text: &str) {
 
 #[component]
 fn Steps(steps: Vec<Entry>) -> impl IntoView {
-    let running = steps.iter().any(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Running));
-    let failed = steps.iter().filter(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Failed)).count();
+    let running = steps
+        .iter()
+        .any(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Running));
+    let failed = steps
+        .iter()
+        .filter(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Failed))
+        .count();
     let names = summary_line(&steps);
     let count = steps.len();
     view! {
@@ -203,7 +216,13 @@ fn summary_line(steps: &[Entry]) -> String {
     }
     counts
         .into_iter()
-        .map(|(name, n)| if n == 1 { name } else { format!("{name} ×{n}") })
+        .map(|(name, n)| {
+            if n == 1 {
+                name
+            } else {
+                format!("{name} ×{n}")
+            }
+        })
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -231,7 +250,11 @@ fn ToolStep(tool: Tool) -> impl IntoView {
 fn ImageCard(shown: Shown) -> impl IntoView {
     let app = state();
     let _ = app;
-    let alt = shown.title.clone().or(shown.description.clone()).unwrap_or_else(|| "picture".to_owned());
+    let alt = shown
+        .title
+        .clone()
+        .or(shown.description.clone())
+        .unwrap_or_else(|| "picture".to_owned());
     view! {
         <figure class="card">
             <img src=format!("/api/card/{}/image", shown.id) alt=alt.clone() loading="lazy" />
@@ -248,9 +271,4 @@ fn AudioCard(shown: Shown) -> impl IntoView {
             <audio controls src=format!("/api/card/{}/audio", shown.id)></audio>
         </div>
     }
-}
-
-/// The agents tile and window use the same step list.
-pub fn agent_label(agent: &Agent) -> String {
-    format!("{} · {}", agent.name, agent.role)
 }

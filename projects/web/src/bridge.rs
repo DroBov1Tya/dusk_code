@@ -7,7 +7,7 @@ use dusk_core::client::{Client, Hub};
 use dusk_protocol::client::{
     Hello, PROTOCOL_VERSION, Request, RequestFrame, Response, ServerFrame,
 };
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 use tokio::sync::{Semaphore, mpsc, watch};
 use tracing::{debug, warn};
 
@@ -124,11 +124,15 @@ fn refused(request: &Request) -> Option<&'static str> {
     }
 }
 
+/// How long a browser may take to accept one frame before it is let go: a stalled one
+/// would otherwise make the events queue up in memory without end.
+const SEND_TIMEOUT: Duration = Duration::from_secs(15);
+
 async fn send(socket: &mut WebSocket, frame: &ServerFrame) -> Result<()> {
     let text = serde_json::to_string(frame).context("cannot write a frame")?;
-    socket
-        .send(Message::Text(text.into()))
+    tokio::time::timeout(SEND_TIMEOUT, socket.send(Message::Text(text.into())))
         .await
+        .context("the browser is too slow")?
         .context("the browser is gone")
 }
 

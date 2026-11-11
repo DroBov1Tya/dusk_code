@@ -12,14 +12,15 @@ pub fn SubagentWindow() -> impl IntoView {
         let parent_chat = app.chat(&parent)?;
         let sub = Memo::new({
             let thread_id = thread_id.clone();
-            move |_| parent_chat.with(|c| c.agent_chats.get(&thread_id).cloned().unwrap_or_default())
+            move |_| {
+                parent_chat.with(|c| c.agent_chats.get(&thread_id).cloned().unwrap_or_default())
+            }
         });
         // The sub-chat as a signal of its own, so the transcript reads it like any chat.
         let view_chat = RwSignal::new(sub.get_untracked());
         Effect::new(move |_| view_chat.set(sub.get()));
-        let info = parent_chat.with_untracked(|c| {
-            c.agents.iter().find(|a| a.thread_id == thread_id).cloned()
-        });
+        let info = parent_chat
+            .with_untracked(|c| c.agents.iter().find(|a| a.thread_id == thread_id).cloned());
         let name = info.as_ref().map(|a| a.name.clone()).unwrap_or_default();
         let task = info.as_ref().map(|a| a.task.clone()).unwrap_or_default();
         let id_for_state = thread_id.clone();

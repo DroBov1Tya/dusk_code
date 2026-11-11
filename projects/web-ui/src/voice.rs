@@ -92,7 +92,9 @@ pub async fn start_recording() -> Result<Recording, String> {
         })
     };
     processor.set_onaudioprocess(Some(callback.as_ref().unchecked_ref()));
-    source.connect_with_audio_node(&processor).map_err(js_error)?;
+    source
+        .connect_with_audio_node(&processor)
+        .map_err(js_error)?;
     processor
         .connect_with_audio_node(&context.destination())
         .map_err(js_error)?;
@@ -162,7 +164,11 @@ fn wav(samples: &[i16]) -> Vec<u8> {
 fn js_error(error: JsValue) -> String {
     error
         .as_string()
-        .or_else(|| js_sys::Reflect::get(&error, &"message".into()).ok()?.as_string())
+        .or_else(|| {
+            js_sys::Reflect::get(&error, &"message".into())
+                .ok()?
+                .as_string()
+        })
         .unwrap_or_else(|| "the browser refused".to_owned())
 }
 

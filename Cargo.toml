@@ -50,7 +50,7 @@ opentelemetry-otlp = { version = "0.33", default-features = false, features = ["
 tracing-opentelemetry = { version = "0.34", default-features = false }
 sha1 = "0.11"
 unicode-width = "0.2"
-axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "tokio", "ws"] }
+axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "ws"] }
 getrandom = "0.3"
 subtle = "2.6"
 rust-embed = "8"

@@ -124,10 +124,8 @@ fn deliver(handlers: &Handlers, frame: ServerFrame) {
 fn retry_later() {
     let retry = Closure::once_into_js(open);
     if let Some(window) = web_sys::window() {
-        let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(
-            retry.unchecked_ref(),
-            RETRY_MS,
-        );
+        let _ = window
+            .set_timeout_with_callback_and_timeout_and_arguments_0(retry.unchecked_ref(), RETRY_MS);
     }
 }
 
