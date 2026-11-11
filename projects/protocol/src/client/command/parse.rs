@@ -19,6 +19,7 @@ pub const COMMANDS: &[(&str, &str)] = &[
         "go on in a new thread from a detailed summary of this one",
     ),
     ("/resume", "open an earlier thread"),
+    ("/sessions", "the same as /resume"),
     ("/model", "choose the model; every provider is checked live"),
     ("/settings", "switch agents, tools and skills; edit skills"),
     (
@@ -68,7 +69,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         "fork" => Ok(Command::Fork {
             instructions: argument,
         }),
-        "resume" => Ok(Command::Resume { cwd: None }),
+        "resume" | "sessions" => Ok(Command::Resume { cwd: None }),
         "new" => Ok(Command::New),
         "settings" => Ok(Command::Settings),
         "context" => Ok(Command::Context { thread_id: None }),
@@ -98,4 +99,20 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
 
 fn unknown(name: &str) -> Result<Command> {
     bail!("unknown command /{name}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sessions_is_resume() {
+        for text in ["/resume", "/sessions", "  /sessions"] {
+            assert!(matches!(
+                parse(text).unwrap().unwrap(),
+                Command::Resume { cwd: None }
+            ));
+        }
+        assert!(parse("/session").unwrap().is_err());
+    }
 }

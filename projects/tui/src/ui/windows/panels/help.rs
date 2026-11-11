@@ -30,7 +30,10 @@ pub const KEYS: [(&str, &str); 38] = [
     ("PgUp / PgDn", "scroll the transcript; wheel works too"),
     ("Shift+PgUp/Dn", "scroll subagent cards"),
     ("Alt+PgUp/Dn", "scroll MCP tools"),
-    ("Ctrl+T /resume", "threads, with a preview of each"),
+    (
+        "Ctrl+T /resume /sessions",
+        "threads, with a preview of each",
+    ),
     (
         "/model",
         "choose the model; /model provider/name uses one the server does not list",
