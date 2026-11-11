@@ -10,6 +10,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow, ensure};
+use dusk_protocol::voice::VoiceSettings;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -107,6 +108,9 @@ pub struct Config {
     /// Log files, and traces for an OpenTelemetry collector.
     #[serde(default, skip_serializing_if = "Logging::is_default")]
     logging: Logging,
+    /// The speech servers: where recordings become text and text becomes sound.
+    #[serde(default, skip_serializing_if = "VoiceSettings::is_default")]
+    voice: VoiceSettings,
     /// Plugins by name: whether each is on, and its settings.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     plugins: BTreeMap<String, PluginConfig>,
@@ -322,6 +326,14 @@ impl Config {
         self.update_channel = (channel != Channel::Stable).then_some(channel);
     }
 
+    pub fn voice(&self) -> &VoiceSettings {
+        &self.voice
+    }
+
+    pub fn set_voice(&mut self, voice: VoiceSettings) {
+        self.voice = voice;
+    }
+
     pub fn approvals(&self) -> ApprovalPolicy {
         self.approvals
     }
@@ -445,6 +457,9 @@ impl Config {
     }
 
     fn validate(&self) -> Result<()> {
+        for endpoint in [&self.voice.stt, &self.voice.tts].into_iter().flatten() {
+            crate::voice::check_endpoint(endpoint)?;
+        }
         ensure!(
             self.limits.max_agents_at_work > 0,
             "max_agents_at_work must be above zero"

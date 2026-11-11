@@ -6,6 +6,14 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- Voice: speech through any server that speaks the OpenAI audio API, a hosted account or a model
+  run on this machine. Connectors, Voice sets the recognition and the synthesis server (keys in
+  the keychain, protocol 6). A microphone button beside Models dictates into the message box,
+  cut at pauses and sent piece by piece; a Listen button under each answer reads it aloud and
+  plays it. Downloading models from Hugging Face and running them inside the app are not done.
+
 ### Changed
 
 - gui: a new app icon, 1024 px with transparent corners.

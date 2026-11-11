@@ -8,6 +8,7 @@ mod mcp;
 mod plugins;
 mod skills;
 mod tools;
+pub mod voice;
 
 use dusk_protocol::{
     client::Switch as CoreSwitch,
@@ -27,10 +28,16 @@ pub enum Shelf {
     Skills,
     Plugins,
     Tools,
+    Voice,
     Agents,
 }
 
-pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
+pub fn render(
+    ws: &mut Workspace,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
+    ws.voice_form.settle(window, cx);
     let Some(settings) = ws.settings.clone() else {
         return div()
             .id("connectors")
@@ -41,6 +48,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         (Shelf::Skills, "Skills", settings.skills.len()),
         (Shelf::Plugins, "Plugins", ws.status.plugins.len()),
         (Shelf::Tools, "Tools", settings.tools.len()),
+        (Shelf::Voice, "Voice", 0),
         (Shelf::Agents, "Agents", 0),
     ];
     let theme = cx.theme();
@@ -81,6 +89,9 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 })
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.shelf = shelf;
+                    if shelf == Shelf::Voice && ws.voice.is_none() {
+                        ws.load_voice(cx);
+                    }
                     cx.notify();
                 })),
         );
@@ -91,6 +102,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         Shelf::Skills => skills::render(&settings, &query, cx),
         Shelf::Plugins => plugins::render(ws, &query, cx),
         Shelf::Tools => tools::render(&settings, &query, cx),
+        Shelf::Voice => voice::render(ws, cx),
         Shelf::Agents => graph::render(ws, &settings.agents, cx),
     };
     div()
@@ -105,7 +117,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 .flex_col()
                 .child(crate::ui::page_title(
                     "Connectors",
-                    "What the agents can reach: servers, skills, plugins, tools and other agents.",
+                    "What the agents can reach: servers, skills, plugins, tools, speech and other agents.",
                     cx,
                 ))
                 .child(
@@ -117,7 +129,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                         .pb_4()
                         .child(tabs)
                         .child(div().flex_1())
-                        .when(ws.shelf != Shelf::Agents, |row| {
+                        .when(!matches!(ws.shelf, Shelf::Agents | Shelf::Voice), |row| {
                             row.child(div().w(px(280.)).child(Input::new(&ws.shelf_search)))
                         }),
                 )

@@ -179,6 +179,9 @@ pub struct Workspace {
     pub provider_form: crate::settings::providers::Form,
     /// Which secrets are set, read when the Secrets page opens.
     pub secrets: Option<dusk_protocol::secrets::SecretsInfo>,
+    /// The speech servers that are set up, and the boxes that edit them.
+    pub voice: Option<dusk_protocol::voice::VoiceSettings>,
+    pub voice_form: crate::connectors::voice::VoiceForm,
     pub token_box: crate::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
@@ -218,6 +221,10 @@ pub struct Workspace {
     /// restart.
     pub update_ready: Option<String>,
     pub audio: crate::chat::audio::Audio,
+    /// The microphone is on and its words go to the message box.
+    pub dictation: Option<crate::chat::dictation::Dictation>,
+    /// An answer is being turned into sound, to be played.
+    pub synthesizing: bool,
     /// The release a background fetch was started for, so one failing is not retried at
     /// every status change.
     pub update_tried: Option<String>,
@@ -336,6 +343,8 @@ impl Workspace {
             plan: crate::inspector::plan::Plan::new(window, cx),
             provider_form: crate::settings::providers::Form::new(window, cx),
             secrets: None,
+            voice: None,
+            voice_form: crate::connectors::voice::VoiceForm::new(window, cx),
             token_box: crate::settings::TokenBox::new(window, cx),
             context_open: HashSet::new(),
             jobs: Vec::new(),
@@ -357,6 +366,8 @@ impl Workspace {
             artifact_menu: None,
             update_ready: None,
             audio: Default::default(),
+            dictation: None,
+            synthesizing: false,
             update_tried: None,
             fading: Default::default(),
             path_menu: false,

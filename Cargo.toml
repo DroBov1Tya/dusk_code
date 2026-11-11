@@ -26,8 +26,8 @@ sqlx = { version = "0.9", default-features = false, features = ["runtime-tokio",
 parking_lot = "0.12"
 # The system keychain; exact, since it holds the keys of every provider.
 keyring = "=4.2.0"
-# Playing the sounds in a chat; only what a chat plays, no recording.
-rodio = { version = "=0.23.0", default-features = false, features = ["playback", "flac", "mp3", "mp4", "vorbis", "wav"] }
+# The sounds a chat plays, and the microphone it dictates from.
+rodio = { version = "=0.23.0", default-features = false, features = ["playback", "recording", "flac", "mp3", "mp4", "vorbis", "wav"] }
 nix = { version = "0.31", default-features = false, features = ["signal"] }
 ratatui = "0.30.2"
 base64 = "0.22.1"

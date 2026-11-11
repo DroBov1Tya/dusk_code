@@ -117,6 +117,7 @@ impl Server {
             Request::Command(command) => Ok(Response::Answer(Box::new(
                 commands::answer(command, &self.runtime).await?,
             ))),
+            Request::Voice(request) => self.voice(request).await,
             Request::SystemReport => Ok(Response::System(self.runtime.system_report().await?)),
             Request::InstallUpdate { .. } | Request::Shutdown => {
                 Err(anyhow!("this request is answered by the loop"))
@@ -229,6 +230,16 @@ impl Server {
         })
     }
 
+    async fn voice(&self, request: dusk_protocol::voice::VoiceRequest) -> Result<Response> {
+        use dusk_protocol::voice::VoiceRequest;
+        Ok(match request {
+            VoiceRequest::Transcribe { audio } => {
+                Response::Text(self.runtime.transcribe(&audio).await?)
+            }
+            VoiceRequest::Speak { text } => Response::Card(self.runtime.speak(&text).await?),
+        })
+    }
+
     async fn settings(&self, request: SettingsRequest) -> Result<Response> {
         let runtime = &self.runtime;
         match request {
@@ -268,6 +279,7 @@ impl Server {
                 runtime.set_secret(&name, &value.0).await?
             }
             SettingsRequest::DeleteSecret { name } => runtime.delete_secret(&name).await?,
+            SettingsRequest::Voice(voice) => runtime.set_voice(voice)?,
             SettingsRequest::PluginEnabled { name, enabled } => {
                 runtime.set_plugin_enabled(&name, enabled)?;
             }
@@ -327,6 +339,7 @@ impl Server {
             }
             CatalogRequest::Profile => Response::Profile(runtime.mentions().profile()?),
             CatalogRequest::Secrets => Response::Secrets(runtime.secrets_info().await),
+            CatalogRequest::Voice => Response::Voice(runtime.voice_settings()),
             CatalogRequest::SaveProfile(profile) => {
                 runtime.mentions().save_profile(&profile)?;
                 Response::Done

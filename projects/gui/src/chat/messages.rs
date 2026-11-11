@@ -7,7 +7,7 @@ use std::path::Path;
 
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, Disableable, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -282,20 +282,37 @@ impl Workspace {
                                 text,
                                 cx,
                             ));
-                            let copied = text.clone();
+                            let (copied, spoken) = (text.clone(), text.clone());
+                            let busy = self.synthesizing;
                             answer = answer.child(
-                                div().flex().flex_row().child(
-                                    Button::new(SharedString::from(format!("copy-{key}")))
-                                        .ghost()
-                                        .xsmall()
-                                        .icon(IconName::Copy)
-                                        .tooltip("Copy the answer")
-                                        .on_click(cx.listener(move |_, _, _, cx| {
-                                            cx.write_to_clipboard(ClipboardItem::new_string(
-                                                copied.clone(),
-                                            ))
-                                        })),
-                                ),
+                                div()
+                                    .flex()
+                                    .flex_row()
+                                    .gap_1()
+                                    .child(
+                                        Button::new(SharedString::from(format!("copy-{key}")))
+                                            .ghost()
+                                            .xsmall()
+                                            .icon(IconName::Copy)
+                                            .tooltip("Copy the answer")
+                                            .on_click(cx.listener(move |_, _, _, cx| {
+                                                cx.write_to_clipboard(ClipboardItem::new_string(
+                                                    copied.clone(),
+                                                ))
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new(SharedString::from(format!("listen-{key}")))
+                                            .ghost()
+                                            .xsmall()
+                                            .icon(IconName::Play)
+                                            .label(if busy { "Preparing..." } else { "Listen" })
+                                            .disabled(busy)
+                                            .tooltip("Read the answer aloud")
+                                            .on_click(cx.listener(move |ws, _, _, cx| {
+                                                ws.speak_answer(&spoken, cx)
+                                            })),
+                                    ),
                             );
                         }
                         answer.into_any_element()

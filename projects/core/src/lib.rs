@@ -33,6 +33,7 @@ mod secrets;
 mod state;
 mod tools;
 mod util;
+mod voice;
 
 use std::{future::Future, pin::Pin};
 

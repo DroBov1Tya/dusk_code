@@ -7,6 +7,7 @@ use gpui_kit::{
         button::{Button, ButtonRounded, ButtonVariants},
         input::{Paste, Textarea},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -112,6 +113,7 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                                     )
                                     .child(super::model_bar::render(ws, cx))
                                     .children(rate)
+                                    .child(mic_button(ws, cx))
                                     .child(super::model_bar::models(ws, cx))
                                     .child(button),
                             ),
@@ -173,6 +175,19 @@ pub fn render(ws: &Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Di
                 }
             }
         }))
+}
+
+/// The microphone: while it is on, what is said is added to the message.
+fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
+    let on = ws.dictating();
+    Button::new("dictate")
+        .rounded(ButtonRounded::Size(px(999.)))
+        .icon(IconName::Mic)
+        .xsmall()
+        .when(on, |button| button.danger())
+        .when(!on, |button| button.ghost())
+        .tooltip(if on { "Stop dictating" } else { "Dictate" })
+        .on_click(cx.listener(|ws, _, _, cx| ws.toggle_dictation(cx)))
 }
 
 const THUMB: f32 = 64.;

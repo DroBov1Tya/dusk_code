@@ -320,6 +320,39 @@ pub fn menu(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Opt
 }
 
 impl Workspace {
+    /// Reads an answer aloud: the core makes the sound, and it plays at once.
+    pub fn speak_answer(&mut self, text: &str, cx: &mut Context<Self>) {
+        if self.synthesizing {
+            return;
+        }
+        let text = text.to_owned();
+        self.when_voice_ready(
+            crate::connectors::voice::Speech::Synthesis,
+            cx,
+            Box::new(move |ws, cx| ws.read_aloud(text, cx)),
+        );
+    }
+
+    fn read_aloud(&mut self, text: String, cx: &mut Context<Self>) {
+        if self.synthesizing {
+            return;
+        }
+        self.synthesizing = true;
+        self.core.call(
+            cx,
+            move |client| async move { client.speak(&text).await },
+            |ws, result, cx| {
+                ws.synthesizing = false;
+                match result {
+                    Ok(card) => ws.toggle_clip(&card.id, cx),
+                    Err(error) => ws.fail(error, cx),
+                }
+                cx.notify();
+            },
+        );
+        cx.notify();
+    }
+
     /// Plays the sound, pauses it while it plays, or goes on from a pause. A sound that ended,
     /// or another one, starts from the beginning.
     pub fn toggle_clip(&mut self, id: &str, cx: &mut Context<Self>) {

@@ -170,6 +170,7 @@ fn act(
                 "skills" => Shelf::Skills,
                 "plugins" => Shelf::Plugins,
                 "tools" => Shelf::Tools,
+                "voice" => Shelf::Voice,
                 "agents" => Shelf::Agents,
                 _ => Shelf::Connectors,
             };
@@ -227,6 +228,11 @@ fn act(
                     ws.modal = Some(Modal::Rename {
                         thread_id: id,
                         title,
+                    })
+                }
+                "voice" => {
+                    ws.modal = Some(Modal::VoiceMissing {
+                        speech: crate::connectors::voice::Speech::Recognition,
                     })
                 }
                 "rollback" => {

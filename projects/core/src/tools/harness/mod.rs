@@ -13,7 +13,7 @@ mod remember;
 mod tasks;
 
 pub use ask_user::{AskUser, Question};
-pub use display_audio::DisplayAudio;
+pub use display_audio::{DisplayAudio, save_sound};
 pub use display_image::DisplayImage;
 pub use goal::GoalTool;
 pub use load_skill::LoadSkill;

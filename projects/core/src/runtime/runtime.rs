@@ -68,6 +68,9 @@ pub struct Runtime {
     model_discovery: Option<JoinHandle<()>>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
     updated_builtin: Vec<String>,
+    /// The latest sounds made by reading aloud, by what was asked, so asking again plays the
+    /// same card and the artifact folder does not fill; the oldest goes when it is full.
+    speech: parking_lot::Mutex<std::collections::VecDeque<(String, dusk_protocol::artifact::Card)>>,
     state_db: PathBuf,
     // Declared last so coordination is released after the other owned runtime fields.
     _restore_guard: Option<crate::backup::archive::RestoreGuard>,
@@ -226,6 +229,7 @@ impl Runtime {
             updates,
             model_discovery,
             updated_builtin: initialized.builtin.updated,
+            speech: Default::default(),
             state_db,
         })
     }
@@ -396,6 +400,32 @@ impl Runtime {
             set: token,
             editable: store.is_some(),
         }];
+        for (name, label) in [
+            (
+                dusk_protocol::voice::STT_KEY,
+                "Key of the speech recognition server",
+            ),
+            (
+                dusk_protocol::voice::TTS_KEY,
+                "Key of the speech synthesis server",
+            ),
+        ] {
+            let set = match store.clone() {
+                Some(store) => {
+                    let asked = name.to_owned();
+                    tokio::task::spawn_blocking(move || store.get(&asked))
+                        .await
+                        .is_ok_and(|found| found.ok().flatten().is_some())
+                }
+                None => false,
+            };
+            entries.push(SecretInfo {
+                name: name.to_owned(),
+                label: label.to_owned(),
+                set,
+                editable: store.is_some(),
+            });
+        }
         for (name, provider) in config.current().providers() {
             entries.push(SecretInfo {
                 name: crate::secrets::provider_key(name),
@@ -414,10 +444,7 @@ impl Runtime {
     /// Keeps the Hugging Face token. Provider keys go with their providers; no other name
     /// is taken.
     pub async fn set_secret(&self, name: &str, value: &str) -> Result<()> {
-        ensure!(
-            name == crate::secrets::HUGGINGFACE,
-            "{name} is not a secret to set here"
-        );
+        ensure!(is_user_secret(name), "{name} is not a secret to set here");
         let value = checked_key(value.to_owned())?;
         ensure!(!value.is_empty(), "a token is not empty");
         let store = self
@@ -432,10 +459,7 @@ impl Runtime {
     }
 
     pub async fn delete_secret(&self, name: &str) -> Result<()> {
-        ensure!(
-            name == crate::secrets::HUGGINGFACE,
-            "{name} is not a secret to clear here"
-        );
+        ensure!(is_user_secret(name), "{name} is not a secret to clear here");
         let Some(store) = self.config().secrets().cloned() else {
             return Ok(());
         };
@@ -443,6 +467,64 @@ impl Runtime {
         tokio::task::spawn_blocking(move || store.delete(&name))
             .await
             .context("the keychain call stopped")?
+    }
+
+    pub fn voice_settings(&self) -> dusk_protocol::voice::VoiceSettings {
+        self.config().current().voice().clone()
+    }
+
+    /// Saves the speech servers after checking their addresses.
+    pub fn set_voice(&self, voice: dusk_protocol::voice::VoiceSettings) -> Result<()> {
+        for endpoint in [&voice.stt, &voice.tts].into_iter().flatten() {
+            crate::voice::check_endpoint(endpoint)?;
+        }
+        self.config().update(|config| config.set_voice(voice))?;
+        Ok(())
+    }
+
+    /// The key of a speech server, asked of the keychain off the async workers.
+    async fn voice_key(&self, name: &'static str) -> Result<Option<String>> {
+        let Some(store) = self.config().secrets().cloned() else {
+            return Ok(None);
+        };
+        tokio::task::spawn_blocking(move || store.get(name))
+            .await
+            .context("the keychain call stopped")?
+    }
+
+    /// The text of a WAV recording.
+    pub async fn transcribe(&self, audio: &[u8]) -> Result<String> {
+        let endpoint = self
+            .voice_settings()
+            .stt
+            .context("speech recognition is not set up: see Connectors, Voice")?;
+        let key = self.voice_key(dusk_protocol::voice::STT_KEY).await?;
+        crate::voice::transcribe(&endpoint, key.as_deref(), audio).await
+    }
+
+    /// Reads a text aloud; the sound is kept as a card of the artifact store.
+    pub async fn speak(&self, text: &str) -> Result<dusk_protocol::artifact::Card> {
+        let endpoint = self
+            .voice_settings()
+            .tts
+            .context("speech synthesis is not set up: see Connectors, Voice")?;
+        let key = self.voice_key(dusk_protocol::voice::TTS_KEY).await?;
+        let asked = speech_key(&endpoint, text);
+        if let Some((_, card)) = self.speech.lock().iter().find(|(known, _)| *known == asked) {
+            return Ok(card.clone());
+        }
+        let sound = crate::voice::speak(&endpoint, key.as_deref(), text).await?;
+        let store =
+            crate::state::artifacts::ArtifactStore::new(self.launcher.paths.artifacts_dir());
+        let card = crate::tools::save_sound(&store, &sound, Some("Read aloud".to_owned()))?;
+        let mut speech = self.speech.lock();
+        speech.push_back((asked, card.clone()));
+        while speech.len() > SPEECH_CACHE {
+            if let Some((_, old)) = speech.pop_front() {
+                store.remove(&old);
+            }
+        }
+        Ok(card)
     }
 
     /// Forgets every provider and its key, and with them the chosen model.
@@ -1249,6 +1331,34 @@ fn icon_file(icons: &Path, name: &str) -> Option<PathBuf> {
     std::fs::symlink_metadata(&path)
         .is_ok_and(|metadata| metadata.is_file())
         .then_some(path)
+}
+
+/// How many readings are kept to play again.
+const SPEECH_CACHE: usize = 8;
+
+/// What a reading is known by: the server, the model, the voice and the text.
+fn speech_key(endpoint: &dusk_protocol::voice::VoiceEndpoint, text: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hash = Sha256::new();
+    for part in [
+        endpoint.base_url.as_str(),
+        endpoint.model.as_str(),
+        endpoint.voice.as_deref().unwrap_or_default(),
+        text,
+    ] {
+        hash.update((part.len() as u64).to_le_bytes());
+        hash.update(part.as_bytes());
+    }
+    hash.finalize()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
+}
+
+/// The secrets a user sets by hand: the Hugging Face token and the keys of the speech servers.
+fn is_user_secret(name: &str) -> bool {
+    use dusk_protocol::voice::{STT_KEY, TTS_KEY};
+    [crate::secrets::HUGGINGFACE, STT_KEY, TTS_KEY].contains(&name)
 }
 
 /// A key or token as it is kept: trimmed, since a pasted one often carries a newline or a

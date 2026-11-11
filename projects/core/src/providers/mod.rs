@@ -15,7 +15,7 @@ pub mod output;
 mod rate;
 mod registry;
 mod request;
-mod transport;
+pub(crate) mod transport;
 
 pub use errors::{
     OutputLimit, RetryAfter, Transient, is_output_limit, is_transient, is_unsupported_effort,

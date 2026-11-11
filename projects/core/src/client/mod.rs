@@ -121,6 +121,26 @@ impl Client {
         }
     }
 
+    /// The text of a WAV recording, by the speech recognition server.
+    pub async fn transcribe(&self, audio: Vec<u8>) -> Result<String> {
+        let request = Request::Voice(dusk_protocol::voice::VoiceRequest::Transcribe { audio });
+        match self.call(request).await? {
+            Response::Text(text) => Ok(text),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Reads a text aloud; the sound is a card of the artifact store.
+    pub async fn speak(&self, text: &str) -> Result<dusk_protocol::artifact::Card> {
+        let request = Request::Voice(dusk_protocol::voice::VoiceRequest::Speak {
+            text: text.to_owned(),
+        });
+        match self.call(request).await? {
+            Response::Card(card) => Ok(card),
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// Closes every thread and stops the core; returns once it has stopped. Every call
     /// after it fails.
     pub async fn shutdown(&self) {
@@ -410,6 +430,11 @@ impl Settings<'_> {
         self.done(request).await
     }
 
+    /// Saves the speech servers; their keys go through `set_secret`.
+    pub async fn set_voice(&self, voice: dusk_protocol::voice::VoiceSettings) -> Result<()> {
+        self.done(SettingsRequest::Voice(voice)).await
+    }
+
     pub async fn delete_secret(&self, name: &str) -> Result<()> {
         let name = name.to_owned();
         self.done(SettingsRequest::DeleteSecret { name }).await
@@ -529,6 +554,14 @@ impl Catalog<'_> {
         self.0
             .done(Request::Catalog(CatalogRequest::SaveSnippet { name, text }))
             .await
+    }
+
+    /// The speech servers that are set up.
+    pub async fn voice(&self) -> Result<dusk_protocol::voice::VoiceSettings> {
+        match self.0.call(Request::Catalog(CatalogRequest::Voice)).await? {
+            Response::Voice(voice) => Ok(voice),
+            other => Err(unexpected(other)),
+        }
     }
 
     /// Which secrets are set, never their values.

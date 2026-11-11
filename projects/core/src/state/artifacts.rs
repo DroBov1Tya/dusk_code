@@ -105,6 +105,15 @@ impl ArtifactStore {
         saved.map(|()| card)
     }
 
+    /// Deletes a card's files; a card that is already gone is fine.
+    pub fn remove(&self, card: &Card) {
+        if let Ok(path) = self.file(card, "audio")
+            && let Some(directory) = path.parent()
+        {
+            let _ = fs::remove_dir_all(directory);
+        }
+    }
+
     /// Where the sound of `card` lies, for a client to play.
     pub fn audio_path(&self, card: &Card) -> Result<PathBuf> {
         self.file(card, "audio")

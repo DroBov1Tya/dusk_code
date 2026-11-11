@@ -42,6 +42,7 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$version</string>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Duskcode listens to the microphone only while you dictate a message.</string>
 </dict></plist>
 PLIST
 

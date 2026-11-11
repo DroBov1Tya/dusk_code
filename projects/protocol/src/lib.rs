@@ -35,4 +35,5 @@ pub mod system;
 pub mod thread;
 pub mod tools;
 pub mod update;
+pub mod voice;
 pub mod work;

@@ -21,11 +21,12 @@ use crate::{
     thread::{Thread, ThreadEvent},
     tools::Decision,
     update::InstallProgress,
+    voice::{VoiceRequest, VoiceSettings},
     work::{JobInfo, Task},
 };
 
 /// Raised whenever a request, a response or an event changes shape.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// The first thing a client says.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,6 +57,8 @@ pub enum Request {
     /// A slash command that does not run in a thread.
     Command(Command),
     SystemReport,
+    /// Recordings in, speech out.
+    Voice(VoiceRequest),
     /// Installs release `tag`; progress shows in the status until it is done.
     InstallUpdate {
         tag: String,
@@ -189,6 +192,8 @@ pub enum SettingsRequest {
     DeleteSecret {
         name: String,
     },
+    /// Saves the speech servers; their keys go through `SetSecret`.
+    Voice(VoiceSettings),
     PluginEnabled {
         name: String,
         enabled: bool,
@@ -263,6 +268,8 @@ pub enum CatalogRequest {
     SaveProfile(Profile),
     /// Which secrets are set, without their values.
     Secrets,
+    /// The speech servers that are set up.
+    Voice,
 }
 
 /// A thread's background jobs and sources.
@@ -396,6 +403,9 @@ pub enum Response {
     Plan(Option<String>),
     Profile(Profile),
     Secrets(SecretsInfo),
+    Voice(VoiceSettings),
+    /// A sound or picture card the core made.
+    Card(crate::artifact::Card),
     /// A thread's own approval mode, or none when it uses the default in settings.
     Approvals(Option<ApprovalPolicy>),
     Projects(Vec<Project>),

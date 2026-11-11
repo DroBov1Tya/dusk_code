@@ -133,6 +133,7 @@ case "$(uname -s)" in
   <key>CFBundleIconFile</key><string>icon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>NSMicrophoneUsageDescription</key><string>Duskcode listens to the microphone only while you dictate a message.</string>
 </dict></plist>
 PLIST
     ln -sf "$installed" "$bundle/Contents/MacOS/duskcode-gui"

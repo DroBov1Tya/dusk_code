@@ -6,6 +6,7 @@ mod approval;
 pub mod audio;
 pub mod code;
 pub mod composer;
+pub mod dictation;
 pub mod links;
 mod media;
 pub mod messages;
