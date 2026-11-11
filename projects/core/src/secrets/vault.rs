@@ -6,7 +6,7 @@
 
 use std::{collections::BTreeMap, path::PathBuf};
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Result, anyhow};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
