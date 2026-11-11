@@ -1,7 +1,7 @@
 //! The fox: the mascot of duskcode, one for each subagent. A fox is the animal of the dusk.
 //! Only down to the chest, in as few 8-bit cells as it takes to be a fox: two ears, a cream
 //! face, big cheeks. It is symmetric by construction. The picture is one layer; what moves is
-//! the eyes, a bounce, and what hovers beside it: dots that fill while it thinks, a pencil, a
+//! the eyes and what hovers beside it: dots that fill while it thinks, a pencil, a
 //! hammer, a lens, a page, sparks when done and stars when it failed.
 
 use std::time::Duration;
@@ -43,6 +43,7 @@ enum Eyes {
     Open,
     /// Turned up: thinking.
     Up,
+    Blink,
     /// Closed and content.
     Happy,
     /// A red cross each: it failed.
@@ -54,7 +55,7 @@ enum Eyes {
 enum Fx {
     /// Three dots of which this many are lit.
     Dots(u8),
-    /// A pencil in one of two places, a line growing after it.
+    /// A pencil leaning through three poses, a line growing after it.
     Pencil(u8),
     /// A hammer up (`false`) or down.
     Hammer(bool),
@@ -70,16 +71,14 @@ enum Fx {
 
 #[derive(Clone, Copy)]
 struct Frame {
-    /// How far the fox sits above its usual place, in cells.
-    lift: i32,
     eyes: Eyes,
     fx: Fx,
     /// How long the frame stays.
     ms: u64,
 }
 
-const fn frame(lift: i32, eyes: Eyes, fx: Fx, ms: u64) -> Frame {
-    Frame { lift, eyes, fx, ms }
+const fn frame(eyes: Eyes, fx: Fx, ms: u64) -> Frame {
+    Frame { eyes, fx, ms }
 }
 
 /// What a tool's name says it does, for the thing beside the fox.
@@ -93,37 +92,57 @@ fn tool_fx(name: &str, step: u8) -> Fx {
     }
 }
 
-fn frames(state: &AgentState) -> Vec<Frame> {
+fn frames(state: &AgentState) -> (&'static str, Vec<Frame>, bool) {
     use Eyes::*;
     match state {
-        // It thinks with the dots filling, eyes turned up, and rocks a little.
-        AgentState::Thinking => vec![
-            frame(0, Up, Fx::Dots(1), 420),
-            frame(0, Up, Fx::Dots(2), 420),
-            frame(1, Up, Fx::Dots(3), 420),
-            frame(0, Up, Fx::Dots(0), 420),
-        ],
-        // It writes: the pencil goes and comes, with a small bounce.
-        AgentState::Writing => vec![
-            frame(0, Open, Fx::Pencil(0), 200),
-            frame(1, Open, Fx::Pencil(1), 200),
-            frame(0, Open, Fx::Pencil(0), 200),
-            frame(1, Open, Fx::Pencil(1), 200),
-        ],
-        AgentState::Tool(name) => vec![
-            frame(0, Open, tool_fx(name, 0), 260),
-            frame(1, Open, tool_fx(name, 1), 260),
-        ],
-        // Done: eyes closed and content, the sparks come and go.
-        AgentState::Done => vec![
-            frame(0, Happy, Fx::Sparkle(0), 900),
-            frame(0, Happy, Fx::Sparkle(1), 900),
-        ],
-        AgentState::Failed => vec![
-            frame(0, Dizzy, Fx::Stars(0), 320),
-            frame(0, Dizzy, Fx::Stars(1), 320),
-            frame(0, Dizzy, Fx::Stars(2), 320),
-        ],
+        AgentState::Thinking => (
+            "thinking",
+            vec![
+                frame(Up, Fx::Dots(1), 260),
+                frame(Up, Fx::Dots(2), 260),
+                frame(Up, Fx::Dots(3), 400),
+                frame(Up, Fx::Dots(2), 260),
+            ],
+            true,
+        ),
+        AgentState::Writing => (
+            "writing",
+            vec![
+                frame(Open, Fx::Pencil(0), 260),
+                frame(Open, Fx::Pencil(1), 160),
+                frame(Open, Fx::Pencil(2), 360),
+                frame(Blink, Fx::Pencil(2), 100),
+            ],
+            true,
+        ),
+        AgentState::Tool(name) => (
+            dusk_protocol::agent::Doing::of_tool(name).label(),
+            vec![
+                frame(Open, tool_fx(name, 0), 440),
+                frame(Open, tool_fx(name, 1), 360),
+                frame(Blink, tool_fx(name, 1), 100),
+            ],
+            true,
+        ),
+        AgentState::Done => (
+            "done",
+            vec![
+                frame(Happy, Fx::Sparkle(0), 160),
+                frame(Happy, Fx::Sparkle(1), 260),
+                frame(Happy, Fx::Sparkle(0), 1),
+            ],
+            false,
+        ),
+        AgentState::Failed => (
+            "failed",
+            vec![
+                frame(Dizzy, Fx::Stars(0), 160),
+                frame(Dizzy, Fx::Stars(1), 160),
+                frame(Dizzy, Fx::Stars(2), 160),
+                frame(Dizzy, Fx::Stars(0), 1),
+            ],
+            false,
+        ),
     }
 }
 
@@ -140,16 +159,16 @@ fn put_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
 }
 
 /// The two eyes: a dark dash each, on the orange of the face.
-fn eyes(grid: &mut Grid, lift: i32, state: Eyes) {
+fn eyes(grid: &mut Grid, state: Eyes) {
     let rows: [u8; 3] = match state {
         Eyes::Open => *b"okk",
         Eyes::Up => *b"kko",
-        Eyes::Happy => *b"oko",
+        Eyes::Blink | Eyes::Happy => *b"oko",
         Eyes::Dizzy => *b"ror",
     };
     for x in [4, 11] {
         for (dy, cell) in rows.iter().enumerate() {
-            put(grid, x, 6 + dy as i32 + AT_Y - lift, *cell);
+            put(grid, x, 6 + dy as i32 + AT_Y, *cell);
         }
     }
 }
@@ -160,18 +179,18 @@ fn compose(frame: Frame) -> Grid {
     for (y, row) in BODY.iter().enumerate() {
         for (x, cell) in row.bytes().enumerate() {
             if cell != b'.' {
-                put(&mut grid, x as i32, y as i32 + AT_Y - frame.lift, cell);
+                put(&mut grid, x as i32, y as i32 + AT_Y, cell);
             }
         }
     }
-    eyes(&mut grid, frame.lift, frame.eyes);
+    eyes(&mut grid, frame.eyes);
     fx(&mut grid, frame.fx);
     grid
 }
 
 /// A cell of what the fox holds, placed from the picture of the hand.
 fn held(grid: &mut Grid, x: i32, y: i32, cell: u8) {
-    put(grid, 33 - x, y - 3, cell);
+    put(grid, 32 - x, y - 8, cell);
 }
 
 fn held_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
@@ -189,20 +208,21 @@ fn fx(grid: &mut Grid, fx: Fx) {
             }
         }
         Fx::Pencil(step) => {
-            let shift = i32::from(step);
+            // The grip stays put as the shaft leans. Every step uses adjacent cells.
+            let poses = [
+                [16, 15, 14, 13, 12],
+                [16, 15, 15, 14, 13],
+                [16, 16, 15, 15, 14],
+            ];
+            let [grip, top, middle, end, tip] = poses[usize::from(step)];
             held_all(
                 grid,
-                &[
-                    (16, 21),
-                    (15, 20 - shift),
-                    (14, 19 - shift),
-                    (13, 18 - shift),
-                ],
+                &[(grip, 21), (top, 20), (middle, 19), (end, 18)],
                 b'y',
             );
-            held(grid, 12, 17 - shift, b'k');
+            held(grid, tip, 17, b'k');
             // The line it leaves grows.
-            for x in 0..(2 + 2 * shift) {
+            for x in 0..(2 + 2 * i32::from(step)) {
                 held(grid, 8 + x, 24, b'W');
             }
         }
@@ -213,7 +233,11 @@ fn fx(grid: &mut Grid, fx: Fx) {
                 held_all(grid, &[(10, 23), (11, 23), (12, 23), (13, 23)], b'g');
                 held_all(grid, &[(9, 26), (10, 26)], b'y');
             } else {
-                held_all(grid, &[(16, 21), (15, 20), (14, 19), (13, 18)], b'b');
+                held_all(
+                    grid,
+                    &[(16, 21), (15, 20), (14, 19), (13, 18), (13, 17)],
+                    b'b',
+                );
                 held_all(grid, &[(10, 15), (11, 15), (12, 15), (13, 15)], b'g');
                 held_all(grid, &[(10, 16), (11, 16), (12, 16), (13, 16)], b'g');
             }
@@ -237,7 +261,12 @@ fn fx(grid: &mut Grid, fx: Fx) {
             }
             held_all(
                 grid,
-                &[(13 + dx, 19 + dy), (14 + dx, 20 + dy), (15 + dx, 21 + dy)],
+                &[
+                    (12 + dx, 18 + dy),
+                    (13 + dx, 19 + dy),
+                    (14 + dx, 20 + dy),
+                    (15 + dx, 21 + dy),
+                ],
                 b'b',
             );
         }
@@ -261,17 +290,16 @@ fn fx(grid: &mut Grid, fx: Fx) {
             );
         }
         Fx::Sparkle(step) => {
-            let (a, b) = if step == 0 {
-                ((1, 7), (24, 9))
-            } else {
-                ((3, 4), (22, 12))
-            };
-            for (x, y) in [a, b] {
-                put_all(
-                    grid,
-                    &[(x, y), (x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)],
-                    b'y',
-                );
+            // Keep the sparks anchored while the light briefly expands.
+            for (x, y) in [(1, 7), (24, 9)] {
+                put(grid, x, y, b'y');
+                if step != 0 {
+                    put_all(
+                        grid,
+                        &[(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)],
+                        b'y',
+                    );
+                }
             }
         }
         Fx::Stars(step) => {
@@ -337,18 +365,21 @@ fn draw(
     unit: f32,
     columns: usize,
 ) -> impl IntoElement {
-    let frames = frames(state);
+    let (motion, frames, repeat) = frames(state);
     let total: u64 = frames.iter().map(|frame| frame.ms).sum();
     let grids: Vec<Grid> = frames.iter().map(|frame| compose(*frame)).collect();
     let times: Vec<u64> = frames.iter().map(|frame| frame.ms).collect();
-    div()
-        .w(px(columns as f32 * unit))
-        .h(px(H as f32 * unit))
-        .flex_none()
-        .with_animation(
-            id,
-            Animation::new(Duration::from_millis(total)).repeat(),
-            move |figure, phase| {
+    let mut animation = Animation::new(Duration::from_millis(total)).with_max_fps(20.);
+    if repeat {
+        animation = animation.repeat();
+    }
+    // The outer ID belongs to the agent; a new activity starts its own timeline.
+    div().id(id).flex_none().child(
+        div()
+            .w(px(columns as f32 * unit))
+            .h(px(H as f32 * unit))
+            .flex_none()
+            .with_animation(motion, animation, move |figure, phase| {
                 let mut at = (phase * total as f32) as u64;
                 let mut index = 0;
                 for (frame, ms) in times.iter().enumerate() {
@@ -386,8 +417,8 @@ fn draw(
                     )
                     .size_full(),
                 )
-            },
-        )
+            }),
+    )
 }
 
 #[cfg(test)]
@@ -412,7 +443,7 @@ mod tests {
             AgentState::Failed,
         ];
         for state in &states {
-            let frames = frames(state);
+            let (_, frames, _) = frames(state);
             assert!(frames.len() >= 2 && frames.iter().all(|f| f.ms > 0));
             for frame in frames {
                 compose(frame);
@@ -426,5 +457,20 @@ mod tests {
         assert!(matches!(tool_fx("read_file", 0), Fx::Page(_)));
         assert!(matches!(tool_fx("plan_edit", 0), Fx::Pencil(_)));
         assert!(matches!(tool_fx("run_command", 1), Fx::Hammer(true)));
+    }
+
+    #[::core::prelude::v1::test]
+    fn tool_details_stay_inside_the_canvas() {
+        let pencil = compose(frame(Eyes::Open, Fx::Pencil(2), 100));
+        assert_eq!(&pencil[16][19..25], b"WWWWWW");
+        assert_eq!((pencil[13][16], pencil[12][16]), (b'y', b'y'));
+        assert_eq!((pencil[11][17], pencil[10][17]), (b'y', b'y'));
+        let hammer = compose(frame(Eyes::Open, Fx::Hammer(true), 100));
+        assert_eq!(&hammer[18][22..24], b"yy");
+        let hammer_up = compose(frame(Eyes::Open, Fx::Hammer(false), 100));
+        assert_eq!((hammer_up[8][19], hammer_up[9][19]), (b'g', b'b'));
+        let lens = compose(frame(Eyes::Open, Fx::Lens(1), 100));
+        assert_eq!(lens[9][W - 1], b'c');
+        assert_eq!((lens[11][22], lens[11][21]), (b'c', b'b'));
     }
 }
