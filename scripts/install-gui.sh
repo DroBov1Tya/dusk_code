@@ -87,28 +87,31 @@ else
   else
     api="https://api.github.com/repos/$repo/releases/tags/$version"
   fi
-  archive="duskcode-gui-$target.tar.gz"
+  # A release on Linux is the AppImage; it is fetched whole and checked against its digest.
+  case "$target" in
+    x86_64-*) image_arch="x86_64" ;;
+    aarch64-*) image_arch="aarch64" ;;
+  esac
   curl -fsSL --proto '=https' --tlsv1.2 -o "$work/release.json" "$api" \
     || fail "cannot read the $version release from GitHub"
   tag="$(tr ',' '\n' < "$work/release.json" | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n 1)"
+  archive="Duskcode-${tag#v}-linux-$image_arch.AppImage"
   expected="$(tr ',' '\n' < "$work/release.json" | awk -v name="\"$archive\"" '
     index($0, "\"name\"") && index($0, name) { found = 1; next }
     found && /"digest":/ { sub(/.*"sha256:/, ""); sub(/".*/, ""); print; exit }
     found && /"name":/ { exit }')"
-  [ -n "$expected" ] || fail "${tag:-the release} has no desktop build yet; run this script from a checkout to build it"
+  [ -n "$expected" ] || fail "${tag:-the release} has no $archive yet; run this script from a checkout to build it"
   curl -fL -sS --proto '=https' --tlsv1.2 -o "$work/$archive" \
     "https://github.com/$repo/releases/download/$tag/$archive" || fail "cannot download $archive"
-  if command -v sha256sum >/dev/null 2>&1; then
-    actual="$(sha256sum "$work/$archive" | cut -d ' ' -f 1)"
-  else
-    actual="$(shasum -a 256 "$work/$archive" | cut -d ' ' -f 1)"
-  fi
+  actual="$(sha256sum "$work/$archive" | cut -d ' ' -f 1)"
   [ "$expected" = "$actual" ] || fail "checksum mismatch"
-  tar -xzf "$work/$archive" -C "$work"
-  built="$work/duskcode-gui-$target/duskcode-gui"
-  icon="$work/duskcode-gui-$target/icon.png"
+  chmod +x "$work/$archive"
+  built="$work/$archive"
+  # The icon of the desktop entry comes out of the image; it runs without FUSE for this.
+  (cd "$work" && APPIMAGE_EXTRACT_AND_RUN=1 "$built" --appimage-extract duskcode.png >/dev/null 2>&1) || true
+  icon="$work/squashfs-root/duskcode.png"
 fi
-"$built" --version >/dev/null 2>&1 || fail "the new build does not run here"
+APPIMAGE_EXTRACT_AND_RUN=1 "$built" --version >/dev/null 2>&1 || fail "the new build does not run here"
 
 mkdir -p "$bin_dir"
 [ ! -L "$bin_dir" ] || fail "install directory must not be a symlink"

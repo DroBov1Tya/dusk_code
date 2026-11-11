@@ -14,6 +14,7 @@ actions!(
         OpenSettings,
         ToggleSidebar,
         ToggleSidePanel,
+        Quit,
         FocusNextRow,
         FocusPrevRow
     ]
@@ -26,6 +27,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("secondary-,", "Settings"),
     ("secondary-b", "Show or hide the sidebar"),
     ("secondary-alt-b", "Show or hide the side panel"),
+    ("secondary-q", "Quit"),
     (
         "escape",
         "Close the menu or window; leave the review or the box",
@@ -34,10 +36,17 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
 
 pub fn bind(cx: &mut App) {
     // The parser takes names that live for the whole run, so each platform's are literals.
-    let (new, find, settings, sidebar, side) = if cfg!(target_os = "macos") {
-        ("cmd-n", "cmd-k", "cmd-,", "cmd-b", "cmd-alt-b")
+    let (new, find, settings, sidebar, side, quit) = if cfg!(target_os = "macos") {
+        ("cmd-n", "cmd-k", "cmd-,", "cmd-b", "cmd-alt-b", "cmd-q")
     } else {
-        ("ctrl-n", "ctrl-k", "ctrl-,", "ctrl-b", "ctrl-alt-b")
+        (
+            "ctrl-n",
+            "ctrl-k",
+            "ctrl-,",
+            "ctrl-b",
+            "ctrl-alt-b",
+            "ctrl-q",
+        )
     };
     cx.bind_keys([
         KeyBinding::new(new, NewChat, None),
@@ -45,12 +54,20 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new(settings, OpenSettings, None),
         KeyBinding::new(sidebar, ToggleSidebar, None),
         KeyBinding::new(side, ToggleSidePanel, None),
+        KeyBinding::new(quit, Quit, None),
         // Tab walks the rows only while a row has the keyboard; in a box it stays the box's.
         KeyBinding::new("tab", FocusNextRow, Some("Row")),
         KeyBinding::new("shift-tab", FocusPrevRow, Some("Row")),
         KeyBinding::new("tab", FocusNextRow, Some("Workspace")),
         KeyBinding::new("shift-tab", FocusPrevRow, Some("Workspace")),
     ]);
+    // Quit works wherever the focus is, and the Mac's application menu shows it.
+    cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.set_menus(vec![Menu {
+        name: "Duskcode".into(),
+        items: vec![MenuItem::action("Quit Duskcode", Quit)],
+        disabled: false,
+    }]);
 }
 
 impl Workspace {

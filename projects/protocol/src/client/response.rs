@@ -35,6 +35,8 @@ pub enum Response {
     Profile(Profile),
     Secrets(SecretsInfo),
     Voice(VoiceSettings),
+    /// What a check of a provider found.
+    Provider(crate::model::ProviderStatus),
     /// A sound or picture card the core made.
     Card(crate::tools::Card),
     /// A thread's own approval mode, or none when it uses the default in settings.

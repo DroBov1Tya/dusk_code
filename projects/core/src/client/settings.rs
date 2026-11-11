@@ -84,6 +84,34 @@ impl Settings<'_> {
         self.done(SettingsRequest::RemoveProvider { name }).await
     }
 
+    /// Asks a provider whether it answers; nothing is saved.
+    pub async fn check_provider(
+        &self,
+        target: dusk_protocol::client::ProviderTarget,
+    ) -> Result<dusk_protocol::model::ProviderStatus> {
+        let request = SettingsRequest::CheckProvider(target);
+        match self.0.call(Request::Settings(request)).await? {
+            Response::Provider(status) => Ok(status),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Builds a saved provider's connection anew, with a new key when given, and checks it.
+    pub async fn reconnect_provider(
+        &self,
+        name: &str,
+        api_key: Option<&str>,
+    ) -> Result<dusk_protocol::model::ProviderStatus> {
+        let request = SettingsRequest::ReconnectProvider {
+            name: name.to_owned(),
+            api_key: api_key.map(|key| Secret(key.to_owned())),
+        };
+        match self.0.call(Request::Settings(request)).await? {
+            Response::Provider(status) => Ok(status),
+            other => Err(unexpected(other)),
+        }
+    }
+
     /// Forgets every provider and the chosen model.
     pub async fn remove_all_providers(&self) -> Result<()> {
         self.done(SettingsRequest::RemoveAllProviders).await

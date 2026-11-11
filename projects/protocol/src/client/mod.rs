@@ -13,8 +13,8 @@ pub use command::{Answer, COMMANDS, Command, parse};
 pub use event::Event;
 pub use hello::{Hello, PROTOCOL_VERSION};
 pub use request::{
-    CatalogRequest, ProjectRequest, Request, SettingsRequest, Switch, ThreadRequest, VoiceRequest,
-    WorkRequest,
+    CatalogRequest, ProjectRequest, ProviderTarget, Request, SettingsRequest, Switch,
+    ThreadRequest, VoiceRequest, WorkRequest,
 };
 pub use response::Response;
 pub use secret::Secret;

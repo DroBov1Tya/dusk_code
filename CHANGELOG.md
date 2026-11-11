@@ -6,6 +6,27 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- The desktop client ships for Linux as an AppImage, for amd64 and arm64, built by the release
+  workflow; `install-gui.sh` installs it. The window's libraries are the machine's own.
+- Settings, Model: a larger connect card with the kinds as tiles, labeled fields and a Check
+  connection button that asks the server for its models without saving; each saved provider has
+  Check, Reconnect (anew, with a new key if one is typed) and Remove, and the list has Check
+  all (protocol 7).
+
+### Changed
+
+- The programs find their resources in `share/duskcode/resources` beside `bin` on Linux, as
+  they do inside the app on macOS.
+
+### Fixed
+
+- The keychain asked for the password for each key at every start, and again after an update:
+  every secret was its own item. All secrets are now one item, read once per run; the old items
+  move into it the first time and are deleted.
+- Cmd+Q did nothing in the desktop client; it quits now, and the application menu says so.
+
 ## 0.72.3 - 2026-11-11
 
 Pre-release: speech through any OpenAI-compatible server, and the whole code tree laid out

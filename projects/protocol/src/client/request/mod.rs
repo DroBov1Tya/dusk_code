@@ -32,7 +32,7 @@ mod work;
 
 pub use catalog::CatalogRequest;
 pub use project::ProjectRequest;
-pub use settings::{SettingsRequest, Switch};
+pub use settings::{ProviderTarget, SettingsRequest, Switch};
 pub use thread::ThreadRequest;
 pub use voice::VoiceRequest;
 pub use work::WorkRequest;
