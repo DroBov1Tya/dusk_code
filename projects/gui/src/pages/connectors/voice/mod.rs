@@ -1,5 +1,9 @@
 use crate::{
-    ui::{Type, widgets},
+    pages::settings::providers::Check,
+    ui::{
+        Type,
+        widgets::{card, labeled},
+    },
     workspace::Workspace,
 };
 use dusk_protocol::config::{VoiceEndpoint, VoiceSettings};
@@ -8,6 +12,7 @@ use gpui_kit::{
         ActiveTheme, Sizable,
         button::{Button, ButtonVariants},
         input::Input,
+        tooltip::Tooltip,
     },
     *,
 };
@@ -45,103 +50,189 @@ const SYNTHESIS: [(&str, &str); 3] = [
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let form = &ws.voice_form;
-    let state = |endpoint: Option<&VoiceEndpoint>| match endpoint {
-        Some(endpoint) => format!("Set up: {} at {}", endpoint.model, endpoint.base_url),
-        None => "Not set up".to_owned(),
-    };
     let current = ws.voice.clone().unwrap_or_default();
-    let mut page = div().flex().flex_col().gap_3().max_w(px(720.));
-    page = page.child(div().small().text_color(muted).child(
-        "Speech goes through any server that speaks the OpenAI audio API: a hosted account, \
-         or a model run on this machine. Keys are kept in the system keychain.",
-    ));
-    page = page.child(
-        div()
-            .flex()
-            .flex_row()
-            .gap_2()
-            .child(preset(
-                "voice-preset-openai",
-                "OpenAI",
-                "https://api.openai.com/v1",
-                ("whisper-1", "tts-1", "alloy"),
-                cx,
-            ))
-            .child(preset(
-                "voice-preset-local",
-                "This machine, port 8000",
-                "http://127.0.0.1:8000/v1",
-                ("", "", ""),
-                cx,
-            )),
-    );
+    let mut page = div().flex().flex_col().gap_4().max_w(px(760.));
     page = page
-        .child(widgets::caption("Speech recognition: the microphone", cx).px_0())
+        .child(div().small().text_color(muted).child(
+            "Speech goes through any server that speaks the OpenAI audio API: a hosted account, \
+             or a model run on this machine. Keys are kept in the system keychain.",
+        ))
+        .child(sources(cx))
         .child(
-            div()
-                .small()
-                .text_color(muted)
-                .child(state(current.stt.as_ref())),
+            card(cx)
+                .child(heading(
+                    "Speech recognition",
+                    "the microphone: your voice becomes text",
+                    cx,
+                ))
+                .child(status(current.stt.as_ref(), cx))
+                .child(
+                    labeled("Address", "where the server is", cx)
+                        .child(Input::new(&form.stt_url).large()),
+                )
+                .child(
+                    labeled("Model", "such as whisper-1", cx)
+                        .child(Input::new(&form.stt_model).large()),
+                )
+                .child(
+                    labeled(
+                        "API key",
+                        "empty keeps the saved one, or for a local server",
+                        cx,
+                    )
+                    .child(Input::new(&form.stt_key).large()),
+                ),
         )
-        .child(Input::new(&form.stt_url))
-        .child(Input::new(&form.stt_model))
-        .child(Input::new(&form.stt_key))
-        .child(widgets::caption("Speech synthesis: read aloud", cx).px_0())
         .child(
-            div()
-                .small()
-                .text_color(muted)
-                .child(state(current.tts.as_ref())),
+            card(cx)
+                .child(heading(
+                    "Speech synthesis",
+                    "read aloud: text becomes sound",
+                    cx,
+                ))
+                .child(status(current.tts.as_ref(), cx))
+                .child(
+                    labeled("Address", "where the server is", cx)
+                        .child(Input::new(&form.tts_url).large()),
+                )
+                .child(
+                    labeled("Model", "such as tts-1", cx)
+                        .child(Input::new(&form.tts_model).large()),
+                )
+                .child(
+                    labeled("Voice", "optional, such as alloy", cx)
+                        .child(Input::new(&form.tts_voice).large()),
+                )
+                .child(
+                    labeled(
+                        "API key",
+                        "empty keeps the saved one, or for a local server",
+                        cx,
+                    )
+                    .child(Input::new(&form.tts_key).large()),
+                ),
         )
-        .child(Input::new(&form.tts_url))
-        .child(Input::new(&form.tts_model))
-        .child(Input::new(&form.tts_voice))
-        .child(Input::new(&form.tts_key))
         .child(
             div().flex().flex_row().child(
                 Button::new("voice-save")
-                    .small()
                     .primary()
                     .label("Save")
                     .on_click(cx.listener(|ws, _, _, cx| ws.save_voice(cx))),
             ),
         );
     page = page
-        .child(widgets::caption("Models worth trying", cx).px_0())
-        .child(div().small().text_color(muted).child(
+        .child(heading(
+            "Models worth trying",
             "Run one behind a server that speaks the OpenAI audio API, then point the boxes \
-             above at it. Pages open on Hugging Face; a token for gated models is set in \
-             Settings, Secrets.",
-        ));
-    for (title, items) in [("Recognition", RECOGNITION), ("Synthesis", SYNTHESIS)] {
-        let mut row = div().flex().flex_row().flex_wrap().items_center().gap_2();
-        row = row.child(div().small().text_color(muted).child(title));
-        for (name, url) in items {
-            row = row.child(
-                Button::new(SharedString::from(format!("voice-model-{name}")))
-                    .small()
-                    .ghost()
-                    .label(name)
-                    .tooltip("Open on Hugging Face")
-                    .on_click(cx.listener(move |_, _, _, cx| cx.open_url(url))),
-            );
-        }
-        page = page.child(row);
-    }
+             above at it. A token for gated models is set in Settings, Secrets.",
+            cx,
+        ))
+        .child(models(cx));
     page
 }
 
-/// A button that fills the boxes with a known server's address and models.
+/// A card's title and what it is for.
+fn heading(title: &'static str, about: &'static str, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap_0p5()
+        .child(div().body().font_weight(FontWeight::SEMIBOLD).child(title))
+        .child(
+            div()
+                .small()
+                .text_color(cx.theme().muted_foreground)
+                .child(about),
+        )
+}
+
+/// The dot and the words that say whether a server is set up.
+fn status(endpoint: Option<&VoiceEndpoint>, cx: &App) -> Div {
+    match endpoint {
+        Some(endpoint) => Check::Done(Ok(format!("{} at {}", endpoint.model, endpoint.base_url)))
+            .line("Set up", cx),
+        None => div()
+            .small()
+            .text_color(cx.theme().muted_foreground)
+            .child("Not set up"),
+    }
+}
+
+/// Where to start: a tile that fills the boxes with a known server.
+fn sources(cx: &mut Context<Workspace>) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .gap_2()
+        .child(preset(
+            "voice-preset-openai",
+            "OpenAI",
+            "api.openai.com",
+            "https://api.openai.com/v1",
+            ("whisper-1", "tts-1", "alloy"),
+            cx,
+        ))
+        .child(preset(
+            "voice-preset-local",
+            "This machine",
+            "a model on port 8000",
+            "http://127.0.0.1:8000/v1",
+            ("", "", ""),
+            cx,
+        ))
+}
+
+/// The models to try, as tiles that open their page on Hugging Face.
+fn models(cx: &mut Context<Workspace>) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let mut column = div().flex().flex_col().gap_3();
+    for (title, items) in [("Recognition", RECOGNITION), ("Synthesis", SYNTHESIS)] {
+        let mut row = div().flex().flex_row().gap_2();
+        for (name, url) in items {
+            row = row.child(
+                tile(SharedString::from(format!("voice-model-{name}")), cx)
+                    .child(div().body().font_weight(FontWeight::MEDIUM).child(name))
+                    .child(div().meta().text_color(muted).child(title))
+                    .tooltip(|window, cx| Tooltip::new("Open on Hugging Face").build(window, cx))
+                    .on_click(cx.listener(move |_, _, _, cx| cx.open_url(url))),
+            );
+        }
+        column = column.child(row);
+    }
+    column
+}
+
+/// A box that can be chosen, the way the provider kinds are.
+fn tile(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
+    let theme = cx.theme();
+    div()
+        .id(id)
+        .flex_1()
+        .flex()
+        .flex_col()
+        .gap_0p5()
+        .px_3()
+        .py_2()
+        .rounded_lg()
+        .border_1()
+        .border_color(theme.border)
+        .cursor_pointer()
+        .hover(move |tile| tile.bg(theme.accent))
+}
+
+/// A tile that fills the boxes with a known server's address and models.
 fn preset(
     id: &'static str,
     label: &'static str,
+    about: &'static str,
     url: &'static str,
     (stt, tts, voice): (&'static str, &'static str, &'static str),
     cx: &mut Context<Workspace>,
-) -> Button {
-    Button::new(id)
-        .small()
-        .label(label)
+) -> Stateful<Div> {
+    let muted = cx.theme().muted_foreground;
+    tile(id, cx)
+        .child(div().body().font_weight(FontWeight::MEDIUM).child(label))
+        .child(div().meta().text_color(muted).child(about))
         .on_click(cx.listener(move |ws, _, _, cx| {
             let endpoint = |model: &str, voice: &str| VoiceEndpoint {
                 base_url: url.to_owned(),

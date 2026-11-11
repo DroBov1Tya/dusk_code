@@ -12,8 +12,14 @@ use gpui_kit::{
     *,
 };
 
-use super::{card, check::Check, labeled};
-use crate::{ui::Type, workspace::Workspace};
+use super::check::Check;
+use crate::{
+    ui::{
+        Type,
+        widgets::{card, labeled},
+    },
+    workspace::Workspace,
+};
 
 const KINDS: [(ProviderKind, &str, &str); 3] = [
     (

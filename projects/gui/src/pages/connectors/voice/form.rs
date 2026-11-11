@@ -25,22 +25,12 @@ impl VoiceForm {
         };
         Self {
             stt_url: field("https://host/v1", false, window, cx),
-            stt_model: field("Model, such as whisper-1", false, window, cx),
-            stt_key: field(
-                "API key (leave empty to keep, or for a local server)",
-                true,
-                window,
-                cx,
-            ),
+            stt_model: field("whisper-1", false, window, cx),
+            stt_key: field("Paste the key", true, window, cx),
             tts_url: field("https://host/v1", false, window, cx),
-            tts_model: field("Model, such as tts-1", false, window, cx),
-            tts_voice: field("Voice, such as alloy (optional)", false, window, cx),
-            tts_key: field(
-                "API key (leave empty to keep, or for a local server)",
-                true,
-                window,
-                cx,
-            ),
+            tts_model: field("tts-1", false, window, cx),
+            tts_voice: field("alloy", false, window, cx),
+            tts_key: field("Paste the key", true, window, cx),
             fill: None,
             clear_keys: false,
         }
