@@ -10,7 +10,7 @@ mod system;
 pub mod uninstall;
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName},
+    component::{ActiveTheme, Colorize, IconName},
     prelude::FluentBuilder,
     *,
 };
@@ -165,6 +165,34 @@ pub fn line(label: &str, hint: &str, cx: &App) -> Div {
                 .child(div().body().child(label.to_owned()))
                 .when_hint(hint, theme.muted_foreground),
         )
+}
+
+fn section(title: &str, hint: &str, cx: &App) -> Div {
+    div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .p_4()
+        .rounded_lg()
+        .bg(cx.theme().muted)
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .child(
+                    div()
+                        .body()
+                        .font_weight(FontWeight::SEMIBOLD)
+                        .child(title.to_owned()),
+                )
+                .when_hint(hint, section_hint_color(cx)),
+        )
+}
+
+fn section_hint_color(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    theme.foreground.mix_oklab(theme.muted_foreground, 0.16)
 }
 
 trait Hint {
