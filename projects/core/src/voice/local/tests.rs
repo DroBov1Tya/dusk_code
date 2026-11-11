@@ -72,7 +72,8 @@ async fn a_model_the_settings_point_at_is_in_use() {
 #[test]
 fn choosing_a_model_drops_the_other_of_its_kind_only() {
     let (voice, _dir) = local_voice("voice-local-choose");
-    let (stt, tts) = (&MODELS[0], &MODELS[1]);
+    let first = |kind| MODELS.iter().find(|model| model.kind == kind).unwrap();
+    let (stt, tts) = (first(SpeechKind::Recognition), first(SpeechKind::Synthesis));
     voice.choose(tts).unwrap();
     voice.choose(stt).unwrap();
     assert_eq!(voice.chosen().len(), 2);
@@ -106,7 +107,9 @@ async fn local_models_talk_to_each_other() {
     use dusk_protocol::config::{STT_KEY, TTS_KEY};
     let (voice, _dir) = local_voice("voice-local-real");
     let voice = Arc::new(voice);
-    for model in MODELS {
+    let ids = chosen_for_the_run();
+    for id in &ids {
+        let model = super::find(id).unwrap();
         voice.install(model.id).await.unwrap();
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
@@ -138,11 +141,30 @@ async fn local_models_talk_to_each_other() {
         .unwrap();
     println!("heard: {text}");
     assert!(text.to_lowercase().contains("hello"));
-    for model in MODELS {
+    for id in &ids {
+        let model = super::find(id).unwrap();
         voice.remove(model.id).await.unwrap();
         assert!(!voice.dir(model).exists());
     }
     let after = voice.config.current().voice().clone();
     assert!(after.stt.is_none() && after.tts.is_none());
     assert!(voice.chosen().is_empty());
+}
+
+/// The models the long test installs: `DUSK_VOICE_TEST` names two ids, else the first of
+/// each kind.
+fn chosen_for_the_run() -> Vec<String> {
+    if let Ok(ids) = std::env::var("DUSK_VOICE_TEST") {
+        return ids.split(',').map(str::to_owned).collect();
+    }
+    [SpeechKind::Recognition, SpeechKind::Synthesis]
+        .map(|kind| {
+            MODELS
+                .iter()
+                .find(|model| model.kind == kind)
+                .unwrap()
+                .id
+                .to_owned()
+        })
+        .to_vec()
 }
