@@ -3,14 +3,14 @@
 use crate::{
     assets,
     auth::{Auth, Login},
-    bridge,
+    bridge, cards,
     guard::{self, Hosts},
 };
 use anyhow::{Context, Result};
 use axum::{
     Json, Router,
     body::Body,
-    extract::{ConnectInfo, DefaultBodyLimit, Request, State, WebSocketUpgrade},
+    extract::{ConnectInfo, DefaultBodyLimit, Path, Request, State, WebSocketUpgrade},
     http::{HeaderMap, HeaderValue, Method, StatusCode, header},
     middleware::{self, Next},
     response::{IntoResponse, Response},
@@ -113,6 +113,7 @@ pub async fn start(hub: Arc<Hub>, config: Config) -> Result<WebServer> {
         .route("/api/logout", post(logout))
         .route("/api/session", get(session))
         .route("/api/ws", get(socket))
+        .route("/api/card/{id}/{part}", get(card))
         .fallback(get(file))
         .layer(middleware::from_fn_with_state(Arc::clone(&shared), gate))
         .with_state(shared);
@@ -217,6 +218,28 @@ async fn socket(
             bridge::run(socket, hub, stop).await;
             drop(permit);
         })
+}
+
+async fn card(
+    State(shared): State<Arc<Shared>>,
+    headers: HeaderMap,
+    Path((id, part)): Path<(String, String)>,
+) -> Response {
+    if !shared.auth.signed_in(&headers) {
+        return StatusCode::UNAUTHORIZED.into_response();
+    }
+    let folder = shared.hub.status().artifacts_dir;
+    let Some(path) = cards::locate(&folder, &id, &part) else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let Some((bytes, kind)) = cards::read(&path).await else {
+        return StatusCode::NOT_FOUND.into_response();
+    };
+    let mut response = Response::new(Body::from(bytes));
+    response
+        .headers_mut()
+        .insert(header::CONTENT_TYPE, HeaderValue::from_static(kind));
+    response
 }
 
 async fn file(uri: axum::http::Uri) -> Response {

@@ -58,3 +58,4 @@ Thumbs.db
 .opencode/
 .cursor/
 .aider*
+/projects/web-ui/dist/

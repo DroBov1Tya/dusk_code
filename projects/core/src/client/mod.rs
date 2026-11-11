@@ -61,6 +61,11 @@ impl Hub {
         })
     }
 
+    /// The status as it is now.
+    pub fn status(&self) -> Status {
+        self.status.borrow().clone()
+    }
+
     /// Attaches the client that said `hello`.
     pub fn attach(self: &Arc<Self>, hello: Hello) -> Result<Client> {
         ensure!(
