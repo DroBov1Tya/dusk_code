@@ -23,7 +23,7 @@ use crate::tools::{Tool, ToolContext, ToolResult, schema, schema::parse_argument
 use crate::util::fs::{printable, read_regular};
 use crate::{
     BoxFuture,
-    state::artifacts::{ArtifactStore, Card, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES},
+    state::artifacts::{ArtifactStore, Card, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES, THUMBNAIL_EDGE},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -32,7 +32,6 @@ const MAX_PIXELS: u64 = 4_000_000;
 const MAX_DIMENSION: u32 = 8192;
 const MAX_DECODE_BYTES: u64 = 32 * 1024 * 1024;
 const MAX_DECODER_ALLOC: u64 = 64 * 1024 * 1024;
-const THUMBNAIL_EDGE: u32 = 256;
 /// Includes a detached decode after cancellation: a new call cannot start another
 /// decoder until that bounded operation releases its permit.
 static IMAGE_WORK: Semaphore = Semaphore::const_new(1);

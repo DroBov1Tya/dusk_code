@@ -62,6 +62,7 @@ pub fn render(
     let mut tabs = div()
         .flex()
         .flex_row()
+        .flex_wrap()
         .gap_0p5()
         .p_0p5()
         .rounded_lg()
@@ -124,8 +125,9 @@ pub fn render(
                     div()
                         .flex()
                         .flex_row()
+                        .flex_wrap()
                         .items_center()
-                        .gap_4()
+                        .gap_3()
                         .pb_4()
                         .child(tabs)
                         .child(div().flex_1())
@@ -137,9 +139,9 @@ pub fn render(
         )
 }
 
-/// Two columns of cards.
+/// Cards wrap at the available width.
 fn grid() -> Div {
-    div().grid().grid_cols(2).gap_3()
+    div().flex().flex_wrap().gap_3()
 }
 
 fn matches(query: &str, texts: &[&str]) -> bool {

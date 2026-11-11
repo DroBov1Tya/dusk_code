@@ -10,7 +10,10 @@ use gpui_kit::{
     *,
 };
 
-use crate::workspace::Workspace;
+use crate::{
+    ui::{Type, widgets},
+    workspace::Workspace,
+};
 
 /// A message waiting for its chat's turn to end.
 pub struct Pending {
@@ -20,39 +23,48 @@ pub struct Pending {
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let shown = ws.shown.as_deref()?;
-    let mut list = div().flex().flex_col().gap_1().pb_2();
-    let mut any = false;
+    let count = ws
+        .pending
+        .iter()
+        .filter(|pending| pending.thread_id == shown)
+        .count();
+    if count == 0 {
+        return None;
+    }
+    let theme = cx.theme();
+    let mut list = div()
+        .id("queued-prompts")
+        .max_h(px(152.))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .gap_1();
     for (index, pending) in ws.pending.iter().enumerate() {
         if pending.thread_id != shown {
             continue;
         }
-        any = true;
         list = list.child(
             div()
                 .flex()
                 .flex_row()
                 .items_center()
-                .gap_1()
+                .gap_2()
                 .px_2()
                 .py_1()
                 .rounded_lg()
-                .border_1()
-                .border_color(cx.theme().border)
-                .bg(cx.theme().background)
-                .child(crate::ui::widgets::icon(
-                    IconName::Inbox,
-                    cx.theme().muted_foreground,
-                ))
+                .bg(theme.background)
                 .child(
-                    div()
-                        .flex_1()
-                        .child(Input::new(&pending.text).appearance(false)),
+                    div().flex_1().min_w_0().child(
+                        Input::new(&pending.text)
+                            .aria_label("Queued message")
+                            .small(),
+                    ),
                 )
                 .child(
                     Button::new(("pending-now", index))
                         .ghost()
-                        .xsmall()
-                        .label("Now")
+                        .small()
+                        .label("Send now")
                         .tooltip("Stop the turn and send this")
                         .on_click(
                             cx.listener(move |ws, _, _, cx| ws.send_pending(index, true, cx)),
@@ -61,7 +73,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 .child(
                     Button::new(("pending-drop", index))
                         .ghost()
-                        .xsmall()
+                        .small()
                         .icon(IconName::Close)
                         .tooltip("Remove")
                         .on_click(cx.listener(move |ws, _, _, cx| {
@@ -73,7 +85,28 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                 ),
         );
     }
-    any.then_some(list)
+    Some(
+        div().pb_2().child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .p_2()
+                .rounded_lg()
+                .bg(theme.muted)
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_2()
+                        .px_2()
+                        .group_name()
+                        .child(widgets::icon(IconName::Inbox, theme.muted_foreground))
+                        .child(format!("{count} queued")),
+                )
+                .child(list),
+        ),
+    )
 }
 
 impl Workspace {

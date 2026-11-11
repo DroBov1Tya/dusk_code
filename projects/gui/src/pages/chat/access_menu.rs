@@ -8,6 +8,7 @@ use gpui_kit::{
     *,
 };
 
+use super::model_bar::{picker_heading, picker_hint, picker_panel};
 use crate::{
     ui::{Type, widgets},
     workspace::Workspace,
@@ -46,52 +47,47 @@ pub fn current(ws: &Workspace) -> ApprovalPolicy {
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, accent) = (theme.muted_foreground, theme.primary);
+    let (muted, accent) = (picker_hint(cx), theme.primary);
     let own = ws.shown_chat().and_then(|chat| chat.access);
-    let mut list = div()
+    let mut list = picker_panel(cx)
         .id("access-menu")
         .absolute()
         .occlude()
-        .bottom(px(32.))
+        .bottom(px(36.))
         .left_0()
-        .w(px(320.))
-        .p_1()
-        .flex()
-        .flex_col()
-        .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg();
+        .w(px(336.))
+        .max_h(px(400.))
+        .overflow_y_scroll()
+        .child(picker_heading("Permissions", cx));
     for (policy, name, hint) in CHOICES {
         let label = match policy {
             None => format!("{name} ({})", ws.status.approvals.name()),
             Some(_) => name.to_owned(),
         };
         list = list.child(
-            div()
-                .id(SharedString::from(format!("access-{name}")))
-                .flex()
-                .flex_row()
-                .gap_2()
-                .px_2()
-                .py_2()
-                .rounded_md()
-                .cursor_pointer()
-                .hover(|row| row.bg(theme.accent))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .gap_0p5()
-                        .child(div().font_weight(FontWeight::MEDIUM).child(label))
-                        .child(div().meta().text_color(muted).child(hint)),
-                )
-                .when(own == policy, |row| {
-                    row.child(widgets::icon(IconName::Check, accent))
-                })
-                .on_click(cx.listener(move |ws, _, _, cx| ws.choose_access(policy, cx))),
+            widgets::row(
+                SharedString::from(format!("access-{name}")),
+                own == policy,
+                cx,
+            )
+            .h_auto()
+            .items_start()
+            .min_h(px(48.))
+            .px_3()
+            .py_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .gap_0p5()
+                    .child(div().body().font_weight(FontWeight::MEDIUM).child(label))
+                    .child(div().small().text_color(muted).child(hint)),
+            )
+            .when(own == policy, |row| {
+                row.child(widgets::icon(IconName::Check, accent))
+            })
+            .on_click(cx.listener(move |ws, _, _, cx| ws.choose_access(policy, cx))),
         );
     }
     list.on_mouse_down_out(cx.listener(|ws, _, _, cx| {

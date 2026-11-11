@@ -23,12 +23,23 @@ pub enum OutputKind {
     Other,
 }
 
+/// How to preview an output image without opening the original.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OutputPreview {
+    #[default]
+    Original,
+    Thumbnail(PathBuf),
+    Unavailable,
+}
+
 /// A file the agents made or keep: under the workspace, the pictures folder or a project.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputFile {
     /// Absolute and resolved.
     pub path: PathBuf,
     pub kind: OutputKind,
+    #[serde(default)]
+    pub preview: OutputPreview,
     pub bytes: u64,
     /// Unix timestamp in milliseconds.
     pub modified: i64,

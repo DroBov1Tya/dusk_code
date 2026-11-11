@@ -37,7 +37,7 @@ pub fn printable(text: &str) -> String {
         .collect()
 }
 
-fn open_no_follow(options: &mut OpenOptions, path: &Path) -> Result<File> {
+pub(crate) fn open_no_follow(options: &mut OpenOptions, path: &Path) -> Result<File> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::OpenOptionsExt;

@@ -8,7 +8,7 @@ use dusk_protocol::{
 };
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, Colorize, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -66,7 +66,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(
                     Button::new("mode")
                         .ghost()
-                        .xsmall()
+                        .small()
                         .label(format!("{} mode", ws.status.mode.to_lowercase()))
                         .tooltip("Pick a mode; Tab walks them")
                         .on_click(cx.listener(|ws, _, _, cx| {
@@ -85,7 +85,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .child(
                         Button::new("access")
                             .ghost()
-                            .xsmall()
+                            .small()
                             .label(super::access_menu::current(ws).name())
                             .tooltip("What this chat's tools may do without asking")
                             .on_click(
@@ -107,7 +107,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 
 /// The Models button at the right of the composer's row: one click opens the models and
 /// the effort, upward from the button.
-pub fn models(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+pub fn models(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Div {
     let model = ws.status.model.clone().unwrap_or_else(|| {
         if ws.status.discovering_model {
             "looking for a model...".to_owned()
@@ -119,20 +119,52 @@ pub fn models(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let menu = ws
         .picker
         .filter(|picker| !matches!(picker, Picker::Mode | Picker::Access));
-    let menu =
-        menu.map(|picker| popup("model", super::model_menu::render(ws, picker, &effort, cx)));
+    let menu = menu.map(|picker| {
+        popup(
+            "model",
+            super::model_menu::render(ws, picker, &effort, window.viewport_size(), cx),
+        )
+    });
     div()
         .relative()
         .child(
             Button::new("pick-model")
                 .ghost()
-                .xsmall()
+                .small()
                 .icon(IconName::Cpu)
                 .label("Models")
                 .tooltip(format!("{} \u{00B7} {effort}", short_model(&model)))
                 .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Model, cx))),
         )
         .children(menu)
+}
+
+pub(super) fn picker_panel(cx: &App) -> Div {
+    div()
+        .p_2()
+        .flex()
+        .flex_col()
+        .gap_0p5()
+        .rounded_xl()
+        .border_1()
+        .border_color(cx.theme().border)
+        .bg(cx.theme().popover)
+        .shadow_lg()
+        .body()
+}
+
+pub(super) fn picker_hint(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    theme.foreground.mix_oklab(theme.muted_foreground, 0.16)
+}
+
+pub(super) fn picker_heading(label: &str, cx: &App) -> Div {
+    div()
+        .px_3()
+        .py_2()
+        .group_name()
+        .text_color(picker_hint(cx))
+        .child(label.to_owned())
 }
 
 /// A picker's menu, faded in and painted over everything.
@@ -157,7 +189,7 @@ impl Workspace {
         if self.picker == Some(picker) || just_closed {
             self.picker = None;
         } else {
-            if self.providers.is_empty() {
+            if matches!(picker, Picker::Model) && self.providers.is_empty() {
                 self.load_models(cx);
             }
             self.picker = Some(picker);
@@ -166,16 +198,22 @@ impl Workspace {
     }
 
     pub fn load_models(&mut self, cx: &mut Context<Self>) {
+        if self.models_loading {
+            return;
+        }
+        self.models_loading = true;
+        cx.notify();
         self.core.call(
             cx,
             |client| async move { client.command(Command::Model { name: None }).await },
-            |ws, result, cx| match result {
-                Ok(Answer::Providers { providers, .. }) => {
-                    ws.providers = providers;
-                    cx.notify();
+            |ws, result, cx| {
+                ws.models_loading = false;
+                match result {
+                    Ok(Answer::Providers { providers, .. }) => ws.providers = providers,
+                    Ok(_) => ws.fail(anyhow::anyhow!("the core gave no models"), cx),
+                    Err(error) => ws.fail(error, cx),
                 }
-                Ok(_) => ws.fail(anyhow::anyhow!("the core gave no models"), cx),
-                Err(error) => ws.fail(error, cx),
+                cx.notify();
             },
         );
     }

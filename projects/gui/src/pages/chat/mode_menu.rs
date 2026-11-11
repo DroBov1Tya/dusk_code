@@ -7,6 +7,7 @@ use gpui_kit::{
     *,
 };
 
+use super::model_bar::{picker_heading, picker_hint, picker_panel};
 use crate::{
     ui::{Type, widgets},
     workspace::Workspace,
@@ -14,23 +15,17 @@ use crate::{
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, accent) = (theme.muted_foreground, theme.primary);
-    let mut list = div()
+    let (muted, accent) = (picker_hint(cx), theme.primary);
+    let mut list = picker_panel(cx)
         .id("mode-menu")
         .absolute()
         .occlude()
-        .bottom(px(32.))
+        .bottom(px(36.))
         .left_0()
-        .w(px(360.))
-        .overflow_hidden()
-        .p_1()
-        .flex()
-        .flex_col()
-        .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg();
+        .w(px(336.))
+        .max_h(px(400.))
+        .overflow_y_scroll()
+        .child(picker_heading("Mode", cx));
     let modes = ws
         .settings
         .as_ref()
@@ -43,41 +38,42 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         let current = mode.name == ws.status.mode;
         let name = mode.name.clone();
         list = list.child(
-            div()
-                .id(SharedString::from(format!("mode-{}", mode.name)))
-                .flex()
-                .flex_row()
-                .gap_2()
-                .px_2()
-                .py_2()
-                .rounded_md()
-                .cursor_pointer()
-                .hover(|row| row.bg(theme.accent))
-                .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .flex_1()
-                        .min_w_0()
-                        .overflow_hidden()
-                        .gap_0p5()
-                        .child(
-                            div()
-                                .font_weight(FontWeight::MEDIUM)
-                                .child(title(&mode.name)),
-                        )
-                        .child(
-                            div()
-                                .meta()
-                                .text_color(muted)
-                                .line_clamp(2)
-                                .child(mode.summary.clone()),
-                        ),
-                )
-                .when(current, |row| {
-                    row.child(widgets::icon(IconName::Check, accent))
-                })
-                .on_click(cx.listener(move |ws, _, _, cx| ws.choose_mode(&name, cx))),
+            widgets::row(
+                SharedString::from(format!("mode-{}", mode.name)),
+                current,
+                cx,
+            )
+            .h_auto()
+            .items_start()
+            .min_h(px(48.))
+            .px_3()
+            .py_2()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
+                    .gap_0p5()
+                    .child(
+                        div()
+                            .body()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child(title(&mode.name)),
+                    )
+                    .child(
+                        div()
+                            .small()
+                            .text_color(muted)
+                            .line_clamp(2)
+                            .child(mode.summary.clone()),
+                    ),
+            )
+            .when(current, |row| {
+                row.child(widgets::icon(IconName::Check, accent))
+            })
+            .on_click(cx.listener(move |ws, _, _, cx| ws.choose_mode(&name, cx))),
         );
     }
     list.on_mouse_down_out(cx.listener(|ws, _, _, cx| {

@@ -44,8 +44,16 @@ pub fn render(
     if servers.is_empty() {
         return div().child(crate::ui::empty(
             IconName::Network,
-            "No MCP servers",
-            "Add one to the mcp section of the config; it appears here with its tools.",
+            if query.is_empty() {
+                "No MCP servers"
+            } else {
+                "No matching connectors"
+            },
+            if query.is_empty() {
+                "Add one to the mcp section of the config; it appears here with its tools."
+            } else {
+                "Search by a server name or address."
+            },
             cx,
         ));
     }
