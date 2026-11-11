@@ -6,6 +6,10 @@ testing.
 
 ## Unreleased
 
+## 0.72.2 - 2026-11-11
+
+Pre-release: secrets in the keychain, sound cards, self-update, uninstall and the new composer.
+
 ### Added
 
 - `display_audio`: the agent can put a sound in the chat as a card with a play button, a bar
