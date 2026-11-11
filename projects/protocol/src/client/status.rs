@@ -35,4 +35,6 @@ pub struct Status {
     pub updated_builtin: Vec<String>,
     /// Where pictures of messages and tool results are kept.
     pub artifacts_dir: PathBuf,
+    /// Where a chat without a project works: the root of the workspace folders.
+    pub workspace_dir: PathBuf,
 }
