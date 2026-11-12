@@ -87,15 +87,7 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
     blocks
 }
 
-/// "8s", "2m 14s", "1h 3m".
-fn duration(ms: i64) -> String {
-    let seconds = (ms.max(0) + 500) / 1000;
-    match seconds {
-        0..60 => format!("{seconds}s"),
-        60..3600 => format!("{}m {}s", seconds / 60, seconds % 60),
-        _ => format!("{}h {}m", seconds / 3600, seconds % 3600 / 60),
-    }
-}
+use dusk_protocol::thread::duration_words as duration;
 
 #[component]
 pub fn Transcript(chat: Chat) -> impl IntoView {

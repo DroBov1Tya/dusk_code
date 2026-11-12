@@ -257,6 +257,14 @@ impl SettingsWindow<'_> {
             switch: None,
             lead: 0,
         });
+        rows.push(Row {
+            lines: vec![Line::from(vec![
+                Span::raw("  providers  "),
+                Span::styled("connect, check or remove  open >", dim()),
+            ])],
+            switch: None,
+            lead: 0,
+        });
         let model = self
             .view
             .selected_model

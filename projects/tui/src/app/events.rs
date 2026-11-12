@@ -92,7 +92,13 @@ impl App {
                         let error = turn.error_message.unwrap_or_else(|| "turn failed".into());
                         self.error(error);
                     }
-                    _ => {}
+                    _ => {
+                        if let Some(ms) = self.last_turn_duration_ms {
+                            let took = dusk_protocol::thread::duration_words(ms as i64);
+                            self.transcript
+                                .notice(format!("Worked for {took}"), Tone::Info);
+                        }
+                    }
                 }
             }
             ThreadEvent::Retrying { attempt, error } => {

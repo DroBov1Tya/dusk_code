@@ -33,14 +33,23 @@ pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
             Some(Err(_)) => about.push_str(" \u{00B7} balance unknown"),
             None => {}
         }
+        if index == list.selected {
+            selected_line = lines.len();
+        }
+        let removing = list.removing.as_deref() == Some(provider.name.as_str());
         lines.push(selectable(
             vec![
                 Span::styled(format!(" {} ", light.0), fg(light.1)),
                 Span::styled(provider.name.clone(), bold(TEXT)),
             ],
-            Span::styled(about, dim()),
-            false,
+            if removing {
+                Span::styled("press d again to remove it".to_owned(), fg(NEGATIVE))
+            } else {
+                Span::styled(about, dim())
+            },
+            index == list.selected,
         ));
+        index += 1;
         // Why a provider failed, in full under its name.
         if let Err(error) = &provider.models {
             lines.extend(
@@ -73,7 +82,7 @@ pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
     }
     if providers.is_empty() {
         lines.push(Line::from(Span::styled(
-            " no providers yet; /connect adds one",
+            " no providers yet; c connects one",
             thought(),
         )));
     }

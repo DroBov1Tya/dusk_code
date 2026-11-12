@@ -13,6 +13,11 @@ testing.
 
 ### Added
 
+- Terminal: /schedules lists the scheduled tasks to run now, switch or remove, and
+  /schedule daily 09:00 <prompt> (or weekdays, weekends, weekly mon 09:00, every 2h,
+  once 14:30) adds one in this folder's project. The model list selects providers too:
+  c connects one, r checks again, d twice removes it; Settings, models opens it. The
+  footer shows how long the turn has run, and the chat says how long it took.
 - Web client sends pictures: picked, pasted or dropped, shown as thumbnails until sent.
   The core keeps a PNG or JPEG of up to 6 MiB a client sends as bytes among the chat's
   sources. The web transcript folds each turn's steps into one line that says how long

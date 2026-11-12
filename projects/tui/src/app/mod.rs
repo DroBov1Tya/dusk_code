@@ -9,6 +9,7 @@ mod hits;
 mod keys;
 mod mouse;
 mod panels;
+pub mod schedule;
 mod state;
 mod submit;
 mod thread;

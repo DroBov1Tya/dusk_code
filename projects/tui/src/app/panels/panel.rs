@@ -55,6 +55,12 @@ pub enum Panel {
     Jobs(JobsView),
     /// The chat's folder's changes: the files, or one of them open.
     Diff(DiffView),
+    /// The timetable; `removing` asks to press the key again.
+    Schedules {
+        tasks: Vec<dusk_protocol::project::Schedule>,
+        selected: usize,
+        removing: bool,
+    },
     /// What is attached to the thread; `removing` asks to press the key again.
     Sources {
         sources: Vec<Source>,
@@ -88,8 +94,26 @@ pub struct ModelList {
     pub current: Option<String>,
     /// `None` while the core checks the providers.
     pub providers: Option<Vec<ProviderStatus>>,
-    /// Among `choices`.
+    /// Among `rows`.
     pub selected: usize,
+    /// The provider a first `d` asked to remove; a second `d` removes it.
+    pub removing: Option<String>,
+}
+
+/// A row of the model list: a provider, which can be checked again or removed, or one of
+/// its models, which can be chosen.
+#[derive(Clone, PartialEq)]
+pub enum ModelRow {
+    Provider(String),
+    Model { provider: String, name: String },
+}
+
+impl ModelRow {
+    pub fn provider(&self) -> &str {
+        match self {
+            ModelRow::Provider(provider) | ModelRow::Model { provider, .. } => provider,
+        }
+    }
 }
 
 impl ModelList {
@@ -98,6 +122,7 @@ impl ModelList {
             current,
             providers: None,
             selected: 0,
+            removing: None,
         }
     }
 
@@ -106,26 +131,29 @@ impl ModelList {
             current,
             providers: Some(providers),
             selected: 0,
+            removing: None,
         };
         list.selected = list
-            .choices()
+            .rows()
             .iter()
-            .position(|name| Some(name) == list.current.as_ref())
+            .position(|row| matches!(row, ModelRow::Model { name, .. } if Some(name) == list.current.as_ref()))
             .unwrap_or(0);
         list
     }
 
-    /// Every model of every provider that answered, as `provider/model`, in order.
-    pub fn choices(&self) -> Vec<String> {
-        let providers = self.providers.iter().flatten();
-        providers
-            .flat_map(|provider| {
-                let models = provider.models.as_deref().unwrap_or_default();
-                models
-                    .iter()
-                    .map(|model| format!("{}/{}", provider.name, model.id))
-            })
-            .collect()
+    /// Each provider followed by its models, as `provider/model`, in order.
+    pub fn rows(&self) -> Vec<ModelRow> {
+        let mut rows = Vec::new();
+        for provider in self.providers.iter().flatten() {
+            rows.push(ModelRow::Provider(provider.name.clone()));
+            for model in provider.models.as_deref().unwrap_or_default() {
+                rows.push(ModelRow::Model {
+                    provider: provider.name.clone(),
+                    name: format!("{}/{}", provider.name, model.id),
+                });
+            }
+        }
+        rows
     }
 }
 
