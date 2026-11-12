@@ -85,6 +85,7 @@ pub fn Sidebar() -> impl IntoView {
             </div>
             <nav class="nav">
                 <NavButton label="Connectors" target=View::Connectors(Tab::Agents) />
+                <NavButton label="Scheduled tasks" target=View::Schedules />
                 <NavButton label="Artifacts" target=View::Artifacts />
                 <NavButton label="Settings" target=View::Settings(Page::Appearance) />
                 <button class="nav-item" on:click=move |_| leptos::task::spawn_local(async {

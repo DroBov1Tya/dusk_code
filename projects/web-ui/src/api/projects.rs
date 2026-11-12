@@ -4,7 +4,7 @@
 use crate::link::request;
 use dusk_protocol::{
     client::{ProjectRequest, Response, Secret},
-    project::{FileDiff, FileEntry, GitInfo, OutputFile, Project},
+    project::{FileDiff, FileEntry, GitInfo, OutputFile, Project, Schedule, ScheduleDraft},
 };
 
 use super::*;
@@ -78,4 +78,21 @@ pub async fn set_env(id: &str, name: String, value: String) -> Res<Vec<String>> 
 pub async fn remove_env(id: &str, name: String) -> Res<Vec<String>> {
     let id = id.to_owned();
     ask!(project(ProjectRequest::RemoveEnv { id, name }), Response::Names(n) => n)
+}
+
+pub async fn schedules() -> Res<Vec<Schedule>> {
+    ask!(project(ProjectRequest::Schedules), Response::Schedules(s) => s)
+}
+
+pub async fn save_schedule(draft: ScheduleDraft) -> Res<Vec<Schedule>> {
+    ask!(project(ProjectRequest::SaveSchedule { draft }), Response::Schedules(s) => s)
+}
+
+pub async fn delete_schedule(id: String) -> Res<Vec<Schedule>> {
+    ask!(project(ProjectRequest::DeleteSchedule { id }), Response::Schedules(s) => s)
+}
+
+/// Runs the task now in a new chat; answers with the chat's id.
+pub async fn run_schedule(id: String) -> Res<String> {
+    ask!(project(ProjectRequest::RunSchedule { id }), Response::Opened { thread_id } => thread_id)
 }

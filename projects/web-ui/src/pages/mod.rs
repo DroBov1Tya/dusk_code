@@ -4,4 +4,5 @@ pub mod artifacts;
 pub mod connectors;
 pub mod project;
 pub mod review;
+pub mod schedules;
 pub mod settings;

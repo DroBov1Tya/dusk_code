@@ -43,12 +43,18 @@ async fn a_task_runs_only_in_a_saved_project_and_remembers_its_chat() {
         .unwrap();
     let saved = projects.save_schedule(draft(&project.id)).await.unwrap();
     assert_eq!(saved.len(), 1);
-    assert!(saved[0].next_run_at.is_some(), "a daily task has a next run");
+    assert!(
+        saved[0].next_run_at.is_some(),
+        "a daily task has a next run"
+    );
 
     let thread_id = projects.run_schedule(saved[0].id.clone()).await.unwrap();
     let after = projects.schedules().await.unwrap();
     assert_eq!(after[0].last_thread_id.as_deref(), Some(thread_id.as_str()));
-    assert_eq!(after[0].next_run_at, saved[0].next_run_at, "run now keeps the timetable");
+    assert_eq!(
+        after[0].next_run_at, saved[0].next_run_at,
+        "run now keeps the timetable"
+    );
 
     projects.delete_schedule(saved[0].id.clone()).await.unwrap();
     assert!(projects.schedules().await.unwrap().is_empty());

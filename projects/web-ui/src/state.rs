@@ -25,6 +25,7 @@ pub enum View {
     Settings(Page),
     Connectors(Tab),
     Artifacts,
+    Schedules,
     Project(String),
 }
 
