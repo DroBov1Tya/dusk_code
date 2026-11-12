@@ -190,6 +190,7 @@ impl Agent {
 #[derive(Default)]
 pub struct Transcript {
     pub items: Vec<Item>,
+    pub activity_boundaries: Vec<usize>,
     pub working: bool,
     pub tokens: Option<(u64, u64)>,
     /// What the chat cost so far, when any call's cost is known.
@@ -220,8 +221,38 @@ pub struct Transcript {
 impl Transcript {
     pub fn from_history(history: &[Message]) -> Self {
         let mut transcript = Self::default();
+        let mut question = None;
         for message in history {
+            if message.role == MessageRole::User && message.from_thread_id.is_none() {
+                // The core admits only a matching answer into an active question.
+                // It persists as a User message, so recognize the stored call and
+                // its exact encoded prompt together.
+                let is_answer = question.is_some_and(|prompt| {
+                    message
+                        .content
+                        .starts_with(&format!("QUESTION: {prompt}\nANSWER: "))
+                });
+                if !is_answer {
+                    transcript.activity_boundary();
+                }
+                question = None;
+            }
             transcript.add_message(message);
+            // Persisted model steps carry calls; the final response is a separate
+            // assistant message. A new human prompt also ends legacy partial turns.
+            if message.role == MessageRole::Assistant {
+                if message.tool_calls.is_empty() {
+                    transcript.activity_boundary();
+                    question = None;
+                } else {
+                    question = message
+                        .tool_calls
+                        .iter()
+                        .find(|call| call.name == "ask_user")
+                        .and_then(|call| call.arguments.get("question"))
+                        .and_then(serde_json::Value::as_str);
+                }
+            }
         }
         transcript
     }
@@ -308,8 +339,14 @@ impl Transcript {
                     sequence,
                 })
             }
-            ThreadEvent::TurnStarted(_) => self.working = true,
-            ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => self.working = false,
+            ThreadEvent::TurnStarted(_) => {
+                self.activity_boundary();
+                self.working = true;
+            }
+            ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
+                self.activity_boundary();
+                self.working = false;
+            }
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
@@ -409,6 +446,7 @@ impl Transcript {
                 // The core forgot the message and all after it; so does the view.
                 if let Some(at) = self.rollback_at.take() {
                     self.items.truncate(at);
+                    self.activity_boundaries.retain(|boundary| *boundary <= at);
                 }
                 self.offered = Some(text);
             }
@@ -535,9 +573,18 @@ impl Transcript {
         self.items.push(Item::Notice(text.to_owned()));
     }
 
+    fn activity_boundary(&mut self) {
+        let end = self.items.len();
+        if end > 0 && self.activity_boundaries.last() != Some(&end) {
+            self.activity_boundaries.push(end);
+        }
+    }
+
     /// The answer being written: the last item, or a new one after a tool or a message.
     fn assistant(&mut self) -> (&mut String, &mut String) {
-        if !matches!(self.items.last(), Some(Item::Assistant { .. })) {
+        if self.activity_boundaries.last() == Some(&self.items.len())
+            || !matches!(self.items.last(), Some(Item::Assistant { .. }))
+        {
             self.items.push(Item::Assistant {
                 text: String::new(),
                 reasoning: String::new(),

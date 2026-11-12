@@ -1,6 +1,6 @@
 //! The message box: Enter sends, Shift+Enter starts a new line, Stop ends the turn.
 
-use crate::ui::Type;
+use crate::ui::{Type, widgets::Focusable};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -55,11 +55,27 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
         });
     let navigator =
         (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, window, cx));
+    let history_padding = navigator.as_ref().map(|_| {
+        let sidebar = if ws.left_hidden {
+            52.
+        } else {
+            crate::columns::sidebar::WIDTH
+        };
+        let inspector = if ws.right_hidden {
+            0.
+        } else {
+            crate::columns::inspector::WIDTH
+        };
+        let chat_width = window.viewport_size().width.as_f32() - sidebar - inspector;
+        let margin = (chat_width - WIDTH).max(0.) / 2.;
+        px(super::navigator::GUTTER - margin).max(window.rem_size() * 1.5)
+    });
     let mentions = mention_menu(ws, cx);
     let chips = strip(ws, cx);
     div()
         .relative()
         .px_6()
+        .when_some(history_padding, |composer, padding| composer.pl(padding))
         .pt_2()
         .max_w(px(WIDTH))
         .mx_auto()
@@ -328,8 +344,17 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         theme.muted,
     );
     let color = if working > 0 { signal } else { muted };
+    let hover = theme.list_hover;
+    let total = chat.agents.len();
+    let open = matches!(&ws.modal, Some(crate::modal::Modal::Agents { thread_id: open }) if open == &thread_id);
+    let label = format!("Subagents, {working} active of {total}");
     let tile = div()
         .id("agents")
+        .focusable_row(cx)
+        .track_focus(&ws.agents_trigger_focus)
+        .role(Role::Button)
+        .aria_label(label.clone())
+        .aria_expanded(open)
         .size(px(AGENTS_BUTTON))
         .flex_none()
         .flex()
@@ -344,14 +369,9 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         })
         .bg(surface)
         .cursor_pointer()
-        .hover(|button| button.border_color(muted.opacity(0.6)))
+        .hover(move |button| button.bg(hover).border_color(muted.opacity(0.6)))
         .tooltip(move |window, cx| {
-            gpui_kit::component::tooltip::Tooltip::new(if working > 0 {
-                format!("{working} subagents at work")
-            } else {
-                "Subagents".to_owned()
-            })
-            .build(window, cx)
+            gpui_kit::component::tooltip::Tooltip::new(label.clone()).build(window, cx)
         })
         .child(crate::columns::inspector::mascot::render_fox(
             "agents-lead",
@@ -359,10 +379,11 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             color,
             1.9,
         ))
-        .on_click(cx.listener(move |ws, _, _, cx| {
+        .on_click(cx.listener(move |ws, _, window, cx| {
             ws.modal = Some(crate::modal::Modal::Agents {
                 thread_id: thread_id.clone(),
             });
+            ws.agents_modal_focus.focus(window, cx);
             cx.notify();
         }));
     // The count sits on the border of the tile's corner: its centre is on the arc of the

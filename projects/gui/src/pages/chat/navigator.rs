@@ -3,7 +3,7 @@
 use std::cell::Cell;
 
 use gpui_kit::{
-    component::{ActiveTheme, Colorize},
+    component::{ActiveTheme, Colorize, tooltip::Tooltip},
     prelude::FluentBuilder,
     *,
 };
@@ -16,7 +16,9 @@ use crate::{
     workspace::Workspace,
 };
 
-const TICKS: usize = 4;
+const TRIGGER_SIZE: f32 = 32.;
+const TRIGGER_GAP: f32 = 6.;
+pub(super) const GUTTER: f32 = TRIGGER_SIZE + TRIGGER_GAP;
 const ROW: f32 = 32.;
 const GAP: f32 = 2.;
 
@@ -38,16 +40,10 @@ pub fn render(
     let selected = theme.list_active;
     panel.a = 1.0;
     let open = ws.navigator_open;
-    let mut ticks = div().flex().flex_col().gap_1().items_center();
-    for index in 0..TICKS.min(sent.len()) {
-        ticks = ticks.child(
-            div()
-                .w(px(if index == 0 { 13. } else { 9. }))
-                .h(px(2.))
-                .rounded_full()
-                .bg(if open { accent } else { muted }),
-        );
-    }
+    let trigger = window
+        .use_keyed_state("navigator-trigger-focus", cx, |_, cx| cx.focus_handle())
+        .read(cx)
+        .clone();
     let catalog = open.then(|| {
         let viewport = window.viewport_size();
         let width = px((viewport.width.as_f32() - 24.).clamp(160., 344.));
@@ -88,6 +84,7 @@ pub fn render(
                 words
             };
             let active = number == current;
+            let trigger = trigger.clone();
             lines = lines.child(
                 div()
                     .id(("sent", row))
@@ -123,9 +120,12 @@ pub fn render(
                             .text_color(foreground)
                             .child(preview),
                     )
-                    .on_click(cx.listener(move |ws, _, _, cx| {
+                    .on_click(cx.listener(move |ws, click: &ClickEvent, window, cx| {
                         ws.list.scroll_to_reveal_item(row);
                         ws.navigator_open = false;
+                        if matches!(click, ClickEvent::Keyboard(_)) {
+                            trigger.focus(window, cx);
+                        }
                         cx.notify();
                     })),
             );
@@ -179,22 +179,25 @@ pub fn render(
         .id("navigator")
         .absolute()
         .right(relative(1.))
-        .bottom(px(12.))
-        .mr_1()
+        .bottom(window.rem_size() * 1.5 - px(TRIGGER_SIZE / 2.))
+        .mr(px(TRIGGER_GAP))
         .child(
             div()
                 .id("navigator-trigger")
                 .focusable_row(cx)
+                .track_focus(&trigger)
                 .role(Role::Button)
                 .aria_label("Message history")
                 .aria_expanded(open)
-                .size(px(22.))
+                .size(px(TRIGGER_SIZE))
                 .flex()
                 .items_center()
                 .justify_center()
                 .rounded_md()
                 .cursor_pointer()
+                .when(open, |button| button.bg(selected))
                 .hover(move |button| button.bg(raised))
+                .tooltip(|window, cx| Tooltip::new("Message history").build(window, cx))
                 .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
                     if *hovered {
                         ws.navigator_open = true;
@@ -205,7 +208,25 @@ pub fn render(
                     ws.navigator_open = true;
                     cx.notify();
                 }))
-                .child(ticks),
+                .child(list_icon(if open { accent } else { muted })),
         )
         .children(catalog)
+}
+
+fn list_icon(color: Hsla) -> Div {
+    div()
+        .size(px(20.))
+        .flex()
+        .flex_col()
+        .items_center()
+        .justify_center()
+        .gap(px(3.5))
+        .children((0..3).map(|_| {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(2.5))
+                .child(div().size(px(2.5)).rounded_full().bg(color))
+                .child(div().w(px(13.)).h(px(1.5)).rounded_full().bg(color))
+        }))
 }

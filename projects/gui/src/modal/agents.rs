@@ -5,37 +5,39 @@
 
 use std::time::Duration;
 
-use gpui_kit::{component::ActiveTheme, *};
+use gpui_kit::{
+    component::{ActiveTheme, Colorize, IconName},
+    *,
+};
 
 use dusk_protocol::agent::Zone;
 
 use crate::{
     columns::inspector::mascot,
     pages::chat::transcript::{Agent, AgentState},
-    ui::{Type, widgets},
+    ui::{
+        Type,
+        widgets::{self, Focusable},
+    },
     workspace::Workspace,
 };
 
-pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Workspace>) -> Div {
     let Some(chat) = ws
         .chats
         .get(thread_id)
         .filter(|chat| !chat.agents.is_empty())
     else {
         return div().p_5().child(crate::ui::empty(
-            gpui_kit::component::IconName::Bot,
+            IconName::Bot,
             "No subagents yet",
             "When the agent asks others for help, they appear here at work.",
             cx,
         ));
     };
     let theme = cx.theme();
-    let (muted, signal, surface, border) = (
-        theme.muted_foreground,
-        theme.warning,
-        theme.muted,
-        theme.border,
-    );
+    let muted = theme.foreground.mix_oklab(theme.muted_foreground, 0.16);
+    let (signal, surface) = (theme.warning, theme.muted);
     let working = chat.agents.values().filter(|agent| agent.working).count();
     let mut zones: Vec<(Zone, Vec<(&String, &Agent)>)> =
         Zone::ALL.iter().map(|zone| (*zone, Vec::new())).collect();
@@ -45,7 +47,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
             members.push((id, agent));
         }
     }
-    let mut stage = div().grid().grid_cols(2).gap_3();
+    let mut stage = div().grid().grid_cols(if wide { 2 } else { 1 }).gap_3();
     for (name, mut members) in zones.into_iter().filter(|(_, members)| !members.is_empty()) {
         // Those at work first, then the oldest.
         members.sort_by_key(|(_, agent)| (!agent.working, agent.started));
@@ -54,10 +56,8 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
             .flex()
             .flex_col()
             .gap_1()
-            .p_3()
-            .rounded_xl()
-            .border_1()
-            .border_color(border)
+            .p_2()
+            .rounded_lg()
             .bg(surface)
             .child(
                 div()
@@ -65,15 +65,22 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                     .flex_row()
                     .items_center()
                     .gap_2()
-                    .pb_1()
-                    .child(div().group_name().child(name.name()))
-                    .child(div().flex_1())
+                    .px_2()
+                    .py_1()
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .group_name()
+                            .truncate()
+                            .child(name.name()),
+                    )
                     .child(
                         div()
                             .meta()
                             .text_color(if busy > 0 { signal } else { muted })
                             .child(if busy > 0 {
-                                format!("{busy} at work")
+                                format!("{busy} active")
                             } else {
                                 widgets::count(members.len(), "agent")
                             }),
@@ -89,39 +96,61 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
         .flex_col()
         .gap_4()
         .p_5()
-        .child(div().small().text_color(muted).child(match working {
-            0 => format!("{} in this chat, none at work.", chat.agents.len()),
-            working => format!(
-                "{} at work of {}.",
-                working,
-                widgets::count(chat.agents.len(), "agent")
-            ),
-        }))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .flex_wrap()
+                .gap_2()
+                .body()
+                .child(
+                    div()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(widgets::count(chat.agents.len(), "subagent")),
+                )
+                .child(
+                    div()
+                        .small()
+                        .text_color(if working > 0 { signal } else { muted })
+                        .child(format!("{working} active")),
+                ),
+        )
         .child(stage)
 }
 
 /// One agent: its figure, its name, and a bubble with what it does now.
 fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, signal, success, danger, hover) = (
-        theme.muted_foreground,
+    let muted = theme.foreground.mix_oklab(theme.muted_foreground, 0.16);
+    let (signal, success, danger, hover) = (
         theme.warning,
         theme.success,
         theme.danger,
-        theme.accent,
+        theme.list_active,
     );
     let color = match agent.state {
         AgentState::Done => success.opacity(0.8),
         AgentState::Failed => danger,
         _ => signal,
     };
+    let status = match &agent.state {
+        AgentState::Thinking => "Thinking".to_owned(),
+        AgentState::Writing => "Writing".to_owned(),
+        AgentState::Tool(name) => format!("Running {name}"),
+        AgentState::Done => "Done".to_owned(),
+        AgentState::Failed => "Failed".to_owned(),
+    };
     let open = id.to_owned();
     div()
         .id(SharedString::from(format!("agents-row-{id}")))
+        .focusable_row(cx)
+        .role(Role::Button)
+        .aria_label(format!("Open {}", agent.name))
+        .aria_description(status.clone())
         .flex()
         .flex_row()
         .items_center()
-        .gap_3()
+        .gap_2()
         .p_2()
         .rounded_lg()
         .cursor_pointer()
@@ -130,7 +159,7 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
             SharedString::from(format!("mascot-{id}")),
             &agent.state,
             color,
-            4.0,
+            3.0,
         ))
         .child(
             div()
@@ -148,6 +177,8 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
                         .child(
                             div()
                                 .small()
+                                .min_w_0()
+                                .truncate()
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(agent.name.clone()),
                         )
@@ -169,7 +200,14 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
                             div()
                                 .flex_1()
                                 .min_w_0()
-                                .child(bubble(id, agent, color, muted)),
+                                .small()
+                                .truncate()
+                                .text_color(if agent.state == AgentState::Done {
+                                    muted
+                                } else {
+                                    color
+                                })
+                                .child(status),
                         )
                         .child(
                             div()
@@ -182,29 +220,16 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
                 .child(
                     div()
                         .meta()
-                        .text_color(muted.opacity(0.85))
+                        .text_color(muted)
                         .truncate()
                         .child(agent.task.clone()),
                 ),
         )
-        .on_click(cx.listener(move |ws, _, _, cx| ws.open_agent_chat(&open, cx)))
-}
-
-/// What it does this moment, in a small bubble that matches the action: thinking breathes,
-/// a tool shows its name as code, writing and the end say so plainly.
-fn bubble(id: &str, agent: &Agent, color: Hsla, muted: Hsla) -> Div {
-    let base = div().small().truncate().text_color(color);
-    match &agent.state {
-        AgentState::Thinking => base.child(div().child("thinking\u{2026}").with_animation(
-            SharedString::from(format!("think-{id}")),
-            Animation::new(Duration::from_millis(1600)).repeat(),
-            |text, phase| text.opacity(0.45 + 0.55 * (phase * std::f32::consts::TAU).sin().abs()),
-        )),
-        AgentState::Writing => base.child("writing"),
-        AgentState::Tool(name) => base.child(format!("running {name}")),
-        AgentState::Done => base.text_color(muted).child("done"),
-        AgentState::Failed => base.child("failed"),
-    }
+        .child(widgets::icon(IconName::ChevronRight, muted))
+        .on_click(cx.listener(move |ws, _, window, cx| {
+            ws.open_agent_chat(&open, cx);
+            ws.agents_modal_focus.focus(window, cx);
+        }))
 }
 
 /// `01:24`, or `1:02:03` past an hour.

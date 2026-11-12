@@ -110,8 +110,9 @@ impl Workspace {
 
     /// Escape closes what is on top, one thing a press: a window, a menu, then the review.
     /// True when something closed, so the key goes no further.
-    pub fn close_top(&mut self) -> bool {
-        if self.modal.take().is_some() {
+    pub fn close_top(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.modal.is_some() {
+            self.close_modal_from_window(window, cx);
             return true;
         }
         if self.chat_menu.take().is_some()
