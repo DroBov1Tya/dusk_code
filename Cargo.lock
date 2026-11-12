@@ -2296,7 +2296,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dusk_core"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2342,7 +2342,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_evals"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "anyhow",
  "clap",
@@ -2357,7 +2357,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_gui"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2382,7 +2382,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_protocol"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "anyhow",
  "schemars 1.2.3",
@@ -2392,7 +2392,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_telegram"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "anyhow",
  "parking_lot",
@@ -2406,7 +2406,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_tui"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "anyhow",
  "chrono",
@@ -2428,7 +2428,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_web"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "anyhow",
  "axum",
@@ -2450,7 +2450,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_web_ui"
-version = "0.73.2"
+version = "0.73.3"
 dependencies = [
  "console_error_panic_hook",
  "dusk_protocol",
