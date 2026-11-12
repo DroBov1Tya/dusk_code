@@ -2,6 +2,7 @@
 //! project. This page lists them; `editor` is the window that makes or changes one.
 
 pub mod editor;
+pub mod report;
 
 use chrono::{Local, TimeZone};
 use dusk_protocol::project::{Repeat, Schedule};

@@ -13,15 +13,18 @@ use crate::{
     workspace::Workspace,
 };
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
+/// The menu, opening upward from the composer's control, or downward from a settings
+/// row when `down`.
+pub fn render(ws: &Workspace, down: bool, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, accent) = (picker_hint(cx), theme.primary);
-    let mut list = picker_panel(cx)
-        .id("mode-menu")
-        .absolute()
-        .occlude()
-        .bottom(px(36.))
-        .left_0()
+    let list = picker_panel(cx).id("mode-menu").absolute().occlude();
+    let list = if down {
+        list.top(px(40.)).right_0()
+    } else {
+        list.bottom(px(36.)).left_0()
+    };
+    let mut list = list
         .w(px(336.))
         .max_h(px(400.))
         .overflow_y_scroll()

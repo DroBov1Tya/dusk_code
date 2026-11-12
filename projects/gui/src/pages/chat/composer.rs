@@ -15,28 +15,33 @@ use super::transcript::Transcript;
 use crate::workspace::Workspace;
 
 pub(super) const WIDTH: f32 = 780.;
-pub(super) const AGENTS_BUTTON: f32 = 52.;
+/// The width of the columns beside the box.
+const SIDE: f32 = crate::ui::size::BAR;
+/// From the foot of the composer to the middle of the box's lower row of buttons: the
+/// row under the box and the box's own padding.
+const SIDE_LIFT: f32 = 40.;
+
+/// A column beside the box, its controls centered and level with the box's buttons.
+fn side() -> Div {
+    div()
+        .w(px(SIDE))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_2()
+        .pb(px(SIDE_LIFT))
+}
+/// The marks beside the box, the history on the left and the subagents and the context on
+/// the right: one size and one shape, a circle, so the two sides mirror each other.
+pub(super) const SIDE_MARK: f32 = crate::ui::size::CONTROL + 4.;
+pub(super) const AGENTS_BUTTON: f32 = SIDE_MARK;
 
 pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     // Subagents may go on after the chat's own turn is over; Stop ends them too.
     let working = ws
         .shown_chat()
         .is_some_and(|chat| chat.working || chat.agents.values().any(|agent| agent.working));
-    let button = if working {
-        Button::new("stop")
-            .danger()
-            .rounded(ButtonRounded::Size(px(999.)))
-            .icon(IconName::Square)
-            .tooltip("Stop")
-            .on_click(cx.listener(|ws, _, _, cx| ws.cancel(cx)))
-    } else {
-        Button::new("send")
-            .primary()
-            .rounded(ButtonRounded::Size(px(999.)))
-            .icon(IconName::ArrowUp)
-            .tooltip("Send")
-            .on_click(cx.listener(|ws, _, window, cx| ws.send(window, cx)))
-    };
     let attach = ws.attach_open.then(|| attach_menu(ws.shown.is_some(), cx));
     let queued = super::queue::render(ws, cx);
     // Output speed while the agent writes, from the core's rate events.
@@ -53,21 +58,25 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .pb_1()
                 .child(format!("{rate} tok/s"))
         });
-    let navigator =
-        (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, window, cx));
-    let history_padding = navigator.as_ref().map(|_| {
-        let chat_width = ws.chat_width(window);
-        let margin = (chat_width - WIDTH).max(0.) / 2.;
-        px(super::navigator::GUTTER - margin).max(window.rem_size() * 1.5)
-    });
+    // Each place around the box takes its parts from the layout map.
+    let layout = crate::ui::theme::prefs(cx).layout.clone();
+    let place =
+        |parts: &[crate::ui::layout::Part], window: &mut Window, cx: &mut Context<Workspace>| {
+            super::parts::region(ws, parts, window, cx)
+        };
+    let side_left = place(&layout.side_left, window, cx);
+    let side_right = place(&layout.side_right, window, cx);
+    let box_left = place(&layout.box_left, window, cx);
+    let box_right = place(&layout.box_right, window, cx);
+    let under_left = place(&layout.under_left, window, cx);
+    let under_right = place(&layout.under_right, window, cx);
     let mentions = mention_menu(ws, cx);
     let chips = strip(ws, cx);
     div()
         .relative()
-        .px_6()
-        .when_some(history_padding, |composer, padding| composer.pl(padding))
+        .px_4()
         .pt_2()
-        .max_w(px(WIDTH))
+        .max_w(px(WIDTH + 2. * SIDE))
         .mx_auto()
         .w_full()
         .children(queued)
@@ -77,60 +86,65 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .flex_row()
                 .items_end()
                 .gap_2()
+                // The history on the left and the context on the right stand level with
+                // the box's lower row of buttons, as wide as each other.
+                .child(side().children(side_left))
                 .child(
-                    div().flex_1().min_w_0().child(
-                        // One card: what goes with the message on top, the text under it
-                        // across the whole width, and a row of controls at the bottom.
-                        // The card grows upward, as the box sits at the foot of the chat.
-                        div()
-                            .flex()
-                            .flex_col()
-                            .rounded_2xl()
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().muted)
-                            .shadow_sm()
-                            .relative()
-                            .children(navigator)
-                            .children(mentions.map(crate::ui::widgets::on_top))
-                            .children(chips)
-                            .child(
-                                div()
-                                    .w_full()
-                                    .px_2()
-                                    .pt_1()
-                                    .child(Textarea::new(&ws.composer).appearance(false)),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_2()
-                                    .px_2()
-                                    .pb_2()
-                                    .child(
-                                        Button::new("attach")
-                                            .ghost()
-                                            .rounded(ButtonRounded::Size(px(999.)))
-                                            .icon(IconName::Plus)
-                                            .tooltip("Attach files or folders")
-                                            .on_click(cx.listener(|ws, _, _, cx| {
-                                                ws.attach_open = !ws.attach_open;
-                                                cx.notify();
-                                            })),
-                                    )
-                                    .child(super::model_bar::render(ws, cx))
-                                    .children(rate)
-                                    .child(mic_button(ws, cx))
-                                    .child(super::model_bar::models(ws, window, cx))
-                                    .child(button),
-                            ),
-                    ),
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            // One card: what goes with the message on top, the text under it
+                            // across the whole width, and a row of controls at the bottom.
+                            // The card grows upward, as the box sits at the foot of the chat.
+                            div()
+                                .flex()
+                                .flex_col()
+                                .rounded_2xl()
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .bg(cx.theme().muted)
+                                .shadow_sm()
+                                .relative()
+                                .children(mentions.map(crate::ui::widgets::on_top))
+                                .children(chips)
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .px_2()
+                                        .pt_1()
+                                        .child(Textarea::new(&ws.composer).appearance(false)),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap_1()
+                                        .px_2()
+                                        .pb_2()
+                                        .children(box_left)
+                                        .child(div().flex_1())
+                                        .children(rate)
+                                        .children(box_right),
+                                ),
+                        )
+                        // Under the box: the mode on the left, the model on the right.
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .justify_between()
+                                .pt_1()
+                                .px_1()
+                                .child(div().flex().items_center().children(under_left))
+                                .child(div().flex().items_center().children(under_right)),
+                        ),
                 )
                 // The subagents stand beside the box, not in it: they are not part of what
                 // is sent.
-                .children(agents_button(ws, cx)),
+                .child(side().children(side_right)),
         )
         .children(attach.map(crate::ui::widgets::on_top))
         // Files copied in the file manager arrive as files, not as their names.
@@ -187,11 +201,12 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
 }
 
 /// The microphone: while it is on, what is said is added to the message.
-fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
+pub(super) fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
     let on = ws.dictating();
     Button::new("dictate")
         .rounded(ButtonRounded::Size(px(999.)))
         .icon(IconName::Mic)
+        // The size of Send beside it; filled only while it listens.
         .when(on, |button| button.danger())
         .when(!on, |button| button.ghost())
         .tooltip(if on { "Stop dictating" } else { "Dictate" })
@@ -315,7 +330,7 @@ fn is_picture(path: &std::path::Path) -> bool {
 /// The chat's subagents at a glance, beside the box: the figure of the one that works (or
 /// the latest), a count, and a ring in the signal color while any works. A click opens
 /// the stage where each is seen at work.
-fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+pub(super) fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat().filter(|chat| !chat.agents.is_empty())?;
     let thread_id = ws.shown.clone()?;
     let working = chat.agents.values().filter(|agent| agent.working).count();
@@ -349,7 +364,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .flex()
         .items_center()
         .justify_center()
-        .rounded_xl()
+        .rounded_full()
         .border_1()
         .border_color(if working > 0 {
             signal.opacity(0.7)
@@ -366,7 +381,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             "agents-lead",
             &lead.1.state,
             color,
-            1.9,
+            1.2,
         ))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.modal = Some(crate::modal::Modal::Agents {
@@ -375,10 +390,8 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             ws.agents_modal_focus.focus(window, cx);
             cx.notify();
         }));
-    // The count sits on the border of the tile's corner: its centre is on the arc of the
-    // rounded corner, which is 3.5 px in from the corner for a radius of 12, so the box
-    // keeps 5.5 px of room above and to the right for the badge's half (9 px).
-    const BADGE_ROOM: f32 = 5.5;
+    // The count sits on the circle's upper right, half outside it.
+    const BADGE_ROOM: f32 = 6.;
     Some(
         div()
             .relative()
@@ -394,8 +407,8 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                     .absolute()
                     .top_0()
                     .right_0()
-                    .min_w(px(18.))
-                    .h(px(18.))
+                    .min_w(px(16.))
+                    .h(px(16.))
                     .px_1()
                     .flex()
                     .items_center()
@@ -681,7 +694,7 @@ impl Workspace {
         cx.notify();
     }
 
-    fn cancel(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn cancel(&mut self, cx: &mut Context<Self>) {
         let Some(thread_id) = self.shown.clone() else {
             return;
         };

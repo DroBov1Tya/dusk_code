@@ -85,6 +85,7 @@ impl Server {
                 prompt: draft.prompt.trim().to_owned(),
                 repeat: draft.repeat,
                 enabled: draft.enabled,
+                model: draft.model,
                 next_run_at,
                 last_run_at: old.as_ref().and_then(|old| old.last_run_at),
                 last_thread_id: old.and_then(|old| old.last_thread_id),
@@ -140,7 +141,14 @@ impl Server {
     async fn start_run(&mut self, task: &Schedule) -> Result<String> {
         let runtime = Arc::clone(&self.runtime);
         let project = project::find(runtime.state(), &task.project_id).await?;
-        let handle = runtime.new_thread(SOURCE, &project.dir).await?;
+        let handle = match &task.model {
+            Some(model) => {
+                runtime
+                    .new_thread_with_model(SOURCE, &project.dir, model)
+                    .await?
+            }
+            None => runtime.new_thread(SOURCE, &project.dir).await?,
+        };
         let thread_id = handle.thread_id.clone();
         self.open(handle);
         let open = self

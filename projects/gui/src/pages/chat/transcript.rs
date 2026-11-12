@@ -193,6 +193,13 @@ pub struct Transcript {
     pub activity_boundaries: Vec<usize>,
     /// When each boundary was drawn, in Unix milliseconds, beside `activity_boundaries`.
     pub boundary_times: Vec<i64>,
+    /// What the thread had spent, as tokens and micro-dollars, when each boundary was
+    /// drawn; a turn's own spend is the difference across it.
+    pub boundary_spend: Vec<(u64, u64)>,
+    /// The thread's spend as the core last reported it.
+    spent: (u64, u64),
+    /// When the last turn seen live ended, for the header's star.
+    pub finished_at: Option<Instant>,
     pub working: bool,
     pub tokens: Option<(u64, u64)>,
     /// What the chat cost so far, when any call's cost is known.
@@ -347,6 +354,9 @@ impl Transcript {
             }
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
                 self.activity_boundary(super::timing::now_ms());
+                if self.working {
+                    self.finished_at = Some(Instant::now());
+                }
                 self.working = false;
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
@@ -376,6 +386,8 @@ impl Transcript {
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = Some((context(&tokens), limit));
                 self.cost = tokens.cost();
+                let used = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
+                self.spent = (used, tokens.cost_micro_usd);
             }
             ThreadEvent::ModelSelected { input_limit, .. } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
@@ -455,6 +467,7 @@ impl Transcript {
                         .count();
                     self.activity_boundaries.truncate(kept);
                     self.boundary_times.truncate(kept);
+                    self.boundary_spend.truncate(kept);
                 }
                 self.offered = Some(text);
             }
@@ -586,11 +599,34 @@ impl Transcript {
         if end > 0 && self.activity_boundaries.last() != Some(&end) {
             self.activity_boundaries.push(end);
             self.boundary_times.push(at);
+            self.boundary_spend.push(self.spent);
         }
     }
 
     /// When the turn whose items end at boundary `index` began and ended; the turn after
     /// the last boundary is still open.
+    /// What the turn ending at boundary `index` spent, as tokens and micro-dollars; none
+    /// for a turn read from history, whose spend was not seen.
+    pub fn turn_spend(&self, index: usize) -> Option<(u64, u64)> {
+        let before = *self.boundary_spend.get(index.checked_sub(1)?)?;
+        let after = *self.boundary_spend.get(index)?;
+        let spent = (
+            after.0.saturating_sub(before.0),
+            after.1.saturating_sub(before.1),
+        );
+        (spent.0 > 0).then_some(spent)
+    }
+
+    /// The mean cost of the turns that have one, to tell an unusually dear turn.
+    pub fn mean_turn_cost(&self) -> Option<u64> {
+        let costs: Vec<u64> = (1..self.boundary_spend.len())
+            .filter_map(|index| self.turn_spend(index))
+            .map(|(_, micro)| micro)
+            .filter(|micro| *micro > 0)
+            .collect();
+        (!costs.is_empty()).then(|| costs.iter().sum::<u64>() / costs.len() as u64)
+    }
+
     pub fn span(&self, index: usize) -> Option<super::timing::Span> {
         let began = *self.boundary_times.get(index.checked_sub(1)?)?;
         Some((began, self.boundary_times.get(index).copied()))

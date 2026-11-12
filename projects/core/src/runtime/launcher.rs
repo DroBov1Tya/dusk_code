@@ -198,6 +198,16 @@ impl Launcher {
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
     /// ends once the client drops every `ThreadInput` and the queue is done.
     pub async fn new_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
+        self.new_thread_on(source, cwd, None).await
+    }
+
+    /// A new thread that asks `model` instead of the chosen one, as a scheduled task may.
+    pub async fn new_thread_on(
+        &self,
+        source: &str,
+        cwd: &Path,
+        model: Option<Arc<ModelChoice>>,
+    ) -> Result<ThreadHandle> {
         let mode = self.config.current().mode().to_owned();
         let thread = start_thread(&self.state, &self.paths, source, &mode, cwd).await?;
         info!(
@@ -205,7 +215,7 @@ impl Launcher {
             thread.thread_id,
             thread.workspace.display()
         );
-        self.run_thread(thread.thread_id, &thread.workspace, cwd)
+        self.run_thread_on(thread.thread_id, &thread.workspace, cwd, model)
             .await
     }
 
@@ -239,6 +249,16 @@ impl Launcher {
         workspace: &Path,
         cwd: &Path,
     ) -> Result<ThreadHandle> {
+        self.run_thread_on(thread_id, workspace, cwd, None).await
+    }
+
+    async fn run_thread_on(
+        &self,
+        thread_id: String,
+        workspace: &Path,
+        cwd: &Path,
+        model: Option<Arc<ModelChoice>>,
+    ) -> Result<ThreadHandle> {
         // A chat opened right after the start still gets the tools of MCP servers.
         self.mcp.wait(MCP_START_WAIT).await;
         let mailboxes = Arc::clone(&self.mailboxes);
@@ -247,7 +267,10 @@ impl Launcher {
             !live.contains_key(&thread_id),
             "thread {thread_id} is already open"
         );
-        let setup = self.setup(&thread_id, cwd, workspace, None, 0)?;
+        let mut setup = self.setup(&thread_id, cwd, workspace, None, 0)?;
+        if let Some(model) = model {
+            setup.model = model;
+        }
         let (runner, input, output) = ThreadRunner::new(setup);
         live.insert(thread_id.clone(), runner.mailbox(&input));
         drop(live);

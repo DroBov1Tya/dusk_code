@@ -41,6 +41,8 @@ pub enum Row {
         end: usize,
         /// The turn's begin and end, for how long it took.
         span: Option<super::timing::Span>,
+        /// What it spent, as tokens and micro-dollars, when that was seen.
+        spent: Option<(u64, u64)>,
     },
     Working,
 }
@@ -61,12 +63,47 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .enumerate()
     {
         let items = &chat.items[start..end];
+        let open = end == chat.items.len() && chat.working;
+        // Only the answer stays in sight: the last thing said once the turn is over.
+        // Everything before it in the turn, steps, thoughts, remarks and pictures,
+        // folds into one row; the user's own words and errors stand apart.
+        let answer = (!open)
+            .then(|| {
+                items.iter().rposition(
+                    |item| matches!(item, Item::Assistant { text, .. } if !text.trim().is_empty()),
+                )
+            })
+            .flatten()
+            .map(|offset| start + offset);
+        // While the turn goes on, what the agent says stays in sight and only its steps
+        // fold; once it is over, all but the answer folds.
+        let folds = |index: usize, item: &Item| {
+            if open {
+                return matches!(
+                    item,
+                    Item::Tool(_) | Item::Agent { .. } | Item::User { sequence: None, .. }
+                ) || matches!(
+                    item,
+                    Item::Assistant { text, reasoning }
+                        if text.trim().is_empty() && !reasoning.trim().is_empty()
+                );
+            }
+            Some(index) != answer
+                && !matches!(
+                    item,
+                    Item::User {
+                        sequence: Some(_),
+                        ..
+                    } | Item::Error(_)
+                )
+                && !matches!(item, Item::Assistant { text, reasoning } if text.is_empty() && reasoning.trim().is_empty())
+        };
         let activity = if items.iter().any(primary_activity) {
-            let first = items.iter().position(activity_item);
-            let last = items.iter().rposition(activity_item);
-            first
-                .zip(last)
-                .map(|(first, last)| (start + first, start + last))
+            let first = (start..end).find(|&index| folds(index, &chat.items[index]));
+            let last = (start..end)
+                .rev()
+                .find(|&index| folds(index, &chat.items[index]));
+            first.zip(last)
         } else {
             None
         };
@@ -79,19 +116,16 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                     start: first,
                     end: last + 1,
                     span: chat.span(turn),
+                    spent: chat.turn_spend(turn),
                 });
             }
             match item {
                 Item::Tool(_) => continue,
                 Item::Assistant { text, .. } if text.is_empty() => continue,
-                // What the agent said on its way goes into the turn's row with its steps;
-                // the answer after the last step stays in sight.
-                Item::Assistant { .. }
-                    if activity.is_some_and(|(first, last)| (first..=last).contains(&index)) =>
+                _ if activity.is_some_and(|(first, last)| {
+                    (first..=last).contains(&index) && folds(index, item)
+                }) =>
                 {
-                    continue;
-                }
-                Item::Agent { .. } | Item::User { sequence: None, .. } if activity.is_some() => {
                     continue;
                 }
                 Item::User {
@@ -157,10 +191,6 @@ fn primary_activity(item: &Item) -> bool {
     }
 }
 
-fn activity_item(item: &Item) -> bool {
-    primary_activity(item) || matches!(item, Item::Agent { .. } | Item::User { sequence: None, .. })
-}
-
 /// The steps a run shows: a picture card stands for the step that showed it.
 pub fn steps(items: &[Item]) -> Vec<&Tool> {
     items
@@ -202,8 +232,17 @@ impl Workspace {
                     _ => "Working".to_owned(),
                 })
                 .into_any_element(),
-            Row::Activity { start, end, span } => {
+            Row::Activity {
+                start,
+                end,
+                span,
+                spent,
+            } => {
+                let dear = spent
+                    .zip(chat.mean_turn_cost())
+                    .is_some_and(|((_, micro), mean)| micro > 2 * mean.max(1));
                 turn_activity(self, &shown, start, &chat.items[start..end], span, cx)
+                    .child_cost(spent, dear, cx)
                     .into_any_element()
             }
             Row::Item(at) => {
@@ -275,7 +314,13 @@ impl Workspace {
                         agent_report(self, &shown, at, from, text, cx).into_any_element()
                     }
                     Item::Assistant { text, .. } => {
-                        let mut answer = div().flex().flex_col().gap_2();
+                        let group = SharedString::from(format!("answer-row-{key}"));
+                        let mut answer = div()
+                            .id(group.clone())
+                            .group(group.clone())
+                            .flex()
+                            .flex_col()
+                            .gap_1();
                         if !text.is_empty() {
                             answer = answer.child(super::media::render(
                                 &format!("answer-{key}"),
@@ -286,11 +331,17 @@ impl Workspace {
                             let listening = self.audio.listening.as_deref() == Some(key.as_str());
                             let (spoken_key, other_busy) =
                                 (key.clone(), self.audio.listening.is_some() && !listening);
+                            // The answer reads as plain text; its tools come up under the
+                            // pointer, or while it is read aloud.
                             answer = answer.child(
                                 div()
                                     .flex()
                                     .flex_row()
                                     .gap_1()
+                                    .when(!listening, |row| {
+                                        row.opacity(0.)
+                                            .group_hover(group.clone(), |row| row.opacity(1.))
+                                    })
                                     .child(
                                         Button::new(SharedString::from(format!("copy-{key}")))
                                             .ghost()
@@ -458,12 +509,7 @@ fn turn_activity(
         }
         _ => latest
             .map_or("Thinking", |tool| {
-                let summary = tool.detail.trim();
-                if summary.is_empty() {
-                    tool.name.as_str()
-                } else {
-                    summary
-                }
+                dusk_protocol::tools::phrase(&tool.name, &tool.call_id)
             })
             .to_owned(),
     };
@@ -514,7 +560,9 @@ fn turn_activity(
                             cx,
                         ));
                     }
-                    if !text.trim().is_empty() {
+                    // A running turn shows what it says in the chat, not here.
+                    let running = matches!(span, Some((_, None)) | None);
+                    if !text.trim().is_empty() && !running {
                         detail = detail.child(div().px_2().small().child(super::links::markdown(
                             SharedString::from(format!("said-{shown}-{index}")),
                             text.clone(),
@@ -525,6 +573,14 @@ fn turn_activity(
                 Item::Agent { from, text } => {
                     detail.child(agent_report(ws, shown, index, from, text, cx))
                 }
+                Item::Image(image) => detail.child(picture(&ws.status.artifacts_dir, image, cx)),
+                Item::Notice(text) => detail.child(
+                    div()
+                        .px_2()
+                        .small()
+                        .text_color(step_muted(cx))
+                        .child(text.clone()),
+                ),
                 Item::User {
                     text,
                     sequence: None,
@@ -539,7 +595,10 @@ fn turn_activity(
                 _ => detail,
             };
         }
-        block = block.child(detail);
+        block = block.child(widgets::unfold(
+            SharedString::from(format!("unfold-{shown}-{start}")),
+            detail,
+        ));
     }
     block
 }
@@ -661,7 +720,7 @@ fn disclosure(id: impl Into<ElementId>, open: bool, cx: &App) -> Stateful<Div> {
         .flex()
         .items_center()
         .gap_2()
-        .min_h(px(26.))
+        .min_h(px(28.))
         .min_w_0()
         .px_2()
         .rounded_md()
@@ -704,11 +763,14 @@ fn step(
         .mono_font
         .clone()
         .unwrap_or_else(|| "Menlo".to_owned());
-    let detail = tool.detail.trim();
-    let summary = if detail.is_empty() {
-        tool.name.replace('_', " ")
+    let detail = tool.detail.trim().to_owned();
+    // Said as a person would; the tool's own name shows once the step is open.
+    let summary = dusk_protocol::tools::phrase(&tool.name, &tool.call_id);
+    // Work handed to another agent is the turn's big move: it carries the accent.
+    let lead = if dusk_protocol::tools::is_agent_tool(&tool.name) {
+        theme.primary
     } else {
-        detail.to_owned()
+        theme.foreground
     };
     let button = disclosure(
         SharedString::from(format!("step-{shown}-{index}")),
@@ -718,22 +780,26 @@ fn step(
     .flex_1()
     .aria_label(format!("{summary}, {}, {status}", tool.name))
     .child(widgets::icon(icon, color))
+    .child(div().flex_none().text_color(lead).child(summary))
     .child(
         div()
             .flex_1()
             .min_w_0()
             .truncate()
-            .text_color(theme.foreground)
-            .child(summary),
-    )
-    .child(
-        div()
-            .max_w(relative(0.30))
-            .truncate()
             .meta()
-            .font_family(mono.clone())
-            .child(tool.name.clone()),
+            .text_color(muted)
+            .child(detail),
     )
+    .when(open, |row| {
+        row.child(
+            div()
+                .max_w(relative(0.30))
+                .truncate()
+                .meta()
+                .font_family(mono.clone())
+                .child(tool.name.clone()),
+        )
+    })
     .when(tool.state == ToolState::Failed, |row| {
         row.child(div().meta().text_color(color).child(status))
     })
@@ -772,7 +838,10 @@ fn step(
         if !tool.output.is_empty() {
             details = details.child(block("Answer", &tool.output));
         }
-        line = line.child(details);
+        line = line.child(widgets::unfold(
+            SharedString::from(format!("unfold-step-{shown}-{index}")),
+            details,
+        ));
     }
     line
 }
@@ -994,5 +1063,42 @@ impl Workspace {
         }
         self.measure_again = true;
         cx.notify();
+    }
+}
+
+/// The spend of a turn beside its row: tokens, and the cost when it is known; a turn
+/// more than twice as dear as the chat's usual one says so in the warning color.
+trait TurnCost {
+    fn child_cost(self, spent: Option<(u64, u64)>, dear: bool, cx: &App) -> Self;
+}
+
+impl TurnCost for Div {
+    fn child_cost(self, spent: Option<(u64, u64)>, dear: bool, cx: &App) -> Self {
+        let Some((tokens, micro)) = spent else {
+            return self;
+        };
+        let theme = cx.theme();
+        let mut text = format!("{} tokens", widgets::short(tokens));
+        if micro > 0 {
+            text.push_str(&format!(
+                " \u{00B7} {}",
+                dusk_protocol::model::Cost::dollars(micro)
+            ));
+        }
+        self.child(
+            div()
+                .pl(px(32.))
+                .meta()
+                .text_color(if dear {
+                    theme.warning
+                } else {
+                    theme.muted_foreground
+                })
+                .child(if dear {
+                    format!("{text} \u{00B7} dearer than usual")
+                } else {
+                    text
+                }),
+        )
     }
 }

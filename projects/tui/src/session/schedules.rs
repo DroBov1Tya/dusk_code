@@ -21,6 +21,7 @@ pub async fn apply(client: &Client, app: &mut App, action: ScheduleAction) {
                         prompt,
                         repeat,
                         enabled: true,
+                        model: None,
                     })
                     .await?;
                 app.flash = Some("Task scheduled; /schedules lists them".into());
@@ -46,6 +47,7 @@ pub async fn apply(client: &Client, app: &mut App, action: ScheduleAction) {
                             prompt: task.prompt,
                             repeat: task.repeat,
                             enabled: on,
+                            model: task.model,
                         })
                         .await?,
                 )

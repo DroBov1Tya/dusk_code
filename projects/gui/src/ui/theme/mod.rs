@@ -33,6 +33,13 @@ pub struct Prefs {
     pub right_folded: Option<Vec<String>>,
     /// The side panel's foot, where the chat works: folded until the user opens it.
     pub footer_open: bool,
+    /// Scheduled runs up to this moment, in Unix milliseconds, were seen; later ones go
+    /// on the "while you were away" card. Zero until the first start sets it.
+    pub runs_seen_until: i64,
+    /// The header's sky while a turn runs: the glow and the stars.
+    pub sky: bool,
+    /// Where each part of the window stands; see `ui::layout`.
+    pub layout: crate::ui::layout::Layout,
 }
 
 impl Default for Prefs {
@@ -40,12 +47,15 @@ impl Default for Prefs {
         Self {
             theme: palettes::DEFAULT.to_owned(),
             font: None,
-            font_size: 15.,
+            font_size: 16.,
             mono_font: None,
             mono_size: 13.,
             pinned: Vec::new(),
             right_folded: None,
             footer_open: false,
+            runs_seen_until: 0,
+            sky: true,
+            layout: Default::default(),
         }
     }
 }
@@ -158,6 +168,7 @@ fn highlight(p: &Palette) -> Value {
 fn config(p: &Palette, prefs: &Prefs) -> Value {
     let hairline = format!("{}14", p.foreground);
     let soft = format!("{}1f", p.accent);
+    let chosen = format!("{}26", p.accent);
     // A pressed or hovered primary is the accent a little sunk into the page, so the
     // button answers the pointer without a second hue.
     let (primary_hover, primary_active) = (format!("{}e0", p.accent), format!("{}c4", p.accent));
@@ -189,8 +200,10 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         ("popover.background", p.surface),
         ("popover.foreground", p.foreground),
         ("list.background", p.panel),
-        ("list.hover.background", p.surface),
-        ("list.active.background", p.raised),
+        // A hovered row is a step up from any surface it stands on, a menu's included; the
+        // chosen one carries a tint of the accent.
+        ("list.hover.background", p.raised),
+        ("list.active.background", &chosen),
         ("list.active.border", &hairline),
         ("sidebar.background", p.panel),
         ("sidebar.foreground", p.foreground),

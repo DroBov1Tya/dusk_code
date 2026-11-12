@@ -16,9 +16,7 @@ use crate::{
     workspace::Workspace,
 };
 
-const TRIGGER_SIZE: f32 = 32.;
-const TRIGGER_GAP: f32 = 6.;
-pub(super) const GUTTER: f32 = TRIGGER_SIZE + TRIGGER_GAP;
+const TRIGGER_SIZE: f32 = super::composer::SIDE_MARK;
 const ROW: f32 = 32.;
 const GAP: f32 = 2.;
 
@@ -177,10 +175,7 @@ pub fn render(
     });
     div()
         .id("navigator")
-        .absolute()
-        .right(relative(1.))
-        .bottom(window.rem_size() * 1.5 - px(TRIGGER_SIZE / 2.))
-        .mr(px(TRIGGER_GAP))
+        .relative()
         .child(
             div()
                 .id("navigator-trigger")
@@ -193,7 +188,7 @@ pub fn render(
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded_md()
+                .rounded_full()
                 .cursor_pointer()
                 .when(open, |button| button.bg(selected))
                 .hover(move |button| button.bg(raised))

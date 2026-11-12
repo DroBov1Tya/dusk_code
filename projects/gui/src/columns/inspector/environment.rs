@@ -86,7 +86,7 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
     let mut menu = div()
         .id("path-menu")
         .absolute()
-        .top(px(30.))
+        .top(px(32.))
         .left(px(12.))
         .w(px(220.))
         .p_1()

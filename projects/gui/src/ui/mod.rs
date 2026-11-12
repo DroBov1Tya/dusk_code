@@ -11,6 +11,7 @@
 //! - Motion answers a person's action: a menu opens in 140 ms, a row leaves in 220 ms.
 
 pub mod controls;
+pub mod layout;
 pub mod theme;
 pub mod widgets;
 
@@ -22,10 +23,25 @@ use gpui_kit::{
 };
 
 /// How long a menu takes to appear.
-pub const OPEN: Duration = Duration::from_millis(140);
+pub const OPEN: Duration = Duration::from_millis(160);
+/// How long a fold takes to open.
+pub const UNFOLD: Duration = Duration::from_millis(180);
+
+/// The scale every size is taken from: multiples of the 4 px grid, so edges line up
+/// across columns.
+pub mod size {
+    /// A button, an input, a menu row: what a pointer aims at.
+    pub const CONTROL: f32 = 32.;
+    /// A row of a list in a column.
+    pub const ROW: f32 = 36.;
+    /// The header's height and the width of the rail and of the composer's sides.
+    pub const BAR: f32 = 52.;
+    pub const ICON: f32 = 16.;
+    pub const ICON_LARGE: f32 = 20.;
+}
 
 /// Row heights.
-pub const ROW: f32 = 32.;
+pub const ROW: f32 = size::CONTROL;
 
 /// The type scale. Each step is a size and a weight, so a place says what the text is,
 /// not how big.

@@ -10,13 +10,14 @@ pub mod dictation;
 pub mod links;
 mod media;
 pub mod messages;
-mod mode_menu;
+pub mod mode_menu;
 mod model_bar;
 mod model_menu;
 mod navigator;
+mod parts;
 pub mod queue;
 mod ring;
-mod timing;
+pub mod timing;
 pub mod transcript;
 mod working;
 
@@ -68,6 +69,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             cx.notify();
         }))
         .children(notice)
+        .children(crate::pages::schedules::report::render(ws, cx))
         .child(
             div()
                 .relative()

@@ -12,7 +12,8 @@ impl State {
     /// Every schedule, soonest first; the ones that will not run again last.
     pub async fn list_schedules(&self) -> Result<Vec<Schedule>> {
         sqlx::query(
-            "SELECT * FROM schedules
+            "SELECT schedules.*, schedule_models.model FROM schedules
+             LEFT JOIN schedule_models ON schedule_models.schedule_id = schedules.id
              ORDER BY next_run_at IS NULL, next_run_at, created_at",
         )
         .try_map(schedule_from_row)
@@ -22,18 +23,23 @@ impl State {
     }
 
     pub async fn load_schedule(&self, id: &str) -> Result<Option<Schedule>> {
-        sqlx::query("SELECT * FROM schedules WHERE id = ?")
-            .bind(id)
-            .try_map(schedule_from_row)
-            .fetch_optional(&self.pool)
-            .await
-            .context("read the scheduled task")
+        sqlx::query(
+            "SELECT schedules.*, schedule_models.model FROM schedules
+             LEFT JOIN schedule_models ON schedule_models.schedule_id = schedules.id
+             WHERE id = ?",
+        )
+        .bind(id)
+        .try_map(schedule_from_row)
+        .fetch_optional(&self.pool)
+        .await
+        .context("read the scheduled task")
     }
 
     /// The enabled schedules whose time has come.
     pub async fn due_schedules(&self, now_ms: i64) -> Result<Vec<Schedule>> {
         sqlx::query(
-            "SELECT * FROM schedules
+            "SELECT schedules.*, schedule_models.model FROM schedules
+             LEFT JOIN schedule_models ON schedule_models.schedule_id = schedules.id
              WHERE enabled = 1 AND next_run_at IS NOT NULL AND next_run_at <= ?
              ORDER BY next_run_at",
         )
@@ -76,6 +82,20 @@ impl State {
         .execute(&self.pool)
         .await
         .context("save the scheduled task; does its project exist?")?;
+        match &schedule.model {
+            Some(model) => sqlx::query(
+                "INSERT INTO schedule_models (schedule_id, model) VALUES (?, ?)
+                 ON CONFLICT (schedule_id) DO UPDATE SET model = excluded.model",
+            )
+            .bind(&schedule.id)
+            .bind(model),
+            None => {
+                sqlx::query("DELETE FROM schedule_models WHERE schedule_id = ?").bind(&schedule.id)
+            }
+        }
+        .execute(&self.pool)
+        .await
+        .context("save the task's model")?;
         Ok(())
     }
 
@@ -100,5 +120,6 @@ fn schedule_from_row(row: SqliteRow) -> Result<Schedule, sqlx::Error> {
         next_run_at: row.try_get("next_run_at")?,
         last_run_at: row.try_get("last_run_at")?,
         last_thread_id: row.try_get("last_thread_id")?,
+        model: row.try_get("model")?,
     })
 }

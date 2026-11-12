@@ -16,6 +16,7 @@ fn draft(project_id: &str) -> ScheduleDraft {
             at: Clock { hour: 9, minute: 0 },
         },
         enabled: true,
+        model: None,
     }
 }
 
@@ -55,6 +56,23 @@ async fn a_task_runs_only_in_a_saved_project_and_remembers_its_chat() {
         after[0].next_run_at, saved[0].next_run_at,
         "run now keeps the timetable"
     );
+
+    // A task keeps the model it names, and forgets it when it names none.
+    let named = ScheduleDraft {
+        id: Some(saved[0].id.clone()),
+        model: Some("local/small".into()),
+        ..draft(&project.id)
+    };
+    let kept = projects.save_schedule(named.clone()).await.unwrap();
+    assert_eq!(kept[0].model.as_deref(), Some("local/small"));
+    let cleared = projects
+        .save_schedule(ScheduleDraft {
+            model: None,
+            ..named
+        })
+        .await
+        .unwrap();
+    assert_eq!(cleared[0].model, None);
 
     projects.delete_schedule(saved[0].id.clone()).await.unwrap();
     assert!(projects.schedules().await.unwrap().is_empty());

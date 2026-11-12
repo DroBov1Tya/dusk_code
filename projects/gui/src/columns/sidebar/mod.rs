@@ -1,13 +1,20 @@
 //! The sidebar: the projects with their chats, and every chat by recent activity under
-//! them. The ways into the rest of the app are on the rail beside it.
+//! them, under a New chat that belongs to none. The ways into the rest of the app are
+//! on the rail beside it.
 
 mod projects;
 mod recent;
 mod threads;
 
-use gpui_kit::{component::ActiveTheme, *};
+use gpui_kit::{
+    component::{ActiveTheme, IconName},
+    *,
+};
 
-use crate::workspace::Workspace;
+use crate::{
+    ui::{Type, widgets},
+    workspace::Workspace,
+};
 
 pub const WIDTH: f32 = 272.;
 
@@ -21,6 +28,25 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .flex_col()
         .pt_2()
         .bg(panel)
+        // A chat of its own, outside every project: it works in the workspace folder.
+        .child(
+            div().px_2().child(
+                widgets::row("sidebar-new-chat", false, cx)
+                    .h(px(crate::ui::size::ROW))
+                    .child(widgets::icon(IconName::Plus, cx.theme().muted_foreground))
+                    .child(
+                        div()
+                            .body()
+                            .font_weight(FontWeight::MEDIUM)
+                            .child("New chat"),
+                    )
+                    .tooltip(|window, cx| {
+                        gpui_kit::component::tooltip::Tooltip::new("A chat outside the projects")
+                            .build(window, cx)
+                    })
+                    .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),
+            ),
+        )
         .child(
             div()
                 .id("chats")

@@ -4,6 +4,44 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- Desktop: while a turn runs, the header carries a faint sky that drifts from violet to a
+  sunset orange as the turn goes on, and a star lights up once when it ends. Each turn
+  says what it spent, tokens and cost, marked when it was more than twice the chat's
+  usual. A moon on the rail turns on quiet mode: only the chat and its box, the header
+  thinned to a line. A "while you were away" card lists the scheduled tasks that ran
+  since the last look, each with a way to its chat. The subagents window leads with each
+  agent's task, then what it does now in words, its steps and time, and its last remark.
+- Stars come out in the header's sky one by one as a turn runs on, each twinkling on its
+  own beat; Appearance can switch the sky off. The rail, the header's tools and the parts
+  around the message box are drawn from one layout map, which `gui.json` may override to
+  reorder or trim them.
+
+### Changed
+
+- A scheduled task can name its model; the desktop editor's lists keep their clicks
+  instead of closing the window. While a turn runs, what the agent says stays in sight
+  and only its steps fold; once it is over, everything but its answer folds, in every
+  client, and says what each tool did in plain words, work for agents in the
+  accent. Desktop composer: attach and access inside the box with the microphone as
+  large as Send, the mode and the model under it, the context as a percentage beside it
+  with the counts on hover. Answers read as text, their tools on hover; the review button
+  shows the git mark; menus show which row is under the pointer; the side panel is
+  narrower with inset rules and larger headers; the wordmark sits over the sidebar; the
+  rail previews a place only while the sidebar is hidden; Settings, Chat opens the mode
+  list; text defaults to 16 px. The composer stands between two columns of one width,
+  the message history on the left and the context ring with its share on the right, level
+  with the box's buttons; the microphone is a plain icon. A New chat above the projects
+  starts one that belongs to none.
+- Grid and motion: every size in the desktop app comes from one scale on a 4 px grid
+  (controls 32, rows 36, bars 52, icons 16 and 20); menus and windows rise into place in
+  160 ms, folds slide open in 180 ms. The web client takes the same grid and motion as
+  CSS variables, honours reduced motion, and gets the desktop composer: access inside the
+  box, mode and a short model name under it, the context as a ring with its share.
+
 ## 0.73.1 - 2026-11-12
 
 ### Fixed

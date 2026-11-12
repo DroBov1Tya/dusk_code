@@ -123,7 +123,19 @@ pub(super) fn tool(
             Span::styled(DONE, fg(POSITIVE)),
         ),
     };
-    let name = Span::styled(call.name.clone(), fg(TEXT));
+    // Said as a person would, the tool's own name once the step is open; work handed to
+    // another agent carries the accent.
+    let said = if open {
+        call.name.clone()
+    } else {
+        dusk_protocol::tools::phrase(&call.name, &call.id).to_owned()
+    };
+    let lead = if dusk_protocol::tools::is_agent_tool(&call.name) {
+        ACCENT
+    } else {
+        TEXT
+    };
+    let name = Span::styled(said, fg(lead));
     // A command says what it does in a few words; the command itself is in the body.
     let about = call
         .arguments

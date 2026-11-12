@@ -56,6 +56,7 @@ pub enum Menu {
     Day,
     Date,
     Time,
+    Model,
 }
 
 pub struct Editor {
@@ -72,6 +73,8 @@ pub struct Editor {
     pub date: u64,
     pub time: Entity<InputState>,
     pub enabled: bool,
+    /// `provider/model`; `None` runs with the chosen one.
+    pub model: Option<String>,
     pub menu: Option<Menu>,
 }
 
@@ -169,6 +172,22 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     if editor.kind != Kind::Interval {
         when = when.child(time_field(editor, cx));
     }
+    let mut models: Vec<(String, Pick)> = vec![choice("The chosen model".to_owned(), |editor| {
+        editor.model = None
+    })];
+    for provider in &ws.providers {
+        for model in provider.models.as_deref().unwrap_or_default() {
+            let name = format!("{}/{}", provider.name, model.id);
+            let label = name.clone();
+            models.push(choice(label, move |editor| {
+                editor.model = Some(name.clone())
+            }));
+        }
+    }
+    let model_label = editor
+        .model
+        .clone()
+        .unwrap_or_else(|| "The chosen model".to_owned());
     div()
         .flex()
         .flex_col()
@@ -191,6 +210,16 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             "Instructions: what the agent does each time, in a new chat",
         ))
         .child(Textarea::new(&editor.prompt).h(px(160.)))
+        .child(div().h_2())
+        .child(label("Model"))
+        .child(picker(
+            "schedule-model",
+            model_label,
+            Menu::Model,
+            editor.menu,
+            models,
+            cx,
+        ))
         .child(div().h_2())
         .child(label("Repeat"))
         .child(when)
@@ -246,7 +275,7 @@ fn picker(
         let mut panel = div()
             .id(SharedString::from(format!("{id}-menu")))
             .absolute()
-            .top(px(38.))
+            .top(px(40.))
             .left_0()
             .min_w(px(200.))
             .max_h(px(280.))
@@ -258,7 +287,11 @@ fn picker(
             .border_1()
             .border_color(theme.border)
             .bg(theme.popover)
-            .shadow_lg();
+            .shadow_lg()
+            // Painted over the window, the list must keep its clicks: the dimmed backdrop
+            // under it closes the window on any press that reaches it.
+            .occlude()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
         for (index, (label, pick)) in choices.into_iter().enumerate() {
             let pick: std::rc::Rc<dyn Fn(&mut Editor)> = pick.into();
             panel = panel.child(
@@ -309,7 +342,7 @@ fn time_field(editor: &Editor, cx: &mut Context<Workspace>) -> Div {
         let mut panel = div()
             .id("schedule-time-menu")
             .absolute()
-            .top(px(38.))
+            .top(px(40.))
             .right_0()
             .w(px(120.))
             .max_h(px(280.))
@@ -321,7 +354,9 @@ fn time_field(editor: &Editor, cx: &mut Context<Workspace>) -> Div {
             .border_1()
             .border_color(theme.border)
             .bg(theme.popover)
-            .shadow_lg();
+            .shadow_lg()
+            .occlude()
+            .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation());
         for (index, text) in times.enumerate() {
             let value = text.clone();
             panel = panel.child(
@@ -400,6 +435,7 @@ pub fn draft_of(task: &Schedule, enabled: bool) -> ScheduleDraft {
         prompt: task.prompt.clone(),
         repeat: task.repeat.clone(),
         enabled,
+        model: task.model.clone(),
     }
 }
 
@@ -431,13 +467,18 @@ impl Workspace {
             date: 0,
             time: cx.new(|cx| InputState::new(window, cx).placeholder("09:00")),
             enabled: true,
+            model: None,
             menu: None,
         };
+        if self.providers.is_empty() {
+            self.load_models(cx);
+        }
         let mut time = Clock { hour: 9, minute: 0 };
         if let Some(task) = task {
             editor.id = Some(task.id);
             editor.project_id = Some(task.project_id);
             editor.enabled = task.enabled;
+            editor.model = task.model.clone();
             match task.repeat {
                 Repeat::Once { at } => {
                     editor.kind = Kind::Once;
@@ -548,6 +589,7 @@ fn draft(editor: &Editor, cx: &App) -> anyhow::Result<ScheduleDraft> {
         prompt: editor.prompt.read(cx).value().to_string(),
         repeat,
         enabled: editor.enabled,
+        model: editor.model.clone(),
     })
 }
 

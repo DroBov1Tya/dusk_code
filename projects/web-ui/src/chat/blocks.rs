@@ -31,12 +31,9 @@ impl Block {
     }
 }
 
-/// What a turn folds away: its steps, thoughts and what it said on the way.
+/// What a finished turn folds away: all but its answer, the user's words and errors.
 fn folds(item: &Item) -> bool {
-    matches!(
-        item,
-        Item::Tool(_) | Item::Agent { .. } | Item::Assistant { .. }
-    )
+    !matches!(item, Item::User(_) | Item::Error(_))
 }
 
 /// The chat as blocks: each turn's way to its answer in one, the rest one by one.
@@ -61,12 +58,38 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
                 )
             })
             .flatten();
-        let folded: Vec<Entry> = turn
+        // While the turn goes on, what the agent says stays in sight and only its steps
+        // fold; once it is over, all but the answer folds.
+        let folds_now = |item: &Item| {
+            if open {
+                matches!(item, Item::Tool(_) | Item::Agent { .. })
+                    || matches!(item, Item::Assistant { text, .. } if text.trim().is_empty())
+            } else {
+                folds(item)
+            }
+        };
+        let mut folded: Vec<Entry> = turn
             .iter()
             .enumerate()
-            .filter(|(index, entry)| Some(*index) != answer && folds(&entry.item))
+            .filter(|(index, entry)| Some(*index) != answer && folds_now(&entry.item))
             .map(|(_, entry)| entry.clone())
             .collect();
+        // The answer's own thinking folds with the rest; the answer shows only what it says.
+        let answer_entry = answer.map(|index| {
+            let mut entry = turn[index].clone();
+            if let Item::Assistant { reasoning, .. } = &mut entry.item
+                && !reasoning.trim().is_empty()
+            {
+                folded.push(Entry {
+                    item: Item::Assistant {
+                        text: String::new(),
+                        reasoning: std::mem::take(reasoning),
+                    },
+                    ..turn[index].clone()
+                });
+            }
+            entry
+        });
         let started = matches!(asked.item, Item::User(_)).then_some(asked.at);
         let took = answer
             .zip(started)
@@ -78,7 +101,9 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
             });
         }
         for (index, entry) in turn.iter().enumerate() {
-            if Some(index) == answer || !folds(&entry.item) {
+            if Some(index) == answer {
+                blocks.extend(answer_entry.clone().map(Block::One));
+            } else if !folds_now(&entry.item) {
                 blocks.push(Block::One(entry.clone()));
             }
         }
@@ -285,6 +310,9 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
                 Item::Agent { from, text } => view! {
                     <div class="step-said"><div class="muted">{format!("From {from}")}</div><Markdown text=text /></div>
                 }.into_any(),
+                Item::Image(shown) => view! { <ImageCard shown /> }.into_any(),
+                Item::Audio(shown) => view! { <AudioCard shown /> }.into_any(),
+                Item::Notice(text) => view! { <div class="step-said muted">{text}</div> }.into_any(),
                 _ => ().into_any(),
             }).collect_view()}
         </details>
@@ -325,9 +353,12 @@ fn ToolStep(tool: Tool) -> impl IntoView {
     view! {
         <details class=format!("tool {state_class}")>
             <summary>
-                <span class="tool-name">{tool.name.clone()}</span>
+                <span class=if dusk_protocol::tools::is_agent_tool(&tool.name) { "tool-name agent" } else { "tool-name" }>
+                    {dusk_protocol::tools::phrase(&tool.name, &tool.call_id)}
+                </span>
                 <span class="muted">{tool.detail.clone()}</span>
             </summary>
+            <div class="muted mono">{tool.name.clone()}</div>
             <pre class="tool-args">{tool.arguments.clone()}</pre>
             {(!tool.output.is_empty()).then(|| view! { <pre class="tool-out">{tool.output.clone()}</pre> })}
         </details>

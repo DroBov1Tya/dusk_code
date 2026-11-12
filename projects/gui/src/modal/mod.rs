@@ -286,7 +286,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 MouseButton::Left,
                 cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
             )
-            .child(panel),
+            .child(crate::ui::widgets::appear("modal-open", panel)),
     )
 }
 
