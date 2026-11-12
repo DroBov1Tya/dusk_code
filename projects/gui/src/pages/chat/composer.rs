@@ -78,59 +78,83 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .items_end()
                 .gap_2()
                 .child(
-                    div().flex_1().min_w_0().child(
-                        // One card: what goes with the message on top, the text under it
-                        // across the whole width, and a row of controls at the bottom.
-                        // The card grows upward, as the box sits at the foot of the chat.
-                        div()
-                            .flex()
-                            .flex_col()
-                            .rounded_2xl()
-                            .border_1()
-                            .border_color(cx.theme().border)
-                            .bg(cx.theme().muted)
-                            .shadow_sm()
-                            .relative()
-                            .children(navigator)
-                            .children(mentions.map(crate::ui::widgets::on_top))
-                            .children(chips)
-                            .child(
-                                div()
-                                    .w_full()
-                                    .px_2()
-                                    .pt_1()
-                                    .child(Textarea::new(&ws.composer).appearance(false)),
-                            )
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_row()
-                                    .items_center()
-                                    .gap_2()
-                                    .px_2()
-                                    .pb_2()
-                                    .child(
-                                        Button::new("attach")
-                                            .ghost()
-                                            .rounded(ButtonRounded::Size(px(999.)))
-                                            .icon(IconName::Plus)
-                                            .tooltip("Attach files or folders")
-                                            .on_click(cx.listener(|ws, _, _, cx| {
-                                                ws.attach_open = !ws.attach_open;
-                                                cx.notify();
-                                            })),
-                                    )
-                                    .child(super::model_bar::render(ws, cx))
-                                    .children(rate)
-                                    .child(mic_button(ws, cx))
-                                    .child(super::model_bar::models(ws, window, cx))
-                                    .child(button),
-                            ),
-                    ),
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(
+                            // One card: what goes with the message on top, the text under it
+                            // across the whole width, and a row of controls at the bottom.
+                            // The card grows upward, as the box sits at the foot of the chat.
+                            div()
+                                .flex()
+                                .flex_col()
+                                .rounded_2xl()
+                                .border_1()
+                                .border_color(cx.theme().border)
+                                .bg(cx.theme().muted)
+                                .shadow_sm()
+                                .relative()
+                                .children(navigator)
+                                .children(mentions.map(crate::ui::widgets::on_top))
+                                .children(chips)
+                                .child(
+                                    div()
+                                        .w_full()
+                                        .px_2()
+                                        .pt_1()
+                                        .child(Textarea::new(&ws.composer).appearance(false)),
+                                )
+                                .child(
+                                    div()
+                                        .flex()
+                                        .flex_row()
+                                        .items_center()
+                                        .gap_1()
+                                        .px_2()
+                                        .pb_2()
+                                        .child(
+                                            Button::new("attach")
+                                                .ghost()
+                                                .rounded(ButtonRounded::Size(px(999.)))
+                                                .icon(IconName::Plus)
+                                                .tooltip("Attach files or folders")
+                                                .on_click(cx.listener(|ws, _, _, cx| {
+                                                    ws.attach_open = !ws.attach_open;
+                                                    cx.notify();
+                                                })),
+                                        )
+                                        .children(super::model_bar::access(ws, cx))
+                                        .child(div().flex_1())
+                                        .children(rate)
+                                        .child(mic_button(ws, cx))
+                                        .child(button),
+                                ),
+                        )
+                        // Under the box: the mode on the left, the model on the right.
+                        .child(
+                            div()
+                                .flex()
+                                .flex_row()
+                                .items_center()
+                                .justify_between()
+                                .pt_1()
+                                .px_1()
+                                .child(super::model_bar::mode(ws, cx))
+                                .child(super::model_bar::models(ws, window, cx)),
+                        ),
                 )
                 // The subagents stand beside the box, not in it: they are not part of what
                 // is sent.
-                .children(agents_button(ws, cx)),
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .items_center()
+                        .gap_2()
+                        .pb(px(36.))
+                        .children(agents_button(ws, cx))
+                        .child(super::model_bar::context(ws, cx)),
+                ),
         )
         .children(attach.map(crate::ui::widgets::on_top))
         // Files copied in the file manager arrive as files, not as their names.
@@ -192,8 +216,9 @@ fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
     Button::new("dictate")
         .rounded(ButtonRounded::Size(px(999.)))
         .icon(IconName::Mic)
+        // As large as Send beside it: a ring when off, filled while it listens.
         .when(on, |button| button.danger())
-        .when(!on, |button| button.ghost())
+        .when(!on, |button| button.outline())
         .tooltip(if on { "Stop dictating" } else { "Dictate" })
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_dictation(cx)))
 }

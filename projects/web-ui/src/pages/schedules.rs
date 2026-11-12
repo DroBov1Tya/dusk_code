@@ -248,6 +248,10 @@ fn Editor(
                     {move || app.projects.get().into_iter().map(|p| view! { <option value=p.id.clone()>{p.name}</option> }).collect_view()}
                 </select>
             </label>
+            <label>"Model: provider/model, or empty for the chosen one"
+                <input type="text" placeholder="the chosen model" prop:value=move || get(|f| f.model.clone())
+                    on:input=field(|f, v| f.model = v) />
+            </label>
             <label>"Instructions: what the agent does each time, in a new chat"
                 <textarea rows="6" prop:value=move || get(|f| f.prompt.clone()) on:input=field(|f, v| f.prompt = v)
                     placeholder="Look through the open issues and sum up what changed today."></textarea>

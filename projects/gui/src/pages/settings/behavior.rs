@@ -45,12 +45,23 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
         SettingsPage::Chat => body.child(list(
             [
                 line("Mode", "What the chat may do and how it is told", cx).child(
-                    Button::new("next-mode")
-                        .outline()
-                        .icon(IconName::ChevronsUpDown)
-                        .label(ws.status.mode.clone())
-                        .tooltip("Switch to the next mode")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.next_mode(cx))),
+                    div()
+                        .relative()
+                        .child(
+                            Button::new("settings-mode")
+                                .outline()
+                                .label(ws.status.mode.clone())
+                                .dropdown_caret(true)
+                                .tooltip("Pick a mode")
+                                .on_click(cx.listener(|ws, _, _, cx| {
+                                    ws.toggle_picker(crate::workspace::Picker::Mode, cx)
+                                })),
+                        )
+                        .children(
+                            matches!(ws.picker, Some(crate::workspace::Picker::Mode)).then(|| {
+                                widgets::on_top(crate::pages::chat::mode_menu::render(ws, true, cx))
+                            }),
+                        ),
                 ),
             ],
             cx,

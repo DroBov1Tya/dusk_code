@@ -10,7 +10,7 @@ pub mod dictation;
 pub mod links;
 mod media;
 pub mod messages;
-mod mode_menu;
+pub mod mode_menu;
 mod model_bar;
 mod model_menu;
 mod navigator;

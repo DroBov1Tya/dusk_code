@@ -290,7 +290,13 @@ impl Workspace {
                         agent_report(self, &shown, at, from, text, cx).into_any_element()
                     }
                     Item::Assistant { text, .. } => {
-                        let mut answer = div().flex().flex_col().gap_2();
+                        let group = SharedString::from(format!("answer-row-{key}"));
+                        let mut answer = div()
+                            .id(group.clone())
+                            .group(group.clone())
+                            .flex()
+                            .flex_col()
+                            .gap_1();
                         if !text.is_empty() {
                             answer = answer.child(super::media::render(
                                 &format!("answer-{key}"),
@@ -301,11 +307,17 @@ impl Workspace {
                             let listening = self.audio.listening.as_deref() == Some(key.as_str());
                             let (spoken_key, other_busy) =
                                 (key.clone(), self.audio.listening.is_some() && !listening);
+                            // The answer reads as plain text; its tools come up under the
+                            // pointer, or while it is read aloud.
                             answer = answer.child(
                                 div()
                                     .flex()
                                     .flex_row()
                                     .gap_1()
+                                    .when(!listening, |row| {
+                                        row.opacity(0.)
+                                            .group_hover(group.clone(), |row| row.opacity(1.))
+                                    })
                                     .child(
                                         Button::new(SharedString::from(format!("copy-{key}")))
                                             .ghost()

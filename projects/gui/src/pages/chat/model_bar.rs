@@ -1,5 +1,6 @@
-//! In the composer's bottom row: the model and the effort, the mode and the access, each
-//! with its picker opening upward from its own chip, and how full the context is.
+//! The controls around the message box: the access inside it, the mode and the model
+//! under it, and how full the context is beside it. Each picker opens upward from its
+//! own control.
 
 use crate::ui::Type;
 use dusk_protocol::{
@@ -8,17 +9,62 @@ use dusk_protocol::{
 };
 use gpui_kit::{
     component::{
-        ActiveTheme, Colorize, IconName,
+        ActiveTheme, Colorize, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
-    prelude::FluentBuilder,
     *,
 };
 
 use crate::ui::widgets;
 use crate::workspace::{Picker, Workspace};
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+/// The access of the chat's tools, beside the attach button inside the box.
+pub fn access(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    ws.shown.as_ref()?;
+    let menu = matches!(ws.picker, Some(Picker::Access))
+        .then(|| popup("access", super::access_menu::render(ws, cx)));
+    Some(
+        div()
+            .relative()
+            .child(
+                Button::new("access")
+                    .ghost()
+                    .icon(IconName::CircleCheck)
+                    .label(super::access_menu::current(ws).name())
+                    .dropdown_caret(true)
+                    .tooltip("What this chat's tools may do without asking")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Access, cx))),
+            )
+            .children(menu),
+    )
+}
+
+/// The mode, under the box on the left: quiet text with a caret.
+pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let menu = matches!(ws.picker, Some(Picker::Mode))
+        .then(|| popup("mode", super::mode_menu::render(ws, false, cx)));
+    div()
+        .relative()
+        .child(
+            Button::new("mode")
+                .ghost()
+                .small()
+                .label(format!("{} mode", ws.status.mode.to_lowercase()))
+                .dropdown_caret(true)
+                .tooltip("Pick a mode; Tab walks them")
+                .on_click(cx.listener(|ws, _, _, cx| {
+                    if ws.settings.is_none() {
+                        ws.load_settings(cx);
+                    }
+                    ws.toggle_picker(Picker::Mode, cx);
+                })),
+        )
+        .children(menu)
+}
+
+/// How full the context is: a ring with the share beside it; the counts and the cost
+/// on hover.
+pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, accent, warning, danger, border) = (
         theme.muted_foreground,
@@ -43,66 +89,31 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     } else {
         accent
     };
-    let (mode_menu, access_menu) = match ws.picker {
-        Some(Picker::Mode) => (Some(popup("mode", super::mode_menu::render(ws, cx))), None),
-        Some(Picker::Access) => (
-            None,
-            Some(popup("access", super::access_menu::render(ws, cx))),
-        ),
-        _ => (None, None),
-    };
+    let mut tip = format!(
+        "{} of {} tokens",
+        widgets::short(used),
+        widgets::short(limit)
+    );
+    if let Some(cost) = ws.shown_chat().and_then(|chat| chat.cost.clone()) {
+        tip.push_str(&format!(" \u{00B7} {cost}"));
+    }
+    let tip = SharedString::from(tip);
     div()
-        .flex_1()
-        .min_w_0()
+        .id("context-ring")
         .flex()
-        .flex_row()
+        .flex_col()
         .items_center()
-        .gap_1()
-        .meta()
-        .text_color(muted)
+        .gap_0p5()
+        .child(super::ring::render(26., share, meter, border))
         .child(
             div()
-                .relative()
-                .child(
-                    Button::new("mode")
-                        .ghost()
-                        .label(format!("{} mode", ws.status.mode.to_lowercase()))
-                        .dropdown_caret(true)
-                        .tooltip("Pick a mode; Tab walks them")
-                        .on_click(cx.listener(|ws, _, _, cx| {
-                            if ws.settings.is_none() {
-                                ws.load_settings(cx);
-                            }
-                            ws.toggle_picker(Picker::Mode, cx);
-                        })),
-                )
-                .children(mode_menu),
+                .meta()
+                .text_color(muted)
+                .child(format!("{:.0}%", share * 100.)),
         )
-        .when(ws.shown.is_some(), |bar| {
-            bar.child(
-                div()
-                    .relative()
-                    .child(
-                        Button::new("access")
-                            .ghost()
-                            .label(super::access_menu::current(ws).name())
-                            .dropdown_caret(true)
-                            .tooltip("What this chat's tools may do without asking")
-                            .on_click(
-                                cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Access, cx)),
-                            ),
-                    )
-                    .children(access_menu),
-            )
+        .tooltip(move |window, cx| {
+            gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
         })
-        .child(div().flex_1())
-        .children(ws.shown_chat().and_then(|chat| chat.cost.clone()))
-        .child(format!(
-            "{} / {}",
-            widgets::short(used),
-            widgets::short(limit)
-        ))
-        .child(super::ring::render(share, meter, border))
 }
 
 /// The Models button at the right of the composer's row: one click opens the models and
@@ -130,6 +141,7 @@ pub fn models(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> D
         .child(
             Button::new("pick-model")
                 .ghost()
+                .small()
                 .icon(IconName::Cpu)
                 .label(short_model(&model))
                 .dropdown_caret(true)
@@ -253,9 +265,9 @@ impl Workspace {
 /// The model without its provider prefix, cut to a length the bar holds.
 fn short_model(name: &str) -> String {
     let name = name.rsplit('/').next().unwrap_or(name);
-    if name.chars().count() <= 30 {
+    if name.chars().count() <= 22 {
         return name.to_owned();
     }
-    let head: String = name.chars().take(29).collect();
+    let head: String = name.chars().take(21).collect();
     format!("{head}\u{2026}")
 }

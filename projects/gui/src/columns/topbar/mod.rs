@@ -56,12 +56,8 @@ pub fn render(
                 .child(div().flex_1())
                 .when(chat, |bar| {
                     bar.child(
-                        tool(
-                            "top-review",
-                            gpui_kit::assets::IconName::GitCompareArrows,
-                            "Review the changes",
-                        )
-                        .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
+                        tool("top-review", IconName::Github, "Review the changes")
+                            .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
                     )
                 })
                 .child(

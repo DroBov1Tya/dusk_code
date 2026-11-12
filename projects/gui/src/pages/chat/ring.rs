@@ -5,14 +5,13 @@ use std::f32::consts::{FRAC_PI_2, TAU};
 
 use gpui_kit::*;
 
-const SIZE: f32 = 18.;
 const STEPS: usize = 24;
 /// The gap between quarters, in radians.
 const GAP: f32 = 0.22;
 
-pub fn render(share: f32, fill: Hsla, track: Hsla) -> impl IntoElement {
+pub fn render(size: f32, share: f32, fill: Hsla, track: Hsla) -> impl IntoElement {
     let share = share.clamp(0., 1.);
-    div().size(px(SIZE)).flex_none().child(
+    div().size(px(size)).flex_none().child(
         canvas(
             |_, _, _| {},
             move |bounds, _, window, _| {

@@ -16,7 +16,8 @@ mod todo;
 pub mod touched;
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName},
+    component::{ActiveTheme, Icon, IconName},
+    prelude::FluentBuilder,
     *,
 };
 
@@ -57,15 +58,19 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .flex_row()
             .items_center()
             .gap_2()
-            .h(px(36.))
+            .h(px(44.))
             .px_4()
             .cursor_pointer()
             // Every header starts with its icon, on the grid of the rows below.
-            .child(widgets::icon(module_icon(module), muted))
+            .child(
+                Icon::new(module_icon(module))
+                    .size(px(18.))
+                    .text_color(muted),
+            )
             .child(
                 div()
                     .flex_1()
-                    .small()
+                    .body()
                     .font_weight(FontWeight::MEDIUM)
                     .child(*title),
             )
@@ -94,10 +99,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 crate::ui::theme::change(cx, |prefs| prefs.right_folded = Some(kept));
                 cx.notify();
             }));
+        // The rule between modules stops short of the column's edges.
         let mut section = div()
             .flex()
             .flex_col()
-            .when_border(index > 0, border)
+            .when(index > 0, |section| {
+                section.child(div().mx_4().h(px(1.)).bg(border))
+            })
             .child(header);
         if open {
             let body = match module {
@@ -240,21 +248,6 @@ fn statistics(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .child(activity::render(ws, cx));
     }
     column
-}
-
-/// A hairline above every module but the first.
-trait WhenBorder {
-    fn when_border(self, on: bool, color: Hsla) -> Self;
-}
-
-impl WhenBorder for Div {
-    fn when_border(self, on: bool, color: Hsla) -> Self {
-        if on {
-            self.border_t_1().border_color(color)
-        } else {
-            self
-        }
-    }
 }
 
 impl Workspace {

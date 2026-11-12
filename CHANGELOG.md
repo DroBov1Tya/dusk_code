@@ -4,6 +4,21 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Changed
+
+- A scheduled task can name its model; the desktop editor's lists keep their clicks
+  instead of closing the window. A finished turn folds everything but its answer, in
+  every client, and says what each tool did in plain words, work for agents in the
+  accent. Desktop composer: attach and access inside the box with the microphone as
+  large as Send, the mode and the model under it, the context as a percentage beside it
+  with the counts on hover. Answers read as text, their tools on hover; the review button
+  shows the git mark; menus show which row is under the pointer; the side panel is
+  narrower with inset rules and larger headers; the wordmark sits over the sidebar; the
+  rail previews a place only while the sidebar is hidden; Settings, Chat opens the mode
+  list; text defaults to 16 px.
+
 ## 0.73.1 - 2026-11-12
 
 ### Fixed
