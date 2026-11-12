@@ -14,6 +14,7 @@ use crate::{
     config::{Effort, ProviderConfig, ProviderKind},
     providers::{
         errors::{Transient, UnsupportedEffort, UnsupportedPictures},
+        limits::{Account, Headers},
         registry::Model,
         request::{ChatMessage, ChatRequest},
         transport::http,
@@ -33,6 +34,7 @@ pub struct OpenAiCompatible {
     authorization: Option<HeaderValue>,
     /// OpenAI itself takes `max_completion_tokens`; its reasoning models refuse `max_tokens`.
     completion_tokens: bool,
+    account: Account,
 }
 
 #[derive(Deserialize)]
@@ -66,6 +68,7 @@ impl OpenAiCompatible {
             completions_url: http::endpoint(&base_url, &["chat", "completions"])?,
             authorization,
             completion_tokens: matches!(config.kind, ProviderKind::OpenAi),
+            account: Account::of(config),
         })
     }
 
@@ -79,6 +82,7 @@ impl OpenAiCompatible {
             .send()
             .await
             .map_err(|_| anyhow!("provider model request failed"))?;
+        self.account.note(Headers::OpenAi, response.headers());
         ensure!(
             response.status().is_success(),
             http::refused("model", response.status())
@@ -135,6 +139,7 @@ impl OpenAiCompatible {
             .send()
             .await
             .map_err(|_| Transient("provider completion request failed".into()))?;
+        self.account.note(Headers::OpenAi, response.headers());
         let status = response.status();
         if !status.is_success() {
             let message = http::refused("completion", status);

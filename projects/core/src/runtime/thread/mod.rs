@@ -5,4 +5,4 @@ pub mod project;
 pub mod thread_start;
 mod title;
 
-pub use context::{Conversation, spec_tokens};
+pub use context::{ContextSource, Conversation, spec_tokens};

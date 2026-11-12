@@ -51,6 +51,9 @@ impl Server {
                 return Ok(Response::Provider(runtime.check_provider(target).await?));
             }
             SettingsRequest::RemoveProvider { name } => runtime.remove_provider(&name)?,
+            SettingsRequest::ProviderEnabled { name, enabled } => {
+                runtime.set_provider_enabled(&name, enabled)?;
+            }
             SettingsRequest::RemoveAllProviders => runtime.remove_all_providers()?,
             SettingsRequest::SetSecret { name, value } => {
                 runtime.set_secret(&name, &value.0).await?

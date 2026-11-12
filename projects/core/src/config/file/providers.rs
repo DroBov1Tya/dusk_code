@@ -83,6 +83,17 @@ impl Config {
         self.providers.insert(name, provider);
     }
 
+    /// Whether a provider of the file was found to switch.
+    pub fn set_provider_enabled(&mut self, name: &str, enabled: bool) -> bool {
+        match self.providers.get_mut(name) {
+            Some(provider) => {
+                provider.enabled = enabled;
+                true
+            }
+            None => false,
+        }
+    }
+
     /// Forgets a provider and what was kept for its models. Whether it is in use is for
     /// the caller to check.
     pub fn remove_provider(&mut self, name: &str) -> bool {

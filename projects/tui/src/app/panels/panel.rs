@@ -217,17 +217,25 @@ pub struct SecretEntry {
 pub enum Preset {
     OpenAi,
     Anthropic,
+    Google,
     Ollama,
     Custom,
 }
 
 impl Preset {
-    pub const ALL: [Self; 4] = [Self::OpenAi, Self::Anthropic, Self::Ollama, Self::Custom];
+    pub const ALL: [Self; 5] = [
+        Self::OpenAi,
+        Self::Anthropic,
+        Self::Google,
+        Self::Ollama,
+        Self::Custom,
+    ];
 
     pub fn label(self) -> &'static str {
         match self {
             Self::OpenAi => "OpenAI",
             Self::Anthropic => "Anthropic",
+            Self::Google => "Google AI",
             Self::Ollama => "Ollama, on this machine",
             Self::Custom => "Custom, OpenAI-compatible",
         }
@@ -240,6 +248,7 @@ impl Preset {
                 "Claude models with an API key from the Anthropic console. A Claude \
                  subscription works only in Anthropic's own apps."
             }
+            Self::Google => "Gemini models with an API key from Google AI Studio.",
             Self::Ollama => {
                 "Models Ollama serves locally, no key. For long tasks start Ollama with a \
                  larger OLLAMA_CONTEXT_LENGTH; its default window is small."
@@ -252,6 +261,7 @@ impl Preset {
         match self {
             Self::OpenAi => ProviderKind::OpenAi,
             Self::Anthropic => ProviderKind::Anthropic,
+            Self::Google => ProviderKind::Google,
             Self::Ollama | Self::Custom => ProviderKind::OpenAiCompatible,
         }
     }
@@ -260,6 +270,7 @@ impl Preset {
         match self {
             Self::OpenAi => "openai",
             Self::Anthropic => "anthropic",
+            Self::Google => "google",
             Self::Ollama => "ollama",
             Self::Custom => "",
         }
@@ -277,6 +288,7 @@ impl Preset {
         match self {
             Self::OpenAi => Some("https://platform.openai.com/api-keys"),
             Self::Anthropic => Some("https://console.anthropic.com/settings/keys"),
+            Self::Google => Some("https://aistudio.google.com/apikey"),
             Self::Ollama | Self::Custom => None,
         }
     }

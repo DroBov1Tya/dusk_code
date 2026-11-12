@@ -4,7 +4,7 @@
 use dusk_protocol::{client::ProviderTarget, config::ProviderKind};
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Sizable,
+        ActiveTheme, Disableable, IconName, Sizable,
         button::{Button, ButtonVariants},
         input::Input,
     },
@@ -21,7 +21,7 @@ use crate::{
     workspace::Workspace,
 };
 
-const KINDS: [(ProviderKind, &str, &str); 3] = [
+const KINDS: [(ProviderKind, &str, &str); 4] = [
     (
         ProviderKind::OpenAiCompatible,
         "Custom",
@@ -29,6 +29,11 @@ const KINDS: [(ProviderKind, &str, &str); 3] = [
     ),
     (ProviderKind::OpenAi, "OpenAI", "api.openai.com"),
     (ProviderKind::Anthropic, "Anthropic", "api.anthropic.com"),
+    (
+        ProviderKind::Google,
+        "Google AI",
+        "generativelanguage.googleapis.com",
+    ),
 ];
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
@@ -37,29 +42,63 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         let theme = cx.theme();
         (theme.muted_foreground, theme.primary, theme.border)
     };
-    let mut kinds = div().flex().flex_row().gap_2();
-    for (kind, label, about) in KINDS {
-        let chosen = page.kind == kind;
-        kinds = kinds.child(
-            div()
-                .id(("provider-kind", kind as usize))
-                .flex_1()
-                .flex()
-                .flex_col()
-                .gap_0p5()
-                .px_3()
-                .py_2()
-                .rounded_lg()
-                .border_1()
-                .border_color(if chosen { accent } else { border })
-                .when(chosen, |tile| tile.bg(accent.opacity(0.10)))
-                .cursor_pointer()
-                .child(div().body().font_weight(FontWeight::MEDIUM).child(label))
-                .child(div().meta().text_color(muted).child(about))
-                .on_click(
-                    cx.listener(move |ws, _, window, cx| ws.pick_provider_kind(kind, window, cx)),
-                ),
-        );
+    let (label, about) = KINDS
+        .iter()
+        .find(|(kind, ..)| *kind == page.kind)
+        .map_or(("Custom", ""), |(_, label, about)| (*label, *about));
+    // The kinds as one drop-down: the chosen one on the button, the rest under it.
+    let mut kinds = div().flex().flex_col().gap_1().child(
+        div()
+            .id("provider-kind")
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .h(px(40.))
+            .px_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(if page.kinds_open { accent } else { border })
+            .cursor_pointer()
+            .child(div().body().font_weight(FontWeight::MEDIUM).child(label))
+            .child(div().flex_1().small().text_color(muted).child(about))
+            .child(crate::ui::widgets::icon(
+                if page.kinds_open {
+                    IconName::ChevronUp
+                } else {
+                    IconName::ChevronDown
+                },
+                muted,
+            ))
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.providers_page.kinds_open = !ws.providers_page.kinds_open;
+                cx.notify();
+            })),
+    );
+    if page.kinds_open {
+        let mut list = div()
+            .flex()
+            .flex_col()
+            .p_1()
+            .rounded_lg()
+            .border_1()
+            .border_color(border)
+            .bg(cx.theme().popover);
+        for (kind, label, about) in KINDS {
+            let chosen = page.kind == kind;
+            list = list.child(
+                crate::ui::widgets::row(("provider-kind", kind as usize), chosen, cx)
+                    .child(div().body().child(label))
+                    .child(div().flex_1().small().text_color(muted).child(about))
+                    .when(chosen, |row| {
+                        row.child(crate::ui::widgets::icon(IconName::Check, accent))
+                    })
+                    .on_click(cx.listener(move |ws, _, window, cx| {
+                        ws.pick_provider_kind(kind, window, cx)
+                    })),
+            );
+        }
+        kinds = kinds.child(list);
     }
     let checking = matches!(page.form_check, Some(Check::Running));
     card(cx)
@@ -74,15 +113,15 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 "Several can be connected at once; the model menu lists the models of each.",
             ),
         )
-        .child(kinds)
+        .child(
+            labeled("Provider name", "optional; it shows in the model menu", cx)
+                .child(Input::new(&page.name).large()),
+        )
+        .child(labeled("Provider", "whose API the server speaks", cx).child(kinds))
         .child(labeled("Address", "where the server is", cx).child(Input::new(&page.url).large()))
         .child(
             labeled("API key", "kept in the system keychain", cx)
                 .child(Input::new(&page.key).large()),
-        )
-        .child(
-            labeled("Name", "optional; it shows in the model menu", cx)
-                .child(Input::new(&page.name).large()),
         )
         .child(
             div()
@@ -122,6 +161,7 @@ impl Workspace {
     ) {
         let page = &mut self.providers_page;
         page.kind = kind;
+        page.kinds_open = false;
         page.form_check = None;
         if let Some(url) = kind.base_url() {
             page.url
@@ -176,7 +216,13 @@ impl Workspace {
             cx,
             move |client| async move { client.settings().connect(kind, name, url, key).await },
             |ws, result, cx| match result {
-                Ok(_) => ws.load_models(cx),
+                Ok(_) => {
+                    // Opened over the chat, the form has done its work.
+                    if matches!(ws.modal, Some(crate::modal::Modal::ConnectProvider)) {
+                        ws.close_modal(cx);
+                    }
+                    ws.load_models(cx)
+                }
                 Err(error) => ws.fail(error, cx),
             },
         );

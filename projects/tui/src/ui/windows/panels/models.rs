@@ -5,7 +5,10 @@ use ratatui::text::{Line, Span};
 use super::frame::selectable;
 use crate::app::{ModelList, compact_number};
 use crate::ui::windows::{
-    theme::{ACCENT, ELLIPSIS, NEGATIVE, ON, POSITIVE, SUN_GLYPH, TEXT, bold, dim, fg, thought},
+    theme::{
+        ACCENT, ELLIPSIS, NEGATIVE, OFF, ON, POSITIVE, SUN_GLYPH, TEXT, TEXT_MUTED, bold, dim, fg,
+        thought,
+    },
     wrap,
 };
 
@@ -24,6 +27,7 @@ pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
             lines.push(Line::default());
         }
         let (light, mut about) = match &provider.models {
+            _ if !provider.enabled => ((OFF, TEXT_MUTED), "off".to_owned()),
             Ok(models) if models.len() == 1 => ((ON, POSITIVE), "1 model".to_owned()),
             Ok(models) => ((ON, POSITIVE), format!("{} models", models.len())),
             Err(_) => ((ON, NEGATIVE), "unavailable".to_owned()),
@@ -40,7 +44,10 @@ pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
         lines.push(selectable(
             vec![
                 Span::styled(format!(" {} ", light.0), fg(light.1)),
-                Span::styled(provider.name.clone(), bold(TEXT)),
+                Span::styled(
+                    provider.name.clone(),
+                    if provider.enabled { bold(TEXT) } else { dim() },
+                ),
             ],
             if removing {
                 Span::styled("press d again to remove it".to_owned(), fg(NEGATIVE))
@@ -54,6 +61,14 @@ pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
         if let Err(error) = &provider.models {
             lines.extend(
                 wrap::words(vec![Span::styled(error.clone(), fg(NEGATIVE))], width, 0)
+                    .into_iter()
+                    .map(|spans| Line::from([vec![Span::raw("    ")], spans].concat())),
+            );
+        }
+        if let Some(limits) = provider.limits.as_ref().filter(|_| provider.enabled) {
+            let text = format!("Limits: {}", limits.text());
+            lines.extend(
+                wrap::words(vec![Span::styled(text, dim())], width, 0)
                     .into_iter()
                     .map(|spans| Line::from([vec![Span::raw("    ")], spans].concat())),
             );

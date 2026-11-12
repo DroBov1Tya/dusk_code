@@ -267,19 +267,26 @@ impl ModelChoice {
     }
 }
 
-/// Asks every configured provider for its models at once.
+/// Asks every configured provider for its models at once. One switched off is listed
+/// without being asked, so the settings can switch it back on.
 pub async fn check_providers(config: &Config) -> Result<Vec<ProviderStatus>> {
     let registry = ProviderRegistry::from_config(config)?;
+    let all = config.all_providers();
     let mut checks = JoinSet::new();
     for name in registry.names() {
         let name = name.to_owned();
         let Some(provider) = registry.provider(&name) else {
             continue;
         };
-        let settings = config.all_providers().get(&name).cloned();
+        let settings = all.get(&name).cloned();
         checks.spawn(check_provider(name, provider, settings));
     }
     let mut statuses = checks.join_all().await;
+    statuses.extend(
+        all.iter()
+            .filter(|(_, settings)| !settings.enabled)
+            .map(|(name, _)| ProviderStatus::disabled(name.clone())),
+    );
     statuses.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(statuses)
 }
@@ -307,5 +314,32 @@ pub async fn check_provider(
         name,
         models,
         balance,
+        limits: provider.limits(),
+        enabled: true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The address answers nobody: a provider that is off must not be asked at all.
+    const OFF: &str = "providers:\n  off:\n    base_url: 'https://127.0.0.1:1/v1'\n    api_key: k\n    enabled: false\n";
+
+    #[tokio::test]
+    async fn a_provider_switched_off_is_listed_but_never_asked_or_chosen() {
+        let config = Config::parse(OFF.as_bytes()).unwrap();
+        let statuses = check_providers(&config).await.unwrap();
+        assert_eq!(statuses, [ProviderStatus::disabled("off".into())]);
+        assert!(Choice::pick(&config, Some("off/model")).await.is_err());
+        let found = Choice::pick(&config, None).await.err().unwrap();
+        assert_eq!(found.to_string(), "no provider configured");
+
+        let mut config = Config::parse(format!("{OFF}model: off/model\n").as_bytes()).unwrap();
+        assert!(Choice::configured(&config).unwrap().is_none());
+        assert!(config.to_yaml().unwrap().contains("enabled: false"));
+        assert!(config.set_provider_enabled("off", true));
+        assert!(!config.to_yaml().unwrap().contains("enabled"));
+        assert!(Choice::configured(&config).unwrap().is_some());
     }
 }

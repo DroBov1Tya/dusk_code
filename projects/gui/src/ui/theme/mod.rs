@@ -69,16 +69,22 @@ impl Global for Stored {}
 
 pub fn init(file: PathBuf, cx: &mut App) {
     // A damaged or missing file falls back to the defaults.
-    let prefs = fs::read_to_string(&file)
+    let mut prefs: Prefs = fs::read_to_string(&file)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default();
+    prefs.layout = prefs.layout.refreshed();
     cx.set_global(Stored { file, prefs });
     apply(cx);
 }
 
 pub fn prefs(cx: &App) -> &Prefs {
     &cx.global::<Stored>().prefs
+}
+
+/// Whether the sky is offered at all: it is the Dusk theme's own.
+pub fn has_sky(cx: &App) -> bool {
+    prefs(cx).theme == palettes::DEFAULT
 }
 
 /// Changes the preferences, applies them and keeps them.

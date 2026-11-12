@@ -1,369 +1,296 @@
-//! The fox: the mascot of duskcode, one for each subagent. A fox is the animal of the dusk.
-//! Only down to the chest, in as few 8-bit cells as it takes to be a fox: two ears, a cream
-//! face, big cheeks. It is symmetric by construction. The picture is one layer; what moves is
-//! the eyes and what hovers beside it: dots that fill while it thinks, a pencil, a
-//! hammer, a lens, a page, sparks when done and stars when it failed.
+//! The fox: the mascot of duskcode, one for each subagent. A fox is the animal of the dusk,
+//! and this one keeps to it: a dark cloak with a crimson lining and a high collar, a clasp
+//! in the agent's color, and narrow eyes that glow. It is drawn in 8-bit cells and holds
+//! nothing: what it does shows in the fox itself. The eyes turn, the ears twitch, the tail
+//! flicks, the clasp pulses and the hem of the cloak lifts, each activity in its own way.
 
 use std::time::Duration;
 
+use dusk_protocol::agent::Doing;
 use gpui_kit::*;
 
 use crate::pages::chat::transcript::AgentState;
 
-/// The fox is 16 cells wide and 16 tall; the margin on the right holds what it holds, and
-/// the one on top its dots.
-const W: usize = 26;
-const H: usize = 19;
-const AT_Y: i32 = 3;
+const W: usize = 22;
+const H: usize = 22;
 
 type Grid = [[u8; W]; H];
 
-// Generated from shapes by a script; edit the picture, not these rows.
-const BODY: [&str; 16] = [
-    "...k........k...",
-    "..kok......kok..",
-    ".koook....koook.",
-    ".koeookkkkooeok.",
-    ".kooooooooooook.",
-    ".kooooooooooook.",
-    ".kooooooooooook.",
-    "khoooooooooooohk",
-    ".kooooooooooook.",
-    ".kvvoooooooovvk.",
-    "..kvvvvnnvvvvk..",
-    "...koovvvvook...",
-    "....koovvook....",
-    "...kkooooookk...",
-    "..khhoooooohhk..",
-    "..koooovvooook..",
+/// Cells laid over the picture at a place; a space keeps what is under it.
+type Patch = (usize, usize, &'static [&'static str]);
+
+// The fox at rest without its tail. The head and the cloak mirror about the middle; the
+// last two columns are room for the tail.
+const BODY: [&str; H] = [
+    "...k............k.....",
+    "..kdk..........kdk....",
+    "..kddk........kddk....",
+    "..koeokkkkkkkkoeok....",
+    "..kooooooooooooook....",
+    "..kooooooooooooook....",
+    "..kooooooooooooook....",
+    ".khoooooooooooooohk...",
+    "kCkvvoooooooooovvkCk..",
+    "kCCkvvvvnnnnvvvvkCCk..",
+    "kcCCkvvvvvvvvvvkCCck..",
+    "kcCCCkkkkkkkkkkCCCck..",
+    "kcCCCCCCmaamCCCCCCck..",
+    "kccCCCCmvvvvmCCCCcck..",
+    "kccCCCmovvvvomCCCcck..",
+    "kccCCCmoovvoomCCCcck..",
+    "kccCCmooovvooomCCcck..",
+    "kcccCmoooooooomCccck..",
+    "kcccCmookookoomCccck..",
+    "kcccCmkookkookmCccck..",
+    "kckcCkkvvkkvvkkCckck..",
+    "k.k.kk.kk..kk.kk.k.k..",
 ];
 
 #[derive(Clone, Copy)]
 enum Eyes {
-    Open,
+    /// Narrow and slanted: at rest.
+    Sly,
+    /// Under a lowered lid: intent on the work.
+    Narrow,
+    Wide,
     /// Turned up: thinking.
     Up,
-    Blink,
+    Left,
+    Right,
+    Closed,
     /// Closed and content.
     Happy,
-    /// A red cross each: it failed.
-    Dizzy,
+    /// Gone out: it failed.
+    Dim,
 }
 
-/// What is beside the fox: what it holds, or what hovers over it.
 #[derive(Clone, Copy)]
-enum Fx {
-    /// Three dots of which this many are lit.
-    Dots(u8),
-    /// A pencil leaning through three poses, a line growing after it.
-    Pencil(u8),
-    /// A hammer up (`false`) or down.
-    Hammer(bool),
-    /// A lens over the page, in one of two places.
-    Lens(u8),
-    /// A page whose lines are read, one of two.
-    Page(u8),
-    /// Sparks of finished work.
-    Sparkle(u8),
-    /// Stars that circle, one of three places.
-    Stars(u8),
+enum Ears {
+    Up,
+    TwitchLeft,
+    TwitchRight,
+    Droop,
+}
+
+#[derive(Clone, Copy)]
+enum Gem {
+    Lit,
+    Dark,
+    Hot,
 }
 
 #[derive(Clone, Copy)]
 struct Frame {
     eyes: Eyes,
-    fx: Fx,
+    ears: Ears,
+    /// The tail's tip flicked aside.
+    flick: bool,
+    gem: Gem,
+    /// The cloak's hem lifted, as in a gust.
+    flare: bool,
     /// How long the frame stays.
     ms: u64,
 }
 
-const fn frame(eyes: Eyes, fx: Fx, ms: u64) -> Frame {
-    Frame { eyes, fx, ms }
-}
-
-/// What a tool's name says it does, for the thing beside the fox.
-fn tool_fx(name: &str, step: u8) -> Fx {
-    use dusk_protocol::agent::Doing;
-    match Doing::of_tool(name) {
-        Doing::Searching => Fx::Lens(step),
-        Doing::Reading => Fx::Page(step),
-        Doing::Planning => Fx::Pencil(step),
-        _ => Fx::Hammer(step == 1),
+const fn frame(eyes: Eyes, ears: Ears, flick: bool, gem: Gem, flare: bool, ms: u64) -> Frame {
+    Frame {
+        eyes,
+        ears,
+        flick,
+        gem,
+        flare,
+        ms,
     }
 }
 
+/// The name of the motion, its frames, and whether it goes round.
 fn frames(state: &AgentState) -> (&'static str, Vec<Frame>, bool) {
+    use Ears::{Droop, TwitchLeft, TwitchRight};
     use Eyes::*;
+    use Gem::*;
+    let up = Ears::Up;
     match state {
+        // Looks up while the clasp pulses; an ear twitches at a thought.
         AgentState::Thinking => (
             "thinking",
             vec![
-                frame(Up, Fx::Dots(1), 260),
-                frame(Up, Fx::Dots(2), 260),
-                frame(Up, Fx::Dots(3), 400),
-                frame(Up, Fx::Dots(2), 260),
+                frame(Eyes::Up, up, false, Lit, false, 320),
+                frame(Eyes::Up, up, false, Dark, false, 320),
+                frame(Eyes::Up, TwitchLeft, false, Lit, false, 160),
+                frame(Eyes::Up, up, false, Dark, false, 320),
             ],
             true,
         ),
+        // Intent eyes and a quick tail, like a hand that writes.
         AgentState::Writing => (
             "writing",
             vec![
-                frame(Open, Fx::Pencil(0), 260),
-                frame(Open, Fx::Pencil(1), 160),
-                frame(Open, Fx::Pencil(2), 360),
-                frame(Blink, Fx::Pencil(2), 100),
+                frame(Narrow, up, false, Lit, false, 220),
+                frame(Narrow, up, true, Lit, false, 160),
+                frame(Narrow, up, false, Lit, false, 220),
+                frame(Closed, up, true, Lit, false, 100),
             ],
             true,
         ),
-        AgentState::Tool(name) => (
-            dusk_protocol::agent::Doing::of_tool(name).label(),
-            vec![
-                frame(Open, tool_fx(name, 0), 440),
-                frame(Open, tool_fx(name, 1), 360),
-                frame(Blink, tool_fx(name, 1), 100),
-            ],
-            true,
-        ),
+        AgentState::Tool(name) => {
+            let doing = Doing::of_tool(name);
+            let frames = match doing {
+                // Wide eyes dart from side to side, the ear on that side turning with them.
+                Doing::Searching => vec![
+                    frame(Left, TwitchLeft, false, Lit, false, 300),
+                    frame(Wide, up, false, Lit, false, 160),
+                    frame(Right, TwitchRight, false, Lit, false, 300),
+                    frame(Wide, up, false, Lit, false, 160),
+                ],
+                // The eyes go along a line, then a blink turns the page.
+                Doing::Reading => vec![
+                    frame(Left, up, false, Lit, false, 360),
+                    frame(Sly, up, false, Lit, false, 300),
+                    frame(Right, up, false, Lit, false, 360),
+                    frame(Closed, up, false, Lit, false, 120),
+                ],
+                // Eyes shut, the clasp breathing, the tail slow.
+                Doing::Planning => vec![
+                    frame(Closed, up, false, Lit, false, 520),
+                    frame(Closed, up, true, Dark, false, 520),
+                ],
+                // The cloak lifts and the clasp burns while the command runs.
+                _ => vec![
+                    frame(Wide, up, false, Hot, true, 200),
+                    frame(Wide, up, false, Lit, false, 200),
+                    frame(Wide, up, true, Hot, true, 200),
+                    frame(Narrow, up, false, Lit, false, 200),
+                ],
+            };
+            (doing.label(), frames, true)
+        }
+        // Two wags of the tail, and it stays content.
         AgentState::Done => (
             "done",
             vec![
-                frame(Happy, Fx::Sparkle(0), 160),
-                frame(Happy, Fx::Sparkle(1), 260),
-                frame(Happy, Fx::Sparkle(0), 1),
+                frame(Happy, up, true, Lit, false, 160),
+                frame(Happy, up, false, Lit, false, 160),
+                frame(Happy, up, true, Lit, false, 160),
+                frame(Happy, up, false, Lit, false, 1),
             ],
             false,
         ),
+        // The light goes out and the ears fall.
         AgentState::Failed => (
             "failed",
             vec![
-                frame(Dizzy, Fx::Stars(0), 160),
-                frame(Dizzy, Fx::Stars(1), 160),
-                frame(Dizzy, Fx::Stars(2), 160),
-                frame(Dizzy, Fx::Stars(0), 1),
+                frame(Dim, TwitchLeft, false, Dark, false, 160),
+                frame(Dim, Droop, false, Dark, false, 240),
+                frame(Dim, Droop, false, Dark, false, 1),
             ],
             false,
         ),
     }
 }
 
-fn put(grid: &mut Grid, x: i32, y: i32, cell: u8) {
-    if (0..W as i32).contains(&x) && (0..H as i32).contains(&y) {
-        grid[y as usize][x as usize] = cell;
-    }
-}
-
-fn put_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
-    for (x, y) in cells {
-        put(grid, *x, *y, cell);
-    }
-}
-
-/// The two eyes: a dark dash each, on the orange of the face.
-fn eyes(grid: &mut Grid, state: Eyes) {
-    let rows: [u8; 3] = match state {
-        Eyes::Open => *b"okk",
-        Eyes::Up => *b"kko",
-        Eyes::Blink | Eyes::Happy => *b"oko",
-        Eyes::Dizzy => *b"ror",
-    };
-    for x in [4, 11] {
-        for (dy, cell) in rows.iter().enumerate() {
-            put(grid, x, 6 + dy as i32 + AT_Y, *cell);
+fn lay(grid: &mut Grid, patch: Patch) {
+    let (x, y, rows) = patch;
+    for (dy, row) in rows.iter().enumerate() {
+        for (dx, cell) in row.bytes().enumerate() {
+            if cell != b' ' && x + dx < W && y + dy < H {
+                grid[y + dy][x + dx] = cell;
+            }
         }
     }
 }
 
-/// The picture of one frame: the fox, its eyes, and what is beside it.
+/// Both eyes: the right one is the left one mirrored, except when they look aside.
+fn eyes(grid: &mut Grid, eyes: Eyes) {
+    let (left, right): (&[&str], &[&str]) = match eyes {
+        Eyes::Sly => (&["E  ", " EE"], &["  E", "EE "]),
+        Eyes::Narrow => (&["kkk", " EE"], &["kkk", "EE "]),
+        Eyes::Wide => (&[" EE", " EE"], &["EE ", "EE "]),
+        Eyes::Up => (&["EEE", "ooo"], &["EEE", "ooo"]),
+        Eyes::Left => (&["ooo", "EEk"], &["ooo", "EEk"]),
+        Eyes::Right => (&["ooo", "kEE"], &["ooo", "kEE"]),
+        Eyes::Closed => (&["ooo", "kkk"], &["ooo", "kkk"]),
+        Eyes::Happy => (&[" k ", "k k"], &[" k ", "k k"]),
+        Eyes::Dim => (&["ooo", "xkx"], &["ooo", "xkx"]),
+    };
+    lay(grid, (4, 5, left));
+    lay(grid, (13, 5, right));
+}
+
+/// The picture of one frame.
 fn compose(frame: Frame) -> Grid {
     let mut grid = [[b'.'; W]; H];
     for (y, row) in BODY.iter().enumerate() {
-        for (x, cell) in row.bytes().enumerate() {
-            if cell != b'.' {
-                put(&mut grid, x as i32, y as i32 + AT_Y, cell);
-            }
+        grid[y].copy_from_slice(row.as_bytes());
+    }
+    let tail: &[&str] = if frame.flick {
+        &[
+            ".kk..", "kvvk.", "kvhk.", "kohok", "koook", "koodk", "koodk", "kodk.", "kdk..",
+            "kk...",
+        ]
+    } else {
+        &[
+            "..kk.", ".kvvk", ".kvhk", "kohok", "koook", "koodk", "koodk", "kodk.", "kdk..",
+            "kk...",
+        ]
+    };
+    lay(&mut grid, (17, 10, tail));
+    if frame.flare {
+        lay(
+            &mut grid,
+            (0, 20, &["kcckCkkvvkkvvkkCkcck", ".k.kk..kk..kk..kk.k."]),
+        );
+    }
+    match frame.ears {
+        Ears::Up => {}
+        Ears::TwitchLeft => lay(&mut grid, (1, 0, &["..k...", ".kdk..", ".kddk."])),
+        Ears::TwitchRight => lay(&mut grid, (13, 0, &["...k..", "..kdk.", ".kddk."])),
+        Ears::Droop => {
+            lay(&mut grid, (2, 0, &["....", "....", "kkkk"]));
+            lay(&mut grid, (14, 0, &["....", "....", "kkkk"]));
         }
     }
     eyes(&mut grid, frame.eyes);
-    fx(&mut grid, frame.fx);
+    match frame.gem {
+        Gem::Lit => {}
+        Gem::Dark => lay(&mut grid, (9, 12, &["AA"])),
+        Gem::Hot => lay(&mut grid, (9, 12, &["FF"])),
+    }
     grid
 }
 
-/// A cell of what the fox holds, placed from the picture of the hand.
-fn held(grid: &mut Grid, x: i32, y: i32, cell: u8) {
-    put(grid, 32 - x, y - 8, cell);
-}
-
-fn held_all(grid: &mut Grid, cells: &[(i32, i32)], cell: u8) {
-    for (x, y) in cells {
-        held(grid, *x, *y, cell);
-    }
-}
-
-fn fx(grid: &mut Grid, fx: Fx) {
-    match fx {
-        Fx::Dots(lit) => {
-            for (index, x) in [6, 8, 10].into_iter().enumerate() {
-                let cell = if (index as u8) < lit { b'a' } else { b'g' };
-                put(grid, x, 1, cell);
-            }
-        }
-        Fx::Pencil(step) => {
-            // The grip stays put as the shaft leans. Every step uses adjacent cells.
-            let poses = [
-                [16, 15, 14, 13, 12],
-                [16, 15, 15, 14, 13],
-                [16, 16, 15, 15, 14],
-            ];
-            let [grip, top, middle, end, tip] = poses[usize::from(step)];
-            held_all(
-                grid,
-                &[(grip, 21), (top, 20), (middle, 19), (end, 18)],
-                b'y',
-            );
-            held(grid, tip, 17, b'k');
-            // The line it leaves grows.
-            for x in 0..(2 + 2 * i32::from(step)) {
-                held(grid, 8 + x, 24, b'W');
-            }
-        }
-        Fx::Hammer(down) => {
-            if down {
-                held_all(grid, &[(16, 21), (15, 22), (14, 23)], b'b');
-                held_all(grid, &[(10, 22), (11, 22), (12, 22), (13, 22)], b'g');
-                held_all(grid, &[(10, 23), (11, 23), (12, 23), (13, 23)], b'g');
-                held_all(grid, &[(9, 26), (10, 26)], b'y');
-            } else {
-                held_all(
-                    grid,
-                    &[(16, 21), (15, 20), (14, 19), (13, 18), (13, 17)],
-                    b'b',
-                );
-                held_all(grid, &[(10, 15), (11, 15), (12, 15), (13, 15)], b'g');
-                held_all(grid, &[(10, 16), (11, 16), (12, 16), (13, 16)], b'g');
-            }
-        }
-        Fx::Lens(step) => {
-            let (dx, dy) = if step == 0 { (0, 0) } else { (-1, 1) };
-            let ring = [
-                (9, 15),
-                (10, 15),
-                (11, 15),
-                (8, 16),
-                (12, 16),
-                (8, 17),
-                (12, 17),
-                (9, 18),
-                (10, 18),
-                (11, 18),
-            ];
-            for (x, y) in ring {
-                held(grid, x + dx, y + dy, b'c');
-            }
-            held_all(
-                grid,
-                &[
-                    (12 + dx, 18 + dy),
-                    (13 + dx, 19 + dy),
-                    (14 + dx, 20 + dy),
-                    (15 + dx, 21 + dy),
-                ],
-                b'b',
-            );
-        }
-        Fx::Page(step) => {
-            for y in 14..22 {
-                for x in 7..13 {
-                    held(grid, x, y, b'W');
-                }
-            }
-            let line = 16 + i32::from(step);
-            held_all(
-                grid,
-                &[
-                    (8, line),
-                    (9, line),
-                    (10, line),
-                    (8, line + 2),
-                    (9, line + 2),
-                ],
-                b'g',
-            );
-        }
-        Fx::Sparkle(step) => {
-            // Keep the sparks anchored while the light briefly expands.
-            for (x, y) in [(1, 7), (24, 9)] {
-                put(grid, x, y, b'y');
-                if step != 0 {
-                    put_all(
-                        grid,
-                        &[(x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)],
-                        b'y',
-                    );
-                }
-            }
-        }
-        Fx::Stars(step) => {
-            let places = [
-                [(5, 1), (8, 0), (11, 1)],
-                [(6, 1), (9, 0), (12, 1)],
-                [(7, 1), (10, 0), (4, 0)],
-            ];
-            put_all(grid, &places[usize::from(step) % 3], b'y');
-        }
-    }
-}
-
-/// The color of a cell. `accent` is the color the caller gives the thinking dots.
+/// The color of a cell. `accent` is the agent's color, worn as the clasp.
 fn paint(cell: u8, accent: Hsla) -> Option<Hsla> {
     let rgb = |hex: u32| Some(rgb(hex).into());
     match cell {
-        b'o' => rgb(0xf08a3e),
-        b'h' => rgb(0xf7a862),
-        b'd' => rgb(0xcf6628),
-        b'w' => rgb(0xf8dcb8),
-        b'v' => rgb(0xfdf6ea),
-        b'e' => rgb(0xd97a62),
-        b'W' => rgb(0xf4f6fb),
-        b'k' => rgb(0x2a1214),
-        b's' => rgb(0x4a2a1c),
-        b'n' => rgb(0x3a1016),
-        b'y' => rgb(0xf2c14e),
-        b'c' => rgb(0x7cc7e8),
-        b'b' => rgb(0x5a2e1b),
-        b'g' => rgb(0x8c93a6),
-        b'r' => rgb(0xe5484d),
+        // Fur: body, light, dark, cream, inner ear.
+        b'o' => rgb(0xc94a2c),
+        b'h' => rgb(0xe26a3c),
+        b'd' => rgb(0x7d2a26),
+        b'v' => rgb(0xf0dccb),
+        b'e' => rgb(0x5a1c2e),
+        // Outline and nose.
+        b'k' | b'n' => rgb(0x1a0e1e),
+        // Cloak: lit, shaded, lining.
+        b'C' => rgb(0x35264f),
+        b'c' => rgb(0x231833),
+        b'm' => rgb(0x9c1f3c),
+        // Eyes: glowing, gone out.
+        b'E' => rgb(0xff6a4d),
+        b'x' => rgb(0x7a5a66),
+        // The clasp: lit, dark, burning.
         b'a' => Some(accent),
+        b'A' => Some(accent.opacity(0.35)),
+        b'F' => rgb(0xffc27a),
         _ => None,
     }
 }
 
-/// The fox with each cell `unit` pixels wide: `color` is the accent of its dots.
+/// The fox with each cell `unit` pixels wide; `color` is the agent's, worn as the clasp.
 pub fn render(
     id: impl Into<ElementId>,
     state: &AgentState,
     color: Hsla,
     unit: f32,
-) -> impl IntoElement {
-    draw(id, state, color, unit, W)
-}
-
-/// Only the fox, without the margin that holds what it carries, so it can stand in the
-/// middle of a button.
-pub fn render_fox(
-    id: impl Into<ElementId>,
-    state: &AgentState,
-    color: Hsla,
-    unit: f32,
-) -> impl IntoElement {
-    draw(id, state, color, unit, BODY[0].len())
-}
-
-fn draw(
-    id: impl Into<ElementId>,
-    state: &AgentState,
-    color: Hsla,
-    unit: f32,
-    columns: usize,
 ) -> impl IntoElement {
     let (motion, frames, repeat) = frames(state);
     let total: u64 = frames.iter().map(|frame| frame.ms).sum();
@@ -376,7 +303,7 @@ fn draw(
     // The outer ID belongs to the agent; a new activity starts its own timeline.
     div().id(id).flex_none().child(
         div()
-            .w(px(columns as f32 * unit))
+            .w(px(W as f32 * unit))
             .h(px(H as f32 * unit))
             .flex_none()
             .with_animation(motion, animation, move |figure, phase| {
@@ -395,7 +322,7 @@ fn draw(
                         |_, _, _| {},
                         move |bounds, _, window, _| {
                             for (row, line) in grid.iter().enumerate() {
-                                for (column, cell) in line.iter().take(columns).enumerate() {
+                                for (column, cell) in line.iter().enumerate() {
                                     let Some(fill_color) = paint(*cell, color) else {
                                         continue;
                                     };
@@ -425,52 +352,47 @@ fn draw(
 mod tests {
     use super::*;
 
-    #[::core::prelude::v1::test]
-    fn the_fox_is_symmetric_and_every_state_has_frames() {
-        assert_eq!(BODY.len(), 16);
-        for row in BODY {
-            let cells = row.as_bytes();
-            assert_eq!(cells.len(), 16);
-            let mirrored: Vec<u8> = cells.iter().rev().copied().collect();
-            assert_eq!(cells, &mirrored[..], "{row}");
-        }
-        let states = [
+    fn states() -> Vec<AgentState> {
+        vec![
             AgentState::Thinking,
             AgentState::Writing,
-            AgentState::Tool("run_command".into()),
             AgentState::Tool("search_files".into()),
+            AgentState::Tool("read_file".into()),
+            AgentState::Tool("plan_edit".into()),
+            AgentState::Tool("run_command".into()),
             AgentState::Done,
             AgentState::Failed,
-        ];
-        for state in &states {
-            let (_, frames, _) = frames(state);
-            assert!(frames.len() >= 2 && frames.iter().all(|f| f.ms > 0));
+        ]
+    }
+
+    #[::core::prelude::v1::test]
+    fn the_cloaked_fox_mirrors_and_every_cell_has_a_color() {
+        for row in BODY {
+            let cells = row.as_bytes();
+            assert_eq!(cells.len(), W);
+            let fox = &cells[..W - 2];
+            let mirrored: Vec<u8> = fox.iter().rev().copied().collect();
+            assert_eq!(fox, &mirrored[..], "{row}");
+        }
+        for state in states() {
+            let (_, frames, _) = frames(&state);
+            assert!(frames.len() >= 2 && frames.iter().all(|frame| frame.ms > 0));
             for frame in frames {
-                compose(frame);
+                for cell in compose(frame).iter().flatten() {
+                    assert!(*cell == b'.' || paint(*cell, gpui_kit::white()).is_some());
+                }
             }
         }
     }
 
     #[::core::prelude::v1::test]
-    fn a_tool_is_held_by_what_it_does() {
-        assert!(matches!(tool_fx("search_files", 0), Fx::Lens(_)));
-        assert!(matches!(tool_fx("read_file", 0), Fx::Page(_)));
-        assert!(matches!(tool_fx("plan_edit", 0), Fx::Pencil(_)));
-        assert!(matches!(tool_fx("run_command", 1), Fx::Hammer(true)));
-    }
-
-    #[::core::prelude::v1::test]
-    fn tool_details_stay_inside_the_canvas() {
-        let pencil = compose(frame(Eyes::Open, Fx::Pencil(2), 100));
-        assert_eq!(&pencil[16][19..25], b"WWWWWW");
-        assert_eq!((pencil[13][16], pencil[12][16]), (b'y', b'y'));
-        assert_eq!((pencil[11][17], pencil[10][17]), (b'y', b'y'));
-        let hammer = compose(frame(Eyes::Open, Fx::Hammer(true), 100));
-        assert_eq!(&hammer[18][22..24], b"yy");
-        let hammer_up = compose(frame(Eyes::Open, Fx::Hammer(false), 100));
-        assert_eq!((hammer_up[8][19], hammer_up[9][19]), (b'g', b'b'));
-        let lens = compose(frame(Eyes::Open, Fx::Lens(1), 100));
-        assert_eq!(lens[9][W - 1], b'c');
-        assert_eq!((lens[11][22], lens[11][21]), (b'c', b'b'));
+    fn each_activity_moves_in_its_own_way() {
+        let motions: Vec<Vec<Grid>> = states()
+            .iter()
+            .map(|state| frames(state).1.into_iter().map(compose).collect())
+            .collect();
+        for (index, motion) in motions.iter().enumerate() {
+            assert!(!motions[..index].contains(motion));
+        }
     }
 }

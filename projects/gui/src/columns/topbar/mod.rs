@@ -193,27 +193,95 @@ fn nav(ws: &Workspace, width: Pixels, border: Hsla, cx: &mut Context<Workspace>)
         })
 }
 
-/// "Dusk" from violet to a sunset orange, one hue per letter, and "code" plain.
+/// The mark and the name: a sun half under the horizon with the evening star over it,
+/// then "Dusk" from violet to a sunset orange, one hue per letter, and "code" quiet
+/// beside it.
 fn wordmark(cx: &App) -> Div {
     const DUSK: [(f32, f32, f32); 4] = [
-        (268., 0.72, 0.66),
-        (300., 0.62, 0.64),
-        (338., 0.74, 0.64),
-        (24., 0.92, 0.60),
+        (268., 0.72, 0.68),
+        (300., 0.62, 0.66),
+        (338., 0.76, 0.66),
+        (24., 0.92, 0.62),
     ];
     let mut word = div()
         .flex()
         .flex_row()
-        .body()
-        .font_weight(FontWeight::SEMIBOLD);
+        .items_center()
+        .gap_2()
+        .child(emblem());
+    let mut name = div()
+        .flex()
+        .flex_row()
+        .text_size(rems(1.02))
+        .font_weight(FontWeight::BOLD);
     for (letter, (hue, saturation, lightness)) in "Dusk".chars().zip(DUSK) {
-        word = word.child(
+        name = name.child(
             div()
                 .text_color(hsla(hue / 360., saturation, lightness, 1.))
                 .child(letter.to_string()),
         );
     }
-    word.child(div().text_color(cx.theme().foreground).child("code"))
+    word = word.child(
+        name.child(
+            div()
+                .font_weight(FontWeight::NORMAL)
+                .text_color(cx.theme().foreground.opacity(0.72))
+                .child("code"),
+        ),
+    );
+    word
+}
+
+/// The setting sun: the upper half of a disc in the wordmark's own colors over a thin
+/// horizon, and a star up to its right.
+fn emblem() -> Div {
+    const DISC: f32 = 14.;
+    let violet = hsla(268. / 360., 0.72, 0.68, 1.);
+    let orange = hsla(24. / 360., 0.92, 0.62, 1.);
+    let rose = hsla(338. / 360., 0.76, 0.66, 1.);
+    div()
+        .relative()
+        .flex_none()
+        .w(px(20.))
+        .h(px(16.))
+        // Only the half above the horizon shows.
+        .child(
+            div()
+                .absolute()
+                .left(px(3.))
+                .top(px(4.))
+                .w(px(DISC))
+                .h(px(DISC / 2.))
+                .overflow_hidden()
+                .child(div().size(px(DISC)).rounded_full().bg(linear_gradient(
+                    180.,
+                    linear_color_stop(orange, 0.),
+                    linear_color_stop(rose, 0.55),
+                ))),
+        )
+        .child(
+            div()
+                .absolute()
+                .left_0()
+                .top(px(12.))
+                .w(px(20.))
+                .h(px(1.5))
+                .rounded_full()
+                .bg(linear_gradient(
+                    90.,
+                    linear_color_stop(violet, 0.),
+                    linear_color_stop(orange, 1.),
+                )),
+        )
+        .child(
+            div()
+                .absolute()
+                .left(px(17.))
+                .top(px(1.))
+                .size(px(2.))
+                .rounded_full()
+                .bg(hsla(0.12, 0.6, 0.92, 1.)),
+        )
 }
 
 /// Where you are: the page, or the chat under a folder icon that names its project on

@@ -41,6 +41,7 @@ fn new_provider(
         prices: Default::default(),
         balance: None,
         requests_per_minute: None,
+        enabled: true,
     };
     crate::providers::validate_provider(&provider)?;
     Ok(provider)
@@ -71,6 +72,9 @@ impl Runtime {
                 (name, settings)
             }
         };
+        if !settings.enabled {
+            return Ok(ProviderStatus::disabled(name));
+        }
         let provider = Arc::new(Provider::new(&settings)?);
         Ok(check_provider(name, provider, Some(settings)).await)
     }
@@ -149,6 +153,36 @@ impl Runtime {
     /// Forgets a provider and its key. The provider of the chosen model stays: the chat
     /// would lose its model under the user.
     pub fn remove_provider(&self, name: &str) -> Result<()> {
+        self.ensure_not_chosen(name)?;
+        self.launcher.config.update(|config| {
+            config.remove_provider(name);
+        })?;
+        Ok(())
+    }
+
+    /// Switches a provider of the config file on or off; its key stays. Off is refused
+    /// like a removal while it holds the chosen model.
+    pub fn set_provider_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        if !enabled {
+            self.ensure_not_chosen(name)?;
+            let chosen = self.launcher.model.current();
+            // Discovery may have chosen a model the config does not name yet.
+            ensure!(
+                chosen.is_none_or(|choice| choice.provider_name != name),
+                "{name} holds the chosen model; choose a model of another provider first"
+            );
+        }
+        let mut found = false;
+        self.launcher
+            .config
+            .update(|config| found = config.set_provider_enabled(name, enabled))?;
+        ensure!(found, "no provider named {name}");
+        Ok(())
+    }
+
+    /// A provider of the config file that does not hold the chosen model: the chat would
+    /// lose its model under the user.
+    fn ensure_not_chosen(&self, name: &str) -> Result<()> {
         let config = self.launcher.config.current();
         ensure!(
             config.providers().contains_key(name),
@@ -161,9 +195,6 @@ impl Runtime {
             !in_use,
             "{name} holds the chosen model; choose a model of another provider first"
         );
-        self.launcher.config.update(|config| {
-            config.remove_provider(name);
-        })?;
         Ok(())
     }
 
@@ -188,6 +219,11 @@ mod tests {
 
     /// A server on this machine that answers any request with `status` and `body`.
     async fn serve(status: &'static str, body: &'static str) -> String {
+        serve_with(status, "", body).await
+    }
+
+    /// The same, with header lines of its own, each ended by `\r\n`.
+    async fn serve_with(status: &'static str, headers: &'static str, body: &'static str) -> String {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let base = format!("http://{}/v1", listener.local_addr().unwrap());
         tokio::spawn(async move {
@@ -198,7 +234,7 @@ mod tests {
                 let mut buffer = [0u8; 4096];
                 let _ = socket.read(&mut buffer).await;
                 let reply = format!(
-                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                    "HTTP/1.1 {status}\r\nContent-Type: application/json\r\n{headers}Content-Length: {}\r\nConnection: close\r\n\r\n{body}",
                     body.len()
                 );
                 let _ = socket.write_all(reply.as_bytes()).await;
@@ -223,6 +259,27 @@ mod tests {
         let base = serve("200 OK", r#"{"data":[{"id":"a"},{"id":"b"}]}"#).await;
         let status = check(base, "sk-test").await;
         assert_eq!(status.models.unwrap().len(), 2);
+    }
+
+    #[tokio::test]
+    async fn limits_an_answer_reported_are_in_the_status_and_kept_for_the_account() {
+        let headers = "x-ratelimit-limit-requests: 5000\r\n\
+                       x-ratelimit-remaining-requests: 4812\r\n\
+                       x-ratelimit-reset-requests: 12s\r\n";
+        let base = serve_with("200 OK", headers, r#"{"data":[{"id":"a"}]}"#).await;
+        let requests = check(base.clone(), "sk-test")
+            .await
+            .limits
+            .and_then(|limits| limits.requests)
+            .expect("the limits of the answer");
+        assert_eq!((requests.limit, requests.remaining), (5_000, 4_812));
+        // A provider built anew for the same account knows them before it asks anything.
+        let settings =
+            new_provider(ProviderKind::OpenAiCompatible, base, Some("sk-test".into())).unwrap();
+        assert!(Provider::new(&settings).unwrap().limits().is_some());
+
+        let silent = serve("200 OK", r#"{"data":[{"id":"a"}]}"#).await;
+        assert_eq!(check(silent, "sk-test").await.limits, None);
     }
 
     #[tokio::test]

@@ -68,7 +68,7 @@ fn main() -> Result<()> {
     // Pictures in answers load over HTTPS through this client; see chat::messages.
     let http = reqwest_client::ReqwestClient::user_agent("duskcode-gui")?;
     gpui_kit::application()
-        .with_assets(gpui_kit::assets::Assets)
+        .with_assets(ui::icons::Assets)
         .with_http_client(Arc::new(http))
         .run(move |cx| {
             gpui_kit::init(cx);

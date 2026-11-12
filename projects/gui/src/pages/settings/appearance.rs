@@ -119,6 +119,8 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .id("fonts")
         .max_h(px(236.))
         .overflow_y_scroll()
+        // The wheel over the list moves the list, not the page under it.
+        .occlude()
         .flex()
         .flex_col()
         .rounded_md()
@@ -166,21 +168,24 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .flex_col()
         .gap_4()
         .child(section("Theme", "", cx).child(themes))
-        .child(
-            section("Sky", "", cx).child(type_size(
-                "Dusk sky",
-                "While the agent works, the header glows and fills with stars",
-                div().child(
-                    gpui_kit::component::switch::Switch::new("appearance-sky")
-                        .checked(prefs.sky)
-                        .on_click(cx.listener(|_, on: &bool, _, cx| {
-                            let on = *on;
-                            theme::change(cx, move |prefs| prefs.sky = on);
-                        })),
-                ),
-                cx,
-            )),
-        )
+        // The sky is the Dusk theme's own: other themes do not offer it.
+        .when(theme::has_sky(cx), |page| {
+            page.child(
+                section("Sky", "", cx).child(type_size(
+                    "Dusk sky",
+                    "While the agent works, the header glows and fills with stars",
+                    div().child(
+                        gpui_kit::component::switch::Switch::new("appearance-sky")
+                            .checked(prefs.sky)
+                            .on_click(cx.listener(|_, on: &bool, _, cx| {
+                                let on = *on;
+                                theme::change(cx, move |prefs| prefs.sky = on);
+                            })),
+                    ),
+                    cx,
+                )),
+            )
+        })
         .child(
             section("Typography", "", cx)
                 .child(type_size(

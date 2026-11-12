@@ -184,6 +184,7 @@ pub struct Workspace {
     pub files: BTreeMap<String, Vec<FileEntry>>,
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
+    pub context_load: crate::columns::inspector::context::ContextLoad,
     pub alerts: crate::platform::notify::Alerts,
     /// The shown chat's pinned plan.
     pub plan: crate::columns::inspector::plan::Plan,
@@ -204,6 +205,8 @@ pub struct Workspace {
     pub token_box: crate::pages::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
+    /// Providers unfolded in More models, by name; each starts folded.
+    pub models_open: HashSet<String>,
     pub jobs: Vec<JobInfo>,
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
@@ -387,6 +390,8 @@ impl Workspace {
             voice_form: crate::pages::connectors::voice::VoiceForm::new(window, cx),
             token_box: crate::pages::settings::TokenBox::new(window, cx),
             context_open: HashSet::new(),
+            context_load: Default::default(),
+            models_open: HashSet::new(),
             jobs: Vec::new(),
             settings: None,
             providers: Vec::new(),
@@ -488,6 +493,9 @@ impl Workspace {
                 );
                 self.notify_event(&thread_id, &event, cx);
                 self.watch_plan(&thread_id, &event, cx);
+                if matches!(*event, dusk_protocol::thread::ThreadEvent::Tokens { .. }) {
+                    self.context_counted(&thread_id, cx);
+                }
                 if matches!(
                     *event,
                     dusk_protocol::thread::ThreadEvent::ToolFinished { .. }

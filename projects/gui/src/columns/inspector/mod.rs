@@ -4,7 +4,7 @@
 //! folds on its header.
 
 mod activity;
-mod context;
+pub mod context;
 mod environment;
 mod files;
 pub mod git;

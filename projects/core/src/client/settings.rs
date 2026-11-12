@@ -84,6 +84,13 @@ impl Settings<'_> {
         self.done(SettingsRequest::RemoveProvider { name }).await
     }
 
+    /// Switches a saved provider on or off; off is refused while its model is the chosen one.
+    pub async fn provider_enabled(&self, name: &str, enabled: bool) -> Result<()> {
+        let name = name.to_owned();
+        self.done(SettingsRequest::ProviderEnabled { name, enabled })
+            .await
+    }
+
     /// Asks a provider whether it answers; nothing is saved.
     pub async fn check_provider(
         &self,

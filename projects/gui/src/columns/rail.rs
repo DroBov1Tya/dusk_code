@@ -139,7 +139,11 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
         .into_any_element(),
         Part::Quiet => item(
             "rail-quiet",
-            IconName::Moon,
+            if ws.quiet {
+                Icon::default().path(crate::ui::icons::MOON_FILL)
+            } else {
+                Icon::new(IconName::Moon)
+            },
             if ws.quiet {
                 "Leave quiet: show the columns again"
             } else {
@@ -190,7 +194,13 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
 }
 
 /// One place: a 32 px square with its icon, filled while it is the shown place.
-fn item(id: &'static str, icon: IconName, tip: String, active: bool, cx: &App) -> Stateful<Div> {
+fn item(
+    id: &'static str,
+    icon: impl Into<Icon>,
+    tip: String,
+    active: bool,
+    cx: &App,
+) -> Stateful<Div> {
     let theme = cx.theme();
     let (hover, selected) = (theme.list_hover, theme.list_active);
     let color = if active {
@@ -212,7 +222,7 @@ fn item(id: &'static str, icon: IconName, tip: String, active: bool, cx: &App) -
         .focusable_row(cx)
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         .child(
-            Icon::new(icon)
+            icon.into()
                 .size(px(crate::ui::size::ICON_LARGE))
                 .text_color(color),
         )

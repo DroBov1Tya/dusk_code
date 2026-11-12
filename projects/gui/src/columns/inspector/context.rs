@@ -7,7 +7,10 @@ use dusk_protocol::{
 };
 use gpui_kit::{component::ActiveTheme, *};
 
-use crate::{ui::widgets, workspace::Workspace};
+use crate::{
+    ui::widgets,
+    workspace::{Right, Workspace},
+};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(report) = &ws.context else {
@@ -151,25 +154,57 @@ fn items(section: &ContextSection, muted: Hsla, cx: &App) -> Div {
     list
 }
 
+/// Whether a report is on its way, so the counts of a busy turn ask for one at a time.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum ContextLoad {
+    #[default]
+    Idle,
+    Loading,
+    /// The thread counted again meanwhile: the report on its way is already old.
+    Stale,
+}
+
 impl Workspace {
     pub fn load_context(&mut self, cx: &mut Context<Self>) {
         let Some(thread_id) = self.shown.clone() else {
             return;
         };
+        if self.context_load != ContextLoad::Idle {
+            self.context_load = ContextLoad::Stale;
+            return;
+        }
+        self.context_load = ContextLoad::Loading;
+        let asked = thread_id.clone();
         self.core.call(
             cx,
             move |client| async move {
                 let thread_id = Some(thread_id);
                 client.command(Command::Context { thread_id }).await
             },
-            |ws, result, cx| match result {
-                Ok(Answer::Context(report)) => {
-                    ws.context = Some(report);
-                    cx.notify();
+            move |ws, result, cx| {
+                let stale = ws.context_load == ContextLoad::Stale;
+                ws.context_load = ContextLoad::Idle;
+                // Another chat is shown by now, or the thread counted again: ask anew.
+                if stale || ws.shown.as_deref() != Some(asked.as_str()) {
+                    return ws.load_context(cx);
                 }
-                Ok(_) => {}
-                Err(error) => ws.fail(error, cx),
+                match result {
+                    Ok(Answer::Context(report)) => {
+                        ws.context = Some(report);
+                        cx.notify();
+                    }
+                    Ok(_) => {}
+                    Err(error) => ws.fail(error, cx),
+                }
             },
         );
+    }
+
+    /// The shown thread counted its context again: the open Statistics follow it.
+    pub fn context_counted(&mut self, thread_id: &str, cx: &mut Context<Self>) {
+        let open = !self.right_hidden && !self.folded.contains(&Right::Statistics);
+        if open && self.shown.as_deref() == Some(thread_id) {
+            self.load_context(cx);
+        }
     }
 }

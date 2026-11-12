@@ -13,6 +13,9 @@ pub enum ProviderKind {
     /// The Anthropic Messages API.
     #[serde(rename = "anthropic")]
     Anthropic,
+    /// The Google AI Gemini API.
+    #[serde(rename = "google")]
+    Google,
 }
 
 impl ProviderKind {
@@ -22,6 +25,7 @@ impl ProviderKind {
             Self::OpenAiCompatible => None,
             Self::OpenAi => Some("https://api.openai.com/v1"),
             Self::Anthropic => Some("https://api.anthropic.com/v1"),
+            Self::Google => Some("https://generativelanguage.googleapis.com/v1beta"),
         }
     }
 }

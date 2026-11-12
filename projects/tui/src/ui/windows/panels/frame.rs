@@ -222,7 +222,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             let (lines, row) = models(list, screen.width.saturating_sub(8).min(72) as usize);
             (
                 "model",
-                "enter choose  c connect  d remove  r check  esc close",
+                "enter choose  c connect  t on/off  d remove  r check  esc close",
                 lines,
                 Some(row),
             )

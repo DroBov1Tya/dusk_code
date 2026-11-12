@@ -16,6 +16,7 @@
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
+//! - `type=TEXT`: put the text in the message box;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
@@ -230,6 +231,10 @@ fn act(
         }
         "attach" => {
             ws.attach_open = true;
+            cx.notify();
+        }
+        "type" => {
+            ws.fill_composer = Some(value.to_owned());
             cx.notify();
         }
         "menu" => {

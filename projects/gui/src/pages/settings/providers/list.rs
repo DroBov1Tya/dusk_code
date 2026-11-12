@@ -6,6 +6,7 @@ use gpui_kit::{
         Disableable, Sizable,
         button::{Button, ButtonVariants},
         input::Input,
+        switch::Switch,
     },
     *,
 };
@@ -83,16 +84,32 @@ fn provider_card(
     let running = matches!(check, Check::Running);
     let reconnecting = ws.providers_page.reconnecting.as_deref() == Some(name.as_str());
     let (check_name, again_name, remove_name) = (name.clone(), name.clone(), name.clone());
+    let (switch_name, enabled) = (name.clone(), provider.enabled);
     let buttons = div()
         .flex()
         .flex_row()
         .items_center()
         .gap_1()
         .child(
+            Switch::new(SharedString::from(format!("provider-on-{name}")))
+                .checked(enabled)
+                .disabled(in_use)
+                .tooltip(if in_use {
+                    "It holds the chosen model; choose another first"
+                } else if enabled {
+                    "Turn off: keep the key, hide its models"
+                } else {
+                    "Turn on: ask it and offer its models"
+                })
+                .on_click(cx.listener(move |ws, on: &bool, _, cx| {
+                    ws.set_provider_enabled(&switch_name, *on, cx)
+                })),
+        )
+        .child(
             Button::new(SharedString::from(format!("provider-check-{name}")))
                 .outline()
                 .label("Check")
-                .disabled(running)
+                .disabled(running || !enabled)
                 .tooltip("Ask this provider whether it answers")
                 .on_click(cx.listener(move |ws, _, _, cx| ws.check_provider(&check_name, cx))),
         )
@@ -129,11 +146,21 @@ fn provider_card(
                         .body()
                         .font_weight(FontWeight::MEDIUM)
                         .truncate()
+                        .when(!enabled, |name| name.opacity(0.5))
                         .child(name.clone()),
                 )
                 .child(buttons),
         )
-        .child(check.line("Connected", cx));
+        .child(if enabled {
+            check.line("Connected", cx)
+        } else {
+            widgets::muted("Off: not asked, its key is kept", cx)
+                .px_0()
+                .opacity(0.5)
+        });
+    if let Some(limits) = provider.limits.as_ref().filter(|_| enabled) {
+        card = card.child(widgets::muted(format!("Limits: {}", limits.text()), cx).p_0());
+    }
     if reconnecting {
         card = card
             .child(Input::new(&ws.providers_page.reconnect_key).large())
@@ -233,6 +260,21 @@ impl Workspace {
             },
         );
         cx.notify();
+    }
+
+    /// Switches a provider on or off and loads the models that are offered now.
+    pub(super) fn set_provider_enabled(&mut self, name: &str, on: bool, cx: &mut Context<Self>) {
+        // What it answered before says nothing about it now.
+        self.providers_page.checks.remove(name);
+        let name = name.to_owned();
+        self.core.call(
+            cx,
+            move |client| async move { client.settings().provider_enabled(&name, on).await },
+            |ws, result, cx| match result {
+                Ok(()) => ws.load_models(cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
     }
 
     pub(super) fn remove_provider(&mut self, name: &str, cx: &mut Context<Self>) {

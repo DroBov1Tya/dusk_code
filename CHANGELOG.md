@@ -4,6 +4,38 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- A provider can be switched off in the model settings of every client: it keeps its key
+  but is not asked, its models are not offered and discovery skips it. The config says
+  `enabled: false` on it. The provider of the chosen model cannot be switched off.
+- Google AI as a kind of provider (`kind: google`): the Gemini API with its own model
+  catalogue, streamed answers, thought summaries, function calls and picture input.
+- The model settings of every client show a provider's rate limits when its answers
+  report them (OpenAI-compatible `x-ratelimit-*` and Anthropic `anthropic-ratelimit-*`
+  headers): requests and tokens left of the limit, and when they are full again. Read off
+  the answers that come anyway and kept in memory only.
+- GUI: slash commands in the message box. Typing `/` lists them, Tab or a click completes
+  one; commands that only show something open the window's own place for it.
+- GUI: a new chat opens on a line in a warm serif that changes with the time of day.
+- `domain-structure` skill: laying out and auditing any codebase as domains with front
+  doors and one reason to change per file; `docs/structure-audit.md` lists what here does
+  not fit yet.
+
+### Changed
+
+- The context report and a thread's `Tokens` events count with the same tools and model,
+  so Statistics and the ring by the message box agree; Statistics follows the turn.
+- GUI: the quiet mode's moon is filled while it is on; Connectors stands above Artifacts
+  in the rail; the dusk sky belongs to the Dusk theme only, its stars are soft points with
+  short rays and a rare tinted one; More models names each provider in bold and folds it.
+
+### Fixed
+
+- GUI: the wheel over the font list in Appearance scrolls the list, not the page.
+
 ## 0.73.2 - 2026-11-12
 
 ### Added

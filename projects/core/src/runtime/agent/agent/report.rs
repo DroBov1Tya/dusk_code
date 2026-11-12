@@ -3,12 +3,13 @@
 use super::Agent;
 use crate::runtime::{
     ThreadEvent,
-    thread::{Conversation, spec_tokens},
+    thread::{ContextSource, Conversation, spec_tokens},
 };
 use crate::{
     config::{Config, Effort},
     state::AgentPhase,
 };
+use std::sync::Arc;
 use tracing::warn;
 
 impl Agent {
@@ -59,7 +60,8 @@ impl Agent {
 
     /// Counting is for the client to see; a failure here does not touch the thread.
     pub async fn report_tokens(&self) {
-        let specs = self.tools.specs(&self.scope, &self.config.current());
+        let source = self.context_source();
+        let specs = source.specs();
         let counted = async {
             let mut tokens = self.state.thread_tokens(&self.thread_id).await?;
             let conversation = Conversation::load(&self.state, &self.thread_id).await?;
@@ -70,7 +72,7 @@ impl Agent {
         match counted.await {
             Ok(tokens) => self.emit(ThreadEvent::Tokens {
                 tokens,
-                limit: self.input_limit(),
+                limit: source.limit(),
             }),
             Err(error) => warn!("cannot count thread tokens: {error:#}"),
         }
@@ -81,13 +83,17 @@ impl Agent {
         let _ = self.events.send(event);
     }
 
-    /// The largest request under the selected model policy and its known window.
+    /// What this thread's context is counted with; its mailbox shares the same.
+    pub fn context_source(&self) -> ContextSource {
+        ContextSource {
+            tools: Arc::clone(&self.tools),
+            scope: Arc::clone(&self.scope),
+            model: Arc::clone(&self.model),
+            config: Arc::clone(&self.config),
+        }
+    }
+
     pub fn input_limit(&self) -> u64 {
-        let config = self.config.current();
-        self.model
-            .current()
-            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                choice.input_limit(&config)
-            })
+        self.context_source().limit()
     }
 }

@@ -1,6 +1,6 @@
 //! Live threads by ID, so one thread can reach another: wake it for a message, stop it,
-//! or pass events on to its client. Entries are weak, so they never keep a thread alive;
-//! each runner adds itself before it starts and takes itself out when it ends.
+//! or pass events on to its client. The channels are weak, so an entry never keeps a
+//! thread alive; each runner adds itself before it starts and takes itself out when it ends.
 
 use std::{
     collections::HashMap,
@@ -10,7 +10,7 @@ use std::{
 use tokio::sync::{Mutex, MutexGuard, mpsc::WeakUnboundedSender};
 
 use super::Input;
-use crate::runtime::ThreadEvent;
+use crate::runtime::{ThreadEvent, thread::ContextSource};
 
 #[derive(Default)]
 pub struct Mailboxes {
@@ -31,6 +31,8 @@ pub struct Mailbox {
     pub events: WeakUnboundedSender<ThreadEvent>,
     /// A subagent's runner rather than a chat's.
     pub agent: bool,
+    /// What the runner counts its context with, for a report that agrees with its events.
+    pub context: ContextSource,
 }
 
 impl Mailboxes {

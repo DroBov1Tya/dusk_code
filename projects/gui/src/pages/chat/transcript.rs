@@ -142,6 +142,8 @@ pub struct Agent {
     pub task: String,
     pub working: bool,
     pub state: AgentState,
+    /// The tools it runs now, by call, oldest first: several may run at once.
+    pub running: Vec<(String, String)>,
     pub started: Instant,
     pub ended: Option<Instant>,
 }
@@ -165,19 +167,47 @@ impl Agent {
     pub fn stop(&mut self) {
         self.working = false;
         self.state = AgentState::Done;
+        self.running.clear();
         self.ended = self.ended.or_else(|| Some(Instant::now()));
     }
 
     fn follow(&mut self, event: &ThreadEvent) {
+        // An agent that ended starts again only with a new turn: what trails in after a
+        // stop must not bring it back to work.
+        if !self.working && !matches!(event, ThreadEvent::TurnStarted(_)) {
+            return;
+        }
         let state = match event {
-            ThreadEvent::TurnStarted(_) | ThreadEvent::ToolFinished { .. } => AgentState::Thinking,
-            ThreadEvent::Model(ModelEvent::Reasoning(_)) => AgentState::Thinking,
-            ThreadEvent::Model(ModelEvent::Text(_)) => AgentState::Writing,
-            ThreadEvent::ToolStarted(call) => AgentState::Tool(call.name.clone()),
+            ThreadEvent::TurnStarted(_) => {
+                self.running.clear();
+                AgentState::Thinking
+            }
+            ThreadEvent::ToolStarted(call) => {
+                self.running.push((call.id.clone(), call.name.clone()));
+                AgentState::Tool(call.name.clone())
+            }
+            // One of several tools ended: the fox goes on with the newest still running.
+            ThreadEvent::ToolFinished { call_id, .. } => {
+                self.running.retain(|(id, _)| id != call_id);
+                match self.running.last() {
+                    Some((_, name)) => AgentState::Tool(name.clone()),
+                    None => AgentState::Thinking,
+                }
+            }
+            // The model speaks between tools, not over them.
+            ThreadEvent::Model(ModelEvent::Reasoning(_)) if self.running.is_empty() => {
+                AgentState::Thinking
+            }
+            ThreadEvent::Model(ModelEvent::Text(_)) if self.running.is_empty() => {
+                AgentState::Writing
+            }
             ThreadEvent::Idle => AgentState::Done,
             ThreadEvent::Failed(_) => AgentState::Failed,
             _ => return,
         };
+        if matches!(state, AgentState::Done | AgentState::Failed) {
+            self.running.clear();
+        }
         self.working = !matches!(state, AgentState::Done | AgentState::Failed);
         self.ended = match self.working {
             true => None,
@@ -410,6 +440,7 @@ impl Transcript {
                         task,
                         working: true,
                         state: AgentState::Thinking,
+                        running: Vec::new(),
                         started: Instant::now(),
                         ended: None,
                     },

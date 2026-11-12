@@ -356,3 +356,50 @@ async fn a_passing_failure_is_retried() {
     assert!(retried);
     assert_eq!(status, Some(TurnStatus::Completed));
 }
+
+#[tokio::test]
+async fn the_context_report_agrees_with_the_tokens_event() {
+    let state = thread_state("context_agrees").await;
+    let config = live_config("runner_config");
+    let provider = provider(vec![vec![Step::Text("hi"), Step::Done]]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(Some(50_000)));
+    // What `Runtime::context` counts a running thread with.
+    let source = runner.mailbox(&input).context;
+    let client = async move {
+        // Before the first step the tool specs are estimated; after it the turn's count leads.
+        for sent in [false, true] {
+            if sent {
+                input.send("hello").await.unwrap();
+            }
+            let mut reported = None;
+            loop {
+                match output.next_event().await.expect("the thread ended") {
+                    ThreadEvent::Tokens { tokens, limit } => {
+                        reported = Some((tokens, limit));
+                        // Nothing follows the count of a thread that has not been written to.
+                        if !sent {
+                            break;
+                        }
+                    }
+                    ThreadEvent::Idle => break,
+                    _ => {}
+                }
+            }
+            let (tokens, limit) = reported.expect("no tokens were reported");
+            let report = commands::context_report(
+                &state,
+                Some("thread"),
+                "main",
+                None,
+                &source.specs(),
+                source.limit(),
+                &commands::ContextDetail::default(),
+            )
+            .await
+            .unwrap();
+            assert_eq!((report.total, report.limit), (tokens.context, limit));
+            assert_eq!(limit, 50_000);
+        }
+    };
+    tokio::join!(runner.run(), client);
+}

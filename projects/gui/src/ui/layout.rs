@@ -62,7 +62,7 @@ impl Default for Layout {
         use Part::*;
         Self {
             rail: vec![
-                NewChat, Search, Divider, Chats, Schedules, Artifacts, Connectors, Spacer, Quiet,
+                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer, Quiet,
                 Settings,
             ],
             header: vec![Review, Search, More, SidePanel],
@@ -73,6 +73,22 @@ impl Default for Layout {
             side_left: vec![History],
             side_right: vec![Agents, Context],
         }
+    }
+}
+
+impl Layout {
+    /// A kept rail that is the order shipped before takes today's order: `gui.json`
+    /// holds the whole map, so a rail nobody reshaped would otherwise never change.
+    pub fn refreshed(mut self) -> Self {
+        use Part::*;
+        let before = [
+            NewChat, Search, Divider, Chats, Schedules, Artifacts, Connectors, Spacer, Quiet,
+            Settings,
+        ];
+        if self.rail == before {
+            self.rail = Self::default().rail;
+        }
+        self
     }
 }
 
