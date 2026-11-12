@@ -10,49 +10,114 @@ use dusk_protocol::thread::{Part, split};
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
 
-/// What the list draws: one item, or a run of tool steps the user can unfold.
+/// What the list draws: one item, or what the agent did on its way to an answer, folded
+/// into one line that says how long it worked.
 #[derive(Clone, PartialEq)]
 enum Block {
     One(Entry),
-    Steps(Vec<Entry>),
+    Turn {
+        entries: Vec<Entry>,
+        /// From the user's message to the answer; `None` while the turn goes on.
+        took: Option<i64>,
+    },
 }
 
-/// The block that starts at the item numbered `first`.
-fn block_at(chat: &ChatData, first: u64) -> Option<Block> {
-    let at = chat
-        .items
-        .binary_search_by_key(&first, |entry| entry.id)
-        .ok()?;
-    let entry = &chat.items[at];
-    if !matches!(entry.item, Item::Tool(_)) {
-        return Some(Block::One(entry.clone()));
-    }
-    let steps = chat.items[at..]
-        .iter()
-        .take_while(|entry| matches!(entry.item, Item::Tool(_)))
-        .cloned()
-        .collect();
-    Some(Block::Steps(steps))
-}
-
-/// The numbers of the first items of the blocks, in order.
-fn starts(chat: &ChatData) -> Vec<u64> {
-    let mut starts = Vec::new();
-    let mut in_steps = false;
-    for entry in &chat.items {
-        let tool = matches!(entry.item, Item::Tool(_));
-        if !(tool && in_steps) {
-            starts.push(entry.id);
+impl Block {
+    fn first(&self) -> u64 {
+        match self {
+            Block::One(entry) => entry.id,
+            Block::Turn { entries, .. } => entries.first().map_or(0, |entry| entry.id),
         }
-        in_steps = tool;
     }
-    starts
 }
+
+/// What a turn folds away: its steps, thoughts and what it said on the way.
+fn folds(item: &Item) -> bool {
+    matches!(
+        item,
+        Item::Tool(_) | Item::Agent { .. } | Item::Assistant { .. }
+    )
+}
+
+/// The chat as blocks: each turn's way to its answer in one, the rest one by one.
+fn blocks(chat: &ChatData) -> Vec<Block> {
+    let mut blocks = Vec::new();
+    let mut at = 0;
+    while at < chat.items.len() {
+        let asked = &chat.items[at];
+        blocks.push(Block::One(asked.clone()));
+        let end = chat.items[at + 1..]
+            .iter()
+            .position(|entry| matches!(entry.item, Item::User(_)))
+            .map_or(chat.items.len(), |offset| at + 1 + offset);
+        let turn = &chat.items[at + 1..end];
+        let open = end == chat.items.len() && chat.working;
+        // The answer is the last thing said after the steps; while the turn goes on,
+        // everything is on the way.
+        let answer = (!open)
+            .then(|| {
+                turn.iter().rposition(
+                    |e| matches!(&e.item, Item::Assistant { text, .. } if !text.trim().is_empty()),
+                )
+            })
+            .flatten();
+        let folded: Vec<Entry> = turn
+            .iter()
+            .enumerate()
+            .filter(|(index, entry)| Some(*index) != answer && folds(&entry.item))
+            .map(|(_, entry)| entry.clone())
+            .collect();
+        let started = matches!(asked.item, Item::User(_)).then_some(asked.at);
+        let took = answer
+            .zip(started)
+            .map(|(index, started)| turn[index].at - started);
+        if !folded.is_empty() {
+            blocks.push(Block::Turn {
+                entries: folded,
+                took,
+            });
+        }
+        for (index, entry) in turn.iter().enumerate() {
+            if Some(index) == answer || !folds(&entry.item) {
+                blocks.push(Block::One(entry.clone()));
+            }
+        }
+        at = end;
+    }
+    blocks
+}
+
+use dusk_protocol::thread::duration_words as duration;
 
 #[component]
 pub fn Transcript(chat: Chat) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
-    let blocks = Memo::new(move |_| chat.with(starts));
+    let all = Memo::new(move |_| chat.with(blocks));
+    let firsts =
+        Memo::new(move |_| all.with(|all| all.iter().map(Block::first).collect::<Vec<_>>()));
+    // A second's tick for the time the running turn has taken.
+    let tick = RwSignal::new(0u32);
+    let _ = set_interval_with_handle(
+        move || tick.update(|n| *n = n.wrapping_add(1)),
+        std::time::Duration::from_secs(1),
+    );
+    let working_for = move || {
+        tick.track();
+        let started = chat.with(|c| {
+            c.items
+                .iter()
+                .rev()
+                .find(|entry| matches!(entry.item, Item::User(_)))
+                .map(|entry| entry.at)
+        });
+        match started {
+            Some(started) => format!(
+                "Working \u{00B7} {}",
+                duration(super::data::now_ms() - started)
+            ),
+            None => "Working".to_owned(),
+        }
+    };
     let pending = move || {
         chat.with(|c| c.pending.clone())
             .into_iter()
@@ -77,14 +142,14 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
             <Show when=move || chat.with(|c| c.items.is_empty() && c.pending.is_empty())>
                 <div class="empty">"Ask anything. The chat is made with your first message."</div>
             </Show>
-            <For each=move || blocks.get() key=|first| *first let:first>
-                <BlockView chat first />
+            <For each=move || firsts.get() key=|first| *first let:first>
+                <BlockView all first />
             </For>
             <For each=pending key=|(at, text)| (*at, text.clone()) let:pair>
                 <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
             </For>
             <Show when=move || chat.with(|c| c.working)>
-                <div class="working"><span class="spinner"></span>"Working"</div>
+                <div class="working"><span class="spinner"></span>{working_for}</div>
             </Show>
         </div>
     }
@@ -98,11 +163,12 @@ fn element_to_end(scroller: &NodeRef<html::Div>) {
 }
 
 #[component]
-fn BlockView(chat: Chat, first: u64) -> impl IntoView {
-    let block = Memo::new(move |_| chat.with(|c| block_at(c, first)));
+fn BlockView(all: Memo<Vec<Block>>, first: u64) -> impl IntoView {
+    let block =
+        Memo::new(move |_| all.with(|all| all.iter().find(|b| b.first() == first).cloned()));
     move || match block.get() {
         Some(Block::One(entry)) => item_view(entry.item).into_any(),
-        Some(Block::Steps(steps)) => view! { <Steps steps /> }.into_any(),
+        Some(Block::Turn { entries, took }) => view! { <Turn entries took /> }.into_any(),
         None => ().into_any(),
     }
 }
@@ -176,27 +242,49 @@ fn copy(text: &str) {
     }
 }
 
+/// A turn's way to its answer: one line that says how long it took, or what it does now,
+/// and under it every step, thought and remark.
 #[component]
-fn Steps(steps: Vec<Entry>) -> impl IntoView {
-    let running = steps
-        .iter()
-        .any(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Running));
-    let failed = steps
+fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
+    let running = took.is_none();
+    let failed = entries
         .iter()
         .filter(|e| matches!(&e.item, Item::Tool(t) if t.state == ToolState::Failed))
         .count();
-    let names = summary_line(&steps);
-    let count = steps.len();
+    let title = match took {
+        Some(ms) => format!("Worked for {}", duration(ms)),
+        None => entries
+            .iter()
+            .rev()
+            .find_map(|e| match &e.item {
+                Item::Tool(tool) if !tool.detail.trim().is_empty() => Some(tool.detail.clone()),
+                Item::Tool(tool) => Some(tool.name.clone()),
+                _ => None,
+            })
+            .unwrap_or_else(|| "Thinking".to_owned()),
+    };
+    let names = summary_line(&entries);
     view! {
-        <details class="steps" open=running>
+        <details class="steps">
             <summary>
                 {running.then(|| view! { <span class="spinner"></span> })}
-                <span>{format!("{count} step{}", if count == 1 { "" } else { "s" })}</span>
+                <span>{title}</span>
                 <span class="muted">{names}</span>
                 {(failed > 0).then(|| view! { <span class="bad">{format!("{failed} failed")}</span> })}
             </summary>
-            {steps.into_iter().map(|entry| match entry.item {
+            {entries.into_iter().map(|entry| match entry.item {
                 Item::Tool(tool) => view! { <ToolStep tool /> }.into_any(),
+                Item::Assistant { text, reasoning } => view! {
+                    <div class="step-said">
+                        {(!reasoning.trim().is_empty()).then(|| view! {
+                            <details class="reasoning"><summary>"Thinking"</summary><Markdown text=reasoning /></details>
+                        })}
+                        {(!text.trim().is_empty()).then(|| view! { <Markdown text=text /> })}
+                    </div>
+                }.into_any(),
+                Item::Agent { from, text } => view! {
+                    <div class="step-said"><div class="muted">{format!("From {from}")}</div><Markdown text=text /></div>
+                }.into_any(),
                 _ => ().into_any(),
             }).collect_view()}
         </details>

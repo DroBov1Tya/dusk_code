@@ -124,6 +124,18 @@ fn replace(image: &[u8], work: &Path, bundle: &Path) -> Result<()> {
             .arg(&new),
         "verify the new app's signature",
     )?;
+    // Signed by a certificate, the running app takes only a copy signed by the same one:
+    // macOS keeps the user's permissions for it, and a copy signed by anyone else is not
+    // installed. An ad hoc app names only its own hash, which no new build can meet.
+    if let Some(requirement) = certificate_requirement(bundle) {
+        run(
+            Command::new("codesign")
+                .args(["--verify", "--deep", "--strict"])
+                .arg(format!("-R={requirement}"))
+                .arg(&new),
+            "check that the new app is signed by the same certificate",
+        )?;
+    }
     let old = work.join("old.app");
     fs::rename(bundle, &old).context("cannot move the running app aside")?;
     if let Err(error) = fs::rename(&new, bundle) {
@@ -132,6 +144,29 @@ fn replace(image: &[u8], work: &Path, bundle: &Path) -> Result<()> {
         return Err(error).context("cannot put the new app in place");
     }
     Ok(())
+}
+
+/// The app's designated requirement when it names a certificate, `None` for ad hoc.
+fn certificate_requirement(bundle: &Path) -> Option<String> {
+    let output = Command::new("codesign")
+        .args(["--display", "--requirements", "-"])
+        .arg(bundle)
+        .stdin(Stdio::null())
+        .output()
+        .ok()?;
+    let text = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    designated(&text)
+}
+
+fn designated(text: &str) -> Option<String> {
+    text.lines()
+        .find_map(|line| line.trim().strip_prefix("designated => "))
+        .filter(|requirement| requirement.contains("certificate"))
+        .map(str::to_owned)
 }
 
 fn run(command: &mut Command, what: &str) -> Result<()> {
@@ -163,6 +198,17 @@ mod tests {
             bundle_of(Path::new("/x/Other/Contents/MacOS/duskcode")),
             None
         );
+    }
+
+    #[test]
+    fn only_a_certificate_requirement_binds_the_next_version() {
+        let signed = "Executable=/A.app/Contents/MacOS/a\ndesignated => identifier \"dev.duskcode.gui\" and certificate leaf = H\"ab12\"\n";
+        assert_eq!(
+            designated(signed).as_deref(),
+            Some("identifier \"dev.duskcode.gui\" and certificate leaf = H\"ab12\"")
+        );
+        let ad_hoc = "designated => cdhash H\"ff00\"\n";
+        assert_eq!(designated(ad_hoc), None);
     }
 
     #[test]

@@ -94,9 +94,18 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
                 }
                 Activity::Idle => (TEXT_MUTED, String::new()),
             };
+            // How long the turn has run, beside what it does now.
+            let took = app
+                .turn_started_at
+                .map(|started| {
+                    let ms = crate::app::now_ms() - started;
+                    format!(" \u{00B7} {}", dusk_protocol::thread::duration_words(ms))
+                })
+                .unwrap_or_default();
             vec![
                 Span::styled(format!("{} ", spinner(app)), fg(color)),
                 Span::styled(what, fg(color)),
+                Span::styled(took, fg(TEXT_MUTED)),
             ]
         }
     };

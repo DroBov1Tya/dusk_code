@@ -191,6 +191,8 @@ impl Agent {
 pub struct Transcript {
     pub items: Vec<Item>,
     pub activity_boundaries: Vec<usize>,
+    /// When each boundary was drawn, in Unix milliseconds, beside `activity_boundaries`.
+    pub boundary_times: Vec<i64>,
     pub working: bool,
     pub tokens: Option<(u64, u64)>,
     /// What the chat cost so far, when any call's cost is known.
@@ -233,7 +235,7 @@ impl Transcript {
                         .starts_with(&format!("QUESTION: {prompt}\nANSWER: "))
                 });
                 if !is_answer {
-                    transcript.activity_boundary();
+                    transcript.activity_boundary(message.created_at);
                 }
                 question = None;
             }
@@ -242,7 +244,7 @@ impl Transcript {
             // assistant message. A new human prompt also ends legacy partial turns.
             if message.role == MessageRole::Assistant {
                 if message.tool_calls.is_empty() {
-                    transcript.activity_boundary();
+                    transcript.activity_boundary(message.created_at);
                     question = None;
                 } else {
                     question = message
@@ -340,11 +342,11 @@ impl Transcript {
                 })
             }
             ThreadEvent::TurnStarted(_) => {
-                self.activity_boundary();
+                self.activity_boundary(super::timing::now_ms());
                 self.working = true;
             }
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
-                self.activity_boundary();
+                self.activity_boundary(super::timing::now_ms());
                 self.working = false;
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
@@ -446,7 +448,13 @@ impl Transcript {
                 // The core forgot the message and all after it; so does the view.
                 if let Some(at) = self.rollback_at.take() {
                     self.items.truncate(at);
-                    self.activity_boundaries.retain(|boundary| *boundary <= at);
+                    let kept = self
+                        .activity_boundaries
+                        .iter()
+                        .take_while(|boundary| **boundary <= at)
+                        .count();
+                    self.activity_boundaries.truncate(kept);
+                    self.boundary_times.truncate(kept);
                 }
                 self.offered = Some(text);
             }
@@ -573,11 +581,19 @@ impl Transcript {
         self.items.push(Item::Notice(text.to_owned()));
     }
 
-    fn activity_boundary(&mut self) {
+    fn activity_boundary(&mut self, at: i64) {
         let end = self.items.len();
         if end > 0 && self.activity_boundaries.last() != Some(&end) {
             self.activity_boundaries.push(end);
+            self.boundary_times.push(at);
         }
+    }
+
+    /// When the turn whose items end at boundary `index` began and ended; the turn after
+    /// the last boundary is still open.
+    pub fn span(&self, index: usize) -> Option<super::timing::Span> {
+        let began = *self.boundary_times.get(index.checked_sub(1)?)?;
+        Some((began, self.boundary_times.get(index).copied()))
     }
 
     /// The answer being written: the last item, or a new one after a tool or a message.

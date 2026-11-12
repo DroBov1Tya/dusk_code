@@ -26,7 +26,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .child(
                 Button::new("add-project")
                     .ghost()
-                    .xsmall()
+                    .small()
                     .icon(IconName::Plus)
                     .tooltip("Add a project")
                     .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx))),
@@ -72,7 +72,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .child(
                 Button::new(SharedString::from(format!("new-chat-{id}")))
                     .ghost()
-                    .xsmall()
+                    .small()
                     .icon(IconName::Plus)
                     .tooltip("New chat in this project")
                     .on_click(cx.listener({
@@ -86,7 +86,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .child(
                 Button::new(SharedString::from(format!("edit-project-{id}")))
                     .ghost()
-                    .xsmall()
+                    .small()
                     .icon(IconName::Ellipsis)
                     .tooltip("Edit the project")
                     .on_click(cx.listener({

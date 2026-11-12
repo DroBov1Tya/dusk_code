@@ -56,17 +56,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     let navigator =
         (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, window, cx));
     let history_padding = navigator.as_ref().map(|_| {
-        let sidebar = if ws.left_hidden {
-            52.
-        } else {
-            crate::columns::sidebar::WIDTH
-        };
-        let inspector = if ws.right_hidden {
-            0.
-        } else {
-            crate::columns::inspector::WIDTH
-        };
-        let chat_width = window.viewport_size().width.as_f32() - sidebar - inspector;
+        let chat_width = ws.chat_width(window);
         let margin = (chat_width - WIDTH).max(0.) / 2.;
         px(super::navigator::GUTTER - margin).max(window.rem_size() * 1.5)
     });
@@ -202,7 +192,6 @@ fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
     Button::new("dictate")
         .rounded(ButtonRounded::Size(px(999.)))
         .icon(IconName::Mic)
-        .xsmall()
         .when(on, |button| button.danger())
         .when(!on, |button| button.ghost())
         .tooltip(if on { "Stop dictating" } else { "Dictate" })
@@ -235,7 +224,7 @@ fn strip(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
             .unwrap_or_else(|| path.display().to_string());
         let remove = Button::new(("unattach", index))
             .ghost()
-            .xsmall()
+            .small()
             .icon(IconName::Close)
             .tooltip("Remove the attachment")
             .on_click(cx.listener(move |ws, _, _, cx| {
@@ -297,7 +286,7 @@ fn strip(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
                 .child(
                     Button::new(("unpaste", index))
                         .ghost()
-                        .xsmall()
+                        .small()
                         .icon(IconName::Close)
                         .tooltip("Remove the pasted text")
                         .on_click(cx.listener(move |ws, _, _, cx| {

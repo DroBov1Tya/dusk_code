@@ -5,7 +5,14 @@ use super::{ClientId, Subscribers};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
-use std::{collections::HashSet, sync::Arc};
+use dusk_protocol::thread::ThreadEvent;
+use std::{
+    collections::HashSet,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+};
 use tracing::warn;
 
 impl Server {
@@ -141,8 +148,18 @@ impl Server {
         } = handle;
         let subscribers = Arc::clone(&self.subscribers);
         let id = thread_id.clone();
+        let done = Arc::new(AtomicBool::new(false));
+        let flag = Arc::clone(&done);
         let forward = tokio::spawn(async move {
+            // A thread may say it is idle as it opens; it is done only once it has worked.
+            let mut worked = false;
             while let Some(event) = output.next_event().await {
+                if matches!(event, ThreadEvent::Idle) {
+                    flag.store(worked, Ordering::Relaxed);
+                } else {
+                    worked = true;
+                    flag.store(false, Ordering::Relaxed);
+                }
                 let event = Event::Thread {
                     thread_id: id.clone(),
                     event: Box::new(event),
@@ -159,6 +176,8 @@ impl Server {
                 forward,
                 clients,
                 orphaned: None,
+                unattended: false,
+                done,
             },
         );
         Response::Opened { thread_id }
@@ -212,6 +231,7 @@ impl Server {
             if let Some(open) = self.threads.get_mut(&thread_id)
                 && open.clients.remove(&client)
                 && open.clients.is_empty()
+                && !open.unattended
             {
                 open.orphaned = Some(std::time::Instant::now());
             }
@@ -224,7 +244,9 @@ impl Server {
             return;
         };
         open.clients.remove(&client);
-        if open.clients.is_empty() {
+        // A scheduled run someone looked at goes on to the end of its turn.
+        let running_alone = open.unattended && !open.done.load(Ordering::Relaxed);
+        if open.clients.is_empty() && !running_alone {
             self.close(thread_id).await;
         }
     }
@@ -235,8 +257,12 @@ impl Server {
             .threads
             .iter()
             .filter(|(_, open)| {
-                open.orphaned
-                    .is_some_and(|at| at.elapsed() > super::ORPHAN_GRACE)
+                let finished =
+                    open.unattended && open.clients.is_empty() && open.done.load(Ordering::Relaxed);
+                finished
+                    || open
+                        .orphaned
+                        .is_some_and(|at| at.elapsed() > super::ORPHAN_GRACE)
             })
             .map(|(id, _)| id.clone())
             .collect();

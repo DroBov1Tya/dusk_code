@@ -4,7 +4,7 @@ use ratatui::text::{Line, Span};
 
 use crate::ui::windows::theme::{TEXT_SOFT, fg};
 
-pub const KEYS: [(&str, &str); 38] = [
+pub const KEYS: [(&str, &str); 40] = [
     (
         "Enter",
         "send; while the agent works it waits above the box",
@@ -39,6 +39,14 @@ pub const KEYS: [(&str, &str); 38] = [
         "choose the model; /model provider/name uses one the server does not list",
     ),
     ("/connect", "add a provider URL and optional API key"),
+    (
+        "/schedules",
+        "the scheduled tasks: run now, switch on or off, remove",
+    ),
+    (
+        "/schedule",
+        "a task in this folder's project: /schedule daily 09:00 <prompt>",
+    ),
     ("/settings", "concurrent agent limit, tools and skills"),
     (
         "/resend",

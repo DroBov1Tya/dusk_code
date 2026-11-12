@@ -116,10 +116,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 div()
                     .max_w(px(760.))
                     .px_8()
-                    .py_6()
+                    .py_8()
                     .flex()
                     .flex_col()
-                    .gap_2()
+                    .gap_4()
                     .child(crate::ui::page_title(title, about(ws.settings_page), cx))
                     .child(body),
             ),
@@ -145,7 +145,8 @@ fn about(page: SettingsPage) -> &'static str {
     }
 }
 
-/// A setting: its name and what it does on the left, its control on the right.
+/// A setting: its name and what it does on the left, its control on the right. Rows
+/// stand in a `list`, which draws the card and the lines between them.
 pub fn line(label: &str, hint: &str, cx: &App) -> Div {
     let theme = cx.theme();
     div()
@@ -153,18 +154,37 @@ pub fn line(label: &str, hint: &str, cx: &App) -> Div {
         .flex_row()
         .items_center()
         .gap_4()
-        .py_3()
-        .border_b_1()
-        .border_color(theme.border)
+        .min_h(px(56.))
+        .px_4()
+        .py_2p5()
         .child(
             div()
                 .flex()
                 .flex_col()
                 .flex_1()
+                .min_w_0()
                 .gap_0p5()
                 .child(div().body().child(label.to_owned()))
                 .when_hint(hint, theme.muted_foreground),
         )
+}
+
+/// Rows of settings grouped on one card, as macOS lists them: a hairline between two
+/// rows, none above the first or under the last.
+pub fn list(rows: impl IntoIterator<Item = Div>, cx: &App) -> Div {
+    let theme = cx.theme();
+    let border = theme.border;
+    div()
+        .flex()
+        .flex_col()
+        .rounded_xl()
+        .border_1()
+        .border_color(border)
+        .bg(theme.muted)
+        .overflow_hidden()
+        .children(rows.into_iter().enumerate().map(move |(index, row)| {
+            row.when(index > 0, |row| row.border_t_1().border_color(border))
+        }))
 }
 
 fn section(title: &str, hint: &str, cx: &App) -> Div {
@@ -172,8 +192,10 @@ fn section(title: &str, hint: &str, cx: &App) -> Div {
         .flex()
         .flex_col()
         .gap_3()
-        .p_4()
-        .rounded_lg()
+        .p_5()
+        .rounded_xl()
+        .border_1()
+        .border_color(cx.theme().border)
         .bg(cx.theme().muted)
         .child(
             div()

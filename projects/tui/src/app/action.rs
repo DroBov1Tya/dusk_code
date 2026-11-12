@@ -64,6 +64,8 @@ pub enum Action {
         pinned: bool,
     },
     RemoveSource(String),
+    /// `/schedule`, `/schedules` and the keys of their panel.
+    Schedule(crate::app::schedule::ScheduleAction),
     /// Ask a running background job of the open thread to stop.
     StopJob(String),
     /// Send the agent's running command, by its tool call, to the background.

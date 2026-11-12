@@ -104,6 +104,7 @@ fn Shell(auth: RwSignal<Auth>) -> impl IntoView {
                 View::Settings(page) => view! { <SettingsPage page /> }.into_any(),
                 View::Connectors(tab) => view! { <Connectors tab /> }.into_any(),
                 View::Artifacts => view! { <Artifacts /> }.into_any(),
+                View::Schedules => view! { <crate::pages::schedules::Schedules /> }.into_any(),
                 View::Project(id) => view! { <ProjectPage id /> }.into_any(),
             }}</main>
             <Inspector />

@@ -1,7 +1,7 @@
 //! The design system: the few values every column is built from, and the pieces made of
 //! them. A column places modules inside this structure; it does not choose its own sizes.
 //!
-//! - Space is a 4 px grid: 4, 8, 12, 16, 24, 32. Rows are 32 px, navigation 36 px.
+//! - Space is a 4 px grid: 4, 8, 12, 16, 24, 32. Rows and controls are 32 px.
 //! - Type is one family on a scale of five sizes, set in rems so the user's size choice
 //!   scales all of it: meta, small, body, title, display. Weight 400 for reading, 500 for
 //!   what can be pressed or names a group, 600 for titles. No capitals for labels.
@@ -10,6 +10,7 @@
 //! - One accent (selection, focus, the primary action) and one signal (work going on).
 //! - Motion answers a person's action: a menu opens in 140 ms, a row leaves in 220 ms.
 
+pub mod controls;
 pub mod theme;
 pub mod widgets;
 
@@ -25,7 +26,6 @@ pub const OPEN: Duration = Duration::from_millis(140);
 
 /// Row heights.
 pub const ROW: f32 = 32.;
-pub const NAV: f32 = 36.;
 
 /// The type scale. Each step is a size and a weight, so a place says what the text is,
 /// not how big.

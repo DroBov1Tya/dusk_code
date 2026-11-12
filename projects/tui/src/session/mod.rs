@@ -4,6 +4,7 @@
 mod actions;
 mod answers;
 mod run;
+mod schedules;
 mod thread;
 
 pub use run::{THREAD_SOURCE, run};

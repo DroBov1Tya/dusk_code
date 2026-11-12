@@ -3,94 +3,104 @@
 
 use dusk_protocol::{client::Switch as CoreSwitch, config::ApprovalPolicy};
 use gpui_kit::{
-    component::{Disableable, Sizable, button::Button, input::Input, switch::Switch},
+    component::{ActiveTheme, Disableable, IconName, button::Button, input::Input, switch::Switch},
     *,
 };
 
-use super::{SettingsPage, line};
-use crate::{ui::widgets, workspace::Workspace};
+use super::{SettingsPage, line, list};
+use crate::{
+    ui::{Type, controls, widgets},
+    workspace::Workspace,
+};
 
 pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -> Div {
-    let mut body = div().flex().flex_col();
+    let body = div().flex().flex_col().gap_6();
     match page {
         SettingsPage::Model => {
-            body = body
-                .child(line(
-                    "Model",
-                    &ws.status
-                        .model
-                        .clone()
-                        .unwrap_or_else(|| "none chosen".to_owned()),
-                    cx,
-                ))
-                .child(
+            let model = ws
+                .status
+                .model
+                .clone()
+                .unwrap_or_else(|| "none chosen".to_owned());
+            body.child(list(
+                [
+                    line("Model", &model, cx),
                     line(
                         "Use a model by name",
                         "For servers that do not list their models: provider/model",
                         cx,
                     )
-                    .child(div().w(px(260.)).child(Input::new(&ws.model_input)))
+                    .child(div().w(px(240.)).child(Input::new(&ws.model_input)))
                     .child(
                         Button::new("model-use")
-                            .small()
+                            .outline()
                             .label("Use")
                             .on_click(cx.listener(|ws, _, _, cx| ws.use_typed_model(cx))),
                     ),
-                )
-                .child(super::providers::render(ws, cx));
+                ],
+                cx,
+            ))
+            .child(super::providers::render(ws, cx))
         }
-        SettingsPage::Chat => {
-            body = body.child(
+        SettingsPage::Chat => body.child(list(
+            [
                 line("Mode", "What the chat may do and how it is told", cx).child(
                     Button::new("next-mode")
-                        .small()
+                        .outline()
+                        .icon(IconName::ChevronsUpDown)
                         .label(ws.status.mode.clone())
                         .tooltip("Switch to the next mode")
                         .on_click(cx.listener(|ws, _, _, cx| ws.next_mode(cx))),
                 ),
-            );
-        }
-        SettingsPage::Notifications => {
-            if let Some(settings) = ws.settings.clone() {
-                body = body
-                    .child(switch_line(
+            ],
+            cx,
+        )),
+        SettingsPage::Notifications => match ws.settings.clone() {
+            Some(settings) => body.child(list(
+                [
+                    switch_line(
                         "Notifications",
                         "Tell when a turn ends or a question waits, while the window is away",
                         settings.notifications,
                         CoreSwitch::Notifications,
                         cx,
-                    ))
-                    .child(switch_line(
+                    ),
+                    switch_line(
                         "Sound",
                         "A short sound with each notification",
                         settings.sound_notifications,
                         CoreSwitch::SoundNotifications,
                         cx,
-                    ));
-            }
-        }
-        SettingsPage::VersionControl => {
-            if let Some(settings) = ws.settings.clone() {
+                    ),
+                ],
+                cx,
+            )),
+            None => body,
+        },
+        SettingsPage::VersionControl => match ws.settings.clone() {
+            Some(settings) => {
                 let prefix = settings.version_control.branch_prefix.clone();
                 let current = if prefix.is_empty() {
                     "Branches the agents make have no prefix".to_owned()
                 } else {
                     format!("Now: {prefix}")
                 };
-                body = body.child(
-                    line("Branch prefix", &current, cx)
+                body.child(list(
+                    [line("Branch prefix", &current, cx)
                         .child(div().w(px(200.)).child(Input::new(&ws.branch_input)))
                         .child(
                             Button::new("branch-prefix-save")
-                                .small()
+                                .outline()
                                 .label("Save")
                                 .on_click(cx.listener(|ws, _, _, cx| ws.save_branch_prefix(cx))),
-                        ),
-                );
+                        )],
+                    cx,
+                ))
             }
-        }
+            None => body,
+        },
         SettingsPage::Safety => {
-            for (label, hint, policy) in [
+            let rows = [
                 (
                     "Sandbox",
                     "Commands run confined to the project",
@@ -106,95 +116,102 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                     "No questions; only for trusted work",
                     ApprovalPolicy::FullAccess,
                 ),
-            ] {
+            ]
+            .map(|(label, hint, policy)| {
                 let on = ws.status.approvals == policy;
-                body = body.child(
-                    line(label, hint, cx).child(
-                        Switch::new(SharedString::from(format!("policy-{label}")))
-                            .checked(on)
-                            .small()
-                            .on_click(cx.listener(move |ws, on: &bool, _, cx| {
-                                ws.switch(CoreSwitch::Approvals(policy), *on, cx);
-                            })),
-                    ),
-                );
-            }
-            body = body.child(
-                widgets::muted("With all off, the agent asks before risky actions.", cx).px_0(),
-            );
+                line(label, hint, cx).child(
+                    Switch::new(SharedString::from(format!("policy-{label}")))
+                        .checked(on)
+                        .on_click(cx.listener(move |ws, on: &bool, _, cx| {
+                            ws.switch(CoreSwitch::Approvals(policy), *on, cx);
+                        })),
+                )
+            });
+            body.child(list(rows, cx)).child(
+                widgets::muted("With all off, the agent asks before risky actions.", cx).px_1(),
+            )
         }
-        SettingsPage::Memory => {
-            if let Some(settings) = ws.settings.clone() {
-                body = body
-                    .child(switch_line(
+        SettingsPage::Memory => match ws.settings.clone() {
+            Some(settings) => body.child(list(
+                [
+                    switch_line(
                         "Memory",
                         "What the agents remember between chats",
                         settings.memory.enabled,
                         CoreSwitch::Memory,
                         cx,
-                    ))
-                    .child(switch_line(
+                    ),
+                    switch_line(
                         "Work history",
                         "A summary of past work in each project",
                         settings.work_history.enabled,
                         CoreSwitch::WorkHistory,
                         cx,
-                    ));
-            }
-        }
+                    ),
+                ],
+                cx,
+            )),
+            None => body,
+        },
         SettingsPage::Advanced => {
-            if let Some(settings) = ws.settings.clone() {
-                body = body
-                    .child(switch_line(
-                        "Log files",
-                        "Written on this machine only",
-                        settings.logging,
-                        CoreSwitch::Logging,
+            let body = match ws.settings.clone() {
+                Some(settings) => {
+                    let agents = settings.max_agents_at_work as u64;
+                    let rounds = u64::from(settings.max_goal_rounds);
+                    let mut web = vec![web_line(ws, cx)];
+                    web.extend(web_address(ws, cx));
+                    body.child(list(
+                        [switch_line(
+                            "Log files",
+                            "Written on this machine only",
+                            settings.logging,
+                            CoreSwitch::Logging,
+                            cx,
+                        )],
                         cx,
                     ))
-                    .child(web_line(ws, cx))
-                    .children(web_address(ws, cx))
-                    .child(
-                        line(
-                            "Agents at work at once",
-                            "Subagents that may run at the same time",
-                            cx,
-                        )
-                        .child(stepper(
-                            "agents",
-                            settings.max_agents_at_work as u64,
-                            1,
-                            32,
-                            |ws, value, cx| ws.set_limit(Limit::Agents, value, cx),
-                            cx,
-                        )),
-                    )
-                    .child(
-                        line(
-                            "Goal rounds",
-                            "How many rounds a goal may take before it stops",
-                            cx,
-                        )
-                        .child(stepper(
-                            "rounds",
-                            u64::from(settings.max_goal_rounds),
-                            1,
-                            200,
-                            |ws, value, cx| ws.set_limit(Limit::Rounds, value, cx),
-                            cx,
-                        )),
-                    );
-            }
-            body = body.child(super::uninstall::section(cx));
+                    .child(list(web, cx))
+                    .child(list(
+                        [
+                            line(
+                                "Agents at work at once",
+                                "Subagents that may run at the same time",
+                                cx,
+                            )
+                            .child(stepper(
+                                "agents",
+                                agents,
+                                (1, 32),
+                                Limit::Agents,
+                                cx,
+                            )),
+                            line(
+                                "Goal rounds",
+                                "How many rounds a goal may take before it stops",
+                                cx,
+                            )
+                            .child(stepper(
+                                "rounds",
+                                rounds,
+                                (1, 200),
+                                Limit::Rounds,
+                                cx,
+                            )),
+                        ],
+                        cx,
+                    ))
+                }
+                None => body,
+            };
+            body.child(super::uninstall::section(cx))
         }
         SettingsPage::Appearance
         | SettingsPage::AboutMe
         | SettingsPage::Keyboard
         | SettingsPage::Updates
         | SettingsPage::Usage
-        | SettingsPage::Secrets => {}
+        | SettingsPage::Secrets => body,
     }
-    body
 }
 
 #[derive(Clone, Copy)]
@@ -203,73 +220,93 @@ enum Limit {
     Rounds,
 }
 
-/// A number with a minus and a plus, kept inside its bounds.
+/// A limit's number with a minus and a plus, kept inside its bounds.
 fn stepper(
     id: &'static str,
     value: u64,
-    min: u64,
-    max: u64,
-    set: fn(&mut Workspace, u64, &mut Context<Workspace>),
+    (min, max): (u64, u64),
+    limit: Limit,
     cx: &mut Context<Workspace>,
 ) -> Div {
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .child(
-            Button::new(SharedString::from(format!("{id}-less")))
-                .xsmall()
-                .label("−")
-                .on_click(
-                    cx.listener(move |ws, _, _, cx| set(ws, value.saturating_sub(1).max(min), cx)),
-                ),
-        )
-        .child(div().w(px(32.)).text_center().child(value.to_string()))
-        .child(
-            Button::new(SharedString::from(format!("{id}-more")))
-                .xsmall()
-                .label("+")
-                .on_click(cx.listener(move |ws, _, _, cx| set(ws, (value + 1).min(max), cx))),
-        )
+    let less =
+        cx.listener(move |ws, _, _, cx| ws.set_limit(limit, value.saturating_sub(1).max(min), cx));
+    let more = cx.listener(move |ws, _, _, cx| ws.set_limit(limit, (value + 1).min(max), cx));
+    controls::stepper(id, value, (min, max), less, more, cx)
 }
 
-/// The switch that serves this core to browsers on this machine.
+/// The switch that serves this core to browsers on this machine, with its port.
 fn web_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     line(
         "Web access",
         "Opens the chats in a browser on this machine, beside this window",
         cx,
     )
-    .child(div().w(px(80.)).child(Input::new(&ws.web_port)))
+    .child(
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .child(
+                div()
+                    .meta()
+                    .text_color(cx.theme().muted_foreground)
+                    .child("Port"),
+            )
+            .child(div().w(px(84.)).child(Input::new(&ws.web_port))),
+    )
     .child(
         Switch::new("web-access")
             .checked(ws.web.is_some())
             .disabled(ws.web_busy)
-            .small()
             .on_click(cx.listener(|ws, on: &bool, _, cx| ws.set_web(*on, cx))),
     )
 }
 
 /// While the server runs: the address to open once, with the token of this run in it.
+/// It takes the row's whole width under its name, so a long token never pushes the
+/// buttons out of the card.
 fn web_address(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let url = ws.web.as_ref()?.sign_in_url();
-    let copied = url.clone();
+    let opened = url.clone();
+    let muted = cx.theme().muted_foreground;
     Some(
-        line(
-            "Address",
-            "Open it once; the part after # is the sign-in token of this run",
-            cx,
-        )
-        .child(div().max_w(px(360.)).child(url))
-        .child(
-            Button::new("web-copy")
-                .small()
-                .label("Copy")
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()));
-                })),
-        ),
+        div()
+            .flex()
+            .flex_col()
+            .gap_2p5()
+            .px_4()
+            .py_3()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(div().body().child("Address"))
+                    .child(div().small().text_color(muted).child(
+                        "Open it once; the part after # signs in this browser for this run",
+                    )),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .child(div().flex_1().min_w_0().child(controls::copy_field(
+                        "web-copy",
+                        url.into(),
+                        cx,
+                    )))
+                    .child(
+                        Button::new("web-open")
+                            .outline()
+                            .icon(IconName::ExternalLink)
+                            .label("Open")
+                            .tooltip("Open it in the default browser")
+                            .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&opened))),
+                    ),
+            ),
     )
 }
 
@@ -283,7 +320,6 @@ fn switch_line(
     line(label, hint, cx).child(
         Switch::new(label)
             .checked(on)
-            .small()
             .on_click(cx.listener(move |ws, on: &bool, _, cx| ws.switch(switch.clone(), *on, cx))),
     )
 }

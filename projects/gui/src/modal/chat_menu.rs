@@ -1,4 +1,5 @@
-//! What a right click on a chat offers: rename, pin to the top, delete. Delete asks
+//! What a right click on a chat offers: rename, pin to the top, a task on a timetable,
+//! delete. Delete asks
 //! first, since the core erases the chat and its folder for good.
 
 use gpui_kit::{
@@ -20,8 +21,8 @@ use crate::{
 };
 
 /// The small menu at the pointer, over everything.
-/// Tall enough for the three rows and the padding.
-const MENU_HEIGHT: f32 = 112.;
+/// Tall enough for the four rows and the padding.
+const MENU_HEIGHT: f32 = 144.;
 
 pub fn render(
     ws: &Workspace,
@@ -70,6 +71,16 @@ pub fn render(
                     .child(widgets::icon(IconName::Star, muted))
                     .child(if pinned { "Unpin" } else { "Pin to the top" })
                     .on_click(cx.listener(move |ws, _, _, cx| ws.toggle_pin(&pin, cx))),
+            )
+            .child(
+                widgets::menu_item("menu-schedule", cx)
+                    .child(widgets::icon(IconName::Calendar, muted))
+                    .child("Schedule a task...")
+                    .on_click(cx.listener(|ws, _, window, cx| {
+                        ws.chat_menu = None;
+                        ws.open_schedules(cx);
+                        ws.open_schedule_editor(None, window, cx);
+                    })),
             )
             // What cannot be undone stands apart.
             .child(div().h(px(1.)).mx_2().my_1().bg(theme.border))

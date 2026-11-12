@@ -271,7 +271,7 @@ fn diff(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
             row.child(
                 Button::new("review-open-file")
                     .ghost()
-                    .xsmall()
+                    .small()
                     .icon(IconName::File)
                     .label("Open file")
                     .on_click(cx.listener(move |ws, _, _, cx| {

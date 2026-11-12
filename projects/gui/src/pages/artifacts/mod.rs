@@ -252,7 +252,7 @@ fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Statefu
                 .child(
                     Button::new(("artifact-delete", index))
                         .ghost()
-                        .xsmall()
+                        .small()
                         .icon(IconName::Delete)
                         .tooltip("Delete")
                         .on_click(cx.listener(move |ws, _, _, cx| {

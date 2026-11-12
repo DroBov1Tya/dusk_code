@@ -71,6 +71,8 @@ pub enum Modal {
     VoiceMissing {
         speech: crate::pages::connectors::voice::Speech,
     },
+    /// Making or changing a scheduled task.
+    Schedule(crate::pages::schedules::editor::Editor),
     /// Removing duskcode from the machine, in steps.
     Uninstall(crate::pages::settings::uninstall::Uninstall),
     /// Forgetting every connected provider, after a yes.
@@ -135,6 +137,16 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             "Remove duskcode".to_owned(),
             520.,
             crate::pages::settings::uninstall::render(state, cx),
+        ),
+        Modal::Schedule(editor) => (
+            if editor.id.is_some() {
+                "Edit task"
+            } else {
+                "New task"
+            }
+            .to_owned(),
+            600.,
+            crate::pages::schedules::editor::render(ws, cx),
         ),
         Modal::RemoveProviders => (
             "Remove all providers".to_owned(),

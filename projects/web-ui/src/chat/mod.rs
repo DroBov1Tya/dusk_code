@@ -3,6 +3,8 @@
 pub mod approval;
 mod blocks;
 mod composer;
+mod pictures;
+pub use pictures::Picture;
 pub mod data;
 pub mod inspector;
 pub mod subagent;

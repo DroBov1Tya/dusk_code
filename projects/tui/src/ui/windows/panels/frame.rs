@@ -17,6 +17,7 @@ use super::jobs::jobs;
 use super::models::models;
 use super::paste::draw_paste;
 use super::plugins::plugins;
+use super::schedules::schedules;
 use super::threads::draw_threads;
 use super::unsent::unsent;
 use super::update::draw_update;
@@ -81,6 +82,19 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             (
                 "local unsent messages",
                 "up/down choose  enter send selected  esc close",
+                lines,
+                Some(row),
+            )
+        }
+        Panel::Schedules {
+            tasks,
+            selected,
+            removing,
+        } => {
+            let (lines, row) = schedules(tasks, *selected, *removing);
+            (
+                "scheduled tasks",
+                "enter run now  space on/off  d remove  esc close",
                 lines,
                 Some(row),
             )
@@ -208,7 +222,7 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             let (lines, row) = models(list, screen.width.saturating_sub(8).min(72) as usize);
             (
                 "model",
-                "enter choose  r check again  esc close",
+                "enter choose  c connect  d remove  r check  esc close",
                 lines,
                 Some(row),
             )

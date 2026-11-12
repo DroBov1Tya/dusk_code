@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::client::Secret;
+use crate::project::ScheduleDraft;
 /// Projects, and the git state and files of one. Git and files are read only inside
 /// a saved project's folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,5 +64,20 @@ pub enum ProjectRequest {
     /// Removes a file under the workspace or the pictures folder, never a project's.
     DeleteOutput {
         path: PathBuf,
+    },
+    /// Every scheduled task, soonest first.
+    Schedules,
+    /// Saves a new scheduled task, or changes the one with the draft's id; answers with
+    /// every scheduled task.
+    SaveSchedule {
+        draft: ScheduleDraft,
+    },
+    DeleteSchedule {
+        id: String,
+    },
+    /// Runs it now, in a new chat, without changing when it runs next; answers with
+    /// the chat's id.
+    RunSchedule {
+        id: String,
     },
 }

@@ -3,7 +3,8 @@
 use super::EFFORTS;
 use crate::app::{
     Action, App, Panel,
-    panels::{Connection, Preset, SecretEntry, step},
+    panels::{Connection, ModelRow, Preset, SecretEntry, step},
+    schedule::ScheduleAction,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 use dusk_protocol::{client::Command, release::InstallStage};
@@ -327,19 +328,71 @@ impl App {
             Panel::Agent(_) => return self.agent_window_key(key),
             Panel::Models(list) => match key.code {
                 _ if up || down => {
-                    let count = list.choices().len();
+                    let count = list.rows().len();
                     step(&mut list.selected, count, down);
+                    list.removing = None;
                 }
-                KeyCode::Enter => {
-                    let chosen = list.choices().get(list.selected).cloned();
-                    return chosen.map_or(Action::None, |name| {
-                        Action::Command(Command::Model { name: Some(name) })
-                    });
+                KeyCode::Enter => match list.rows().get(list.selected).cloned() {
+                    Some(ModelRow::Model { name, .. }) => {
+                        return Action::Command(Command::Model { name: Some(name) });
+                    }
+                    Some(ModelRow::Provider(_)) => {
+                        return Action::Command(Command::Model { name: None });
+                    }
+                    None => {}
+                },
+                // Removing asks twice: the first press names the provider.
+                KeyCode::Char('d') => {
+                    let Some(provider) = list
+                        .rows()
+                        .get(list.selected)
+                        .map(|row| row.provider().to_owned())
+                    else {
+                        return Action::None;
+                    };
+                    if list.removing.as_deref() == Some(provider.as_str()) {
+                        list.removing = None;
+                        return Action::Disconnect(provider);
+                    }
+                    list.removing = Some(provider);
                 }
+                KeyCode::Char('c') => self.panel = Some(Panel::Connect(Connection::default())),
                 KeyCode::Char('r') => return Action::Command(Command::Model { name: None }),
                 KeyCode::Esc => self.panel = None,
                 _ => {}
             },
+            Panel::Schedules {
+                tasks,
+                selected,
+                removing,
+            } => {
+                let id = tasks.get(*selected).map(|task| task.id.clone());
+                match key.code {
+                    _ if up || down => {
+                        step(selected, tasks.len(), down);
+                        *removing = false;
+                    }
+                    KeyCode::Enter => {
+                        return id
+                            .map_or(Action::None, |id| Action::Schedule(ScheduleAction::Run(id)));
+                    }
+                    KeyCode::Char(' ') => {
+                        let on = tasks.get(*selected).is_some_and(|task| !task.enabled);
+                        return id.map_or(Action::None, |id| {
+                            Action::Schedule(ScheduleAction::Toggle { id, on })
+                        });
+                    }
+                    // Removing asks twice.
+                    KeyCode::Char('d') if *removing => {
+                        return id.map_or(Action::None, |id| {
+                            Action::Schedule(ScheduleAction::Delete(id))
+                        });
+                    }
+                    KeyCode::Char('d') => *removing = true,
+                    KeyCode::Esc => self.panel = None,
+                    _ => {}
+                }
+            }
             Panel::Help => self.panel = None,
             // The drawing keeps the row within the lines.
             Panel::Context { row, .. } => {

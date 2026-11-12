@@ -76,11 +76,13 @@ impl Tool for Click {
              through Accessibility and leaves the user's pointer alone: a single left click \
              on a button, link or checkbox, which may not focus a field or the app. A control \
              that cannot be pressed so, a window that moved since the screenshot, or an \
-             ambiguous window match is an error. Outside a window session, mode system clicks \
-             with the real pointer and supports right and double clicks. It asks separately."
+             ambiguous window match is an error. Mode system takes the user's own pointer, \
+             for right and double clicks outside a window session: use it only when the user \
+             asked in so many words to use their mouse; it asks them first."
         } else {
             "Click at x, y of the newest screenshot, left by default, right or double when \
-             asked. It moves the user's pointer there, so it asks the user first."
+             asked. It moves the user's pointer there, so use it only when the user asked for \
+             a click, and it asks them first."
         }
         .into()
     }

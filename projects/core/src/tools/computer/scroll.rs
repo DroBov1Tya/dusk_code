@@ -41,8 +41,8 @@ impl Tool for Scroll {
 
     fn description(&self, _: &ToolContext) -> String {
         "Scroll what is under x, y of the newest screenshot by pixels down or right; \
-         negative goes up or left. It moves the user's pointer there, so it asks the user \
-         first."
+         negative goes up or left. It moves the user's pointer there, so use it only when \
+         the user asked for it, and it asks them first."
             .into()
     }
 

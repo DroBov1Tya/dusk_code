@@ -54,14 +54,14 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
         let id_decline = id.clone();
         let submit = move |_| {
             let reply = for_answer.answer(&chosen.get_untracked(), &own.get_untracked());
-            app.send(id.clone(), reply, false);
+            app.send(id.clone(), reply, false, Vec::new());
             chat.update(|c| c.question = None);
             chosen.set(Vec::new());
             own.set(String::new());
         };
         let decline = move |_| {
             let reply = for_decline.declined(&own.get_untracked());
-            app.send(id_decline.clone(), reply, false);
+            app.send(id_decline.clone(), reply, false, Vec::new());
             chat.update(|c| c.question = None);
         };
         Some(view! {

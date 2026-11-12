@@ -2,7 +2,7 @@
 
 use dusk_protocol::client::{Command, parse};
 
-use super::{Action, Activity, App, Connection, Panel, Tone};
+use super::{Action, Activity, App, Connection, Panel, Tone, schedule::ScheduleAction};
 
 impl App {
     /// Takes the typed text for sending; commands show as notices, messages as the user's.
@@ -24,6 +24,7 @@ impl App {
                 return Action::None;
             }
             "/plan" => return Action::OpenPlan,
+            "/schedules" => return Action::Schedule(ScheduleAction::Open),
             "/files" => return Action::ChangedFiles,
             "/diff" => return Action::Diff,
             "/me" => return Action::OpenMe,
@@ -38,6 +39,15 @@ impl App {
         }
         if let Some(name) = trimmed.strip_prefix("/snippet ") {
             return Action::OpenSnippet(name.trim().trim_start_matches('@').to_owned());
+        }
+        if let Some(spec) = trimmed.strip_prefix("/schedule ") {
+            return match super::schedule::parse(spec, chrono::Local::now()) {
+                Ok((repeat, prompt)) => Action::Schedule(ScheduleAction::Add { repeat, prompt }),
+                Err(error) => {
+                    self.flash = Some(error);
+                    Action::None
+                }
+            };
         }
         if let Some(name) = trimmed.strip_prefix("/disconnect ") {
             return Action::Disconnect(name.trim().to_owned());

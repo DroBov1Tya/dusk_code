@@ -38,3 +38,15 @@ in `resources/`.
 `evals/` holds small tasks with a script that checks the result, run by `projects/evals`.
 Changes to prompts, tools or the agent loop should show their effect there; see
 `evals/README.md`.
+
+## Signing the desktop app
+
+Releases of `Duskcode.app` are signed by one self-signed certificate, so macOS treats each
+version as the same program and keeps the permissions (microphone, screen, files) and the
+keychain access the user gave before. It is made once with
+`sh scripts/make-signing-identity.sh <folder outside the repository>`, and the release
+workflow reads it from the repository secrets `MACOS_SIGN_P12` and `MACOS_SIGN_PASSWORD`.
+Without them the app is signed ad hoc and every version asks again. The certificate is not
+a Developer ID and the app is not notarized, so the first start still asks once in
+Privacy & Security. Losing the certificate means one more round of questions on the
+version signed by its replacement; leaking it lets anyone sign as duskcode.

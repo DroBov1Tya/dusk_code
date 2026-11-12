@@ -19,6 +19,9 @@ use dusk_protocol::{
 };
 use std::{collections::BTreeSet, time::Instant};
 
+/// The last row of the models page: the providers, to connect, check or remove.
+pub const PROVIDERS_ROW: usize = 7;
+
 pub struct SettingsView {
     pub selected_model: Option<String>,
     pub context_policy: Option<ContextPolicy>,
@@ -140,7 +143,7 @@ impl SettingsView {
     pub fn len(&self) -> usize {
         match self.category {
             None => SettingCategory::ALL.len(),
-            Some(SettingCategory::Models) => 7,
+            Some(SettingCategory::Models) => 8,
             Some(SettingCategory::Agents) => LIMIT_ROWS + self.agents.len(),
             Some(SettingCategory::Tools) => self.tools.len(),
             Some(SettingCategory::Personalize) => 4,
@@ -190,6 +193,10 @@ impl SettingsView {
     }
 
     pub(super) fn model_action(&self, row: usize) -> Option<Action> {
+        // The providers open without a chosen model too: that is where one is connected.
+        if row == PROVIDERS_ROW {
+            return Some(Action::Command(Command::Model { name: None }));
+        }
         self.selected_model.as_ref()?;
         match row {
             0 => Some(Action::SetContextPolicy(ContextPolicy::Auto)),

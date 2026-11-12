@@ -9,6 +9,7 @@ mod jobs;
 mod models;
 mod paste;
 mod plugins;
+mod schedules;
 mod threads;
 mod unsent;
 mod update;

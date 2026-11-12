@@ -6,4 +6,5 @@ pub mod chat;
 pub mod connectors;
 pub mod file;
 pub mod review;
+pub mod schedules;
 pub mod settings;

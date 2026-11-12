@@ -30,8 +30,13 @@ mod diff;
 mod files;
 mod git;
 mod path;
+mod schedule;
 
 pub use diff::{DiffKind, DiffLine, DiffStat, FileDiff, Hunk};
 pub use files::{FileEntry, MAX_PREVIEW_BYTES, OutputFile, OutputKind, OutputPreview};
 pub use git::{Change, ChangeKind, GitInfo, Worktree};
 pub use path::{PathCompletion, PathEntry};
+pub use schedule::{
+    Clock, DAY_NAMES, EVERY_DAY, MAX_INTERVAL_MINUTES, MAX_PROMPT_CHARS, MAX_SCHEDULES,
+    MIN_INTERVAL_MINUTES, Repeat, Schedule, ScheduleDraft, WEEKDAYS, WEEKENDS, interval_name,
+};

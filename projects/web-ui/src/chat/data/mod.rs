@@ -72,6 +72,8 @@ const SHOWN_CHARS: usize = 4000;
 pub struct Entry {
     pub id: u64,
     pub item: Item,
+    /// When it came, in Unix milliseconds, for how long a turn took.
+    pub at: i64,
 }
 
 /// A subagent of the chat and what it does now.
@@ -121,12 +123,15 @@ pub struct ChatData {
     /// The stream broke or the thread ended; sending opens it again.
     pub ended: bool,
     next_id: u64,
+    /// The time new items take: a stored message's own, or now for a live event.
+    clock: i64,
 }
 
 impl ChatData {
     pub fn from_history(history: &[Message]) -> Self {
         let mut chat = Self::default();
         for message in history {
+            chat.clock = message.created_at;
             chat.add_message(message);
         }
         chat
@@ -137,6 +142,7 @@ impl ChatData {
         self.items.push(Entry {
             id: self.next_id,
             item,
+            at: self.clock,
         });
     }
 
@@ -195,6 +201,7 @@ impl ChatData {
     }
 
     pub fn apply(&mut self, event: ThreadEvent) {
+        self.clock = now_ms();
         match event {
             ThreadEvent::FromAgent(message) => {
                 let from = message
@@ -395,3 +402,11 @@ fn summary(arguments: &serde_json::Value) -> String {
 
 #[cfg(test)]
 mod tests;
+
+/// The browser's clock in Unix milliseconds; tests on the host read zero.
+pub fn now_ms() -> i64 {
+    #[cfg(target_arch = "wasm32")]
+    return js_sys::Date::now() as i64;
+    #[cfg(not(target_arch = "wasm32"))]
+    0
+}

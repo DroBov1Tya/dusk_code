@@ -35,3 +35,26 @@ impl TurnStatus {
         }
     }
 }
+
+/// How long a turn took, as every client says it: "8s", "2m 14s", "1h 3m".
+pub fn duration_words(ms: i64) -> String {
+    let seconds = (ms.max(0) + 500) / 1000;
+    match seconds {
+        0..60 => format!("{seconds}s"),
+        60..3600 => format!("{}m {}s", seconds / 60, seconds % 60),
+        _ => format!("{}h {}m", seconds / 3600, seconds % 3600 / 60),
+    }
+}
+
+#[cfg(test)]
+mod duration_tests {
+    use super::duration_words;
+
+    #[test]
+    fn durations_read_in_the_largest_two_units() {
+        assert_eq!(duration_words(8_400), "8s");
+        assert_eq!(duration_words(134_000), "2m 14s");
+        assert_eq!(duration_words(3_780_000), "1h 3m");
+        assert_eq!(duration_words(-5), "0s");
+    }
+}

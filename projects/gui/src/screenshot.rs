@@ -4,11 +4,11 @@
 //!
 //! - `wait=MS`: let the core answer and the window draw;
 //! - `project=N`, `thread=N`: choose the Nth project or chat of the lists;
-//! - `center=chat|review|settings|connectors|artifacts`; `review`: open the review page;
+//! - `center=chat|review|settings|connectors|artifacts|schedules`; `review`: open the review page;
 //! - `settings=PAGE` (appearance, model, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
-//! - `modal=search|project|agents|none`, `right=all`: open a window; unfold the right column;
+//! - `modal=search|project|schedule|agents|none`, `right=all`: open a window; unfold the right column;
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
@@ -130,8 +130,12 @@ fn act(
                 "settings" => Center::Settings,
                 "connectors" => Center::Connectors,
                 "artifacts" => Center::Artifacts,
+                "schedules" => Center::Schedules,
                 _ => Center::Chat,
             };
+            if ws.center == Center::Schedules {
+                ws.load_schedules(cx);
+            }
             cx.notify();
         }
         "review" => ws.open_review(cx),
@@ -164,6 +168,7 @@ fn act(
             };
             ws.center = Center::Settings;
             ws.load_settings(cx);
+            ws.load_page(ws.settings_page, cx);
         }
         "shelf" => {
             ws.shelf = match value {
@@ -187,6 +192,7 @@ fn act(
         "modal" => match value {
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
+            "schedule" => ws.open_schedule_editor(None, window, cx),
             "agents" => {
                 ws.modal = ws
                     .shown

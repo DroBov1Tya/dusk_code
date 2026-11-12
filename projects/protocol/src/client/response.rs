@@ -6,7 +6,7 @@ use std::path::PathBuf;
 use crate::catalog::NodeText;
 use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
-use crate::project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project};
+use crate::project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project, Schedule};
 use crate::system::SystemReport;
 use crate::thread::{JobInfo, LocalUnsent, Message, Task, Thread};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -43,6 +43,7 @@ pub enum Response {
     /// A thread's own approval mode, or none when it uses the default in settings.
     Approvals(Option<ApprovalPolicy>),
     Projects(Vec<Project>),
+    Schedules(Vec<Schedule>),
     Project(Project),
     Git(GitInfo),
     Diff(Vec<FileDiff>),

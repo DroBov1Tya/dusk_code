@@ -37,7 +37,6 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .when_some((!ws.providers.is_empty()).then_some(()), |row, _| {
                 row.child(
                     Button::new("provider-check-all")
-                        .small()
                         .outline()
                         .label("Check all")
                         .tooltip("Ask every provider whether it answers")
@@ -45,7 +44,6 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 )
                 .child(
                     Button::new("provider-remove-all")
-                        .small()
                         .ghost()
                         .label("Remove all")
                         .tooltip("Forget every provider and its key")
@@ -92,7 +90,6 @@ fn provider_card(
         .gap_1()
         .child(
             Button::new(SharedString::from(format!("provider-check-{name}")))
-                .small()
                 .outline()
                 .label("Check")
                 .disabled(running)
@@ -101,7 +98,6 @@ fn provider_card(
         )
         .child(
             Button::new(SharedString::from(format!("provider-again-{name}")))
-                .small()
                 .ghost()
                 .label("Reconnect")
                 .tooltip("Connect again, with a new key if the old one stopped working")
@@ -109,7 +105,6 @@ fn provider_card(
         )
         .child(
             Button::new(SharedString::from(format!("provider-remove-{name}")))
-                .small()
                 .ghost()
                 .label("Remove")
                 .disabled(in_use)

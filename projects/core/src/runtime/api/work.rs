@@ -84,6 +84,21 @@ impl Runtime {
         .await
     }
 
+    /// Keeps a picture a client sent as bytes among the thread's sources; answers with
+    /// the tag that puts it in a message.
+    pub async fn add_picture(&self, thread_id: &str, name: &str, bytes: &[u8]) -> Result<String> {
+        let workspace =
+            thread_start::workspace(&self.launcher.state, &self.launcher.paths, thread_id).await?;
+        let source = ThreadSources {
+            state: &self.launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .add_picture(name, bytes)
+        .await?;
+        Ok(dusk_protocol::thread::source_tag(&source.name))
+    }
+
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
         self.launcher.state.pin_source(thread_id, id, pinned).await
     }

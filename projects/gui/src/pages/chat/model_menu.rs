@@ -32,17 +32,7 @@ pub fn render(
     let current = ws.status.model.clone().unwrap_or_default();
     let provider = current.split('/').next().unwrap_or_default();
     let max_height = (viewport.height.as_f32() - 165.).clamp(150., 440.);
-    let sidebar = if ws.left_hidden {
-        52.
-    } else {
-        crate::columns::sidebar::WIDTH
-    };
-    let inspector = if ws.right_hidden {
-        0.
-    } else {
-        crate::columns::inspector::WIDTH
-    };
-    let chat_width = viewport.width.as_f32() - sidebar - inspector;
+    let chat_width = ws.chat_width(window);
     let composer_width = chat_width.min(super::composer::WIDTH);
     let rem = window.rem_size().as_f32();
     // Account for the centered composer and the padding, Send and optional

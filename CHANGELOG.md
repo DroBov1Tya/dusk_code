@@ -6,8 +6,57 @@ testing.
 
 ## Unreleased
 
+### Fixed
+
+- The desktop app shows the agent's own cursor where it clicks: run as the cursor helper,
+  the app now becomes the helper instead of opening a second window.
+
+### Added
+
+- Terminal: /schedules lists the scheduled tasks to run now, switch or remove, and
+  /schedule daily 09:00 <prompt> (or weekdays, weekends, weekly mon 09:00, every 2h,
+  once 14:30) adds one in this folder's project. The model list selects providers too:
+  c connects one, r checks again, d twice removes it; Settings, models opens it. The
+  footer shows how long the turn has run, and the chat says how long it took.
+- Web client sends pictures: picked, pasted or dropped, shown as thumbnails until sent.
+  The core keeps a PNG or JPEG of up to 6 MiB a client sends as bytes among the chat's
+  sources. The web transcript folds each turn's steps into one line that says how long
+  the agent worked, as the desktop app does.
+- Scheduled tasks: a prompt the core sends to a new chat of a saved project once, every
+  so many minutes or hours, every day, on weekdays or weekends, every week or on chosen
+  days. The desktop app lists them on a page of their own with Run now, a switch and an
+  editor, and so does the web client; a run nobody watches goes on to the end of its turn.
+  Protocol version 10.
+
 ### Changed
 
+- Desktop chrome: a header across the whole window holds, over the rail and sidebar,
+  their switches and Back and Forward, the chat's title past a thin rule. The rail is a
+  shade darker than the sidebar, the sidebar is a card with one rounded corner, and the
+  wordmark made room for the controls.
+- The side panel lists screenshots as rows with a small thumbnail, the first five with
+  "View all" for the rest. Click and scroll tools tell the model to take the user's own
+  pointer only when the user asked for it.
+- Desktop: a wider rail with larger icons that can itself be hidden; resting on its Chats
+  or Scheduled icon shows that place beside it, a click opens it. The top bar has Back and
+  Forward through the places visited, the chat's project on hover of its folder, and a
+  "..." with the chat's menu, which can also schedule a task. The work area is one rounded
+  sheet, the user's messages carry a light accent, and each turn folds its steps, thinking
+  and passing remarks into one row that says how long the agent worked.
+- Updates page installs a newer desktop app in place and offers the restart into it,
+  instead of opening the release page. Releases are signed by one certificate when the
+  release secrets hold it, so macOS keeps permissions and keychain access across
+  versions; an app signed that way takes only an update signed by the same certificate.
+- Web client builds install `wasm-bindgen-cli` from source, so Linux runners with an
+  older glibc build it too.
+- Desktop layout: a thin rail at the left edge holds the places of the app, the sidebar
+  holds only projects and chats, a 52 px bar runs across the top to the right edge with
+  the side panel under it, both side columns slide open and closed, and the side
+  panel's foot (project, folder, branch, model, mode) starts folded behind an arrow.
+- Desktop and web look: a deeper Dusk palette, settings grouped on cards as macOS lists
+  them, controls at least 32 px (steppers, switches, buttons), the web address in a
+  copy field that never leaves its card, System usage as tiles, and clearer composer
+  controls with menu carets and the model's name.
 - Desktop chat groups each turn's tool calls and reasoning under a collapsed row labeled
   with the latest action. Assistant messages and prompts stay visible.
 - The composer has a clearer message history button, and the Subagents panel fits

@@ -16,22 +16,16 @@ mod model_menu;
 mod navigator;
 pub mod queue;
 mod ring;
+mod timing;
 pub mod transcript;
 mod working;
 
 use gpui_kit::{
-    component::{
-        ActiveTheme, IconName, Sizable,
-        button::{Button, ButtonVariants},
-    },
-    prelude::FluentBuilder,
+    component::{ActiveTheme, IconName, button::Button},
     *,
 };
 
-use crate::{
-    ui::{Type, widgets},
-    workspace::Workspace,
-};
+use crate::{ui::Type, workspace::Workspace};
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     if let Some(text) = ws.fill_composer.take() {
@@ -39,19 +33,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .update(cx, |composer, cx| composer.set_value(text, window, cx));
     }
     let theme = cx.theme();
-    let (border, danger) = (theme.border, theme.danger);
-    let title = ws
-        .shown_chat()
-        .and_then(|chat| chat.title.clone())
-        .or_else(|| {
-            let shown = ws.shown.as_deref()?;
-            ws.threads.iter().find(|t| t.id == shown)?.title.clone()
-        })
-        .unwrap_or_else(|| "New chat".to_owned());
-    let project = ws
-        .selected_project()
-        .map(|project| project.name.clone())
-        .unwrap_or_default();
+    let danger = theme.danger;
     let notice = ws.notice.clone().map(|text| {
         div()
             .id("notice")
@@ -85,35 +67,6 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             ws.attachments.extend(paths.paths().iter().cloned());
             cx.notify();
         }))
-        .child(
-            div()
-                .h(px(44.))
-                .px_4()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_2()
-                .border_b_1()
-                .border_color(border)
-                .child(
-                    div()
-                        .body()
-                        .font_weight(FontWeight::SEMIBOLD)
-                        .truncate()
-                        .child(title),
-                )
-                .when(!project.is_empty(), |header| {
-                    header.child(widgets::badge(project, cx.theme().muted_foreground))
-                })
-                .child(div().flex_1())
-                .child(panel_toggle(
-                    "toggle-right",
-                    IconName::PanelRight,
-                    |ws| &mut ws.right_hidden,
-                    "Show or hide the side panel",
-                    cx,
-                )),
-        )
         .children(notice)
         .child(
             div()
@@ -160,25 +113,6 @@ fn to_bottom(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
 }
 
 /// Shows or hides a side column.
-fn panel_toggle(
-    id: &'static str,
-    icon: IconName,
-    hidden: fn(&mut Workspace) -> &mut bool,
-    tip: &'static str,
-    cx: &mut Context<Workspace>,
-) -> Button {
-    Button::new(id)
-        .ghost()
-        .small()
-        .icon(icon)
-        .tooltip(tip)
-        .on_click(cx.listener(move |ws, _, _, cx| {
-            let hidden = hidden(ws);
-            *hidden = !*hidden;
-            cx.notify();
-        }))
-}
-
 fn empty(ws: &Workspace, cx: &App) -> Div {
     let text = if ws.projects.is_empty() {
         "Add a project on the left to start.".to_owned()

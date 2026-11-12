@@ -96,7 +96,7 @@ fn variables(form: &ProjectForm, cx: &mut Context<Workspace>) -> Div {
                 .child(
                     Button::new(("env-remove", index))
                         .ghost()
-                        .xsmall()
+                        .small()
                         .icon(IconName::Close)
                         .tooltip("Remove the variable")
                         .on_click(cx.listener(move |ws, _, _, cx| ws.remove_env(&target, cx))),

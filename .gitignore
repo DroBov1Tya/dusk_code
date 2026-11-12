@@ -24,6 +24,8 @@
 *.pem
 *.key
 *.p12
+*.password
+duskcode-signing.*
 *.keystore
 config.yml
 config.yml.bak
@@ -44,6 +46,10 @@ test/
 tmp/
 scratch/
 .tree/
+
+# Trunk's staging folder and core dumps
+/projects/web-ui/.trunk/
+core.[0-9]*
 
 # Editors and systems
 .DS_Store

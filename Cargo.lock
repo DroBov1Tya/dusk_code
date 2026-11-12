@@ -2360,6 +2360,7 @@ name = "dusk_gui"
 version = "0.73.0"
 dependencies = [
  "anyhow",
+ "chrono",
  "dusk_core",
  "dusk_protocol",
  "dusk_web",

@@ -4,7 +4,7 @@ use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
     client::{ProjectRequest, Request, Response, Secret},
-    project::{FileDiff, FileEntry, GitInfo, OutputFile, Project},
+    project::{FileDiff, FileEntry, GitInfo, OutputFile, Project, Schedule, ScheduleDraft},
 };
 use std::path::PathBuf;
 
@@ -134,5 +134,37 @@ impl Projects<'_> {
         self.0
             .text(Request::Project(ProjectRequest::ReadOutput { path }))
             .await
+    }
+
+    /// Every scheduled task, soonest first.
+    pub async fn schedules(&self) -> Result<Vec<Schedule>> {
+        self.timetable(ProjectRequest::Schedules).await
+    }
+
+    pub async fn save_schedule(&self, draft: ScheduleDraft) -> Result<Vec<Schedule>> {
+        self.timetable(ProjectRequest::SaveSchedule { draft }).await
+    }
+
+    pub async fn delete_schedule(&self, id: String) -> Result<Vec<Schedule>> {
+        self.timetable(ProjectRequest::DeleteSchedule { id }).await
+    }
+
+    /// Runs the task now in a new chat; answers with the chat's id.
+    pub async fn run_schedule(&self, id: String) -> Result<String> {
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::RunSchedule { id }))
+            .await?
+        {
+            Response::Opened { thread_id } => Ok(thread_id),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    async fn timetable(&self, request: ProjectRequest) -> Result<Vec<Schedule>> {
+        match self.0.call(Request::Project(request)).await? {
+            Response::Schedules(schedules) => Ok(schedules),
+            other => Err(unexpected(other)),
+        }
     }
 }

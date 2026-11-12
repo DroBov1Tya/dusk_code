@@ -132,8 +132,18 @@ pub async fn apply(
             }
             Err(error) => app.error(format!("cannot save the agent limit: {error:#}")),
         },
+        Action::Schedule(action) => super::schedules::apply(client, app, action).await,
         Action::Disconnect(name) => match client.settings().remove_provider(&name).await {
-            Ok(()) => app.flash = Some(format!("Provider {name} forgotten")),
+            Ok(()) => {
+                // An open model list shows the providers that are left.
+                if matches!(app.panel, Some(Panel::Models(_))) {
+                    let model = client.status.borrow().model.clone();
+                    app.panel = Some(Panel::Models(ModelList::checking(model)));
+                    terminal.draw(|frame| ui::draw(frame, app))?;
+                    answer(client, app, open, Command::Model { name: None }).await;
+                }
+                app.flash = Some(format!("Provider {name} forgotten"));
+            }
             Err(error) => app.error(format!("cannot forget the provider: {error:#}")),
         },
         Action::OpenMe => match client.catalog().profile().await {

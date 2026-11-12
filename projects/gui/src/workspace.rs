@@ -18,18 +18,19 @@ use gpui_kit::{
         ActiveTheme,
         input::{InputEvent, InputState, TextareaState},
     },
-    prelude::FluentBuilder,
     *,
 };
 use tokio::sync::{mpsc, watch};
 
+use gpui_kit::base::spring;
+
 use crate::{
-    columns::{inspector, sidebar},
+    columns::{inspector, rail, sidebar, topbar},
     core::Core,
     modal::{self, Modal},
     pages::{
         artifacts, chat, chat::transcript::Transcript, connectors, connectors::Shelf, review,
-        settings, settings::SettingsPage,
+        schedules, settings, settings::SettingsPage,
     },
 };
 
@@ -43,6 +44,8 @@ pub enum Center {
     Review,
     /// One file, read-only, as an editor shows it.
     File,
+    /// Prompts the core runs on a timetable.
+    Schedules,
 }
 
 /// The modules of the right column, top to bottom.
@@ -132,6 +135,8 @@ pub struct Workspace {
     pub home: PathBuf,
     pub status: Status,
     pub projects: Vec<Project>,
+    /// The timetable, once read; `None` until the page asks.
+    pub schedules: Option<Vec<dusk_protocol::project::Schedule>>,
     /// Every chat the core keeps; subagent threads are left out.
     pub threads: Vec<Thread>,
     /// Chats opened in this window, by thread ID.
@@ -209,6 +214,15 @@ pub struct Workspace {
     pub picked: Vec<usize>,
     pub attach_open: bool,
     pub left_hidden: bool,
+    /// The strip of places at the left edge, hidden on the user's word.
+    pub rail_hidden: bool,
+    /// A rail place shown on hover, and whether the pointer is on its icon or panel.
+    pub flyout: Option<crate::columns::flyout::Flyout>,
+    pub flyout_inside: bool,
+    /// Side panel modules showing all their rows rather than the first few.
+    pub unfolded_modules: HashSet<Right>,
+    /// The places the user went, for Back and Forward.
+    pub history: topbar::history::History,
     pub right_hidden: bool,
     /// Files to send with the next message.
     pub attachments: Vec<PathBuf>,
@@ -322,6 +336,7 @@ impl Workspace {
             home,
             status: first,
             projects: Vec::new(),
+            schedules: None,
             threads: Vec::new(),
             chats: HashMap::new(),
             shown: None,
@@ -379,6 +394,11 @@ impl Workspace {
             picked: Vec::new(),
             attach_open: false,
             left_hidden: false,
+            rail_hidden: false,
+            flyout: None,
+            flyout_inside: false,
+            unfolded_modules: HashSet::new(),
+            history: Default::default(),
             right_hidden: false,
             attachments: Vec::new(),
             pastes: Vec::new(),
@@ -521,10 +541,34 @@ impl Workspace {
     }
 }
 
+impl Workspace {
+    /// The side panel belongs to the work: pages about the app itself have the whole width.
+    pub fn side_panel_allowed(&self) -> bool {
+        matches!(self.center, Center::Chat | Center::Review | Center::File)
+    }
+
+    fn side_panel_shown(&self) -> bool {
+        self.side_panel_allowed() && !self.right_hidden
+    }
+
+    /// The middle column's width once the side columns have settled.
+    pub fn chat_width(&self, window: &Window) -> f32 {
+        let sidebar = if self.left_hidden { 0. } else { sidebar::WIDTH };
+        let inspector = if self.side_panel_shown() {
+            inspector::WIDTH
+        } else {
+            0.
+        };
+        window.viewport_size().width.as_f32() - rail::width(self) - sidebar - inspector
+    }
+}
+
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.record_place();
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
+        let (frame, theme_border) = (rail::color(cx), theme.border);
         let center = match self.center {
             Center::Chat => chat::render(self, window, cx).into_any_element(),
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
@@ -532,33 +576,93 @@ impl Render for Workspace {
             Center::Settings => settings::render(self, window, cx).into_any_element(),
             Center::Review => review::render(self, cx).into_any_element(),
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
+            Center::Schedules => schedules::render(self, window, cx).into_any_element(),
         };
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
         let artifact_menu = artifacts::menu(self, window, cx);
         let audio_menu = chat::audio::menu(self, window, cx);
+        // The side columns slide rather than jump: their widths follow a spring, and a
+        // column is drawn at its full width inside a clipped frame, so its rows do not
+        // reflow while it moves.
+        let motion = cx.theme().motion_tokens().spring_move;
+        let left = spring(
+            "sidebar-width",
+            px(if self.left_hidden { 0. } else { sidebar::WIDTH }),
+            motion,
+            window,
+            cx,
+        );
+        let right = spring(
+            "inspector-width",
+            px(if self.side_panel_shown() {
+                inspector::WIDTH
+            } else {
+                0.
+            }),
+            motion,
+            window,
+            cx,
+        );
+        let sidebar = (left > px(0.5)).then(|| {
+            div()
+                .w(left)
+                .h_full()
+                .flex_none()
+                .overflow_hidden()
+                .child(sidebar::render(self, window, cx))
+        });
+        let inspector = (right > px(0.5)).then(|| {
+            div()
+                .w(right)
+                .h_full()
+                .flex_none()
+                .overflow_hidden()
+                .flex()
+                .justify_end()
+                .child(inspector::render(self, window, cx))
+        });
+        // The header runs the window's width; under it the rail on the frame, the
+        // sidebar as a card with one rounded corner, and the work beside it.
+        let nav_width = px(rail::width(self)) + left;
+        let sidebar = sidebar.map(|column| {
+            column
+                .rounded_tl_xl()
+                .border_t_1()
+                .border_l_1()
+                .border_color(theme_border)
+        });
         div()
             .relative()
             .size_full()
             .flex()
-            .flex_row()
-            .bg(background)
+            .flex_col()
+            .bg(frame)
             .text_color(foreground)
-            .map(|row| {
-                if self.left_hidden {
-                    row.child(sidebar::rail(self, cx))
-                } else {
-                    row.child(sidebar::render(self, window, cx))
-                }
-            })
-            .child(div().flex_1().min_w_0().h_full().child(center))
-            // The side column belongs to the work: pages about the app itself have the
-            // whole width.
-            .when(
-                !self.right_hidden
-                    && matches!(self.center, Center::Chat | Center::Review | Center::File),
-                |row| row.child(inspector::render(self, window, cx)),
+            .child(topbar::render(self, nav_width, window, cx))
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .flex()
+                    .flex_row()
+                    .children((!self.rail_hidden).then(|| rail::render(self, cx)))
+                    .children(sidebar)
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .h_full()
+                            .flex()
+                            .flex_row()
+                            .border_t_1()
+                            .border_color(theme_border)
+                            .bg(background)
+                            .child(div().flex_1().min_w_0().h_full().child(center))
+                            .children(inspector),
+                    ),
             )
+            .children(crate::columns::flyout::render(self, window, cx))
             .children(modal)
             .children(chat_menu)
             .children(artifact_menu)

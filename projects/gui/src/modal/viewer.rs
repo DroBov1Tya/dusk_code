@@ -53,7 +53,7 @@ pub fn render(
         .child(
             Button::new("viewer-open")
                 .ghost()
-                .xsmall()
+                .small()
                 .icon(IconName::ExternalLink)
                 .label("Open in the system")
                 .on_click(cx.listener(move |_, _, _, cx| cx.open_with_system(&shown))),

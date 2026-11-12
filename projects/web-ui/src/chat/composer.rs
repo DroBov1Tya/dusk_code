@@ -24,6 +24,8 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     let area = NodeRef::<html::Textarea>::new();
     let dictation = RwSignal::new(Dictation::Idle);
     let recording = StoredValue::new_local(None::<voice::Recording>);
+    let pictures = RwSignal::new(Vec::<super::pictures::Picture>::new());
+    let picker = NodeRef::<html::Input>::new();
 
     // After /undo the core hands the message back to edit.
     Effect::new(move |_| {
@@ -49,11 +51,13 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
         let id = id.clone();
         move |now: bool| {
             let value = text.get_untracked();
-            if value.trim().is_empty() {
+            let attached = pictures.get_untracked();
+            if value.trim().is_empty() && attached.is_empty() {
                 return;
             }
             text.set(String::new());
-            app.send(id.clone(), value, now);
+            pictures.set(Vec::new());
+            app.send(id.clone(), value, now, attached);
         }
     });
     let on_key = move |ev: leptos::ev::KeyboardEvent| {
@@ -124,8 +128,21 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                     </For>
                 </ul>
             </Show>
+            <super::pictures::Strip pictures />
             <textarea
                 node_ref=area
+                on:paste=move |ev: leptos::ev::ClipboardEvent| {
+                    let files = super::pictures::pasted(&ev);
+                    if !files.is_empty() {
+                        ev.prevent_default();
+                        super::pictures::add_files(files, pictures);
+                    }
+                }
+                on:dragover=move |ev: leptos::ev::DragEvent| ev.prevent_default()
+                on:drop=move |ev: leptos::ev::DragEvent| {
+                    ev.prevent_default();
+                    super::pictures::add_files(super::pictures::dropped(&ev), pictures);
+                }
                 rows="1"
                 placeholder="Message, or / for commands"
                 prop:value=move || text.get()
@@ -133,6 +150,17 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                 on:keydown=on_key
             ></textarea>
             <div class="composer-actions">
+                <input type="file" accept="image/png,image/jpeg" multiple hidden node_ref=picker
+                    on:change=move |ev| {
+                        if let Some(input) = super::pictures::input_of(&ev) {
+                            super::pictures::pick(&input, pictures);
+                        }
+                    } />
+                <button class="ghost" title="Attach pictures" on:click=move |_| {
+                    if let Some(input) = picker.get() {
+                        input.click();
+                    }
+                }>"+"</button>
                 <button class="ghost" on:click=toggle_dictation
                     title="Dictate with the speech model">
                     {move || match dictation.get() {

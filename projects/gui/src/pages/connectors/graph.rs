@@ -240,7 +240,7 @@ fn card(
                         .child(
                             Switch::new(SharedString::from(format!("agent-switch-{name}")))
                                 .checked(node.enabled)
-                                .xsmall()
+                                .small()
                                 .on_click(cx.listener(move |ws, on: &bool, _, cx| {
                                     ws.switch(CoreSwitch::Agent(switch_name.clone()), *on, cx);
                                 })),

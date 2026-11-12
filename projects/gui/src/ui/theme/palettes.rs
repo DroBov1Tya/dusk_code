@@ -26,22 +26,24 @@ pub struct Palette {
 pub const DEFAULT: &str = "Dusk";
 
 pub const PALETTES: &[Palette] = &[
-    // Dusk: night water in ink blue, a violet flower for the accent and its golden heart.
+    // Dusk: the sky a little after sunset, deep indigo going to violet; an iris flower
+    // for the accent and its golden heart. Each surface step is an even rise in
+    // lightness, so cards and rows read without lines.
     Palette {
         name: "Dusk",
         dark: true,
-        background: "#12151e",
-        panel: "#0e1118",
-        surface: "#191d28",
-        raised: "#232835",
-        foreground: "#eef0f5",
-        secondary: "#a3a9b8",
-        muted: "#7a8296",
-        accent: "#b99cf0",
-        on_accent: "#12151e",
-        success: "#6fcfae",
-        warning: "#e7c35a",
-        danger: "#ef6b8a",
+        background: "#13141f",
+        panel: "#0e0f18",
+        surface: "#1b1c2a",
+        raised: "#262839",
+        foreground: "#efedf7",
+        secondary: "#aeadc4",
+        muted: "#83829c",
+        accent: "#b4a0f8",
+        on_accent: "#13121d",
+        success: "#74d4b3",
+        warning: "#ecc46e",
+        danger: "#f27a96",
     },
     Palette {
         name: "Light",

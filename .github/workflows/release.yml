@@ -107,6 +107,37 @@ jobs:
           printf '%s\n' "$version" > "dist/$name/resources/VERSION"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           "./dist/$name/duskcode" --version
+      - name: Signing certificate
+        # Every release is signed by the same certificate, so macOS keeps the permissions
+        # and keychain access of the last version. Without the secrets it is signed ad hoc.
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          P12: ${{ secrets.MACOS_SIGN_P12 }}
+          PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
+        run: |
+          if [[ -z "$P12" ]]; then
+            echo "::warning::MACOS_SIGN_P12 is not set; the app is signed ad hoc"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          unlock="$(openssl rand -base64 24)"
+          security create-keychain -p "$unlock" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$unlock" "$keychain"
+          printf '%s' "$P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security import "$RUNNER_TEMP/signing.p12" -k "$keychain" -P "$PASSWORD" -T /usr/bin/codesign
+          openssl pkcs12 -in "$RUNNER_TEMP/signing.p12" -passin env:PASSWORD -nokeys -clcerts -legacy \
+            -out "$RUNNER_TEMP/signing.pem" 2>/dev/null \
+            || openssl pkcs12 -in "$RUNNER_TEMP/signing.p12" -passin env:PASSWORD -nokeys -clcerts \
+              -out "$RUNNER_TEMP/signing.pem"
+          rm -f "$RUNNER_TEMP/signing.p12"
+          # Self-signed: trusted for code signing on this throwaway runner only.
+          sudo security add-trusted-cert -d -r trustRoot -p codeSign \
+            -k /Library/Keychains/System.keychain "$RUNNER_TEMP/signing.pem"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$unlock" "$keychain" >/dev/null
+          security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
+          echo "DUSK_SIGN_IDENTITY=Duskcode Release Signing" >> "$GITHUB_ENV"
       - name: Desktop app
         if: runner.os == 'macOS'
         shell: bash
