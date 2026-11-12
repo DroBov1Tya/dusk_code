@@ -4,7 +4,7 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
-## Unreleased
+## 0.73.2 - 2026-11-12
 
 ### Added
 
