@@ -4,6 +4,15 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Changed
+
+- Desktop chat groups each turn's tool calls and reasoning under a collapsed row labeled
+  with the latest action. Assistant messages and prompts stay visible.
+- The composer has a clearer message history button, and the Subagents panel fits
+  smaller windows and returns keyboard focus to its button on close.
+
 ## 0.73.0 - 2026-11-11
 
 ### Added

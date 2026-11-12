@@ -520,7 +520,7 @@ impl Workspace {
             "escape" => {
                 // Nothing open: Escape leaves the box for the window, from where Tab walks
                 // the rows.
-                if !self.close_top() {
+                if !self.close_top(window, cx) {
                     if self.focus.is_focused(window) {
                         return;
                     }

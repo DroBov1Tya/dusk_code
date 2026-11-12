@@ -30,12 +30,13 @@ use crate::{
 /// Keys of unfolded things share one set: answers by index, runs and steps apart.
 const RUN: usize = 1 << 40;
 const STEP: usize = 1 << 41;
+const ACTIVITY: usize = 1 << 42;
 
-/// One row of the list: an item, a run of steps, or the working figure.
+/// One row of the list: a visible item, a turn disclosure, or the working figure.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Row {
     Item(usize),
-    Run { start: usize, end: usize },
+    Activity { start: usize, end: usize },
     Working,
 }
 
@@ -46,27 +47,48 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     };
     let mut rows = Vec::new();
     let mut sent = Vec::new();
-    let mut index = 0;
-    while index < chat.items.len() {
-        if let Item::Tool(_) = chat.items[index] {
-            let start = index;
-            while index < chat.items.len() && matches!(chat.items[index], Item::Tool(_)) {
-                index += 1;
+    let mut start = 0;
+    for end in chat
+        .activity_boundaries
+        .iter()
+        .copied()
+        .chain(std::iter::once(chat.items.len()))
+    {
+        let items = &chat.items[start..end];
+        let activity = if items.iter().any(primary_activity) {
+            let first = items.iter().position(activity_item);
+            let last = items.iter().rposition(activity_item);
+            first
+                .zip(last)
+                .map(|(first, last)| (start + first, start + last))
+        } else {
+            None
+        };
+        for (offset, item) in items.iter().enumerate() {
+            let index = start + offset;
+            if let Some((first, last)) = activity
+                && index == last
+            {
+                rows.push(Row::Activity {
+                    start: first,
+                    end: last + 1,
+                });
             }
-            if !steps(&chat.items[start..index]).is_empty() {
-                rows.push(Row::Run { start, end: index });
+            match item {
+                Item::Tool(_) => continue,
+                Item::Assistant { text, .. } if text.is_empty() => continue,
+                Item::Agent { .. } | Item::User { sequence: None, .. } if activity.is_some() => {
+                    continue;
+                }
+                Item::User {
+                    text,
+                    sequence: Some(_),
+                } => sent.push((rows.len(), text.clone())),
+                _ => {}
             }
-            continue;
+            rows.push(Row::Item(index));
         }
-        if let Item::User {
-            text,
-            sequence: Some(_),
-        } = &chat.items[index]
-        {
-            sent.push((rows.len(), text.clone()));
-        }
-        rows.push(Row::Item(index));
-        index += 1;
+        start = end;
     }
     if chat.working {
         rows.push(Row::Working);
@@ -95,14 +117,9 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
     let same = old.min(rows.len());
     // The first row that differs from what the list holds, and the last one, which may
     // still be growing.
-    let first = ws
-        .rows
-        .iter()
-        .zip(rows)
-        .position(|(a, b)| a != b)
-        .unwrap_or(same)
-        .min(same.saturating_sub(1));
-    if old != rows.len() || ws.measure_again {
+    let changed = ws.rows.iter().zip(rows).position(|(a, b)| a != b);
+    let first = changed.unwrap_or(same).min(same.saturating_sub(1));
+    if old != rows.len() || changed.is_some() || ws.measure_again {
         ws.list.splice(first..old, rows.len() - first);
     } else if let Some(last) = rows.len().checked_sub(1) {
         ws.list.splice(last..last + 1, 1);
@@ -113,17 +130,29 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
     }
 }
 
+fn visible_tool(tool: &Tool) -> bool {
+    !matches!(tool.name.as_str(), "display_image" | "display_audio")
+        || tool.state != ToolState::Done
+}
+
+fn primary_activity(item: &Item) -> bool {
+    match item {
+        Item::Tool(_) => true,
+        Item::Assistant { reasoning, .. } => !reasoning.trim().is_empty(),
+        _ => false,
+    }
+}
+
+fn activity_item(item: &Item) -> bool {
+    primary_activity(item) || matches!(item, Item::Agent { .. } | Item::User { sequence: None, .. })
+}
+
 /// The steps a run shows: a picture card stands for the step that showed it.
 pub fn steps(items: &[Item]) -> Vec<&Tool> {
     items
         .iter()
         .filter_map(|item| match item {
-            Item::Tool(tool)
-                if !(matches!(tool.name.as_str(), "display_image" | "display_audio")
-                    && tool.state == ToolState::Done) =>
-            {
-                Some(tool)
-            }
+            Item::Tool(tool) if visible_tool(tool) => Some(tool),
             _ => None,
         })
         .collect()
@@ -136,12 +165,11 @@ impl Workspace {
             return div().into_any_element();
         };
         let theme = cx.theme();
-        let (surface, muted, accent, danger, border) = (
+        let (surface, muted, accent, danger) = (
             theme.muted,
             theme.muted_foreground,
             theme.primary,
             theme.danger,
-            theme.border,
         );
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
@@ -159,9 +187,8 @@ impl Workspace {
                 ))
                 .child("Working")
                 .into_any_element(),
-            Row::Run { start, end } => {
-                let tools = steps(&chat.items[start..end]);
-                run(self, &shown, start, &tools, cx).into_any_element()
+            Row::Activity { start, end } => {
+                turn_activity(self, &shown, start, &chat.items[start..end], cx).into_any_element()
             }
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
@@ -225,64 +252,10 @@ impl Workspace {
                     }
                     Item::Command(run) => command_card(&key, run, cx),
                     Item::Agent { from, text } => {
-                        let unfolded = self.unfolded.contains(&(shown.clone(), at));
-                        let id = shown.clone();
-                        let first = text.lines().next().unwrap_or_default();
-                        let mark = if unfolded { "\u{25BE}" } else { "\u{25B8}" };
-                        let mut card = div().flex().flex_col().gap_2().child(
-                            div()
-                                .id(SharedString::from(format!("agent-{key}")))
-                                .meta()
-                                .text_color(muted)
-                                .cursor_pointer()
-                                .truncate()
-                                .child(if unfolded {
-                                    format!("{mark} {from} reported")
-                                } else {
-                                    format!("{mark} {from} reported: {first}")
-                                })
-                                .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx))),
-                        );
-                        if unfolded {
-                            card =
-                                card.child(div().pl_3().border_l_2().border_color(border).child(
-                                    links::markdown(
-                                        SharedString::from(format!("report-{key}")),
-                                        text.clone(),
-                                    ),
-                                ));
-                        }
-                        card.into_any_element()
+                        agent_report(self, &shown, at, from, text, cx).into_any_element()
                     }
-                    Item::Assistant { text, reasoning } => {
-                        let unfolded = self.unfolded.contains(&(shown.clone(), at));
+                    Item::Assistant { text, .. } => {
                         let mut answer = div().flex().flex_col().gap_2();
-                        if !reasoning.trim().is_empty() {
-                            let id = shown.clone();
-                            answer = answer.child(
-                                disclosure(
-                                    SharedString::from(format!("reasoning-{key}")),
-                                    unfolded,
-                                    cx,
-                                )
-                                .aria_label("Thinking")
-                                .child(disclosure_icon(unfolded, step_muted(cx)))
-                                .child("Thinking")
-                                .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, at, cx))),
-                            );
-                            if unfolded {
-                                answer = answer.child(
-                                    div()
-                                        .ml_4()
-                                        .pl_3()
-                                        .border_l_1()
-                                        .border_color(border)
-                                        .small()
-                                        .text_color(step_muted(cx))
-                                        .child(reasoning.clone()),
-                                );
-                            }
-                        }
                         if !text.is_empty() {
                             answer = answer.child(super::media::render(
                                 &format!("answer-{key}"),
@@ -358,11 +331,7 @@ impl Workspace {
                 }
             }
         };
-        let activity = matches!(row, Row::Run { .. })
-            || matches!(row, Row::Item(at) if matches!(
-                &chat.items[at],
-                Item::Assistant { text, reasoning } if text.is_empty() && !reasoning.trim().is_empty()
-            ));
+        let activity = matches!(row, Row::Activity { .. });
         let gutter = if activity { 3. } else { 8. };
         let top = if ix == 0 { 24. } else { gutter };
         let bottom = if ix + 1 == self.rows.len() {
@@ -436,6 +405,174 @@ fn lane(content: AnyElement) -> AnyElement {
                 .child(content),
         )
         .into_any_element()
+}
+
+fn turn_activity(
+    ws: &Workspace,
+    shown: &str,
+    start: usize,
+    items: &[Item],
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let open = ws.unfolded.contains(&(shown.to_owned(), start | ACTIVITY));
+    let mut latest = None;
+    let mut running = None;
+    for (index, item) in items.iter().enumerate().rev() {
+        if let Item::Tool(tool) = item {
+            if latest.is_none() {
+                latest = Some(tool);
+            }
+            if running.is_none() && tool.state == ToolState::Running && tool.name == "run_command" {
+                running = Some((start + index, tool));
+            }
+        }
+        if latest.is_some() && running.is_some() {
+            break;
+        }
+    }
+    let title = latest.map_or("Thinking", |tool| {
+        let summary = tool.detail.trim();
+        if summary.is_empty() {
+            tool.name.as_str()
+        } else {
+            summary
+        }
+    });
+    let id = shown.to_owned();
+    let header = disclosure(
+        SharedString::from(format!("activity-{shown}-{start}")),
+        open,
+        cx,
+    )
+    .flex_1()
+    .aria_label(format!("Turn activity, {title}"))
+    .child(disclosure_icon(open, step_muted(cx)))
+    .child(
+        div()
+            .min_w_0()
+            .truncate()
+            .text_color(cx.theme().foreground)
+            .child(title.to_owned()),
+    )
+    .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, start | ACTIVITY, cx)));
+    let mut row = div().flex().items_center().gap_2().child(header);
+    if !open && let Some((index, tool)) = running {
+        row = row.child(background_button(shown, index, tool, cx));
+    }
+    let mut block = div().flex().flex_col().gap_1().child(row);
+    if open {
+        let mut detail = div()
+            .ml_4()
+            .pl_2()
+            .border_l_1()
+            .border_color(cx.theme().border)
+            .flex()
+            .flex_col()
+            .gap_1();
+        for (offset, item) in items.iter().enumerate() {
+            let index = start + offset;
+            detail = match item {
+                Item::Tool(tool) => detail.child(step(ws, shown, index, tool, cx)),
+                Item::Assistant { reasoning, .. } if !reasoning.trim().is_empty() => {
+                    detail.child(activity_text(
+                        ws,
+                        shown,
+                        index,
+                        "Thinking",
+                        || reasoning.clone().into_any_element(),
+                        cx,
+                    ))
+                }
+                Item::Agent { from, text } => {
+                    detail.child(agent_report(ws, shown, index, from, text, cx))
+                }
+                Item::User {
+                    text,
+                    sequence: None,
+                } => detail.child(activity_text(
+                    ws,
+                    shown,
+                    index,
+                    "Background task result",
+                    || text.clone().into_any_element(),
+                    cx,
+                )),
+                _ => detail,
+            };
+        }
+        block = block.child(detail);
+    }
+    block
+}
+
+fn agent_report(
+    ws: &Workspace,
+    shown: &str,
+    index: usize,
+    from: &str,
+    text: &str,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let label = if ws.unfolded.contains(&(shown.to_owned(), index)) {
+        format!("{from} reported")
+    } else {
+        let first = text.lines().next().unwrap_or_default();
+        format!("{from} reported: {first}")
+    };
+    activity_text(
+        ws,
+        shown,
+        index,
+        &label,
+        || {
+            links::markdown(
+                SharedString::from(format!("report-{shown}-{index}")),
+                text.to_owned(),
+            )
+            .into_any_element()
+        },
+        cx,
+    )
+}
+
+fn activity_text(
+    ws: &Workspace,
+    shown: &str,
+    index: usize,
+    title: &str,
+    body: impl FnOnce() -> AnyElement,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let open = ws.unfolded.contains(&(shown.to_owned(), index));
+    let id = shown.to_owned();
+    let muted = step_muted(cx);
+    div()
+        .flex()
+        .flex_col()
+        .gap_1()
+        .child(
+            disclosure(
+                SharedString::from(format!("activity-text-{shown}-{index}")),
+                open,
+                cx,
+            )
+            .aria_label(title.to_owned())
+            .child(disclosure_icon(open, muted))
+            .child(div().min_w_0().truncate().child(title.to_owned()))
+            .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
+        )
+        .when(open, |block| {
+            block.child(
+                div()
+                    .ml_4()
+                    .pl_3()
+                    .border_l_1()
+                    .border_color(cx.theme().border)
+                    .small()
+                    .text_color(muted)
+                    .child(body()),
+            )
+        })
 }
 
 /// A run of steps: the latest one, and the count of the others to unfold.
@@ -566,18 +703,7 @@ fn step(
     let mut row = div().flex().items_center().gap_2().child(button);
     // A long command can go on in the background while the agent works on.
     if tool.state == ToolState::Running && tool.name == "run_command" {
-        let (thread_id, call_id) = (shown.to_owned(), tool.call_id.clone());
-        row = row.child(
-            Button::new(SharedString::from(format!("background-{shown}-{index}")))
-                .ghost()
-                .xsmall()
-                .label("To background")
-                .tooltip("The agent goes on; the result comes when it ends")
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    cx.stop_propagation();
-                    ws.send_to_background(&thread_id, &call_id, cx);
-                })),
-        );
+        row = row.child(background_button(shown, index, tool, cx));
     }
     let mut line = div().flex().flex_col().child(row);
     if open {
@@ -610,6 +736,24 @@ fn step(
         line = line.child(details);
     }
     line
+}
+
+fn background_button(
+    shown: &str,
+    index: usize,
+    tool: &Tool,
+    cx: &mut Context<Workspace>,
+) -> Button {
+    let (thread_id, call_id) = (shown.to_owned(), tool.call_id.clone());
+    Button::new(SharedString::from(format!("background-{shown}-{index}")))
+        .ghost()
+        .xsmall()
+        .label("To background")
+        .tooltip("The agent goes on; the result comes when it ends")
+        .on_click(cx.listener(move |ws, _, _, cx| {
+            cx.stop_propagation();
+            ws.send_to_background(&thread_id, &call_id, cx);
+        }))
 }
 
 /// A command the user ran from an answer: its line, a bar that fills while it runs, then

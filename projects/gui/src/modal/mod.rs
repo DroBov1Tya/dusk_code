@@ -19,6 +19,7 @@ use gpui_kit::{
         button::{Button, ButtonVariants},
         input::{InputState, TextareaState},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -156,15 +157,17 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         }
         Modal::Agents { thread_id } => {
             let thread_id = thread_id.clone();
+            let width = (window.viewport_size().width.as_f32() - 32.).clamp(220., 640.);
             (
                 "Subagents".to_owned(),
-                640.,
-                agents::render(ws, &thread_id, cx),
+                width,
+                agents::render(ws, &thread_id, width >= 560., cx),
             )
         }
         Modal::AgentChat { agent, name } => {
             let (agent, name) = (agent.clone(), name.clone());
-            (name, 760., agent_chat::render(ws, &agent, cx))
+            let width = (window.viewport_size().width.as_f32() - 32.).clamp(220., 760.);
+            (name, width, agent_chat::render(ws, &agent, cx))
         }
         Modal::DeleteFiles { paths } => (
             "Delete files".to_owned(),
@@ -198,6 +201,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     cx.notify();
                 }))
         });
+    let agent_focus = matches!(
+        ws.modal,
+        Some(Modal::Agents { .. } | Modal::AgentChat { .. })
+    )
+    .then(|| ws.agents_modal_focus.clone());
     let theme = cx.theme();
     let panel = div()
         .id("modal-panel")
@@ -237,7 +245,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         .small()
                         .icon(IconName::Close)
                         .tooltip("Close")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
+                        .when_some(agent_focus, |button, focus| button.track_focus(&focus))
+                        .on_click(
+                            cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
+                        ),
                 ),
         )
         .child(
@@ -261,13 +272,23 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .occlude()
             .on_mouse_down(
                 MouseButton::Left,
-                cx.listener(|ws, _, _, cx| ws.close_modal(cx)),
+                cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
             )
             .child(panel),
     )
 }
 
 impl Workspace {
+    pub fn close_modal_from_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(
+            self.modal,
+            Some(Modal::Agents { .. } | Modal::AgentChat { .. })
+        ) {
+            self.agents_trigger_focus.focus(window, cx);
+        }
+        self.close_modal(cx);
+    }
+
     pub fn close_modal(&mut self, cx: &mut Context<Self>) {
         self.modal = None;
         cx.notify();

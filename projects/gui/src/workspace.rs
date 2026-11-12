@@ -170,6 +170,8 @@ pub struct Workspace {
     /// The window's own focus: shortcuts reach the workspace from here when no box or row
     /// has the keyboard.
     pub focus: FocusHandle,
+    pub agents_trigger_focus: FocusHandle,
+    pub agents_modal_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,
@@ -349,6 +351,8 @@ impl Workspace {
             touched: Vec::new(),
             review: crate::pages::review::Review::new(),
             focus: cx.focus_handle(),
+            agents_trigger_focus: cx.focus_handle(),
+            agents_modal_focus: cx.focus_handle(),
             file: crate::pages::file::FileView::new(),
             mcp_restarting: HashSet::new(),
             files: BTreeMap::new(),
