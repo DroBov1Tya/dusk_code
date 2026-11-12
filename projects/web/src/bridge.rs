@@ -6,7 +6,7 @@ use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use dusk_core::client::{Client, Hub};
 use dusk_protocol::client::{
     CatalogRequest, Hello, PROTOCOL_VERSION, Request, RequestFrame, Response, ServerFrame,
-    VoiceRequest,
+    VoiceRequest, WorkRequest,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Semaphore, mpsc, watch};
@@ -149,7 +149,9 @@ fn refused(request: &Request, size: usize) -> Option<&'static str> {
         Request::Catalog(CatalogRequest::SaveMcpServer { old: Some(_), .. }) => {
             Some("an existing MCP server is edited in the desktop app")
         }
-        Request::Voice(VoiceRequest::Transcribe { .. }) => None,
+        // Sound and pictures are bytes; the core caps a picture, the frame cap the rest.
+        Request::Voice(VoiceRequest::Transcribe { .. })
+        | Request::Work(WorkRequest::UploadPicture { .. }) => None,
         _ if size > MAX_REQUEST => Some("the request is too large"),
         _ => None,
     }

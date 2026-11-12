@@ -232,7 +232,8 @@ fn Editor(
             });
         }
     };
-    let get = move |read: fn(&Form) -> String| form.with(|f| f.as_ref().map(read).unwrap_or_default());
+    let get =
+        move |read: fn(&Form) -> String| form.with(|f| f.as_ref().map(read).unwrap_or_default());
     let kind = move || get(|f| f.kind.clone());
     view! {
         <div class="card-tile editor">

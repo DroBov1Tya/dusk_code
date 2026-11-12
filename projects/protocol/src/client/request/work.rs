@@ -2,6 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The largest picture a client may send as bytes. A browser's frame carries the bytes
+/// as JSON numbers, about four characters each, so this keeps it under the web's frame cap.
+pub const MAX_PICTURE_UPLOAD: usize = 6 * 1024 * 1024;
+
 /// A thread's background jobs and sources.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum WorkRequest {
@@ -24,6 +28,14 @@ pub enum WorkRequest {
     RemoveSource {
         thread_id: String,
         id: String,
+    },
+    /// A PNG or JPEG of up to `MAX_PICTURE_UPLOAD` bytes, sent by a client that cannot
+    /// name a file on this machine, such as a browser; kept among the thread's sources.
+    /// Answers with the tag that puts it in a message.
+    UploadPicture {
+        thread_id: String,
+        name: String,
+        bytes: Vec<u8>,
     },
     /// The chat's pinned plan, a Markdown text the user and the model both edit.
     Plan {

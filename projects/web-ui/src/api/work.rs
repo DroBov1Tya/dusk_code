@@ -44,3 +44,12 @@ pub async fn changed_files(thread_id: &str) -> Res<Vec<Change>> {
     let thread_id = thread_id.to_owned();
     ask!(work(WorkRequest::ChangedFiles { thread_id }), Response::Changes(c) => c)
 }
+
+/// Keeps a picture among the thread's sources; answers with the tag for the message.
+pub async fn upload_picture(thread_id: &str, name: String, bytes: Vec<u8>) -> Res<String> {
+    let thread_id = thread_id.to_owned();
+    ask!(
+        work(WorkRequest::UploadPicture { thread_id, name, bytes }),
+        Response::Text(tag) => tag
+    )
+}

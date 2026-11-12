@@ -35,4 +35,4 @@ pub use project::ProjectRequest;
 pub use settings::{ProviderTarget, SettingsRequest, Switch};
 pub use thread::ThreadRequest;
 pub use voice::VoiceRequest;
-pub use work::WorkRequest;
+pub use work::{MAX_PICTURE_UPLOAD, WorkRequest};

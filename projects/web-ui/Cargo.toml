@@ -28,5 +28,6 @@ web-sys = { version = "=0.3.107", features = [
     "AudioContext", "AudioContextState", "MediaStreamAudioSourceNode", "ScriptProcessorNode",
     "AudioProcessingEvent", "AudioBuffer", "AudioDestinationNode", "AudioNode",
     "MediaStreamConstraints", "Headers", "Blob", "BlobPropertyBag", "Url", "HtmlAudioElement",
-    "HtmlMediaElement", "DomTokenList", "CssStyleDeclaration",
+    "HtmlMediaElement", "DomTokenList", "CssStyleDeclaration", "File", "FileList",
+    "DataTransfer", "ClipboardEvent", "DragEvent",
 ] }

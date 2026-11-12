@@ -248,8 +248,15 @@ impl AppState {
         });
     }
 
-    /// Sends a message. From a draft the thread is made first, with this message.
-    pub fn send(self, thread_id: Option<String>, text: String, now: bool) {
+    /// Sends a message with its pictures. From a draft the thread is made first, with
+    /// this message; the pictures go to the thread before the text that names them.
+    pub fn send(
+        self,
+        thread_id: Option<String>,
+        text: String,
+        now: bool,
+        pictures: Vec<crate::chat::Picture>,
+    ) {
         spawn_local(async move {
             let thread_id = match thread_id {
                 Some(id) => id,
@@ -258,6 +265,19 @@ impl AppState {
                     Err(error) => return self.fail(error),
                 },
             };
+            let mut text = text;
+            for picture in pictures {
+                picture.forget();
+                match api::upload_picture(&thread_id, picture.name, picture.bytes).await {
+                    Ok(tag) => {
+                        if !text.is_empty() {
+                            text.push('\n');
+                        }
+                        text.push_str(&tag);
+                    }
+                    Err(error) => return self.fail(error),
+                }
+            }
             if let Some(chat) = self.chat(&thread_id) {
                 chat.update(|data| data.sent(text.clone()));
                 if chat.with_untracked(|data| data.ended) {

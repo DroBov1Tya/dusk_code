@@ -15,8 +15,8 @@ pub use event::Event;
 pub use frame::{RequestFrame, ServerFrame};
 pub use hello::{Hello, PROTOCOL_VERSION};
 pub use request::{
-    CatalogRequest, ProjectRequest, ProviderTarget, Request, SettingsRequest, Switch,
-    ThreadRequest, VoiceRequest, WorkRequest,
+    CatalogRequest, MAX_PICTURE_UPLOAD, ProjectRequest, ProviderTarget, Request, SettingsRequest,
+    Switch, ThreadRequest, VoiceRequest, WorkRequest,
 };
 pub use response::Response;
 pub use secret::Secret;

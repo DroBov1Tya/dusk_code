@@ -127,6 +127,23 @@ impl ThreadSources<'_> {
         Ok(kept)
     }
 
+    /// A picture a client sent as bytes, such as a browser's upload: only a PNG or a
+    /// JPEG, by its first bytes, and under the protocol's cap.
+    pub async fn add_picture(&self, name: &str, bytes: &[u8]) -> Result<Source> {
+        ensure!(
+            bytes.len() <= dusk_protocol::client::MAX_PICTURE_UPLOAD,
+            "the picture is over {} MiB",
+            dusk_protocol::client::MAX_PICTURE_UPLOAD / (1024 * 1024)
+        );
+        ensure!(
+            is_picture(&bytes[..bytes.len().min(16)]),
+            "only PNG and JPEG pictures can be sent"
+        );
+        // A browser may send a path; only its last part names the file.
+        let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+        self.store(&clean_name(base), bytes).await
+    }
+
     /// A copy of the file at `path` among the chat's sources.
     pub async fn add_file(&self, path: &Path) -> Result<Source> {
         let (name, bytes) = read_file(path).await?;
@@ -460,6 +477,34 @@ pub(crate) fn picture(bytes: &[u8]) -> Option<Picture> {
 mod tests {
     use super::*;
     use crate::testing::{temp_dir, temp_state};
+
+    #[tokio::test]
+    async fn an_uploaded_picture_must_be_a_small_png_or_jpeg_with_a_plain_name() {
+        let state = temp_state("sources-upload").await;
+        state.create_thread("thread", "test").await.unwrap();
+        let workspace = temp_dir("sources-upload-workspace");
+        let sources = ThreadSources {
+            state: &state,
+            workspace: &workspace,
+            thread_id: "thread",
+        };
+        let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+        assert!(
+            sources
+                .add_picture("x.png", b"<svg onload=x>")
+                .await
+                .is_err()
+        );
+        let mut huge = png.clone();
+        huge.resize(dusk_protocol::client::MAX_PICTURE_UPLOAD + 1, 0);
+        assert!(sources.add_picture("big.png", &huge).await.is_err());
+        let kept = sources
+            .add_picture("../../etc/shot.png", &png)
+            .await
+            .unwrap();
+        assert_eq!(kept.name, "shot.png");
+        assert!(!kept.file.contains('/'));
+    }
 
     #[tokio::test]
     async fn a_source_goes_once_unless_pinned_and_a_paste_leaves_the_message() {

@@ -13,6 +13,10 @@ testing.
 
 ### Added
 
+- Web client sends pictures: picked, pasted or dropped, shown as thumbnails until sent.
+  The core keeps a PNG or JPEG of up to 6 MiB a client sends as bytes among the chat's
+  sources. The web transcript folds each turn's steps into one line that says how long
+  the agent worked, as the desktop app does.
 - Scheduled tasks: a prompt the core sends to a new chat of a saved project once, every
   so many minutes or hours, every day, on weekdays or weekends, every week or on chosen
   days. The desktop app lists them on a page of their own with Run now, a switch and an

@@ -38,6 +38,11 @@ impl Server {
                 runtime.remove_source(&thread_id, &id).await?;
                 Response::Done
             }
+            WorkRequest::UploadPicture {
+                thread_id,
+                name,
+                bytes,
+            } => Response::Text(runtime.add_picture(&thread_id, &name, &bytes).await?),
         })
     }
 }
