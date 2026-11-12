@@ -11,6 +11,7 @@
 //! - Motion answers a person's action: a menu opens in 140 ms, a row leaves in 220 ms.
 
 pub mod controls;
+pub mod icons;
 pub mod layout;
 pub mod theme;
 pub mod widgets;

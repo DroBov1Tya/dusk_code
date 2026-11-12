@@ -130,7 +130,15 @@ pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {
         }
     }
     if last {
-        column = column.child(Input::new(&state.typed));
+        // What stays is said once more where the word is typed, so nobody expects it gone.
+        let kept = if state.files {
+            "The chats' files in ~/Documents/duskcode are deleted too."
+        } else {
+            "The chats' files in ~/Documents/duskcode are kept; cancel and tick the box on the second step to delete them too."
+        };
+        column = column
+            .child(div().text_sm().text_color(muted).child(kept))
+            .child(Input::new(&state.typed));
     }
     let ready = !last || state.typed.read(cx).value().trim() == WORD;
     column.child(

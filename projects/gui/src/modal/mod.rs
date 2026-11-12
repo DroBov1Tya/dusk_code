@@ -30,6 +30,8 @@ pub use viewer::ViewerContent;
 
 pub enum Modal {
     Search,
+    /// The settings' card that connects a provider, opened from the model menu.
+    ConnectProvider,
     Project(ProjectForm),
     Viewer {
         path: PathBuf,
@@ -102,6 +104,13 @@ pub struct ProjectForm {
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Option<Div> {
     let (title, width, body) = match ws.modal.as_ref()? {
         Modal::Search => ("Search chats".to_owned(), 640., search::render(ws, cx)),
+        Modal::ConnectProvider => (
+            "Providers".to_owned(),
+            640.,
+            div()
+                .p_3()
+                .child(crate::pages::settings::providers::connect_card(ws, cx)),
+        ),
         Modal::Project(form) => (
             if form.id.is_some() {
                 "Edit project"

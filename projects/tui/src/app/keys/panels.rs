@@ -356,6 +356,18 @@ impl App {
                     }
                     list.removing = Some(provider);
                 }
+                KeyCode::Char('t') => {
+                    let rows = list.rows();
+                    let Some(provider) = rows.get(list.selected).map(ModelRow::provider) else {
+                        return Action::None;
+                    };
+                    let on = list
+                        .providers
+                        .iter()
+                        .flatten()
+                        .any(|status| status.name == provider && status.enabled);
+                    return Action::ProviderEnabled(provider.to_owned(), !on);
+                }
                 KeyCode::Char('c') => self.panel = Some(Panel::Connect(Connection::default())),
                 KeyCode::Char('r') => return Action::Command(Command::Model { name: None }),
                 KeyCode::Esc => self.panel = None,

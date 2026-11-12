@@ -146,6 +146,19 @@ pub async fn apply(
             }
             Err(error) => app.error(format!("cannot forget the provider: {error:#}")),
         },
+        Action::ProviderEnabled(name, on) => {
+            match client.settings().provider_enabled(&name, on).await {
+                Ok(()) => {
+                    let model = client.status.borrow().model.clone();
+                    app.panel = Some(Panel::Models(ModelList::checking(model)));
+                    terminal.draw(|frame| ui::draw(frame, app))?;
+                    answer(client, app, open, Command::Model { name: None }).await;
+                    let state = if on { "on" } else { "off" };
+                    app.flash = Some(format!("Provider {name} is {state}"));
+                }
+                Err(error) => app.error(format!("cannot switch the provider: {error:#}")),
+            }
+        }
         Action::OpenMe => match client.catalog().profile().await {
             Ok(profile) => app.panel = Some(Panel::Paste(PasteEditor::me(profile.about))),
             Err(error) => app.error(format!("cannot read the profile: {error:#}")),

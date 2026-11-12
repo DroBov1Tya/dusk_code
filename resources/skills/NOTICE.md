@@ -20,7 +20,7 @@ the upstream has one). The front matter of each `SKILL.md` names its `source`, `
 Upstreams: https://github.com/anthropics/skills, https://github.com/openai/skills.
 
 `skill-creator`, `duskcode`, `project-tree`, `skill-improve`, `skill-from-practice`, `design-patterns`,
-`spike`, `systematic-debugging`, `test-driven-development`,
+`domain-structure`, `spike`, `systematic-debugging`, `test-driven-development`,
 `security-assessment` and its `web-`, `api-`, `mobile-`, `ad-` and
 `infrastructure-security-assessment` are dusk_code's own and share its MIT license, as do
 the agents in `agents/`.

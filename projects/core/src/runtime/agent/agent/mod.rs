@@ -58,7 +58,7 @@ pub struct Agent {
     pub state: Arc<State>,
     pub model: Arc<ModelChoice>,
     pub config: Arc<LiveConfig>,
-    pub tools: ToolRegistry,
+    pub tools: Arc<ToolRegistry>,
     pub scope: Arc<ToolScope>,
     /// Comes right after the prompt in every request.
     pub project: String,

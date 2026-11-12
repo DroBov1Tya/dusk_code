@@ -9,6 +9,7 @@ use anyhow::Result;
 
 use super::{
     anthropic::{Anthropic, MessageStream},
+    google::{GenerateStream, Google},
     openai::{CompletionStream, OpenAiCompatible},
     output::{ChatStream, ModelEvent},
     request::ChatRequest,
@@ -39,11 +40,13 @@ pub struct Provider {
     inline_tags: bool,
     prices: BTreeMap<String, Price>,
     rate: Option<super::rate::TokenBucket>,
+    account: super::limits::Account,
 }
 
 enum ProviderAdapter {
     OpenAiCompatible(OpenAiCompatible),
     Anthropic(Anthropic),
+    Google(Google),
 }
 
 struct ProviderStream {
@@ -57,13 +60,18 @@ struct ProviderStream {
 enum StreamAdapter {
     OpenAiCompatible(CompletionStream),
     Anthropic(MessageStream),
+    Google(GenerateStream),
 }
 
 impl ProviderRegistry {
-    /// Builds adapters without making any network requests.
+    /// Builds adapters without making any network requests. A provider switched off is
+    /// left out, so nothing can ask it, choose it or discover a model on it.
     pub fn from_config(config: &Config) -> Result<Self> {
         let mut providers = BTreeMap::new();
         for (name, settings) in &config.all_providers() {
+            if !settings.enabled {
+                continue;
+            }
             providers.insert(name.clone(), Arc::new(Provider::new(settings)?));
         }
         Ok(Self { providers })
@@ -99,6 +107,7 @@ impl Provider {
                 ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
             }
             ProviderKind::Anthropic => ProviderAdapter::Anthropic(Anthropic::new(settings)?),
+            ProviderKind::Google => ProviderAdapter::Google(Google::new(settings)?),
         };
         Ok(Self {
             adapter,
@@ -107,7 +116,13 @@ impl Provider {
             rate: settings
                 .requests_per_minute
                 .map(super::rate::TokenBucket::new),
+            account: super::limits::Account::of(settings),
         })
+    }
+
+    /// The rate limits the account's last answer reported, to any provider built for it.
+    pub fn limits(&self) -> Option<dusk_protocol::model::RateLimits> {
+        self.account.limits()
     }
 }
 
@@ -117,6 +132,7 @@ impl ModelProvider for Provider {
             match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
                 ProviderAdapter::Anthropic(adapter) => adapter.list_models().await,
+                ProviderAdapter::Google(adapter) => adapter.list_models().await,
             }
         })
     }
@@ -133,6 +149,9 @@ impl ModelProvider for Provider {
                 }
                 ProviderAdapter::Anthropic(adapter) => {
                     StreamAdapter::Anthropic(adapter.stream_chat(request).await?)
+                }
+                ProviderAdapter::Google(adapter) => {
+                    StreamAdapter::Google(adapter.stream_chat(request).await?)
                 }
             };
             let stream = ProviderStream {
@@ -156,6 +175,7 @@ impl ChatStream for ProviderStream {
                 let mut event = match &mut self.adapter {
                     StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
                     StreamAdapter::Anthropic(stream) => stream.next_event().await?,
+                    StreamAdapter::Google(stream) => stream.next_event().await?,
                 };
                 if let (Some(ModelEvent::Usage(usage)), Some(price)) = (&mut event, &self.price)
                     && usage.cost.is_none()

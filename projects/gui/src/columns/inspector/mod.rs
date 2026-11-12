@@ -4,7 +4,7 @@
 //! folds on its header.
 
 mod activity;
-mod context;
+pub mod context;
 mod environment;
 mod files;
 pub mod git;
@@ -12,6 +12,7 @@ mod jobs;
 pub mod mascot;
 pub mod plan;
 mod screenshots;
+mod sources;
 mod todo;
 pub mod touched;
 
@@ -39,6 +40,7 @@ const MODULES: &[(Right, &str)] = &[
     (Right::Plan, "Plan"),
     (Right::Todo, "Todo"),
     (Right::Jobs, "Jobs"),
+    (Right::Sources, "Sources"),
 ];
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
@@ -118,6 +120,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 Right::Plan => plan::render(ws, window, cx),
                 Right::Todo => todo::render(ws, cx),
                 Right::Jobs => jobs::render(ws, cx),
+                Right::Sources => sources::render(ws, cx),
             };
             section = section.child(widgets::unfold(
                 SharedString::from(format!("module-{}", module.key())),
@@ -158,6 +161,7 @@ fn module_icon(module: Right) -> IconName {
         Right::Plan => IconName::Map,
         Right::Todo => IconName::CircleCheck,
         Right::Jobs => IconName::SquareTerminal,
+        Right::Sources => IconName::File,
     }
 }
 
@@ -193,6 +197,13 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
         Right::Jobs => {
             let running = ws.jobs.iter().filter(|job| job.running).count();
             (running > 0).then(|| format!("{running} running"))
+        }
+        Right::Sources => {
+            let pinned = ws.sources.iter().filter(|source| source.pinned).count();
+            Some(match pinned {
+                0 => ws.sources.len().to_string(),
+                pinned => format!("{} \u{00B7} {pinned} every time", ws.sources.len()),
+            })
         }
     }
 }
@@ -275,6 +286,7 @@ impl Workspace {
             Right::Plan => plan::has_content(self),
             Right::Todo => chat.is_some_and(|chat| !chat.tasks.is_empty()),
             Right::Jobs => !self.jobs.is_empty(),
+            Right::Sources => !self.sources.is_empty(),
         }
     }
 
@@ -290,6 +302,13 @@ impl Workspace {
         if self.folded.contains(&Right::Git) {
             self.load_git(cx);
         }
+        // Likewise the jobs: the module shows only when the chat has some.
+        if self.folded.contains(&Right::Jobs) {
+            self.load_jobs(cx);
+        }
+        if self.folded.contains(&Right::Sources) {
+            self.load_sources(cx);
+        }
     }
 
     fn refresh_module(&mut self, module: Right, cx: &mut Context<Self>) {
@@ -298,6 +317,7 @@ impl Workspace {
             Right::Files => self.load_folder(String::new(), cx),
             Right::Statistics => self.load_context(cx),
             Right::Jobs => self.load_jobs(cx),
+            Right::Sources => self.load_sources(cx),
             Right::Plan => self.load_plan(cx),
             Right::Touched => self.load_touched(cx),
             Right::Arbiter | Right::Screenshots | Right::Todo => {}

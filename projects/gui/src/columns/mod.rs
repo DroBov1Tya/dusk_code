@@ -2,6 +2,7 @@
 //! chats, the bar across the top and the inspector on the right.
 
 pub mod flyout;
+pub mod fog;
 pub mod inspector;
 pub mod rail;
 pub mod sidebar;

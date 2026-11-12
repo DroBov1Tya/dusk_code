@@ -38,6 +38,8 @@ pub struct Prefs {
     pub runs_seen_until: i64,
     /// The header's sky while a turn runs: the glow and the stars.
     pub sky: bool,
+    /// Mist at the window's foot after it was left alone for a while.
+    pub fog: bool,
     /// Where each part of the window stands; see `ui::layout`.
     pub layout: crate::ui::layout::Layout,
 }
@@ -55,6 +57,7 @@ impl Default for Prefs {
             footer_open: false,
             runs_seen_until: 0,
             sky: true,
+            fog: true,
             layout: Default::default(),
         }
     }
@@ -69,10 +72,11 @@ impl Global for Stored {}
 
 pub fn init(file: PathBuf, cx: &mut App) {
     // A damaged or missing file falls back to the defaults.
-    let prefs = fs::read_to_string(&file)
+    let mut prefs: Prefs = fs::read_to_string(&file)
         .ok()
         .and_then(|text| serde_json::from_str(&text).ok())
         .unwrap_or_default();
+    prefs.layout = prefs.layout.refreshed();
     cx.set_global(Stored { file, prefs });
     apply(cx);
 }

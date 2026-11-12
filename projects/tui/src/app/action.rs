@@ -51,6 +51,8 @@ pub enum Action {
     OpenSnippet(String),
     SaveMe(String),
     SaveSnippet(String, String),
+    /// Switches a provider on or off; its key stays.
+    ProviderEnabled(String, bool),
     /// `/disconnect name`: forget a provider.
     Disconnect(String),
     /// The plan as the editor saved it; empty text removes it.

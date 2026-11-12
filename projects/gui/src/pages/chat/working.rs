@@ -1,7 +1,8 @@
-//! What shows while the agent works: a sunflower spiral of dots that breathes and turns,
-//! a ring of dots on its own orbit turning the other way, and a wave of light running
-//! out from the middle, its color moving from the accent toward the text. Every motion
-//! is a whole number of turns per cycle, so the loop has no seam.
+//! What shows while the agent works: a sunflower spiral of dots that breathes and turns
+//! around a glowing heart, a wave of light running out from the middle, and two comets on
+//! one orbit turning the other way, each with a tail that thins out behind it. Its colors
+//! move from the accent toward the text. Every motion is a whole number of turns per
+//! cycle, so the loop has no seam.
 
 use std::{f32::consts::TAU, time::Duration};
 
@@ -9,7 +10,8 @@ use gpui_kit::*;
 
 const SIZE: f32 = 28.;
 const CORE: usize = 34;
-const RING: usize = 12;
+/// The dots of one comet, head first.
+const TAIL: usize = 9;
 /// The golden angle, which spreads the dots evenly on the spiral.
 const GOLDEN: f32 = 2.399_963;
 
@@ -17,8 +19,32 @@ pub fn render(id: impl Into<ElementId>, accent: Hsla, light: Hsla) -> impl IntoE
     div().relative().size(px(SIZE)).flex_none().with_animation(
         id,
         Animation::new(Duration::from_millis(3600)).repeat(),
-        move |figure, phase| figure.children(dots(phase, accent, light)),
+        move |figure, phase| {
+            figure
+                .child(heart(phase, accent))
+                .children(dots(phase, accent, light))
+        },
     )
+}
+
+/// The glow in the middle, swelling with the spiral's breath.
+fn heart(phase: f32, accent: Hsla) -> Div {
+    let beat = (phase * TAU * 2.).sin() * 0.5 + 0.5;
+    let size = 2.;
+    div()
+        .absolute()
+        .left(px(SIZE / 2. - size / 2.))
+        .top(px(SIZE / 2. - size / 2.))
+        .size(px(size))
+        .rounded_full()
+        .bg(accent.opacity(0.5 + beat * 0.4))
+        .shadow(vec![BoxShadow {
+            color: accent.opacity(0.25 + beat * 0.3),
+            offset: point(px(0.), px(0.)),
+            blur_radius: px(5. + beat * 4.),
+            spread_radius: px(1. + beat * 1.5),
+            inset: false,
+        }])
 }
 
 fn dots(phase: f32, accent: Hsla, light: Hsla) -> Vec<Div> {
@@ -32,13 +58,14 @@ fn dots(phase: f32, accent: Hsla, light: Hsla) -> Vec<Div> {
         let wave = ((reach - phase * 2.) * TAU).cos() * 0.5 + 0.5;
         (angle, radius, 1.2 + wave * 1.6, wave)
     });
-    let ring = (0..RING).map(|index| {
-        let angle = index as f32 / RING as f32 * TAU - phase * TAU;
-        // One bright dot chases around the ring.
-        let chase = ((index as f32 / RING as f32 + phase) * TAU).cos() * 0.5 + 0.5;
-        (angle, center - 1.5, 1.0 + chase * 1.4, chase * chase)
+    // Two comets half a turn apart; each dot of a tail trails the one before it.
+    let comets = (0..2 * TAIL).map(|index| {
+        let (comet, place) = (index / TAIL, index % TAIL);
+        let fade = 1. - place as f32 / TAIL as f32;
+        let angle = comet as f32 * TAU / 2. - phase * TAU + place as f32 * 0.17;
+        (angle, center - 1.5, 0.7 + fade * 1.9, fade * fade)
     });
-    core.chain(ring)
+    core.chain(comets)
         .map(|(angle, radius, size, glow)| {
             let color = mix(accent, light, glow * 0.35);
             div()
@@ -47,7 +74,7 @@ fn dots(phase: f32, accent: Hsla, light: Hsla) -> Vec<Div> {
                 .top(px(center + radius * angle.sin() - size / 2.))
                 .size(px(size))
                 .rounded_full()
-                .bg(color.opacity(0.2 + glow * 0.8))
+                .bg(color.opacity(0.12 + glow * 0.88))
         })
         .collect()
 }

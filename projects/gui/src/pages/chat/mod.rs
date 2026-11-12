@@ -5,6 +5,7 @@ mod access_menu;
 mod approval;
 pub mod audio;
 pub mod code;
+mod commands;
 pub mod composer;
 pub mod dictation;
 pub mod links;
@@ -19,6 +20,7 @@ pub mod queue;
 mod ring;
 pub mod timing;
 pub mod transcript;
+mod welcome;
 mod working;
 
 use gpui_kit::{
@@ -56,7 +58,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let body = if ws.shown.is_some() {
         messages::render(ws, window, cx).into_any_element()
     } else {
-        empty(ws, cx).into_any_element()
+        welcome::render(ws, cx).into_any_element()
     };
     div()
         .size_full()
@@ -112,22 +114,4 @@ fn to_bottom(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                     })),
             ),
     )
-}
-
-/// Shows or hides a side column.
-fn empty(ws: &Workspace, cx: &App) -> Div {
-    let text = if ws.projects.is_empty() {
-        "Add a project on the left to start.".to_owned()
-    } else if let Some(project) = ws.selected_project() {
-        format!("Write a message to start a chat in {}.", project.name)
-    } else {
-        "Write a message to start a chat, or pick one on the left.".to_owned()
-    };
-    div()
-        .size_full()
-        .flex()
-        .items_center()
-        .justify_center()
-        .text_color(cx.theme().muted_foreground)
-        .child(text)
 }

@@ -78,7 +78,7 @@ impl ThreadRunner {
             state: setup.state,
             model: setup.model,
             config: setup.config,
-            tools: setup.tools,
+            tools: Arc::new(setup.tools),
             scope: setup.scope,
             project: setup.project,
             pictures_refused: Mutex::new(None),
@@ -115,6 +115,7 @@ impl ThreadRunner {
             input: input.inputs.downgrade(),
             events: self.agent.events.downgrade(),
             agent: self.ends_when_idle,
+            context: self.agent.context_source(),
         }
     }
 

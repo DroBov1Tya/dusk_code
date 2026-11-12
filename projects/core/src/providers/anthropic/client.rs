@@ -14,6 +14,7 @@ use crate::{
     config::{Effort, ProviderConfig},
     providers::{
         errors::{Transient, UnsupportedEffort, UnsupportedPictures},
+        limits::{Account, Headers},
         registry::Model,
         request::{ChatMessage, ChatRequest},
         transport::http,
@@ -36,6 +37,7 @@ pub struct Anthropic {
     models_url: Url,
     messages_url: Url,
     api_key: Option<HeaderValue>,
+    account: Account,
 }
 
 #[derive(Deserialize)]
@@ -70,6 +72,7 @@ impl Anthropic {
             models_url: http::endpoint(&base_url, &["models"])?,
             messages_url: http::endpoint(&base_url, &["messages"])?,
             api_key,
+            account: Account::of(config),
         })
     }
 
@@ -114,6 +117,7 @@ impl Anthropic {
             .send()
             .await
             .map_err(|_| anyhow!("provider model request failed"))?;
+        self.account.note(Headers::Anthropic, response.headers());
         ensure!(
             response.status().is_success(),
             http::refused("model", response.status())
@@ -147,6 +151,7 @@ impl Anthropic {
             .send()
             .await
             .map_err(|_| Transient("provider completion request failed".into()))?;
+        self.account.note(Headers::Anthropic, response.headers());
         let status = response.status();
         if !status.is_success() {
             let wait = http::retry_failure(&response, String::new());

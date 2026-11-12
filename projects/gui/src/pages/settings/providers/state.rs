@@ -10,6 +10,8 @@ use super::check::Check;
 
 pub struct State {
     pub(super) kind: ProviderKind,
+    /// The list of kinds is unfolded under its button.
+    pub(super) kinds_open: bool,
     pub(super) name: Entity<InputState>,
     pub(super) url: Entity<InputState>,
     pub(super) key: Entity<InputState>,
@@ -33,6 +35,7 @@ impl State {
         };
         Self {
             kind: ProviderKind::default(),
+            kinds_open: false,
             name: field("my-server", false, window, cx),
             url: field("https://host/v1", false, window, cx),
             key: field("Paste the key; empty for a local server", true, window, cx),

@@ -2,14 +2,16 @@
 //! event type for everything a model sends back.
 //!
 //! `registry` builds the configured providers and dispatches to their protocol,
-//! `openai` or `anthropic`. Both send a `request`, reach their server through
-//! `transport` and turn what comes back into the events of `output`; `errors` names the
-//! failures the agent tells apart.
+//! `openai`, `anthropic` or `google`. Each sends a `request`, reaches its server through
+//! `transport` and turns what comes back into the events of `output`; `errors` names the
+//! failures the agent tells apart, `limits` remembers the rate limits an answer reports.
 
 mod anthropic;
 pub mod balance;
 pub mod cost;
 mod errors;
+mod google;
+mod limits;
 mod openai;
 pub mod output;
 mod rate;

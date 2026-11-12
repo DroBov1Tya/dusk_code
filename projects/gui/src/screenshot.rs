@@ -16,6 +16,8 @@
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
+//! - `type=TEXT`: put the text in the message box; `idle=MIN`: as if left alone that long,
+//!   for the mist;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
@@ -230,6 +232,19 @@ fn act(
         }
         "attach" => {
             ws.attach_open = true;
+            cx.notify();
+        }
+        "idle" => {
+            let minutes: u64 = value.parse().unwrap_or(10);
+            if let Some(past) =
+                std::time::Instant::now().checked_sub(Duration::from_secs(minutes * 60))
+            {
+                ws.last_input = past;
+            }
+            cx.notify();
+        }
+        "type" => {
+            ws.fill_composer = Some(value.to_owned());
             cx.notify();
         }
         "menu" => {

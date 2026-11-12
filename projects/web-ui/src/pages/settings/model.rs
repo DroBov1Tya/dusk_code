@@ -51,12 +51,18 @@ pub fn ModelPage() -> impl IntoView {
             {move || providers.get().into_iter().map(|provider| {
                 let name = provider.name.clone();
                 let removing = name.clone();
+                let switched = name.clone();
+                let enabled = provider.enabled;
                 view! {
-                    <div class="provider">
+                    <div class="provider" style:opacity=if enabled { "1" } else { "0.5" }>
                         <div class="provider-head">
                             <b>{name.clone()}</b>
                             {provider.balance.as_ref().and_then(|b| b.as_ref().ok()).map(|b| view! { <span class="muted">{b.text()}</span> })}
                             <span class="grow"></span>
+                            <button class="ghost" on:click=move |_| {
+                                let name = switched.clone();
+                                run(api::set(SettingsRequest::ProviderEnabled { name, enabled: !enabled }), move |()| load());
+                            }>{if enabled { "Turn off" } else { "Turn on" }}</button>
                             <button class="ghost danger" on:click=move |_| {
                                 if confirm("Remove this provider and its key?") {
                                     let name = removing.clone();
@@ -64,7 +70,9 @@ pub fn ModelPage() -> impl IntoView {
                                 }
                             }>"Remove"</button>
                         </div>
+                        {provider.limits.as_ref().filter(|_| enabled).map(|limits| view! { <p class="muted">{format!("Limits: {}", limits.text())}</p> })}
                         {match &provider.models {
+                            _ if !enabled => view! { <p class="muted">"Off: not asked, its key is kept"</p> }.into_any(),
                             Err(error) => view! { <p class="bad">{error.clone()}</p> }.into_any(),
                             Ok(models) => models.iter().map(|model| {
                                 let full = format!("{}/{}", provider.name, model.id);
@@ -118,11 +126,13 @@ pub fn ConnectProvider(done: impl Fn() + Clone + Send + Sync + 'static) -> impl 
             <select on:change=move |ev| kind.set(match event_target_value(&ev).as_str() {
                 "openai" => ProviderKind::OpenAi,
                 "anthropic" => ProviderKind::Anthropic,
+                "google" => ProviderKind::Google,
                 _ => ProviderKind::OpenAiCompatible,
             })>
                 <option value="openai_compatible">"OpenAI-compatible"</option>
                 <option value="openai">"OpenAI"</option>
                 <option value="anthropic">"Anthropic"</option>
+                <option value="google">"Google AI"</option>
             </select>
             <input placeholder="Name (optional)" prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) />
             <input placeholder=move || kind.get().base_url().unwrap_or("Base URL, such as http://localhost:11434/v1")

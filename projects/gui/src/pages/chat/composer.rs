@@ -70,7 +70,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     let box_right = place(&layout.box_right, window, cx);
     let under_left = place(&layout.under_left, window, cx);
     let under_right = place(&layout.under_right, window, cx);
-    let mentions = mention_menu(ws, cx);
+    let mentions = mention_menu(ws, cx).or_else(|| super::commands::menu(ws, cx));
     let chips = strip(ws, cx);
     div()
         .relative()
@@ -187,14 +187,17 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
             }
         }))
         // Tab switches the mode, before the text box takes it as an indent.
-        .capture_key_down(cx.listener(|ws, event: &KeyDownEvent, _, cx| {
+        .capture_key_down(cx.listener(|ws, event: &KeyDownEvent, window, cx| {
             let keys = &event.keystroke;
             if keys.key == "tab" && !keys.modifiers.shift && !keys.modifiers.control {
                 cx.stop_propagation();
-                // Over a mention, Tab completes it, as in the TUI.
-                match ws.mention_matches(cx).first().cloned() {
-                    Some(name) => ws.complete_mention(name, cx),
-                    None => ws.next_mode(cx),
+                // Over a mention or a command, Tab completes it, as in the TUI.
+                if let Some(name) = ws.mention_matches(cx).first().cloned() {
+                    ws.complete_mention(name, cx);
+                } else if let Some((name, _)) = ws.command_matches(cx).first().copied() {
+                    ws.complete_command(name, window, cx);
+                } else {
+                    ws.next_mode(cx);
                 }
             }
         }))
@@ -377,11 +380,11 @@ pub(super) fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Opti
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(label.clone()).build(window, cx)
         })
-        .child(crate::columns::inspector::mascot::render_fox(
+        .child(crate::columns::inspector::mascot::render(
             "agents-lead",
             &lead.1.state,
             color,
-            1.2,
+            1.0,
         ))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.modal = Some(crate::modal::Modal::Agents {
@@ -601,6 +604,9 @@ impl Workspace {
     /// project when none is shown.
     pub fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut text = self.composer.read(cx).value().trim().to_owned();
+        if self.run_command(&text, window, cx) {
+            return;
+        }
         for pasted in std::mem::take(&mut self.pastes) {
             if !text.is_empty() {
                 text.push('\n');
@@ -666,6 +672,8 @@ impl Workspace {
                         ws.show(thread_id, cx);
                         ws.reload_threads(cx);
                     }
+                    // What was attached is now among the chat's sources.
+                    ws.load_sources(cx);
                 }
                 Err(error) => ws.fail(error, cx),
             },

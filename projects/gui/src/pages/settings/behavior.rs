@@ -1,9 +1,17 @@
 //! What the core lets the user change, page by page: the model, the chat, safety,
 //! memory and the advanced switches.
 
-use dusk_protocol::{client::Switch as CoreSwitch, config::ApprovalPolicy};
+use dusk_protocol::{
+    client::Switch as CoreSwitch,
+    config::{ApprovalPolicy, ContextPolicy, ContextPreset},
+};
 use gpui_kit::{
-    component::{ActiveTheme, Disableable, IconName, button::Button, input::Input, switch::Switch},
+    component::{
+        ActiveTheme, Disableable, IconName,
+        button::{Button, ButtonVariants},
+        input::Input,
+        switch::Switch,
+    },
     *,
 };
 
@@ -143,7 +151,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
             )
         }
         SettingsPage::Memory => match ws.settings.clone() {
-            Some(settings) => body.child(list(
+            Some(settings) => body.child(list([context_line(ws, cx)], cx)).child(list(
                 [
                     switch_line(
                         "Memory",
@@ -223,6 +231,34 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
         | SettingsPage::Usage
         | SettingsPage::Secrets => body,
     }
+}
+
+/// How much of the model's window a request may fill: the model's own, or a fixed size.
+fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let current = ws.status.context_policy.unwrap_or_default();
+    let choices = std::iter::once(("Auto", ContextPolicy::Auto)).chain(
+        ContextPreset::ALL
+            .into_iter()
+            .map(|preset| (preset.name(), ContextPolicy::Fixed(preset))),
+    );
+    let mut row = div().flex().flex_row().gap_1();
+    for (label, policy) in choices {
+        let button = Button::new(SharedString::from(format!("context-{label}")))
+            .compact()
+            .label(label)
+            .on_click(cx.listener(move |ws, _, _, cx| ws.set_context_policy(policy, cx)));
+        row = row.child(if policy == current {
+            button.primary()
+        } else {
+            button.ghost()
+        });
+    }
+    line(
+        "Context window",
+        "The largest request: the model's own window, or a fixed size",
+        cx,
+    )
+    .child(row)
 }
 
 #[derive(Clone, Copy)]
@@ -397,6 +433,22 @@ impl Workspace {
                 if let Err(error) = result {
                     ws.fail(error, cx);
                 }
+            },
+        );
+    }
+
+    fn set_context_policy(&mut self, policy: ContextPolicy, cx: &mut Context<Self>) {
+        self.core.call(
+            cx,
+            move |client| async move { client.settings().context_policy(policy).await },
+            move |ws, result, cx| match result {
+                // The core answers with the limit the policy gives; the ring shows it.
+                Ok(limit) => {
+                    ws.status.context_policy = Some(policy);
+                    ws.status.input_limit = limit;
+                    cx.notify();
+                }
+                Err(error) => ws.fail(error, cx),
             },
         );
     }

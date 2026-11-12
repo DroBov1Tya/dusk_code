@@ -161,6 +161,9 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
         ws.list.set_follow_mode(FollowMode::Tail);
         return;
     }
+    // Measuring a row again sends a reader inside it back to its top, which a long last
+    // answer shows as a chat that cannot be scrolled down: remember where they are.
+    let reading = (!ws.list.is_following_tail()).then(|| ws.list.logical_scroll_top());
     let old = ws.list.item_count();
     let same = old.min(rows.len());
     // The first row that differs from what the list holds, and the last one, which may
@@ -175,6 +178,12 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
     if ws.measure_again {
         ws.measure_again = false;
         ws.list.splice(0..rows.len(), rows.len());
+    }
+    if let Some(top) = reading
+        && ws.rows.get(top.item_ix) == rows.get(top.item_ix)
+        && top.item_ix < rows.len()
+    {
+        ws.list.scroll_to(top);
     }
 }
 

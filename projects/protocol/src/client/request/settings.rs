@@ -46,6 +46,12 @@ pub enum SettingsRequest {
     RemoveProvider {
         name: String,
     },
+    /// Switches a saved provider on or off; its key stays. Off is refused while its model
+    /// is the chosen one.
+    ProviderEnabled {
+        name: String,
+        enabled: bool,
+    },
     /// Forgets every provider and the chosen model.
     RemoveAllProviders,
     /// Keeps a secret in the system keychain; only the names the core knows are taken.

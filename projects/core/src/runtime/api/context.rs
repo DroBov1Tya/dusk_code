@@ -1,6 +1,6 @@
 //! What the next request of a thread carries.
 
-use crate::runtime::Runtime;
+use crate::runtime::{Runtime, thread::ContextSource};
 use crate::{
     catalog::modes::Modes,
     catalog::skills::{self},
@@ -19,17 +19,25 @@ impl Runtime {
         let launcher = &self.launcher;
         let config = launcher.config.current();
         let cwd = std::env::current_dir()?;
-        let scope = Arc::new(ToolScope::new(&cwd, &cwd)?);
-        let specs = launcher
-            .tools(thread_id.unwrap_or_default(), None, 0)
-            .specs(&scope, &config);
+        // A running thread is counted with its own tools and model, as its `Tokens`
+        // events are; a stored one, or no thread yet, with what a chat would get now.
+        let live = match thread_id {
+            Some(thread_id) => launcher.mailboxes.get(thread_id).await,
+            None => None,
+        };
+        let source = match live {
+            Some(mailbox) => mailbox.context,
+            None => ContextSource {
+                tools: Arc::new(launcher.tools(thread_id.unwrap_or_default(), None, 0)),
+                scope: Arc::new(ToolScope::new(&cwd, &cwd)?),
+                model: Arc::clone(&launcher.model),
+                config: Arc::clone(&launcher.config),
+            },
+        };
+        let specs = source.specs();
         let mode = config.mode().to_owned();
         let prompt = Modes::new(&launcher.paths.modes_dir()).prompt(&mode)?;
-        let limit = self
-            .model()
-            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
-                choice.input_limit(&config)
-            });
+        let limit = source.limit();
         let detail = self.context_detail(&cwd);
         context_report(
             &launcher.state,

@@ -2,7 +2,12 @@
 //! in use, then Effort and More models, each opening its submenu to the side.
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName, button::Button, input::Input, tooltip::Tooltip},
+    component::{
+        ActiveTheme, IconName, Sizable,
+        button::{Button, ButtonVariants},
+        input::Input,
+        tooltip::Tooltip,
+    },
     prelude::FluentBuilder,
     *,
 };
@@ -191,8 +196,19 @@ fn catalog_status(ws: &Workspace) -> &'static str {
     }
 }
 
-fn models_heading(provider: Option<&str>, cx: &App) -> Div {
+fn models_heading(provider: Option<&str>, cx: &mut Context<Workspace>) -> Div {
     let muted = picker_hint(cx);
+    // The way to a new provider from where a model is chosen: the settings' own card.
+    let connect = Button::new("models-connect")
+        .ghost()
+        .small()
+        .icon(IconName::Settings)
+        .tooltip("Connect a provider")
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.picker = None;
+            ws.modal = Some(crate::modal::Modal::ConnectProvider);
+            cx.notify();
+        }));
     div()
         .flex()
         .items_center()
@@ -221,6 +237,7 @@ fn models_heading(provider: Option<&str>, cx: &App) -> Div {
                 .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
                 .child(provider.to_owned())
         }))
+        .child(connect)
 }
 
 fn current_model(current: &str, cx: &App) -> Stateful<Div> {
@@ -320,9 +337,10 @@ fn efforts(
     cx: &mut Context<Workspace>,
 ) -> Div {
     let accent = cx.theme().primary;
-    let list = picker_panel(cx)
-        .w(px(width))
-        .child(back_row("Effort", side_by_side, cx));
+    // Beside the menu the row it opened from already names it; alone, it needs the way back.
+    let list = picker_panel(cx).w(px(width)).when(!side_by_side, |list| {
+        list.child(back_row("Effort", side_by_side, cx))
+    });
     let mut options = div()
         .id("effort-options")
         .flex()
@@ -369,42 +387,61 @@ fn all_models(
     if ws.providers.is_empty() {
         scroll = scroll.child(widgets::muted(catalog_status(ws), cx));
     }
-    for provider in &ws.providers {
+    let (foreground, hint) = (cx.theme().foreground, picker_hint(cx));
+    // A provider switched off offers nothing, so it is not listed.
+    for provider in ws.providers.iter().filter(|provider| provider.enabled) {
         let name = provider.name.clone();
+        let open = ws.models_open.contains(&provider.name);
+        let toggled = provider.name.clone();
+        let count = provider.models.as_ref().map_or(0, Vec::len);
+        // The provider's name is the landmark of the list: larger and brighter than its
+        // models, and it folds them, so two providers' models are never read as one.
         scroll = scroll.child(
-            div()
-                .flex()
-                .items_center()
-                .gap_2()
-                .px_3()
-                .pt_3()
-                .pb_1()
-                .child(
-                    div()
-                        .id(SharedString::from(format!(
-                            "models-provider-{}",
-                            provider.name
-                        )))
-                        .flex_1()
-                        .min_w_0()
-                        .group_name()
-                        .truncate()
-                        .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
-                        .child(provider.name.clone()),
-                )
-                .children(
-                    provider
-                        .balance
-                        .as_ref()
-                        .and_then(|balance| balance.as_ref().ok())
-                        .map(|balance| {
-                            div()
-                                .small()
-                                .text_color(picker_hint(cx))
-                                .child(balance.text())
-                        }),
-                ),
+            widgets::row(
+                SharedString::from(format!("models-provider-{}", provider.name)),
+                false,
+                cx,
+            )
+            .role(Role::Button)
+            .aria_label(provider.name.clone())
+            .h(px(ROW + 4.))
+            .child(widgets::icon(
+                if open {
+                    IconName::ChevronDown
+                } else {
+                    IconName::ChevronRight
+                },
+                hint,
+            ))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .body()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .text_color(foreground)
+                    .child(provider.name.clone()),
+            )
+            .children(
+                provider
+                    .balance
+                    .as_ref()
+                    .and_then(|balance| balance.as_ref().ok())
+                    .map(|balance| div().small().text_color(hint).child(balance.text())),
+            )
+            .child(div().small().text_color(hint).child(count.to_string()))
+            .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                if !ws.models_open.remove(&toggled) {
+                    ws.models_open.insert(toggled.clone());
+                }
+                cx.notify();
+            })),
         );
+        if !open {
+            continue;
+        }
         match &provider.models {
             Ok(models) if models.is_empty() => {
                 scroll = scroll.child(widgets::muted("No listed models", cx));
@@ -412,7 +449,7 @@ fn all_models(
             Ok(models) => {
                 for model in models {
                     let name = format!("{}/{}", provider.name, model.id);
-                    scroll = scroll.child(model_row(&name, &model.id, current, None, cx));
+                    scroll = scroll.child(model_row(&name, &model.id, current, None, cx).pl_6());
                 }
             }
             Err(error) => scroll = scroll.child(widgets::muted(error.clone(), cx)),

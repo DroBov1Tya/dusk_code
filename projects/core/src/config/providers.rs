@@ -4,7 +4,7 @@ use std::{collections::BTreeMap, fmt};
 
 use serde::{Deserialize, Serialize};
 
-use super::sections::is_false;
+use super::sections::{is_false, is_true, yes};
 
 pub use dusk_protocol::config::ProviderKind;
 
@@ -33,6 +33,9 @@ pub struct ProviderConfig {
     /// not set.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub requests_per_minute: Option<u32>,
+    /// Off keeps the provider and its key but never asks it or offers its models.
+    #[serde(default = "yes", skip_serializing_if = "is_true")]
+    pub enabled: bool,
 }
 
 /// US dollars per million tokens, as the provider's price list gives them.

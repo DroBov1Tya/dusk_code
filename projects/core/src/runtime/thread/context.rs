@@ -1,14 +1,19 @@
 //! A thread as the model sees it: its system messages, the newest compaction summary and
 //! the messages after it, and which of them are still waiting for an answer.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use anyhow::Result;
 
 use crate::{
+    config::live::LiveConfig,
     providers::{ChatMessage, ToolSpec},
-    runtime::thread::thread_start::{FORK_INTRO, NO_PROMPT, display_name},
+    runtime::{
+        model_choice::ModelChoice,
+        thread::thread_start::{FORK_INTRO, NO_PROMPT, display_name},
+    },
     state::{Compaction, LastPrompt, Message, MessageRole, State, estimate_tokens},
+    tools::{ToolRegistry, ToolScope},
 };
 
 /// Introduces a compaction summary to the model.
@@ -169,6 +174,33 @@ impl Conversation {
             })
             .map(Message::context_tokens)
             .sum()
+    }
+}
+
+/// What decides how full a thread's context is: the tools it is offered and the model
+/// it asks. A running thread shares its own through its mailbox, so the context report
+/// and the thread's `Tokens` events count with the same inputs and agree.
+#[derive(Clone)]
+pub struct ContextSource {
+    pub tools: Arc<ToolRegistry>,
+    pub scope: Arc<ToolScope>,
+    pub model: Arc<ModelChoice>,
+    pub config: Arc<LiveConfig>,
+}
+
+impl ContextSource {
+    pub fn specs(&self) -> Vec<ToolSpec> {
+        self.tools.specs(&self.scope, &self.config.current())
+    }
+
+    /// The largest request under the selected model policy and its known window.
+    pub fn limit(&self) -> u64 {
+        let config = self.config.current();
+        self.model
+            .current()
+            .map_or(crate::config::UNKNOWN_WINDOW, |choice| {
+                choice.input_limit(&config)
+            })
     }
 }
 

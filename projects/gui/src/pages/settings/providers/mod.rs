@@ -16,6 +16,11 @@ use gpui_kit::*;
 
 use crate::workspace::Workspace;
 
+/// The card that connects a provider, alone: the model menu opens it in a window.
+pub fn connect_card(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    connect::render(ws, cx)
+}
+
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     div()
         .flex()
