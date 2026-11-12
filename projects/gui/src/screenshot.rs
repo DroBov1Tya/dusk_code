@@ -243,6 +243,7 @@ fn act(
             }
             cx.notify();
         }
+        "dawn" => ws.dawn(cx),
         "type" => {
             ws.fill_composer = Some(value.to_owned());
             cx.notify();

@@ -8,6 +8,7 @@ pub mod code;
 mod commands;
 pub mod composer;
 pub mod dictation;
+mod fireflies;
 pub mod links;
 mod media;
 pub mod messages;
@@ -78,6 +79,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .flex_1()
                 .min_h_0()
                 .child(body)
+                .children(fireflies::render(ws, cx))
                 .children(to_bottom(ws, cx)),
         )
         .child(approval::render(ws, cx))

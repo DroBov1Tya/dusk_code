@@ -29,6 +29,14 @@ testing.
   of a window left alone for a few minutes; a click or a key clears it. Appearance has a
   switch for each.
 
+- GUI: a long unfolded block (a turn's activity, thinking, a step, a run of steps) ends
+  with its heading again, so it folds from where the reading ended.
+- GUI: a firefly glows over the message box for each subagent at work; a turn that runs
+  past sunset sees the header's glow go on into a deep blue night; a turn that ends
+  while the mist stands lifts it with a warm light along the foot of the window.
+- GUI: Memory and context has the context window and the sizes of the memory and of the
+  work history.
+
 ### Changed
 
 - The context report and a thread's `Tokens` events count with the same tools and model,

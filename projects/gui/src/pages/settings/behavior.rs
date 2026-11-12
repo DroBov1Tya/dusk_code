@@ -160,11 +160,25 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                         CoreSwitch::Memory,
                         cx,
                     ),
+                    size_line(
+                        "Memory size",
+                        "Characters kept; every request carries them",
+                        settings.memory.max_chars,
+                        true,
+                        cx,
+                    ),
                     switch_line(
                         "Work history",
                         "A summary of past work in each project",
                         settings.work_history.enabled,
                         CoreSwitch::WorkHistory,
+                        cx,
+                    ),
+                    size_line(
+                        "Work history size",
+                        "Characters kept for each project",
+                        settings.work_history.max_chars,
+                        false,
                         cx,
                     ),
                 ],
@@ -259,6 +273,38 @@ fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         cx,
     )
     .child(row)
+}
+
+/// A size in characters as a few steps; one the config holds beside them shows as it is.
+fn size_line(
+    label: &'static str,
+    hint: &str,
+    current: usize,
+    memory: bool,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let mut sizes = vec![1000, 2000, 4000, 8000];
+    if !sizes.contains(&current) {
+        sizes.push(current);
+        sizes.sort_unstable();
+    }
+    let mut row = div().flex().flex_row().gap_1();
+    for size in sizes {
+        let button = Button::new(SharedString::from(format!("{label}-{size}")))
+            .compact()
+            // Whole thousands read as 2k, not 2.0k.
+            .label(match size % 1000 {
+                0 => format!("{}k", size / 1000),
+                _ => widgets::short(size as u64),
+            })
+            .on_click(cx.listener(move |ws, _, _, cx| ws.set_chars(memory, size, cx)));
+        row = row.child(if size == current {
+            button.primary()
+        } else {
+            button.ghost()
+        });
+    }
+    line(label, hint, cx).child(row)
 }
 
 #[derive(Clone, Copy)]
@@ -448,6 +494,26 @@ impl Workspace {
                     ws.status.input_limit = limit;
                     cx.notify();
                 }
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+
+    fn set_chars(&mut self, memory: bool, chars: usize, cx: &mut Context<Self>) {
+        self.core.call(
+            cx,
+            move |client| async move {
+                match memory {
+                    true => client.settings().memory_chars(chars).await,
+                    false => client
+                        .settings()
+                        .work_history_chars(chars)
+                        .await
+                        .map(|_| ()),
+                }
+            },
+            |ws, result, cx| match result {
+                Ok(()) => ws.load_settings(cx),
                 Err(error) => ws.fail(error, cx),
             },
         );

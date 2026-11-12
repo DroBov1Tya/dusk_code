@@ -17,6 +17,8 @@ const RISE: Duration = Duration::from_secs(6 * 60);
 const CLEAR: Duration = Duration::from_millis(700);
 /// The drift's cycle; every wisp goes round a whole number of times in it.
 const DRIFT: Duration = Duration::from_secs(48);
+/// How long the dawn takes: the mist lifting as a turn ends in a window left alone.
+const DAWN: Duration = Duration::from_millis(2600);
 /// How much of the window's height the mist reaches when full.
 const REACH: f32 = 0.34;
 
@@ -32,6 +34,17 @@ impl Workspace {
         self.last_input = Instant::now();
         if level > 0. {
             self.fog_cleared = Some((Instant::now(), level));
+            cx.notify();
+        }
+    }
+
+    /// A turn ended while the mist stood: the work is done, and the day breaks. The mist
+    /// lifts instead of clearing, with a warm light along the foot of the window.
+    pub fn dawn(&mut self, cx: &mut Context<Self>) {
+        let level = risen(self.last_input.elapsed());
+        if level > 0. {
+            self.last_input = Instant::now();
+            self.fog_dawn = Some((Instant::now(), level));
             cx.notify();
         }
     }
@@ -64,6 +77,44 @@ pub fn render(ws: &Workspace, window: &Window, cx: &App) -> Option<AnyElement> {
     // Light mist on a dark theme, a grey one on a light theme.
     let color = theme.muted_foreground;
     let height = window.viewport_size().height.as_f32() * REACH;
+    if let Some((at, level)) = ws.fog_dawn.filter(|(at, _)| at.elapsed() < DAWN) {
+        let id = SharedString::from(format!("fog-dawn-{at:?}"));
+        let warm = hsla(0.07, 0.95, 0.64, 1.);
+        return Some(
+            div()
+                .absolute()
+                .inset_0()
+                .with_animation(
+                    id,
+                    Animation::new(DAWN).with_easing(ease_in_out),
+                    move |holder, delta| {
+                        // The light swells and goes; the mist thins as it climbs.
+                        let light = (delta * std::f32::consts::PI).sin();
+                        holder
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left_0()
+                                    .right_0()
+                                    .bottom_0()
+                                    .h(px(height * (0.4 + delta * 0.5)))
+                                    .bg(linear_gradient(
+                                        0.,
+                                        linear_color_stop(warm.opacity(0.30 * light), 0.),
+                                        linear_color_stop(warm.opacity(0.), 1.),
+                                    )),
+                            )
+                            .child(layer(
+                                height * (1. + delta * 0.9),
+                                level * (1. - delta),
+                                delta * 0.05,
+                                color,
+                            ))
+                    },
+                )
+                .into_any_element(),
+        );
+    }
     if let Some((at, level)) = ws.fog_cleared.filter(|(at, _)| at.elapsed() < CLEAR) {
         let id = SharedString::from(format!("fog-clear-{at:?}"));
         return Some(

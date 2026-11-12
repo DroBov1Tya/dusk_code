@@ -523,6 +523,8 @@ fn turn_activity(
             .to_owned(),
     };
     let id = shown.to_owned();
+    let foot_id = id.clone();
+    let foot_title = title.clone();
     let header = disclosure(
         SharedString::from(format!("activity-{shown}-{start}")),
         open,
@@ -565,6 +567,7 @@ fn turn_activity(
                             shown,
                             index,
                             "Thinking",
+                            long(reasoning),
                             || reasoning.clone().into_any_element(),
                             cx,
                         ));
@@ -598,6 +601,7 @@ fn turn_activity(
                     shown,
                     index,
                     "Background task result",
+                    long(text),
                     || text.clone().into_any_element(),
                     cx,
                 )),
@@ -608,6 +612,16 @@ fn turn_activity(
             SharedString::from(format!("unfold-{shown}-{start}")),
             detail,
         ));
+        if items.len() > 3 {
+            block = block.child(
+                fold_foot(
+                    SharedString::from(format!("activity-foot-{shown}-{start}")),
+                    foot_title,
+                    cx,
+                )
+                .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&foot_id, start | ACTIVITY, cx))),
+            );
+        }
     }
     block
 }
@@ -631,6 +645,7 @@ fn agent_report(
         shown,
         index,
         &label,
+        long(text),
         || {
             links::markdown(
                 SharedString::from(format!("report-{shown}-{index}")),
@@ -647,11 +662,13 @@ fn activity_text(
     shown: &str,
     index: usize,
     title: &str,
+    long: bool,
     body: impl FnOnce() -> AnyElement,
     cx: &mut Context<Workspace>,
 ) -> Div {
     let open = ws.unfolded.contains(&(shown.to_owned(), index));
     let id = shown.to_owned();
+    let foot_id = id.clone();
     let muted = step_muted(cx);
     div()
         .flex()
@@ -678,6 +695,16 @@ fn activity_text(
                     .small()
                     .text_color(muted)
                     .child(body()),
+            )
+        })
+        .when(open && long, |block| {
+            block.child(
+                fold_foot(
+                    SharedString::from(format!("activity-text-foot-{shown}-{index}")),
+                    title.to_owned(),
+                    cx,
+                )
+                .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&foot_id, index, cx))),
             )
         })
 }
@@ -711,6 +738,17 @@ pub fn run(
     for (offset, tool) in tools.iter().enumerate().skip(first) {
         block = block.child(step(ws, shown, start + offset, tool, cx));
     }
+    if open && tools.len() > 4 {
+        let id = shown.to_owned();
+        block = block.child(
+            fold_foot(
+                SharedString::from(format!("run-foot-{shown}-{start}")),
+                widgets::count(tools.len(), "step"),
+                cx,
+            )
+            .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, start | RUN, cx))),
+        );
+    }
     block
 }
 
@@ -738,6 +776,20 @@ fn disclosure(id: impl Into<ElementId>, open: bool, cx: &App) -> Stateful<Div> {
         .cursor_pointer()
         .when(open, |row| row.bg(hover))
         .hover(move |row| row.bg(hover))
+}
+
+/// Whether an unfolded text is long enough that its end is far from its heading.
+fn long(text: &str) -> bool {
+    text.len() > 500 || text.lines().count() > 8
+}
+
+/// The heading again under a long unfolded block, so it folds from where the reading
+/// ended instead of after a scroll back up to where it began.
+fn fold_foot(id: impl Into<ElementId>, title: impl Into<SharedString>, cx: &App) -> Stateful<Div> {
+    disclosure(id, false, cx)
+        .aria_label("Fold")
+        .child(widgets::icon(IconName::ChevronUp, step_muted(cx)))
+        .child(div().min_w_0().truncate().child(title.into()))
 }
 
 fn disclosure_icon(open: bool, color: Hsla) -> impl IntoElement {
@@ -851,6 +903,17 @@ fn step(
             SharedString::from(format!("unfold-step-{shown}-{index}")),
             details,
         ));
+        if long(&tool.arguments) || long(&tool.output) {
+            let id = shown.to_owned();
+            line = line.child(
+                fold_foot(
+                    SharedString::from(format!("step-foot-{shown}-{index}")),
+                    summary,
+                    cx,
+                )
+                .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index | STEP, cx))),
+            );
+        }
     }
     line
 }
