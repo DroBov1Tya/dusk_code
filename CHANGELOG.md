@@ -6,6 +6,13 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- Scheduled tasks: a prompt the core sends to a new chat of a saved project once, every
+  so many minutes or hours, every day, on weekdays or weekends, every week or on chosen
+  days. The desktop app lists them on a page of their own with Run now, a switch and an
+  editor; a run nobody watches goes on to the end of its turn. Protocol version 10.
+
 ### Changed
 
 - Desktop layout: a thin rail at the left edge holds the places of the app, the sidebar

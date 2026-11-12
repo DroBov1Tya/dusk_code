@@ -6,6 +6,7 @@ pub mod env;
 mod files;
 mod git;
 mod outputs;
+pub mod schedule;
 
 use std::path::{Component, Path, PathBuf};
 

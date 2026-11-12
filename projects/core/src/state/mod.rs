@@ -9,6 +9,7 @@ pub mod artifacts;
 mod db;
 mod project_env;
 mod projects;
+mod schedules;
 mod thread;
 mod thread_files;
 mod usage;

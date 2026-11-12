@@ -53,6 +53,12 @@ impl Server {
                 roots.extend(state.list_projects().await?.into_iter().map(|p| p.dir));
                 Response::Text(project::read_output(&path, &roots).await?)
             }
+            ProjectRequest::Schedules
+            | ProjectRequest::SaveSchedule { .. }
+            | ProjectRequest::DeleteSchedule { .. }
+            | ProjectRequest::RunSchedule { .. } => {
+                anyhow::bail!("scheduled tasks are answered by the timetable")
+            }
         })
     }
 

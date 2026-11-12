@@ -3,6 +3,7 @@
 
 mod catalog;
 mod projects;
+mod schedules;
 mod settings;
 mod status;
 mod thread;
@@ -38,6 +39,8 @@ const ORPHAN_GRACE: Duration = Duration::from_secs(60);
 /// How often the status is read again for what changes in the background, such as a
 /// model found over the network or an MCP server that settled.
 const STATUS_PERIOD: Duration = Duration::from_millis(100);
+/// How often the timetable is read for tasks whose time has come.
+const SCHEDULE_PERIOD: Duration = Duration::from_secs(30);
 
 /// Who is attached to the core; ids are never reused within a run.
 pub type ClientId = u64;
@@ -71,6 +74,11 @@ struct OpenThread {
     /// When the last client that kept it open went away; a turn gets `ORPHAN_GRACE` to be
     /// picked up again, as after a reload, before it is stopped.
     orphaned: Option<std::time::Instant>,
+    /// Started by a schedule with nobody watching: it runs to the end of its turn and
+    /// then closes, rather than stopping when no client keeps it.
+    unattended: bool,
+    /// Set by the forwarding task once the thread has worked and is idle again.
+    done: Arc<std::sync::atomic::AtomicBool>,
 }
 
 pub struct Server {
@@ -111,6 +119,9 @@ impl Server {
     pub async fn run(mut self, mut calls: mpsc::UnboundedReceiver<Message>) {
         let mut clock = tokio::time::interval(STATUS_PERIOD);
         clock.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        // The first tick is at once, so runs missed while the app was closed start now.
+        let mut timetable = tokio::time::interval(SCHEDULE_PERIOD);
+        timetable.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         let last = loop {
             tokio::select! {
                 call = calls.recv() => match call {
@@ -140,6 +151,7 @@ impl Server {
                     self.refresh_status();
                     self.close_orphans().await;
                 }
+                _ = timetable.tick() => self.run_due_schedules().await,
             }
         };
         let threads: Vec<String> = self.threads.keys().cloned().collect();
@@ -161,6 +173,9 @@ impl Server {
             Request::Settings(request) => self.settings(request).await,
             Request::Catalog(request) => self.catalog(request).await,
             Request::Work(request) => self.work(request).await,
+            Request::Project(request) if schedules::is_schedule(&request) => {
+                self.schedule(request).await
+            }
             Request::Project(request) => self.project(request).await,
             Request::Command(command) => Ok(Response::Answer(Box::new(
                 commands::answer(command, &self.runtime).await?,

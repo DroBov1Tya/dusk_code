@@ -135,6 +135,8 @@ pub struct Workspace {
     pub home: PathBuf,
     pub status: Status,
     pub projects: Vec<Project>,
+    /// The timetable, once read; `None` until the page asks.
+    pub schedules: Option<Vec<dusk_protocol::project::Schedule>>,
     /// Every chat the core keeps; subagent threads are left out.
     pub threads: Vec<Thread>,
     /// Chats opened in this window, by thread ID.
@@ -325,6 +327,7 @@ impl Workspace {
             home,
             status: first,
             projects: Vec::new(),
+            schedules: None,
             threads: Vec::new(),
             chats: HashMap::new(),
             shown: None,

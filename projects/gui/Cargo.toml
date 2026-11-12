@@ -15,6 +15,7 @@ path = "src/main.rs"
 screenshot = ["dep:image", "dep:gpui_pre", "dep:gpui_pre_platform"]
 
 [dependencies]
+chrono.workspace = true
 anyhow.workspace = true
 image = { workspace = true, optional = true }
 # Only for the screenshot tool: the same versions gpui-kit uses, with the in-memory renderer.
