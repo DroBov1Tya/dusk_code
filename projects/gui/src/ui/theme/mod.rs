@@ -31,6 +31,8 @@ pub struct Prefs {
     /// The right column's folded modules as the user left them; none before the first
     /// choice, so the first start folds the heavy ones.
     pub right_folded: Option<Vec<String>>,
+    /// The side panel's foot, where the chat works: folded until the user opens it.
+    pub footer_open: bool,
 }
 
 impl Default for Prefs {
@@ -43,6 +45,7 @@ impl Default for Prefs {
             mono_size: 13.,
             pinned: Vec::new(),
             right_folded: None,
+            footer_open: false,
         }
     }
 }

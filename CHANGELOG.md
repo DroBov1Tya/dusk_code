@@ -8,6 +8,10 @@ testing.
 
 ### Changed
 
+- Desktop layout: a thin rail at the left edge holds the places of the app, the sidebar
+  holds only projects and chats, a 52 px bar runs across the top to the right edge with
+  the side panel under it, both side columns slide open and closed, and the side
+  panel's foot (project, folder, branch, model, mode) starts folded behind an arrow.
 - Desktop and web look: a deeper Dusk palette, settings grouped on cards as macOS lists
   them, controls at least 32 px (steppers, switches, buttons), the web address in a
   copy field that never leaves its card, System usage as tiles, and clearer composer

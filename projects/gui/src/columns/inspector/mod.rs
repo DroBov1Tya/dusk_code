@@ -131,35 +131,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .overflow_y_scroll()
                 .child(column),
         )
-        // Where the chat works stays in sight, under everything that scrolls.
-        .child(
-            div()
-                .flex_none()
-                .border_t_1()
-                .border_color(border)
-                .pt_2()
-                .pb_2()
-                .child(environment::render(ws, cx))
-                .child(
-                    div()
-                        .id("version")
-                        .px_4()
-                        .pt_1()
-                        .flex()
-                        .justify_end()
-                        .text_xs()
-                        .text_color(muted)
-                        .cursor_pointer()
-                        .hover(|version| version.text_color(cx.theme().foreground))
-                        .child(format!("duskcode {}", env!("CARGO_PKG_VERSION")))
-                        .on_click(cx.listener(|ws, _, _, cx| {
-                            ws.center = Center::Settings;
-                            ws.settings_page = SettingsPage::Updates;
-                            ws.load_page(SettingsPage::Updates, cx);
-                            cx.notify();
-                        })),
-                ),
-        )
+        // Where the chat works waits folded under everything that scrolls: a bar across
+        // the column's width unfolds it.
+        .child(footer(ws, cx))
 }
 
 fn module_icon(module: Right) -> IconName {
@@ -333,4 +307,80 @@ impl Workspace {
             Right::Arbiter | Right::Screenshots | Right::Todo => {}
         }
     }
+}
+
+/// The foot of the column: a bar with an arrow while folded; open, the chat's project,
+/// folder, branch, model and mode, and the version.
+fn footer(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let theme = cx.theme();
+    let (border, muted, hover) = (
+        theme.sidebar_border,
+        theme.muted_foreground,
+        theme.list_hover,
+    );
+    let open = crate::ui::theme::prefs(cx).footer_open;
+    let bar = div()
+        .id("footer-toggle")
+        .h(px(32.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .cursor_pointer()
+        .hover(move |bar| bar.bg(hover))
+        .tooltip(move |window, cx| {
+            gpui_kit::component::tooltip::Tooltip::new(if open {
+                "Fold where the chat works"
+            } else {
+                "Show where the chat works"
+            })
+            .build(window, cx)
+        })
+        .child(widgets::icon(
+            if open {
+                IconName::ChevronDown
+            } else {
+                IconName::ChevronUp
+            },
+            muted,
+        ))
+        .on_click(cx.listener(|_, _, _, cx| {
+            crate::ui::theme::change(cx, |prefs| prefs.footer_open = !prefs.footer_open);
+        }));
+    let footer = div()
+        .flex_none()
+        .flex()
+        .flex_col()
+        .border_t_1()
+        .border_color(border)
+        .child(bar);
+    if !open {
+        return footer;
+    }
+    footer.child(widgets::appear(
+        "footer-body",
+        div()
+            .flex()
+            .flex_col()
+            .pb_2()
+            .child(environment::render(ws, cx))
+            .child(
+                div()
+                    .id("version")
+                    .px_4()
+                    .pt_1()
+                    .flex()
+                    .justify_end()
+                    .text_xs()
+                    .text_color(muted)
+                    .cursor_pointer()
+                    .hover(|version| version.text_color(cx.theme().foreground))
+                    .child(format!("duskcode {}", env!("CARGO_PKG_VERSION")))
+                    .on_click(cx.listener(|ws, _, _, cx| {
+                        ws.center = Center::Settings;
+                        ws.settings_page = SettingsPage::Updates;
+                        ws.load_page(SettingsPage::Updates, cx);
+                        cx.notify();
+                    })),
+            ),
+    ))
 }

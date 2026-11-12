@@ -18,18 +18,19 @@ use gpui_kit::{
         ActiveTheme,
         input::{InputEvent, InputState, TextareaState},
     },
-    prelude::FluentBuilder,
     *,
 };
 use tokio::sync::{mpsc, watch};
 
+use gpui_kit::base::spring;
+
 use crate::{
-    columns::{inspector, sidebar},
+    columns::{inspector, rail, sidebar, topbar},
     core::Core,
     modal::{self, Modal},
     pages::{
         artifacts, chat, chat::transcript::Transcript, connectors, connectors::Shelf, review,
-        settings, settings::SettingsPage,
+        schedules, settings, settings::SettingsPage,
     },
 };
 
@@ -43,6 +44,8 @@ pub enum Center {
     Review,
     /// One file, read-only, as an editor shows it.
     File,
+    /// Prompts the core runs on a timetable.
+    Schedules,
 }
 
 /// The modules of the right column, top to bottom.
@@ -521,6 +524,28 @@ impl Workspace {
     }
 }
 
+impl Workspace {
+    /// The side panel belongs to the work: pages about the app itself have the whole width.
+    pub fn side_panel_allowed(&self) -> bool {
+        matches!(self.center, Center::Chat | Center::Review | Center::File)
+    }
+
+    fn side_panel_shown(&self) -> bool {
+        self.side_panel_allowed() && !self.right_hidden
+    }
+
+    /// The middle column's width once the side columns have settled.
+    pub fn chat_width(&self, window: &Window) -> f32 {
+        let sidebar = if self.left_hidden { 0. } else { sidebar::WIDTH };
+        let inspector = if self.side_panel_shown() {
+            inspector::WIDTH
+        } else {
+            0.
+        };
+        window.viewport_size().width.as_f32() - rail::WIDTH - sidebar - inspector
+    }
+}
+
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
@@ -532,11 +557,52 @@ impl Render for Workspace {
             Center::Settings => settings::render(self, window, cx).into_any_element(),
             Center::Review => review::render(self, cx).into_any_element(),
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
+            Center::Schedules => schedules::render(self, window, cx).into_any_element(),
         };
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
         let artifact_menu = artifacts::menu(self, window, cx);
         let audio_menu = chat::audio::menu(self, window, cx);
+        // The side columns slide rather than jump: their widths follow a spring, and a
+        // column is drawn at its full width inside a clipped frame, so its rows do not
+        // reflow while it moves.
+        let motion = cx.theme().motion_tokens().spring_move;
+        let left = spring(
+            "sidebar-width",
+            px(if self.left_hidden { 0. } else { sidebar::WIDTH }),
+            motion,
+            window,
+            cx,
+        );
+        let right = spring(
+            "inspector-width",
+            px(if self.side_panel_shown() {
+                inspector::WIDTH
+            } else {
+                0.
+            }),
+            motion,
+            window,
+            cx,
+        );
+        let sidebar = (left > px(0.5)).then(|| {
+            div()
+                .w(left)
+                .h_full()
+                .flex_none()
+                .overflow_hidden()
+                .child(sidebar::render(self, window, cx))
+        });
+        let inspector = (right > px(0.5)).then(|| {
+            div()
+                .w(right)
+                .h_full()
+                .flex_none()
+                .overflow_hidden()
+                .flex()
+                .justify_end()
+                .child(inspector::render(self, window, cx))
+        });
         div()
             .relative()
             .size_full()
@@ -544,20 +610,25 @@ impl Render for Workspace {
             .flex_row()
             .bg(background)
             .text_color(foreground)
-            .map(|row| {
-                if self.left_hidden {
-                    row.child(sidebar::rail(self, cx))
-                } else {
-                    row.child(sidebar::render(self, window, cx))
-                }
-            })
-            .child(div().flex_1().min_w_0().h_full().child(center))
-            // The side column belongs to the work: pages about the app itself have the
-            // whole width.
-            .when(
-                !self.right_hidden
-                    && matches!(self.center, Center::Chat | Center::Review | Center::File),
-                |row| row.child(inspector::render(self, window, cx)),
+            .child(rail::render(self, cx))
+            .children(sidebar)
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .h_full()
+                    .flex()
+                    .flex_col()
+                    .child(topbar::render(self, cx))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .flex()
+                            .flex_row()
+                            .child(div().flex_1().min_w_0().h_full().child(center))
+                            .children(inspector),
+                    ),
             )
             .children(modal)
             .children(chat_menu)

@@ -97,7 +97,7 @@ voice/  (8)
 ### gui
 
 ```
-columns/  (17)
+columns/  (19)
   inspector/  (12)
   sidebar/  (4)
 modal/  (10)
