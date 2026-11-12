@@ -609,22 +609,26 @@ mod tests {
             .await
             .unwrap();
         drop(gone);
-        manager(&state, &database).await;
+        // A test beside this one that starts a command forks, and until the child execs
+        // it holds every descriptor of this process, the dropped lease's among them. A
+        // start in that moment sees a live owner and leaves the job for the next start,
+        // which is what a real runtime does too: so both the interruption and the sweep
+        // are given a few starts to happen.
+        for _ in 0..20 {
+            manager(&state, &database).await;
+            let interrupted = state.job("thread", "job").await.unwrap().status == "interrupted";
+            if interrupted && !Path::new(&path).exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(25)).await;
+        }
         assert_eq!(
             state.job("thread", "job").await.unwrap().status,
             "interrupted"
         );
+        // However many starts it took, the end is told once.
         assert_eq!(announced(&state, "job").await, 1);
-        // A process forking elsewhere holds an inherited lock for a moment, and then the
-        // lease waits for the next start; the sweep must get it in the end.
-        for _ in 0..20 {
-            if !Path::new(&path).exists() {
-                return;
-            }
-            tokio::time::sleep(Duration::from_millis(25)).await;
-            self::manager(&state, &database).await;
-        }
-        panic!("the lease was not swept");
+        assert!(!Path::new(&path).exists(), "the lease was not swept");
     }
 
     #[tokio::test]
