@@ -214,6 +214,13 @@ pub struct Workspace {
     pub picked: Vec<usize>,
     pub attach_open: bool,
     pub left_hidden: bool,
+    /// The strip of places at the left edge, hidden on the user's word.
+    pub rail_hidden: bool,
+    /// A rail place shown on hover, and whether the pointer is on its icon or panel.
+    pub flyout: Option<crate::columns::flyout::Flyout>,
+    pub flyout_inside: bool,
+    /// The places the user went, for Back and Forward.
+    pub history: topbar::history::History,
     pub right_hidden: bool,
     /// Files to send with the next message.
     pub attachments: Vec<PathBuf>,
@@ -385,6 +392,10 @@ impl Workspace {
             picked: Vec::new(),
             attach_open: false,
             left_hidden: false,
+            rail_hidden: false,
+            flyout: None,
+            flyout_inside: false,
+            history: Default::default(),
             right_hidden: false,
             attachments: Vec::new(),
             pastes: Vec::new(),
@@ -545,14 +556,16 @@ impl Workspace {
         } else {
             0.
         };
-        window.viewport_size().width.as_f32() - rail::WIDTH - sidebar - inspector
+        window.viewport_size().width.as_f32() - rail::width(self) - sidebar - inspector
     }
 }
 
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        self.record_place();
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
+        let (frame, theme_border) = (theme.sidebar, theme.border);
         let center = match self.center {
             Center::Chat => chat::render(self, window, cx).into_any_element(),
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
@@ -611,18 +624,26 @@ impl Render for Workspace {
             .size_full()
             .flex()
             .flex_row()
-            .bg(background)
+            .bg(frame)
             .text_color(foreground)
-            .child(rail::render(self, cx))
+            .children((!self.rail_hidden).then(|| rail::render(self, cx)))
             .children(sidebar)
+            // The work stands on one rounded sheet, a step lighter than the frame of
+            // rail and sidebar around it.
             .child(
                 div()
                     .flex_1()
                     .min_w_0()
-                    .h_full()
+                    .my_1p5()
+                    .mr_1p5()
+                    .rounded_xl()
+                    .overflow_hidden()
+                    .border_1()
+                    .border_color(theme_border)
+                    .bg(background)
                     .flex()
                     .flex_col()
-                    .child(topbar::render(self, cx))
+                    .child(topbar::render(self, window, cx))
                     .child(
                         div()
                             .flex_1()
@@ -633,6 +654,7 @@ impl Render for Workspace {
                             .children(inspector),
                     ),
             )
+            .children(crate::columns::flyout::render(self, window, cx))
             .children(modal)
             .children(chat_menu)
             .children(artifact_menu)

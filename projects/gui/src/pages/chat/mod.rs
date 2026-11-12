@@ -16,6 +16,7 @@ mod model_menu;
 mod navigator;
 pub mod queue;
 mod ring;
+mod timing;
 pub mod transcript;
 mod working;
 

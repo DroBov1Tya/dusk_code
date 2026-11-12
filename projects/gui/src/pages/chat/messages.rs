@@ -36,7 +36,12 @@ const ACTIVITY: usize = 1 << 42;
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum Row {
     Item(usize),
-    Activity { start: usize, end: usize },
+    Activity {
+        start: usize,
+        end: usize,
+        /// The turn's begin and end, for how long it took.
+        span: Option<super::timing::Span>,
+    },
     Working,
 }
 
@@ -48,11 +53,12 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     let mut rows = Vec::new();
     let mut sent = Vec::new();
     let mut start = 0;
-    for end in chat
+    for (turn, end) in chat
         .activity_boundaries
         .iter()
         .copied()
         .chain(std::iter::once(chat.items.len()))
+        .enumerate()
     {
         let items = &chat.items[start..end];
         let activity = if items.iter().any(primary_activity) {
@@ -72,11 +78,19 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 rows.push(Row::Activity {
                     start: first,
                     end: last + 1,
+                    span: chat.span(turn),
                 });
             }
             match item {
                 Item::Tool(_) => continue,
                 Item::Assistant { text, .. } if text.is_empty() => continue,
+                // What the agent said on its way goes into the turn's row with its steps;
+                // the answer after the last step stays in sight.
+                Item::Assistant { .. }
+                    if activity.is_some_and(|(first, last)| (first..=last).contains(&index)) =>
+                {
+                    continue;
+                }
                 Item::Agent { .. } | Item::User { sequence: None, .. } if activity.is_some() => {
                     continue;
                 }
@@ -165,12 +179,7 @@ impl Workspace {
             return div().into_any_element();
         };
         let theme = cx.theme();
-        let (surface, muted, accent, danger) = (
-            theme.muted,
-            theme.muted_foreground,
-            theme.primary,
-            theme.danger,
-        );
+        let (muted, accent, danger) = (theme.muted_foreground, theme.primary, theme.danger);
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
             Row::Working => div()
@@ -185,10 +194,17 @@ impl Workspace {
                     accent,
                     theme.foreground,
                 ))
-                .child("Working")
+                .child(match chat.span(chat.activity_boundaries.len()) {
+                    Some((began, None)) => format!(
+                        "Working \u{00B7} {}",
+                        super::timing::duration(super::timing::now_ms() - began)
+                    ),
+                    _ => "Working".to_owned(),
+                })
                 .into_any_element(),
-            Row::Activity { start, end } => {
-                turn_activity(self, &shown, start, &chat.items[start..end], cx).into_any_element()
+            Row::Activity { start, end, span } => {
+                turn_activity(self, &shown, start, &chat.items[start..end], span, cx)
+                    .into_any_element()
             }
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
@@ -236,11 +252,15 @@ impl Workspace {
                             .items_end()
                             .gap_1()
                             .child(
+                                // The user's words carry a breath of the accent, so the
+                                // two sides of the chat part at a glance without glare.
                                 div()
                                     .px_4()
                                     .py_2()
                                     .rounded_xl()
-                                    .bg(surface)
+                                    .bg(accent.opacity(0.09))
+                                    .border_1()
+                                    .border_color(accent.opacity(0.16))
                                     // Selectable like the answers; pastes and files show as labels.
                                     .child(links::markdown(
                                         SharedString::from(format!("user-{key}")),
@@ -412,6 +432,7 @@ fn turn_activity(
     shown: &str,
     start: usize,
     items: &[Item],
+    span: Option<super::timing::Span>,
     cx: &mut Context<Workspace>,
 ) -> Div {
     let open = ws.unfolded.contains(&(shown.to_owned(), start | ACTIVITY));
@@ -430,14 +451,22 @@ fn turn_activity(
             break;
         }
     }
-    let title = latest.map_or("Thinking", |tool| {
-        let summary = tool.detail.trim();
-        if summary.is_empty() {
-            tool.name.as_str()
-        } else {
-            summary
+    // A finished turn says how long it took; one under way, what it does now.
+    let title = match span {
+        Some((began, Some(ended))) => {
+            format!("Worked for {}", super::timing::duration(ended - began))
         }
-    });
+        _ => latest
+            .map_or("Thinking", |tool| {
+                let summary = tool.detail.trim();
+                if summary.is_empty() {
+                    tool.name.as_str()
+                } else {
+                    summary
+                }
+            })
+            .to_owned(),
+    };
     let id = shown.to_owned();
     let header = disclosure(
         SharedString::from(format!("activity-{shown}-{start}")),
@@ -452,7 +481,7 @@ fn turn_activity(
             .min_w_0()
             .truncate()
             .text_color(cx.theme().foreground)
-            .child(title.to_owned()),
+            .child(title),
     )
     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, start | ACTIVITY, cx)));
     let mut row = div().flex().items_center().gap_2().child(header);
@@ -473,15 +502,25 @@ fn turn_activity(
             let index = start + offset;
             detail = match item {
                 Item::Tool(tool) => detail.child(step(ws, shown, index, tool, cx)),
-                Item::Assistant { reasoning, .. } if !reasoning.trim().is_empty() => {
-                    detail.child(activity_text(
-                        ws,
-                        shown,
-                        index,
-                        "Thinking",
-                        || reasoning.clone().into_any_element(),
-                        cx,
-                    ))
+                Item::Assistant { text, reasoning } => {
+                    let mut detail = detail;
+                    if !reasoning.trim().is_empty() {
+                        detail = detail.child(activity_text(
+                            ws,
+                            shown,
+                            index,
+                            "Thinking",
+                            || reasoning.clone().into_any_element(),
+                            cx,
+                        ));
+                    }
+                    if !text.trim().is_empty() {
+                        detail = detail.child(div().px_2().small().child(super::links::markdown(
+                            SharedString::from(format!("said-{shown}-{index}")),
+                            text.clone(),
+                        )));
+                    }
+                    detail
                 }
                 Item::Agent { from, text } => {
                     detail.child(agent_report(ws, shown, index, from, text, cx))

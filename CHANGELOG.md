@@ -16,6 +16,12 @@ testing.
 
 ### Changed
 
+- Desktop: a wider rail with larger icons that can itself be hidden; resting on its Chats
+  or Scheduled icon shows that place beside it, a click opens it. The top bar has Back and
+  Forward through the places visited, the chat's project on hover of its folder, and a
+  "..." with the chat's menu, which can also schedule a task. The work area is one rounded
+  sheet, the user's messages carry a light accent, and each turn folds its steps, thinking
+  and passing remarks into one row that says how long the agent worked.
 - Updates page installs a newer desktop app in place and offers the restart into it,
   instead of opening the release page. Releases are signed by one certificate when the
   release secrets hold it, so macOS keeps permissions and keychain access across

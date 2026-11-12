@@ -13,15 +13,13 @@ pub const WIDTH: f32 = 272.;
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (panel, border) = (theme.sidebar, theme.sidebar_border);
+    let panel = theme.sidebar;
     div()
         .w(px(WIDTH))
         .h_full()
         .flex()
         .flex_col()
         .bg(panel)
-        .border_r_1()
-        .border_color(border)
         .child(
             div()
                 .h(px(crate::columns::topbar::HEIGHT))

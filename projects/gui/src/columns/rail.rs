@@ -2,18 +2,24 @@
 //! sight, so the sidebar beside it can hold only the projects and their chats.
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName, tooltip::Tooltip},
+    component::{ActiveTheme, Icon, IconName, tooltip::Tooltip},
     prelude::FluentBuilder,
     *,
 };
 
 use crate::{
+    columns::flyout::Flyout,
     modal::Modal,
-    ui::widgets::{self, Focusable},
+    ui::widgets::Focusable,
     workspace::{Center, Workspace},
 };
 
-pub const WIDTH: f32 = 44.;
+pub const WIDTH: f32 = 52.;
+
+/// The rail's width as drawn: none while the user keeps it hidden.
+pub fn width(ws: &Workspace) -> f32 {
+    if ws.rail_hidden { 0. } else { WIDTH }
+}
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
@@ -35,11 +41,9 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_col()
         .items_center()
-        .gap_1()
+        .gap_1p5()
         .py_2()
         .bg(panel)
-        .border_r_1()
-        .border_color(border)
         .child(
             item(
                 "rail-sidebar",
@@ -78,7 +82,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 matches!(ws.center, Center::Chat | Center::Review | Center::File),
                 cx,
             )
+            .map(|item| with_flyout(item, Flyout::Chats, ws.left_hidden, cx))
             .on_click(cx.listener(|ws, _, _, cx| {
+                // A click keeps what the hover showed: the sidebar opens for good.
+                ws.flyout = None;
+                ws.left_hidden = false;
                 ws.center = Center::Chat;
                 cx.notify();
             })),
@@ -91,7 +99,14 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 ws.center == Center::Schedules,
                 cx,
             )
-            .on_click(cx.listener(|ws, _, _, cx| ws.open_schedules(cx))),
+            .map(|item| {
+                let shown = ws.center == Center::Schedules;
+                with_flyout(item, Flyout::Schedules, !shown, cx)
+            })
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.flyout = None;
+                ws.open_schedules(cx);
+            })),
         )
         .child(
             item(
@@ -160,7 +175,7 @@ fn item(id: &'static str, icon: IconName, tip: String, active: bool, cx: &App) -
     let tip = SharedString::from(tip);
     div()
         .id(id)
-        .size(px(32.))
+        .size(px(40.))
         .flex()
         .items_center()
         .justify_center()
@@ -170,5 +185,20 @@ fn item(id: &'static str, icon: IconName, tip: String, active: bool, cx: &App) -
         .hover(move |item| item.bg(hover))
         .focusable_row(cx)
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
-        .child(widgets::icon(icon, color))
+        .child(Icon::new(icon).size(px(20.)).text_color(color))
+}
+
+/// Shows the place's panel while the pointer rests on its icon, where `allowed`.
+fn with_flyout(
+    item: Stateful<Div>,
+    kind: Flyout,
+    allowed: bool,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
+    if !allowed {
+        return item;
+    }
+    item.on_hover(
+        cx.listener(move |ws, inside: &bool, _, cx| ws.hover_flyout(Some(kind), *inside, cx)),
+    )
 }
