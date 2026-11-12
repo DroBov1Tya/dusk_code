@@ -38,6 +38,8 @@ pub struct Prefs {
     pub runs_seen_until: i64,
     /// The header's sky while a turn runs: the glow and the stars.
     pub sky: bool,
+    /// Mist at the window's foot after it was left alone for a while.
+    pub fog: bool,
     /// Where each part of the window stands; see `ui::layout`.
     pub layout: crate::ui::layout::Layout,
 }
@@ -55,6 +57,7 @@ impl Default for Prefs {
             footer_open: false,
             runs_seen_until: 0,
             sky: true,
+            fog: true,
             layout: Default::default(),
         }
     }
@@ -80,11 +83,6 @@ pub fn init(file: PathBuf, cx: &mut App) {
 
 pub fn prefs(cx: &App) -> &Prefs {
     &cx.global::<Stored>().prefs
-}
-
-/// Whether the sky is offered at all: it is the Dusk theme's own.
-pub fn has_sky(cx: &App) -> bool {
-    prefs(cx).theme == palettes::DEFAULT
 }
 
 /// Changes the preferences, applies them and keeps them.

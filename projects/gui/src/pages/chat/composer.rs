@@ -672,6 +672,8 @@ impl Workspace {
                         ws.show(thread_id, cx);
                         ws.reload_threads(cx);
                     }
+                    // What was attached is now among the chat's sources.
+                    ws.load_sources(cx);
                 }
                 Err(error) => ws.fail(error, cx),
             },

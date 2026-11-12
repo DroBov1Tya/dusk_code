@@ -62,10 +62,12 @@ pub enum Right {
     Plan,
     Todo,
     Jobs,
+    /// The files and pastes attached to the shown chat.
+    Sources,
 }
 
 impl Right {
-    const ALL: [Right; 9] = [
+    const ALL: [Right; 10] = [
         Right::Arbiter,
         Right::Statistics,
         Right::Screenshots,
@@ -75,6 +77,7 @@ impl Right {
         Right::Plan,
         Right::Todo,
         Right::Jobs,
+        Right::Sources,
     ];
 
     /// The name the choice of folding is kept under.
@@ -89,6 +92,7 @@ impl Right {
             Self::Plan => "plan",
             Self::Todo => "todo",
             Self::Jobs => "jobs",
+            Self::Sources => "sources",
         }
     }
 
@@ -102,6 +106,7 @@ impl Right {
             Right::Files,
             Right::Touched,
             Right::Jobs,
+            Right::Sources,
         ]
         .into_iter()
         .collect()
@@ -207,7 +212,13 @@ pub struct Workspace {
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
     pub models_open: HashSet<String>,
+    /// The last click or key, for the mist that rises when the window is left alone.
+    pub last_input: std::time::Instant,
+    /// When the mist was cleared and how thick it stood, while it fades.
+    pub fog_cleared: Option<(std::time::Instant, f32)>,
     pub jobs: Vec<JobInfo>,
+    /// The shown chat's sources, as the core lists them.
+    pub sources: Vec<dusk_protocol::thread::Source>,
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
     pub models_loading: bool,
@@ -392,7 +403,10 @@ impl Workspace {
             context_open: HashSet::new(),
             context_load: Default::default(),
             models_open: HashSet::new(),
+            last_input: std::time::Instant::now(),
+            fog_cleared: None,
             jobs: Vec::new(),
+            sources: Vec::new(),
             settings: None,
             providers: Vec::new(),
             models_loading: false,
@@ -433,6 +447,7 @@ impl Workspace {
         };
         workspace.pump_events(events, cx);
         workspace.pump_status(status, cx);
+        workspace.watch_idle(cx);
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
         // The runs since the last look come up on the chat's "while you were away" card.
@@ -503,6 +518,17 @@ impl Workspace {
                 {
                     self.load_touched(cx);
                 }
+                // A job starts inside a tool and ends as a message of its own; the Jobs
+                // module is hidden while it has none, so nothing else would ask for them.
+                if matches!(
+                    *event,
+                    dusk_protocol::thread::ThreadEvent::ToolFinished { .. }
+                        | dusk_protocol::thread::ThreadEvent::FromJob(_)
+                ) && self.shown.as_deref() == Some(thread_id.as_str())
+                {
+                    self.load_jobs(cx);
+                    self.load_sources(cx);
+                }
                 let mut finished = false;
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     let was_working = chat.working;
@@ -512,6 +538,10 @@ impl Workspace {
                 if finished {
                     self.rates.remove(&thread_id);
                     self.send_next_pending(&thread_id, cx);
+                    // A source that went with the turn now reads as sent.
+                    if self.shown.as_deref() == Some(thread_id.as_str()) {
+                        self.load_sources(cx);
+                    }
                 }
                 if titled {
                     self.reload_threads(cx);
@@ -692,6 +722,9 @@ impl Render for Workspace {
             .children(chat_menu)
             .children(artifact_menu)
             .children(audio_menu)
+            .children(crate::columns::fog::render(self, window, cx))
+            .capture_any_mouse_down(cx.listener(|ws, _, _, cx| ws.attended(cx)))
+            .capture_key_down(cx.listener(|ws, _: &KeyDownEvent, _, cx| ws.attended(cx)))
             .track_focus(&self.focus)
             .key_context("Workspace")
             .on_action(cx.listener(Self::on_new_chat))

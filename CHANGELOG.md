@@ -23,18 +23,25 @@ testing.
 - `domain-structure` skill: laying out and auditing any codebase as domains with front
   doors and one reason to change per file; `docs/structure-audit.md` lists what here does
   not fit yet.
+- GUI: a Sources module in the side panel lists what is attached to the chat; each
+  source goes to the model once, and a switch on it sends it with every request.
+- GUI: a falling star crosses the header's sky now and then, and mist rises at the foot
+  of a window left alone for a few minutes; a click or a key clears it. Appearance has a
+  switch for each.
 
 ### Changed
 
 - The context report and a thread's `Tokens` events count with the same tools and model,
   so Statistics and the ring by the message box agree; Statistics follows the turn.
 - GUI: the quiet mode's moon is filled while it is on; Connectors stands above Artifacts
-  in the rail; the dusk sky belongs to the Dusk theme only, its stars are soft points with
-  short rays and a rare tinted one; More models names each provider in bold and folds it.
+  in the rail; the sky's stars are soft points with short rays and a rare tinted one;
+  More models names each provider in bold and folds it.
 
 ### Fixed
 
 - GUI: the wheel over the font list in Appearance scrolls the list, not the page.
+- GUI: a long last answer can be scrolled down again after scrolling up in it.
+- GUI: background jobs show in the Jobs module as they start and end.
 
 ## 0.73.2 - 2026-11-12
 

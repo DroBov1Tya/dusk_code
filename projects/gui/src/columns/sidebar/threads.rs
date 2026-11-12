@@ -127,6 +127,7 @@ impl Workspace {
         self.center = Center::Chat;
         self.context = None;
         self.jobs.clear();
+        self.sources.clear();
         self.plan.text = None;
         self.plan.editing = false;
         self.touched.clear();
@@ -190,6 +191,7 @@ impl Workspace {
         self.center = Center::Chat;
         self.context = None;
         self.jobs.clear();
+        self.sources.clear();
         self.plan.text = None;
         self.plan.editing = false;
         self.refresh_inspector(cx);

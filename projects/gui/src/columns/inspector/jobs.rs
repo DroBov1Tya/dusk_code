@@ -66,11 +66,17 @@ impl Workspace {
         };
         self.core.call(
             cx,
-            move |client| async move { client.work().jobs(&thread_id).await },
+            move |client| async move {
+                let jobs = client.work().jobs(&thread_id).await?;
+                anyhow::Ok((thread_id, jobs))
+            },
             |ws, result, cx| match result {
-                Ok(jobs) => {
-                    ws.jobs = jobs;
-                    cx.notify();
+                // An answer for a chat left meanwhile is not this chat's.
+                Ok((thread_id, jobs)) => {
+                    if ws.shown.as_deref() == Some(thread_id.as_str()) {
+                        ws.jobs = jobs;
+                        cx.notify();
+                    }
                 }
                 Err(error) => ws.fail(error, cx),
             },

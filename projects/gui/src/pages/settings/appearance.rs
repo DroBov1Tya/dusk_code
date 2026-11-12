@@ -168,11 +168,10 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .flex_col()
         .gap_4()
         .child(section("Theme", "", cx).child(themes))
-        // The sky is the Dusk theme's own: other themes do not offer it.
-        .when(theme::has_sky(cx), |page| {
-            page.child(
-                section("Sky", "", cx).child(type_size(
-                    "Dusk sky",
+        .child(
+            section("Atmosphere", "", cx)
+                .child(type_size(
+                    "Sky",
                     "While the agent works, the header glows and fills with stars",
                     div().child(
                         gpui_kit::component::switch::Switch::new("appearance-sky")
@@ -183,9 +182,21 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                             })),
                     ),
                     cx,
+                ))
+                .child(type_size(
+                    "Mist",
+                    "Rises at the foot of the window left alone; a click clears it",
+                    div().child(
+                        gpui_kit::component::switch::Switch::new("appearance-fog")
+                            .checked(prefs.fog)
+                            .on_click(cx.listener(|_, on: &bool, _, cx| {
+                                let on = *on;
+                                theme::change(cx, move |prefs| prefs.fog = on);
+                            })),
+                    ),
+                    cx,
                 )),
-            )
-        })
+        )
         .child(
             section("Typography", "", cx)
                 .child(type_size(
