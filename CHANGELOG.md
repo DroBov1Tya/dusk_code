@@ -44,6 +44,10 @@ testing.
 - GUI: the quiet mode's moon is filled while it is on; Connectors stands above Artifacts
   in the rail; the sky's stars are soft points with short rays and a rare tinted one;
   More models names each provider in bold and folds it.
+- GUI, Dusk: a chosen value in a row of choices is tinted with the accent instead of
+  filled with it; the settings page is wider and stands in the middle; the frame is a
+  step lighter and the quiet text a step brighter; the message box lights up a little
+  while it is written in.
 
 ### Fixed
 

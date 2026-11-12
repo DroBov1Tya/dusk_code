@@ -6,12 +6,7 @@ use dusk_protocol::{
     config::{ApprovalPolicy, ContextPolicy, ContextPreset},
 };
 use gpui_kit::{
-    component::{
-        ActiveTheme, Disableable, IconName,
-        button::{Button, ButtonVariants},
-        input::Input,
-        switch::Switch,
-    },
+    component::{ActiveTheme, Disableable, IconName, button::Button, input::Input, switch::Switch},
     *,
 };
 
@@ -261,11 +256,7 @@ fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .compact()
             .label(label)
             .on_click(cx.listener(move |ws, _, _, cx| ws.set_context_policy(policy, cx)));
-        row = row.child(if policy == current {
-            button.primary()
-        } else {
-            button.ghost()
-        });
+        row = row.child(controls::choice(button, policy == current, cx));
     }
     line(
         "Context window",
@@ -298,11 +289,7 @@ fn size_line(
                 _ => widgets::short(size as u64),
             })
             .on_click(cx.listener(move |ws, _, _, cx| ws.set_chars(memory, size, cx)));
-        row = row.child(if size == current {
-            button.primary()
-        } else {
-            button.ghost()
-        });
+        row = row.child(controls::choice(button, size == current, cx));
     }
     line(label, hint, cx).child(row)
 }

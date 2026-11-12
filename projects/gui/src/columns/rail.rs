@@ -22,7 +22,7 @@ pub const WIDTH: f32 = crate::ui::size::BAR;
 pub fn color(cx: &App) -> Hsla {
     let theme = cx.theme();
     let mut color = theme.sidebar;
-    color.l *= if theme.mode.is_dark() { 0.72 } else { 0.95 };
+    color.l *= if theme.mode.is_dark() { 0.86 } else { 0.95 };
     color
 }
 
