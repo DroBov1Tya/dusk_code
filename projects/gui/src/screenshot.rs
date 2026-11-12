@@ -18,6 +18,7 @@
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
+//! - `quiet`: hide the columns as the rail's moon does;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
 
 use std::{path::PathBuf, time::Duration};
@@ -139,6 +140,7 @@ fn act(
             cx.notify();
         }
         "review" => ws.open_review(cx),
+        "quiet" => ws.quiet = true,
         "detail" => {
             use crate::modal::detail::Detail;
             let first = |names: Vec<String>| names.into_iter().next();

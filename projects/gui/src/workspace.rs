@@ -216,6 +216,8 @@ pub struct Workspace {
     pub left_hidden: bool,
     /// The strip of places at the left edge, hidden on the user's word.
     pub rail_hidden: bool,
+    /// Quiet: only the chat and its box; the sidebar and the side panel step away.
+    pub quiet: bool,
     /// A rail place shown on hover, and whether the pointer is on its icon or panel.
     pub flyout: Option<crate::columns::flyout::Flyout>,
     pub flyout_inside: bool,
@@ -395,6 +397,7 @@ impl Workspace {
             attach_open: false,
             left_hidden: false,
             rail_hidden: false,
+            quiet: false,
             flyout: None,
             flyout_inside: false,
             unfolded_modules: HashSet::new(),
@@ -427,6 +430,12 @@ impl Workspace {
         workspace.pump_status(status, cx);
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
+        // The runs since the last look come up on the chat's "while you were away" card.
+        workspace.load_schedules(cx);
+        if crate::ui::theme::prefs(cx).runs_seen_until == 0 {
+            let now = chrono::Utc::now().timestamp_millis();
+            crate::ui::theme::change(cx, |prefs| prefs.runs_seen_until = now);
+        }
         workspace.load_about_me(cx);
         Self::answer_notifications(cx);
         window.focus(&workspace.focus, cx);
@@ -548,12 +557,16 @@ impl Workspace {
     }
 
     fn side_panel_shown(&self) -> bool {
-        self.side_panel_allowed() && !self.right_hidden
+        self.side_panel_allowed() && !self.right_hidden && !self.quiet
     }
 
     /// The middle column's width once the side columns have settled.
     pub fn chat_width(&self, window: &Window) -> f32 {
-        let sidebar = if self.left_hidden { 0. } else { sidebar::WIDTH };
+        let sidebar = if self.left_hidden || self.quiet {
+            0.
+        } else {
+            sidebar::WIDTH
+        };
         let inspector = if self.side_panel_shown() {
             inspector::WIDTH
         } else {
@@ -588,7 +601,11 @@ impl Render for Workspace {
         let motion = cx.theme().motion_tokens().spring_move;
         let left = spring(
             "sidebar-width",
-            px(if self.left_hidden { 0. } else { sidebar::WIDTH }),
+            px(if self.left_hidden || self.quiet {
+                0.
+            } else {
+                sidebar::WIDTH
+            }),
             motion,
             window,
             cx,

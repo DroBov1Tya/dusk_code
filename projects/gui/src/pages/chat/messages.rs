@@ -41,6 +41,8 @@ pub enum Row {
         end: usize,
         /// The turn's begin and end, for how long it took.
         span: Option<super::timing::Span>,
+        /// What it spent, as tokens and micro-dollars, when that was seen.
+        spent: Option<(u64, u64)>,
     },
     Working,
 }
@@ -114,6 +116,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                     start: first,
                     end: last + 1,
                     span: chat.span(turn),
+                    spent: chat.turn_spend(turn),
                 });
             }
             match item {
@@ -229,8 +232,17 @@ impl Workspace {
                     _ => "Working".to_owned(),
                 })
                 .into_any_element(),
-            Row::Activity { start, end, span } => {
+            Row::Activity {
+                start,
+                end,
+                span,
+                spent,
+            } => {
+                let dear = spent
+                    .zip(chat.mean_turn_cost())
+                    .is_some_and(|((_, micro), mean)| micro > 2 * mean.max(1));
                 turn_activity(self, &shown, start, &chat.items[start..end], span, cx)
+                    .child_cost(spent, dear, cx)
                     .into_any_element()
             }
             Row::Item(at) => {
@@ -1051,5 +1063,42 @@ impl Workspace {
         }
         self.measure_again = true;
         cx.notify();
+    }
+}
+
+/// The spend of a turn beside its row: tokens, and the cost when it is known; a turn
+/// more than twice as dear as the chat's usual one says so in the warning color.
+trait TurnCost {
+    fn child_cost(self, spent: Option<(u64, u64)>, dear: bool, cx: &App) -> Self;
+}
+
+impl TurnCost for Div {
+    fn child_cost(self, spent: Option<(u64, u64)>, dear: bool, cx: &App) -> Self {
+        let Some((tokens, micro)) = spent else {
+            return self;
+        };
+        let theme = cx.theme();
+        let mut text = format!("{} tokens", widgets::short(tokens));
+        if micro > 0 {
+            text.push_str(&format!(
+                " \u{00B7} {}",
+                dusk_protocol::model::Cost::dollars(micro)
+            ));
+        }
+        self.child(
+            div()
+                .pl(px(32.))
+                .meta()
+                .text_color(if dear {
+                    theme.warning
+                } else {
+                    theme.muted_foreground
+                })
+                .child(if dear {
+                    format!("{text} \u{00B7} dearer than usual")
+                } else {
+                    text
+                }),
+        )
     }
 }

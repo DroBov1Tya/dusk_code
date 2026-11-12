@@ -33,6 +33,9 @@ pub struct Prefs {
     pub right_folded: Option<Vec<String>>,
     /// The side panel's foot, where the chat works: folded until the user opens it.
     pub footer_open: bool,
+    /// Scheduled runs up to this moment, in Unix milliseconds, were seen; later ones go
+    /// on the "while you were away" card. Zero until the first start sets it.
+    pub runs_seen_until: i64,
 }
 
 impl Default for Prefs {
@@ -46,6 +49,7 @@ impl Default for Prefs {
             pinned: Vec::new(),
             right_folded: None,
             footer_open: false,
+            runs_seen_until: 0,
         }
     }
 }

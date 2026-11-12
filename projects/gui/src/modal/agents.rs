@@ -87,7 +87,8 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
                     ),
             );
         for (id, agent) in members {
-            card = card.child(figure(id, agent, cx));
+            let progress = chat.agent_chats.get(id.as_str()).map(progress);
+            card = card.child(figure(id, agent, progress, cx));
         }
         stage = stage.child(card);
     }
@@ -119,7 +120,36 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
 }
 
 /// One agent: its figure, its name, and a bubble with what it does now.
-fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div> {
+/// How far an agent got: its steps so far and the last thing it said.
+struct Progress {
+    steps: usize,
+    said: Option<String>,
+}
+
+fn progress(transcript: &crate::pages::chat::transcript::Transcript) -> Progress {
+    use crate::pages::chat::transcript::Item;
+    let steps = transcript
+        .items
+        .iter()
+        .filter(|item| matches!(item, Item::Tool(_)))
+        .count();
+    let said = transcript.items.iter().rev().find_map(|item| match item {
+        Item::Assistant { text, .. } => text
+            .lines()
+            .map(str::trim)
+            .find(|line| !line.is_empty())
+            .map(str::to_owned),
+        _ => None,
+    });
+    Progress { steps, said }
+}
+
+fn figure(
+    id: &str,
+    agent: &Agent,
+    progress: Option<Progress>,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
     let theme = cx.theme();
     let muted = theme.foreground.mix_oklab(theme.muted_foreground, 0.16);
     let (signal, success, danger, hover) = (
@@ -136,7 +166,7 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
     let status = match &agent.state {
         AgentState::Thinking => "Thinking".to_owned(),
         AgentState::Writing => "Writing".to_owned(),
-        AgentState::Tool(name) => format!("Running {name}"),
+        AgentState::Tool(name) => dusk_protocol::tools::phrase(name, &agent.name).to_owned(),
         AgentState::Done => "Done".to_owned(),
         AgentState::Failed => "Failed".to_owned(),
     };
@@ -161,6 +191,7 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
             color,
             3.0,
         ))
+        // What it was asked first, then what it does now, then what it last said.
         .child(
             div()
                 .flex()
@@ -176,20 +207,13 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
                         .gap_2()
                         .child(
                             div()
-                                .small()
-                                .min_w_0()
-                                .truncate()
+                                .meta()
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(agent.name.clone()),
                         )
-                        .child(
-                            div()
-                                .meta()
-                                .text_color(muted)
-                                .truncate()
-                                .child(agent.role.clone()),
-                        ),
+                        .child(div().meta().text_color(muted).child(agent.role.clone())),
                 )
+                .child(div().small().line_clamp(2).child(agent.task.clone()))
                 .child(
                     div()
                         .flex()
@@ -200,7 +224,7 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
                             div()
                                 .flex_1()
                                 .min_w_0()
-                                .small()
+                                .meta()
                                 .truncate()
                                 .text_color(if agent.state == AgentState::Done {
                                     muted
@@ -209,6 +233,13 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
                                 })
                                 .child(status),
                         )
+                        .children(progress.as_ref().filter(|p| p.steps > 0).map(|p| {
+                            div()
+                                .meta()
+                                .flex_none()
+                                .text_color(muted)
+                                .child(widgets::count(p.steps, "step"))
+                        }))
                         .child(
                             div()
                                 .meta()
@@ -217,13 +248,13 @@ fn figure(id: &str, agent: &Agent, cx: &mut Context<Workspace>) -> Stateful<Div>
                                 .child(clock(agent.run_time())),
                         ),
                 )
-                .child(
+                .children(progress.and_then(|p| p.said).map(|said| {
                     div()
                         .meta()
                         .text_color(muted)
                         .truncate()
-                        .child(agent.task.clone()),
-                ),
+                        .child(format!("\u{201C}{said}\u{201D}"))
+                })),
         )
         .child(widgets::icon(IconName::ChevronRight, muted))
         .on_click(cx.listener(move |ws, _, window, cx| {

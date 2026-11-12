@@ -3,6 +3,7 @@
 //! are and the tools of that place.
 
 pub mod history;
+mod sky;
 
 use gpui_kit::{
     component::{
@@ -21,6 +22,8 @@ use crate::{
 };
 
 pub const HEIGHT: f32 = crate::ui::size::BAR;
+/// The header in quiet mode.
+const QUIET_HEIGHT: f32 = crate::ui::size::CONTROL;
 /// The narrowest the navigation part gets, with both side columns hidden.
 const NAV_MIN: f32 = 156.;
 
@@ -34,12 +37,17 @@ pub fn render(
     let (border, muted) = (theme.border, theme.muted_foreground);
     let chat = ws.center == Center::Chat && ws.shown.is_some();
     let menu_x = window.viewport_size().width - px(220.);
+    let glow = sky::glow(ws);
+    let star = sky::star(ws, cx);
+    // Quiet thins the header to a line that only names the chat.
+    let height = if ws.quiet { QUIET_HEIGHT } else { HEIGHT };
     div()
-        .h(px(HEIGHT))
+        .h(px(height))
         .flex_none()
         .flex()
         .flex_row()
         .items_center()
+        .when_some(glow, |bar, glow| bar.bg(glow))
         .child(nav(ws, nav_width, border, cx))
         .child(
             div()
@@ -53,6 +61,7 @@ pub fn render(
                 .pl_4()
                 .pr_3()
                 .child(title(ws, muted))
+                .children(star)
                 .child(div().flex_1())
                 .when(chat, |bar| {
                     bar.child(

@@ -16,7 +16,7 @@ mod model_menu;
 mod navigator;
 pub mod queue;
 mod ring;
-mod timing;
+pub mod timing;
 pub mod transcript;
 mod working;
 
@@ -68,6 +68,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             cx.notify();
         }))
         .children(notice)
+        .children(crate::pages::schedules::report::render(ws, cx))
         .child(
             div()
                 .relative()

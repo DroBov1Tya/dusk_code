@@ -6,6 +6,16 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- Desktop: while a turn runs, the header carries a faint sky that drifts from violet to a
+  sunset orange as the turn goes on, and a star lights up once when it ends. Each turn
+  says what it spent, tokens and cost, marked when it was more than twice the chat's
+  usual. A moon on the rail turns on quiet mode: only the chat and its box, the header
+  thinned to a line. A "while you were away" card lists the scheduled tasks that ran
+  since the last look, each with a way to its chat. The subagents window leads with each
+  agent's task, then what it does now in words, its steps and time, and its last remark.
+
 ### Changed
 
 - A scheduled task can name its model; the desktop editor's lists keep their clicks

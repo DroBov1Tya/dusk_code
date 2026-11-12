@@ -128,6 +128,25 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             })),
         )
         .child(div().flex_1())
+        .child(
+            item(
+                "rail-quiet",
+                IconName::Moon,
+                if ws.quiet {
+                    "Leave quiet: show the columns again"
+                } else {
+                    "Quiet: only the chat"
+                }
+                .into(),
+                ws.quiet,
+                cx,
+            )
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.quiet = !ws.quiet;
+                ws.flyout = None;
+                cx.notify();
+            })),
+        )
         .children(restart)
         .child(
             item(
