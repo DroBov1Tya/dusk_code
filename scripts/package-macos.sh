@@ -2,8 +2,12 @@
 # Packs the desktop client as Duskcode.app inside a disk image, for a release.
 #   sh scripts/package-macos.sh <duskcode-gui binary> <version> <out dir>
 # The app carries the resources of its version in Contents/Resources, so it runs on a
-# Mac where nothing else was installed. It is signed ad hoc: without a Developer ID
-# and notarization, macOS asks once to allow it in Privacy & Security.
+# Mac where nothing else was installed. With DUSK_SIGN_IDENTITY set (the name of a code
+# signing certificate in a keychain, see scripts/make-signing-identity.sh) every release is
+# signed by the same certificate, so macOS keeps the permissions and keychain access the
+# user gave an earlier version. Without it the app is signed ad hoc, and macOS treats each
+# version as a new program. Neither is notarized: the first start asks once in Privacy &
+# Security.
 set -eu
 
 fail() { printf 'package-macos: %s\n' "$1" >&2; exit 1; }
@@ -58,9 +62,15 @@ for size in 16 32 128 256 512; do
 done
 iconutil -c icns "$set_dir" -o "$app/Contents/Resources/icon.icns"
 
-# Apple silicon runs only signed code; ad hoc signs the whole bundle as one.
-codesign --force --deep --sign - "$app"
+# Apple silicon runs only signed code. The designated requirement names the certificate,
+# not this build's hash, so the next version signed by it is the same program to macOS.
+identity="${DUSK_SIGN_IDENTITY:--}"
+if [ "$identity" = "-" ]; then
+  printf 'package-macos: DUSK_SIGN_IDENTITY is not set; signing ad hoc\n' >&2
+fi
+codesign --force --deep --timestamp=none --sign "$identity" "$app"
 codesign --verify --deep --strict "$app"
+codesign --display --requirements - "$app" 2>&1 | grep designated >&2 || true
 
 # Dragging the app onto the Applications link installs it.
 ln -s /Applications "$work/image/Applications"

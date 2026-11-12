@@ -15,6 +15,12 @@ testing.
 
 ### Changed
 
+- Updates page installs a newer desktop app in place and offers the restart into it,
+  instead of opening the release page. Releases are signed by one certificate when the
+  release secrets hold it, so macOS keeps permissions and keychain access across
+  versions; an app signed that way takes only an update signed by the same certificate.
+- Web client builds install `wasm-bindgen-cli` from source, so Linux runners with an
+  older glibc build it too.
 - Desktop layout: a thin rail at the left edge holds the places of the app, the sidebar
   holds only projects and chats, a 52 px bar runs across the top to the right edge with
   the side panel under it, both side columns slide open and closed, and the side

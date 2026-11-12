@@ -122,31 +122,63 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
         ],
         cx,
     ));
-    if let Some(progress) = &ws.status.install {
+    if let Some(tag) = ws.update_ready.clone() {
+        body = body.child(
+            div().flex().items_center().gap_3().child(
+                Button::new("update-restart")
+                    .primary()
+                    .icon(IconName::RefreshCw)
+                    .label(format!("Restart into {tag}"))
+                    .on_click(cx.listener(|_, _, _, cx| cx.restart())),
+            ),
+        );
+    } else if let Some(progress) = &ws.status.install {
         let stage = match progress.stage {
             InstallStage::Preparing => "Preparing",
             InstallStage::Downloading => "Downloading",
-            InstallStage::Verifying => "Verifying",
+            InstallStage::Verifying => "Checking the download",
             InstallStage::Installing => "Installing",
             InstallStage::Complete => "Installed; restart to use it",
         };
-        body = body.child(div().px_1().small().text_color(muted).child(stage));
+        body = body.child(
+            div()
+                .flex()
+                .items_center()
+                .gap_2()
+                .px_1()
+                .child(crate::ui::spinner(cx))
+                .child(div().small().text_color(muted).child(stage)),
+        );
+    } else if update.newer && dusk_core::app::running_bundle().is_some() {
+        // The app replaces itself: the release's app is checked against its digest and
+        // its signature, put in place beside this one, and taken on the next start.
+        let install = tag.clone();
+        body = body.child(
+            div().flex().child(
+                Button::new("update-install")
+                    .primary()
+                    .icon(IconName::ArrowDown)
+                    .label(format!("Install {tag}"))
+                    .disabled(!update.ready)
+                    .tooltip(if update.ready {
+                        "Downloads it and puts it in place; restart to use it"
+                    } else {
+                        "Its build is not ready yet"
+                    })
+                    .on_click(
+                        cx.listener(move |ws, _, _, cx| ws.install_update_now(install.clone(), cx)),
+                    ),
+            ),
+        );
     } else if update.newer {
-        // The app is replaced as a whole, from the release's disk image or installer:
-        // the in-place update carries the terminal client only.
+        // Not run from the app bundle, as in development: the release page has the app.
         let page = format!("{RELEASES}{tag}");
         body = body.child(
             div().flex().child(
                 Button::new("update-download")
                     .primary()
-                    .icon(IconName::ArrowDown)
+                    .icon(IconName::ExternalLink)
                     .label(format!("Get {tag}"))
-                    .disabled(!update.ready)
-                    .tooltip(if update.ready {
-                        "Opens the release; its .dmg holds the new app"
-                    } else {
-                        "Its build is not ready yet"
-                    })
                     .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&page))),
             ),
         );
@@ -220,6 +252,24 @@ impl Workspace {
 }
 
 impl Workspace {
+    /// Installs the release now, on the user's word; the rail and this page then offer
+    /// the restart into it.
+    fn install_update_now(&mut self, tag: String, cx: &mut Context<Self>) {
+        self.update_tried = Some(tag.clone());
+        let asked = tag.clone();
+        self.core.call(
+            cx,
+            move |client| async move { client.install_update(&asked).await },
+            move |ws, result, cx| {
+                match result {
+                    Ok(_) => ws.update_ready = Some(tag),
+                    Err(error) => ws.fail(error, cx),
+                }
+                cx.notify();
+            },
+        );
+    }
+
     /// Fetches the release the core found, once, when the app can replace itself: the new
     /// copy waits in place and a button in the sidebar restarts into it.
     pub fn fetch_update(&mut self, cx: &mut Context<Self>) {
