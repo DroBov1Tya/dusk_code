@@ -18,6 +18,9 @@ pub struct Schedule {
     pub prompt: String,
     pub repeat: Repeat,
     pub enabled: bool,
+    /// `provider/model` the task runs with; `None` takes the chosen one.
+    #[serde(default)]
+    pub model: Option<String>,
     /// Unix milliseconds; `None` once it will not run again.
     pub next_run_at: Option<i64>,
     pub last_run_at: Option<i64>,
@@ -34,6 +37,8 @@ pub struct ScheduleDraft {
     pub prompt: String,
     pub repeat: Repeat,
     pub enabled: bool,
+    #[serde(default)]
+    pub model: Option<String>,
 }
 
 /// A time of day on this machine's clock.

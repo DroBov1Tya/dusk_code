@@ -59,6 +59,19 @@ impl Runtime {
         self.launcher.new_thread(source, cwd).await
     }
 
+    /// A new thread that asks `model`, as `provider/model`, instead of the chosen one.
+    pub async fn new_thread_with_model(
+        &self,
+        source: &str,
+        cwd: &Path,
+        model: &str,
+    ) -> Result<ThreadHandle> {
+        let config = self.config().current();
+        let choice = crate::runtime::model_choice::Choice::pick(&config, Some(model)).await?;
+        let model = std::sync::Arc::new(crate::runtime::model_choice::ModelChoice::new(choice));
+        self.launcher.new_thread_on(source, cwd, Some(model)).await
+    }
+
     /// A new chat thread that starts from a /fork summary of another, after its prompt.
     pub async fn fork_thread(
         &self,

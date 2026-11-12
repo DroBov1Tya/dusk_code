@@ -57,12 +57,13 @@ impl State {
         let repeat = serde_json::to_string(&schedule.repeat)?;
         sqlx::query(
             "INSERT INTO schedules (id, project_id, prompt, repeat, enabled, next_run_at,
-                 last_run_at, last_thread_id, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 last_run_at, last_thread_id, created_at, model)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT (id) DO UPDATE SET project_id = excluded.project_id,
                  prompt = excluded.prompt, repeat = excluded.repeat,
                  enabled = excluded.enabled, next_run_at = excluded.next_run_at,
-                 last_run_at = excluded.last_run_at, last_thread_id = excluded.last_thread_id",
+                 last_run_at = excluded.last_run_at, last_thread_id = excluded.last_thread_id,
+                 model = excluded.model",
         )
         .bind(&schedule.id)
         .bind(&schedule.project_id)
@@ -73,6 +74,7 @@ impl State {
         .bind(schedule.last_run_at)
         .bind(&schedule.last_thread_id)
         .bind(timestamp_ms()?)
+        .bind(&schedule.model)
         .execute(&self.pool)
         .await
         .context("save the scheduled task; does its project exist?")?;
@@ -100,5 +102,6 @@ fn schedule_from_row(row: SqliteRow) -> Result<Schedule, sqlx::Error> {
         next_run_at: row.try_get("next_run_at")?,
         last_run_at: row.try_get("last_run_at")?,
         last_thread_id: row.try_get("last_thread_id")?,
+        model: row.try_get("model")?,
     })
 }

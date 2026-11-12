@@ -61,12 +61,35 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .enumerate()
     {
         let items = &chat.items[start..end];
+        let open = end == chat.items.len() && chat.working;
+        // Only the answer stays in sight: the last thing said once the turn is over.
+        // Everything before it in the turn, steps, thoughts, remarks and pictures,
+        // folds into one row; the user's own words and errors stand apart.
+        let answer = (!open)
+            .then(|| {
+                items.iter().rposition(
+                    |item| matches!(item, Item::Assistant { text, .. } if !text.trim().is_empty()),
+                )
+            })
+            .flatten()
+            .map(|offset| start + offset);
+        let folds = |index: usize, item: &Item| {
+            Some(index) != answer
+                && !matches!(
+                    item,
+                    Item::User {
+                        sequence: Some(_),
+                        ..
+                    } | Item::Error(_)
+                )
+                && !matches!(item, Item::Assistant { text, reasoning } if text.is_empty() && reasoning.trim().is_empty())
+        };
         let activity = if items.iter().any(primary_activity) {
-            let first = items.iter().position(activity_item);
-            let last = items.iter().rposition(activity_item);
-            first
-                .zip(last)
-                .map(|(first, last)| (start + first, start + last))
+            let first = (start..end).find(|&index| folds(index, &chat.items[index]));
+            let last = (start..end)
+                .rev()
+                .find(|&index| folds(index, &chat.items[index]));
+            first.zip(last)
         } else {
             None
         };
@@ -84,14 +107,10 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             match item {
                 Item::Tool(_) => continue,
                 Item::Assistant { text, .. } if text.is_empty() => continue,
-                // What the agent said on its way goes into the turn's row with its steps;
-                // the answer after the last step stays in sight.
-                Item::Assistant { .. }
-                    if activity.is_some_and(|(first, last)| (first..=last).contains(&index)) =>
+                _ if activity.is_some_and(|(first, last)| {
+                    (first..=last).contains(&index) && folds(index, item)
+                }) =>
                 {
-                    continue;
-                }
-                Item::Agent { .. } | Item::User { sequence: None, .. } if activity.is_some() => {
                     continue;
                 }
                 Item::User {
@@ -155,10 +174,6 @@ fn primary_activity(item: &Item) -> bool {
         Item::Assistant { reasoning, .. } => !reasoning.trim().is_empty(),
         _ => false,
     }
-}
-
-fn activity_item(item: &Item) -> bool {
-    primary_activity(item) || matches!(item, Item::Agent { .. } | Item::User { sequence: None, .. })
 }
 
 /// The steps a run shows: a picture card stands for the step that showed it.
@@ -458,12 +473,7 @@ fn turn_activity(
         }
         _ => latest
             .map_or("Thinking", |tool| {
-                let summary = tool.detail.trim();
-                if summary.is_empty() {
-                    tool.name.as_str()
-                } else {
-                    summary
-                }
+                dusk_protocol::tools::phrase(&tool.name, &tool.call_id)
             })
             .to_owned(),
     };
@@ -525,6 +535,14 @@ fn turn_activity(
                 Item::Agent { from, text } => {
                     detail.child(agent_report(ws, shown, index, from, text, cx))
                 }
+                Item::Image(image) => detail.child(picture(&ws.status.artifacts_dir, image, cx)),
+                Item::Notice(text) => detail.child(
+                    div()
+                        .px_2()
+                        .small()
+                        .text_color(step_muted(cx))
+                        .child(text.clone()),
+                ),
                 Item::User {
                     text,
                     sequence: None,
@@ -704,11 +722,14 @@ fn step(
         .mono_font
         .clone()
         .unwrap_or_else(|| "Menlo".to_owned());
-    let detail = tool.detail.trim();
-    let summary = if detail.is_empty() {
-        tool.name.replace('_', " ")
+    let detail = tool.detail.trim().to_owned();
+    // Said as a person would; the tool's own name shows once the step is open.
+    let summary = dusk_protocol::tools::phrase(&tool.name, &tool.call_id);
+    // Work handed to another agent is the turn's big move: it carries the accent.
+    let lead = if dusk_protocol::tools::is_agent_tool(&tool.name) {
+        theme.primary
     } else {
-        detail.to_owned()
+        theme.foreground
     };
     let button = disclosure(
         SharedString::from(format!("step-{shown}-{index}")),
@@ -718,22 +739,26 @@ fn step(
     .flex_1()
     .aria_label(format!("{summary}, {}, {status}", tool.name))
     .child(widgets::icon(icon, color))
+    .child(div().flex_none().text_color(lead).child(summary))
     .child(
         div()
             .flex_1()
             .min_w_0()
             .truncate()
-            .text_color(theme.foreground)
-            .child(summary),
-    )
-    .child(
-        div()
-            .max_w(relative(0.30))
-            .truncate()
             .meta()
-            .font_family(mono.clone())
-            .child(tool.name.clone()),
+            .text_color(muted)
+            .child(detail),
     )
+    .when(open, |row| {
+        row.child(
+            div()
+                .max_w(relative(0.30))
+                .truncate()
+                .meta()
+                .font_family(mono.clone())
+                .child(tool.name.clone()),
+        )
+    })
     .when(tool.state == ToolState::Failed, |row| {
         row.child(div().meta().text_color(color).child(status))
     })

@@ -285,6 +285,9 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
                 Item::Agent { from, text } => view! {
                     <div class="step-said"><div class="muted">{format!("From {from}")}</div><Markdown text=text /></div>
                 }.into_any(),
+                Item::Image(shown) => view! { <ImageCard shown /> }.into_any(),
+                Item::Audio(shown) => view! { <AudioCard shown /> }.into_any(),
+                Item::Notice(text) => view! { <div class="step-said muted">{text}</div> }.into_any(),
                 _ => ().into_any(),
             }).collect_view()}
         </details>
@@ -325,9 +328,12 @@ fn ToolStep(tool: Tool) -> impl IntoView {
     view! {
         <details class=format!("tool {state_class}")>
             <summary>
-                <span class="tool-name">{tool.name.clone()}</span>
+                <span class=if dusk_protocol::tools::is_agent_tool(&tool.name) { "tool-name agent" } else { "tool-name" }>
+                    {dusk_protocol::tools::phrase(&tool.name, &tool.call_id)}
+                </span>
                 <span class="muted">{tool.detail.clone()}</span>
             </summary>
+            <div class="muted mono">{tool.name.clone()}</div>
             <pre class="tool-args">{tool.arguments.clone()}</pre>
             {(!tool.output.is_empty()).then(|| view! { <pre class="tool-out">{tool.output.clone()}</pre> })}
         </details>

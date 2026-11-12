@@ -6,7 +6,7 @@ pub mod history;
 
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, IconName,
+        ActiveTheme, Disableable, Icon, IconName,
         button::{Button, ButtonVariants},
         tooltip::Tooltip,
     },
@@ -56,8 +56,12 @@ pub fn render(
                 .child(div().flex_1())
                 .when(chat, |bar| {
                     bar.child(
-                        tool("top-review", IconName::Inspector, "Review the changes")
-                            .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
+                        tool(
+                            "top-review",
+                            gpui_kit::assets::IconName::GitCompareArrows,
+                            "Review the changes",
+                        )
+                        .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
                     )
                 })
                 .child(
@@ -153,6 +157,36 @@ fn nav(ws: &Workspace, width: Pixels, border: Hsla, cx: &mut Context<Workspace>)
                 .disabled(!ws.history.can_go_forward())
                 .on_click(cx.listener(|ws, _, _, cx| ws.go(false, cx))),
         )
+        // The name fills the room left over the sidebar; with the sidebar hidden there
+        // is none, and it steps aside.
+        .when(width >= px(NAV_MIN + 110.), |nav| {
+            nav.child(div().flex_1())
+                .child(wordmark(cx))
+                .child(div().w_4())
+        })
+}
+
+/// "Dusk" from violet to a sunset orange, one hue per letter, and "code" plain.
+fn wordmark(cx: &App) -> Div {
+    const DUSK: [(f32, f32, f32); 4] = [
+        (268., 0.72, 0.66),
+        (300., 0.62, 0.64),
+        (338., 0.74, 0.64),
+        (24., 0.92, 0.60),
+    ];
+    let mut word = div()
+        .flex()
+        .flex_row()
+        .body()
+        .font_weight(FontWeight::SEMIBOLD);
+    for (letter, (hue, saturation, lightness)) in "Dusk".chars().zip(DUSK) {
+        word = word.child(
+            div()
+                .text_color(hsla(hue / 360., saturation, lightness, 1.))
+                .child(letter.to_string()),
+        );
+    }
+    word.child(div().text_color(cx.theme().foreground).child("code"))
 }
 
 /// Where you are: the page, or the chat under a folder icon that names its project on
@@ -198,6 +232,6 @@ fn title(ws: &Workspace, muted: Hsla) -> Stateful<Div> {
 }
 
 /// A tool of the bar: an icon in a 32 px square.
-fn tool(id: &'static str, icon: IconName, tip: &'static str) -> Button {
-    Button::new(id).ghost().icon(icon).tooltip(tip)
+fn tool(id: &'static str, icon: impl Into<Icon>, tip: &'static str) -> Button {
+    Button::new(id).ghost().icon(icon.into()).tooltip(tip)
 }

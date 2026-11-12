@@ -91,9 +91,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 ws.center == Center::Schedules,
                 cx,
             )
+            // A preview only stands in for a sidebar that is not there.
             .map(|item| {
                 let shown = ws.center == Center::Schedules;
-                with_flyout(item, Flyout::Schedules, !shown, cx)
+                with_flyout(item, Flyout::Schedules, ws.left_hidden && !shown, cx)
             })
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.flyout = None;

@@ -15,6 +15,15 @@ pub fn check(draft: &ScheduleDraft, now_ms: i64) -> Result<()> {
         prompt.chars().count() <= MAX_PROMPT_CHARS,
         "the prompt is longer than {MAX_PROMPT_CHARS} characters"
     );
+    if let Some(model) = &draft.model {
+        let named = model
+            .split_once('/')
+            .is_some_and(|(provider, id)| !provider.is_empty() && !id.trim().is_empty());
+        ensure!(
+            named && model.len() <= 200 && !model.chars().any(char::is_control),
+            "write the model as provider/model"
+        );
+    }
     match draft.repeat {
         Repeat::Once { at } => ensure!(at > now_ms, "the time has already passed"),
         Repeat::Interval { minutes } => ensure!(
@@ -96,6 +105,7 @@ mod tests {
             prompt: "check the build".into(),
             repeat,
             enabled: true,
+            model: None,
         }
     }
 
@@ -160,6 +170,10 @@ mod tests {
             },
             ScheduleDraft {
                 prompt: "x".repeat(MAX_PROMPT_CHARS + 1),
+                ..draft(Repeat::Daily { at: clock(9, 0) })
+            },
+            ScheduleDraft {
+                model: Some("no-slash".into()),
                 ..draft(Repeat::Daily { at: clock(9, 0) })
             },
         ];

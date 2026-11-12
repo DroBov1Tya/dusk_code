@@ -40,7 +40,7 @@ impl Default for Prefs {
         Self {
             theme: palettes::DEFAULT.to_owned(),
             font: None,
-            font_size: 15.,
+            font_size: 16.,
             mono_font: None,
             mono_size: 13.,
             pinned: Vec::new(),
@@ -158,6 +158,7 @@ fn highlight(p: &Palette) -> Value {
 fn config(p: &Palette, prefs: &Prefs) -> Value {
     let hairline = format!("{}14", p.foreground);
     let soft = format!("{}1f", p.accent);
+    let chosen = format!("{}26", p.accent);
     // A pressed or hovered primary is the accent a little sunk into the page, so the
     // button answers the pointer without a second hue.
     let (primary_hover, primary_active) = (format!("{}e0", p.accent), format!("{}c4", p.accent));
@@ -189,8 +190,10 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         ("popover.background", p.surface),
         ("popover.foreground", p.foreground),
         ("list.background", p.panel),
-        ("list.hover.background", p.surface),
-        ("list.active.background", p.raised),
+        // A hovered row is a step up from any surface it stands on, a menu's included; the
+        // chosen one carries a tint of the accent.
+        ("list.hover.background", p.raised),
+        ("list.active.background", &chosen),
         ("list.active.border", &hairline),
         ("sidebar.background", p.panel),
         ("sidebar.foreground", p.foreground),

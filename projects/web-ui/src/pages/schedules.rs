@@ -26,6 +26,8 @@ struct Form {
     date: String,
     time: String,
     enabled: bool,
+    /// `provider/model`, or empty for the chosen one.
+    model: String,
 }
 
 impl Form {
@@ -41,6 +43,7 @@ impl Form {
             date: String::new(),
             time: "09:00".into(),
             enabled: true,
+            model: String::new(),
         }
     }
 
@@ -49,6 +52,7 @@ impl Form {
         form.id = Some(task.id.clone());
         form.prompt = task.prompt.clone();
         form.enabled = task.enabled;
+        form.model = task.model.clone().unwrap_or_default();
         let mut set = |kind: &str, at: Clock| {
             form.kind = kind.into();
             form.time = at.to_string();
@@ -101,6 +105,7 @@ impl Form {
             prompt: self.prompt.clone(),
             repeat,
             enabled: self.enabled,
+            model: (!self.model.trim().is_empty()).then(|| self.model.trim().to_owned()),
         })
     }
 }

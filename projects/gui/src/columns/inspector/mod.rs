@@ -26,7 +26,7 @@ use crate::{
     workspace::{Center, Right, Workspace},
 };
 
-pub const WIDTH: f32 = 340.;
+pub const WIDTH: f32 = 300.;
 
 const MODULES: &[(Right, &str)] = &[
     (Right::Arbiter, "Arbiter"),

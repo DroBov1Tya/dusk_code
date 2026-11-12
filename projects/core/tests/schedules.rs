@@ -16,6 +16,7 @@ fn draft(project_id: &str) -> ScheduleDraft {
             at: Clock { hour: 9, minute: 0 },
         },
         enabled: true,
+        model: None,
     }
 }
 
