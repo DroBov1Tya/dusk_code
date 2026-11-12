@@ -6,58 +6,76 @@ use dusk_protocol::{
 };
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Sizable,
+        ActiveTheme, Disableable, IconName,
         button::{Button, ButtonVariants},
     },
     *,
 };
 
-use super::{SettingsPage, line};
-use crate::{ui::widgets, workspace::Workspace};
+use super::{SettingsPage, line, list};
+use crate::{
+    ui::{Type, controls, widgets},
+    workspace::Workspace,
+};
 
 const RELEASES: &str = "https://github.com/DroBov1Tya/dusk_code/releases/tag/";
 
 pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
-    let mut body = div().flex().flex_col();
+    let body = div().flex().flex_col().gap_6();
     if page == SettingsPage::Usage {
         let Some(report) = &ws.system else {
             return body.child(widgets::muted("Measuring...", cx).px_0());
         };
         let mb = |bytes: u64| format!("{:.1} MB", bytes as f64 / 1_048_576.);
+        let mut tiles = div().flex().flex_row().flex_wrap().gap_3();
         if let Some(process) = &report.process {
-            body = body
-                .child(
-                    line(
-                        "Memory",
-                        "Resident memory of this window and the core inside it",
-                        cx,
-                    )
-                    .child(mb(process.resident_bytes)),
-                )
-                .child(
-                    line("CPU", "Of one core", cx).child(format!("{:.1}%", process.cpu_percent)),
-                );
-        }
-        return body
-            .child(
-                line("Database", "Chats and their records", cx)
-                    .child(mb(report.database_bytes + report.wal_bytes)),
-            )
-            .child(line("Pictures", "Kept for image cards", cx).child(mb(report.artifacts_bytes)))
-            .child(line("Logs", "", cx).child(mb(report.logs_bytes)))
-            .child(
-                line(
-                    "Chats",
-                    &widgets::count(report.messages as usize, "message"),
+            tiles = tiles
+                .child(controls::stat(
+                    "Memory",
+                    mb(process.resident_bytes),
+                    "This window and its core",
                     cx,
-                )
-                .child(report.threads.to_string()),
+                ))
+                .child(controls::stat(
+                    "CPU",
+                    format!("{:.1}%", process.cpu_percent),
+                    "Of one core",
+                    cx,
+                ));
+        }
+        tiles = tiles.child(controls::stat(
+            "Chats",
+            report.threads.to_string(),
+            &widgets::count(report.messages as usize, "message"),
+            cx,
+        ));
+        let disk = list(
+            [
+                line("Database", "Chats and their records", cx)
+                    .child(figure(mb(report.database_bytes + report.wal_bytes))),
+                line("Pictures", "Kept for image cards", cx)
+                    .child(figure(mb(report.artifacts_bytes))),
+                line("Logs", "Written on this machine only", cx)
+                    .child(figure(mb(report.logs_bytes))),
+            ],
+            cx,
+        );
+        return body
+            .child(tiles)
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(widgets::caption("On disk", cx).px_1().pt_0())
+                    .child(disk),
             )
             .child(
-                div().pt_3().child(
+                div().flex().child(
                     Button::new("usage-refresh")
-                        .small()
+                        .outline()
+                        .icon(IconName::RefreshCw)
                         .label("Measure again")
                         .on_click(
                             cx.listener(|ws, _, _, cx| ws.load_page(SettingsPage::Usage, cx)),
@@ -71,20 +89,19 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
     let behind = update
         .commits_behind
         .map_or("unknown".to_owned(), |count| format!("{count} commits"));
-    body = body
-        .child(
+    let dev = update.channel == dusk_protocol::release::Channel::Dev;
+    let tag = update.latest.clone();
+    let notes = format!("{RELEASES}{tag}");
+    let mut body = body.child(list(
+        [
             line(
                 "This version",
                 &format!("{:?} channel", update.channel).to_lowercase(),
                 cx,
             )
-            .child(update.current.clone()),
-        )
-        .child(
-            line("Latest", &format!("{behind} ahead of this one"), cx).child(update.latest.clone()),
-        )
-        .child({
-            let dev = update.channel == dusk_protocol::release::Channel::Dev;
+            .child(figure(update.current.clone())),
+            line("Latest", &format!("{behind} ahead of this one"), cx)
+                .child(figure(update.latest.clone())),
             line(
                 "Dev builds",
                 "Every build of the main branch, before it is released",
@@ -93,21 +110,18 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
             .child(
                 gpui_kit::component::switch::Switch::new("update-dev")
                     .checked(dev)
-                    .small()
                     .on_click(cx.listener(|ws, on: &bool, _, cx| ws.set_channel(*on, cx))),
-            )
-        });
-    let tag = update.latest.clone();
-    let notes = format!("{RELEASES}{tag}");
-    body = body.child(
-        line("Changelog", "What the latest release brings", cx).child(
-            Button::new("changelog")
-                .ghost()
-                .small()
-                .label("Open")
-                .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&notes))),
-        ),
-    );
+            ),
+            line("Changelog", "What the latest release brings", cx).child(
+                Button::new("changelog")
+                    .outline()
+                    .icon(IconName::ExternalLink)
+                    .label("Open")
+                    .on_click(cx.listener(move |_, _, _, cx| cx.open_url(&notes))),
+            ),
+        ],
+        cx,
+    ));
     if let Some(progress) = &ws.status.install {
         let stage = match progress.stage {
             InstallStage::Preparing => "Preparing",
@@ -116,15 +130,16 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
             InstallStage::Installing => "Installing",
             InstallStage::Complete => "Installed; restart to use it",
         };
-        body = body.child(div().pt_3().text_sm().text_color(muted).child(stage));
+        body = body.child(div().px_1().small().text_color(muted).child(stage));
     } else if update.newer {
         // The app is replaced as a whole, from the release's disk image or installer:
         // the in-place update carries the terminal client only.
         let page = format!("{RELEASES}{tag}");
         body = body.child(
-            div().pt_3().child(
+            div().flex().child(
                 Button::new("update-download")
                     .primary()
+                    .icon(IconName::ArrowDown)
                     .label(format!("Get {tag}"))
                     .disabled(!update.ready)
                     .tooltip(if update.ready {
@@ -136,9 +151,14 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
             ),
         );
     } else {
-        body = body.child(widgets::muted("This is the newest version.", cx).px_0());
+        body = body.child(widgets::muted("This is the newest version.", cx).px_1());
     }
     body
+}
+
+/// A measured value at a row's right end, in the medium weight so it reads as the answer.
+fn figure(text: String) -> Div {
+    div().body().font_weight(FontWeight::MEDIUM).child(text)
 }
 
 impl Workspace {

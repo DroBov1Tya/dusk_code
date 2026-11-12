@@ -22,7 +22,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         let stop = (job.running && job.stoppable).then(|| {
             Button::new(SharedString::from(format!("stop-{id}")))
                 .danger()
-                .xsmall()
+                .small()
                 .label("Stop")
                 .on_click(cx.listener(move |ws, _, _, cx| ws.stop_job(&id, cx)))
         });

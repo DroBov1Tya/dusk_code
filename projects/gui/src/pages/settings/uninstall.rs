@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use anyhow::{Context as _, Result, ensure};
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Sizable,
+        ActiveTheme, Disableable, IconName,
         button::{Button, ButtonVariants},
         checkbox::Checkbox,
         input::{Input, InputState},
@@ -49,25 +49,27 @@ pub fn section(cx: &mut Context<Workspace>) -> Div {
     div()
         .flex()
         .flex_col()
-        .pt_6()
-        .child(widgets::caption("Remove duskcode", cx).px_0())
-        .child(
-            line(
+        .gap_2()
+        .pt_4()
+        .child(widgets::caption("Remove duskcode", cx).px_1().pt_0())
+        .child(super::list(
+            [line(
                 "Remove duskcode from this computer",
                 "The programs, settings, API keys and chats. You are asked several times.",
                 cx,
             )
             .child(
                 Button::new("uninstall-open")
-                    .small()
                     .danger()
+                    .icon(IconName::Delete)
                     .label("Remove...")
                     .on_click(cx.listener(|ws, _, window, cx| {
                         ws.modal = Some(Modal::Uninstall(Uninstall::new(window, cx)));
                         cx.notify();
                     })),
-            ),
-        )
+            )],
+            cx,
+        ))
 }
 
 pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {

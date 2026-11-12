@@ -155,6 +155,13 @@ fn highlight(p: &Palette) -> Value {
 fn config(p: &Palette, prefs: &Prefs) -> Value {
     let hairline = format!("{}14", p.foreground);
     let soft = format!("{}1f", p.accent);
+    // A pressed or hovered primary is the accent a little sunk into the page, so the
+    // button answers the pointer without a second hue.
+    let (primary_hover, primary_active) = (format!("{}e0", p.accent), format!("{}c4", p.accent));
+    let (danger_hover, danger_active) = (format!("{}e0", p.danger), format!("{}c4", p.danger));
+    // An off switch must still read as a control on every surface, so its track is the
+    // text color at low alpha rather than one of the surface steps.
+    let switch_off = format!("{}2e", p.foreground);
     let colors: Map<String, Value> = [
         ("background", p.background),
         ("foreground", p.foreground),
@@ -170,8 +177,8 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         // A calm primary: the parchment or ink of the ramp, the accent stays rare.
         ("primary.background", p.accent),
         ("primary.foreground", p.on_accent),
-        ("primary.hover.background", p.accent),
-        ("primary.active.background", p.accent),
+        ("primary.hover.background", &primary_hover),
+        ("primary.active.background", &primary_active),
         ("secondary.background", p.raised),
         ("secondary.foreground", p.foreground),
         ("secondary.hover.background", p.raised),
@@ -197,13 +204,16 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         ("title_bar.background", p.panel),
         ("title_bar.border", &hairline),
         ("scrollbar.background", "#00000000"),
-        ("switch.background", p.raised),
+        ("switch.background", &switch_off),
+        ("switch.thumb.background", "#ffffff"),
         ("success.background", p.success),
         ("success.foreground", p.on_accent),
         ("warning.background", p.warning),
         ("warning.foreground", p.on_accent),
         ("danger.background", p.danger),
         ("danger.foreground", p.on_accent),
+        ("danger.hover.background", &danger_hover),
+        ("danger.active.background", &danger_active),
         ("info.background", p.secondary),
         ("info.foreground", p.on_accent),
         ("link.foreground", p.accent),

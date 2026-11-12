@@ -48,7 +48,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .child(
                 Button::new("git-refresh")
                     .ghost()
-                    .xsmall()
+                    .small()
                     .icon(IconName::RefreshCw)
                     .tooltip("Read the repository again")
                     .on_click(cx.listener(|ws, _, _, cx| ws.load_git(cx))),

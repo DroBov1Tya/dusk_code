@@ -202,7 +202,6 @@ fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
     Button::new("dictate")
         .rounded(ButtonRounded::Size(px(999.)))
         .icon(IconName::Mic)
-        .xsmall()
         .when(on, |button| button.danger())
         .when(!on, |button| button.ghost())
         .tooltip(if on { "Stop dictating" } else { "Dictate" })
@@ -235,7 +234,7 @@ fn strip(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
             .unwrap_or_else(|| path.display().to_string());
         let remove = Button::new(("unattach", index))
             .ghost()
-            .xsmall()
+            .small()
             .icon(IconName::Close)
             .tooltip("Remove the attachment")
             .on_click(cx.listener(move |ws, _, _, cx| {
@@ -297,7 +296,7 @@ fn strip(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
                 .child(
                     Button::new(("unpaste", index))
                         .ghost()
-                        .xsmall()
+                        .small()
                         .icon(IconName::Close)
                         .tooltip("Remove the pasted text")
                         .on_click(cx.listener(move |ws, _, _, cx| {

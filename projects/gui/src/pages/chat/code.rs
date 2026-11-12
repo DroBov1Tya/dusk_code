@@ -38,7 +38,7 @@ pub fn actions(block: &CodeBlock, _: &mut Window, _: &mut App) -> Div {
         let text = code.clone();
         Button::new("copy")
             .ghost()
-            .xsmall()
+            .small()
             .icon(IconName::Copy)
             .tooltip("Copy")
             .on_click(move |_, window, cx| {
@@ -48,7 +48,7 @@ pub fn actions(block: &CodeBlock, _: &mut Window, _: &mut App) -> Div {
     let run = shell.then(|| {
         Button::new("run")
             .ghost()
-            .xsmall()
+            .small()
             .icon(IconName::Play)
             .tooltip("Run in the chat's folder")
             .on_click(move |_, window, cx| {

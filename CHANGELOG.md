@@ -8,6 +8,10 @@ testing.
 
 ### Changed
 
+- Desktop and web look: a deeper Dusk palette, settings grouped on cards as macOS lists
+  them, controls at least 32 px (steppers, switches, buttons), the web address in a
+  copy field that never leaves its card, System usage as tiles, and clearer composer
+  controls with menu carets and the model's name.
 - Desktop chat groups each turn's tool calls and reasoning under a collapsed row labeled
   with the latest action. Assistant messages and prompts stay visible.
 - The composer has a clearer message history button, and the Subagents panel fits

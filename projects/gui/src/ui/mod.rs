@@ -10,6 +10,7 @@
 //! - One accent (selection, focus, the primary action) and one signal (work going on).
 //! - Motion answers a person's action: a menu opens in 140 ms, a row leaves in 220 ms.
 
+pub mod controls;
 pub mod theme;
 pub mod widgets;
 

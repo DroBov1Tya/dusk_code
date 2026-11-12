@@ -205,7 +205,7 @@ impl Workspace {
                         tools = tools.child(
                             Button::new(SharedString::from(format!("copy-{key}")))
                                 .ghost()
-                                .xsmall()
+                                .small()
                                 .icon(IconName::Copy)
                                 .tooltip("Copy the message")
                                 .on_click(cx.listener(move |_, _, _, cx| {
@@ -218,7 +218,7 @@ impl Workspace {
                             tools = tools.child(
                                 Button::new(SharedString::from(format!("rollback-{key}")))
                                     .ghost()
-                                    .xsmall()
+                                    .small()
                                     .icon(IconName::Undo2)
                                     .tooltip("Go back to this message")
                                     .on_click(cx.listener(move |ws, _, _, cx| {
@@ -274,7 +274,7 @@ impl Workspace {
                                     .child(
                                         Button::new(SharedString::from(format!("copy-{key}")))
                                             .ghost()
-                                            .xsmall()
+                                            .small()
                                             .icon(IconName::Copy)
                                             .tooltip("Copy the answer")
                                             .on_click(cx.listener(move |_, _, _, cx| {
@@ -286,7 +286,7 @@ impl Workspace {
                                     .child(
                                         Button::new(SharedString::from(format!("listen-{key}")))
                                             .ghost()
-                                            .xsmall()
+                                            .small()
                                             .icon(if listening {
                                                 IconName::Square
                                             } else {
@@ -747,7 +747,7 @@ fn background_button(
     let (thread_id, call_id) = (shown.to_owned(), tool.call_id.clone());
     Button::new(SharedString::from(format!("background-{shown}-{index}")))
         .ghost()
-        .xsmall()
+        .small()
         .label("To background")
         .tooltip("The agent goes on; the result comes when it ends")
         .on_click(cx.listener(move |ws, _, _, cx| {

@@ -8,7 +8,7 @@ use dusk_protocol::{
 };
 use gpui_kit::{
     component::{
-        ActiveTheme, Colorize, IconName, Sizable,
+        ActiveTheme, Colorize, IconName,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -66,8 +66,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(
                     Button::new("mode")
                         .ghost()
-                        .small()
                         .label(format!("{} mode", ws.status.mode.to_lowercase()))
+                        .dropdown_caret(true)
                         .tooltip("Pick a mode; Tab walks them")
                         .on_click(cx.listener(|ws, _, _, cx| {
                             if ws.settings.is_none() {
@@ -85,8 +85,8 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .child(
                         Button::new("access")
                             .ghost()
-                            .small()
                             .label(super::access_menu::current(ws).name())
+                            .dropdown_caret(true)
                             .tooltip("What this chat's tools may do without asking")
                             .on_click(
                                 cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Access, cx)),
@@ -130,9 +130,9 @@ pub fn models(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> D
         .child(
             Button::new("pick-model")
                 .ghost()
-                .small()
                 .icon(IconName::Cpu)
-                .label("Models")
+                .label(short_model(&model))
+                .dropdown_caret(true)
                 .tooltip(format!("{} \u{00B7} {effort}", short_model(&model)))
                 .on_click(cx.listener(|ws, _, _, cx| ws.toggle_picker(Picker::Model, cx))),
         )

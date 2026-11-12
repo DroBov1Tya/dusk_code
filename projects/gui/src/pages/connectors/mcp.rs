@@ -85,7 +85,7 @@ pub fn render(
                 row.child(
                     Button::new(SharedString::from(format!("sign-in-{name}")))
                         .ghost()
-                        .xsmall()
+                        .small()
                         .label("Sign in")
                         .on_click(cx.listener(move |ws, _, _, cx| ws.sign_in_mcp(&sign_in, cx))),
                 )
@@ -93,7 +93,7 @@ pub fn render(
             .child(
                 Button::new(SharedString::from(format!("restart-{name}")))
                     .ghost()
-                    .xsmall()
+                    .small()
                     .icon(if busy {
                         IconName::LoaderCircle
                     } else {

@@ -164,6 +164,7 @@ fn act(
             };
             ws.center = Center::Settings;
             ws.load_settings(cx);
+            ws.load_page(ws.settings_page, cx);
         }
         "shelf" => {
             ws.shelf = match value {
