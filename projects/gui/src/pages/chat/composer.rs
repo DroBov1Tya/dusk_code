@@ -42,21 +42,6 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     let working = ws
         .shown_chat()
         .is_some_and(|chat| chat.working || chat.agents.values().any(|agent| agent.working));
-    let button = if working {
-        Button::new("stop")
-            .danger()
-            .rounded(ButtonRounded::Size(px(999.)))
-            .icon(IconName::Square)
-            .tooltip("Stop")
-            .on_click(cx.listener(|ws, _, _, cx| ws.cancel(cx)))
-    } else {
-        Button::new("send")
-            .primary()
-            .rounded(ButtonRounded::Size(px(999.)))
-            .icon(IconName::ArrowUp)
-            .tooltip("Send")
-            .on_click(cx.listener(|ws, _, window, cx| ws.send(window, cx)))
-    };
     let attach = ws.attach_open.then(|| attach_menu(ws.shown.is_some(), cx));
     let queued = super::queue::render(ws, cx);
     // Output speed while the agent writes, from the core's rate events.
@@ -73,8 +58,18 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .pb_1()
                 .child(format!("{rate} tok/s"))
         });
-    let navigator =
-        (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, window, cx));
+    // Each place around the box takes its parts from the layout map.
+    let layout = crate::ui::theme::prefs(cx).layout.clone();
+    let place =
+        |parts: &[crate::ui::layout::Part], window: &mut Window, cx: &mut Context<Workspace>| {
+            super::parts::region(ws, parts, window, cx)
+        };
+    let side_left = place(&layout.side_left, window, cx);
+    let side_right = place(&layout.side_right, window, cx);
+    let box_left = place(&layout.box_left, window, cx);
+    let box_right = place(&layout.box_right, window, cx);
+    let under_left = place(&layout.under_left, window, cx);
+    let under_right = place(&layout.under_right, window, cx);
     let mentions = mention_menu(ws, cx);
     let chips = strip(ws, cx);
     div()
@@ -93,7 +88,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .gap_2()
                 // The history on the left and the context on the right stand level with
                 // the box's lower row of buttons, as wide as each other.
-                .child(side().children(navigator))
+                .child(side().children(side_left))
                 .child(
                     div()
                         .flex_1()
@@ -128,22 +123,10 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                                         .gap_1()
                                         .px_2()
                                         .pb_2()
-                                        .child(
-                                            Button::new("attach")
-                                                .ghost()
-                                                .rounded(ButtonRounded::Size(px(999.)))
-                                                .icon(IconName::Plus)
-                                                .tooltip("Attach files or folders")
-                                                .on_click(cx.listener(|ws, _, _, cx| {
-                                                    ws.attach_open = !ws.attach_open;
-                                                    cx.notify();
-                                                })),
-                                        )
-                                        .children(super::model_bar::access(ws, cx))
+                                        .children(box_left)
                                         .child(div().flex_1())
                                         .children(rate)
-                                        .child(mic_button(ws, cx))
-                                        .child(button),
+                                        .children(box_right),
                                 ),
                         )
                         // Under the box: the mode on the left, the model on the right.
@@ -155,17 +138,13 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                                 .justify_between()
                                 .pt_1()
                                 .px_1()
-                                .child(super::model_bar::mode(ws, cx))
-                                .child(super::model_bar::models(ws, window, cx)),
+                                .child(div().flex().items_center().children(under_left))
+                                .child(div().flex().items_center().children(under_right)),
                         ),
                 )
                 // The subagents stand beside the box, not in it: they are not part of what
                 // is sent.
-                .child(
-                    side()
-                        .children(agents_button(ws, cx))
-                        .child(super::model_bar::context(ws, cx)),
-                ),
+                .child(side().children(side_right)),
         )
         .children(attach.map(crate::ui::widgets::on_top))
         // Files copied in the file manager arrive as files, not as their names.
@@ -222,7 +201,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
 }
 
 /// The microphone: while it is on, what is said is added to the message.
-fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
+pub(super) fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
     let on = ws.dictating();
     Button::new("dictate")
         .rounded(ButtonRounded::Size(px(999.)))
@@ -351,7 +330,7 @@ fn is_picture(path: &std::path::Path) -> bool {
 /// The chat's subagents at a glance, beside the box: the figure of the one that works (or
 /// the latest), a count, and a ring in the signal color while any works. A click opens
 /// the stage where each is seen at work.
-fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+pub(super) fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
     let chat = ws.shown_chat().filter(|chat| !chat.agents.is_empty())?;
     let thread_id = ws.shown.clone()?;
     let working = chat.agents.values().filter(|agent| agent.working).count();
@@ -715,7 +694,7 @@ impl Workspace {
         cx.notify();
     }
 
-    fn cancel(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn cancel(&mut self, cx: &mut Context<Self>) {
         let Some(thread_id) = self.shown.clone() else {
             return;
         };

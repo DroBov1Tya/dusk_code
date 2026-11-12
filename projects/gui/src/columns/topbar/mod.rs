@@ -17,6 +17,7 @@ use gpui_kit::{
 
 use crate::{
     modal::Modal,
+    ui::layout::Part,
     ui::{Type, widgets},
     workspace::{Center, Workspace},
 };
@@ -37,7 +38,8 @@ pub fn render(
     let (border, muted) = (theme.border, theme.muted_foreground);
     let chat = ws.center == Center::Chat && ws.shown.is_some();
     let menu_x = window.viewport_size().width - px(220.);
-    let glow = sky::glow(ws);
+    let glow = sky::glow(ws, cx);
+    let stars = sky::stars(ws, cx);
     let star = sky::star(ws, cx);
     // Quiet thins the header to a line that only names the chat.
     let height = if ws.quiet { QUIET_HEIGHT } else { HEIGHT };
@@ -47,7 +49,9 @@ pub fn render(
         .flex()
         .flex_row()
         .items_center()
+        .relative()
         .when_some(glow, |bar, glow| bar.bg(glow))
+        .children(stars)
         .child(nav(ws, nav_width, border, cx))
         .child(
             div()
@@ -63,49 +67,67 @@ pub fn render(
                 .child(title(ws, muted))
                 .children(star)
                 .child(div().flex_1())
-                .when(chat, |bar| {
-                    bar.child(
-                        tool("top-review", IconName::Github, "Review the changes")
-                            .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
-                    )
-                })
-                .child(
-                    tool("top-search", IconName::Search, "Search the chats").on_click(cx.listener(
-                        |ws, _, _, cx| {
-                            ws.modal = Some(Modal::Search);
-                            cx.notify();
-                        },
-                    )),
-                )
-                .when_some(ws.shown.clone().filter(|_| chat), |bar, thread_id| {
-                    // The same menu a right click on the chat in the sidebar opens.
-                    bar.child(
-                        tool("top-more", IconName::Ellipsis, "More").on_click(cx.listener(
-                            move |ws, _, _, cx| {
-                                ws.chat_menu = Some((thread_id.clone(), point(menu_x, px(HEIGHT))));
-                                cx.notify();
-                            },
-                        )),
-                    )
-                })
-                .when(ws.side_panel_allowed(), |bar| {
-                    bar.child(
-                        tool(
-                            "top-panel",
-                            if ws.right_hidden {
-                                IconName::PanelRightOpen
-                            } else {
-                                IconName::PanelRightClose
-                            },
-                            "Show or hide the side panel",
-                        )
-                        .on_click(cx.listener(|ws, _, _, cx| {
-                            ws.right_hidden = !ws.right_hidden;
-                            cx.notify();
-                        })),
-                    )
-                }),
+                .children(tools(ws, chat, menu_x, cx)),
         )
+}
+
+/// The header's tools, as the layout map orders them.
+fn tools(
+    ws: &Workspace,
+    chat: bool,
+    menu_x: Pixels,
+    cx: &mut Context<Workspace>,
+) -> Vec<AnyElement> {
+    let parts = crate::ui::theme::prefs(cx).layout.header.clone();
+    parts
+        .into_iter()
+        .filter_map(|part| tool_of(ws, part, chat, menu_x, cx))
+        .collect()
+}
+
+fn tool_of(
+    ws: &Workspace,
+    part: Part,
+    chat: bool,
+    menu_x: Pixels,
+    cx: &mut Context<Workspace>,
+) -> Option<AnyElement> {
+    Some(match part {
+        Part::Review if chat => tool("top-review", IconName::Github, "Review the changes")
+            .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx)))
+            .into_any_element(),
+        Part::Search => tool("top-search", IconName::Search, "Search the chats")
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.modal = Some(Modal::Search);
+                cx.notify();
+            }))
+            .into_any_element(),
+        // The same menu a right click on the chat in the sidebar opens.
+        Part::More if chat => {
+            let thread_id = ws.shown.clone()?;
+            tool("top-more", IconName::Ellipsis, "More")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.chat_menu = Some((thread_id.clone(), point(menu_x, px(HEIGHT))));
+                    cx.notify();
+                }))
+                .into_any_element()
+        }
+        Part::SidePanel if ws.side_panel_allowed() => tool(
+            "top-panel",
+            if ws.right_hidden {
+                IconName::PanelRightOpen
+            } else {
+                IconName::PanelRightClose
+            },
+            "Show or hide the side panel",
+        )
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.right_hidden = !ws.right_hidden;
+            cx.notify();
+        }))
+        .into_any_element(),
+        _ => return None,
+    })
 }
 
 /// Over the rail and the sidebar: their switches, then Back and Forward. It is as wide as

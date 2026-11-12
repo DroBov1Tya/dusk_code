@@ -10,6 +10,7 @@ use gpui_kit::{
 use crate::{
     columns::flyout::Flyout,
     modal::Modal,
+    ui::layout::Part,
     ui::widgets::Focusable,
     workspace::{Center, Workspace},
 };
@@ -31,19 +32,14 @@ pub fn width(ws: &Workspace) -> f32 {
 }
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let theme = cx.theme();
-    let border = theme.sidebar_border;
-    let restart = ws.update_ready.clone().map(|tag| {
+    let parts = crate::ui::theme::prefs(cx).layout.rail.clone();
+    let mut restart = ws.update_ready.clone().map(|tag| {
         let tip = format!("Restart into {tag}");
         item("rail-restart", IconName::RefreshCw, tip, false, cx)
             .text_color(cx.theme().primary)
             .on_click(cx.listener(|_, _, _, cx| cx.restart()))
     });
-    let settings_tip = match &ws.status.available_update {
-        Some(tag) => format!("Settings: {tag} is out"),
-        None => "Settings".to_owned(),
-    };
-    div()
+    let mut rail = div()
         .w(px(WIDTH))
         .h_full()
         .flex_none()
@@ -52,107 +48,122 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .items_center()
         .gap_1p5()
         .py_2()
-        .bg(color(cx))
-        .child(
-            item("rail-new", IconName::Plus, "New chat".into(), false, cx)
-                .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),
-        )
-        .child(
-            item("rail-search", IconName::Search, "Search".into(), false, cx).on_click(
-                cx.listener(|ws, _, _, cx| {
-                    ws.modal = Some(Modal::Search);
-                    cx.notify();
-                }),
-            ),
-        )
-        .child(div().w(px(20.)).h(px(1.)).my_1().bg(border))
-        .child(
-            item(
-                "rail-chats",
-                IconName::Inbox,
-                "Chats".into(),
-                matches!(ws.center, Center::Chat | Center::Review | Center::File),
-                cx,
-            )
-            .map(|item| with_flyout(item, Flyout::Chats, ws.left_hidden, cx))
+        .bg(color(cx));
+    for part in parts {
+        // The restart into a waiting update stands just above the far end's group.
+        if part == Part::Spacer {
+            rail = rail.child(div().flex_1()).children(restart.take());
+            continue;
+        }
+        rail = rail.children(place(ws, part, cx));
+    }
+    // With no spacer in the map the restart still shows, at the end.
+    rail.children(restart)
+}
+
+/// The element of one part of the map, or none for a part the rail does not hold.
+fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyElement> {
+    let border = cx.theme().sidebar_border;
+    Some(match part {
+        Part::Divider => div()
+            .w(px(20.))
+            .h(px(1.))
+            .my_1()
+            .bg(border)
+            .into_any_element(),
+        Part::NewChat => item("rail-new", IconName::Plus, "New chat".into(), false, cx)
+            .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx)))
+            .into_any_element(),
+        Part::Search => item("rail-search", IconName::Search, "Search".into(), false, cx)
             .on_click(cx.listener(|ws, _, _, cx| {
-                // A click keeps what the hover showed: the sidebar opens for good.
-                ws.flyout = None;
-                ws.left_hidden = false;
-                ws.center = Center::Chat;
+                ws.modal = Some(Modal::Search);
                 cx.notify();
-            })),
+            }))
+            .into_any_element(),
+        Part::Chats => item(
+            "rail-chats",
+            IconName::Inbox,
+            "Chats".into(),
+            matches!(ws.center, Center::Chat | Center::Review | Center::File),
+            cx,
         )
-        .child(
-            item(
-                "rail-schedules",
-                IconName::Calendar,
-                "Scheduled tasks".into(),
-                ws.center == Center::Schedules,
-                cx,
-            )
-            // A preview only stands in for a sidebar that is not there.
-            .map(|item| {
-                let shown = ws.center == Center::Schedules;
-                with_flyout(item, Flyout::Schedules, ws.left_hidden && !shown, cx)
-            })
-            .on_click(cx.listener(|ws, _, _, cx| {
-                ws.flyout = None;
-                ws.open_schedules(cx);
-            })),
+        .map(|item| with_flyout(item, Flyout::Chats, ws.left_hidden, cx))
+        .on_click(cx.listener(|ws, _, _, cx| {
+            // A click keeps what the hover showed: the sidebar opens for good.
+            ws.flyout = None;
+            ws.left_hidden = false;
+            ws.center = Center::Chat;
+            cx.notify();
+        }))
+        .into_any_element(),
+        Part::Schedules => item(
+            "rail-schedules",
+            IconName::Calendar,
+            "Scheduled tasks".into(),
+            ws.center == Center::Schedules,
+            cx,
         )
-        .child(
-            item(
-                "rail-artifacts",
-                IconName::LayoutDashboard,
-                "Artifacts".into(),
-                ws.center == Center::Artifacts,
-                cx,
-            )
-            .on_click(cx.listener(|ws, _, _, cx| {
-                ws.center = Center::Artifacts;
-                ws.load_outputs(cx);
-            })),
+        // A preview only stands in for a sidebar that is not there.
+        .map(|item| {
+            let shown = ws.center == Center::Schedules;
+            with_flyout(item, Flyout::Schedules, ws.left_hidden && !shown, cx)
+        })
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.flyout = None;
+            ws.open_schedules(cx);
+        }))
+        .into_any_element(),
+        Part::Artifacts => item(
+            "rail-artifacts",
+            IconName::LayoutDashboard,
+            "Artifacts".into(),
+            ws.center == Center::Artifacts,
+            cx,
         )
-        .child(
-            item(
-                "rail-connectors",
-                IconName::Network,
-                "Connectors".into(),
-                ws.center == Center::Connectors,
-                cx,
-            )
-            .on_click(cx.listener(|ws, _, _, cx| {
-                ws.center = Center::Connectors;
-                ws.load_settings(cx);
-            })),
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.center = Center::Artifacts;
+            ws.load_outputs(cx);
+        }))
+        .into_any_element(),
+        Part::Connectors => item(
+            "rail-connectors",
+            IconName::Network,
+            "Connectors".into(),
+            ws.center == Center::Connectors,
+            cx,
         )
-        .child(div().flex_1())
-        .child(
-            item(
-                "rail-quiet",
-                IconName::Moon,
-                if ws.quiet {
-                    "Leave quiet: show the columns again"
-                } else {
-                    "Quiet: only the chat"
-                }
-                .into(),
-                ws.quiet,
-                cx,
-            )
-            .on_click(cx.listener(|ws, _, _, cx| {
-                ws.quiet = !ws.quiet;
-                ws.flyout = None;
-                cx.notify();
-            })),
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.center = Center::Connectors;
+            ws.load_settings(cx);
+        }))
+        .into_any_element(),
+        Part::Quiet => item(
+            "rail-quiet",
+            IconName::Moon,
+            if ws.quiet {
+                "Leave quiet: show the columns again"
+            } else {
+                "Quiet: only the chat"
+            }
+            .into(),
+            ws.quiet,
+            cx,
         )
-        .children(restart)
-        .child(
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.quiet = !ws.quiet;
+            ws.flyout = None;
+            cx.notify();
+        }))
+        .into_any_element(),
+        Part::Settings => {
+            let tip = match &ws.status.available_update {
+                Some(tag) => format!("Settings: {tag} is out"),
+                None => "Settings".to_owned(),
+            };
             item(
                 "rail-settings",
                 IconName::Settings,
-                settings_tip,
+                tip,
                 ws.center == Center::Settings,
                 cx,
             )
@@ -171,8 +182,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.center = Center::Settings;
                 ws.load_settings(cx);
-            })),
-        )
+            }))
+            .into_any_element()
+        }
+        _ => return None,
+    })
 }
 
 /// One place: a 32 px square with its icon, filled while it is the shown place.

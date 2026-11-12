@@ -167,6 +167,21 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .gap_4()
         .child(section("Theme", "", cx).child(themes))
         .child(
+            section("Sky", "", cx).child(type_size(
+                "Dusk sky",
+                "While the agent works, the header glows and fills with stars",
+                div().child(
+                    gpui_kit::component::switch::Switch::new("appearance-sky")
+                        .checked(prefs.sky)
+                        .on_click(cx.listener(|_, on: &bool, _, cx| {
+                            let on = *on;
+                            theme::change(cx, move |prefs| prefs.sky = on);
+                        })),
+                ),
+                cx,
+            )),
+        )
+        .child(
             section("Typography", "", cx)
                 .child(type_size(
                     "Interface size",

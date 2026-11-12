@@ -15,6 +15,10 @@ testing.
   thinned to a line. A "while you were away" card lists the scheduled tasks that ran
   since the last look, each with a way to its chat. The subagents window leads with each
   agent's task, then what it does now in words, its steps and time, and its last remark.
+- Stars come out in the header's sky one by one as a turn runs on, each twinkling on its
+  own beat; Appearance can switch the sky off. The rail, the header's tools and the parts
+  around the message box are drawn from one layout map, which `gui.json` may override to
+  reorder or trim them.
 
 ### Changed
 

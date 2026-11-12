@@ -36,6 +36,10 @@ pub struct Prefs {
     /// Scheduled runs up to this moment, in Unix milliseconds, were seen; later ones go
     /// on the "while you were away" card. Zero until the first start sets it.
     pub runs_seen_until: i64,
+    /// The header's sky while a turn runs: the glow and the stars.
+    pub sky: bool,
+    /// Where each part of the window stands; see `ui::layout`.
+    pub layout: crate::ui::layout::Layout,
 }
 
 impl Default for Prefs {
@@ -50,6 +54,8 @@ impl Default for Prefs {
             right_folded: None,
             footer_open: false,
             runs_seen_until: 0,
+            sky: true,
+            layout: Default::default(),
         }
     }
 }
