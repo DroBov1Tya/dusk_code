@@ -106,12 +106,30 @@ pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         .flex()
         .items_center()
         .justify_center()
-        .child(div().absolute().inset_0().child(super::ring::render(
-            super::composer::SIDE_MARK,
-            share,
-            meter,
-            border,
-        )))
+        // Nearly full, the ring breathes: time to compact, said before the limit says it.
+        .child(
+            div()
+                .absolute()
+                .inset_0()
+                .child(super::ring::render(
+                    super::composer::SIDE_MARK,
+                    share,
+                    meter,
+                    border,
+                ))
+                .with_animation(
+                    if share > 0.85 {
+                        "context-breath"
+                    } else {
+                        "context-still"
+                    },
+                    Animation::new(std::time::Duration::from_millis(2600)).repeat(),
+                    move |ring, phase| {
+                        let breath = (phase * std::f32::consts::TAU).sin() * 0.5 + 0.5;
+                        ring.opacity(if share > 0.85 { 0.5 + breath * 0.5 } else { 1. })
+                    },
+                ),
+        )
         .child(
             div()
                 .text_size(px(9.))

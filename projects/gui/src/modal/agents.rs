@@ -6,7 +6,10 @@
 use std::time::Duration;
 
 use gpui_kit::{
-    component::{ActiveTheme, Colorize, IconName},
+    component::{
+        ActiveTheme, Colorize, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -114,7 +117,16 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
                         .small()
                         .text_color(if working > 0 { signal } else { muted })
                         .child(format!("{working} active")),
-                ),
+                )
+                .child(div().flex_1())
+                .children((working < chat.agents.len()).then(|| {
+                    Button::new("agents-clear-finished")
+                        .ghost()
+                        .small()
+                        .label("Clear finished")
+                        .tooltip("Take the agents that are done off the list")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.clear_agents(None, cx)))
+                })),
         )
         .child(stage)
 }
@@ -256,6 +268,30 @@ fn figure(
                         .child(format!("\u{201C}{said}\u{201D}"))
                 })),
         )
+        // One agent is stopped or put away from its own row; the row itself opens it.
+        .child(if agent.working {
+            let id = id.to_owned();
+            Button::new(SharedString::from(format!("agent-stop-{id}")))
+                .ghost()
+                .small()
+                .icon(IconName::Square)
+                .tooltip("Stop this agent")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    cx.stop_propagation();
+                    ws.stop_agent(&id, cx);
+                }))
+        } else {
+            let id = id.to_owned();
+            Button::new(SharedString::from(format!("agent-clear-{id}")))
+                .ghost()
+                .small()
+                .icon(IconName::Close)
+                .tooltip("Take it off the list")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    cx.stop_propagation();
+                    ws.clear_agents(Some(&id), cx);
+                }))
+        })
         .child(widgets::icon(IconName::ChevronRight, muted))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.open_agent_chat(&open, cx);

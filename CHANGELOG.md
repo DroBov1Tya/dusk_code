@@ -37,6 +37,14 @@ testing.
 - GUI: Memory and context has the context window and the sizes of the memory and of the
   work history.
 
+- GUI: a step's icon says what it is: the terminal, a file, a search, an edit, the web,
+  another agent, a connector's tool; thinking and reports have their own. Its color says
+  how it stands.
+- GUI: the context ring breathes once the context is more than 85% full.
+- GUI: a subagent's chat shows its task and reports as markdown, its thinking folded, its
+  errors apart, and who it is at the top; one agent can be stopped from its row or its
+  chat, and finished ones cleared from the list, one by one or all at once.
+
 ### Changed
 
 - The context report and a thread's `Tokens` events count with the same tools and model,

@@ -31,6 +31,11 @@ use gpui_kit::{
 
 use crate::{ui::Type, workspace::Workspace};
 
+/// The mark of work under way, for a window that shows a chat of its own.
+pub fn working_mark(id: SharedString, accent: Hsla, light: Hsla) -> impl IntoElement {
+    working::render(id, accent, light)
+}
+
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     if let Some(text) = ws.fill_composer.take() {
         ws.composer
