@@ -216,6 +216,8 @@ pub struct Workspace {
     pub last_input: std::time::Instant,
     /// When the mist was cleared and how thick it stood, while it fades.
     pub fog_cleared: Option<(std::time::Instant, f32)>,
+    /// When a turn ended under the mist and how thick it stood, while the dawn plays.
+    pub fog_dawn: Option<(std::time::Instant, f32)>,
     pub jobs: Vec<JobInfo>,
     /// The shown chat's sources, as the core lists them.
     pub sources: Vec<dusk_protocol::thread::Source>,
@@ -405,6 +407,7 @@ impl Workspace {
             models_open: HashSet::new(),
             last_input: std::time::Instant::now(),
             fog_cleared: None,
+            fog_dawn: None,
             jobs: Vec::new(),
             sources: Vec::new(),
             settings: None,
@@ -540,6 +543,7 @@ impl Workspace {
                     self.send_next_pending(&thread_id, cx);
                     // A source that went with the turn now reads as sent.
                     if self.shown.as_deref() == Some(thread_id.as_str()) {
+                        self.dawn(cx);
                         self.load_sources(cx);
                     }
                 }

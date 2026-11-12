@@ -31,15 +31,23 @@ fn late(ws: &Workspace, cx: &App) -> Option<f32> {
     let chat = ws.shown_chat().filter(|chat| chat.working)?;
     let (began, _) = chat.span(chat.activity_boundaries.len())?;
     let seconds = (crate::pages::chat::timing::now_ms() - began).max(0) as f32 / 1000.;
-    Some((seconds / DUSK_TO_SUNSET).min(1.))
+    // Past sunset it goes on into the night, as long again.
+    Some((seconds / DUSK_TO_SUNSET).min(2.))
 }
 
 /// The glow for the header while the shown chat works.
 pub fn glow(ws: &Workspace, cx: &App) -> Option<Background> {
     let late = late(ws, cx)?;
-    // Violet at 268 degrees to orange at 24, the long way through magenta and rose.
-    let hue = (268. + late * 116.) % 360.;
-    let color = hsla(hue / 360., 0.7, 0.55, 0.16);
+    // Violet at 268 degrees to orange at 24, the long way through magenta and rose; a
+    // turn that runs on past sunset sees the orange go back down through red and violet
+    // into a deep blue, darker and a little fuller, as the night comes.
+    let night = (late - 1.).max(0.);
+    let hue = if night > 0. {
+        (24. - night * 144.).rem_euclid(360.)
+    } else {
+        (268. + late * 116.) % 360.
+    };
+    let color = hsla(hue / 360., 0.7, 0.55 - night * 0.17, 0.16 + night * 0.06);
     Some(linear_gradient(
         90.,
         linear_color_stop(color.opacity(0.), 0.35),
@@ -50,7 +58,7 @@ pub fn glow(ws: &Workspace, cx: &App) -> Option<Background> {
 /// The stars over the header's right half, more of them the later it is; each twinkles
 /// on its own beat. Their places come from their number, so they stay put.
 pub fn stars(ws: &Workspace, cx: &App) -> Option<Div> {
-    let late = late(ws, cx)?;
+    let late = late(ws, cx)?.min(1.);
     let out = ((late * STARS as f32).round() as usize).min(STARS);
     let dark = cx.theme().is_dark();
     let mut sky = div().absolute().inset_0().overflow_hidden();
