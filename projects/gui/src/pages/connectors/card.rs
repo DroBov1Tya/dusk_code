@@ -35,7 +35,7 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
         .hover(|card| card.border_color(theme.muted_foreground.opacity(0.4)))
         .child(match card.icon {
             Some(path) => div()
-                .size(px(34.))
+                .size(px(36.))
                 .flex_none()
                 .rounded_lg()
                 .overflow_hidden()

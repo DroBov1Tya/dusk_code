@@ -32,7 +32,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .child(
             div().px_2().child(
                 widgets::row("sidebar-new-chat", false, cx)
-                    .h(px(36.))
+                    .h(px(crate::ui::size::ROW))
                     .child(widgets::icon(IconName::Plus, cx.theme().muted_foreground))
                     .child(
                         div()

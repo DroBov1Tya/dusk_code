@@ -20,7 +20,7 @@ use crate::{
     workspace::{Center, Workspace},
 };
 
-pub const HEIGHT: f32 = 52.;
+pub const HEIGHT: f32 = crate::ui::size::BAR;
 /// The narrowest the navigation part gets, with both side columns hidden.
 const NAV_MIN: f32 = 156.;
 

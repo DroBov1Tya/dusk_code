@@ -1,4 +1,11 @@
 /* Palettes follow the desktop app: near-neutral surfaces, one accent, used rarely. */
+:root {
+  /* The grid: every space is a multiple of 4 px; controls are 32 px, the bars 52. */
+  --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px;
+  --control: 32px; --bar: 52px;
+  /* Motion answers a click: menus in 160 ms, folds in 180 ms, always easing out. */
+  --t-open: 160ms; --t-fold: 180ms; --ease: cubic-bezier(.22, 1, .36, 1);
+}
 :root, [data-theme="dusk"] {
   color-scheme: dark;
   --bg: #13141f; --panel: #0e0f18; --surface: #1b1c2a; --raised: #262839;
@@ -147,10 +154,10 @@ label > input, label > textarea { display: block; width: 100%; margin-top: 4px; 
 .approval, .question { border: 1px solid var(--accent); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; background: var(--surface); }
 .approval-actions, .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .option { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0; color: var(--fg); font-size: 14px; }
-.composer { max-width: 820px; width: calc(100% - 40px); margin: 0 auto 16px; border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); border-radius: 16px; background: var(--surface); padding: 8px 10px; position: relative; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
+.composer { width: 100%; margin: 0; border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); border-radius: 16px; background: var(--surface); padding: 8px 10px; position: relative; box-shadow: 0 4px 18px rgba(0,0,0,.18); }
 .composer textarea { border: 0; background: transparent; resize: none; max-height: 220px; }
 .composer textarea:focus { outline: none; }
-.composer-actions { display: flex; gap: 6px; align-items: center; }
+.composer-actions { display: flex; gap: var(--s1); align-items: center; }
 .composer-actions button.ghost, .composer-actions select.chip { border-color: transparent; }
 .composer-actions button.primary { border-radius: 999px; min-width: 32px; }
 .suggest { position: absolute; bottom: 100%; left: 0; right: 0; list-style: none; margin: 0 0 6px; padding: 4px; background: var(--raised); border-radius: 10px; max-height: 240px; overflow: auto; }
@@ -232,7 +239,7 @@ label > input, label > textarea { display: block; width: 100%; margin-top: 4px; 
 
 /* Overlays */
 .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: grid; place-items: center; z-index: 10; }
-.dialog, .window { background: var(--bg); border-radius: 14px; padding: 18px; width: min(560px, 92vw); max-height: 88vh; overflow: auto; box-shadow: 0 12px 48px rgba(0,0,0,.45); }
+.dialog, .window { background: var(--bg); border-radius: 12px; padding: var(--s5); animation: rise var(--t-open) var(--ease); width: min(560px, 92vw); max-height: 88vh; overflow: auto; box-shadow: 0 12px 48px rgba(0,0,0,.45); }
 .window { width: min(900px, 94vw); height: 80vh; display: flex; flex-direction: column; padding: 0; overflow: hidden; }
 .window-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; border-bottom: 1px solid color-mix(in srgb, var(--fg) 8%, transparent); }
 .window .transcript, .viewer { flex: 1; overflow: auto; padding: 12px 16px; margin: 0; }
@@ -257,3 +264,32 @@ label > input, label > textarea { display: block; width: 100%; margin-top: 4px; 
 .step-said { padding: 4px 10px; color: var(--fg2); font-size: 14px; }
 .tool-name.agent { color: var(--accent); }
 .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 12px; padding: 2px 10px; }
+
+/* The composer between two sides of one width, as the desktop app has it. */
+.composer-wrap { display: flex; align-items: flex-end; gap: var(--s2); max-width: calc(780px + 2 * var(--bar)); width: calc(100% - var(--s6)); margin: 0 auto var(--s3); }
+.composer-column { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.composer-side { width: var(--bar); flex: none; display: flex; flex-direction: column; align-items: center; gap: var(--s2); padding-bottom: 40px; }
+.composer-under { display: flex; justify-content: space-between; align-items: center; padding: var(--s1) var(--s1) 0; }
+button.under { background: none; border: 0; color: var(--muted); font-size: 13px; display: inline-flex; align-items: center; gap: var(--s1); padding: var(--s1) var(--s2); border-radius: 8px; min-height: 28px; transition: background var(--t-open) var(--ease), color var(--t-open) var(--ease); }
+button.under:hover { background: var(--raised); color: var(--fg); }
+.caret { width: 6px; height: 6px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: rotate(45deg) translateY(-2px); }
+button.round { border-radius: 999px; width: var(--control); min-width: var(--control); height: var(--control); padding: 0; }
+button.icon.round.live { background: var(--bad); color: var(--on-accent); }
+.glyph { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+select.chip.quiet { border-color: transparent; background: transparent; }
+select.chip.quiet:hover { background: var(--raised); }
+
+/* The context ring: the share as an arc, its number in the middle. */
+.ring { --share: 0; width: var(--control); height: var(--control); border-radius: 50%; display: grid; place-items: center; font-size: 10px; font-weight: 600; color: var(--muted);
+  background: radial-gradient(closest-side, var(--bg) 76%, transparent 78%), conic-gradient(var(--accent) calc(var(--share) * 1%), color-mix(in srgb, var(--fg) 12%, transparent) 0); }
+.ring.warn { background: radial-gradient(closest-side, var(--bg) 76%, transparent 78%), conic-gradient(var(--warn) calc(var(--share) * 1%), color-mix(in srgb, var(--fg) 12%, transparent) 0); }
+.ring.bad { background: radial-gradient(closest-side, var(--bg) 76%, transparent 78%), conic-gradient(var(--bad) calc(var(--share) * 1%), color-mix(in srgb, var(--fg) 12%, transparent) 0); }
+
+/* Motion: menus rise into place, folds slide open, rows answer the pointer. */
+@keyframes rise { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes unfold { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.suggest, .chat-menu, .toast, .editor { animation: rise var(--t-open) var(--ease); }
+details[open] > :not(summary) { animation: unfold var(--t-fold) var(--ease); }
+.row, .nav-item, .model, button.icon, button.ghost { transition: background var(--t-open) var(--ease), color var(--t-open) var(--ease), border-color var(--t-open) var(--ease); }
+.msg { animation: rise var(--t-fold) var(--ease); }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }

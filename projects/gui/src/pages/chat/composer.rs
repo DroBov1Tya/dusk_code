@@ -16,7 +16,7 @@ use crate::workspace::Workspace;
 
 pub(super) const WIDTH: f32 = 780.;
 /// The width of the columns beside the box.
-const SIDE: f32 = 52.;
+const SIDE: f32 = crate::ui::size::BAR;
 /// From the foot of the composer to the middle of the box's lower row of buttons: the
 /// row under the box and the box's own padding.
 const SIDE_LIFT: f32 = 40.;
@@ -32,7 +32,7 @@ fn side() -> Div {
         .gap_2()
         .pb(px(SIDE_LIFT))
 }
-pub(super) const AGENTS_BUTTON: f32 = 52.;
+pub(super) const AGENTS_BUTTON: f32 = crate::ui::size::BAR;
 
 pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     // Subagents may go on after the chat's own turn is over; Stop ends them too.
@@ -427,8 +427,8 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                     .absolute()
                     .top_0()
                     .right_0()
-                    .min_w(px(18.))
-                    .h(px(18.))
+                    .min_w(px(20.))
+                    .h(px(20.))
                     .px_1()
                     .flex()
                     .items_center()

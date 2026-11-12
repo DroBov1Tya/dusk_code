@@ -14,7 +14,7 @@ use crate::{
     workspace::{Center, Workspace},
 };
 
-pub const WIDTH: f32 = 52.;
+pub const WIDTH: f32 = crate::ui::size::BAR;
 
 /// The frame's color, which the rail and the header stand on: a step darker than the
 /// sidebar, so the edge between them reads without a line.
@@ -168,7 +168,7 @@ fn item(id: &'static str, icon: IconName, tip: String, active: bool, cx: &App) -
     let tip = SharedString::from(tip);
     div()
         .id(id)
-        .size(px(40.))
+        .size(px(crate::ui::size::CONTROL + 8.))
         .flex()
         .items_center()
         .justify_center()
@@ -178,7 +178,11 @@ fn item(id: &'static str, icon: IconName, tip: String, active: bool, cx: &App) -
         .hover(move |item| item.bg(hover))
         .focusable_row(cx)
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
-        .child(Icon::new(icon).size(px(20.)).text_color(color))
+        .child(
+            Icon::new(icon)
+                .size(px(crate::ui::size::ICON_LARGE))
+                .text_color(color),
+        )
 }
 
 /// Shows the place's panel while the pointer rests on its icon, where `allowed`.

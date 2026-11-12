@@ -2,7 +2,7 @@
 
 use crate::ui::Type;
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName, Sizable},
+    component::{ActiveTheme, Icon, IconName},
     prelude::FluentBuilder,
     *,
 };
@@ -58,7 +58,9 @@ pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
 }
 
 pub fn icon(name: IconName, color: Hsla) -> Icon {
-    Icon::new(name).small().text_color(color)
+    Icon::new(name)
+        .size(px(crate::ui::size::ICON))
+        .text_color(color)
 }
 
 /// "1 file", "2 files": a count with its noun in the plural unless it is one.
@@ -117,8 +119,9 @@ pub fn on_top(popup: impl IntoElement + 'static) -> Deferred {
     deferred(popup).with_priority(1)
 }
 
-/// A popup that fades in as it opens, in 140 ms: the click that opened it is answered at
-/// once, and the menu does not jump into place. It plays when the element first appears.
+/// A popup that fades in and settles the last 4 px into place as it opens: the click that
+/// opened it is answered at once, and the menu does not jump. It plays when the element
+/// first appears.
 pub fn appear<E>(id: impl Into<ElementId>, popup: E) -> AnimationElement<E>
 where
     E: IntoElement + Styled + 'static,
@@ -126,7 +129,20 @@ where
     popup.with_animation(
         id,
         Animation::new(crate::ui::OPEN).with_easing(ease_out_quint()),
-        |popup, delta| popup.opacity(delta),
+        |popup, delta| popup.opacity(delta).mt(px((1. - delta) * 4.)),
+    )
+}
+
+/// What a fold shows as it opens: it fades in and slides the last 6 px down into place,
+/// so the eye follows where the new rows came from.
+pub fn unfold<E>(id: impl Into<ElementId>, body: E) -> AnimationElement<E>
+where
+    E: IntoElement + Styled + 'static,
+{
+    body.with_animation(
+        id,
+        Animation::new(crate::ui::UNFOLD).with_easing(ease_out_quint()),
+        |body, delta| body.opacity(delta).mt(px((delta - 1.) * 6.)),
     )
 }
 

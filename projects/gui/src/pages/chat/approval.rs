@@ -99,7 +99,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             } else {
                 div()
                     .flex_none()
-                    .size(px(22.))
+                    .size(px(24.))
                     .flex()
                     .items_center()
                     .justify_center()

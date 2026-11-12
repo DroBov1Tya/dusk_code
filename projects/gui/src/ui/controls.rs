@@ -13,7 +13,7 @@ use gpui_kit::{
 use crate::ui::Type;
 
 /// The height of a control on a settings row.
-pub const CONTROL: f32 = 32.;
+pub const CONTROL: f32 = crate::ui::size::CONTROL;
 
 type Click = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
 

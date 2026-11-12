@@ -22,6 +22,11 @@ testing.
   the message history on the left and the context ring with its share on the right, level
   with the box's buttons; the microphone is a plain icon. A New chat above the projects
   starts one that belongs to none.
+- Grid and motion: every size in the desktop app comes from one scale on a 4 px grid
+  (controls 32, rows 36, bars 52, icons 16 and 20); menus and windows rise into place in
+  160 ms, folds slide open in 180 ms. The web client takes the same grid and motion as
+  CSS variables, honours reduced motion, and gets the desktop composer: access inside the
+  box, mode and a short model name under it, the context as a ring with its share.
 
 ## 0.73.1 - 2026-11-12
 

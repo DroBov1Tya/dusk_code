@@ -64,7 +64,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             // Every header starts with its icon, on the grid of the rows below.
             .child(
                 Icon::new(module_icon(module))
-                    .size(px(18.))
+                    .size(px(crate::ui::size::ICON_LARGE))
                     .text_color(muted),
             )
             .child(
@@ -119,7 +119,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 Right::Todo => todo::render(ws, cx),
                 Right::Jobs => jobs::render(ws, cx),
             };
-            section = section.child(div().pb_3().child(body));
+            section = section.child(widgets::unfold(
+                SharedString::from(format!("module-{}", module.key())),
+                div().pb_3().child(body),
+            ));
         }
         column = column.child(section);
     }

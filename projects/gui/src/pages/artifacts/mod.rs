@@ -47,7 +47,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         let active = ws.artifact_kind == kind;
         tabs = tabs.child(
             widgets::row(*label, active, cx)
-                .h(px(34.))
+                .h(px(crate::ui::size::ROW))
                 .gap_2()
                 .px_3()
                 .body()

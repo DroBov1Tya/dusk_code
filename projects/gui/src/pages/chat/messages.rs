@@ -583,7 +583,10 @@ fn turn_activity(
                 _ => detail,
             };
         }
-        block = block.child(detail);
+        block = block.child(widgets::unfold(
+            SharedString::from(format!("unfold-{shown}-{start}")),
+            detail,
+        ));
     }
     block
 }
@@ -705,7 +708,7 @@ fn disclosure(id: impl Into<ElementId>, open: bool, cx: &App) -> Stateful<Div> {
         .flex()
         .items_center()
         .gap_2()
-        .min_h(px(26.))
+        .min_h(px(28.))
         .min_w_0()
         .px_2()
         .rounded_md()
@@ -823,7 +826,10 @@ fn step(
         if !tool.output.is_empty() {
             details = details.child(block("Answer", &tool.output));
         }
-        line = line.child(details);
+        line = line.child(widgets::unfold(
+            SharedString::from(format!("unfold-step-{shown}-{index}")),
+            details,
+        ));
     }
     line
 }

@@ -31,12 +31,9 @@ impl Block {
     }
 }
 
-/// What a turn folds away: its steps, thoughts and what it said on the way.
+/// What a finished turn folds away: all but its answer, the user's words and errors.
 fn folds(item: &Item) -> bool {
-    matches!(
-        item,
-        Item::Tool(_) | Item::Agent { .. } | Item::Assistant { .. }
-    )
+    !matches!(item, Item::User(_) | Item::Error(_))
 }
 
 /// The chat as blocks: each turn's way to its answer in one, the rest one by one.
@@ -71,12 +68,28 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
                 folds(item)
             }
         };
-        let folded: Vec<Entry> = turn
+        let mut folded: Vec<Entry> = turn
             .iter()
             .enumerate()
             .filter(|(index, entry)| Some(*index) != answer && folds_now(&entry.item))
             .map(|(_, entry)| entry.clone())
             .collect();
+        // The answer's own thinking folds with the rest; the answer shows only what it says.
+        let answer_entry = answer.map(|index| {
+            let mut entry = turn[index].clone();
+            if let Item::Assistant { reasoning, .. } = &mut entry.item
+                && !reasoning.trim().is_empty()
+            {
+                folded.push(Entry {
+                    item: Item::Assistant {
+                        text: String::new(),
+                        reasoning: std::mem::take(reasoning),
+                    },
+                    ..turn[index].clone()
+                });
+            }
+            entry
+        });
         let started = matches!(asked.item, Item::User(_)).then_some(asked.at);
         let took = answer
             .zip(started)
@@ -88,7 +101,9 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
             });
         }
         for (index, entry) in turn.iter().enumerate() {
-            if Some(index) == answer || !folds_now(&entry.item) {
+            if Some(index) == answer {
+                blocks.extend(answer_entry.clone().map(Block::One));
+            } else if !folds_now(&entry.item) {
                 blocks.push(Block::One(entry.clone()));
             }
         }
