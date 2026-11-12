@@ -81,25 +81,43 @@ pub fn run(paths: &Paths, options: &RemoveOptions) -> Result<()> {
         }
     }
 
-    // First, while the config still names the providers; a locked keychain must not stop
-    // the removal, so what it leaves is only reported.
+    // What the user wants gone goes first and the program last, and one failure does not
+    // stop the rest: a run that could not finish leaves a program that can be asked again,
+    // never a removed program beside the data it was meant to take along.
+    let mut failures: Vec<String> = Vec::new();
+    let mut step = |result: Result<()>| {
+        if let Err(error) = result {
+            failures.push(format!("{error:#}"));
+        }
+    };
+    // While the config still names the providers; a locked keychain must not stop the
+    // removal, so what it leaves is only reported.
     if let Err(error) = app::forget_secrets(&paths.config_file()) {
         eprintln!("duskcode: {error:#}; delete them in the keychain app");
     }
-    for link in &links {
-        fs::remove_file(link).with_context(|| format!("cannot remove {}", link.display()))?;
-    }
-    fs::remove_file(&exe).with_context(|| format!("cannot remove {}", exe.display()))?;
-    removal.remove_application_data(&install_dir)?;
-    for extra in &extras {
-        remove_path(extra)?;
-    }
-    remove_path(config)?;
+    step(remove_path(config));
     if options.files {
-        remove_path(workspace)?;
+        step(remove_path(workspace));
     }
-    println!("duskcode is removed.");
-    Ok(())
+    step(removal.remove_application_data(&install_dir));
+    for extra in &extras {
+        step(remove_path(extra));
+    }
+    for link in &links {
+        step(fs::remove_file(link).with_context(|| format!("cannot remove {}", link.display())));
+    }
+    if failures.is_empty() {
+        fs::remove_file(&exe).with_context(|| format!("cannot remove {}", exe.display()))?;
+        println!("duskcode is removed.");
+        return Ok(());
+    }
+    // Started by the desktop client nobody reads this process's output, so what failed is
+    // also kept beside the lock, which stays.
+    let report = failures.join("\n");
+    if let Some(folder) = removal.lock_path().parent() {
+        let _ = fs::write(folder.join("removal.log"), format!("{report}\n"));
+    }
+    anyhow::bail!("the removal did not finish; run `duskcode remove` again:\n{report}")
 }
 
 /// The lock that keeps other duskcode processes out. Started by the desktop client, this
@@ -137,11 +155,23 @@ fn remove_path(path: &Path) -> Result<()> {
     let Ok(meta) = fs::symlink_metadata(path) else {
         return Ok(());
     };
-    match meta.is_dir() {
-        true => fs::remove_dir_all(path),
-        false => fs::remove_file(path),
+    if !meta.is_dir() {
+        return fs::remove_file(path).with_context(|| format!("cannot remove {}", path.display()));
     }
-    .with_context(|| format!("cannot remove {}", path.display()))
+    // A process that is still closing may write one more file into the folder while it is
+    // emptied, which fails the removal of the folder itself: a few tries outlast that.
+    let mut tries = 0;
+    loop {
+        match fs::remove_dir_all(path) {
+            Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty && tries < 10 => {
+                tries += 1;
+                std::thread::sleep(std::time::Duration::from_millis(300));
+            }
+            result => {
+                return result.with_context(|| format!("cannot remove {}", path.display()));
+            }
+        }
+    }
 }
 
 /// Links named duskcode on PATH and in the usual places that lead to `exe`.
