@@ -25,6 +25,10 @@ testing.
 
 ### Changed
 
+- Desktop chrome: a header across the whole window holds, over the rail and sidebar,
+  their switches and Back and Forward, the chat's title past a thin rule. The rail is a
+  shade darker than the sidebar, the sidebar is a card with one rounded corner, and the
+  wordmark made room for the controls.
 - The side panel lists screenshots as rows with a small thumbnail, the first five with
   "View all" for the rest. Click and scroll tools tell the model to take the user's own
   pointer only when the user asked for it.

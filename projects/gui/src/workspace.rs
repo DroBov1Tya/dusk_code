@@ -568,7 +568,7 @@ impl Render for Workspace {
         self.record_place();
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
-        let (frame, theme_border) = (theme.sidebar, theme.border);
+        let (frame, theme_border) = (rail::color(cx), theme.border);
         let center = match self.center {
             Center::Chat => chat::render(self, window, cx).into_any_element(),
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
@@ -622,37 +622,42 @@ impl Render for Workspace {
                 .justify_end()
                 .child(inspector::render(self, window, cx))
         });
+        // The header runs the window's width; under it the rail on the frame, the
+        // sidebar as a card with one rounded corner, and the work beside it.
+        let nav_width = px(rail::width(self)) + left;
+        let sidebar = sidebar.map(|column| {
+            column
+                .rounded_tl_xl()
+                .border_t_1()
+                .border_l_1()
+                .border_color(theme_border)
+        });
         div()
             .relative()
             .size_full()
             .flex()
-            .flex_row()
+            .flex_col()
             .bg(frame)
             .text_color(foreground)
-            .children((!self.rail_hidden).then(|| rail::render(self, cx)))
-            .children(sidebar)
-            // The work stands on one rounded sheet, a step lighter than the frame of
-            // rail and sidebar around it.
+            .child(topbar::render(self, nav_width, window, cx))
             .child(
                 div()
                     .flex_1()
-                    .min_w_0()
-                    .my_1p5()
-                    .mr_1p5()
-                    .rounded_xl()
-                    .overflow_hidden()
-                    .border_1()
-                    .border_color(theme_border)
-                    .bg(background)
+                    .min_h_0()
                     .flex()
-                    .flex_col()
-                    .child(topbar::render(self, window, cx))
+                    .flex_row()
+                    .children((!self.rail_hidden).then(|| rail::render(self, cx)))
+                    .children(sidebar)
                     .child(
                         div()
                             .flex_1()
-                            .min_h_0()
+                            .min_w_0()
+                            .h_full()
                             .flex()
                             .flex_row()
+                            .border_t_1()
+                            .border_color(theme_border)
+                            .bg(background)
                             .child(div().flex_1().min_w_0().h_full().child(center))
                             .children(inspector),
                     ),

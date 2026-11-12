@@ -16,6 +16,15 @@ use crate::{
 
 pub const WIDTH: f32 = 52.;
 
+/// The frame's color, which the rail and the header stand on: a step darker than the
+/// sidebar, so the edge between them reads without a line.
+pub fn color(cx: &App) -> Hsla {
+    let theme = cx.theme();
+    let mut color = theme.sidebar;
+    color.l *= if theme.mode.is_dark() { 0.72 } else { 0.95 };
+    color
+}
+
 /// The rail's width as drawn: none while the user keeps it hidden.
 pub fn width(ws: &Workspace) -> f32 {
     if ws.rail_hidden { 0. } else { WIDTH }
@@ -23,7 +32,7 @@ pub fn width(ws: &Workspace) -> f32 {
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (panel, border) = (theme.sidebar, theme.sidebar_border);
+    let border = theme.sidebar_border;
     let restart = ws.update_ready.clone().map(|tag| {
         let tip = format!("Restart into {tag}");
         item("rail-restart", IconName::RefreshCw, tip, false, cx)
@@ -43,24 +52,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .items_center()
         .gap_1p5()
         .py_2()
-        .bg(panel)
-        .child(
-            item(
-                "rail-sidebar",
-                if ws.left_hidden {
-                    IconName::PanelLeftOpen
-                } else {
-                    IconName::PanelLeftClose
-                },
-                "Show or hide the chats".into(),
-                false,
-                cx,
-            )
-            .on_click(cx.listener(|ws, _, _, cx| {
-                ws.left_hidden = !ws.left_hidden;
-                cx.notify();
-            })),
-        )
+        .bg(color(cx))
         .child(
             item("rail-new", IconName::Plus, "New chat".into(), false, cx)
                 .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),

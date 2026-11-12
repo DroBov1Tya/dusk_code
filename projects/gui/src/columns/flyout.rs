@@ -38,7 +38,7 @@ pub fn render(
     let panel = div()
         .id("flyout")
         .absolute()
-        .top(px(8.))
+        .top(px(crate::columns::topbar::HEIGHT + 4.))
         .bottom(px(8.))
         .left(px(crate::columns::rail::width(ws) + 6.))
         .w(px(crate::columns::sidebar::WIDTH))
