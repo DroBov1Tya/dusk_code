@@ -17,8 +17,6 @@ use crate::{
 };
 
 const TRIGGER_SIZE: f32 = 32.;
-const TRIGGER_GAP: f32 = 6.;
-pub(super) const GUTTER: f32 = TRIGGER_SIZE + TRIGGER_GAP;
 const ROW: f32 = 32.;
 const GAP: f32 = 2.;
 
@@ -177,10 +175,7 @@ pub fn render(
     });
     div()
         .id("navigator")
-        .absolute()
-        .right(relative(1.))
-        .bottom(window.rem_size() * 1.5 - px(TRIGGER_SIZE / 2.))
-        .mr(px(TRIGGER_GAP))
+        .relative()
         .child(
             div()
                 .id("navigator-trigger")

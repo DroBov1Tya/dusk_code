@@ -98,18 +98,26 @@ pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         tip.push_str(&format!(" \u{00B7} {cost}"));
     }
     let tip = SharedString::from(tip);
+    // The share in the ring's middle, the same 32 px as the buttons across the box.
     div()
         .id("context-ring")
+        .relative()
+        .size(px(32.))
         .flex()
-        .flex_col()
         .items_center()
-        .gap_0p5()
-        .child(super::ring::render(26., share, meter, border))
+        .justify_center()
         .child(
             div()
-                .meta()
+                .absolute()
+                .inset_0()
+                .child(super::ring::render(32., share, meter, border)),
+        )
+        .child(
+            div()
+                .text_size(px(9.))
+                .font_weight(FontWeight::MEDIUM)
                 .text_color(muted)
-                .child(format!("{:.0}%", share * 100.)),
+                .child(format!("{:.0}", share * 100.)),
         )
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)

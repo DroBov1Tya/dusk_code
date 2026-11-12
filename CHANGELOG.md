@@ -17,7 +17,10 @@ testing.
   shows the git mark; menus show which row is under the pointer; the side panel is
   narrower with inset rules and larger headers; the wordmark sits over the sidebar; the
   rail previews a place only while the sidebar is hidden; Settings, Chat opens the mode
-  list; text defaults to 16 px.
+  list; text defaults to 16 px. The composer stands between two columns of one width,
+  the message history on the left and the context ring with its share on the right, level
+  with the box's buttons; the microphone is a plain icon. A New chat above the projects
+  starts one that belongs to none.
 
 ## 0.73.1 - 2026-11-12
 

@@ -15,6 +15,23 @@ use super::transcript::Transcript;
 use crate::workspace::Workspace;
 
 pub(super) const WIDTH: f32 = 780.;
+/// The width of the columns beside the box.
+const SIDE: f32 = 52.;
+/// From the foot of the composer to the middle of the box's lower row of buttons: the
+/// row under the box and the box's own padding.
+const SIDE_LIFT: f32 = 40.;
+
+/// A column beside the box, its controls centered and level with the box's buttons.
+fn side() -> Div {
+    div()
+        .w(px(SIDE))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .items_center()
+        .gap_2()
+        .pb(px(SIDE_LIFT))
+}
 pub(super) const AGENTS_BUTTON: f32 = 52.;
 
 pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
@@ -55,19 +72,13 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
         });
     let navigator =
         (ws.sent_rows.len() > 1).then(|| super::navigator::render(ws, &ws.sent_rows, window, cx));
-    let history_padding = navigator.as_ref().map(|_| {
-        let chat_width = ws.chat_width(window);
-        let margin = (chat_width - WIDTH).max(0.) / 2.;
-        px(super::navigator::GUTTER - margin).max(window.rem_size() * 1.5)
-    });
     let mentions = mention_menu(ws, cx);
     let chips = strip(ws, cx);
     div()
         .relative()
-        .px_6()
-        .when_some(history_padding, |composer, padding| composer.pl(padding))
+        .px_4()
         .pt_2()
-        .max_w(px(WIDTH))
+        .max_w(px(WIDTH + 2. * SIDE))
         .mx_auto()
         .w_full()
         .children(queued)
@@ -77,6 +88,9 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 .flex_row()
                 .items_end()
                 .gap_2()
+                // The history on the left and the context on the right stand level with
+                // the box's lower row of buttons, as wide as each other.
+                .child(side().children(navigator))
                 .child(
                     div()
                         .flex_1()
@@ -94,7 +108,6 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                                 .bg(cx.theme().muted)
                                 .shadow_sm()
                                 .relative()
-                                .children(navigator)
                                 .children(mentions.map(crate::ui::widgets::on_top))
                                 .children(chips)
                                 .child(
@@ -146,12 +159,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 // The subagents stand beside the box, not in it: they are not part of what
                 // is sent.
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .items_center()
-                        .gap_2()
-                        .pb(px(36.))
+                    side()
                         .children(agents_button(ws, cx))
                         .child(super::model_bar::context(ws, cx)),
                 ),
@@ -216,9 +224,9 @@ fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
     Button::new("dictate")
         .rounded(ButtonRounded::Size(px(999.)))
         .icon(IconName::Mic)
-        // As large as Send beside it: a ring when off, filled while it listens.
+        // The size of Send beside it; filled only while it listens.
         .when(on, |button| button.danger())
-        .when(!on, |button| button.outline())
+        .when(!on, |button| button.ghost())
         .tooltip(if on { "Stop dictating" } else { "Dictate" })
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_dictation(cx)))
 }
