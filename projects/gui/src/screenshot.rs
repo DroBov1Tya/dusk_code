@@ -18,7 +18,8 @@
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
-//! - `quiet`: hide the columns as the rail's moon does;
+//! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
+//!   for that many minutes, for the header's sky;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
 
 use std::{path::PathBuf, time::Duration};
@@ -141,6 +142,17 @@ fn act(
         }
         "review" => ws.open_review(cx),
         "quiet" => ws.quiet = true,
+        // A turn of the shown chat that began `value` minutes ago and goes on.
+        "working" => {
+            let minutes: i64 = value.parse().unwrap_or(7);
+            if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
+                chat.working = true;
+                chat.activity_boundaries.push(chat.items.len());
+                chat.boundary_times
+                    .push(crate::pages::chat::timing::now_ms() - minutes * 60_000);
+                chat.boundary_spend.push((0, 0));
+            }
+        }
         "detail" => {
             use crate::modal::detail::Detail;
             let first = |names: Vec<String>| names.into_iter().next();

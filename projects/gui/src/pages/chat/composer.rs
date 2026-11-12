@@ -32,7 +32,10 @@ fn side() -> Div {
         .gap_2()
         .pb(px(SIDE_LIFT))
 }
-pub(super) const AGENTS_BUTTON: f32 = crate::ui::size::BAR;
+/// The marks beside the box, the history on the left and the subagents and the context on
+/// the right: one size and one shape, a circle, so the two sides mirror each other.
+pub(super) const SIDE_MARK: f32 = crate::ui::size::CONTROL + 4.;
+pub(super) const AGENTS_BUTTON: f32 = SIDE_MARK;
 
 pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     // Subagents may go on after the chat's own turn is over; Stop ends them too.
@@ -382,7 +385,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .flex()
         .items_center()
         .justify_center()
-        .rounded_xl()
+        .rounded_full()
         .border_1()
         .border_color(if working > 0 {
             signal.opacity(0.7)
@@ -399,7 +402,7 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             "agents-lead",
             &lead.1.state,
             color,
-            1.9,
+            1.2,
         ))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.modal = Some(crate::modal::Modal::Agents {
@@ -408,10 +411,8 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
             ws.agents_modal_focus.focus(window, cx);
             cx.notify();
         }));
-    // The count sits on the border of the tile's corner: its centre is on the arc of the
-    // rounded corner, which is 3.5 px in from the corner for a radius of 12, so the box
-    // keeps 5.5 px of room above and to the right for the badge's half (9 px).
-    const BADGE_ROOM: f32 = 5.5;
+    // The count sits on the circle's upper right, half outside it.
+    const BADGE_ROOM: f32 = 6.;
     Some(
         div()
             .relative()
@@ -427,8 +428,8 @@ fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
                     .absolute()
                     .top_0()
                     .right_0()
-                    .min_w(px(20.))
-                    .h(px(20.))
+                    .min_w(px(16.))
+                    .h(px(16.))
                     .px_1()
                     .flex()
                     .items_center()

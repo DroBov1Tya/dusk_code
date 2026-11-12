@@ -102,16 +102,16 @@ pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     div()
         .id("context-ring")
         .relative()
-        .size(px(32.))
+        .size(px(super::composer::SIDE_MARK))
         .flex()
         .items_center()
         .justify_center()
-        .child(
-            div()
-                .absolute()
-                .inset_0()
-                .child(super::ring::render(32., share, meter, border)),
-        )
+        .child(div().absolute().inset_0().child(super::ring::render(
+            super::composer::SIDE_MARK,
+            share,
+            meter,
+            border,
+        )))
         .child(
             div()
                 .text_size(px(9.))

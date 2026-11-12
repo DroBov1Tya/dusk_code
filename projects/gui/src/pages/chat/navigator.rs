@@ -16,7 +16,7 @@ use crate::{
     workspace::Workspace,
 };
 
-const TRIGGER_SIZE: f32 = 32.;
+const TRIGGER_SIZE: f32 = super::composer::SIDE_MARK;
 const ROW: f32 = 32.;
 const GAP: f32 = 2.;
 
@@ -188,7 +188,7 @@ pub fn render(
                 .flex()
                 .items_center()
                 .justify_center()
-                .rounded_md()
+                .rounded_full()
                 .cursor_pointer()
                 .when(open, |button| button.bg(selected))
                 .hover(move |button| button.bg(raised))
