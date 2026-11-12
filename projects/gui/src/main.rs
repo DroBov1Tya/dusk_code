@@ -34,6 +34,12 @@ use gpui_kit::*;
 pub const THREAD_SOURCE: &str = "gui";
 
 fn main() -> Result<()> {
+    // The agent's own cursor runs as this binary again; without this the helper would
+    // open a second window instead of the cursor.
+    #[cfg(target_os = "macos")]
+    if dusk_core::app::run_overlay_if_asked() {
+        return Ok(());
+    }
     // The installer checks what it put in place with this.
     if std::env::args().nth(1).as_deref() == Some("--version") {
         println!("duskcode-gui {}", env!("CARGO_PKG_VERSION"));

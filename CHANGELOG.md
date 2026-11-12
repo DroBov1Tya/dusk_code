@@ -6,6 +6,11 @@ testing.
 
 ## Unreleased
 
+### Fixed
+
+- The desktop app shows the agent's own cursor where it clicks: run as the cursor helper,
+  the app now becomes the helper instead of opening a second window.
+
 ### Added
 
 - Scheduled tasks: a prompt the core sends to a new chat of a saved project once, every
@@ -16,6 +21,9 @@ testing.
 
 ### Changed
 
+- The side panel lists screenshots as rows with a small thumbnail, the first five with
+  "View all" for the rest. Click and scroll tools tell the model to take the user's own
+  pointer only when the user asked for it.
 - Desktop: a wider rail with larger icons that can itself be hidden; resting on its Chats
   or Scheduled icon shows that place beside it, a click opens it. The top bar has Back and
   Forward through the places visited, the chat's project on hover of its folder, and a

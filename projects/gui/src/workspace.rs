@@ -219,6 +219,8 @@ pub struct Workspace {
     /// A rail place shown on hover, and whether the pointer is on its icon or panel.
     pub flyout: Option<crate::columns::flyout::Flyout>,
     pub flyout_inside: bool,
+    /// Side panel modules showing all their rows rather than the first few.
+    pub unfolded_modules: HashSet<Right>,
     /// The places the user went, for Back and Forward.
     pub history: topbar::history::History,
     pub right_hidden: bool,
@@ -395,6 +397,7 @@ impl Workspace {
             rail_hidden: false,
             flyout: None,
             flyout_inside: false,
+            unfolded_modules: HashSet::new(),
             history: Default::default(),
             right_hidden: false,
             attachments: Vec::new(),
