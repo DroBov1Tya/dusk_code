@@ -70,6 +70,8 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     let box_right = place(&layout.box_right, window, cx);
     let under_left = place(&layout.under_left, window, cx);
     let under_right = place(&layout.under_right, window, cx);
+    let accent = cx.theme().primary;
+    let writing = gpui_kit::Focusable::focus_handle(ws.composer.read(cx), cx).is_focused(window);
     let mentions = mention_menu(ws, cx).or_else(|| super::commands::menu(ws, cx));
     let chips = strip(ws, cx);
     div()
@@ -102,8 +104,22 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                                 .flex_col()
                                 .rounded_2xl()
                                 .border_1()
-                                .border_color(cx.theme().border)
+                                .border_color(if writing {
+                                    accent.opacity(0.5)
+                                } else {
+                                    cx.theme().border
+                                })
                                 .bg(cx.theme().muted)
+                                // The box lights up a little while it is written in.
+                                .when(writing, |card| {
+                                    card.shadow(vec![BoxShadow {
+                                        color: accent.opacity(0.14),
+                                        offset: point(px(0.), px(0.)),
+                                        blur_radius: px(18.),
+                                        spread_radius: px(0.),
+                                        inset: false,
+                                    }])
+                                })
                                 .shadow_sm()
                                 .relative()
                                 .children(mentions.map(crate::ui::widgets::on_top))

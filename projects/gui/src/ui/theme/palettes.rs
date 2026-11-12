@@ -38,7 +38,7 @@ pub const PALETTES: &[Palette] = &[
         raised: "#262839",
         foreground: "#efedf7",
         secondary: "#aeadc4",
-        muted: "#83829c",
+        muted: "#9695ae",
         accent: "#b4a0f8",
         on_accent: "#13121d",
         success: "#74d4b3",

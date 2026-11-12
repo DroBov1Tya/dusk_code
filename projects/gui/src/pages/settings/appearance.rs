@@ -1,11 +1,7 @@
 //! How the window looks: the theme, and the fonts with their sizes.
 
 use gpui_kit::{
-    component::{
-        ActiveTheme, Colorize, IconName, Sizable,
-        button::{Button, ButtonVariants},
-        input::Input,
-    },
+    component::{ActiveTheme, Colorize, IconName, Sizable, button::Button, input::Input},
     prelude::FluentBuilder,
     *,
 };
@@ -97,19 +93,21 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         let mut row = div().flex().flex_wrap().gap_1();
         for &size in options {
             row = row.child(
-                Button::new(SharedString::from(format!("size-{mono}-{size}")))
-                    .compact()
-                    .when_selected(size == current)
-                    .label(format!("{size:.0}"))
-                    .on_click(cx.listener(move |_, _, _, cx| {
-                        theme::change(cx, |prefs| {
-                            if mono {
-                                prefs.mono_size = size;
-                            } else {
-                                prefs.font_size = size;
-                            }
-                        });
-                    })),
+                crate::ui::controls::choice(
+                    Button::new(SharedString::from(format!("size-{mono}-{size}"))).compact(),
+                    size == current,
+                    cx,
+                )
+                .label(format!("{size:.0}"))
+                .on_click(cx.listener(move |_, _, _, cx| {
+                    theme::change(cx, |prefs| {
+                        if mono {
+                            prefs.mono_size = size;
+                        } else {
+                            prefs.font_size = size;
+                        }
+                    });
+                })),
             );
         }
         row
@@ -274,20 +272,6 @@ impl WhenFont for Div {
         match family {
             Some(family) => self.font_family(family),
             None => self,
-        }
-    }
-}
-
-trait WhenSelected {
-    fn when_selected(self, selected: bool) -> Self;
-}
-
-impl WhenSelected for Button {
-    fn when_selected(self, selected: bool) -> Self {
-        if selected {
-            self.primary()
-        } else {
-            self.ghost()
         }
     }
 }

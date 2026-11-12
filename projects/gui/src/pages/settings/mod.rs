@@ -113,8 +113,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .h_full()
             .overflow_y_scroll()
             .child(
+                // A reading width in the middle of the page, not a strip along its left.
                 div()
-                    .max_w(px(760.))
+                    .max_w(px(880.))
+                    .mx_auto()
                     .px_8()
                     .py_8()
                     .flex()

@@ -5,7 +5,7 @@
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon, IconName, Sizable,
-        button::{Button, ButtonVariants},
+        button::{Button, ButtonCustomVariant, ButtonVariants},
     },
     *,
 };
@@ -16,6 +16,23 @@ use crate::ui::Type;
 pub const CONTROL: f32 = crate::ui::size::CONTROL;
 
 type Click = Box<dyn Fn(&ClickEvent, &mut Window, &mut App) + 'static>;
+
+/// One of a row of choices. The chosen one is tinted with the accent and written in it,
+/// not filled: a page of such rows stays calm, and the full accent is left to the one
+/// button that acts.
+pub fn choice(button: Button, chosen: bool, cx: &App) -> Button {
+    if !chosen {
+        return button.ghost();
+    }
+    let accent = cx.theme().primary;
+    button.custom(
+        ButtonCustomVariant::new(cx)
+            .color(accent.opacity(0.26))
+            .foreground(accent)
+            .hover(accent.opacity(0.32))
+            .active(accent.opacity(0.36)),
+    )
+}
 
 /// A number between a minus and a plus, joined in one rounded field as on macOS. A side
 /// at its bound is greyed out, so the field says where the range ends.
