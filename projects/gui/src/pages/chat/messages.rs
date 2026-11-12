@@ -73,7 +73,19 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             })
             .flatten()
             .map(|offset| start + offset);
+        // While the turn goes on, what the agent says stays in sight and only its steps
+        // fold; once it is over, all but the answer folds.
         let folds = |index: usize, item: &Item| {
+            if open {
+                return matches!(
+                    item,
+                    Item::Tool(_) | Item::Agent { .. } | Item::User { sequence: None, .. }
+                ) || matches!(
+                    item,
+                    Item::Assistant { text, reasoning }
+                        if text.trim().is_empty() && !reasoning.trim().is_empty()
+                );
+            }
             Some(index) != answer
                 && !matches!(
                     item,
@@ -536,7 +548,9 @@ fn turn_activity(
                             cx,
                         ));
                     }
-                    if !text.trim().is_empty() {
+                    // A running turn shows what it says in the chat, not here.
+                    let running = matches!(span, Some((_, None)) | None);
+                    if !text.trim().is_empty() && !running {
                         detail = detail.child(div().px_2().small().child(super::links::markdown(
                             SharedString::from(format!("said-{shown}-{index}")),
                             text.clone(),

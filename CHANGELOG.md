@@ -9,8 +9,9 @@ testing.
 ### Changed
 
 - A scheduled task can name its model; the desktop editor's lists keep their clicks
-  instead of closing the window. A finished turn folds everything but its answer, in
-  every client, and says what each tool did in plain words, work for agents in the
+  instead of closing the window. While a turn runs, what the agent says stays in sight
+  and only its steps fold; once it is over, everything but its answer folds, in every
+  client, and says what each tool did in plain words, work for agents in the
   accent. Desktop composer: attach and access inside the box with the microphone as
   large as Send, the mode and the model under it, the context as a percentage beside it
   with the counts on hover. Answers read as text, their tools on hover; the review button

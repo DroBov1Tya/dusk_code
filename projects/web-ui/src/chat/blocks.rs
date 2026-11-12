@@ -61,10 +61,20 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
                 )
             })
             .flatten();
+        // While the turn goes on, what the agent says stays in sight and only its steps
+        // fold; once it is over, all but the answer folds.
+        let folds_now = |item: &Item| {
+            if open {
+                matches!(item, Item::Tool(_) | Item::Agent { .. })
+                    || matches!(item, Item::Assistant { text, .. } if text.trim().is_empty())
+            } else {
+                folds(item)
+            }
+        };
         let folded: Vec<Entry> = turn
             .iter()
             .enumerate()
-            .filter(|(index, entry)| Some(*index) != answer && folds(&entry.item))
+            .filter(|(index, entry)| Some(*index) != answer && folds_now(&entry.item))
             .map(|(_, entry)| entry.clone())
             .collect();
         let started = matches!(asked.item, Item::User(_)).then_some(asked.at);
@@ -78,7 +88,7 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
             });
         }
         for (index, entry) in turn.iter().enumerate() {
-            if Some(index) == answer || !folds(&entry.item) {
+            if Some(index) == answer || !folds_now(&entry.item) {
                 blocks.push(Block::One(entry.clone()));
             }
         }
