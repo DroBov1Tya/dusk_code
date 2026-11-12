@@ -566,7 +566,7 @@ fn turn_activity(
                             ws,
                             shown,
                             index,
-                            "Thinking",
+                            ("Thinking", IconName::Asterisk),
                             long(reasoning),
                             || reasoning.clone().into_any_element(),
                             cx,
@@ -600,7 +600,7 @@ fn turn_activity(
                     ws,
                     shown,
                     index,
-                    "Background task result",
+                    ("Background task result", IconName::SquareTerminal),
                     long(text),
                     || text.clone().into_any_element(),
                     cx,
@@ -626,7 +626,7 @@ fn turn_activity(
     block
 }
 
-fn agent_report(
+pub fn agent_report(
     ws: &Workspace,
     shown: &str,
     index: usize,
@@ -644,7 +644,7 @@ fn agent_report(
         ws,
         shown,
         index,
-        &label,
+        (&label, IconName::Bot),
         long(text),
         || {
             links::markdown(
@@ -657,11 +657,11 @@ fn agent_report(
     )
 }
 
-fn activity_text(
+pub fn activity_text(
     ws: &Workspace,
     shown: &str,
     index: usize,
-    title: &str,
+    (title, icon): (&str, IconName),
     long: bool,
     body: impl FnOnce() -> AnyElement,
     cx: &mut Context<Workspace>,
@@ -681,8 +681,9 @@ fn activity_text(
                 cx,
             )
             .aria_label(title.to_owned())
+            .child(widgets::icon(icon, muted))
+            .child(div().flex_1().min_w_0().truncate().child(title.to_owned()))
             .child(disclosure_icon(open, muted))
-            .child(div().min_w_0().truncate().child(title.to_owned()))
             .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
         )
         .when(open, |block| {
@@ -752,6 +753,34 @@ pub fn run(
     block
 }
 
+/// What a step is, at a glance, before its words are read: the terminal, a file, a
+/// search, an edit, the web, another agent, a connector's tool. The tool's name says it;
+/// a connector's tool is named `server__tool`.
+fn step_icon(tool: &str) -> IconName {
+    use dusk_protocol::agent::Doing;
+    let has = |words: &[&str]| words.iter().any(|word| tool.contains(word));
+    if dusk_protocol::tools::is_agent_tool(tool) {
+        IconName::Bot
+    } else if tool.contains("__") {
+        IconName::Network
+    } else if has(&["screenshot", "click", "type_text", "computer", "display"]) {
+        IconName::Frame
+    } else if has(&["fetch", "web", "navigate", "browse", "url"]) {
+        IconName::Globe
+    } else if has(&["skill"]) {
+        IconName::BookOpen
+    } else if has(&["remember", "memory"]) {
+        IconName::MemoryStick
+    } else {
+        match Doing::of_tool(tool) {
+            Doing::Searching => IconName::Search,
+            Doing::Reading => IconName::FileText,
+            Doing::Planning => IconName::Replace,
+            _ => IconName::SquareTerminal,
+        }
+    }
+}
+
 fn step_muted(cx: &App) -> Hsla {
     let theme = cx.theme();
     theme.foreground.mix_oklab(theme.muted_foreground, 0.16)
@@ -779,7 +808,7 @@ fn disclosure(id: impl Into<ElementId>, open: bool, cx: &App) -> Stateful<Div> {
 }
 
 /// Whether an unfolded text is long enough that its end is far from its heading.
-fn long(text: &str) -> bool {
+pub fn long(text: &str) -> bool {
     text.len() > 500 || text.lines().count() > 8
 }
 
@@ -814,10 +843,12 @@ fn step(
     let muted = step_muted(cx);
     let surface = theme.muted;
     let open = ws.unfolded.contains(&(shown.to_owned(), index | STEP));
-    let (icon, color, status) = match tool.state {
-        ToolState::Running => (IconName::LoaderCircle, theme.warning, "Running"),
-        ToolState::Done => (IconName::Check, muted, "Completed"),
-        ToolState::Failed => (IconName::CircleX, theme.danger, "Failed"),
+    // The icon says what the step is; its color, how it stands.
+    let icon = step_icon(&tool.name);
+    let (color, status) = match tool.state {
+        ToolState::Running => (theme.warning, "Running"),
+        ToolState::Done => (muted, "Completed"),
+        ToolState::Failed => (theme.danger, "Failed"),
     };
     let id = shown.to_owned();
     let mono = crate::ui::theme::prefs(cx)
