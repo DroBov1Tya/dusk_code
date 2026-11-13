@@ -36,23 +36,29 @@ const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
 /// Where the user sees and sets how much of the plan an app may use.
 const USAGE_PAGE: &str = "https://chatgpt.com/settings/usage";
+const SIGN_IN_AGAIN: &str =
+    "ChatGPT did not accept the sign-in; sign in again in the provider settings";
 
 pub struct ChatGpt {
     client: Client,
     models_url: Url,
     responses_url: Url,
-    session: Arc<Session>,
+    /// None when the record of the sign-in cannot be read, as with a locked keychain:
+    /// the provider then says so when asked, and the others go on working.
+    session: Option<Arc<Session>>,
     account: Account,
 }
 
 #[derive(Deserialize)]
 struct Catalogue {
-    #[serde(default)]
+    /// The plan's list; `data` is how the same endpoint answers an API key.
+    #[serde(default, alias = "data")]
     models: Vec<Entry>,
 }
 
 #[derive(Deserialize)]
 struct Entry {
+    #[serde(alias = "id")]
     slug: String,
     visibility: Option<String>,
     context_window: Option<u64>,
@@ -72,17 +78,21 @@ impl ChatGpt {
             client: http::client()?,
             models_url: http::endpoint(&base_url, &["models"])?,
             responses_url: http::endpoint(&base_url, &["responses"])?,
-            session: Session::of(&config.api_key.0)?,
+            session: Session::of(&config.api_key.0).ok(),
             account: Account::of(config),
         })
     }
 
-    async fn bearer(&self, refused: bool) -> Result<HeaderValue> {
-        let token = self.session.access_token(&self.client, refused).await?;
+    async fn bearer(&self, refused: Option<&str>) -> Result<(String, HeaderValue)> {
+        let session = self
+            .session
+            .as_ref()
+            .ok_or_else(|| anyhow!("{SIGN_IN_AGAIN}"))?;
+        let token = session.access_token(&self.client, refused).await?;
         let mut value = HeaderValue::from_str(&format!("Bearer {token}"))
             .map_err(|_| anyhow!("the ChatGPT sign-in gave an unusable token"))?;
         value.set_sensitive(true);
-        Ok(value)
+        Ok((token, value))
     }
 
     /// Sends the request made by `build`, once more with a renewed token when the first
@@ -92,17 +102,18 @@ impl ChatGpt {
         build: impl Fn() -> reqwest::RequestBuilder,
         failed: impl Fn() -> anyhow::Error,
     ) -> Result<Response> {
-        let mut refused = false;
+        let mut refused: Option<String> = None;
         loop {
+            let (token, bearer) = self.bearer(refused.as_deref()).await?;
             let response = build()
-                .header(AUTHORIZATION, self.bearer(refused).await?)
+                .header(AUTHORIZATION, bearer)
                 .send()
                 .await
                 .map_err(|_| failed())?;
-            if response.status() != StatusCode::UNAUTHORIZED || refused {
+            if response.status() != StatusCode::UNAUTHORIZED || refused.is_some() {
                 return Ok(response);
             }
-            refused = true;
+            refused = Some(token);
         }
     }
 
@@ -220,7 +231,11 @@ async fn refusal(response: Response, what: &str) -> String {
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
         .and_then(|body| Some(body.get("error")?.get("code")?.as_str()?.to_owned()))
         .unwrap_or_default();
-    said(&code).unwrap_or_else(|| http::refused(what, status))
+    said(&code).unwrap_or_else(|| match status {
+        // There is no key to change here: the token was renewed once and refused again.
+        StatusCode::UNAUTHORIZED => SIGN_IN_AGAIN.to_owned(),
+        status => http::refused(what, status),
+    })
 }
 
 /// The plan's own refusals, in words that tell the user what to do.
@@ -237,9 +252,7 @@ fn said(code: &str) -> Option<String> {
         }
         "subscription_sharing_invalid_user"
         | "chatpass_v2_scope_not_authorized"
-        | "chatpass_v2_invalid_authorization_context" => {
-            "ChatGPT did not accept the sign-in; sign in again in the provider settings".to_owned()
-        }
+        | "chatpass_v2_invalid_authorization_context" => SIGN_IN_AGAIN.to_owned(),
         _ => return None,
     })
 }
@@ -381,6 +394,8 @@ struct Parser {
     /// agent knows them by, and whether their arguments came in pieces.
     calls: HashMap<u64, (u32, bool)>,
     done: bool,
+    /// The tool calls counted; the map may not grow when a stream repeats a place.
+    counted: u32,
 }
 
 #[derive(Deserialize)]
@@ -464,8 +479,11 @@ impl Parser {
                 events.push(ModelEvent::Reasoning("\n\n".into()));
             }
             "response.output_item.added" => {
-                if let Some(item) = event.item.filter(|item| item.r#type == "function_call") {
-                    let index = self.calls.len() as u32;
+                if let Some(item) = event.item.filter(|item| item.r#type == "function_call")
+                    && !self.calls.contains_key(&event.output_index)
+                {
+                    let index = self.counted;
+                    self.counted += 1;
                     self.calls.insert(event.output_index, (index, false));
                     events.push(ModelEvent::ToolCall {
                         index,

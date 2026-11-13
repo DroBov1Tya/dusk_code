@@ -13,7 +13,9 @@ testing.
   Responses API. It is in the provider settings of the desktop window and first in
   `/connect` of the terminal client. The identity token's signature, issuer, audience,
   expiry and nonce are checked; the record is kept where API keys are kept, and its
-  rotating refresh token is saved after every renewal. A new provider kind, `chatgpt`,
+  rotating refresh token is saved after every renewal and read again before one, so
+  the desktop and terminal clients can run side by side. A record that cannot be read
+  leaves the other providers working. A new provider kind, `chatgpt`,
   cannot be made from a form or pointed at another address. New direct dependency:
   `aws-lc-rs`, already in the tree under rustls.
 

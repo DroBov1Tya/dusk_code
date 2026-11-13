@@ -236,7 +236,14 @@ pub(crate) async fn redirected(
         let denied = callback
             .query_pairs()
             .find(|(key, _)| key == "error")
-            .map(|(_, value)| value.chars().take(60).collect::<String>());
+            // A code, not prose: what else the server wrote could carry anything.
+            .map(|(_, value)| {
+                value
+                    .chars()
+                    .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+                    .take(60)
+                    .collect::<String>()
+            });
         let page = match &denied {
             Some(_) => "<!doctype html><p>Sign-in was not completed.</p>",
             None => DONE_PAGE,

@@ -33,32 +33,38 @@ fn provider(credential: &Credential) -> ProviderConfig {
     }
 }
 
-/// The signed-in provider of the config file and its record, when there is one.
-fn signed_in(config: &LiveConfig) -> Option<(String, Credential)> {
+/// The ChatGPT provider of the config file, and its record when it can be read: with a
+/// locked keychain or a damaged record there is a provider and no record.
+fn signed_in(config: &LiveConfig) -> Option<(String, Option<Credential>)> {
     config
         .current()
         .providers()
         .iter()
-        .filter(|(_, provider)| provider.kind == ProviderKind::ChatGpt)
-        .find_map(|(name, provider)| {
-            Some((name.clone(), Credential::read(&provider.api_key.0).ok()?))
-        })
+        .find(|(_, provider)| provider.kind == ProviderKind::ChatGpt)
+        .map(|(name, provider)| (name.clone(), Credential::read(&provider.api_key.0).ok()))
 }
 
-/// Keeps a renewed record: the refresh token rotates, so the one in the keychain would
-/// be of no use after the next start.
+/// Keeps a renewed record, and reads the stored one before a renewal: the refresh token
+/// rotates, so a spent one in the keychain would end the sign-in at the next start, and
+/// another client of this program may have renewed it since.
 pub(crate) fn keep_renewed(config: Arc<LiveConfig>) {
-    sign_in::save_with(move |credential| {
-        let Some((name, earlier)) = signed_in(&config) else {
-            return;
-        };
-        if earlier.client_id != credential.client_id {
-            return;
-        }
-        let renewed = provider(credential);
-        if let Err(error) = config.update(|config| config.set_provider(name, renewed)) {
-            warn!("the renewed ChatGPT sign-in was not saved: {error:#}");
-        }
+    let stored = Arc::clone(&config);
+    sign_in::keep_in(sign_in::Store {
+        load: Box::new(move |client_id| {
+            // The file and the keychain as they are now, not as this process last saw them.
+            let _ = stored.reload();
+            let (_, credential) = signed_in(&stored)?;
+            credential.filter(|credential| credential.client_id == client_id)
+        }),
+        save: Box::new(move |credential| {
+            let Some((name, _)) = signed_in(&config) else {
+                // Removed meanwhile: nothing to keep.
+                return Ok(());
+            };
+            let renewed = provider(credential);
+            config.update(|config| config.set_provider(name, renewed))?;
+            Ok(())
+        }),
     });
 }
 
@@ -68,10 +74,13 @@ impl Runtime {
         let note = self.chatgpt.lock().clone();
         match (note, signed_in(&self.launcher.config)) {
             (ChatGpt::Waiting, _) => ChatGpt::Waiting,
-            (_, Some((_, credential))) => ChatGpt::SignedIn {
+            (_, Some((_, Some(credential)))) => ChatGpt::SignedIn {
                 account: credential.email.unwrap_or_else(|| "ChatGPT".to_owned()),
             },
-            (failed @ ChatGpt::Failed(_), None) => failed,
+            (failed @ ChatGpt::Failed(_), _) => failed,
+            (_, Some((_, None))) => {
+                ChatGpt::Failed("the saved ChatGPT sign-in cannot be read; sign in again".into())
+            }
             _ => ChatGpt::SignedOut,
         }
     }
@@ -80,10 +89,6 @@ impl Runtime {
     /// the provider once they come back from it. Signed in before, the same account
     /// signs in again.
     pub async fn sign_in_chatgpt(&self) -> Result<reqwest::Url> {
-        ensure!(
-            *self.chatgpt.lock() != ChatGpt::Waiting,
-            "a sign-in is already waiting for the browser"
-        );
         let earlier = signed_in(&self.launcher.config);
         let name = earlier.as_ref().map_or(NAME, |(name, _)| name).to_owned();
         ensure!(
@@ -96,8 +101,24 @@ impl Runtime {
                     .contains_key(NAME),
             "a provider named {NAME} exists; remove or rename it first"
         );
-        let (page, finish) = sign_in::sign_in(earlier.map(|(_, credential)| credential)).await?;
-        *self.chatgpt.lock() = ChatGpt::Waiting;
+        // One at a time: checked and marked in one step, before anything waits.
+        {
+            let mut note = self.chatgpt.lock();
+            ensure!(
+                *note != ChatGpt::Waiting,
+                "a sign-in is already waiting for the browser"
+            );
+            *note = ChatGpt::Waiting;
+        }
+        // A record that cannot be read signs in as the first time, under the same name.
+        let started = sign_in::sign_in(earlier.and_then(|(_, credential)| credential)).await;
+        let (page, finish) = match started {
+            Ok(started) => started,
+            Err(error) => {
+                *self.chatgpt.lock() = ChatGpt::SignedOut;
+                return Err(error);
+            }
+        };
         let (config, model, note) = (
             Arc::clone(&self.launcher.config),
             Arc::clone(&self.launcher.model),
@@ -106,9 +127,9 @@ impl Runtime {
         tokio::spawn(async move {
             let saved = async {
                 let settings = provider(&finish.await?);
-                let adapter = Arc::new(Provider::new(&settings)?);
-                config.update(|config| config.set_provider(name.clone(), settings))?;
-                model.replace_provider(&name, adapter);
+                // Saved first: the session reads the stored record before it renews.
+                config.update(|config| config.set_provider(name.clone(), settings.clone()))?;
+                model.replace_provider(&name, Arc::new(Provider::new(&settings)?));
                 anyhow::Ok(())
             };
             *note.lock() = match saved.await {
@@ -117,7 +138,7 @@ impl Runtime {
                     ChatGpt::SignedOut
                 }
                 Err(error) => {
-                    // Our own words only: the servers' answers never reach an error here.
+                    // Our own words and filtered codes: no server's prose reaches here.
                     let error: String = format!("{error:#}").chars().take(200).collect();
                     warn!("sign-in to ChatGPT failed: {error}");
                     ChatGpt::Failed(error)

@@ -81,18 +81,38 @@ impl Credential {
 
 /// One account's tokens, shared by every adapter built from its record.
 pub struct Session {
-    credential: tokio::sync::Mutex<Credential>,
+    tokens: tokio::sync::Mutex<Held>,
+    /// A record that came while a renewal held the tokens, as from a new sign-in; it is
+    /// taken up before the tokens are used again.
+    newer: parking_lot::Mutex<Option<Credential>>,
+}
+
+struct Held {
+    credential: Credential,
+    /// The last renewal could not be kept; the next use tries again, since the record
+    /// in the store holds a refresh token that is spent.
+    unsaved: bool,
 }
 
 static SESSIONS: LazyLock<parking_lot::Mutex<HashMap<String, Arc<Session>>>> =
     LazyLock::new(Default::default);
 
-type Saver = Box<dyn Fn(&Credential) + Send + Sync>;
-static SAVER: OnceLock<Saver> = OnceLock::new();
+type Load = Box<dyn Fn(&str) -> Option<Credential> + Send + Sync>;
+type Save = Box<dyn Fn(&Credential) -> Result<()> + Send + Sync>;
 
-/// Who keeps a renewed record. Set once, by the runtime that owns the config.
-pub fn save_with(saver: impl Fn(&Credential) + Send + Sync + 'static) {
-    let _ = SAVER.set(Box::new(saver));
+/// Where the record of an account is kept: another process of this program may have
+/// renewed it since, so it is read again before a renewal, and written after one.
+pub struct Store {
+    /// The stored record of the account with this client ID.
+    pub load: Load,
+    pub save: Save,
+}
+
+static STORE: OnceLock<Store> = OnceLock::new();
+
+/// Set once, by the runtime that owns the config.
+pub fn keep_in(store: Store) {
+    let _ = STORE.set(store);
 }
 
 impl Session {
@@ -105,30 +125,62 @@ impl Session {
             .entry(credential.client_id.clone())
             .or_insert_with(|| {
                 Arc::new(Self {
-                    credential: tokio::sync::Mutex::new(credential.clone()),
+                    tokens: tokio::sync::Mutex::new(Held {
+                        credential: credential.clone(),
+                        unsaved: false,
+                    }),
+                    newer: Default::default(),
                 })
             });
-        // Held only while a refresh runs, and that refresh is the newer one.
-        if let Ok(mut held) = session.credential.try_lock()
-            && credential.saved_at > held.saved_at
-        {
-            *held = credential;
-        }
+        *session.newer.lock() = Some(credential);
         Ok(Arc::clone(session))
     }
 
-    /// A token good for a request now, renewed first when it is about to end, or at
-    /// once when the server just refused it.
-    pub async fn access_token(&self, http: &Client, refused: bool) -> Result<String> {
-        let mut credential = self.credential.lock().await;
-        if refused || credential.expires_at - now() < RENEW_BEFORE {
-            let renewed = refresh(http, &credential).await?;
-            *credential = renewed;
-            if let Some(save) = SAVER.get() {
-                save(&credential);
+    /// A token good for a request now. It is renewed first when it is about to end, or
+    /// when the server refused `refused`, unless someone has renewed it meanwhile.
+    pub async fn access_token(&self, http: &Client, refused: Option<&str>) -> Result<String> {
+        let mut held = self.tokens.lock().await;
+        if let Some(newer) = self.newer.lock().take() {
+            held.adopt(newer);
+        }
+        let stale = |held: &Held| {
+            refused == Some(held.credential.access_token.as_str())
+                || held.credential.expires_at.saturating_sub(now()) < RENEW_BEFORE
+        };
+        // Another process of this program may hold a renewed record already: using the
+        // refresh token it spent would end the sign-in for both.
+        if stale(&held)
+            && let Some(stored) = STORE
+                .get()
+                .and_then(|store| (store.load)(&held.credential.client_id))
+        {
+            held.adopt(stored);
+        }
+        if stale(&held) {
+            held.credential = refresh(http, &held.credential).await?;
+            held.unsaved = true;
+        }
+        if held.unsaved
+            && let Some(store) = STORE.get()
+        {
+            match (store.save)(&held.credential) {
+                Ok(()) => held.unsaved = false,
+                Err(error) => {
+                    tracing::warn!("the renewed ChatGPT sign-in is not saved yet: {error:#}")
+                }
             }
         }
-        Ok(credential.access_token.clone())
+        Ok(held.credential.access_token.clone())
+    }
+}
+
+impl Held {
+    /// Takes `other` when it was made later. A renewal not yet saved is the latest there
+    /// is, whatever a clock says.
+    fn adopt(&mut self, other: Credential) {
+        if !self.unsaved && other.saved_at >= self.credential.saved_at {
+            self.credential = other;
+        }
     }
 }
 
@@ -234,7 +286,7 @@ pub async fn sign_in(
             refresh_token: tokens
                 .refresh_token
                 .context("the sign-in gave no refresh token")?,
-            expires_at: now() + tokens.expires_in.unwrap_or(3600),
+            expires_at: expiry(tokens.expires_in),
             saved_at: now(),
         })
     };
@@ -252,6 +304,12 @@ fn issued_client(earlier: Option<&Credential>, answered: Option<String>) -> Resu
         }
         (Some(earlier), _) => Ok(earlier.client_id.clone()),
     }
+}
+
+/// When a token ends, from the seconds the server gave: an hour when it gave none, and
+/// never an absurd span.
+fn expiry(expires_in: Option<i64>) -> i64 {
+    now() + expires_in.unwrap_or(3600).clamp(0, 30 * 24 * 3600)
 }
 
 fn granted(scope: Option<&str>) -> bool {
@@ -275,8 +333,10 @@ async fn refresh(http: &Client, credential: &Credential) -> Result<Credential> {
         refresh_token: tokens
             .refresh_token
             .unwrap_or_else(|| credential.refresh_token.clone()),
-        expires_at: now() + tokens.expires_in.unwrap_or(3600),
-        saved_at: now(),
+        expires_at: expiry(tokens.expires_in),
+        // Later than the record it came from even within one second, or after the
+        // clock stepped back.
+        saved_at: now().max(credential.saved_at + 1),
         ..credential.clone()
     })
 }
@@ -348,6 +408,8 @@ async fn limited(mut response: reqwest::Response) -> Result<Vec<u8>> {
 struct Identity {
     iss: String,
     aud: Audience,
+    /// The party the token was issued to; stated when there are several audiences.
+    azp: Option<String>,
     exp: i64,
     nonce: Option<String>,
     sub: String,
@@ -439,7 +501,9 @@ fn check_identity(
     let identity: Identity = serde_json::from_slice(&decode(body)?).map_err(|_| unsigned())?;
     let for_client = match &identity.aud {
         Audience::One(one) => one == client_id,
-        Audience::Many(many) => many.iter().any(|one| one == client_id),
+        Audience::Many(many) => {
+            many.iter().any(|one| one == client_id) && identity.azp.as_deref() == Some(client_id)
+        }
     };
     ensure!(
         identity.iss == ISSUER && for_client,
@@ -501,6 +565,36 @@ mod tests {
         assert!(refused(token(r#"{"alg":"RS256","kid":"k1"}"#)));
         assert!(refused("a.b".into()));
         assert!(refused("a.b.c.d".into()));
+    }
+
+    fn credential(saved_at: i64, access_token: &str) -> Credential {
+        Credential {
+            client_id: "oaiapp_1".into(),
+            host_id: "urn:uuid:x".into(),
+            subject: "u".into(),
+            email: None,
+            access_token: access_token.into(),
+            refresh_token: "r".into(),
+            expires_at: 0,
+            saved_at,
+        }
+    }
+
+    /// The refresh token rotates: the record made last wins, and a renewal that is not
+    /// saved yet is never given up for what the store still holds.
+    #[test]
+    fn the_latest_record_is_kept_and_an_unsaved_renewal_is_not_replaced() {
+        let mut held = Held {
+            credential: credential(10, "mine"),
+            unsaved: false,
+        };
+        held.adopt(credential(9, "older"));
+        assert_eq!(held.credential.access_token, "mine");
+        held.adopt(credential(11, "from another process"));
+        assert_eq!(held.credential.access_token, "from another process");
+        held.unsaved = true;
+        held.adopt(credential(99, "stale store"));
+        assert_eq!(held.credential.access_token, "from another process");
     }
 
     #[test]
