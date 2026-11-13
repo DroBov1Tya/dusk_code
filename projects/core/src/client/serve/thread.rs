@@ -224,6 +224,8 @@ impl Server {
     pub(super) async fn detach(&mut self, client: ClientId) {
         self.sources.remove(&client);
         self.subscribers.lock().retain(|(id, _)| *id != client);
+        // A shell never outlives the client that opened it.
+        self.terminals.close_client(client);
         let ids: Vec<String> = self.threads.keys().cloned().collect();
         // A client that is gone, unlike one that closes a thread, may be a browser that
         // reloads: its threads run on for a while before they are stopped.

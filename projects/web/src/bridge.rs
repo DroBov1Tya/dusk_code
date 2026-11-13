@@ -5,8 +5,8 @@ use anyhow::{Context, Result};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use dusk_core::client::{Client, Hub};
 use dusk_protocol::client::{
-    CatalogRequest, Hello, PROTOCOL_VERSION, Request, RequestFrame, Response, ServerFrame,
-    VoiceRequest, WorkRequest,
+    CatalogRequest, Hello, PROTOCOL_VERSION, ProjectRequest, Request, RequestFrame, Response,
+    ServerFrame, VoiceRequest, WorkRequest,
 };
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Semaphore, mpsc, watch};
@@ -139,7 +139,8 @@ const MAX_REQUEST: usize = 1024 * 1024;
 
 /// What a browser may not ask, though the protocol has it: stopping the core is for the
 /// process that started the server, an MCP server's config text holds its keys and tokens,
-/// and a request over the ordinary size is only for a recording.
+/// a shell and the files of a project are the desktop app's to open and change, and a
+/// request over the ordinary size is only for a recording.
 fn refused(request: &Request, size: usize) -> Option<&'static str> {
     match request {
         Request::Shutdown => Some("a browser cannot stop the core"),
@@ -148,6 +149,10 @@ fn refused(request: &Request, size: usize) -> Option<&'static str> {
         }
         Request::Catalog(CatalogRequest::SaveMcpServer { old: Some(_), .. }) => {
             Some("an existing MCP server is edited in the desktop app")
+        }
+        Request::Terminal(_) => Some("a terminal opens in the desktop app only"),
+        Request::Project(ProjectRequest::WriteFile { .. }) => {
+            Some("a file is edited in the desktop app only")
         }
         // Sound and pictures are bytes; the core caps a picture, the frame cap the rest.
         Request::Voice(VoiceRequest::Transcribe { .. })
@@ -181,12 +186,46 @@ async fn refuse(socket: &mut WebSocket, code: u16, reason: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusk_protocol::client::ThreadRequest;
+    use dusk_protocol::client::{TerminalRequest, ThreadRequest};
 
     #[test]
     fn a_browser_cannot_stop_the_core() {
         assert!(refused(&Request::Shutdown, 10).is_some());
         assert!(refused(&Request::Thread(ThreadRequest::List), 10).is_none());
+    }
+
+    #[test]
+    fn a_browser_gets_no_shell_and_writes_no_file() {
+        let id = || "0190".to_owned();
+        for request in [
+            TerminalRequest::Open {
+                cwd: "/".into(),
+                cols: 80,
+                rows: 24,
+            },
+            TerminalRequest::Input {
+                id: id(),
+                data: b"ls\n".to_vec(),
+            },
+            TerminalRequest::Resize {
+                id: id(),
+                cols: 80,
+                rows: 24,
+            },
+            TerminalRequest::Close { id: id() },
+        ] {
+            assert!(refused(&Request::Terminal(request), 10).is_some());
+        }
+        let write = Request::Project(ProjectRequest::WriteFile {
+            path: "/tmp/x".into(),
+            text: String::new(),
+            seen: None,
+        });
+        assert!(refused(&write, 10).is_some());
+        let read = Request::Project(ProjectRequest::ReadFile {
+            path: "/tmp/x".into(),
+        });
+        assert!(refused(&read, 10).is_none());
     }
 
     #[test]

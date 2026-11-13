@@ -47,3 +47,22 @@ pub struct OutputFile {
 
 /// The most a text file may weigh to be read for a preview.
 pub const MAX_PREVIEW_BYTES: u64 = 1024 * 1024;
+
+/// The most a text file may weigh to be opened in the editor or written back by it.
+pub const MAX_EDIT_BYTES: u64 = 8 * 1024 * 1024;
+
+/// What a file was on disk at one moment. A client sends back the stamp it read with, so
+/// a file that something else changed meanwhile is not written over.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileStamp {
+    /// Unix timestamp in milliseconds.
+    pub modified_ms: i64,
+    pub bytes: u64,
+}
+
+/// A text file as the editor opens it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileText {
+    pub text: String,
+    pub stamp: FileStamp,
+}

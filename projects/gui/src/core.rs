@@ -62,6 +62,16 @@ impl Core {
         .detach();
     }
 
+    /// Starts work against the core that lives as long as it has something to do, such
+    /// as a queue of calls that must be made in order.
+    pub fn run<F, Fut>(&self, work: F)
+    where
+        F: FnOnce(Arc<Client>) -> Fut + Send + 'static,
+        Fut: Future<Output = ()> + Send + 'static,
+    {
+        self.runtime.spawn(work(Arc::clone(&self.client)));
+    }
+
     /// Runs `call` against the core, then `done` on the view with its result.
     pub fn call<V, T, F, Fut>(
         &self,

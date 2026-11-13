@@ -15,6 +15,8 @@ pub enum Request {
     SystemReport,
     /// Recordings in, speech out.
     Voice(VoiceRequest),
+    /// The user's own shell in the window; the agents never see it.
+    Terminal(TerminalRequest),
     /// Installs release `tag`; progress shows in the status until it is done.
     InstallUpdate {
         tag: String,
@@ -26,6 +28,7 @@ pub enum Request {
 mod catalog;
 mod project;
 mod settings;
+mod terminal;
 mod thread;
 mod voice;
 mod work;
@@ -33,6 +36,7 @@ mod work;
 pub use catalog::CatalogRequest;
 pub use project::ProjectRequest;
 pub use settings::{ProviderTarget, SettingsRequest, Switch};
+pub use terminal::{MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE, MAX_TERMINALS, TerminalRequest};
 pub use thread::ThreadRequest;
 pub use voice::VoiceRequest;
 pub use work::{MAX_PICTURE_UPLOAD, WorkRequest};

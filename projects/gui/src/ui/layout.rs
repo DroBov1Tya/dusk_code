@@ -16,6 +16,7 @@ pub enum Part {
     Schedules,
     Artifacts,
     Connectors,
+    Terminal,
     Quiet,
     Settings,
     /// A short rule between groups.
@@ -62,8 +63,8 @@ impl Default for Layout {
         use Part::*;
         Self {
             rail: vec![
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer, Quiet,
-                Settings,
+                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
+                Terminal, Quiet, Settings,
             ],
             header: vec![Review, Search, More, SidePanel],
             box_left: vec![Attach, Access],
@@ -81,11 +82,17 @@ impl Layout {
     /// holds the whole map, so a rail nobody reshaped would otherwise never change.
     pub fn refreshed(mut self) -> Self {
         use Part::*;
-        let before = [
-            NewChat, Search, Divider, Chats, Schedules, Artifacts, Connectors, Spacer, Quiet,
-            Settings,
+        let before: [&[Part]; 2] = [
+            &[
+                NewChat, Search, Divider, Chats, Schedules, Artifacts, Connectors, Spacer, Quiet,
+                Settings,
+            ],
+            &[
+                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer, Quiet,
+                Settings,
+            ],
         ];
-        if self.rail == before {
+        if before.contains(&self.rail.as_slice()) {
             self.rail = Self::default().rail;
         }
         self

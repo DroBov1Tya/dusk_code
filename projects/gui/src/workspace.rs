@@ -18,6 +18,7 @@ use gpui_kit::{
         ActiveTheme,
         input::{InputEvent, InputState, TextareaState},
     },
+    prelude::FluentBuilder,
     *,
 };
 use tokio::sync::{mpsc, watch};
@@ -218,6 +219,8 @@ pub struct Workspace {
     pub fog_cleared: Option<(std::time::Instant, f32)>,
     /// When a turn ended under the mist and how thick it stood, while the dawn plays.
     pub fog_dawn: Option<(std::time::Instant, f32)>,
+    /// The terminal panel at the foot of the work area.
+    pub terminal: crate::columns::terminal::Panel,
     pub jobs: Vec<JobInfo>,
     /// The shown chat's sources, as the core lists them.
     pub sources: Vec<dusk_protocol::thread::Source>,
@@ -408,6 +411,7 @@ impl Workspace {
             last_input: std::time::Instant::now(),
             fog_cleared: None,
             fog_dawn: None,
+            terminal: crate::columns::terminal::Panel::new(cx),
             jobs: Vec::new(),
             sources: Vec::new(),
             settings: None,
@@ -551,6 +555,8 @@ impl Workspace {
                     self.reload_threads(cx);
                 }
             }
+            Event::Terminal { id, data } => self.terminal_output(&id, &data, cx),
+            Event::TerminalClosed { id, code } => self.terminal_closed(&id, code, cx),
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;
@@ -633,6 +639,8 @@ impl Render for Workspace {
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
         };
+        let terminal = crate::columns::terminal::render(self, window, cx);
+        let dragging = self.terminal.dragging();
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
         let artifact_menu = artifacts::menu(self, window, cx);
@@ -717,7 +725,17 @@ impl Render for Workspace {
                             .border_t_1()
                             .border_color(theme_border)
                             .bg(background)
-                            .child(div().flex_1().min_w_0().h_full().child(center))
+                            // The page, and under it the terminal when it is open.
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .min_w_0()
+                                    .h_full()
+                                    .flex()
+                                    .flex_col()
+                                    .child(div().flex_1().min_h_0().child(center))
+                                    .children(terminal),
+                            )
                             .children(inspector),
                     ),
             )
@@ -727,6 +745,16 @@ impl Render for Workspace {
             .children(artifact_menu)
             .children(audio_menu)
             .children(crate::columns::fog::render(self, window, cx))
+            // While the terminal's edge is held, the whole window follows the pointer.
+            .when(dragging, |root| {
+                root.on_mouse_move(
+                    cx.listener(|ws, event: &MouseMoveEvent, _, cx| ws.drag_terminal(event, cx)),
+                )
+                .on_mouse_up(
+                    MouseButton::Left,
+                    cx.listener(|ws, _, _, cx| ws.drop_terminal_edge(cx)),
+                )
+            })
             .capture_any_mouse_down(cx.listener(|ws, _, _, cx| ws.attended(cx)))
             .capture_key_down(cx.listener(|ws, _: &KeyDownEvent, _, cx| ws.attended(cx)))
             .track_focus(&self.focus)
@@ -738,6 +766,8 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_open_settings))
             .on_action(cx.listener(Self::on_toggle_sidebar))
             .on_action(cx.listener(Self::on_toggle_side_panel))
+            .on_action(cx.listener(Self::on_toggle_terminal))
+            .on_action(cx.listener(Self::on_save_file))
             .on_action(cx.listener(Self::copy_code))
             .on_action(cx.listener(Self::run_code))
             .capture_key_down(cx.listener(Self::menu_keys))

@@ -6,6 +6,7 @@ mod projects;
 mod schedules;
 mod settings;
 mod status;
+mod terminal;
 mod thread;
 mod voice;
 mod work;
@@ -15,6 +16,7 @@ use status::read_status;
 use crate::{
     message::commands,
     runtime::{Runtime, ThreadInput},
+    terminal::Terminals,
 };
 use anyhow::{Result, anyhow};
 use dusk_protocol::client::{Event, Request, Response, Status};
@@ -90,6 +92,7 @@ pub struct Server {
     subscribers: Subscribers,
     status: Arc<watch::Sender<Status>>,
     threads: HashMap<String, OpenThread>,
+    terminals: Terminals,
 }
 
 impl Server {
@@ -103,6 +106,7 @@ impl Server {
             subscribers,
             status: Arc::new(sender),
             threads: HashMap::new(),
+            terminals: Terminals::new(crate::terminal::login_shell()),
         };
         (server, receiver)
     }
@@ -154,6 +158,7 @@ impl Server {
                 _ = timetable.tick() => self.run_due_schedules().await,
             }
         };
+        self.terminals.close_all();
         let threads: Vec<String> = self.threads.keys().cloned().collect();
         for thread_id in threads {
             self.close(&thread_id).await;
@@ -181,6 +186,7 @@ impl Server {
                 commands::answer(command, &self.runtime).await?,
             ))),
             Request::Voice(request) => self.voice(request).await,
+            Request::Terminal(request) => self.terminal(request).await,
             Request::SystemReport => Ok(Response::System(self.runtime.system_report().await?)),
             Request::InstallUpdate { .. } | Request::Shutdown => {
                 Err(anyhow!("this request is answered by the loop"))

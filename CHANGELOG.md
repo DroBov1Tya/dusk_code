@@ -4,6 +4,22 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- A file open in the desktop window can be changed and saved. The core writes it whole and
+  in one step, only inside a saved project or the chat folders, keeps its permissions, and
+  refuses the save when the file changed on disk since it was opened. Browsers cannot
+  write files this way.
+- Terminals in the desktop window: the user's own login shell on a pseudo-terminal the
+  core runs, started only inside a saved project or the workspace. A terminal belongs to
+  the client that opened it and ends with it; the agents cannot reach it, nothing typed or
+  printed is stored or logged, and browsers are refused. New dependency: `portable-pty`.
+- GUI: the terminal is a panel under the chat with tabs, opened from the rail or with
+  cmd-J; the file page saves with cmd-S and warns before unsaved text is dropped. New
+  dependency: `alacritty_terminal`.
+
 ## 0.73.3 - 2026-11-13
 
 ### Added

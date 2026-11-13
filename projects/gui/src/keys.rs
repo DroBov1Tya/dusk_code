@@ -14,6 +14,8 @@ actions!(
         OpenSettings,
         ToggleSidebar,
         ToggleSidePanel,
+        ToggleTerminal,
+        SaveFile,
         Quit,
         FocusNextRow,
         FocusPrevRow
@@ -27,6 +29,8 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("secondary-,", "Settings"),
     ("secondary-b", "Show or hide the sidebar"),
     ("secondary-alt-b", "Show or hide the side panel"),
+    ("secondary-j", "Show or hide the terminal"),
+    ("secondary-s", "Save the open file"),
     ("secondary-q", "Quit"),
     (
         "escape",
@@ -36,6 +40,12 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
 
 pub fn bind(cx: &mut App) {
     // The parser takes names that live for the whole run, so each platform's are literals.
+    let (terminal, save) = if cfg!(target_os = "macos") {
+        ("cmd-j", "cmd-s")
+    } else {
+        // Control-J and Control-S are the shell's own keys, so these take Shift too.
+        ("ctrl-shift-j", "ctrl-shift-s")
+    };
     let (new, find, settings, sidebar, side, quit) = if cfg!(target_os = "macos") {
         ("cmd-n", "cmd-k", "cmd-,", "cmd-b", "cmd-alt-b", "cmd-q")
     } else {
@@ -54,6 +64,8 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new(settings, OpenSettings, None),
         KeyBinding::new(sidebar, ToggleSidebar, None),
         KeyBinding::new(side, ToggleSidePanel, None),
+        KeyBinding::new(terminal, ToggleTerminal, None),
+        KeyBinding::new(save, SaveFile, None),
         KeyBinding::new(quit, Quit, None),
         // Tab walks the rows only while a row has the keyboard; in a box it stays the box's.
         KeyBinding::new("tab", FocusNextRow, Some("Row")),
@@ -96,6 +108,19 @@ impl Workspace {
     pub fn on_toggle_sidebar(&mut self, _: &ToggleSidebar, _: &mut Window, cx: &mut Context<Self>) {
         self.left_hidden = !self.left_hidden;
         cx.notify();
+    }
+
+    pub fn on_toggle_terminal(
+        &mut self,
+        _: &ToggleTerminal,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_terminal(window, cx);
+    }
+
+    pub fn on_save_file(&mut self, _: &SaveFile, _: &mut Window, cx: &mut Context<Self>) {
+        self.save_file(cx);
     }
 
     pub fn on_toggle_side_panel(

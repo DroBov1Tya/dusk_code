@@ -11,6 +11,7 @@
 //! - `providers`, `mcp`, `tools`: what the agents talk to and act with;
 //! - `runtime`, `message`, `state`: running threads, what messages carry, and the records;
 //! - `project`: named folders, their git state and files, read only inside them;
+//! - `terminal`: the user's own shell for a client that draws it, out of the agents' reach;
 //! - `plugins`: what the community adds without changing this code;
 //! - `backup`: `/migrate` archives, their restore, and the guard of an uninstall;
 //! - `util`: small helpers with no domain.
@@ -31,6 +32,7 @@ mod release;
 mod runtime;
 mod secrets;
 mod state;
+mod terminal;
 mod tools;
 mod util;
 mod voice;

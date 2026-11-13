@@ -507,6 +507,10 @@ impl Workspace {
     /// While a menu over the model bar is open, Escape closes it; in the model menu
     /// the digits 1-6 pick its models, before the text box takes them.
     pub fn menu_keys(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        // Escape and the arrows are the shell's while it has the keyboard.
+        if self.terminal_focused(window) {
+            return;
+        }
         let Some(picker) = self.picker else {
             self.page_keys(event, window, cx);
             return;
