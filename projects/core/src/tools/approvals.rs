@@ -40,6 +40,15 @@ pub struct Approvals {
 }
 
 impl Approvals {
+    /// A set of its own whose request numbers begin at `first`, so two sets never give
+    /// the same number to a client that answers by it.
+    pub fn starting_at(first: u64) -> Self {
+        Self {
+            next: AtomicU64::new(first),
+            ..Self::default()
+        }
+    }
+
     pub fn set_judge(&self, judge: std::sync::Arc<dyn Judge>) {
         let _ = self.judge.set(judge);
     }

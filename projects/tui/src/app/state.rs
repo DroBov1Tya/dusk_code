@@ -29,6 +29,9 @@ pub struct App {
     pub local_unsent: Vec<LocalUnsent>,
     pub plugins: Vec<PluginRow>,
     pub thread_id: Option<String>,
+    /// The chat about to start is a temporary one; and whether the open one is.
+    pub temporary_next: bool,
+    pub temporary: bool,
     pub title: Option<String>,
     pub transcript: Transcript,
     pub input: Input,
@@ -180,6 +183,8 @@ impl App {
             local_unsent: Vec::new(),
             plugins: Vec::new(),
             thread_id: None,
+            temporary_next: false,
+            temporary: false,
             title: None,
             transcript: Transcript::default(),
             input: Input::default(),
@@ -278,6 +283,7 @@ impl App {
         if self.thread_id != thread_id {
             self.input = Input::default();
         }
+        self.temporary = false;
         (self.sent_ids, self.sent) = history
             .iter()
             .filter(|message| {

@@ -20,6 +20,13 @@ testing.
   cmd-J; the file page saves with cmd-S and warns before unsaved text is dropped. New
   dependency: `alacritty_terminal`.
 
+- Temporary chats: a chat that is never written to disk. The core keeps it in a database
+  in memory, its files and artifacts in a private folder of the system's temporary
+  folder, and it writes no memory; all of it is gone when the core stops, and a folder a
+  crash left is removed at the next start. It is listed while it lives, is not found by
+  the search and is in no backup. An hourglass beside New chat in the desktop window,
+  `/temp` in every client, a button in the browser. Sounds made by reading aloud are
+  still kept among the stored artifacts.
 - Search in what was said: the core finds messages of any chat by their text, and the
   desktop search window lists them under the chats; a found message opens its chat at
   that message. Cmd-F opens the same window as Cmd-K.

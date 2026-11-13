@@ -120,10 +120,14 @@ pub async fn answer(
         Ok(Answer::Context(report)) => {
             app.panel = Some(Panel::Context { report, row: 0 });
         }
-        Ok(Answer::NewThread) => {
+        Ok(answer @ (Answer::NewThread | Answer::TemporaryThread)) => {
             close(client, open.take()).await;
             app.panel = None;
             app.open(None, None, &[]);
+            app.temporary_next = answer == Answer::TemporaryThread;
+            if app.temporary_next {
+                app.flash = Some("temporary chat: kept in memory, gone when dusk closes".into());
+            }
         }
         // The update window stays and says the whole reason.
         Err(error) if matches!(app.panel, Some(Panel::Update { .. })) => {

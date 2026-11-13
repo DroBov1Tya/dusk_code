@@ -31,6 +31,9 @@ const AGENTS_STOP_WAIT: Duration = Duration::from_secs(5);
 
 pub struct Runtime {
     pub(super) launcher: Launcher,
+    /// Starts the chats that leave nothing behind: its database is in memory and its
+    /// folders are under `temporary_root`.
+    pub(super) temporary: Launcher,
     pub(super) config_check: JoinHandle<()>,
     pub(super) agents_check: JoinHandle<()>,
     pub(super) plugins: Arc<crate::plugins::Plugins>,
@@ -48,6 +51,8 @@ pub struct Runtime {
     /// Speech models installed on this machine, and the servers that run them.
     pub(super) local_voice: Arc<crate::voice::LocalVoice>,
     pub(super) state_db: PathBuf,
+    // After the launchers, so the folder goes once nothing writes to it.
+    pub(super) _temporary_root: super::temporary::TemporaryRoot,
     // Declared last so coordination is released after the other owned runtime fields.
     pub(super) _restore_guard: Option<crate::backup::archive::RestoreGuard>,
 }
@@ -135,6 +140,7 @@ impl Runtime {
             platform,
             mcp,
             agents,
+            temporary: false,
         };
         launcher
             .approvals
@@ -142,6 +148,30 @@ impl Runtime {
                 Arc::clone(&launcher.state),
                 Arc::clone(&launcher.model),
             )));
+        let temporary_root = super::temporary::TemporaryRoot::make()?;
+        let temporary = {
+            let memory = Arc::new(State::in_memory().await?);
+            // Its own approvals: an arbiter keeps what it was asked, and that must stay
+            // in memory too. The numbers start far from the others'.
+            let approvals = Arc::new(crate::tools::Approvals::starting_at(1 << 40));
+            approvals.set_judge(Arc::new(super::arbiter::Arbiter::new(
+                Arc::clone(&memory),
+                Arc::clone(&launcher.model),
+            )));
+            Launcher {
+                jobs: JobManager::new(
+                    Arc::clone(&memory),
+                    Arc::clone(&launcher.mailboxes),
+                    &temporary_root.mark(),
+                )
+                .await?,
+                state: memory,
+                paths: launcher.paths.temporary(&temporary_root.path),
+                approvals,
+                temporary: true,
+                ..launcher.clone()
+            }
+        };
         platforms.attach(launcher.clone());
         // Read before model discovery, so a plugin's provider can be the first that answers.
         let plugins = crate::plugins::Plugins::new(
@@ -190,6 +220,8 @@ impl Runtime {
         Ok(Self {
             _restore_guard: restore_guard,
             launcher,
+            temporary,
+            _temporary_root: temporary_root,
             config_check,
             agents_check,
             plugins,
@@ -221,6 +253,7 @@ impl Runtime {
         let mailboxes = &self.launcher.mailboxes;
         mailboxes.close();
         self.launcher.jobs.shutdown().await;
+        self.temporary.jobs.shutdown().await;
         let started = Instant::now();
         while started.elapsed() < AGENTS_STOP_WAIT {
             let live = mailboxes.lock().await;
@@ -241,6 +274,7 @@ impl Runtime {
             discovery.abort();
         }
         self.launcher.state.close().await;
+        self.temporary.state.close().await;
     }
 }
 

@@ -40,6 +40,10 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &App) {
         None => Span::styled(wrap::clip("new thread", room), thought()),
     };
     let mut spans = brand;
+    // Said for as long as the chat is open: nothing of it is kept.
+    if app.temporary || app.temporary_next {
+        spans.push(Span::styled("temporary \u{00B7} ", thought()));
+    }
     spans.push(title);
     frame.render_widget(Paragraph::new(Line::from(spans)), title_area);
     frame.render_widget(

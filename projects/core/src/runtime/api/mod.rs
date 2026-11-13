@@ -15,3 +15,16 @@ mod threads;
 mod updates;
 mod voice;
 mod work;
+
+use super::{Launcher, Runtime};
+
+impl Runtime {
+    /// The launcher that holds `thread_id`: the temporary one for a temporary chat and
+    /// its agents, the stored one for everything else.
+    pub(super) async fn of(&self, thread_id: &str) -> &Launcher {
+        match self.temporary.state.load_thread(thread_id).await {
+            Ok(Some(_)) => &self.temporary,
+            _ => &self.launcher,
+        }
+    }
+}

@@ -62,6 +62,9 @@ pub struct Launcher {
     pub threads: Arc<parking_lot::Mutex<tokio::task::JoinSet<()>>>,
     /// What plugins run when something happens in a thread.
     pub hooks: Arc<crate::plugins::Hooks>,
+    /// Its chats leave nothing behind: the database is in memory, their files are in the
+    /// system's temporary folder, and they write no memory.
+    pub temporary: bool,
 }
 
 impl Launcher {
@@ -135,11 +138,14 @@ impl Launcher {
             Arc::clone(&self.state),
             thread_id.to_owned(),
         )));
-        tools.add(Box::new(Remember::user(self.paths.rules_root())));
-        tools.add(Box::new(Remember::project(
-            self.paths.rules_root(),
-            self.paths.workspace_root(),
-        )));
+        // A temporary chat reads what is remembered and adds nothing to it.
+        if !self.temporary {
+            tools.add(Box::new(Remember::user(self.paths.rules_root())));
+            tools.add(Box::new(Remember::project(
+                self.paths.rules_root(),
+                self.paths.workspace_root(),
+            )));
+        }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
             use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};

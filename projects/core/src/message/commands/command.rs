@@ -32,6 +32,7 @@ pub async fn run_in_thread(command: Command, agent: &Agent, inbox: &mut Inbox) {
         Command::Resume { .. }
         | Command::Migrate { .. }
         | Command::New
+        | Command::Temporary
         | Command::Model { .. }
         | Command::Settings
         | Command::Context { .. }
@@ -52,6 +53,7 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
         )),
         Command::Resume { cwd } => Ok(Answer::Threads(resume::run(runtime, cwd).await?)),
         Command::New => Ok(Answer::NewThread),
+        Command::Temporary => Ok(Answer::TemporaryThread),
         Command::Settings => Ok(Answer::Settings(Box::new(settings::run(runtime).await?))),
         Command::Update { channel } => {
             let channel = match channel.as_deref() {

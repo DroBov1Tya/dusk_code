@@ -20,6 +20,11 @@ pub async fn new_thread(cwd: String) -> Res<String> {
     ask!(thread(ThreadRequest::New { cwd }), Response::Opened { thread_id } => thread_id)
 }
 
+pub async fn new_temporary_thread(cwd: String) -> Res<String> {
+    let cwd = cwd.into();
+    ask!(thread(ThreadRequest::NewTemporary { cwd }), Response::Opened { thread_id } => thread_id)
+}
+
 pub async fn resume(thread_id: &str, cwd: String) -> Res<String> {
     let (thread_id, cwd) = (thread_id.to_owned(), cwd.into());
     ask!(thread(ThreadRequest::Resume { thread_id, cwd }), Response::Opened { thread_id } => thread_id)

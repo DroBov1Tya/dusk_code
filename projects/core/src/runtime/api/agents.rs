@@ -30,7 +30,8 @@ impl Runtime {
     /// Stops one agent and every agent it asked; agents waiting for a free slot drop
     /// their waiting messages. The chat and other agents go on.
     pub async fn stop_agent(&self, thread_id: &str) -> Result<()> {
-        let state = &self.launcher.state;
+        let launcher = self.of(thread_id).await;
+        let state = &launcher.state;
         let thread = state
             .load_thread(thread_id)
             .await?
@@ -43,7 +44,7 @@ impl Runtime {
         let mut threads = state.descendant_threads(thread_id).await?;
         threads.insert(0, thread_id.to_owned());
         for stopped in threads {
-            match self.launcher.mailboxes.get(&stopped).await {
+            match launcher.mailboxes.get(&stopped).await {
                 Some(mailbox) => {
                     mailbox.send(Input::Cancel);
                 }
@@ -52,17 +53,15 @@ impl Runtime {
         }
         // A running agent reports its stop from its turn; one still waiting for a slot
         // has no turn, so the asker is told here.
-        if self.launcher.mailboxes.get(thread_id).await.is_none()
+        if launcher.mailboxes.get(thread_id).await.is_none()
             && let Some(parent) = &thread.parent_thread_id
         {
             let stopped = "was stopped before it started";
-            self.launcher
-                .tell_stopped(parent, thread_id, stopped)
-                .await?;
+            launcher.tell_stopped(parent, thread_id, stopped).await?;
         }
         // A queued agent has no runner/report stream to release a waiting goal.
         // Its requests are durably dropped before the non-preemptive wake.
-        if let Some(mailbox) = self.launcher.mailboxes.get(&root).await {
+        if let Some(mailbox) = launcher.mailboxes.get(&root).await {
             mailbox.send(Input::DependencyFinished);
         }
         info!("agent thread {thread_id} stopped by the user");

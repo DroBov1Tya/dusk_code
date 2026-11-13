@@ -14,6 +14,11 @@ const MOON_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" h
 
 const MOON_FILL_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="0.75" stroke-linejoin="round"><path d="M8.915 3.546A9 9 0 1 0 20.085 15.954A9 9 0 0 1 8.915 3.546Z" /></svg>"#;
 
+/// An hourglass: a temporary chat, kept only while the app runs.
+pub const HOURGLASS: &str = "icons/dusk/hourglass.svg";
+
+const HOURGLASS_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14" /><path d="M5 2h14" /><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" /><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" /></svg>"#;
+
 /// The kit's icons, with ours answered first.
 pub struct Assets;
 
@@ -22,6 +27,7 @@ impl AssetSource for Assets {
         match path {
             MOON => return Ok(Some(Cow::Borrowed(MOON_SVG))),
             MOON_FILL => return Ok(Some(Cow::Borrowed(MOON_FILL_SVG))),
+            HOURGLASS => return Ok(Some(Cow::Borrowed(HOURGLASS_SVG))),
             _ => {}
         }
         gpui_kit::assets::Assets.load(path)

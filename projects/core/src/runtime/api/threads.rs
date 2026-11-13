@@ -21,13 +21,36 @@ impl Runtime {
         &self.launcher.state
     }
 
+    /// The database that holds `thread_id`, and where its files are.
+    pub async fn state_of(&self, thread_id: &str) -> &State {
+        &self.of(thread_id).await.state
+    }
+
+    pub async fn places_of(&self, thread_id: &str) -> (&State, &crate::init::paths::Paths) {
+        let launcher = self.of(thread_id).await;
+        (&launcher.state, &launcher.paths)
+    }
+
+    /// The stored threads, and before them the temporary chats of this run.
     pub async fn list_threads(&self) -> Result<Vec<Thread>> {
-        self.launcher.state.list_threads().await
+        let mut threads = self.temporary.state.list_threads().await?;
+        for thread in &mut threads {
+            thread.temporary = true;
+        }
+        threads.extend(self.launcher.state.list_threads().await?);
+        Ok(threads)
+    }
+
+    /// A chat that is never written to disk: it lives in memory, its files in the
+    /// system's temporary folder, and it writes no memory. Gone when the core stops.
+    pub async fn new_temporary_thread(&self, source: &str, cwd: &Path) -> Result<ThreadHandle> {
+        self.temporary.new_thread(source, cwd).await
     }
 
     /// The whole history of a thread, compacted messages included, oldest first.
     pub async fn thread_messages(&self, thread_id: &str) -> Result<Vec<Message>> {
-        self.launcher.state.list_messages(thread_id).await
+        let launcher = self.of(thread_id).await;
+        launcher.state.list_messages(thread_id).await
     }
 
     /// What was said in any chat that contains `text`, best matches first.
@@ -37,17 +60,16 @@ impl Runtime {
 
     /// Local messages waiting for an explicit resend. They are not model history.
     pub async fn local_unsent(&self, thread_id: &str) -> Result<Vec<LocalUnsent>> {
-        self.launcher.state.local_unsent(thread_id).await
+        let launcher = self.of(thread_id).await;
+        launcher.state.local_unsent(thread_id).await
     }
 
     /// Explicitly queue one local message. Never called during startup or recovery.
     pub async fn resend_local_unsent(&self, thread_id: &str, id: &str) -> Result<()> {
+        let launcher = self.of(thread_id).await;
         ensure!(self.model().is_some(), "provider is unavailable");
-        self.launcher
-            .state
-            .promote_local_unsent(thread_id, id)
-            .await?;
-        if let Some(mailbox) = self.launcher.mailboxes.get(thread_id).await {
+        launcher.state.promote_local_unsent(thread_id, id).await?;
+        if let Some(mailbox) = launcher.mailboxes.get(thread_id).await {
             mailbox.send(Input::Sent);
         }
         Ok(())
@@ -55,7 +77,8 @@ impl Runtime {
 
     /// The task board an agent keeps in a thread.
     pub async fn thread_tasks(&self, thread_id: &str) -> Result<Vec<Task>> {
-        self.launcher.state.thread_tasks(thread_id).await
+        let launcher = self.of(thread_id).await;
+        launcher.state.thread_tasks(thread_id).await
     }
 
     /// Starts a thread whose tools work in `cwd`, and the task that runs it. The task
@@ -108,6 +131,7 @@ impl Runtime {
     /// unfinished is closed first: a running turn ends as interrupted, and messages sent
     /// before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
-        self.launcher.resume_thread(thread_id, cwd).await
+        let launcher = self.of(thread_id).await;
+        launcher.resume_thread(thread_id, cwd).await
     }
 }

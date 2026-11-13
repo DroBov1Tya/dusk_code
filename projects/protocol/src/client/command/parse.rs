@@ -15,6 +15,10 @@ pub const COMMANDS: &[(&str, &str)] = &[
     ),
     ("/new", "start a new thread"),
     (
+        "/temp",
+        "start a temporary chat: kept in memory only, gone when the app closes",
+    ),
+    (
         "/fork",
         "go on in a new thread from a detailed summary of this one",
     ),
@@ -71,6 +75,7 @@ pub fn parse(text: &str) -> Option<Result<Command>> {
         }),
         "resume" | "sessions" => Ok(Command::Resume { cwd: None }),
         "new" => Ok(Command::New),
+        "temp" | "temporary" => Ok(Command::Temporary),
         "settings" => Ok(Command::Settings),
         "context" => Ok(Command::Context { thread_id: None }),
         "effort" => Ok(Command::Effort { level: argument }),

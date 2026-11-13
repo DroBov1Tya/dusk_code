@@ -125,6 +125,7 @@ impl Workspace {
             .update(cx, |composer, cx| composer.set_value("", window, cx));
         match command {
             Command::New => self.new_chat(None, window, cx),
+            Command::Temporary => self.new_temporary_chat(window, cx),
             Command::Resume { .. } => self.modal = Some(Modal::Search),
             Command::Model { name: Some(name) } => self.choose_model(name, cx),
             Command::Model { name: None } => self.open_picker(Picker::Model, cx),

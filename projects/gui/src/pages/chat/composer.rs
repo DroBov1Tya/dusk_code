@@ -678,12 +678,14 @@ impl Workspace {
         );
         self.composer
             .update(cx, |composer, cx| composer.set_value("", window, cx));
+        let temporary = std::mem::take(&mut self.temporary_next);
         self.core.call(
             cx,
             move |client| async move {
                 let threads = client.threads();
                 let (thread_id, new) = match (shown, dir) {
                     (Some(thread_id), _) => (thread_id, false),
+                    (None, Some(dir)) if temporary => (threads.start_temporary(dir).await?, true),
                     (None, Some(dir)) => (threads.start(dir).await?, true),
                     (None, None) => anyhow::bail!("no project"),
                 };
