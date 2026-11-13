@@ -20,6 +20,33 @@ testing.
   cmd-J; the file page saves with cmd-S and warns before unsaved text is dropped. New
   dependency: `alacritty_terminal`.
 
+- Search in what was said: the core finds messages of any chat by their text, and the
+  desktop search window lists them under the chats; a found message opens its chat at
+  that message. Cmd-F opens the same window as Cmd-K.
+- GUI: a background job opens in a window with its whole command, how long it runs, its
+  output so far and Cancel; the agent is told the job was cancelled.
+- GUI: a copy button on every kind of message, the folded ones too: thoughts, reports,
+  a step's arguments and answer, commands, and a subagent's chat.
+- GUI: a switch for the fireflies under Appearance.
+
+### Changed
+
+- Several questions asked in a row wait in a queue in every client and are answered by
+  one message; before, the second took the place of the first.
+- GUI: the settings menu is grouped as Agent, Window, Data and System, and the context
+  window stands on the Model page with the size in force.
+- GUI: the todo list is cards with a progress line and the item in work lit; a loaded
+  skill shows by its name among the steps; More models has no heading of its own beside
+  the menu.
+
+### Fixed
+
+- A model whose provider did not answer at the start stayed at the unknown window of
+  128 000 tokens until it was chosen again. The start asks again, and any catalogue read
+  later fills the window in.
+- GUI: one zone of subagents takes the whole window instead of half of it, and a long
+  brief no longer runs down the row.
+
 ## 0.73.3 - 2026-11-13
 
 ### Added

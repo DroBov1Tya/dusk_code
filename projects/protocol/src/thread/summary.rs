@@ -21,3 +21,14 @@ pub struct Thread {
     /// The folder a chat was started in; `None` for one older than this record.
     pub project: Option<String>,
 }
+
+/// A message found by searching the text of every chat.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Found {
+    pub thread_id: String,
+    pub title: Option<String>,
+    /// The message's place in its chat.
+    pub sequence: u64,
+    /// The words around the match, on one line.
+    pub snippet: String,
+}

@@ -37,28 +37,49 @@ pub enum SettingsPage {
     Secrets,
 }
 
-const PAGES: &[(SettingsPage, IconName, &str)] = &[
-    (SettingsPage::Appearance, IconName::Palette, "Appearance"),
-    (SettingsPage::Model, IconName::Cpu, "Model"),
-    (SettingsPage::Chat, IconName::Inbox, "Chat"),
-    (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
-    (SettingsPage::Secrets, IconName::Eye, "Secrets"),
-    (SettingsPage::AboutMe, IconName::User, "About me"),
-    (SettingsPage::Notifications, IconName::Bell, "Notifications"),
-    (SettingsPage::Keyboard, IconName::SquareTerminal, "Keyboard"),
+type Page = (SettingsPage, IconName, &'static str);
+
+/// The pages in the order they are reached for: what the agent is and may do first, then
+/// how the window looks and speaks, then what it keeps, then the machine. Each group has
+/// a quiet name; removal sits at the very end, under Advanced.
+const GROUPS: &[(&str, &[Page])] = &[
     (
-        SettingsPage::VersionControl,
-        IconName::Github,
-        "Version control",
+        "Agent",
+        &[
+            (SettingsPage::Model, IconName::Cpu, "Model"),
+            (SettingsPage::Chat, IconName::Inbox, "Chat"),
+            (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
+            (SettingsPage::Memory, IconName::MemoryStick, "Memory"),
+            (SettingsPage::AboutMe, IconName::User, "About me"),
+        ],
     ),
     (
-        SettingsPage::Memory,
-        IconName::MemoryStick,
-        "Memory and context",
+        "Window",
+        &[
+            (SettingsPage::Appearance, IconName::Palette, "Appearance"),
+            (SettingsPage::Notifications, IconName::Bell, "Notifications"),
+            (SettingsPage::Keyboard, IconName::SquareTerminal, "Keyboard"),
+        ],
     ),
-    (SettingsPage::Advanced, IconName::Settings2, "Advanced"),
-    (SettingsPage::Updates, IconName::RefreshCw, "Updates"),
-    (SettingsPage::Usage, IconName::Cpu, "System usage"),
+    (
+        "Data",
+        &[
+            (SettingsPage::Secrets, IconName::Eye, "Secrets"),
+            (
+                SettingsPage::VersionControl,
+                IconName::Github,
+                "Version control",
+            ),
+        ],
+    ),
+    (
+        "System",
+        &[
+            (SettingsPage::Updates, IconName::RefreshCw, "Updates"),
+            (SettingsPage::Usage, IconName::ChartPie, "System usage"),
+            (SettingsPage::Advanced, IconName::Settings2, "Advanced"),
+        ],
+    ),
 ];
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
@@ -75,9 +96,20 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .pt_4()
         .border_r_1()
         .border_color(border);
-    for (page, icon, label) in PAGES {
-        let page = *page;
+    let pages = || GROUPS.iter().flat_map(|(_, pages)| pages.iter());
+    for (index, (group, _)) in GROUPS.iter().enumerate() {
         menu = menu.child(
+            div()
+                .px_2()
+                .pb_1()
+                .when(index > 0, |name| name.pt_3())
+                .meta()
+                .text_color(muted.opacity(0.8))
+                .child(*group),
+        );
+        menu = menu.children(GROUPS[index].1.iter().map(|(page, icon, label)| {
+            let page = *page;
+
             widgets::row(*label, ws.settings_page == page, cx)
                 .h(px(36.))
                 .child(widgets::icon(icon.clone(), muted))
@@ -90,11 +122,10 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     ws.settings_page = page;
                     ws.load_page(page, cx);
                     cx.notify();
-                })),
-        );
+                }))
+        }));
     }
-    let title = PAGES
-        .iter()
+    let title = pages()
         .find(|(page, ..)| *page == ws.settings_page)
         .map_or("", |(.., label)| *label);
     let body = match ws.settings_page {
@@ -132,14 +163,14 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
 fn about(page: SettingsPage) -> &'static str {
     match page {
         SettingsPage::Appearance => "Theme and fonts, kept on this machine.",
-        SettingsPage::Model => "The models the chat can use, and the servers that give them.",
+        SettingsPage::Model => "The model in use, how much context it gets, and its providers.",
         SettingsPage::Chat => "How a new chat starts: its mode and what it may do.",
         SettingsPage::Safety => "What the agents may do without asking.",
         SettingsPage::AboutMe => "What the agents know about you, and snippets for @names.",
         SettingsPage::Notifications => "How you hear that a chat needs you.",
         SettingsPage::Keyboard => "Shortcuts for the places you go most.",
         SettingsPage::VersionControl => "Branches the agents create, and how they are named.",
-        SettingsPage::Memory => "What is remembered between chats, and how much context is kept.",
+        SettingsPage::Memory => "What is remembered between chats.",
         SettingsPage::Advanced => "Limits and timings. The defaults suit most work.",
         SettingsPage::Updates => "The version you run and the newest one.",
         SettingsPage::Usage => "What duskcode takes from this machine.",

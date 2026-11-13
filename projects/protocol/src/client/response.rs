@@ -10,7 +10,7 @@ use crate::project::{
     Change, FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project, Schedule,
 };
 use crate::system::SystemReport;
-use crate::thread::{JobInfo, LocalUnsent, Message, Task, Thread};
+use crate::thread::{Found, JobInfo, LocalUnsent, Message, Task, Thread};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
@@ -24,6 +24,8 @@ pub enum Response {
     Path(PathBuf),
     Threads(Vec<Thread>),
     Messages(Vec<Message>),
+    /// Messages of any chat that contain the searched text.
+    Found(Vec<Found>),
     Tasks(Vec<Task>),
     LocalUnsent(Vec<LocalUnsent>),
     Jobs(Vec<JobInfo>),

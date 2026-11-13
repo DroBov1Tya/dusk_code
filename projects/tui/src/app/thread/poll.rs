@@ -120,8 +120,20 @@ impl App {
                 }
             },
         };
-        self.poll = None;
-        self.send_text(text)
+        match self.answered(text) {
+            Some(text) => self.send_text(text),
+            None => Action::None,
+        }
+    }
+
+    /// Keeps the answer to the question shown and shows the next one. The message for
+    /// the agent once every question asked has its answer.
+    pub fn answered(&mut self, text: String) -> Option<String> {
+        self.poll_answers.push(text);
+        self.poll = self.polls_waiting.pop_front().map(Poll::new);
+        self.poll
+            .is_none()
+            .then(|| std::mem::take(&mut self.poll_answers).join("\n\n"))
     }
 
     /// The answer goes at once, even while the thread works: the core lets it join the

@@ -36,6 +36,14 @@ impl Threads<'_> {
         }
     }
 
+    pub async fn search(&self, text: &str) -> Result<Vec<dusk_protocol::thread::Found>> {
+        let text = text.to_owned();
+        match self.call(ThreadRequest::Search { text }).await? {
+            Response::Found(found) => Ok(found),
+            other => Err(unexpected(other)),
+        }
+    }
+
     pub async fn messages(&self, thread_id: &str) -> Result<Vec<Message>> {
         let thread_id = thread_id.to_owned();
         match self.call(ThreadRequest::Messages { thread_id }).await? {

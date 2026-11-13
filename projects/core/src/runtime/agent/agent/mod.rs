@@ -68,9 +68,9 @@ pub struct Agent {
     pub pace: Mutex<Pace>,
     /// Calls repeated with the same result, to tell a stuck model.
     pub repeats: Mutex<crate::runtime::agent::repeats::Repeats>,
-    /// The question on the user's screen. Its answer joins the running turn instead of
-    /// waiting for the next one.
-    pub asking: Mutex<Option<String>>,
+    /// The questions on the user's screen. Their answer joins the running turn instead
+    /// of waiting for the next one.
+    pub asking: Mutex<Vec<String>>,
     pub thread_id: String,
     /// COMPACT.md: how to summarize the thread.
     pub compact_prompt: PathBuf,

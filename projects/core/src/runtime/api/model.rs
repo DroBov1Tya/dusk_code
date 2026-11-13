@@ -59,9 +59,20 @@ impl Runtime {
             .config
             .update(|config| config.set_model(name))?;
         self.launcher.model.set(choice.clone());
+        self.announce_model(choice);
+        Ok(())
+    }
+
+    /// A catalogue just read may know the window of the chosen model the start missed.
+    pub fn learn_model(&self, statuses: &[dusk_protocol::model::ProviderStatus]) {
+        if let Some(choice) = self.launcher.model.learn(statuses) {
+            self.announce_model(choice);
+        }
+    }
+
+    fn announce_model(&self, selected: Choice) {
         let mailboxes = Arc::clone(&self.launcher.mailboxes);
-        let input_limit = choice.input_limit(&self.launcher.config.current());
-        let selected = choice;
+        let input_limit = selected.input_limit(&self.launcher.config.current());
         tokio::spawn(async move {
             for mailbox in mailboxes.lock().await.values() {
                 mailbox.emit(ThreadEvent::ModelSelected {
@@ -71,6 +82,5 @@ impl Runtime {
                 mailbox.send(Input::Sent);
             }
         });
-        Ok(())
     }
 }

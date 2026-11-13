@@ -22,6 +22,10 @@ pub enum ThreadRequest {
         cwd: PathBuf,
     },
     List,
+    /// Searches what was said in every chat; at least three characters.
+    Search {
+        text: String,
+    },
     Messages {
         thread_id: String,
     },

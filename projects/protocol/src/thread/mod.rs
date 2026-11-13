@@ -21,7 +21,7 @@ pub use message::{
     source_tag, split, wrap,
 };
 pub use name::{ARBITER_THREAD, agent_name, fnv1a, name_seed};
-pub use summary::Thread;
+pub use summary::{Found, Thread};
 pub use task::{Task, TaskItem};
 pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts};
 pub use turn::{Turn, TurnStatus, duration_words};

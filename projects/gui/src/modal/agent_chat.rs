@@ -14,7 +14,7 @@ use crate::{
     columns::inspector::mascot,
     pages::chat::{
         links,
-        messages::{activity_text, agent_report, long, run, steps},
+        messages::{activity_text, agent_report, run, steps},
         transcript::{AgentState, Item, Transcript},
     },
     ui::{Type, widgets},
@@ -55,15 +55,25 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
         let at = index;
         index += 1;
         let key = |part: &str| SharedString::from(format!("agent-{part}-{agent}-{at}"));
+        // Every message copies whole, from a button that comes up under the pointer.
+        let group = key("row");
+        let copy = |text: &str| {
+            div()
+                .flex()
+                .justify_end()
+                .child(widgets::copy(key("copy"), &group, text))
+        };
         column = column.child(match item {
             // What it was asked reads as it was written: lists, code and all.
             Item::User { text, .. } => div()
+                .group(group.clone())
                 .px_3()
                 .py_2()
                 .rounded_lg()
                 .bg(surface)
                 .small()
                 .child(links::markdown(key("asked"), text.clone()))
+                .child(copy(text))
                 .into_any_element(),
             Item::Agent { from, text } => {
                 agent_report(ws, agent, at, from, text, cx).into_any_element()
@@ -77,13 +87,16 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                         agent,
                         at,
                         ("Thinking", IconName::Asterisk),
-                        long(reasoning),
+                        reasoning,
                         move || thought.into_any_element(),
                         cx,
                     ));
                 }
                 if !text.is_empty() {
-                    said = said.child(links::markdown(key("said"), text.clone()));
+                    said = said
+                        .group(group.clone())
+                        .child(links::markdown(key("said"), text.clone()))
+                        .child(copy(text));
                 }
                 said.into_any_element()
             }
@@ -115,6 +128,8 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .into_any_element(),
             // What went wrong must not read as one more quiet note.
             Item::Error(text) => div()
+                .group(group.clone())
+                .child(copy(text))
                 .px_3()
                 .py_2()
                 .rounded_lg()

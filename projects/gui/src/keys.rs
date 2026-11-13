@@ -25,7 +25,8 @@ actions!(
 /// The shortcuts and what they do, in the order the help lists them.
 pub const SHORTCUTS: &[(&str, &str)] = &[
     ("secondary-n", "New chat"),
-    ("secondary-k", "Find a chat"),
+    ("secondary-k", "Find a chat, or what was said in one"),
+    ("secondary-f", "The same search"),
     ("secondary-,", "Settings"),
     ("secondary-b", "Show or hide the sidebar"),
     ("secondary-alt-b", "Show or hide the side panel"),
@@ -40,11 +41,12 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
 
 pub fn bind(cx: &mut App) {
     // The parser takes names that live for the whole run, so each platform's are literals.
-    let (terminal, save) = if cfg!(target_os = "macos") {
-        ("cmd-j", "cmd-s")
+    let (terminal, save, find_text) = if cfg!(target_os = "macos") {
+        ("cmd-j", "cmd-s", "cmd-f")
     } else {
-        // Control-J and Control-S are the shell's own keys, so these take Shift too.
-        ("ctrl-shift-j", "ctrl-shift-s")
+        // Control-J, Control-S and Control-F are the shell's own keys, so these take
+        // Shift too.
+        ("ctrl-shift-j", "ctrl-shift-s", "ctrl-shift-f")
     };
     let (new, find, settings, sidebar, side, quit) = if cfg!(target_os = "macos") {
         ("cmd-n", "cmd-k", "cmd-,", "cmd-b", "cmd-alt-b", "cmd-q")
@@ -61,6 +63,7 @@ pub fn bind(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new(new, NewChat, None),
         KeyBinding::new(find, FindChat, None),
+        KeyBinding::new(find_text, FindChat, None),
         KeyBinding::new(settings, OpenSettings, None),
         KeyBinding::new(sidebar, ToggleSidebar, None),
         KeyBinding::new(side, ToggleSidePanel, None),

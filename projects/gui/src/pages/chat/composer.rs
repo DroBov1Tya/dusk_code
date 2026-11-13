@@ -646,12 +646,21 @@ impl Workspace {
         }
         let shown = self.shown.clone();
         // A pending question takes the text as the user's own answer.
-        let question = shown
+        let asked = shown
             .as_ref()
             .and_then(|id| self.chats.get_mut(id))
-            .and_then(|chat| chat.question.take());
-        if let Some(question) = question {
-            text = question.answer(&[], &text);
+            .filter(|chat| !chat.questions.is_empty());
+        if let Some(chat) = asked {
+            match chat.answer(&[], &text) {
+                Some(answers) => text = answers,
+                // More questions wait: this answer is kept and the next one shows.
+                None => {
+                    self.composer
+                        .update(cx, |composer, cx| composer.set_value("", window, cx));
+                    cx.notify();
+                    return;
+                }
+            }
         } else if let Some(thread_id) = shown
             .clone()
             .filter(|id| self.chats.get(id).is_some_and(|chat| chat.working))

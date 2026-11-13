@@ -40,6 +40,8 @@ pub struct Prefs {
     pub sky: bool,
     /// Mist at the window's foot after it was left alone for a while.
     pub fog: bool,
+    /// Lights over the message box, one for each subagent at work.
+    pub fireflies: bool,
     /// Where each part of the window stands; see `ui::layout`.
     pub layout: crate::ui::layout::Layout,
 }
@@ -58,6 +60,7 @@ impl Default for Prefs {
             runs_seen_until: 0,
             sky: true,
             fog: true,
+            fireflies: true,
             layout: Default::default(),
         }
     }

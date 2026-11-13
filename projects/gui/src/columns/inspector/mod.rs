@@ -8,7 +8,7 @@ pub mod context;
 mod environment;
 mod files;
 pub mod git;
-mod jobs;
+pub mod jobs;
 pub mod mascot;
 pub mod plan;
 mod screenshots;

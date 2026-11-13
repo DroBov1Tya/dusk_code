@@ -265,6 +265,26 @@ impl ModelChoice {
         choice.model = model;
         Some(choice.clone())
     }
+
+    /// Takes the chosen model's sizes from a catalogue of its provider when they are not
+    /// known yet: the start asks once, and a provider that was down then must not leave
+    /// the model at the unknown window for good. The choice, when it changed.
+    pub fn learn(&self, statuses: &[ProviderStatus]) -> Option<Choice> {
+        let mut current = self.current.write();
+        let choice = current.choice.as_mut()?;
+        if choice.model.context_window.is_some() {
+            return None;
+        }
+        let listed = statuses
+            .iter()
+            .filter(|status| status.name == choice.provider_name)
+            .filter_map(|status| status.models.as_ref().ok())
+            .flatten()
+            .find(|model| model.id == choice.model.id)?;
+        listed.context_window?;
+        choice.model = listed.clone();
+        Some(choice.clone())
+    }
 }
 
 /// Asks every configured provider for its models at once. One switched off is listed

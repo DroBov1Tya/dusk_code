@@ -103,6 +103,32 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn chat_search_takes_any_text_as_words_never_as_a_query() {
+        let state = temp_state("chat-search").await;
+        state.create_thread("thread", "test").await.unwrap();
+        exchange(
+            &state,
+            "why is the Cache \"cold\"?",
+            "Because NEAR(it) starts empty",
+        )
+        .await;
+
+        let found = state.search_chats("cache \"cold", 10).await.unwrap();
+        assert_eq!(found.len(), 1);
+        assert_eq!(
+            (found[0].thread_id.as_str(), found[0].sequence),
+            ("thread", 1)
+        );
+        assert!(found[0].snippet.contains("Cache \"cold\""));
+        // Query syntax is text like any other, and matches nothing it does not spell.
+        for text in ["NEAR(it)", "content : x", "a* OR b*", "\"\"\"", "-cold^2"] {
+            let found = state.search_chats(text, 10).await.unwrap();
+            assert_eq!(found.len(), usize::from(text == "NEAR(it)"), "{text}");
+        }
+        assert!(state.search_chats("ab", 10).await.is_err());
+    }
+
+    #[tokio::test]
     async fn undo_removes_the_message_and_all_after_it() {
         let state = temp_state("undo").await;
         state.create_thread("thread", "test").await.unwrap();

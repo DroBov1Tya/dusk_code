@@ -28,6 +28,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
             body.child(list(
                 [
                     line("Model", &model, cx),
+                    context_line(ws, cx),
                     line(
                         "Use a model by name",
                         "For servers that do not list their models: provider/model",
@@ -146,7 +147,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
             )
         }
         SettingsPage::Memory => match ws.settings.clone() {
-            Some(settings) => body.child(list([context_line(ws, cx)], cx)).child(list(
+            Some(settings) => body.child(list(
                 [
                     switch_line(
                         "Memory",
@@ -258,12 +259,16 @@ fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .on_click(cx.listener(move |ws, _, _, cx| ws.set_context_policy(policy, cx)));
         row = row.child(controls::choice(button, policy == current, cx));
     }
-    line(
-        "Context window",
-        "The largest request: the model's own window, or a fixed size",
-        cx,
-    )
-    .child(row)
+    // The size in force stands in the hint: Auto alone does not say what the model has.
+    let hint = format!(
+        "The largest request, now {} tokens: the model's own window, or a fixed size",
+        match ws.status.input_limit {
+            // Whole thousands read as 128k, not 128.0k.
+            limit if limit % 1000 == 0 && limit < 1_000_000 => format!("{}k", limit / 1000),
+            limit => widgets::short(limit),
+        }
+    );
+    line("Context window", &hint, cx).child(row)
 }
 
 /// A size in characters as a few steps; one the config holds beside them shows as it is.

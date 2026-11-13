@@ -113,6 +113,10 @@ pub struct ChatData {
     pub agents: Vec<Agent>,
     pub approvals: Vec<ApprovalRequest>,
     pub question: Option<Question>,
+    /// Questions asked while one was on the page, and the answers given so far: they go
+    /// to the agent together, after the last one.
+    pub questions_waiting: std::collections::VecDeque<Question>,
+    pub answers: Vec<String>,
     pub title: Option<String>,
     /// Text the core gave back after /undo, for the composer to offer again.
     pub offered: Option<String>,
@@ -268,6 +272,9 @@ impl ChatData {
                     agent.follow(&event);
                 }
                 self.agent_chats.entry(thread_id).or_default().apply(*event);
+            }
+            ThreadEvent::Question(question) if self.question.is_some() => {
+                self.questions_waiting.push_back(question)
             }
             ThreadEvent::Question(question) => self.question = Some(question),
             ThreadEvent::Approval(request) => self.approvals.push(request),

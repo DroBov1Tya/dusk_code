@@ -187,14 +187,15 @@ impl Agent {
     }
 
     pub(super) fn answers_question(&self, content: &str) -> bool {
+        // Several questions asked in a row are answered by one message, in any order.
         self.asking
             .lock()
-            .as_ref()
-            .is_some_and(|question| content.starts_with(&format!("QUESTION: {question}\n")))
+            .iter()
+            .any(|question| content.starts_with(&format!("QUESTION: {question}\n")))
     }
 
     pub(super) async fn take_answer(&self, pending: &PendingMessage) -> Result<()> {
-        *self.asking.lock() = None;
+        self.asking.lock().clear();
         let message = self.state.admit_pending(&self.thread_id, pending).await?;
         sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
             .bind(&self.thread_id)

@@ -87,7 +87,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(buttons),
         );
     }
-    if let Some(question) = &chat.question {
+    if let Some(question) = chat.questions.front() {
         let muted = cx.theme().muted_foreground;
         let (primary, hover) = (cx.theme().primary, muted.opacity(0.5));
         let mut options = div().flex().flex_col().gap_2();
@@ -142,6 +142,14 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             } else {
                 "Pick one. Or write your own answer below."
             }))
+            // More wait behind this one; the answers go to the agent together.
+            .when(chat.questions.len() + chat.answers.len() > 1, |card| {
+                card.child(div().meta().text_color(muted).child(format!(
+                    "Question {} of {}",
+                    chat.answers.len() + 1,
+                    chat.questions.len() + chat.answers.len()
+                )))
+            })
             .child(options);
         if question.multiple {
             card = card.child(
@@ -190,7 +198,7 @@ impl Workspace {
     fn pick(&mut self, index: usize, cx: &mut Context<Self>) {
         let multiple = self
             .shown_chat()
-            .and_then(|chat| chat.question.as_ref())
+            .and_then(|chat| chat.questions.front())
             .is_some_and(|q| q.multiple);
         if !multiple {
             self.picked = vec![index];
@@ -216,10 +224,11 @@ impl Workspace {
         let Some(chat) = self.chats.get_mut(&thread_id) else {
             return;
         };
-        let Some(question) = chat.question.take() else {
+        let Some(text) = chat.answer(&chosen, "") else {
+            // The next question shows; nothing is sent until the last one is answered.
+            cx.notify();
             return;
         };
-        let text = question.answer(&chosen, "");
         self.core.call(
             cx,
             move |client| async move { client.threads().send(&thread_id, text, false).await },

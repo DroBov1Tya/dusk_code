@@ -15,7 +15,7 @@ const MOST: usize = 12;
 const BAND: f32 = 84.;
 
 pub fn render(ws: &Workspace, cx: &App) -> Option<impl IntoElement + use<>> {
-    if !crate::ui::theme::prefs(cx).sky {
+    if !crate::ui::theme::prefs(cx).fireflies {
         return None;
     }
     let working = ws

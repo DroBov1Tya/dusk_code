@@ -193,6 +193,19 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                             })),
                     ),
                     cx,
+                ))
+                .child(type_size(
+                    "Fireflies",
+                    "A light over the message box for each subagent at work",
+                    div().child(
+                        gpui_kit::component::switch::Switch::new("appearance-fireflies")
+                            .checked(prefs.fireflies)
+                            .on_click(cx.listener(|_, on: &bool, _, cx| {
+                                let on = *on;
+                                theme::change(cx, move |prefs| prefs.fireflies = on);
+                            })),
+                    ),
+                    cx,
                 )),
         )
         .child(

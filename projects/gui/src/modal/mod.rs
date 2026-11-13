@@ -65,6 +65,12 @@ pub enum Modal {
         thread_id: String,
         title: String,
     },
+    /// One background job of the shown chat: its whole command, how long it runs, what
+    /// it printed, and a way to cancel it.
+    Job {
+        job_id: String,
+        output: Option<String>,
+    },
     /// A picture large over the window; a click outside closes it.
     Picture {
         path: PathBuf,
@@ -178,13 +184,18 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         }
         Modal::Agents { thread_id } => {
             let thread_id = thread_id.clone();
-            let width = (window.viewport_size().width.as_f32() - 32.).clamp(220., 640.);
+            let width = (window.viewport_size().width.as_f32() - 32.).clamp(220., 860.);
             (
                 "Subagents".to_owned(),
                 width,
-                agents::render(ws, &thread_id, width >= 560., cx),
+                agents::render(ws, &thread_id, width >= 720., cx),
             )
         }
+        Modal::Job { job_id, output } => (
+            "Background job".to_owned(),
+            720.,
+            crate::columns::inspector::jobs::detail(ws, job_id, output.as_deref(), cx),
+        ),
         Modal::AgentChat { agent, name } => {
             let (agent, name) = (agent.clone(), name.clone());
             let width = (window.viewport_size().width.as_f32() - 32.).clamp(220., 760.);

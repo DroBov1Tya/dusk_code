@@ -144,6 +144,49 @@ impl State {
         .collect()
     }
 
+    /// What the user and the agent said in any chat that contains `text`, best matches
+    /// first. Tool calls and subagents' threads are left out: the search is for what a
+    /// person remembers reading.
+    pub async fn search_chats(
+        &self,
+        text: &str,
+        limit: u32,
+    ) -> Result<Vec<dusk_protocol::thread::Found>> {
+        let text = text.trim();
+        ensure!(
+            text.chars().count() >= 3,
+            "search text needs at least 3 characters"
+        );
+        // A quoted phrase in the text column: never read as query syntax.
+        let phrase = format!("content : \"{}\"", text.replace('"', "\"\""));
+        let rows = sqlx::query(
+            "SELECT messages.thread_id, messages.sequence, messages.content, threads.title
+             FROM messages_search
+             JOIN messages ON messages.rowid = messages_search.rowid
+             JOIN threads ON threads.id = messages.thread_id
+             WHERE messages_search MATCH ? AND threads.parent_thread_id IS NULL
+               AND messages.role IN ('user', 'assistant')
+             ORDER BY messages_search.rank LIMIT ?",
+        )
+        .bind(phrase)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .context("search chats")?;
+        rows.into_iter()
+            .map(|row| {
+                let content: String = row.try_get("content")?;
+                let sequence: i64 = row.try_get("sequence")?;
+                Ok(dusk_protocol::thread::Found {
+                    thread_id: row.try_get("thread_id")?,
+                    title: row.try_get("title")?,
+                    sequence: sequence as u64,
+                    snippet: snippet(&content, text),
+                })
+            })
+            .collect()
+    }
+
     /// Messages from sequence `from` on, oldest first.
     pub async fn messages_from(
         &self,
@@ -347,4 +390,31 @@ pub fn decode_message(row: SqliteRow) -> Result<Message> {
 pub fn read_tokens(row: &SqliteRow, column: &str) -> Result<u64> {
     let tokens: i64 = row.try_get(column)?;
     tokens.try_into().context("negative token count")
+}
+
+/// The words around the first place `text` stands in `content`, on one line.
+fn snippet(content: &str, text: &str) -> String {
+    const BEFORE: usize = 40;
+    const SHOWN: usize = 160;
+    let lower = |c: char| c.to_lowercase().next().unwrap_or(c);
+    let chars: Vec<char> = content.chars().collect();
+    let folded: Vec<char> = chars.iter().copied().map(lower).collect();
+    let needle: Vec<char> = text.chars().map(lower).collect();
+    let at = folded
+        .windows(needle.len().max(1))
+        .position(|window| window == needle)
+        .unwrap_or(0);
+    let start = at.saturating_sub(BEFORE);
+    let mut line: String = chars[start..]
+        .iter()
+        .take(SHOWN)
+        .map(|c| if c.is_whitespace() { ' ' } else { *c })
+        .collect();
+    if start > 0 {
+        line.insert(0, '\u{2026}');
+    }
+    if start + SHOWN < chars.len() {
+        line.push('\u{2026}');
+    }
+    line
 }
