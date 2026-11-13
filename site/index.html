@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>duskcode: an open-source coding agent in Rust</title>
+<meta name="description" content="One core, three clients: a desktop window, a terminal client and a web client. Any model, local by default, MIT.">
+<meta property="og:title" content="duskcode">
+<meta property="og:description" content="An open-source coding agent in Rust: one core, three clients, any model, local by default.">
+<meta property="og:image" content="img/desktop.png">
+<link rel="icon" href="img/icon.png">
+<style>
+:root {
+  --bg: #0e0f18; --panel: #13141f; --card: #1b1c2a; --raised: #262839;
+  --text: #efedf7; --soft: #aeadc4; --muted: #8f8ea8; --line: rgba(239,237,247,.09);
+  --accent: #b4a0f8; --amber: #ecc46e; --green: #74d4b3;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+a:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+.wrap { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
+
+/* The sky: violet going to the last light at the horizon, and a few stars. */
+.sky {
+  position: relative; overflow: hidden;
+  background:
+    radial-gradient(120% 70% at 50% 108%, rgba(236,160,90,.30), rgba(180,110,170,.14) 38%, transparent 70%),
+    linear-gradient(#0b0b16, #14132a 60%, #1a1630);
+  border-bottom: 1px solid var(--line);
+}
+.stars { position: absolute; inset: 0; pointer-events: none; }
+.stars i {
+  position: absolute; width: 2px; height: 2px; border-radius: 50%; background: #dcd6ff;
+  opacity: .5; animation: twinkle 4s ease-in-out infinite;
+}
+@keyframes twinkle { 50% { opacity: .12; } }
+@media (prefers-reduced-motion: reduce) { .stars i { animation: none; } html { scroll-behavior: auto; } }
+
+nav { display: flex; align-items: center; gap: 22px; padding: 18px 0; position: relative; }
+nav .brand { font-weight: 650; font-size: 18px; color: var(--text); margin-right: auto; display: flex; align-items: center; gap: 10px; }
+nav .brand img { width: 26px; height: 26px; border-radius: 7px; }
+nav .brand b { color: var(--accent); font-weight: 650; }
+nav a.link { color: var(--soft); font-size: 15px; }
+@media (max-width: 560px) { nav a.hide { display: none; } }
+
+.hero { position: relative; padding: 56px 0 0; text-align: center; }
+h1 { font-size: clamp(34px, 6vw, 58px); line-height: 1.08; letter-spacing: -.02em; margin: 0 0 18px; font-weight: 680; }
+h1 span { color: var(--amber); }
+.lead { color: var(--soft); font-size: clamp(17px, 2.2vw, 20px); max-width: 640px; margin: 0 auto 30px; }
+.install {
+  display: flex; align-items: center; gap: 10px; max-width: 760px; margin: 0 auto 14px;
+  background: rgba(14,15,24,.72); border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 12px 18px;
+}
+.install code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 14px var(--mono); color: var(--text); text-align: left; scrollbar-width: none; }
+.install code::-webkit-scrollbar { display: none; }
+button.copy {
+  flex: none; font: 600 14px inherit; color: #13121d; background: var(--accent); border: 0;
+  border-radius: 8px; padding: 9px 16px; cursor: pointer; min-width: 76px;
+}
+button.copy:hover { filter: brightness(1.08); }
+.under { color: var(--muted); font-size: 14px; margin: 0 0 40px; }
+.shot { display: block; width: 100%; height: auto; border-radius: 14px 14px 0 0; border: 1px solid var(--line); border-bottom: 0; box-shadow: 0 -20px 80px rgba(120,90,220,.18); }
+
+section { padding: 72px 0; border-bottom: 1px solid var(--line); }
+h2 { font-size: clamp(26px, 3.6vw, 34px); letter-spacing: -.015em; margin: 0 0 10px; font-weight: 650; }
+.sub { color: var(--soft); max-width: 640px; margin: 0 0 36px; }
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.card img { display: block; width: 100%; aspect-ratio: 16 / 10; object-fit: cover; object-position: top left; border-bottom: 1px solid var(--line); }
+.card div { padding: 18px 20px 20px; }
+.card h3 { margin: 0 0 6px; font-size: 18px; font-weight: 620; }
+.card h3 code { font: 13px var(--mono); color: var(--amber); margin-left: 6px; }
+.card p { margin: 0; color: var(--soft); font-size: 15.5px; }
+
+.points { display: grid; gap: 28px 36px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+.points h3 { margin: 0 0 6px; font-size: 17px; font-weight: 620; }
+.points h3::before { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); margin-right: 10px; vertical-align: 2px; }
+.points p { margin: 0; color: var(--soft); font-size: 15.5px; }
+
+ol.steps { counter-reset: step; list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; max-width: 760px; }
+ol.steps li { counter-increment: step; position: relative; padding: 16px 20px 16px 62px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; color: var(--soft); font-size: 15.5px; }
+ol.steps li::before { content: counter(step); position: absolute; left: 20px; top: 15px; width: 28px; height: 28px; border-radius: 50%; background: var(--raised); color: var(--accent); font-weight: 650; display: grid; place-items: center; font-size: 14px; }
+ol.steps b { color: var(--text); font-weight: 600; }
+.note { color: var(--muted); font-size: 14.5px; max-width: 760px; margin: 20px 0 0; }
+
+.wallets { display: grid; gap: 12px; max-width: 760px; }
+.wallet { display: flex; align-items: center; gap: 12px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px 12px 12px 18px; }
+.wallet span { flex: none; width: 74px; color: var(--soft); font-size: 15px; }
+.wallet code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; font: 13.5px var(--mono); scrollbar-width: none; }
+.wallet button.copy { background: var(--raised); color: var(--text); }
+
+footer { padding: 34px 0 48px; color: var(--muted); font-size: 14.5px; display: flex; flex-wrap: wrap; gap: 8px 22px; }
+footer span { margin-right: auto; }
+</style>
+</head>
+<body>
+<header class="sky">
+  <div class="stars" aria-hidden="true"></div>
+  <div class="wrap">
+    <nav>
+      <a class="brand" href="./"><img src="img/icon.png" alt=""><span><b>Dusk</b>code</span></a>
+      <a class="link hide" href="#clients">Clients</a>
+      <a class="link hide" href="#connect">Models</a>
+      <a class="link hide" href="#support">Support</a>
+      <a class="link" href="https://github.com/DroBov1Tya/dusk_code">GitHub</a>
+    </nav>
+    <div class="hero">
+      <h1>A coding agent that stays<br><span>on your machine</span></h1>
+      <p class="lead">Open source, written in Rust. One core and three clients: a desktop window, a terminal client and a web client. Any model you can reach, your files and chats kept local.</p>
+      <div class="install">
+        <code id="cmd">curl -fsSL https://raw.githubusercontent.com/DroBov1Tya/dusk_code/main/install.sh | sh</code>
+        <button class="copy" data-copy="cmd">Copy</button>
+      </div>
+      <p class="under">macOS arm64 and Linux x86_64 / arm64 · MIT · <a href="https://github.com/DroBov1Tya/dusk_code/releases">Releases</a></p>
+      <img class="shot" src="img/desktop.png" alt="The desktop window of duskcode: a chat with its steps, the context, the tool runs and the todo list" width="1800" height="1125">
+    </div>
+  </div>
+</header>
+
+<main>
+<section id="clients">
+  <div class="wrap">
+    <h2>One core, three clients</h2>
+    <p class="sub">They draw the same threads over one protocol, so a chat started in one opens in another, and a feature lands once.</p>
+    <div class="grid">
+      <article class="card">
+        <img src="img/desktop-subagents.png" alt="The subagents window: agents by the zone of their work" loading="lazy">
+        <div><h3>Desktop <code>duskcode-gui</code></h3><p>Chats and projects, a file viewer and editor, your own terminal in a panel, subagents and the arbiter in windows of their own.</p></div>
+      </article>
+      <article class="card">
+        <img src="img/terminal.png" alt="The terminal client: the rail, the steps of a turn and the answer" loading="lazy">
+        <div><h3>Terminal <code>duskcode</code></h3><p>Full screen in any terminal, 24-bit colour, keyboard and mouse. Runs on a server over SSH, and headless with <code style="font:13px var(--mono)">duskcode run</code>.</p></div>
+      </article>
+      <article class="card">
+        <img src="img/web.png" alt="The web client: a chat with the task list beside it" loading="lazy">
+        <div><h3>Web <code>--web</code></h3><p>The same chats in a browser, served by the core. Bound to this machine unless you open it to your network.</p></div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>What it does</h2>
+    <p class="sub">The work of a coding agent, with the parts you may want to read or change kept as plain files.</p>
+    <div class="points">
+      <div><h3>Works in your project</h3><p>Reads, searches and edits files, runs commands in the foreground or as background jobs, and keeps a task list while it goes.</p></div>
+      <div><h3>Delegates</h3><p>Specialist agents by role, several at once, each in a thread of its own. An arbiter can answer their approval requests under your rules.</p></div>
+      <div><h3>Asks first</h3><p>Ask, sandbox, arbiter or full access, set per chat. An approval nobody can give is denied.</p></div>
+      <div><h3>Extends</h3><p>Skills loaded when a task needs them, MCP servers for tools, plugins for providers, hooks and platforms such as a Telegram bot.</p></div>
+      <div><h3>Remembers in the open</h3><p>Notes per project and about you are Markdown files. A temporary chat lives in memory and leaves nothing on disk.</p></div>
+      <div><h3>Goes the distance</h3><p>Goals with acceptance criteria, scheduled runs, context compaction, forks from a summary and undo to an earlier message.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="connect">
+  <div class="wrap">
+    <h2>Any model, with or without a key</h2>
+    <p class="sub">OpenAI, Anthropic and Google with an API key; any server that speaks the OpenAI API; local models on localhost. Or sign in with ChatGPT and use the models of your plan:</p>
+    <ol class="steps">
+      <li><b>The browser asks, not the app.</b> duskcode opens OpenAI's sign-in page and listens on 127.0.0.1. It never sees your password.</li>
+      <li><b>OpenAI issues this install its own client ID</b> and sends the browser back with a one-time code. Authorization code with PKCE; there is no client secret.</li>
+      <li><b>The identity is checked.</b> Signature against OpenAI's published keys, issuer, audience, expiry and nonce, and that use of the plan was granted.</li>
+      <li><b>Requests go to the Responses API</b> with storing switched off. The record is kept in the system keychain and works only with api.openai.com.</li>
+    </ol>
+    <p class="note">A Claude subscription cannot be used this way: Anthropic allows signing in with a Claude account only in its own apps. Claude models work with an API key.</p>
+  </div>
+</section>
+
+<section>
+  <div class="wrap">
+    <h2>Local by default</h2>
+    <p class="sub">No account, no telemetry, no project servers.</p>
+    <div class="points">
+      <div><h3>Secrets in the keychain</h3><p>Never in the config file, the logs, the chat history or a backup, never shown and never sent to a model.</p></div>
+      <div><h3>Nothing phones home</h3><p>The program talks to the providers and servers you set up, and to GitHub to look for a release. That request carries no chat data.</p></div>
+      <div><h3>Inside your projects</h3><p>Files and git only in saved projects; paths are canonicalized, and <code style="font:13px var(--mono)">..</code> or a symlink that leads out is refused.</p></div>
+      <div><h3>Read it yourself</h3><p>MIT, with the lockfile committed: build from source and you run what a release runs.</p></div>
+    </div>
+  </div>
+</section>
+
+<section id="support">
+  <div class="wrap">
+    <h2>Say thanks</h2>
+    <p class="sub">duskcode is free and has no paid tier. If it saves you time, a coffee is welcome. Issues and pull requests help as much.</p>
+    <div class="wallets">
+      <div class="wallet"><span>Bitcoin</span><code id="btc">bc1q636n7dg4kwjqn0tm4v5vlxfwzydqgte4423xkz</code><button class="copy" data-copy="btc">Copy</button></div>
+      <div class="wallet"><span>Litecoin</span><code id="ltc">ltc1q0xdfq0ze6f2cqdufgnnm3p3fls5km9qvjj2vkd</code><button class="copy" data-copy="ltc">Copy</button></div>
+    </div>
+  </div>
+</section>
+</main>
+
+<div class="wrap">
+  <footer>
+    <span>duskcode · MIT</span>
+    <a href="https://github.com/DroBov1Tya/dusk_code">Source</a>
+    <a href="https://github.com/DroBov1Tya/dusk_code/blob/main/CHANGELOG.md">Changelog</a>
+    <a href="https://github.com/DroBov1Tya/dusk_code/blob/main/SECURITY.md">Security</a>
+  </footer>
+</div>
+
+<script>
+// A few stars, the same every visit.
+(function () {
+  var sky = document.querySelector('.stars'), seed = 7;
+  function next() { seed = (seed * 16807) % 2147483647; return seed / 2147483647; }
+  for (var n = 0; n < 46; n++) {
+    var star = document.createElement('i'), big = next() > 0.86;
+    star.style.left = (next() * 100) + '%';
+    star.style.top = (next() * 58) + '%';
+    star.style.animationDelay = (-next() * 4) + 's';
+    if (big) { star.style.width = star.style.height = '3px'; star.style.opacity = '.8'; }
+    sky.appendChild(star);
+  }
+})();
+document.querySelectorAll('button.copy').forEach(function (button) {
+  button.addEventListener('click', function () {
+    var text = document.getElementById(button.dataset.copy).textContent;
+    navigator.clipboard.writeText(text).then(function () {
+      button.textContent = 'Copied';
+      setTimeout(function () { button.textContent = 'Copy'; }, 1600);
+    });
+  });
+});
+</script>
+</body>
+</html>

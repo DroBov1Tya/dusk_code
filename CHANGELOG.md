@@ -8,6 +8,10 @@ testing.
 
 ### Added
 
+- A page for the project on GitHub Pages, `site/index.html`, published by its own
+  workflow with the readme's screenshots. No scripts or fonts from other hosts.
+- The readme shows the three clients, says how a model is connected and how sign-in
+  with ChatGPT works, and names a way to say thanks.
 - Sign in with ChatGPT: OpenAI connects without an API key. The browser asks the user,
   OpenAI issues this install a client ID of its own, and the plan's models run over the
   Responses API. It is in the provider settings of the desktop window and first in
