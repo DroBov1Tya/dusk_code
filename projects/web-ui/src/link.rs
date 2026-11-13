@@ -24,6 +24,9 @@ pub struct Handlers {
 }
 
 struct Link {
+    /// Which `connect` this is. A stream opened for an earlier one is stale: what it
+    /// still delivers is dropped and it does not open another.
+    run: u64,
     socket: Option<WebSocket>,
     next: u64,
     pending: HashMap<u64, oneshot::Sender<Response>>,
@@ -36,34 +39,53 @@ thread_local! {
 
 const RETRY_MS: i32 = 2000;
 
+/// Starts the stream. Called again after a new sign-in, it takes the place of the
+/// earlier one, whose socket is closed: two live streams would deliver every event twice.
 pub fn connect(handlers: Handlers) {
     LINK.with(|link| {
-        *link.borrow_mut() = Some(Link {
+        let mut link = link.borrow_mut();
+        let run = link.as_ref().map_or(1, |earlier| earlier.run + 1);
+        if let Some(socket) = link.as_mut().and_then(|earlier| earlier.socket.take()) {
+            let _ = socket.close();
+        }
+        *link = Some(Link {
+            run,
             socket: None,
             next: 1,
             pending: HashMap::new(),
             handlers: Rc::new(handlers),
         });
     });
-    open();
+    open(run_now());
 }
 
 fn handlers() -> Option<Rc<Handlers>> {
     LINK.with(|link| link.borrow().as_ref().map(|link| Rc::clone(&link.handlers)))
 }
 
-fn open() {
+fn run_now() -> u64 {
+    LINK.with(|link| link.borrow().as_ref().map_or(0, |link| link.run))
+}
+
+fn open(run: u64) {
+    if run != run_now() {
+        return;
+    }
     let Some(handlers) = handlers() else { return };
     (handlers.on_conn)(Conn::Connecting);
     let Some(url) = socket_url() else { return };
     let Ok(socket) = WebSocket::new(&url) else {
-        retry_later();
+        retry_later(run);
         return;
     };
 
     let on_open = {
         let handlers = Rc::clone(&handlers);
-        Closure::<dyn FnMut()>::new(move || (handlers.on_conn)(Conn::Online))
+        Closure::<dyn FnMut()>::new(move || {
+            if run == run_now() {
+                (handlers.on_conn)(Conn::Online)
+            }
+        })
     };
     socket.set_onopen(Some(on_open.as_ref().unchecked_ref()));
     on_open.forget();
@@ -71,6 +93,9 @@ fn open() {
     let on_message = {
         let handlers = Rc::clone(&handlers);
         Closure::<dyn FnMut(MessageEvent)>::new(move |message: MessageEvent| {
+            if run != run_now() {
+                return;
+            }
             let Some(text) = message.data().as_string() else {
                 return;
             };
@@ -84,6 +109,9 @@ fn open() {
     on_message.forget();
 
     let on_close = Closure::<dyn FnMut(CloseEvent)>::new(move |_| {
+        if run != run_now() {
+            return;
+        }
         // Calls still waiting will never be answered on this stream.
         LINK.with(|link| {
             if let Some(link) = link.borrow_mut().as_mut() {
@@ -92,7 +120,7 @@ fn open() {
             }
         });
         (handlers.on_conn)(Conn::Lost);
-        retry_later();
+        retry_later(run);
     });
     socket.set_onclose(Some(on_close.as_ref().unchecked_ref()));
     on_close.forget();
@@ -121,8 +149,8 @@ fn deliver(handlers: &Handlers, frame: ServerFrame) {
     }
 }
 
-fn retry_later() {
-    let retry = Closure::once_into_js(open);
+fn retry_later(run: u64) {
+    let retry = Closure::once_into_js(move || open(run));
     if let Some(window) = web_sys::window() {
         let _ = window
             .set_timeout_with_callback_and_timeout_and_arguments_0(retry.unchecked_ref(), RETRY_MS);

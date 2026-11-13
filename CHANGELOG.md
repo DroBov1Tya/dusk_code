@@ -4,6 +4,16 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Fixed
+
+- Web: a turn that only thought and answered, with no tool, drew its "Worked for" line
+  twice and never showed the answer. The line's fold and the answer had the same key in
+  the list, since the fold began with the answer's own thinking.
+- Web: signing in again no longer leaves the earlier stream to the core open beside the
+  new one.
+
 ## 0.73.5 - 2026-11-13
 
 ### Added

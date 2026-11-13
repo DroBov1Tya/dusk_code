@@ -22,11 +22,16 @@ enum Block {
     },
 }
 
+/// What tells one drawn block from another: whether it is a turn's fold, and the first
+/// item in it. The fold of a turn may start with its answer's own thinking, which has
+/// the answer's number, so the number alone would name two blocks.
+type BlockKey = (bool, u64);
+
 impl Block {
-    fn first(&self) -> u64 {
+    fn key(&self) -> BlockKey {
         match self {
-            Block::One(entry) => entry.id,
-            Block::Turn { entries, .. } => entries.first().map_or(0, |entry| entry.id),
+            Block::One(entry) => (false, entry.id),
+            Block::Turn { entries, .. } => (true, entries.first().map_or(0, |entry| entry.id)),
         }
     }
 }
@@ -118,8 +123,7 @@ use dusk_protocol::thread::duration_words as duration;
 pub fn Transcript(chat: Chat) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
     let all = Memo::new(move |_| chat.with(blocks));
-    let firsts =
-        Memo::new(move |_| all.with(|all| all.iter().map(Block::first).collect::<Vec<_>>()));
+    let firsts = Memo::new(move |_| all.with(|all| all.iter().map(Block::key).collect::<Vec<_>>()));
     // A second's tick for the time the running turn has taken.
     let tick = RwSignal::new(0u32);
     let _ = set_interval_with_handle(
@@ -167,8 +171,8 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
             <Show when=move || chat.with(|c| c.items.is_empty() && c.pending.is_empty())>
                 <div class="empty">"Ask anything. The chat is made with your first message."</div>
             </Show>
-            <For each=move || firsts.get() key=|first| *first let:first>
-                <BlockView all first />
+            <For each=move || firsts.get() key=|key| *key let:key>
+                <BlockView all key />
             </For>
             <For each=pending key=|(at, text)| (*at, text.clone()) let:pair>
                 <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
@@ -188,9 +192,8 @@ fn element_to_end(scroller: &NodeRef<html::Div>) {
 }
 
 #[component]
-fn BlockView(all: Memo<Vec<Block>>, first: u64) -> impl IntoView {
-    let block =
-        Memo::new(move |_| all.with(|all| all.iter().find(|b| b.first() == first).cloned()));
+fn BlockView(all: Memo<Vec<Block>>, key: BlockKey) -> impl IntoView {
+    let block = Memo::new(move |_| all.with(|all| all.iter().find(|b| b.key() == key).cloned()));
     move || match block.get() {
         Some(Block::One(entry)) => item_view(entry.item).into_any(),
         Some(Block::Turn { entries, took }) => view! { <Turn entries took /> }.into_any(),
@@ -389,5 +392,31 @@ fn AudioCard(shown: Shown) -> impl IntoView {
             <div class="muted">{shown.title.clone().unwrap_or_else(|| "Sound".to_owned())}</div>
             <audio controls src=format!("/api/card/{}/audio", shown.id)></audio>
         </div>
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dusk_protocol::{model::ModelEvent, thread::ThreadEvent};
+
+    /// A turn of thinking and an answer, with no tool: the fold holds only the answer's
+    /// thinking. Two blocks under one key made the list draw the fold twice and never
+    /// the answer.
+    #[test]
+    fn a_turn_of_thought_and_answer_draws_each_block_once() {
+        let mut chat = ChatData::default();
+        // Any item opens the turn the way the user's message does.
+        chat.apply(ThreadEvent::Rejected {
+            reason: "first".into(),
+        });
+        chat.apply(ThreadEvent::Model(ModelEvent::Reasoning("hm".into())));
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("done".into())));
+        let blocks = blocks(&chat);
+        assert_eq!(blocks.len(), 3);
+        assert!(matches!(&blocks[1], Block::Turn { .. }));
+        assert!(matches!(&blocks[2], Block::One(entry)
+            if matches!(&entry.item, Item::Assistant { text, .. } if text == "done")));
+        assert_ne!(blocks[1].key(), blocks[2].key());
     }
 }
