@@ -156,7 +156,7 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
             if ws.quiet {
                 Icon::default().path(crate::ui::icons::MOON_FILL)
             } else {
-                Icon::new(IconName::Moon)
+                Icon::default().path(crate::ui::icons::MOON)
             },
             if ws.quiet {
                 "Leave quiet: show the columns again"

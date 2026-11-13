@@ -41,7 +41,8 @@ testing.
 
 - GUI: the falling star is one smooth stroke of light on a shallow path, white at the
   head and blue behind, gone in a quarter of a second; one in a few crosses the whole
-  sky.
+  sky. Its head is a blunt front of fire in lit air, with the trail streaming off it.
+- GUI: Quiet's moon is a crescent, a disc covered by a shadow of its own size.
 
 ### Fixed
 

@@ -3,7 +3,10 @@
 //! one by one as it darkens, so how long it has run reads from the corner of the eye.
 //! When the turn ends a small star lights up once. Appearance can switch it all off.
 
-use std::time::Duration;
+use std::{
+    f32::consts::{FRAC_PI_2, PI},
+    time::Duration,
+};
 
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -93,8 +96,12 @@ pub fn stars(ws: &Workspace, cx: &App) -> Option<Div> {
 const METEOR_EVERY: i64 = 11_000;
 const METEOR_FLIGHT: f32 = 240.;
 const METEOR_AFTERGLOW: f32 = 620.;
-/// The needles its trail is laid from; enough that it reads as one stroke of light.
+/// The drops its fire is laid from; enough that it reads as one stroke of light.
 const METEOR_PARTS: usize = 28;
+/// The steps the round front of one is drawn in.
+const METEOR_FRONT: usize = 14;
+/// The layers of lit air round its front.
+const METEOR_SHOCK: usize = 9;
 
 /// One meteor at one moment.
 #[derive(Clone, Copy)]
@@ -161,8 +168,8 @@ fn meteor() -> impl IntoElement {
 fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
     let (width, height) = (bounds.size.width.as_f32(), bounds.size.height.as_f32());
     let (sin, cos) = meteor.angle.sin_cos();
-    // It burns out inside the sky: never further than the header is tall.
-    let run = (meteor.run * width).min((height - 4.) / sin);
+    // It burns out inside the sky, glow and all: never lower than the header's foot.
+    let run = (meteor.run * width).min((height - 14.) / sin);
     let (left, top) = (bounds.origin.x.as_f32(), bounds.origin.y.as_f32());
     let start = (left + meteor.from * width, top + 2.);
     let head = (
@@ -171,23 +178,31 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
     );
     // The trail reaches back to where it came in, then goes out from that end.
     let trail = run * meteor.flown * (0.25 + 0.75 * meteor.left);
-    let (core, glow) = if meteor.great { (3., 11.) } else { (2., 7.) };
-    // The trail is needles laid over each other from the head, each longer and bluer
-    // than the last: where many lie it is white, where few reach it is a thin blue, and
-    // no needle ends in an edge, so the light has no joints.
-    let needle = |reach: f32, wide: f32, color: Hsla, window: &mut Window| {
+    // Half the width of the front of fire, and of the glow around it.
+    let (front, glow) = if meteor.great { (4., 9.) } else { (2.8, 6.) };
+    // Nothing of the body shows: where it meets the air there is a blunt front of fire,
+    // and the fire streams back off it into the trail. It is drawn as drops laid over
+    // each other, round at the front and drawn out to a point behind, each wider, longer
+    // and bluer than the last: white-hot in the middle, blue at the skin, and no drop
+    // ends in an edge, so the light has no joints.
+    let drop = |reach: f32, radius: f32, color: Hsla, window: &mut Window| {
         let mut path = PathBuilder::fill();
-        path.move_to(point(
-            px(head.0 + sin * wide / 2.),
-            px(head.1 + cos * wide / 2.),
-        ));
+        for step in 0..=METEOR_FRONT {
+            let turn = FRAC_PI_2 - PI * step as f32 / METEOR_FRONT as f32;
+            let (across, ahead) = (radius * turn.sin(), radius * turn.cos());
+            let at = point(
+                px(head.0 + sin * across - cos * ahead),
+                px(head.1 + cos * across + sin * ahead),
+            );
+            if step == 0 {
+                path.move_to(at);
+            } else {
+                path.line_to(at);
+            }
+        }
         path.line_to(point(
             px(head.0 + cos * trail * reach),
             px(head.1 - sin * trail * reach),
-        ));
-        path.line_to(point(
-            px(head.0 - sin * wide / 2.),
-            px(head.1 - cos * wide / 2.),
         ));
         path.close();
         if let Ok(path) = path.build() {
@@ -196,40 +211,36 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
     };
     for part in 0..METEOR_PARTS {
         let share = (part + 1) as f32 / METEOR_PARTS as f32;
-        let blue = (share * 2.4).min(1.);
-        let color = hsla(0.6, blue, 1. - blue * 0.38, meteor.left);
-        // The glow under it, wider and all but unseen, then the light itself.
-        needle(
+        let blue = (share * 2.2).min(1.);
+        let color = hsla(0.6, blue, 1. - blue * 0.38, 1.);
+        // The glow around it, wide and all but unseen, then the fire itself.
+        drop(
             share,
-            glow * (0.4 + share),
+            glow * (0.35 + 0.65 * share),
             color.opacity(0.012 * meteor.left),
             window,
         );
-        needle(
-            share * share,
-            core,
-            color.opacity(0.2 * meteor.left),
-            window,
-        );
+        let radius = front * (0.25 + 0.75 * share);
+        let strength = (0.05 + 0.2 * (1. - share)) * meteor.left;
+        drop(share.powf(1.5), radius, color.opacity(strength), window);
     }
-    // It is white-hot where it burns: the first quarter of the trail, under the head.
+    // White-hot behind the front, a quarter of the way back.
     for part in 1..=6 {
-        let white = hsla(0.6, 0.25, 0.97, 0.26 * meteor.left);
-        needle(part as f32 * 0.045, core, white, window);
+        let white = hsla(0.6, 0.2, 0.98, 0.26 * meteor.left);
+        drop(part as f32 * 0.045, front * 0.5, white, window);
     }
-    // The head: a point of white in a halo that thins outward, while it still flies.
-    let flying = if meteor.flown < 1. { 1. } else { meteor.left };
-    for ring in 0..6 {
-        let wide = glow * 1.5 * (1. - ring as f32 / 6.);
-        let spot = Bounds::centered_at(point(px(head.0), px(head.1)), size(px(wide), px(wide)));
-        let color = hsla(0.6, 1., 0.75, 0.07 * flying);
-        window.paint_quad(fill(spot, color).corner_radii(px(wide / 2.)));
+    // The shock: the air lit ahead of the fire and swept back round it, wider than the
+    // fire and gone a little way behind. It has no line of its own, only light.
+    let flying = if meteor.flown < 1. {
+        1.
+    } else {
+        meteor.left * meteor.left
+    };
+    for layer in 0..METEOR_SHOCK {
+        let out = (layer + 1) as f32 / METEOR_SHOCK as f32;
+        let pale = hsla(0.59, 0.85, 0.8, 0.05 * flying);
+        drop(0.06 + 0.3 * out, front * (0.9 + 1.5 * out), pale, window);
     }
-    let spot = Bounds::centered_at(
-        point(px(head.0), px(head.1)),
-        size(px(core * 1.3), px(core * 1.3)),
-    );
-    window.paint_quad(fill(spot, hsla(0., 0., 1., flying)).corner_radii(px(core)));
 }
 
 /// One star: a soft point in a haze, and on the larger ones four short rays that thin
