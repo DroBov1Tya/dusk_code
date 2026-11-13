@@ -119,7 +119,12 @@ pub fn render(
                             .child(preview),
                     )
                     .on_click(cx.listener(move |ws, click: &ClickEvent, window, cx| {
-                        ws.list.scroll_to_reveal_item(row);
+                        // To the message itself: a list that follows its end would stay
+                        // there, and this is what lets go of the end.
+                        ws.list.scroll_to(ListOffset {
+                            item_ix: row,
+                            offset_in_item: px(0.),
+                        });
                         ws.navigator_open = false;
                         if matches!(click, ClickEvent::Keyboard(_)) {
                             trigger.focus(window, cx);

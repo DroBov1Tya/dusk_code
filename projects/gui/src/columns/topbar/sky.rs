@@ -88,11 +88,15 @@ pub fn stars(ws: &Workspace, cx: &App) -> Option<Div> {
     Some(sky)
 }
 
-/// How often the sky looks for a meteor, how long its flight takes, and how long the
-/// trail it left takes to go out.
+/// How often the sky looks for a meteor.
 const METEOR_EVERY: i64 = 11_000;
-const METEOR_FLIGHT: f32 = 240.;
-const METEOR_AFTERGLOW: f32 = 620.;
+/// A small one: how long it flies, and how long its trail takes to go out.
+const SMALL: (f32, f32, f32) = (240., 0., 520.);
+/// A great one crosses the whole sky in an instant; its trail hangs there for a moment,
+/// as the eye keeps it, and only then goes out.
+const GREAT: (f32, f32, f32) = (130., 420., 950.);
+/// One meteor in so many is a great one.
+const GREAT_ONE_IN: u32 = 24;
 /// The shells its flame is laid from; enough that it reads as one stroke of light.
 const METEOR_PARTS: usize = 28;
 /// The steps one side of a shell's outline is drawn in.
@@ -112,13 +116,15 @@ struct Meteor {
     /// How much of the way the head has gone, and how much of the trail is left.
     flown: f32,
     left: f32,
+    /// How much of the flame at the head still burns: all of it in flight, none after.
+    head: f32,
     /// One in a few crosses the whole sky, wider and brighter.
     great: bool,
 }
 
-/// A falling star, now and then: gone in a quarter of a second, on a shallow path of its
-/// own each time, a white point with a long blue trail that thins to nothing and goes
-/// out from its far end. The clock picks the moments and the paths, so nothing has to be
+/// A falling star, now and then, on a shallow path of its own each time: nearly always a
+/// small one, gone in a quarter of a second; rarely a great one that crosses the whole
+/// sky at once and leaves its trail hanging for a moment. The clock picks the moments and the paths, so nothing has to be
 /// remembered.
 fn meteor() -> impl IntoElement {
     div().absolute().inset_0().with_animation(
@@ -131,23 +137,30 @@ fn meteor() -> impl IntoElement {
             // The screenshot tool cannot wait for the sky: it names the moment itself.
             #[cfg(feature = "screenshot")]
             let (seed, at) = match std::env::var("DUSK_METEOR").map(|at| at.parse()) {
-                Ok(Ok(at)) => (21, at),
+                // A great one, or with `DUSK_METEOR_SMALL` a small one.
+                Ok(Ok(at)) if std::env::var("DUSK_METEOR_SMALL").is_ok() => (3 * 4001, at),
+                Ok(Ok(at)) => (3 * GREAT_ONE_IN, at),
                 _ => (seed, at),
             };
-            // Rare: about one window in three has one.
-            if !seed.is_multiple_of(3) || at >= METEOR_FLIGHT + METEOR_AFTERGLOW {
+            // About one window in three has one, nearly always a small one.
+            if !seed.is_multiple_of(3) {
                 return sky;
             }
             let unit = |shift: u32| (seed / shift % 1000) as f32 / 1000.;
-            let great = (seed / 3).is_multiple_of(7);
+            let great = (seed / 3).is_multiple_of(GREAT_ONE_IN);
+            let (flight, hold, fade) = if great { GREAT } else { SMALL };
+            if at >= flight + hold + fade {
+                return sky;
+            }
             // It slows a little as it burns up.
-            let gone = (at / METEOR_FLIGHT).min(1.);
+            let gone = (at / flight).min(1.);
             let meteor = Meteor {
                 from: if great { 0.99 } else { 0.66 + unit(3) * 0.32 },
                 angle: (if great { 4.5 } else { 6. + unit(3000) * 8. }).to_radians(),
-                run: if great { 0.95 } else { 0.24 + unit(7) * 0.2 },
+                run: if great { 0.95 } else { 0.16 + unit(7) * 0.16 },
                 flown: 1. - (1. - gone) * (1. - gone),
-                left: 1. - ((at - METEOR_FLIGHT) / METEOR_AFTERGLOW).clamp(0., 1.),
+                left: 1. - ((at - flight - hold) / fade).clamp(0., 1.),
+                head: 1. - ((at - flight) / 90.).clamp(0., 1.),
                 great,
             };
             sky.child(
@@ -176,7 +189,7 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
     // The trail reaches back to where it came in, then goes out from that end.
     let trail = run * meteor.flown * (0.25 + 0.75 * meteor.left);
     // How wide the flame is at its widest, and the glow around it.
-    let (flame, glow) = if meteor.great { (9., 20.) } else { (6., 13.) };
+    let (flame, glow) = if meteor.great { (9., 20.) } else { (3.2, 8.) };
     // Nothing of the body shows, only the flame round it, and the flame has one shape:
     // a drop. It comes to a rounded nose, is widest a little way back, then narrows
     // without a corner into a thin tail that goes on for the whole trail. It is drawn
@@ -195,6 +208,9 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
                 let past = (back - widest) / (wide * 3.2);
                 METEOR_TAIL + (1. - METEOR_TAIL) / (1. + past * past)
             };
+            // Once it has burned up only the trail is left: the head sinks into it.
+            let thin = METEOR_TAIL * (back / (wide * 0.5)).min(1.).sqrt();
+            let body = thin + (body - thin) * meteor.head;
             wide / 2. * body * (1. - back / long).max(0.).powf(0.8)
         };
         let at = |back: f32, side: f32| {

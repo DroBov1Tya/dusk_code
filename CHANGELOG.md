@@ -50,6 +50,13 @@ testing.
   head and blue behind, gone in a quarter of a second; one in a few crosses the whole
   sky. It has the shape of a flame: a drop with a rounded nose that narrows without a
   waist into the thin trail, white-hot inside and blue at the skin.
+- GUI: small falling stars are the usual ones again; a great one is rare, crosses the
+  whole sky in an instant and leaves its trail hanging for a moment before it goes out.
+- GUI: an hourglass in the rail starts a temporary chat.
+- GUI: rings go out from the microphone while it records.
+- GUI: the arbiter window anew: the agents as a tree with their roles, the arbiter's
+  state as a mark over one plate of counts, and what passed as a timeline in plain
+  words with the time since.
 - GUI: Quiet's moon is a crescent, a disc covered by a shadow of its own size.
 
 ### Fixed
@@ -57,6 +64,8 @@ testing.
 - A model whose provider did not answer at the start stayed at the unknown window of
   128 000 tokens until it was chosen again. The start asks again, and any catalogue read
   later fills the window in.
+- GUI: a message picked in the chat's list of messages is shown also when the chat
+  stood at its end; before, the list stayed where it was.
 - GUI: one zone of subagents takes the whole window instead of half of it, and a long
   brief no longer runs down the row.
 
