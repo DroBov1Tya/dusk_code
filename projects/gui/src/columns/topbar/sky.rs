@@ -3,10 +3,7 @@
 //! one by one as it darkens, so how long it has run reads from the corner of the eye.
 //! When the turn ends a small star lights up once. Appearance can switch it all off.
 
-use std::{
-    f32::consts::{FRAC_PI_2, PI},
-    time::Duration,
-};
+use std::time::Duration;
 
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -96,12 +93,12 @@ pub fn stars(ws: &Workspace, cx: &App) -> Option<Div> {
 const METEOR_EVERY: i64 = 11_000;
 const METEOR_FLIGHT: f32 = 240.;
 const METEOR_AFTERGLOW: f32 = 620.;
-/// The drops its fire is laid from; enough that it reads as one stroke of light.
+/// The shells its flame is laid from; enough that it reads as one stroke of light.
 const METEOR_PARTS: usize = 28;
-/// The steps the round front of one is drawn in.
-const METEOR_FRONT: usize = 14;
-/// The layers of lit air round its front.
-const METEOR_SHOCK: usize = 9;
+/// The steps one side of a shell's outline is drawn in.
+const METEOR_STEPS: usize = 30;
+/// How wide the tail is against the head, before it thins to nothing.
+const METEOR_TAIL: f32 = 0.26;
 
 /// One meteor at one moment.
 #[derive(Clone, Copy)]
@@ -178,32 +175,45 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
     );
     // The trail reaches back to where it came in, then goes out from that end.
     let trail = run * meteor.flown * (0.25 + 0.75 * meteor.left);
-    // Half the width of the front of fire, and of the glow around it.
-    let (front, glow) = if meteor.great { (4., 9.) } else { (2.8, 6.) };
-    // Nothing of the body shows: where it meets the air there is a blunt front of fire,
-    // and the fire streams back off it into the trail. It is drawn as drops laid over
-    // each other, round at the front and drawn out to a point behind, each wider, longer
-    // and bluer than the last: white-hot in the middle, blue at the skin, and no drop
-    // ends in an edge, so the light has no joints.
-    let drop = |reach: f32, radius: f32, color: Hsla, window: &mut Window| {
-        let mut path = PathBuilder::fill();
-        for step in 0..=METEOR_FRONT {
-            let turn = FRAC_PI_2 - PI * step as f32 / METEOR_FRONT as f32;
-            let (across, ahead) = (radius * turn.sin(), radius * turn.cos());
-            let at = point(
-                px(head.0 + sin * across - cos * ahead),
-                px(head.1 + cos * across + sin * ahead),
-            );
-            if step == 0 {
-                path.move_to(at);
+    // How wide the flame is at its widest, and the glow around it.
+    let (flame, glow) = if meteor.great { (9., 20.) } else { (6., 13.) };
+    // Nothing of the body shows, only the flame round it, and the flame has one shape:
+    // a drop. It comes to a rounded nose, is widest a little way back, then narrows
+    // without a corner into a thin tail that goes on for the whole trail. It is drawn
+    // as shells of that shape laid over each other from the same nose, each wider,
+    // longer and bluer than the last: white-hot at the core, blue at the skin, and no
+    // shell ends in an edge, so the light has no joints.
+    let shell = |long: f32, wide: f32, color: Hsla, window: &mut Window| {
+        // A shell is never shorter than its own head, or the drop would be cut off.
+        let long = long.max(wide * 6.);
+        let half = |back: f32| {
+            let widest = wide * 0.55;
+            let body = if back < widest {
+                (1. - ((widest - back) / widest).powi(2)).max(0.).powf(0.6)
             } else {
-                path.line_to(at);
-            }
+                // The narrowing takes several widths, as a flame's does: no waist.
+                let past = (back - widest) / (wide * 3.2);
+                METEOR_TAIL + (1. - METEOR_TAIL) / (1. + past * past)
+            };
+            wide / 2. * body * (1. - back / long).max(0.).powf(0.8)
+        };
+        let at = |back: f32, side: f32| {
+            let across = half(back) * side;
+            point(
+                px(head.0 + cos * back + sin * across),
+                px(head.1 - sin * back + cos * across),
+            )
+        };
+        // More steps near the nose, where the outline turns; few along the tail.
+        let back = |step: usize| long * (step as f32 / METEOR_STEPS as f32).powf(2.4);
+        let mut path = PathBuilder::fill();
+        path.move_to(at(0., 1.));
+        for step in 1..=METEOR_STEPS {
+            path.line_to(at(back(step), 1.));
         }
-        path.line_to(point(
-            px(head.0 + cos * trail * reach),
-            px(head.1 - sin * trail * reach),
-        ));
+        for step in (1..METEOR_STEPS).rev() {
+            path.line_to(at(back(step), -1.));
+        }
         path.close();
         if let Ok(path) = path.build() {
             window.paint_path(path, color);
@@ -213,33 +223,25 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
         let share = (part + 1) as f32 / METEOR_PARTS as f32;
         let blue = (share * 2.2).min(1.);
         let color = hsla(0.6, blue, 1. - blue * 0.38, 1.);
-        // The glow around it, wide and all but unseen, then the fire itself.
-        drop(
-            share,
+        // The glow around it, wide and all but unseen, then the flame itself.
+        shell(
+            trail * share,
             glow * (0.35 + 0.65 * share),
             color.opacity(0.012 * meteor.left),
             window,
         );
-        let radius = front * (0.25 + 0.75 * share);
         let strength = (0.05 + 0.2 * (1. - share)) * meteor.left;
-        drop(share.powf(1.5), radius, color.opacity(strength), window);
+        shell(
+            trail * share.powf(1.5),
+            flame * (0.25 + 0.75 * share),
+            color.opacity(strength),
+            window,
+        );
     }
-    // White-hot behind the front, a quarter of the way back.
+    // The core: white-hot, a quarter of the way back.
     for part in 1..=6 {
         let white = hsla(0.6, 0.2, 0.98, 0.26 * meteor.left);
-        drop(part as f32 * 0.045, front * 0.5, white, window);
-    }
-    // The shock: the air lit ahead of the fire and swept back round it, wider than the
-    // fire and gone a little way behind. It has no line of its own, only light.
-    let flying = if meteor.flown < 1. {
-        1.
-    } else {
-        meteor.left * meteor.left
-    };
-    for layer in 0..METEOR_SHOCK {
-        let out = (layer + 1) as f32 / METEOR_SHOCK as f32;
-        let pale = hsla(0.59, 0.85, 0.8, 0.05 * flying);
-        drop(0.06 + 0.3 * out, front * (0.9 + 1.5 * out), pale, window);
+        shell(trail * part as f32 * 0.045, flame * 0.45, white, window);
     }
 }
 
