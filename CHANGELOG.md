@@ -8,6 +8,9 @@ testing.
 
 ### Added
 
+- GUI: the first start after an update opens a window that says what the update
+  brought: how many things are new, changed and fixed, and each of them, read from the
+  changelog built into the program. It shows once for a version.
 - The web client can be opened to other devices: `duskcode --web --global`, or the
   "Other devices" switch beside Web access in the desktop window. The address shown is
   then the machine's address on its network. A server that listens on every address

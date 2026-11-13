@@ -10,6 +10,7 @@ mod project;
 mod search;
 mod sphere;
 mod viewer;
+mod whats_new;
 
 use std::path::PathBuf;
 
@@ -70,6 +71,10 @@ pub enum Modal {
     Job {
         job_id: String,
         output: Option<String>,
+    },
+    /// What the update brought, once after it; `from` is the version left behind.
+    WhatsNew {
+        from: Option<String>,
     },
     /// A picture large over the window; a click outside closes it.
     Picture {
@@ -162,6 +167,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .to_owned(),
             600.,
             crate::pages::schedules::editor::render(ws, cx),
+        ),
+        Modal::WhatsNew { from } => (
+            "What's new".to_owned(),
+            640.,
+            whats_new::render(from.as_deref(), cx),
         ),
         Modal::RemoveProviders => (
             "Remove all providers".to_owned(),
