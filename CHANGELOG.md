@@ -4,6 +4,13 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Changed
+
+- GUI: small falling stars are short white scratches that fall at any lean, as the first
+  ones did, only smooth. The great flaming one stays rare.
+
 ## 0.73.4 - 2026-11-13
 
 ### Added
