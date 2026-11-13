@@ -91,7 +91,9 @@ pub fn stars(ws: &Workspace, cx: &App) -> Option<Div> {
 /// How often the sky looks for a meteor.
 const METEOR_EVERY: i64 = 11_000;
 /// A small one: how long it flies, and how long its trail takes to go out.
-const SMALL: (f32, f32, f32) = (240., 0., 520.);
+const SMALL: (f32, f32, f32) = (190., 0., 260.);
+/// The needles a small one's trail is laid from.
+const SMALL_PARTS: usize = 12;
 /// A great one crosses the whole sky in an instant; its trail hangs there for a moment,
 /// as the eye keeps it, and only then goes out.
 const GREAT: (f32, f32, f32) = (130., 420., 950.);
@@ -109,9 +111,10 @@ const METEOR_TAIL: f32 = 0.26;
 struct Meteor {
     /// Where it enters at the top, as a share of the width.
     from: f32,
-    /// How steeply it falls, in radians below level: shallow, so the trail is long.
+    /// A great one: how steeply it falls, in radians below level; shallow, so the trail
+    /// is long. A small one: how far it leans off straight down, either way.
     angle: f32,
-    /// How far it goes, as a share of the width.
+    /// How far it goes: a great one as a share of the width, a small one of the height.
     run: f32,
     /// How much of the way the head has gone, and how much of the trail is left.
     flown: f32,
@@ -123,7 +126,7 @@ struct Meteor {
 }
 
 /// A falling star, now and then, on a shallow path of its own each time: nearly always a
-/// small one, gone in a quarter of a second; rarely a great one that crosses the whole
+/// small one, a short white scratch downward and aside; rarely a great one that crosses the whole
 /// sky at once and leaves its trail hanging for a moment. The clock picks the moments and the paths, so nothing has to be
 /// remembered.
 fn meteor() -> impl IntoElement {
@@ -155,9 +158,10 @@ fn meteor() -> impl IntoElement {
             // It slows a little as it burns up.
             let gone = (at / flight).min(1.);
             let meteor = Meteor {
-                from: if great { 0.99 } else { 0.66 + unit(3) * 0.32 },
-                angle: (if great { 4.5 } else { 6. + unit(3000) * 8. }).to_radians(),
-                run: if great { 0.95 } else { 0.16 + unit(7) * 0.16 },
+                from: if great { 0.99 } else { 0.5 + unit(3) * 0.47 },
+                // A small one leans either way off straight down, up to forty degrees.
+                angle: (if great { 4.5 } else { unit(3000) * 80. - 40. }).to_radians(),
+                run: if great { 0.95 } else { 0.45 + unit(7) * 0.5 },
                 flown: 1. - (1. - gone) * (1. - gone),
                 left: 1. - ((at - flight - hold) / fade).clamp(0., 1.),
                 head: 1. - ((at - flight) / 90.).clamp(0., 1.),
@@ -175,7 +179,54 @@ fn meteor() -> impl IntoElement {
     )
 }
 
+/// A small one: a short white scratch of light, downward and a little aside, gone almost
+/// before it is seen. Needles laid from its point, each longer than the last, so it is
+/// bright at the point and thins to nothing behind with no joint.
+fn paint_small(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
+    let (width, height) = (bounds.size.width.as_f32(), bounds.size.height.as_f32());
+    let (aside, down) = meteor.angle.sin_cos();
+    let start = (
+        bounds.origin.x.as_f32() + meteor.from * width,
+        bounds.origin.y.as_f32() + 2.,
+    );
+    let run = meteor.run * (height - 8.) / down;
+    let head = (
+        start.0 + aside * run * meteor.flown,
+        start.1 + down * run * meteor.flown,
+    );
+    // Its trail is short: half its way at most, and it goes out from the far end.
+    let trail = (run * meteor.flown).min(run * 0.5) * (0.3 + 0.7 * meteor.left);
+    let needle = |reach: f32, wide: f32, color: Hsla, window: &mut Window| {
+        let mut path = PathBuilder::fill();
+        path.move_to(point(
+            px(head.0 + down * wide / 2.),
+            px(head.1 - aside * wide / 2.),
+        ));
+        path.line_to(point(
+            px(head.0 - aside * trail * reach),
+            px(head.1 - down * trail * reach),
+        ));
+        path.line_to(point(
+            px(head.0 - down * wide / 2.),
+            px(head.1 + aside * wide / 2.),
+        ));
+        path.close();
+        if let Ok(path) = path.build() {
+            window.paint_path(path, color);
+        }
+    };
+    let white = hsla(0.6, 0.18, 0.97, 1.);
+    for part in 1..=SMALL_PARTS {
+        let reach = part as f32 / SMALL_PARTS as f32;
+        needle(reach, 4., white.opacity(0.025 * meteor.left), window);
+        needle(reach, 1.4, white.opacity(0.2 * meteor.left), window);
+    }
+}
+
 fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
+    if !meteor.great {
+        return paint_small(bounds, meteor, window);
+    }
     let (width, height) = (bounds.size.width.as_f32(), bounds.size.height.as_f32());
     let (sin, cos) = meteor.angle.sin_cos();
     // It burns out inside the sky, glow and all: never lower than the header's foot.
@@ -189,7 +240,7 @@ fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
     // The trail reaches back to where it came in, then goes out from that end.
     let trail = run * meteor.flown * (0.25 + 0.75 * meteor.left);
     // How wide the flame is at its widest, and the glow around it.
-    let (flame, glow) = if meteor.great { (9., 20.) } else { (3.2, 8.) };
+    let (flame, glow) = (9., 20.);
     // Nothing of the body shows, only the flame round it, and the flame has one shape:
     // a drop. It comes to a rounded nose, is widest a little way back, then narrows
     // without a corner into a thin tail that goes on for the whole trail. It is drawn
