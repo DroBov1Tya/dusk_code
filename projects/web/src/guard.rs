@@ -6,7 +6,12 @@ use axum::http::{HeaderMap, HeaderName, HeaderValue, header};
 use std::net::{IpAddr, SocketAddr};
 
 /// The host names a request may be addressed to, as the browser writes them in `Host`.
-pub struct Hosts(Vec<String>);
+pub struct Hosts {
+    names: Vec<String>,
+    /// Set when the server listens on every address: a request may then name any of the
+    /// machine's addresses as a number, with this port.
+    any_address: Option<u16>,
+}
 
 impl Hosts {
     /// The names that reach `bound`, plus those the user allowed for a proxy or a name.
@@ -27,7 +32,10 @@ impl Hosts {
         hosts.extend(extra.iter().map(|host| host.to_ascii_lowercase()));
         hosts.sort();
         hosts.dedup();
-        Self(hosts)
+        Self {
+            names: hosts,
+            any_address: ip.is_unspecified().then_some(port),
+        }
     }
 
     /// The `Host` header must name this server.
@@ -48,11 +56,19 @@ impl Hosts {
 
     fn allows(&self, host: &str) -> bool {
         let host = host.to_ascii_lowercase();
-        self.0.contains(&host)
+        if self.names.contains(&host) {
+            return true;
+        }
+        // DNS rebinding needs a name: the browser writes the attacker's host here. An
+        // address written as a number can only be this machine's own.
+        self.any_address.is_some_and(|port| {
+            host.parse::<SocketAddr>()
+                .is_ok_and(|named| named.port() == port && !named.ip().is_unspecified())
+        })
     }
 
     pub fn first(&self) -> &str {
-        self.0.first().map_or("localhost", String::as_str)
+        self.names.first().map_or("localhost", String::as_str)
     }
 }
 
@@ -139,9 +155,16 @@ mod tests {
     }
 
     #[test]
-    fn an_open_bind_allows_only_the_names_given() {
+    fn an_open_bind_allows_the_names_given_and_addresses_as_numbers() {
         let hosts = Hosts::for_bind("0.0.0.0:80".parse().unwrap(), &["Box.lan:80".into()]);
         assert!(hosts.host_ok(&headers(&[("host", "box.lan:80")])));
         assert!(!hosts.host_ok(&headers(&[("host", "0.0.0.0:80")])));
+        assert!(hosts.host_ok(&headers(&[("host", "192.168.1.5:80")])));
+        assert!(hosts.host_ok(&headers(&[("host", "[fe80::1]:80")])));
+        assert!(!hosts.host_ok(&headers(&[("host", "192.168.1.5:81")])));
+        assert!(!hosts.host_ok(&headers(&[("host", "evil.example:80")])));
+        assert!(!hosts.origin_ok(&headers(&[("origin", "http://evil.example:80")]), true));
+        // A server bound to one address takes no other address.
+        assert!(!local().host_ok(&headers(&[("host", "192.168.1.5:7777")])));
     }
 }

@@ -213,6 +213,8 @@ pub struct Workspace {
     pub web: Option<dusk_web::WebServer>,
     /// The server is starting or stopping.
     pub web_busy: bool,
+    /// The next start listens on every address, for other devices on the network.
+    pub web_global: bool,
     pub voice_form: crate::pages::connectors::voice::VoiceForm,
     pub token_box: crate::pages::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
@@ -416,6 +418,7 @@ impl Workspace {
             voice_polling: false,
             web: None,
             web_busy: false,
+            web_global: false,
             voice_form: crate::pages::connectors::voice::VoiceForm::new(window, cx),
             token_box: crate::pages::settings::TokenBox::new(window, cx),
             context_open: HashSet::new(),

@@ -66,9 +66,13 @@ impl WebServer {
     /// The address to open: the token is in the fragment, which a browser never sends
     /// anywhere. Shown to the user once; never logged.
     pub fn sign_in_url(&self) -> String {
-        // A browser cannot open "any address"; the machine's own name reaches it.
+        // A browser cannot open "any address": the machine's address on its network is
+        // the one another device can use, and it works here too.
         let host = match self.addr.ip().is_unspecified() {
-            true => format!("localhost:{}", self.addr.port()),
+            true => match network_address() {
+                Some(ip) => SocketAddr::new(ip, self.addr.port()).to_string(),
+                None => format!("localhost:{}", self.addr.port()),
+            },
             false => self.addr.to_string(),
         };
         format!("http://{host}/#{}", self.token)
@@ -85,6 +89,15 @@ impl WebServer {
             info!("the web server did not stop in time");
         }
     }
+}
+
+/// The address this machine has on its network: the one a socket would leave from.
+/// Connecting a datagram socket only picks the route; nothing is sent.
+fn network_address() -> Option<std::net::IpAddr> {
+    let socket = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    socket.connect("192.0.2.1:9").ok()?;
+    let ip = socket.local_addr().ok()?.ip();
+    (!ip.is_unspecified() && !ip.is_loopback()).then_some(ip)
 }
 
 struct Shared {

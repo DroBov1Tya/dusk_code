@@ -241,6 +241,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let theme = cx.theme();
     let panel = div()
         .id("modal-panel")
+        // The window itself takes the keys, not its close button: a focused button
+        // is drawn as if the pointer were on it.
+        .when_some(agent_focus, |panel, focus| panel.track_focus(&focus))
         .w(px(width))
         .max_h(relative(0.86))
         .flex()
@@ -277,7 +280,6 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         .small()
                         .icon(IconName::Close)
                         .tooltip("Close")
-                        .when_some(agent_focus, |button, focus| button.track_focus(&focus))
                         .on_click(
                             cx.listener(|ws, _, window, cx| ws.close_modal_from_window(window, cx)),
                         ),

@@ -93,6 +93,14 @@ pub fn parse_args() -> Args {
                 .help("Address of the web client; anything but a loopback address opens it to the network"),
         )
         .arg(
+            Arg::new("global")
+                .long("global")
+                .action(clap::ArgAction::SetTrue)
+                .requires("web")
+                .conflicts_with("bind")
+                .help("Serve the web client on every address of this machine, for other devices on the network"),
+        )
+        .arg(
             Arg::new("allow-host")
                 .long("allow-host")
                 .value_name("HOST:PORT")
@@ -216,10 +224,13 @@ pub fn parse_args() -> Args {
         return Args::Update;
     }
     let web = matches.get_flag("web").then(|| WebOptions {
-        bind: matches
-            .get_one::<IpAddr>("bind")
-            .copied()
-            .unwrap_or(IpAddr::from([127, 0, 0, 1])),
+        bind: match matches.get_flag("global") {
+            true => IpAddr::from([0, 0, 0, 0]),
+            false => matches
+                .get_one::<IpAddr>("bind")
+                .copied()
+                .unwrap_or(IpAddr::from([127, 0, 0, 1])),
+        },
         port: matches
             .get_one::<u16>("port")
             .copied()
