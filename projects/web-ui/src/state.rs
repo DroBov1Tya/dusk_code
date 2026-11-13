@@ -182,6 +182,8 @@ impl AppState {
                     self.refresh();
                 }
             }
+            // A terminal is the desktop window's; the core never sends one to a browser.
+            Event::Terminal { .. } | Event::TerminalClosed { .. } => {}
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chat(&thread_id) {
                     chat.update(|data| {

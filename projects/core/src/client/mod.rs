@@ -20,14 +20,18 @@ mod catalog;
 mod projects;
 mod serve;
 mod settings;
+mod terminal;
 mod threads;
 mod work;
 
-use serve::{Call, ClientId, Message, Server, Subscribers};
+use serve::{Call, Message, Server, Subscribers};
+
+pub(crate) use serve::ClientId;
 
 pub use catalog::Catalog;
 pub use projects::Projects;
 pub use settings::Settings;
+pub use terminal::Terminal;
 pub use threads::Threads;
 pub use work::Work;
 
@@ -125,6 +129,10 @@ impl Client {
 
     pub fn projects(&self) -> Projects<'_> {
         Projects(self)
+    }
+
+    pub fn terminal(&self) -> Terminal<'_> {
+        Terminal(self)
     }
 
     /// A slash command that does not run in a thread.

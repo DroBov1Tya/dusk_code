@@ -33,7 +33,10 @@ mod path;
 mod schedule;
 
 pub use diff::{DiffKind, DiffLine, DiffStat, FileDiff, Hunk};
-pub use files::{FileEntry, MAX_PREVIEW_BYTES, OutputFile, OutputKind, OutputPreview};
+pub use files::{
+    FileEntry, FileStamp, FileText, MAX_EDIT_BYTES, MAX_PREVIEW_BYTES, OutputFile, OutputKind,
+    OutputPreview,
+};
 pub use git::{Change, ChangeKind, GitInfo, Worktree};
 pub use path::{PathCompletion, PathEntry};
 pub use schedule::{

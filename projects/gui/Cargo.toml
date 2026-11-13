@@ -26,6 +26,9 @@ dusk_web.workspace = true
 dusk_protocol.workspace = true
 gpui-kit = { version = "=0.9.0", features = ["syntect"] }
 reqwest_client = { package = "gpui-pre-reqwest-client", version = "=0.3.11" }
+# The terminal panel: parses what the shell writes into a grid of cells. The shell itself
+# runs in the core; this crate's own PTY side is not used.
+alacritty_terminal = { version = "=0.26.0", default-features = false }
 serde.workspace = true
 rodio.workspace = true
 parking_lot.workspace = true

@@ -4,7 +4,10 @@ use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
     client::{ProjectRequest, Request, Response, Secret},
-    project::{FileDiff, FileEntry, GitInfo, OutputFile, Project, Schedule, ScheduleDraft},
+    project::{
+        FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project, Schedule,
+        ScheduleDraft,
+    },
 };
 use std::path::PathBuf;
 
@@ -134,6 +137,33 @@ impl Projects<'_> {
         self.0
             .text(Request::Project(ProjectRequest::ReadOutput { path }))
             .await
+    }
+
+    /// A text file for the editor, with the stamp a later `write_file` sends back.
+    pub async fn read_file(&self, path: PathBuf) -> Result<FileText> {
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::ReadFile { path }))
+            .await?
+        {
+            Response::File(file) => Ok(file),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Writes the whole file and answers with its new stamp. Refused when `seen` is given
+    /// and the file on disk no longer has that stamp.
+    pub async fn write_file(
+        &self,
+        path: PathBuf,
+        text: String,
+        seen: Option<FileStamp>,
+    ) -> Result<FileStamp> {
+        let request = ProjectRequest::WriteFile { path, text, seen };
+        match self.0.call(Request::Project(request)).await? {
+            Response::Stamp(stamp) => Ok(stamp),
+            other => Err(unexpected(other)),
+        }
     }
 
     /// Every scheduled task, soonest first.

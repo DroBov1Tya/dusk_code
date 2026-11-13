@@ -137,6 +137,20 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
             ws.load_settings(cx);
         }))
         .into_any_element(),
+        Part::Terminal => item(
+            "rail-terminal",
+            IconName::SquareTerminal,
+            if ws.terminal.open {
+                "Hide the terminal"
+            } else {
+                "Terminal"
+            }
+            .into(),
+            ws.terminal.open,
+            cx,
+        )
+        .on_click(cx.listener(|ws, _, window, cx| ws.toggle_terminal(window, cx)))
+        .into_any_element(),
         Part::Quiet => item(
             "rail-quiet",
             if ws.quiet {

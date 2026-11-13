@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
 use crate::client::Secret;
-use crate::project::ScheduleDraft;
+use crate::project::{FileStamp, ScheduleDraft};
 /// Projects, and the git state and files of one. Git and files are read only inside
 /// a saved project's folder.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -60,6 +60,19 @@ pub enum ProjectRequest {
     /// a saved project, and only up to `MAX_PREVIEW_BYTES`.
     ReadOutput {
         path: PathBuf,
+    },
+    /// A text file for the editor, read where `ReadOutput` reads and up to
+    /// `MAX_EDIT_BYTES`; answers with the text and the file's stamp.
+    ReadFile {
+        path: PathBuf,
+    },
+    /// Writes the whole file, only where `ReadFile` reads; a new file is made when its
+    /// folder is there. `seen` is the stamp the client read with: the write is refused
+    /// when the file on disk no longer has it. Answers with the new stamp.
+    WriteFile {
+        path: PathBuf,
+        text: String,
+        seen: Option<FileStamp>,
     },
     /// Removes a file under the workspace or the pictures folder, never a project's.
     DeleteOutput {

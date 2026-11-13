@@ -6,4 +6,5 @@ pub mod fog;
 pub mod inspector;
 pub mod rail;
 pub mod sidebar;
+pub mod terminal;
 pub mod topbar;

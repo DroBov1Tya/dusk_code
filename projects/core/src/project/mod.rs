@@ -2,6 +2,7 @@
 //! project's folder, and only through the paths `inside` lets through.
 
 mod diff;
+mod edit;
 pub mod env;
 mod files;
 mod git;
@@ -16,6 +17,7 @@ use dusk_protocol::project::{MAX_DESCRIPTION_CHARS, MAX_NAME_CHARS, Project};
 use crate::state::State;
 
 pub use diff::diff;
+pub use edit::{read as read_file, write as write_file};
 pub use files::list as files;
 pub use git::{changes as git_changes, info as git, switch_branch};
 pub use outputs::{delete as delete_output, list as outputs, read as read_output};
@@ -93,6 +95,22 @@ async fn inside(project: &Project, relative: &str) -> Result<PathBuf> {
         "the path must stay inside the project"
     );
     Ok(path)
+}
+
+/// `path` resolved, links followed, when it is inside one of `roots`: the one check for
+/// what a client may name by an absolute path.
+pub async fn within(path: &Path, roots: &[PathBuf]) -> Result<PathBuf> {
+    let path = tokio::fs::canonicalize(path)
+        .await
+        .context("no such path")?;
+    for root in roots {
+        if let Ok(root) = tokio::fs::canonicalize(root).await
+            && path.starts_with(root)
+        {
+            return Ok(path);
+        }
+    }
+    bail!("the path must be inside the workspace or a project")
 }
 
 #[cfg(test)]

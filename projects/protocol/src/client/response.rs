@@ -6,7 +6,9 @@ use std::path::PathBuf;
 use crate::catalog::NodeText;
 use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
-use crate::project::{Change, FileDiff, FileEntry, GitInfo, OutputFile, Project, Schedule};
+use crate::project::{
+    Change, FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project, Schedule,
+};
 use crate::system::SystemReport;
 use crate::thread::{JobInfo, LocalUnsent, Message, Task, Thread};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -50,6 +52,10 @@ pub enum Response {
     Files(Vec<FileEntry>),
     Changes(Vec<Change>),
     Outputs(Vec<OutputFile>),
+    /// A file read for the editor.
+    File(FileText),
+    /// What a file is on disk after a write.
+    Stamp(FileStamp),
     System(SystemReport),
     Answer(Box<Answer>),
     /// The request failed; the text says why in full.

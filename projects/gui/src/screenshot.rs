@@ -16,6 +16,8 @@
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
+//! - `terminal`: show or hide the terminal panel; `run=COMMAND`: type the command in its
+//!   shown shell, with Return;
 //! - `type=TEXT`: put the text in the message box; `idle=MIN`: as if left alone that long,
 //!   for the mist;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
@@ -244,6 +246,8 @@ fn act(
             cx.notify();
         }
         "dawn" => ws.dawn(cx),
+        "terminal" => ws.toggle_terminal(window, cx),
+        "run" => ws.type_in_terminal(format!("{value}\r").into_bytes(), cx),
         "type" => {
             ws.fill_composer = Some(value.to_owned());
             cx.notify();

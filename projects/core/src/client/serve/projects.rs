@@ -53,6 +53,12 @@ impl Server {
                 roots.extend(state.list_projects().await?.into_iter().map(|p| p.dir));
                 Response::Text(project::read_output(&path, &roots).await?)
             }
+            ProjectRequest::ReadFile { path } => {
+                Response::File(project::read_file(&path, &self.file_roots().await?).await?)
+            }
+            ProjectRequest::WriteFile { path, text, seen } => Response::Stamp(
+                project::write_file(&path, text, seen, &self.file_roots().await?).await?,
+            ),
             ProjectRequest::Schedules
             | ProjectRequest::SaveSchedule { .. }
             | ProjectRequest::DeleteSchedule { .. }
@@ -60,6 +66,14 @@ impl Server {
                 anyhow::bail!("scheduled tasks are answered by the timetable")
             }
         })
+    }
+
+    /// Where a file may be opened and saved: the chat folders and every saved project.
+    async fn file_roots(&self) -> Result<Vec<PathBuf>> {
+        let mut roots = self.output_roots();
+        let projects = self.runtime.state().list_projects().await?;
+        roots.extend(projects.into_iter().map(|project| project.dir));
+        Ok(roots)
     }
 
     pub(super) fn output_roots(&self) -> Vec<PathBuf> {
