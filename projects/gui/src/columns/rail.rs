@@ -151,6 +151,15 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
         )
         .on_click(cx.listener(|ws, _, window, cx| ws.toggle_terminal(window, cx)))
         .into_any_element(),
+        Part::Temporary => item(
+            "rail-temporary",
+            Icon::default().path(crate::ui::icons::HOURGLASS),
+            "Temporary chat: kept in memory, gone when the app closes".into(),
+            ws.center == Center::Chat && ws.shown.is_none() && ws.temporary_next,
+            cx,
+        )
+        .on_click(cx.listener(|ws, _, window, cx| ws.new_temporary_chat(window, cx)))
+        .into_any_element(),
         Part::Quiet => item(
             "rail-quiet",
             if ws.quiet {

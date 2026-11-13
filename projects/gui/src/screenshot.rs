@@ -8,7 +8,7 @@
 //! - `settings=PAGE` (appearance, model, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
-//! - `modal=search|project|schedule|agents|none`, `right=all`: open a window; unfold the right column;
+//! - `modal=search|project|schedule|agents|arbiter|none`, `right=all`: open a window; unfold the right column;
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
@@ -213,6 +213,63 @@ fn act(
             "search" => ws.modal = Some(Modal::Search),
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
+            // The arbiter's window, with a few things said so its timeline has rows.
+            "arbiter" => {
+                use crate::pages::chat::transcript::{CHAT, Exchange, ExchangeKind};
+                let Some(thread_id) = ws.shown.clone() else {
+                    return;
+                };
+                if let Some(chat) = ws.chats.get_mut(&thread_id) {
+                    let now = std::time::Instant::now();
+                    let said = [
+                        (
+                            2400,
+                            CHAT,
+                            "Ember-79",
+                            ExchangeKind::Asked,
+                            "Second design pass on the dashboard. You must edit src/App.jsx and src/index.css.",
+                        ),
+                        (
+                            1900,
+                            "Ember-79",
+                            CHAT,
+                            ExchangeKind::Reported,
+                            "finished:\nStatus: done.\n\nPer file:\n- **tailwind.config.js**: palette replaced with the pass-3 tokens",
+                        ),
+                        (
+                            700,
+                            "Ember-79",
+                            "arbiter",
+                            ExchangeKind::Approval,
+                            "run `npm run build` in app/frontend",
+                        ),
+                        (
+                            690,
+                            "arbiter",
+                            "Ember-79",
+                            ExchangeKind::Allowed,
+                            "A build inside the project folder changes nothing outside it.",
+                        ),
+                        (
+                            40,
+                            "arbiter",
+                            "Ember-79",
+                            ExchangeKind::Denied,
+                            "Deleting the lockfile is outside what was asked.",
+                        ),
+                    ];
+                    for (ago, from, to, kind, text) in said {
+                        chat.exchanges.push(Exchange {
+                            at: now - Duration::from_secs(ago),
+                            from: from.into(),
+                            to: to.into(),
+                            kind,
+                            text: text.into(),
+                        });
+                    }
+                }
+                ws.modal = Some(Modal::Arbiter { thread_id });
+            }
             "agents" => {
                 ws.modal = ws
                     .shown

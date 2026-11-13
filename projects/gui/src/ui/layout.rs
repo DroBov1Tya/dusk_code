@@ -17,6 +17,8 @@ pub enum Part {
     Artifacts,
     Connectors,
     Terminal,
+    /// A new chat that is kept in memory only.
+    Temporary,
     Quiet,
     Settings,
     /// A short rule between groups.
@@ -64,7 +66,7 @@ impl Default for Layout {
         Self {
             rail: vec![
                 NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
-                Terminal, Quiet, Settings,
+                Temporary, Terminal, Quiet, Settings,
             ],
             header: vec![Review, Search, More, SidePanel],
             box_left: vec![Attach, Access],
@@ -82,7 +84,11 @@ impl Layout {
     /// holds the whole map, so a rail nobody reshaped would otherwise never change.
     pub fn refreshed(mut self) -> Self {
         use Part::*;
-        let before: [&[Part]; 2] = [
+        let before: [&[Part]; 3] = [
+            &[
+                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
+                Terminal, Quiet, Settings,
+            ],
             &[
                 NewChat, Search, Divider, Chats, Schedules, Artifacts, Connectors, Spacer, Quiet,
                 Settings,

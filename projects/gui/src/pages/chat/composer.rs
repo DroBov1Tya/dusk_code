@@ -219,17 +219,42 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
         }))
 }
 
-/// The microphone: while it is on, what is said is added to the message.
-pub(super) fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Button {
+/// The microphone: while it is on, what is said is added to the message, and rings go
+/// out from it like sound, so a recording under way is never mistaken for a red button.
+pub(super) fn mic_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let on = ws.dictating();
-    Button::new("dictate")
+    let danger = cx.theme().danger;
+    let button = Button::new("dictate")
         .rounded(ButtonRounded::Size(px(999.)))
         .icon(IconName::Mic)
         // The size of Send beside it; filled only while it listens.
         .when(on, |button| button.danger())
         .when(!on, |button| button.ghost())
         .tooltip(if on { "Stop dictating" } else { "Dictate" })
-        .on_click(cx.listener(|ws, _, _, cx| ws.toggle_dictation(cx)))
+        .on_click(cx.listener(|ws, _, _, cx| ws.toggle_dictation(cx)));
+    let mut holder = div().relative().flex().items_center().justify_center();
+    if on {
+        // Two rings half a beat apart; each grows from the button's edge and thins out.
+        for (name, shift) in [("dictate-ring-a", 0.), ("dictate-ring-b", 0.5)] {
+            holder = holder.child(
+                div()
+                    .absolute()
+                    .rounded_full()
+                    .border_1()
+                    .border_color(danger)
+                    .with_animation(
+                        name,
+                        Animation::new(std::time::Duration::from_millis(1600)).repeat(),
+                        move |ring, at| {
+                            let at = (at + shift).fract();
+                            let grown = 32. + 22. * at;
+                            ring.size(px(grown)).opacity(0.55 * (1. - at) * (1. - at))
+                        },
+                    ),
+            );
+        }
+    }
+    holder.child(button)
 }
 
 const THUMB: f32 = 64.;
