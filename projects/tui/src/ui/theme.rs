@@ -40,7 +40,6 @@ pub const USER_BAR: &str = "\u{258E}";
 pub const GUTTER: &str = "\u{2502}";
 pub const CODE_BAR: &str = "\u{258F}";
 pub const TOOL: &str = "\u{25C6}";
-pub const TOOL_RUNNING: &str = "\u{25C7}";
 pub const DONE: &str = "\u{2713}";
 pub const FAILED: &str = "\u{2717}";
 pub const DOT: &str = "\u{00B7}";
@@ -56,6 +55,27 @@ pub const SPINNER: [&str; 6] = [
     "\u{25C6}\u{00B7}\u{00B7} ",
     "\u{25C6}\u{00B7}  ",
 ];
+
+/// The mark of a step, by the kind of work its tool does: a prompt for a command, lines
+/// for reading, plus and minus for an edit. An unknown tool keeps the diamond.
+pub fn step_glyph(tool: &str) -> &'static str {
+    match tool {
+        "run_command" | "jobs" => "\u{276F}",
+        "read_file" | "read_history" => "\u{2261}",
+        "search_files" => "\u{2299}",
+        "plan_edit" => "\u{00B1}",
+        "screenshot" | "screen" | "click" | "type_text" | "press_keys" | "scroll"
+        | "window_session" => "\u{25A3}",
+        "ask_agent" | "agent_state" | "message_parent" => "\u{25C8}",
+        "ask_user" => "?",
+        "display_image" | "display_audio" => "\u{25A8}",
+        "load_skill" => "\u{2726}",
+        "remember" => "\u{2756}",
+        "tasks" | "goal" => "\u{2263}",
+        "name_session" => "\u{00B6}",
+        _ => TOOL,
+    }
+}
 
 pub fn fg(color: Color) -> Style {
     Style::new().fg(color)

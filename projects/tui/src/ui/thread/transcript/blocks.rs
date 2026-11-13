@@ -12,7 +12,7 @@ use crate::ui::thread::{
     markdown,
     theme::{
         ACCENT, DONE, DOT, FAILED, FOLDED, GUTTER, NEGATIVE, POSITIVE, RAISED, TEXT, TEXT_MUTED,
-        TEXT_SOFT, TOOL, TOOL_RUNNING, UNFOLDED, USER_BAR, bold, dim, fg, thought,
+        TEXT_SOFT, TOOL, UNFOLDED, USER_BAR, bold, dim, fg, step_glyph, thought,
     },
     wrap,
 };
@@ -109,17 +109,19 @@ pub(super) fn tool(
     width: usize,
     live: Option<&App>,
 ) -> Vec<Line<'static>> {
+    // The mark says what kind of work the step is; its colour, how the step stands.
+    let glyph = step_glyph(&call.name);
     let (mark, status) = match result {
         None => (
-            Span::styled(format!("   {TOOL_RUNNING} "), fg(ACCENT)),
+            Span::styled(format!("   {glyph} "), fg(ACCENT)),
             Span::styled(live.map_or("", spinner), fg(ACCENT)),
         ),
         Some(result) if result.is_error => (
-            Span::styled(format!("   {TOOL} "), fg(NEGATIVE)),
+            Span::styled(format!("   {glyph} "), fg(NEGATIVE)),
             Span::styled(FAILED, fg(NEGATIVE)),
         ),
         Some(_) => (
-            Span::styled(format!("   {TOOL} "), fg(TEXT_MUTED)),
+            Span::styled(format!("   {glyph} "), fg(TEXT_MUTED)),
             Span::styled(DONE, fg(POSITIVE)),
         ),
     };

@@ -23,15 +23,15 @@ use super::{
         wrap,
     },
     theme::{
-        ACCENT, DEEP, DONE, DOT, FAILED, FOLDED, HAIRLINE, NEGATIVE, OFF, ON, POSITIVE, TEXT,
-        TEXT_SOFT, UNFOLDED, bold, dusk, fg,
+        ACCENT, DEEP, DONE, DOT, DUSK, FAILED, FOLDED, HAIRLINE, NEGATIVE, OFF, ON, POSITIVE,
+        RAISED, TEXT, TEXT_MUTED, TEXT_SOFT, UNFOLDED, USER_BAR, bold, dusk, fg,
     },
 };
 use crate::app::{App, compact_number, now_ms};
 
 /// Running jobs the rail lists before it sums up the rest.
 const MAX_JOB_ROWS: usize = 4;
-/// The statistics: fifteen lines and a blank one below.
+/// The statistics: eleven lines and a blank one below.
 const STATS_HEIGHT: u16 = 12;
 /// The connectors folded: the heading and one line that sums them up.
 const CONNECTORS_FOLDED: u16 = 2;
@@ -117,12 +117,12 @@ impl Sidebar<'_> {
 
     fn statistics(&self, frame: &mut Frame, area: Rect) {
         let width = area.width.saturating_sub(2 * PAD) as usize;
-        let fill = if self.app.limit == 0 {
+        let share = if self.app.limit == 0 {
             0.0
         } else {
             (self.app.tokens.context as f64 / self.app.limit as f64).clamp(0.0, 1.0)
         };
-        let percent = fill * 100.0;
+        let percent = share * 100.0;
         let near_compaction = percent >= AUTO_COMPACT_PERCENT as f64;
         let ThreadTokens { model_calls, .. } = self.app.tokens;
         let elapsed = self
@@ -150,7 +150,7 @@ impl Sidebar<'_> {
         let context_color = if near_compaction {
             NEGATIVE
         } else {
-            dusk(fill)
+            dusk(share)
         };
         let mode = match self.app.effort {
             Some(effort) => format!(
@@ -160,21 +160,46 @@ impl Sidebar<'_> {
             ),
             None => self.app.mode.to_lowercase(),
         };
-        let filled = ((width as f64) * fill).round() as usize;
+        let filled = ((width as f64) * share).round() as usize;
+        // The gauge warms toward its end, and a notch marks where compaction starts.
+        let notch = width * AUTO_COMPACT_PERCENT as usize / 100;
+        let gauge: Vec<Span> = (0..width)
+            .map(|cell| {
+                let color = match cell {
+                    _ if cell < filled && near_compaction => NEGATIVE,
+                    _ if cell < filled => dusk(cell as f64 / width.max(1) as f64),
+                    _ if cell == notch => TEXT_MUTED,
+                    _ => HAIRLINE,
+                };
+                Span::styled(GAUGE, fg(color))
+            })
+            .collect();
+        // The model and its mode on a card, with the mode's colour down its edge.
+        let edge = if self.app.mode == "MAIN" {
+            ACCENT
+        } else {
+            DUSK
+        };
+        let card = |text: &str, style: Style| {
+            Line::from(vec![
+                Span::styled(USER_BAR, fg(edge).bg(RAISED)),
+                Span::styled(
+                    format!(" {}", fill(text, width.saturating_sub(2))),
+                    style.bg(RAISED),
+                ),
+            ])
+        };
         let lines = vec![
             Line::default(),
-            Line::from(Span::styled(wrap::clip(&self.app.model, width), bold(TEXT))),
-            Line::from(Span::styled(wrap::clip(&mode, width), fg(TEXT_SOFT))),
+            card(&self.app.model, bold(TEXT)),
+            card(&mode, fg(TEXT_SOFT)),
             Line::default(),
-            row(
-                vec![heading("Context")],
-                Span::styled(format!("{percent:.0}%"), bold(context_color)),
+            ruled(
+                "Context",
+                Some(Span::styled(format!("{percent:.0}%"), bold(context_color))),
                 width,
             ),
-            Line::from(vec![
-                Span::styled(GAUGE.repeat(filled), fg(context_color)),
-                Span::styled(GAUGE.repeat(width - filled), fg(HAIRLINE)),
-            ]),
+            Line::from(gauge),
             Line::from(Span::styled(
                 format!(
                     "{} of {}{}",
@@ -189,7 +214,7 @@ impl Sidebar<'_> {
                 fg(TEXT_SOFT),
             )),
             Line::default(),
-            Line::from(heading("Activity")),
+            ruled("Activity", None, width),
             row(
                 vec![Span::styled(format!("{time_label}{calls}"), fg(TEXT_SOFT))],
                 Span::styled(elapsed, fg(ACCENT)),
@@ -228,7 +253,7 @@ impl Sidebar<'_> {
         self.app.task_max_scroll = scroll_limit(rows.len(), area);
         self.app.task_scroll = self.app.task_scroll.min(self.app.task_max_scroll);
         self.app.task_area = Some(area);
-        let mut block = section(Line::from(heading("Tasks")));
+        let mut block = section(ruled("Tasks", None, width));
         let scrolls = self.app.task_max_scroll > 0 && area.height > 2;
         if scrolls {
             block =
@@ -275,10 +300,11 @@ impl Sidebar<'_> {
         let width = area.width.saturating_sub(2 * PAD) as usize;
         let now = now_ms();
         let running: Vec<_> = self.app.jobs.iter().filter(|job| job.running).collect();
-        let heading = Line::from(vec![
-            heading("Background"),
-            Span::styled("  /jobs", fg(TEXT_SOFT)),
-        ]);
+        let heading = ruled(
+            "Background",
+            Some(Span::styled("/jobs", fg(TEXT_MUTED))),
+            width,
+        );
         frame.render_widget(section(heading), Rect { height: 1, ..area });
         let mut lines: Vec<Line<'static>> = running
             .iter()
@@ -431,7 +457,8 @@ impl Sidebar<'_> {
         }
         self.app.agent_max_scroll = scroll_limit(lines.len(), area);
         self.app.agent_scroll = self.app.agent_scroll.min(self.app.agent_max_scroll);
-        let mut block = section(Line::from(heading("Subagents")));
+        let rule = area.width.saturating_sub(2 * PAD) as usize;
+        let mut block = section(ruled("Subagents", None, rule));
         if self.app.agent_max_scroll > 0 && area.height > 2 {
             block =
                 block.title_bottom(Line::from(Span::styled(" wheel to scroll ", fg(TEXT_SOFT))));
@@ -455,10 +482,7 @@ impl Sidebar<'_> {
         } else {
             FOLDED
         };
-        let title = Line::from(vec![
-            heading("Connectors"),
-            Span::styled(format!(" {mark}"), fg(TEXT_SOFT)),
-        ]);
+        let title = ruled("Connectors", Some(Span::styled(mark, fg(TEXT_SOFT))), width);
         if !self.app.connectors_open {
             let ready = self
                 .app
@@ -531,10 +555,22 @@ impl Sidebar<'_> {
     }
 }
 
-/// A section's name, quiet and in capitals, above what it holds.
-/// A section's name: sentence case, quieter than what it heads.
-fn heading(text: &str) -> Span<'static> {
-    Span::styled(text.to_owned(), fg(TEXT_SOFT))
+/// A section's name with a hairline running from it to the right edge, where a value
+/// may stand: the rail reads as blocks without a box around any of them.
+fn ruled(name: &str, value: Option<Span<'static>>, width: usize) -> Line<'static> {
+    let taken = name.width() + 1 + value.as_ref().map_or(0, |value| value.width() + 1);
+    let mut spans = vec![
+        Span::styled(name.to_owned(), bold(TEXT_SOFT)),
+        Span::styled(
+            format!(" {}", "\u{2500}".repeat(width.saturating_sub(taken))),
+            fg(HAIRLINE),
+        ),
+    ];
+    if let Some(value) = value {
+        spans.push(Span::raw(" "));
+        spans.push(value);
+    }
+    Line::from(spans)
 }
 
 /// `left` on the left and `right` against the right edge.
@@ -570,6 +606,16 @@ fn task_lines(task: &Task, unfolded: bool, width: usize, now: i64) -> Vec<Line<'
         ),
         Span::styled(count, fg(TEXT_SOFT)),
     ])];
+    // How far the task is, as a thin bar under its name.
+    let bar = width.saturating_sub(2);
+    if !task.items.is_empty() && bar > 0 {
+        let done = bar * finished / task.items.len();
+        lines.push(Line::from(vec![
+            Span::raw("  "),
+            Span::styled(GAUGE.repeat(done), fg(POSITIVE)),
+            Span::styled(GAUGE.repeat(bar - done), fg(HAIRLINE)),
+        ]));
+    }
     if !unfolded {
         return lines;
     }

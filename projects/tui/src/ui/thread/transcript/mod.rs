@@ -94,6 +94,13 @@ fn welcome(frame: &mut Frame, area: Rect) {
     };
     let paragraph = Paragraph::new(lines).alignment(Alignment::Center);
     frame.render_widget(paragraph, area);
+    // The evening sky above the horizon, thinner than the header's.
+    let over = Rect {
+        height: top.saturating_sub(1),
+        y: area.y - top,
+        ..area
+    };
+    crate::ui::thread::sky::stars(frame, over, 31, None);
 }
 
 impl TranscriptView<'_> {

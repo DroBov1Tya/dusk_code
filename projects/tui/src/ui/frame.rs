@@ -1,6 +1,6 @@
 //! One frame: the split between transcript and sidebar, the windows over them, and the tab title.
 
-use thread::{header, input, transcript};
+use thread::{header, input, sky, transcript};
 use windows::panels;
 
 use ratatui::{
@@ -62,7 +62,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     };
     let input_height = input::height(app, card.width);
     // A single empty row keeps the header separate from the transcript.
-    let [top, _, body, bottom] = Layout::vertical([
+    let [top, gap, body, bottom] = Layout::vertical([
         Constraint::Length(1),
         Constraint::Length(1),
         Constraint::Min(1),
@@ -70,6 +70,7 @@ pub fn draw(frame: &mut Frame, app: &mut App) {
     ])
     .areas(main);
     header::draw(frame, top, app);
+    sky::draw(frame, top.union(gap), app);
     app.sidebar_overlay = None;
     app.sidebar_area = None;
     app.agent_area = None;
