@@ -3,6 +3,7 @@
 
 pub mod app_update;
 pub mod complete;
+pub mod notes;
 pub mod resources;
 pub mod shipped;
 pub mod update;

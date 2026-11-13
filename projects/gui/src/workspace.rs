@@ -475,6 +475,18 @@ impl Workspace {
         workspace.reload_threads(cx);
         // The runs since the last look come up on the chat's "while you were away" card.
         workspace.load_schedules(cx);
+        // The first start of a new version says what it brought. A first start ever has
+        // nothing to compare with and only notes the version.
+        let prefs = crate::ui::theme::prefs(cx);
+        if prefs.seen_version != dusk_core::app::VERSION {
+            let from = Some(prefs.seen_version.clone()).filter(|seen| !seen.is_empty());
+            if from.is_some() || prefs.runs_seen_until != 0 {
+                workspace.modal = Some(crate::modal::Modal::WhatsNew { from });
+            }
+            crate::ui::theme::change(cx, |prefs| {
+                prefs.seen_version = dusk_core::app::VERSION.to_owned();
+            });
+        }
         if crate::ui::theme::prefs(cx).runs_seen_until == 0 {
             let now = chrono::Utc::now().timestamp_millis();
             crate::ui::theme::change(cx, |prefs| prefs.runs_seen_until = now);

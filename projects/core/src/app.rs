@@ -21,6 +21,7 @@ pub use crate::{
     release::{
         app_update::running_bundle,
         complete::{Step, complete, ensure_installed},
+        notes::{Notes, notes_since},
         resources::{data_root, install_snapshot},
         update::{VERSION, update_now},
     },

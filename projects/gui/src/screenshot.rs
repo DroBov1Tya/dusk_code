@@ -8,7 +8,7 @@
 //! - `settings=PAGE` (appearance, model, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
-//! - `modal=search|project|schedule|agents|arbiter|none`, `right=all`: open a window; unfold the right column;
+//! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all`: open a window; unfold the right column;
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
@@ -214,6 +214,11 @@ fn act(
             "project" => ws.open_form(None, window, cx),
             "schedule" => ws.open_schedule_editor(None, window, cx),
             // The arbiter's window, with a few things said so its timeline has rows.
+            "whatsnew" => {
+                ws.modal = Some(crate::modal::Modal::WhatsNew {
+                    from: Some("0.73.3".to_owned()),
+                });
+            }
             "arbiter" => {
                 use crate::pages::chat::transcript::{CHAT, Exchange, ExchangeKind};
                 let Some(thread_id) = ws.shown.clone() else {

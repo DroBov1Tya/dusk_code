@@ -36,6 +36,8 @@ pub struct Prefs {
     /// Scheduled runs up to this moment, in Unix milliseconds, were seen; later ones go
     /// on the "while you were away" card. Zero until the first start sets it.
     pub runs_seen_until: i64,
+    /// The version that ran last, to greet an update once; empty before the first start.
+    pub seen_version: String,
     /// The header's sky while a turn runs: the glow and the stars.
     pub sky: bool,
     /// Mist at the window's foot after it was left alone for a while.
@@ -58,6 +60,7 @@ impl Default for Prefs {
             right_folded: None,
             footer_open: false,
             runs_seen_until: 0,
+            seen_version: String::new(),
             sky: true,
             fog: true,
             fireflies: true,
