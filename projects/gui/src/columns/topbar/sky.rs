@@ -88,15 +88,34 @@ pub fn stars(ws: &Workspace, cx: &App) -> Option<Div> {
     Some(sky)
 }
 
-/// How often the sky looks for a meteor, and how long one takes to fall and fade.
+/// How often the sky looks for a meteor, how long its flight takes, and how long the
+/// trail it left takes to go out.
 const METEOR_EVERY: i64 = 11_000;
-const METEOR_FALL: f32 = 950.;
-/// The dots of its trail, head first.
-const METEOR_TRAIL: usize = 14;
+const METEOR_FLIGHT: f32 = 240.;
+const METEOR_AFTERGLOW: f32 = 620.;
+/// The needles its trail is laid from; enough that it reads as one stroke of light.
+const METEOR_PARTS: usize = 28;
 
-/// A falling star, now and then: fast, always downward, on a path of its own each time,
-/// white at the head and bright blue behind, its trail thinning out after it has gone.
-/// The clock picks the moments and the paths, so nothing has to be remembered.
+/// One meteor at one moment.
+#[derive(Clone, Copy)]
+struct Meteor {
+    /// Where it enters at the top, as a share of the width.
+    from: f32,
+    /// How steeply it falls, in radians below level: shallow, so the trail is long.
+    angle: f32,
+    /// How far it goes, as a share of the width.
+    run: f32,
+    /// How much of the way the head has gone, and how much of the trail is left.
+    flown: f32,
+    left: f32,
+    /// One in a few crosses the whole sky, wider and brighter.
+    great: bool,
+}
+
+/// A falling star, now and then: gone in a quarter of a second, on a shallow path of its
+/// own each time, a white point with a long blue trail that thins to nothing and goes
+/// out from its far end. The clock picks the moments and the paths, so nothing has to be
+/// remembered.
 fn meteor() -> impl IntoElement {
     div().absolute().inset_0().with_animation(
         "sky-meteor",
@@ -104,36 +123,113 @@ fn meteor() -> impl IntoElement {
         |sky, _| {
             let now = crate::pages::chat::timing::now_ms();
             let seed = ((now / METEOR_EVERY) as u32).wrapping_mul(2_654_435_761);
-            let at = (now % METEOR_EVERY) as f32 / METEOR_FALL;
+            let at = (now % METEOR_EVERY) as f32;
+            // The screenshot tool cannot wait for the sky: it names the moment itself.
+            #[cfg(feature = "screenshot")]
+            let (seed, at) = match std::env::var("DUSK_METEOR").map(|at| at.parse()) {
+                Ok(Ok(at)) => (21, at),
+                _ => (seed, at),
+            };
             // Rare: about one window in three has one.
-            if !seed.is_multiple_of(3) || at >= 1. {
+            if !seed.is_multiple_of(3) || at >= METEOR_FLIGHT + METEOR_AFTERGLOW {
                 return sky;
             }
-            let from = 0.5 + (seed / 3 % 1000) as f32 / 1000. * 0.42;
-            let lean = ((seed / 3000 % 1000) as f32 / 1000. - 0.5) * 0.12;
-            // The head crosses in the first half; the rest is the trail going out.
-            let head = (at / 0.5).min(1.);
-            let fade = 1. - ((at - 0.5) / 0.5).max(0.);
-            sky.children((0..METEOR_TRAIL).filter_map(move |index| {
-                let behind = index as f32 / METEOR_TRAIL as f32;
-                let along = head - behind * 0.55;
-                if !(0. ..=1.).contains(&along) {
-                    return None;
-                }
-                let size = 2.2 - behind * 1.6;
-                let color = hsla(0.6, behind.min(1.), 1. - behind * 0.38, 1.);
-                Some(
-                    div()
-                        .absolute()
-                        .left(relative(from + lean * along))
-                        .top(relative(along * 1.1 - 0.05))
-                        .size(px(size))
-                        .rounded_full()
-                        .bg(color.opacity((1. - behind) * fade)),
+            let unit = |shift: u32| (seed / shift % 1000) as f32 / 1000.;
+            let great = (seed / 3).is_multiple_of(7);
+            // It slows a little as it burns up.
+            let gone = (at / METEOR_FLIGHT).min(1.);
+            let meteor = Meteor {
+                from: if great { 0.99 } else { 0.66 + unit(3) * 0.32 },
+                angle: (if great { 4.5 } else { 6. + unit(3000) * 8. }).to_radians(),
+                run: if great { 0.95 } else { 0.24 + unit(7) * 0.2 },
+                flown: 1. - (1. - gone) * (1. - gone),
+                left: 1. - ((at - METEOR_FLIGHT) / METEOR_AFTERGLOW).clamp(0., 1.),
+                great,
+            };
+            sky.child(
+                canvas(
+                    |_, _, _| {},
+                    move |bounds, _, window, _| paint_meteor(bounds, meteor, window),
                 )
-            }))
+                .absolute()
+                .inset_0(),
+            )
         },
     )
+}
+
+fn paint_meteor(bounds: Bounds<Pixels>, meteor: Meteor, window: &mut Window) {
+    let (width, height) = (bounds.size.width.as_f32(), bounds.size.height.as_f32());
+    let (sin, cos) = meteor.angle.sin_cos();
+    // It burns out inside the sky: never further than the header is tall.
+    let run = (meteor.run * width).min((height - 4.) / sin);
+    let (left, top) = (bounds.origin.x.as_f32(), bounds.origin.y.as_f32());
+    let start = (left + meteor.from * width, top + 2.);
+    let head = (
+        start.0 - cos * run * meteor.flown,
+        start.1 + sin * run * meteor.flown,
+    );
+    // The trail reaches back to where it came in, then goes out from that end.
+    let trail = run * meteor.flown * (0.25 + 0.75 * meteor.left);
+    let (core, glow) = if meteor.great { (3., 11.) } else { (2., 7.) };
+    // The trail is needles laid over each other from the head, each longer and bluer
+    // than the last: where many lie it is white, where few reach it is a thin blue, and
+    // no needle ends in an edge, so the light has no joints.
+    let needle = |reach: f32, wide: f32, color: Hsla, window: &mut Window| {
+        let mut path = PathBuilder::fill();
+        path.move_to(point(
+            px(head.0 + sin * wide / 2.),
+            px(head.1 + cos * wide / 2.),
+        ));
+        path.line_to(point(
+            px(head.0 + cos * trail * reach),
+            px(head.1 - sin * trail * reach),
+        ));
+        path.line_to(point(
+            px(head.0 - sin * wide / 2.),
+            px(head.1 - cos * wide / 2.),
+        ));
+        path.close();
+        if let Ok(path) = path.build() {
+            window.paint_path(path, color);
+        }
+    };
+    for part in 0..METEOR_PARTS {
+        let share = (part + 1) as f32 / METEOR_PARTS as f32;
+        let blue = (share * 2.4).min(1.);
+        let color = hsla(0.6, blue, 1. - blue * 0.38, meteor.left);
+        // The glow under it, wider and all but unseen, then the light itself.
+        needle(
+            share,
+            glow * (0.4 + share),
+            color.opacity(0.012 * meteor.left),
+            window,
+        );
+        needle(
+            share * share,
+            core,
+            color.opacity(0.2 * meteor.left),
+            window,
+        );
+    }
+    // It is white-hot where it burns: the first quarter of the trail, under the head.
+    for part in 1..=6 {
+        let white = hsla(0.6, 0.25, 0.97, 0.26 * meteor.left);
+        needle(part as f32 * 0.045, core, white, window);
+    }
+    // The head: a point of white in a halo that thins outward, while it still flies.
+    let flying = if meteor.flown < 1. { 1. } else { meteor.left };
+    for ring in 0..6 {
+        let wide = glow * 1.5 * (1. - ring as f32 / 6.);
+        let spot = Bounds::centered_at(point(px(head.0), px(head.1)), size(px(wide), px(wide)));
+        let color = hsla(0.6, 1., 0.75, 0.07 * flying);
+        window.paint_quad(fill(spot, color).corner_radii(px(wide / 2.)));
+    }
+    let spot = Bounds::centered_at(
+        point(px(head.0), px(head.1)),
+        size(px(core * 1.3), px(core * 1.3)),
+    );
+    window.paint_quad(fill(spot, hsla(0., 0., 1., flying)).corner_radii(px(core)));
 }
 
 /// One star: a soft point in a haze, and on the larger ones four short rays that thin

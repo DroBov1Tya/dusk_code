@@ -10,6 +10,8 @@
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|schedule|agents|none`, `right=all`: open a window; unfold the right column;
 //! - `detail=mcp|skill`: open the window of the first of those;
+//! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
+//!   the environment the sky holds a falling star that many milliseconds into its flight;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
@@ -402,6 +404,12 @@ fn act(
             ws.chats.insert("demo".into(), chat);
             ws.shown = Some("demo".into());
             cx.notify();
+        }
+        // A chat that exists only in the window, so a profile with no chats can show one.
+        "chat" => {
+            ws.chats.insert("shot".into(), Default::default());
+            ws.shown = Some("shot".into());
+            ws.center = Center::Chat;
         }
         "fake" => {
             use dusk_protocol::{
