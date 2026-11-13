@@ -12,6 +12,11 @@ pub enum ThreadRequest {
     New {
         cwd: PathBuf,
     },
+    /// A new chat that is never written to disk: its messages stay in memory and its
+    /// files in the system's temporary folder, and all of it goes when the core stops.
+    NewTemporary {
+        cwd: PathBuf,
+    },
     Resume {
         thread_id: String,
         cwd: PathBuf,

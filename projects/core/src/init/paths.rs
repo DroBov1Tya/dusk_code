@@ -27,6 +27,8 @@ pub struct Paths {
     workspace_root: PathBuf,
     /// Where what is installed lives: the models of speech, which are large.
     data_root: PathBuf,
+    /// Set for temporary chats: their pictures and sounds go here, not among the records.
+    artifacts: Option<PathBuf>,
 }
 
 impl Paths {
@@ -45,6 +47,7 @@ impl Paths {
         let config_root = config_root.into();
         Self {
             data_root: config_root.join("data"),
+            artifacts: None,
             config_root,
             workspace_root: workspace_root.into(),
         }
@@ -121,7 +124,20 @@ impl Paths {
     }
 
     pub fn artifacts_dir(&self) -> PathBuf {
-        self.records_dir().join("artifacts")
+        match &self.artifacts {
+            Some(artifacts) => artifacts.clone(),
+            None => self.records_dir().join("artifacts"),
+        }
+    }
+
+    /// The same prompts, skills and agents, with everything a chat writes under `root`
+    /// instead: its folder and its artifacts. For chats that leave nothing behind.
+    pub fn temporary(&self, root: &Path) -> Self {
+        Self {
+            workspace_root: root.join("chats"),
+            artifacts: Some(root.join("artifacts")),
+            ..self.clone()
+        }
     }
 
     pub fn workspace_root(&self) -> &Path {

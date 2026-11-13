@@ -39,6 +39,8 @@ pub struct AppState {
     pub view: RwSignal<View>,
     /// The project a draft chat starts in and the sidebar highlights.
     pub project: RwSignal<Option<String>>,
+    /// The chat about to start is a temporary one: kept in memory, gone with the core.
+    pub temporary_next: RwSignal<bool>,
     pub toast: RwSignal<Option<String>>,
     pub theme: RwSignal<String>,
     /// A subagent chat shown in a window over the page: its parent chat and thread.
@@ -72,6 +74,7 @@ impl AppState {
             chats: RwSignal::new(HashMap::new()),
             view: RwSignal::new(View::Chat(None)),
             project: RwSignal::new(None),
+            temporary_next: RwSignal::new(false),
             toast: RwSignal::new(None),
             theme: RwSignal::new(theme::stored()),
             subagent: RwSignal::new(None),
@@ -223,7 +226,16 @@ impl AppState {
     /// A draft chat in a project, or in the workspace root without one.
     pub fn new_chat(self, project: Option<String>) {
         self.project.set(project);
+        self.temporary_next.set(false);
         self.view.set(View::Chat(None));
+    }
+
+    /// A new chat that is never written to disk, made with its first message.
+    pub fn new_temporary_chat(self) {
+        self.new_chat(self.project.get_untracked());
+        self.temporary_next.set(true);
+        self.toast
+            .set(Some("Temporary chat: kept in memory only".to_owned()));
     }
 
     /// Opens a listed chat: its history, then the thread itself.
@@ -302,7 +314,12 @@ impl AppState {
                 .unwrap_or_else(|| self.workspace_dir()),
             None => self.workspace_dir(),
         };
-        let thread_id = api::new_thread(cwd).await?;
+        let temporary = self.temporary_next.get_untracked();
+        self.temporary_next.set(false);
+        let thread_id = match temporary {
+            true => api::new_temporary_thread(cwd).await?,
+            false => api::new_thread(cwd).await?,
+        };
         self.chats.update(|chats| {
             chats.insert(thread_id.clone(), RwSignal::new(ChatData::default()));
         });

@@ -19,6 +19,11 @@ impl Threads<'_> {
         self.opened(ThreadRequest::New { cwd }).await
     }
 
+    /// A new chat that leaves nothing behind once the core stops.
+    pub async fn start_temporary(&self, cwd: PathBuf) -> Result<String> {
+        self.opened(ThreadRequest::NewTemporary { cwd }).await
+    }
+
     pub async fn resume(&self, thread_id: &str, cwd: PathBuf) -> Result<String> {
         let thread_id = thread_id.to_owned();
         self.opened(ThreadRequest::Resume { thread_id, cwd }).await

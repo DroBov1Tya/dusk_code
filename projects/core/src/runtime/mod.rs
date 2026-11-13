@@ -15,6 +15,7 @@ pub mod model_choice;
 // Named after its primary item, `Runtime`, as the style guide asks.
 #[allow(clippy::module_inception)]
 mod runtime;
+mod temporary;
 pub mod thread;
 mod thread_lock;
 mod thread_runner;

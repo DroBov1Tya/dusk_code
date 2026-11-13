@@ -23,6 +23,10 @@ impl Server {
                 let handle = runtime.new_thread(self.source(), &cwd).await?;
                 self.open(handle)
             }
+            ThreadRequest::NewTemporary { cwd } => {
+                let handle = runtime.new_temporary_thread(self.source(), &cwd).await?;
+                self.open(handle)
+            }
             ThreadRequest::Resume { thread_id, cwd } => {
                 // A thread another client keeps open runs on; this one just joins it.
                 if let Some(open) = self.threads.get_mut(&thread_id)
@@ -106,16 +110,21 @@ impl Server {
                     title.chars().count() <= 200,
                     "a title is at most 200 characters"
                 );
-                runtime.state().set_title(&thread_id, title).await?;
+                runtime
+                    .state_of(&thread_id)
+                    .await
+                    .set_title(&thread_id, title)
+                    .await?;
                 Response::Done
             }
             ThreadRequest::Delete { thread_id } => {
                 // Its turn ends first, so nothing writes to what is being erased.
                 self.close(&thread_id).await;
                 let runtime = &self.runtime;
-                for folder in runtime.state().delete_thread(&thread_id).await? {
+                let (state, paths) = runtime.places_of(&thread_id).await;
+                for folder in state.delete_thread(&thread_id).await? {
                     // Only plain names under the workspace root are taken.
-                    let path = runtime.paths().workspace_folder(&folder)?;
+                    let path = paths.workspace_folder(&folder)?;
                     match tokio::fs::remove_dir_all(&path).await {
                         Ok(()) => {}
                         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
@@ -129,13 +138,15 @@ impl Server {
             }
             ThreadRequest::SetApprovals { thread_id, policy } => {
                 runtime
-                    .state()
+                    .state_of(&thread_id)
+                    .await
                     .set_thread_approvals(&thread_id, policy)
                     .await?;
                 Response::Done
             }
             ThreadRequest::GetApprovals { thread_id } => {
-                Response::Approvals(runtime.state().thread_approvals(&thread_id).await?)
+                let state = runtime.state_of(&thread_id).await;
+                Response::Approvals(state.thread_approvals(&thread_id).await?)
             }
         })
     }

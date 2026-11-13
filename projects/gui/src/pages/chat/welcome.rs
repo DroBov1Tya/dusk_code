@@ -58,7 +58,9 @@ fn line(now: chrono::DateTime<chrono::Local>) -> &'static str {
 
 pub(super) fn render(ws: &Workspace, cx: &App) -> Div {
     let theme = cx.theme();
-    let hint = if ws.projects.is_empty() {
+    let hint = if ws.temporary_next {
+        "A temporary chat: kept in memory only, gone when the app closes.".to_owned()
+    } else if ws.projects.is_empty() {
         "Add a project on the left to start.".to_owned()
     } else if let Some(project) = ws.selected_project() {
         format!("Write a message to start a chat in {}.", project.name)

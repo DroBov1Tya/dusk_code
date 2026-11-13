@@ -331,6 +331,8 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
         agent: row.try_get("agent")?,
         name: row.try_get("name")?,
         project: row.try_get("project")?,
+        // The runtime marks the threads of its database in memory.
+        temporary: false,
     })
 }
 

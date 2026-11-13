@@ -20,6 +20,9 @@ pub struct Thread {
     pub name: Option<String>,
     /// The folder a chat was started in; `None` for one older than this record.
     pub project: Option<String>,
+    /// It is kept in memory only and is gone when the core stops.
+    #[serde(default)]
+    pub temporary: bool,
 }
 
 /// A message found by searching the text of every chat.

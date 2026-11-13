@@ -141,7 +141,12 @@ pub async fn ensure_open(
             *open = Some(OpenThread::new(thread_id));
         }
         None => {
-            let thread_id = client.threads().start(cwd).await?;
+            let threads = client.threads();
+            app.temporary = std::mem::take(&mut app.temporary_next);
+            let thread_id = match app.temporary {
+                true => threads.start_temporary(cwd).await?,
+                false => threads.start(cwd).await?,
+            };
             app.thread_id = Some(thread_id.clone());
             *open = Some(OpenThread::new(thread_id));
         }

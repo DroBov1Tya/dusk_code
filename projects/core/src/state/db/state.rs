@@ -66,6 +66,29 @@ impl State {
         Ok(Self { pool })
     }
 
+    /// A database that lives in this process alone and is gone with it: nothing of it
+    /// reaches the disk. One connection that is never let go, since the database is that
+    /// connection.
+    pub async fn in_memory() -> Result<Self> {
+        let options = SqliteConnectOptions::new()
+            .in_memory(true)
+            .foreign_keys(true)
+            .disable_statement_logging();
+        let pool = sqlx::sqlite::SqlitePoolOptions::new()
+            .max_connections(1)
+            .min_connections(1)
+            .idle_timeout(None)
+            .max_lifetime(None)
+            .connect_with(options)
+            .await
+            .context("open a database in memory")?;
+        MIGRATOR
+            .run(&pool)
+            .await
+            .context("set up a database in memory")?;
+        Ok(Self { pool })
+    }
+
     pub async fn close(&self) {
         self.pool.close().await;
     }

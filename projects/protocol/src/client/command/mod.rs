@@ -18,6 +18,8 @@ pub enum Command {
     Resume { cwd: Option<PathBuf> },
     /// Leaves the open thread for a new one, created with its first message.
     New,
+    /// The same, for a chat kept in memory only and gone when the core stops.
+    Temporary,
     /// Lists the providers with their models, or switches to `provider/model`.
     Model { name: Option<String> },
     /// What a client offers to switch: tools, skills, agents and limits.
@@ -82,6 +84,8 @@ pub enum Answer {
     },
     /// The client closes the open thread and shows an empty one.
     NewThread,
+    /// The same, and the thread it starts is a temporary one.
+    TemporaryThread,
     Settings(Box<Settings>),
     Context(ContextReport),
     Update(UpdateInfo),

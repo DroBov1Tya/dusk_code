@@ -64,6 +64,10 @@ pub fn Sidebar() -> impl IntoView {
             <button class="primary wide" on:click=move |_| app.new_chat(app.project.get_untracked())>
                 "New chat"
             </button>
+            <button class="wide" title="Kept in memory only; gone when duskcode stops"
+                on:click=move |_| app.new_temporary_chat()>
+                "Temporary chat"
+            </button>
             <input
                 class="search"
                 placeholder="Search chats"

@@ -7,7 +7,10 @@ mod recent;
 mod threads;
 
 use gpui_kit::{
-    component::{ActiveTheme, IconName},
+    component::{
+        ActiveTheme, Icon, IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
     *,
 };
 
@@ -44,7 +47,20 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         gpui_kit::component::tooltip::Tooltip::new("A chat outside the projects")
                             .build(window, cx)
                     })
-                    .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),
+                    .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx)))
+                    .child(div().flex_1())
+                    // Beside it, the chat that leaves nothing behind.
+                    .child(
+                        Button::new("sidebar-temporary-chat")
+                            .ghost()
+                            .xsmall()
+                            .icon(Icon::default().path(crate::ui::icons::HOURGLASS))
+                            .tooltip("Temporary chat: kept in memory, gone when the app closes")
+                            .on_click(cx.listener(|ws, _, window, cx| {
+                                cx.stop_propagation();
+                                ws.new_temporary_chat(window, cx);
+                            })),
+                    ),
             ),
         )
         .child(

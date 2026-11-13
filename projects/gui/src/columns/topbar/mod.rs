@@ -324,6 +324,10 @@ fn title(ws: &Workspace, muted: Hsla) -> Stateful<Div> {
             .tooltip(move |window, cx| Tooltip::new(project.clone()).build(window, cx))
     })
     .child(div().truncate().child(chat))
+    // Said beside the title for as long as the chat is shown: nothing of it is kept.
+    .when(ws.temporary_shown(), |title| {
+        title.child(widgets::badge("temporary", muted))
+    })
 }
 
 /// A tool of the bar: an icon in a 32 px square.

@@ -16,7 +16,10 @@ impl Runtime {
     /// What the next request of a chat thread carries; before a thread, the mode's prompt and the
     /// tools a chat gets.
     pub async fn context(&self, thread_id: Option<&str>) -> Result<ContextReport> {
-        let launcher = &self.launcher;
+        let launcher = match thread_id {
+            Some(thread_id) => self.of(thread_id).await,
+            None => &self.launcher,
+        };
         let config = launcher.config.current();
         let cwd = std::env::current_dir()?;
         // A running thread is counted with its own tools and model, as its `Tokens`

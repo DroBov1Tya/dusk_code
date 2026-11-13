@@ -172,6 +172,8 @@ pub struct Workspace {
     pub found: (String, Vec<dusk_protocol::thread::Found>),
     /// A chat opened from a found message scrolls to these words once it shows.
     pub jump: Option<(String, String)>,
+    /// The chat about to start is a temporary one: kept in memory, gone with the app.
+    pub temporary_next: bool,
     pub composer: Entity<TextareaState>,
     /// Text for the composer, put there on the next frame, which has the window.
     pub fill_composer: Option<String>,
@@ -387,6 +389,7 @@ impl Workspace {
             search,
             found: Default::default(),
             jump: None,
+            temporary_next: false,
             composer,
             fill_composer: None,
             me: crate::pages::settings::about_me::AboutMe::new(window, cx),

@@ -4,7 +4,11 @@
 use std::path::PathBuf;
 
 use dusk_protocol::{project::Project, thread::Thread};
-use gpui_kit::{component::ActiveTheme, prelude::FluentBuilder, *};
+use gpui_kit::{
+    component::{ActiveTheme, Icon},
+    prelude::FluentBuilder,
+    *,
+};
 
 use crate::{
     pages::chat::transcript::Transcript,
@@ -73,6 +77,14 @@ pub fn chat_row(
     };
     let row = widgets::row(SharedString::from(format!("{prefix}-{id}")), shown, cx)
         .child(dot)
+        .when(thread.temporary, |row| {
+            row.child(
+                Icon::default()
+                    .path(crate::ui::icons::HOURGLASS)
+                    .size_3()
+                    .text_color(muted),
+            )
+        })
         .child(div().flex_1().min_w_0().truncate().child(title))
         .when_some(source.filter(|source| *source != "gui"), |row, source| {
             row.child(
@@ -124,6 +136,7 @@ impl Workspace {
     ) {
         self.select_project(project_id, cx);
         self.shown = None;
+        self.temporary_next = false;
         self.center = Center::Chat;
         self.context = None;
         self.jobs.clear();
@@ -135,6 +148,26 @@ impl Workspace {
         self.composer
             .update(cx, |composer, cx| composer.focus(window, cx));
         cx.notify();
+    }
+
+    /// A new chat that is never written to disk; like any new chat it is made when the
+    /// first message is sent.
+    pub fn new_temporary_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let project = self.selected_project().map(|project| project.id.clone());
+        self.new_chat(project.as_deref(), window, cx);
+        self.temporary_next = true;
+        cx.notify();
+    }
+
+    /// Whether the shown chat, or the one about to start, is a temporary one.
+    pub fn temporary_shown(&self) -> bool {
+        match &self.shown {
+            Some(shown) => self
+                .threads
+                .iter()
+                .any(|thread| thread.id == *shown && thread.temporary),
+            None => self.temporary_next,
+        }
     }
 
     pub fn open_chat(&mut self, thread_id: &str, cx: &mut Context<Self>) {
