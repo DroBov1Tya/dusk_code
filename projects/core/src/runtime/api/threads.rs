@@ -30,6 +30,11 @@ impl Runtime {
         self.launcher.state.list_messages(thread_id).await
     }
 
+    /// What was said in any chat that contains `text`, best matches first.
+    pub async fn search_chats(&self, text: &str) -> Result<Vec<dusk_protocol::thread::Found>> {
+        self.launcher.state.search_chats(text, 40).await
+    }
+
     /// Local messages waiting for an explicit resend. They are not model history.
     pub async fn local_unsent(&self, thread_id: &str) -> Result<Vec<LocalUnsent>> {
         self.launcher.state.local_unsent(thread_id).await

@@ -171,6 +171,10 @@ impl App {
                 note,
                 started,
             } => self.goal_changed(goal, note, started),
+            // A second question waits behind the first instead of taking its place.
+            ThreadEvent::Question(question) if self.poll.is_some() => {
+                self.polls_waiting.push_back(question)
+            }
             ThreadEvent::Question(question) => self.poll = Some(Poll::new(question)),
             ThreadEvent::Approval(request) => self.ask_approval(request, None),
             ThreadEvent::ApprovalClosed { id } => self.close_approval(id),

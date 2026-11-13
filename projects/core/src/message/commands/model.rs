@@ -9,7 +9,9 @@ use crate::runtime::{
 };
 
 pub async fn check(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
-    check_providers(&runtime.config().current()).await
+    let statuses = check_providers(&runtime.config().current()).await?;
+    runtime.learn_model(&statuses);
+    Ok(statuses)
 }
 
 pub async fn switch(runtime: &Runtime, name: &str) -> Result<Choice> {

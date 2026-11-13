@@ -141,7 +141,35 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     if chat.working {
         rows.push(Row::Working);
     }
+    // A chat opened from a found message shows that message, not its end.
+    let jump = ws
+        .jump
+        .as_ref()
+        .filter(|(chat, _)| *chat == shown)
+        .map(|(_, words)| {
+            let words = words.to_lowercase();
+            let says = |item: &Item| match item {
+                Item::User { text, .. } | Item::Assistant { text, .. } => {
+                    text.to_lowercase().contains(&words)
+                }
+                _ => false,
+            };
+            rows.iter().position(|row| match *row {
+                Row::Item(index) => says(&chat.items[index]),
+                Row::Activity { start, end, .. } => chat.items[start..end].iter().any(says),
+                Row::Working => false,
+            })
+        });
     sync(ws, &shown, &rows);
+    if let Some(at) = jump {
+        ws.jump = None;
+        if let Some(item_ix) = at {
+            ws.list.scroll_to(ListOffset {
+                item_ix,
+                offset_in_item: px(0.),
+            });
+        }
+    }
     ws.rows = rows;
     ws.sent_rows = sent;
     list(
@@ -567,7 +595,7 @@ fn turn_activity(
                             shown,
                             index,
                             ("Thinking", IconName::Asterisk),
-                            long(reasoning),
+                            reasoning,
                             || reasoning.clone().into_any_element(),
                             cx,
                         ));
@@ -601,7 +629,7 @@ fn turn_activity(
                     shown,
                     index,
                     ("Background task result", IconName::SquareTerminal),
-                    long(text),
+                    text,
                     || text.clone().into_any_element(),
                     cx,
                 )),
@@ -645,7 +673,7 @@ pub fn agent_report(
         shown,
         index,
         (&label, IconName::Bot),
-        long(text),
+        text,
         || {
             links::markdown(
                 SharedString::from(format!("report-{shown}-{index}")),
@@ -662,29 +690,44 @@ pub fn activity_text(
     shown: &str,
     index: usize,
     (title, icon): (&str, IconName),
-    long: bool,
+    text: &str,
     body: impl FnOnce() -> AnyElement,
     cx: &mut Context<Workspace>,
 ) -> Div {
     let open = ws.unfolded.contains(&(shown.to_owned(), index));
+    let long = long(text);
     let id = shown.to_owned();
     let foot_id = id.clone();
     let muted = step_muted(cx);
+    let group = SharedString::from(format!("activity-text-row-{shown}-{index}"));
     div()
         .flex()
         .flex_col()
         .gap_1()
         .child(
-            disclosure(
-                SharedString::from(format!("activity-text-{shown}-{index}")),
-                open,
-                cx,
-            )
-            .aria_label(title.to_owned())
-            .child(widgets::icon(icon, muted))
-            .child(div().flex_1().min_w_0().truncate().child(title.to_owned()))
-            .child(disclosure_icon(open, muted))
-            .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
+            div()
+                .group(group.clone())
+                .flex()
+                .items_center()
+                .gap_1()
+                .child(
+                    disclosure(
+                        SharedString::from(format!("activity-text-{shown}-{index}")),
+                        open,
+                        cx,
+                    )
+                    .flex_1()
+                    .aria_label(title.to_owned())
+                    .child(widgets::icon(icon, muted))
+                    .child(div().flex_1().min_w_0().truncate().child(title.to_owned()))
+                    .child(disclosure_icon(open, muted))
+                    .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
+                )
+                .child(widgets::copy(
+                    SharedString::from(format!("activity-text-copy-{shown}-{index}")),
+                    &group,
+                    text,
+                )),
         )
         .when(open, |block| {
             block.child(
@@ -857,7 +900,11 @@ fn step(
         .unwrap_or_else(|| "Menlo".to_owned());
     let detail = tool.detail.trim().to_owned();
     // Said as a person would; the tool's own name shows once the step is open.
-    let summary = dusk_protocol::tools::phrase(&tool.name, &tool.call_id);
+    let summary = if tool.name == "load_skill" {
+        "Skill"
+    } else {
+        dusk_protocol::tools::phrase(&tool.name, &tool.call_id)
+    };
     // Work handed to another agent is the turn's big move: it carries the accent.
     let lead = if dusk_protocol::tools::is_agent_tool(&tool.name) {
         theme.primary
@@ -905,11 +952,24 @@ fn step(
     let mut line = div().flex().flex_col().child(row);
     if open {
         let block = |title: &'static str, text: &str| {
+            let group = SharedString::from(format!("step-{title}-{shown}-{index}"));
             div()
+                .group(group.clone())
                 .flex()
                 .flex_col()
                 .gap_1()
-                .child(div().meta().text_color(muted).child(title))
+                .child(
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_1()
+                        .child(div().meta().text_color(muted).child(title))
+                        .child(widgets::copy(
+                            SharedString::from(format!("step-copy-{title}-{shown}-{index}")),
+                            &group,
+                            text,
+                        )),
+                )
                 .child(
                     div()
                         .p_2()
@@ -978,11 +1038,24 @@ fn command_card(key: &str, run: &CommandRun, cx: &mut Context<Workspace>) -> Any
         theme.danger,
         theme.border,
     );
-    let mut card = div().flex().flex_col().gap_2().child(
+    let group = SharedString::from(format!("command-row-{key}"));
+    let copied = match &run.result {
+        Some(Ok(output)) => format!("$ {}\n{}", run.command, output.trim_end()),
+        _ => run.command.clone(),
+    };
+    let mut card = div().group(group.clone()).flex().flex_col().gap_2().child(
         div()
+            .flex()
+            .items_center()
+            .gap_1()
             .meta()
             .text_color(muted)
-            .child(format!("$ {}", run.command)),
+            .child(div().min_w_0().child(format!("$ {}", run.command)))
+            .child(widgets::copy(
+                SharedString::from(format!("command-copy-{key}")),
+                &group,
+                &copied,
+            )),
     );
     match &run.result {
         None => {

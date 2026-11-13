@@ -54,15 +54,31 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
         let id_decline = id.clone();
         let submit = move |_| {
             let reply = for_answer.answer(&chosen.get_untracked(), &own.get_untracked());
-            app.send(id.clone(), reply, false, Vec::new());
-            chat.update(|c| c.question = None);
+            // The next question shows; the answers go together after the last one.
+            let mut all = None;
+            chat.update(|c| {
+                c.answers.push(reply);
+                c.question = c.questions_waiting.pop_front();
+                if c.question.is_none() {
+                    all = Some(std::mem::take(&mut c.answers).join("\n\n"));
+                }
+            });
+            if let Some(all) = all {
+                app.send(id.clone(), all, false, Vec::new());
+            }
             chosen.set(Vec::new());
             own.set(String::new());
         };
         let decline = move |_| {
             let reply = for_decline.declined(&own.get_untracked());
-            app.send(id_decline.clone(), reply, false, Vec::new());
-            chat.update(|c| c.question = None);
+            let mut all = String::new();
+            chat.update(|c| {
+                c.answers.push(reply);
+                c.questions_waiting.clear();
+                c.question = None;
+                all = std::mem::take(&mut c.answers).join("\n\n");
+            });
+            app.send(id_decline.clone(), all, false, Vec::new());
         };
         Some(view! {
             <div class="question">

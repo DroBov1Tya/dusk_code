@@ -84,7 +84,7 @@ impl ThreadRunner {
             pictures_refused: Mutex::new(None),
             pace: Mutex::default(),
             repeats: Mutex::default(),
-            asking: Mutex::new(None),
+            asking: Mutex::new(Vec::new()),
             thread_id: setup.thread_id,
             compact_prompt: setup.compact_prompt,
             fork_prompt: setup.fork_prompt,

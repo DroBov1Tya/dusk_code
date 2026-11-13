@@ -159,11 +159,8 @@ impl Runtime {
             let mailboxes = Arc::clone(&launcher.mailboxes);
             Some(tokio::spawn(async move {
                 let revision = model.revision();
-                let selected = if let Some(saved) = model.current() {
-                    saved
-                        .refresh()
-                        .await
-                        .map(|metadata| model.refresh_model(&saved, metadata))
+                let selected = if model.current().is_some() {
+                    refresh_saved(&model).await
                 } else {
                     Choice::pick(&config.current(), None).await.map(|choice| {
                         if model.set_if_empty_at_revision(choice, &revision) {
@@ -244,5 +241,25 @@ impl Runtime {
             discovery.abort();
         }
         self.launcher.state.close().await;
+    }
+}
+
+/// Asks the saved model's provider for its sizes. A provider that is down or still
+/// waiting for its key at the start is asked again, or the model would stay at the
+/// unknown window until it is chosen anew.
+async fn refresh_saved(model: &ModelChoice) -> anyhow::Result<Option<Choice>> {
+    const TRIES: u32 = 5;
+    const PAUSE: std::time::Duration = std::time::Duration::from_secs(20);
+    let mut tries = 0;
+    loop {
+        let Some(saved) = model.current() else {
+            return Ok(None);
+        };
+        tries += 1;
+        match saved.refresh().await {
+            Ok(metadata) => return Ok(model.refresh_model(&saved, metadata)),
+            Err(error) if tries == TRIES => return Err(error),
+            Err(_) => tokio::time::sleep(PAUSE).await,
+        }
     }
 }

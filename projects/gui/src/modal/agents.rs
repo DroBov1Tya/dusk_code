@@ -50,8 +50,11 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
             members.push((id, agent));
         }
     }
-    let mut stage = div().grid().grid_cols(if wide { 2 } else { 1 }).gap_3();
-    for (name, mut members) in zones.into_iter().filter(|(_, members)| !members.is_empty()) {
+    zones.retain(|(_, members)| !members.is_empty());
+    // One zone alone takes the whole width: half a window of it left the text in a strip.
+    let columns = if wide && zones.len() > 1 { 2 } else { 1 };
+    let mut stage = div().grid().grid_cols(columns).gap_3();
+    for (name, mut members) in zones {
         // Those at work first, then the oldest.
         members.sort_by_key(|(_, agent)| (!agent.working, agent.started));
         let busy = members.iter().filter(|(_, agent)| agent.working).count();
@@ -225,7 +228,7 @@ fn figure(
                         )
                         .child(div().meta().text_color(muted).child(agent.role.clone())),
                 )
-                .child(div().small().line_clamp(2).child(agent.task.clone()))
+                .child(div().small().truncate().child(headline(&agent.task)))
                 .child(
                     div()
                         .flex()
@@ -297,6 +300,16 @@ fn figure(
             ws.open_agent_chat(&open, cx);
             ws.agents_modal_focus.focus(window, cx);
         }))
+}
+
+/// A task in one line: its first line that says something, markdown marks off. A brief
+/// is pages long, and the row is for telling the agents apart.
+fn headline(task: &str) -> String {
+    task.lines()
+        .map(|line| line.trim().trim_start_matches(['#', '-', '*', ' ']))
+        .find(|line| !line.is_empty())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 /// `01:24`, or `1:02:03` past an hour.

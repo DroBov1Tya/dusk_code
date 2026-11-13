@@ -206,7 +206,7 @@ impl Agent {
                 && !result.is_error
                 && let Some(question) = call.arguments["question"].as_str()
             {
-                *self.asking.lock() = Some(question.to_owned());
+                self.asking.lock().push(question.to_owned());
             }
             // A visible result must already be available when the thread is reopened.
             if let Some(result) = finished {

@@ -94,6 +94,10 @@ pub struct App {
     pub undone: Option<String>,
     /// A question the agent asked, until it is answered or declined.
     pub poll: Option<Poll>,
+    /// Questions asked while one was on the screen, and the answers given so far: they
+    /// go to the agent together, after the last one.
+    pub polls_waiting: std::collections::VecDeque<dusk_protocol::tools::Question>,
+    pub poll_answers: Vec<String>,
     /// Tools waiting for the user's yes, the oldest first; only the first is shown.
     pub approvals: Vec<Asked>,
     pub approval_hits: Vec<ApprovalHit>,
@@ -229,6 +233,8 @@ impl App {
             goal_rounds: status.max_goal_rounds,
             goal_hits: Vec::new(),
             poll: None,
+            polls_waiting: Default::default(),
+            poll_answers: Vec::new(),
             approvals: Vec::new(),
             approval_hits: Vec::new(),
             forked: None,
@@ -288,6 +294,8 @@ impl App {
         self.thread_id = thread_id;
         self.title = title;
         self.poll = None;
+        self.polls_waiting.clear();
+        self.poll_answers.clear();
         self.local_unsent.clear();
         let images = std::mem::take(&mut self.transcript.images);
         self.transcript = Transcript::from_history(history);

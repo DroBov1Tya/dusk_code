@@ -76,7 +76,9 @@ impl Runtime {
             return Ok(ProviderStatus::disabled(name));
         }
         let provider = Arc::new(Provider::new(&settings)?);
-        Ok(check_provider(name, provider, Some(settings)).await)
+        let status = check_provider(name, provider, Some(settings)).await;
+        self.learn_model(std::slice::from_ref(&status));
+        Ok(status)
     }
 
     /// Builds the connection of a saved provider anew, with a new key when one is given. The

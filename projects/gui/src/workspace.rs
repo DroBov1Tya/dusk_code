@@ -168,6 +168,10 @@ pub struct Workspace {
     pub outputs: Vec<OutputFile>,
     pub artifact_kind: Option<OutputKind>,
     pub search: Entity<InputState>,
+    /// What the search found in the text of the chats, and the words it was for.
+    pub found: (String, Vec<dusk_protocol::thread::Found>),
+    /// A chat opened from a found message scrolls to these words once it shows.
+    pub jump: Option<(String, String)>,
     pub composer: Entity<TextareaState>,
     /// Text for the composer, put there on the next frame, which has the window.
     pub fill_composer: Option<String>,
@@ -302,10 +306,14 @@ impl Workspace {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
-        let search =
-            cx.new(|cx| InputState::new(window, cx).placeholder("Find a chat by its title"));
-        cx.subscribe_in(&search, window, |_, _, _: &InputEvent, _, cx| cx.notify())
-            .detach();
+        let search = cx.new(|cx| {
+            InputState::new(window, cx).placeholder("Find a chat by its title or by what was said")
+        });
+        cx.subscribe_in(&search, window, |ws, _, _: &InputEvent, _, cx| {
+            ws.search_text(cx);
+            cx.notify();
+        })
+        .detach();
         let shelf_search = cx.new(|cx| InputState::new(window, cx).placeholder("Search"));
         cx.subscribe_in(&shelf_search, window, |_, _, _: &InputEvent, _, cx| {
             cx.notify()
@@ -368,7 +376,7 @@ impl Workspace {
             shelf_search,
             folded: Right::folded_from(crate::ui::theme::prefs(cx).right_folded.as_deref()),
             modal: None,
-            settings_page: SettingsPage::Appearance,
+            settings_page: SettingsPage::Model,
             font_search,
             fonts: crate::ui::theme::font_families(cx),
             model_input,
@@ -377,6 +385,8 @@ impl Workspace {
             outputs: Vec::new(),
             artifact_kind: None,
             search,
+            found: Default::default(),
+            jump: None,
             composer,
             fill_composer: None,
             me: crate::pages::settings::about_me::AboutMe::new(window, cx),

@@ -51,6 +51,7 @@ impl Server {
                 self.open(handle)
             }
             ThreadRequest::List => Response::Threads(runtime.list_threads().await?),
+            ThreadRequest::Search { text } => Response::Found(runtime.search_chats(&text).await?),
             ThreadRequest::Messages { thread_id } => {
                 Response::Messages(runtime.thread_messages(&thread_id).await?)
             }

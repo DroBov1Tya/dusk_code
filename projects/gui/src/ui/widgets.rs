@@ -190,3 +190,28 @@ pub fn labeled(label: &'static str, hint: &'static str, cx: &App) -> Div {
             .child(div().meta().text_color(muted).child(hint)),
     )
 }
+
+/// A small button that copies `text`; it comes up while the pointer is over `group`.
+/// Every kind of message has one, the folded ones under their heading too.
+pub fn copy(id: impl Into<ElementId>, group: &SharedString, text: &str) -> Div {
+    use gpui_kit::component::{
+        Sizable,
+        button::{Button, ButtonVariants},
+    };
+    let text = text.to_owned();
+    div()
+        .flex_none()
+        .opacity(0.)
+        .group_hover(group.clone(), |button| button.opacity(1.))
+        .child(
+            Button::new(id)
+                .ghost()
+                .xsmall()
+                .icon(IconName::Copy)
+                .tooltip("Copy")
+                .on_click(move |_, _, cx| {
+                    cx.stop_propagation();
+                    cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                }),
+        )
+}

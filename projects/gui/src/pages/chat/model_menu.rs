@@ -455,9 +455,12 @@ fn all_models(
             Err(error) => scroll = scroll.child(widgets::muted(error.clone(), cx)),
         }
     }
+    // Beside the menu the row it opened from already names it; alone, it needs the way back.
     picker_panel(cx)
         .w(px(width))
-        .child(back_row("All models", side_by_side, cx))
+        .when(!side_by_side, |list| {
+            list.child(back_row("More models", side_by_side, cx))
+        })
         .child(scroll)
 }
 

@@ -242,7 +242,10 @@ pub struct Transcript {
     pub tasks: Vec<Task>,
     pub agents: BTreeMap<String, Agent>,
     pub approvals: Vec<ApprovalRequest>,
-    pub question: Option<Question>,
+    /// What the agent asked and nobody answered yet, in order; the first one shows.
+    pub questions: std::collections::VecDeque<Question>,
+    /// The answers given so far; they go to the agent together, after the last one.
+    pub answers: Vec<String>,
     pub title: Option<String>,
     /// Text the core gave back, such as after /undo, for the composer to offer again.
     pub offered: Option<String>,
@@ -258,6 +261,16 @@ pub struct Transcript {
 }
 
 impl Transcript {
+    /// Answers the question shown. Gives the message for the agent once every question
+    /// asked has its answer: a second question must not take the place of the first.
+    pub fn answer(&mut self, chosen: &[usize], own: &str) -> Option<String> {
+        let question = self.questions.pop_front()?;
+        self.answers.push(question.answer(chosen, own));
+        self.questions
+            .is_empty()
+            .then(|| std::mem::take(&mut self.answers).join("\n\n"))
+    }
+
     pub fn from_history(history: &[Message]) -> Self {
         let mut transcript = Self::default();
         let mut question = None;
@@ -475,7 +488,7 @@ impl Transcript {
                 }
                 self.agent_chats.entry(thread_id).or_default().apply(*event);
             }
-            ThreadEvent::Question(question) => self.question = Some(question),
+            ThreadEvent::Question(question) => self.questions.push_back(question),
             ThreadEvent::Approval(request) => {
                 self.exchange(
                     CHAT,
@@ -694,6 +707,8 @@ fn summary(arguments: &serde_json::Value) -> String {
         "url",
         "pattern",
         "task",
+        // A skill is loaded by its name.
+        "name",
     ]
     .iter()
     .find_map(|key| arguments.get(key).and_then(|value| value.as_str()))
