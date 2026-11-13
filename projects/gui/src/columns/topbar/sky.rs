@@ -23,14 +23,25 @@ pub fn shown(cx: &App) -> bool {
 }
 
 /// How far the running turn has gone from dusk to night, 0 to 1; none when the shown
-/// chat rests or the sky is not shown.
+/// chat rests or the sky is not shown. Subagents still at work after the turn keep the
+/// sky up, counted from the first of them.
 fn late(ws: &Workspace, cx: &App) -> Option<f32> {
     if !shown(cx) {
         return None;
     }
-    let chat = ws.shown_chat().filter(|chat| chat.working)?;
-    let (began, _) = chat.span(chat.activity_boundaries.len())?;
-    let seconds = (crate::pages::chat::timing::now_ms() - began).max(0) as f32 / 1000.;
+    let chat = ws.shown_chat()?;
+    let seconds = if chat.working {
+        let (began, _) = chat.span(chat.activity_boundaries.len())?;
+        (crate::pages::chat::timing::now_ms() - began).max(0) as f32 / 1000.
+    } else {
+        let first = chat
+            .agents
+            .values()
+            .filter(|agent| agent.working)
+            .map(|agent| agent.started)
+            .min()?;
+        first.elapsed().as_secs_f32()
+    };
     // Past sunset it goes on into the night, as long again.
     Some((seconds / DUSK_TO_SUNSET).min(2.))
 }

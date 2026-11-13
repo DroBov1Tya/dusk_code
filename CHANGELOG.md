@@ -6,6 +6,25 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- The web client can be opened to other devices: `duskcode --web --global`, or the
+  "Other devices" switch beside Web access in the desktop window. The address shown is
+  then the machine's address on its network. A server that listens on every address
+  now takes a request addressed to any of the machine's addresses written as a number;
+  a request for a name is still refused unless that name was allowed, so DNS rebinding
+  stays closed. The traffic is not encrypted, and both clients say so.
+
+### Fixed
+
+- Releases for macOS: the terminal client is signed by the same certificate as the
+  desktop app, when the repository holds one. Without it both are signed ad hoc and
+  macOS asks for keychain access again after every update; the release job now says so.
+- An agent or skill whose front matter is not valid YAML says why, and names the usual
+  cause: a value that holds a colon and a space without quotes.
+- GUI: the header's sky stays up while subagents of the chat still work after its turn.
+- GUI: the subagents window no longer opens with its close button drawn as hovered.
+
 ### Changed
 
 - TUI: a sky over the thread. A few stars stand on the header's rows and above the

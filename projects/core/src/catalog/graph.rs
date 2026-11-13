@@ -243,6 +243,19 @@ pub(crate) fn node_name(directory: &Path, file: &str, path: &Path) -> Option<Str
     (!names.is_empty() && names.len() <= MAX_DEPTH).then(|| names.join("/"))
 }
 
+/// The parser's own words on one line, with the commonest cause named: a value that
+/// holds a colon and a space has to stand in quotes.
+fn yaml_reason(error: &str) -> String {
+    let said: String = error
+        .lines()
+        .next()
+        .unwrap_or_default()
+        .chars()
+        .take(160)
+        .collect();
+    format!("{said}; a value that holds \": \" needs quotes")
+}
+
 fn read_node(file: &Path, name: &str) -> Result<Node> {
     let text = read_text(file)?;
     parse_node(&text, name, file.to_owned())
@@ -250,8 +263,12 @@ fn read_node(file: &Path, name: &str) -> Result<Node> {
 
 fn parse_node(text: &str, name: &str, file: PathBuf) -> Result<Node> {
     let (front, _) = split_front_matter(text)?;
-    let front: FrontMatter =
-        serde_saphyr::from_str(front).map_err(|_| anyhow!("front matter is not valid YAML"))?;
+    let front: FrontMatter = serde_saphyr::from_str(front).map_err(|error| {
+        anyhow!(
+            "front matter is not valid YAML: {}",
+            yaml_reason(&error.to_string())
+        )
+    })?;
     if let Some(declared) = &front.name {
         let folder_name = name.rsplit('/').next().unwrap_or(name);
         ensure!(

@@ -91,22 +91,6 @@ jobs:
           packages=(-p dusk_tui)
           if [[ "$RUNNER_OS" == macOS ]]; then packages+=(-p dusk_gui); fi
           cargo build --release --locked --target ${{ matrix.target }} "${packages[@]}"
-      - name: Package
-        shell: bash
-        run: |
-          name=duskcode-${{ matrix.target }}
-          mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/duskcode" LICENSE README.md "dist/$name/"
-          cp resources/skills/NOTICE.md "dist/$name/SKILLS-NOTICE.md"
-          cp -R resources "dist/$name/resources"
-          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "dusk_core"))')
-          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
-            echo "release tag does not match Cargo package version" >&2
-            exit 1
-          fi
-          printf '%s\n' "$version" > "dist/$name/resources/VERSION"
-          tar -C dist -czf "dist/$name.tar.gz" "$name"
-          "./dist/$name/duskcode" --version
       - name: Signing certificate
         # Every release is signed by the same certificate, so macOS keeps the permissions
         # and keychain access of the last version. Without the secrets it is signed ad hoc.
@@ -117,7 +101,7 @@ jobs:
           PASSWORD: ${{ secrets.MACOS_SIGN_PASSWORD }}
         run: |
           if [[ -z "$P12" ]]; then
-            echo "::warning::MACOS_SIGN_P12 is not set; the app is signed ad hoc"
+            echo "::warning::MACOS_SIGN_P12 is not set; the clients are signed ad hoc and macOS will ask for keychain access again after every update"
             exit 0
           fi
           keychain="$RUNNER_TEMP/signing.keychain-db"
@@ -138,6 +122,29 @@ jobs:
           security set-key-partition-list -S apple-tool:,apple: -s -k "$unlock" "$keychain" >/dev/null
           security list-keychains -d user -s "$keychain" $(security list-keychains -d user | tr -d '"')
           echo "DUSK_SIGN_IDENTITY=Duskcode Release Signing" >> "$GITHUB_ENV"
+      - name: Package
+        shell: bash
+        run: |
+          name=duskcode-${{ matrix.target }}
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/duskcode" LICENSE README.md "dist/$name/"
+          # The terminal client reads the keychain too: signed by the same certificate,
+          # the next version is the same program to macOS and is not asked again.
+          if [[ "$RUNNER_OS" == macOS && -n "${DUSK_SIGN_IDENTITY:-}" ]]; then
+            codesign --force --timestamp=none --identifier dev.duskcode.cli \
+              --sign "$DUSK_SIGN_IDENTITY" "dist/$name/duskcode"
+            codesign --verify --strict "dist/$name/duskcode"
+          fi
+          cp resources/skills/NOTICE.md "dist/$name/SKILLS-NOTICE.md"
+          cp -R resources "dist/$name/resources"
+          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "dusk_core"))')
+          if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
+            echo "release tag does not match Cargo package version" >&2
+            exit 1
+          fi
+          printf '%s\n' "$version" > "dist/$name/resources/VERSION"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          "./dist/$name/duskcode" --version
       - name: Desktop app
         if: runner.os == 'macOS'
         shell: bash

@@ -187,7 +187,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                 Some(settings) => {
                     let agents = settings.max_agents_at_work as u64;
                     let rounds = u64::from(settings.max_goal_rounds);
-                    let mut web = vec![web_line(ws, cx)];
+                    let mut web = vec![web_line(ws, cx), web_global_line(ws, cx)];
                     web.extend(web_address(ws, cx));
                     body.child(list(
                         [switch_line(
@@ -348,6 +348,28 @@ fn web_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     )
 }
 
+/// Whether the server listens for other devices too. Set before it starts; the hint
+/// says what that opens, since nothing on the wire is encrypted.
+fn web_global_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let hint = match ws.web_global {
+        true => {
+            "Anyone on your network who holds the address can use your agents and files; \
+             the traffic is not encrypted"
+        }
+        false => "Off: only this machine. On: phones and computers on your network too",
+    };
+    line("Other devices", hint, cx).child(
+        Switch::new("web-global")
+            .checked(ws.web_global)
+            .disabled(ws.web_busy || ws.web.is_some())
+            .tooltip("Stop web access to change this")
+            .on_click(cx.listener(|ws, on: &bool, _, cx| {
+                ws.web_global = *on;
+                cx.notify();
+            })),
+    )
+}
+
 /// While the server runs: the address to open once, with the token of this run in it.
 /// It takes the row's whole width under its name, so a long token never pushes the
 /// buttons out of the card.
@@ -410,7 +432,8 @@ fn switch_line(
 }
 
 impl Workspace {
-    /// Starts or stops the web server of this core. It listens on this machine only.
+    /// Starts or stops the web server of this core. It listens on this machine only
+    /// unless the user opened it to other devices.
     fn set_web(&mut self, on: bool, cx: &mut Context<Self>) {
         if self.web_busy {
             return;
@@ -427,12 +450,16 @@ impl Workspace {
             },
         };
         self.web_busy = true;
+        let address = match self.web_global {
+            true => [0, 0, 0, 0],
+            false => [127, 0, 0, 1],
+        };
         if on {
             self.core.call_hub(
                 cx,
                 move |hub| async move {
                     let config = dusk_web::Config {
-                        bind: ([127, 0, 0, 1], port).into(),
+                        bind: (address, port).into(),
                         ..dusk_web::Config::default()
                     };
                     dusk_web::start(hub, config).await
