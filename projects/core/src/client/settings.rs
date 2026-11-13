@@ -61,6 +61,13 @@ impl Settings<'_> {
     }
 
     /// Saves a provider and returns the name it was saved under.
+    /// The page to open in the browser to sign in with ChatGPT.
+    pub async fn sign_in_chatgpt(&self) -> Result<String> {
+        self.0
+            .text(Request::Settings(SettingsRequest::SignInChatGpt))
+            .await
+    }
+
     pub async fn connect(
         &self,
         kind: ProviderKind,

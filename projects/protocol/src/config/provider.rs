@@ -10,6 +10,9 @@ pub enum ProviderKind {
     /// OpenAI itself: Chat Completions with `max_completion_tokens`.
     #[serde(rename = "openai")]
     OpenAi,
+    /// OpenAI on a ChatGPT plan: the Responses API, signed in to in the browser.
+    #[serde(rename = "chatgpt")]
+    ChatGpt,
     /// The Anthropic Messages API.
     #[serde(rename = "anthropic")]
     Anthropic,
@@ -23,7 +26,7 @@ impl ProviderKind {
     pub fn base_url(self) -> Option<&'static str> {
         match self {
             Self::OpenAiCompatible => None,
-            Self::OpenAi => Some("https://api.openai.com/v1"),
+            Self::OpenAi | Self::ChatGpt => Some("https://api.openai.com/v1"),
             Self::Anthropic => Some("https://api.anthropic.com/v1"),
             Self::Google => Some("https://generativelanguage.googleapis.com/v1beta"),
         }

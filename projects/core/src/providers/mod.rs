@@ -12,7 +12,7 @@ pub mod cost;
 mod errors;
 mod google;
 mod limits;
-mod openai;
+pub mod openai;
 pub mod output;
 mod rate;
 mod registry;

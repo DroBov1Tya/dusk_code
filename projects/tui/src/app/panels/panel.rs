@@ -215,6 +215,8 @@ pub struct SecretEntry {
 /// Where /connect starts: the providers to pick from, each with what it needs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Preset {
+    /// No form: the browser signs in, and the plan's models come with it.
+    ChatGpt,
     OpenAi,
     Anthropic,
     Google,
@@ -223,7 +225,8 @@ pub enum Preset {
 }
 
 impl Preset {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
+        Self::ChatGpt,
         Self::OpenAi,
         Self::Anthropic,
         Self::Google,
@@ -233,6 +236,7 @@ impl Preset {
 
     pub fn label(self) -> &'static str {
         match self {
+            Self::ChatGpt => "ChatGPT, sign in",
             Self::OpenAi => "OpenAI",
             Self::Anthropic => "Anthropic",
             Self::Google => "Google AI",
@@ -243,6 +247,10 @@ impl Preset {
 
     pub fn about(self) -> &'static str {
         match self {
+            Self::ChatGpt => {
+                "GPT models on your ChatGPT plan, no API key: Enter opens OpenAI's sign-in \
+                 page in the browser."
+            }
             Self::OpenAi => "GPT models with an API key from the OpenAI platform.",
             Self::Anthropic => {
                 "Claude models with an API key from the Anthropic console. A Claude \
@@ -259,6 +267,7 @@ impl Preset {
 
     pub fn kind(self) -> ProviderKind {
         match self {
+            Self::ChatGpt => ProviderKind::ChatGpt,
             Self::OpenAi => ProviderKind::OpenAi,
             Self::Anthropic => ProviderKind::Anthropic,
             Self::Google => ProviderKind::Google,
@@ -268,6 +277,7 @@ impl Preset {
 
     fn name(self) -> &'static str {
         match self {
+            Self::ChatGpt => "chatgpt",
             Self::OpenAi => "openai",
             Self::Anthropic => "anthropic",
             Self::Google => "google",
@@ -289,7 +299,7 @@ impl Preset {
             Self::OpenAi => Some("https://platform.openai.com/api-keys"),
             Self::Anthropic => Some("https://console.anthropic.com/settings/keys"),
             Self::Google => Some("https://aistudio.google.com/apikey"),
-            Self::Ollama | Self::Custom => None,
+            Self::ChatGpt | Self::Ollama | Self::Custom => None,
         }
     }
 

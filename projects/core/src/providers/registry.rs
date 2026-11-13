@@ -10,7 +10,7 @@ use anyhow::Result;
 use super::{
     anthropic::{Anthropic, MessageStream},
     google::{GenerateStream, Google},
-    openai::{CompletionStream, OpenAiCompatible},
+    openai::{ChatGpt, CompletionStream, OpenAiCompatible, ResponseStream},
     output::{ChatStream, ModelEvent},
     request::ChatRequest,
 };
@@ -45,6 +45,7 @@ pub struct Provider {
 
 enum ProviderAdapter {
     OpenAiCompatible(OpenAiCompatible),
+    ChatGpt(ChatGpt),
     Anthropic(Anthropic),
     Google(Google),
 }
@@ -59,6 +60,7 @@ struct ProviderStream {
 
 enum StreamAdapter {
     OpenAiCompatible(CompletionStream),
+    ChatGpt(ResponseStream),
     Anthropic(MessageStream),
     Google(GenerateStream),
 }
@@ -106,6 +108,7 @@ impl Provider {
             ProviderKind::OpenAiCompatible | ProviderKind::OpenAi => {
                 ProviderAdapter::OpenAiCompatible(OpenAiCompatible::new(settings)?)
             }
+            ProviderKind::ChatGpt => ProviderAdapter::ChatGpt(ChatGpt::new(settings)?),
             ProviderKind::Anthropic => ProviderAdapter::Anthropic(Anthropic::new(settings)?),
             ProviderKind::Google => ProviderAdapter::Google(Google::new(settings)?),
         };
@@ -131,6 +134,7 @@ impl ModelProvider for Provider {
         Box::pin(async move {
             match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => adapter.list_models().await,
+                ProviderAdapter::ChatGpt(adapter) => adapter.list_models().await,
                 ProviderAdapter::Anthropic(adapter) => adapter.list_models().await,
                 ProviderAdapter::Google(adapter) => adapter.list_models().await,
             }
@@ -146,6 +150,9 @@ impl ModelProvider for Provider {
             let adapter = match &self.adapter {
                 ProviderAdapter::OpenAiCompatible(adapter) => {
                     StreamAdapter::OpenAiCompatible(adapter.stream_chat(request).await?)
+                }
+                ProviderAdapter::ChatGpt(adapter) => {
+                    StreamAdapter::ChatGpt(adapter.stream_chat(request).await?)
                 }
                 ProviderAdapter::Anthropic(adapter) => {
                     StreamAdapter::Anthropic(adapter.stream_chat(request).await?)
@@ -174,6 +181,7 @@ impl ChatStream for ProviderStream {
                 }
                 let mut event = match &mut self.adapter {
                     StreamAdapter::OpenAiCompatible(stream) => stream.next_event().await?,
+                    StreamAdapter::ChatGpt(stream) => stream.next_event().await?,
                     StreamAdapter::Anthropic(stream) => stream.next_event().await?,
                     StreamAdapter::Google(stream) => stream.next_event().await?,
                 };

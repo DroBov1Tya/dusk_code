@@ -2,6 +2,7 @@
 //! block: the struct and its start are in `runtime.rs`.
 
 mod agents;
+mod chatgpt;
 mod context;
 mod mcp;
 mod model;
@@ -15,6 +16,8 @@ mod threads;
 mod updates;
 mod voice;
 mod work;
+
+pub(super) use chatgpt::keep_renewed as keep_renewed_chatgpt;
 
 use super::{Launcher, Runtime};
 

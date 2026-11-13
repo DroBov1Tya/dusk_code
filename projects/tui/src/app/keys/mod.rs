@@ -100,6 +100,10 @@ impl App {
                     })
                 {
                     match form.preset {
+                        // It has no form: the click chooses it, Enter signs in.
+                        None if Preset::ALL.get(index) == Some(&Preset::ChatGpt) => {
+                            form.choice = index;
+                        }
                         None if index < Preset::ALL.len() => form.pick(Preset::ALL[index]),
                         None => {}
                         Some(_) => form.selected = index.min(Connection::FIELDS - 1),

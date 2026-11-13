@@ -92,6 +92,7 @@ pub async fn run(
     let mut shown_title = String::new();
     let mut terminal_status = crate::host::terminal::TerminalStatus::new();
     let mut known_model = status.model.clone();
+    let mut known_chatgpt = status.chatgpt.clone();
     let mut update: Option<InstallingUpdate> = None;
     let mut idle_since = Instant::now();
     loop {
@@ -110,6 +111,21 @@ pub async fn run(
             }
             app.model = name.clone();
             app.limit = status.input_limit;
+        }
+        // A sign-in ends in the browser; say here how it went.
+        if known_chatgpt != status.chatgpt {
+            use dusk_protocol::client::ChatGpt;
+            match &status.chatgpt {
+                ChatGpt::SignedIn { account } => app.transcript.notice(
+                    format!("Signed in with ChatGPT as {account}; /model lists its models"),
+                    Tone::Success,
+                ),
+                ChatGpt::Failed(error) => app
+                    .transcript
+                    .notice(format!("Sign-in with ChatGPT failed: {error}"), Tone::Error),
+                ChatGpt::SignedOut | ChatGpt::Waiting => {}
+            }
+            known_chatgpt = status.chatgpt.clone();
         }
         app.effort = status.effort;
         app.mode = status.mode.clone();

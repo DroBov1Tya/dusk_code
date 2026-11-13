@@ -517,7 +517,12 @@ impl Workspace {
             while status.changed().await.is_ok() {
                 let next = status.borrow_and_update().clone();
                 let alive = this.update(cx, |this, cx| {
+                    // A sign-in that just ended brought a provider: show it.
+                    let signed = this.status.chatgpt != next.chatgpt;
                     this.status = next;
+                    if signed {
+                        this.load_settings(cx);
+                    }
                     this.fetch_update(cx);
                     cx.notify();
                 });

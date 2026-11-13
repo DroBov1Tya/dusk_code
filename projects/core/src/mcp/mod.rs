@@ -4,7 +4,7 @@
 //! failed, and says why, until it is restarted from a client or the core starts again.
 
 mod client;
-mod oauth;
+pub(crate) mod oauth;
 mod servers;
 
 pub use client::{McpClient, RemoteTool, check_headers, check_url};

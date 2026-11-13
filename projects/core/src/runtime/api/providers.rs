@@ -31,6 +31,11 @@ fn new_provider(
     base_url: String,
     api_key: Option<String>,
 ) -> Result<ProviderConfig> {
+    // Its record comes from a sign-in, never from a form.
+    ensure!(
+        kind != ProviderKind::ChatGpt,
+        "ChatGPT is connected by signing in, not with a key"
+    );
     let provider = ProviderConfig {
         kind,
         base_url,

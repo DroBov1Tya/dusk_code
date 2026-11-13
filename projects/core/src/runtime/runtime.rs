@@ -51,6 +51,8 @@ pub struct Runtime {
     /// Speech models installed on this machine, and the servers that run them.
     pub(super) local_voice: Arc<crate::voice::LocalVoice>,
     pub(super) state_db: PathBuf,
+    /// A sign-in with ChatGPT that waits for the browser, or how the last one failed.
+    pub(super) chatgpt: Arc<parking_lot::Mutex<dusk_protocol::client::ChatGpt>>,
     // After the launchers, so the folder goes once nothing writes to it.
     pub(super) _temporary_root: super::temporary::TemporaryRoot,
     // Declared last so coordination is released after the other owned runtime fields.
@@ -91,6 +93,7 @@ impl Runtime {
             paths.config_file(),
             crate::secrets::Keychain::open(paths.config_root()),
         )?);
+        super::api::keep_renewed_chatgpt(Arc::clone(&config));
         let choice = match Choice::configured(&config.current()) {
             Ok(choice) => choice,
             Err(error) => {
@@ -234,6 +237,7 @@ impl Runtime {
             speech: Default::default(),
             local_voice,
             state_db,
+            chatgpt: Default::default(),
         })
     }
 

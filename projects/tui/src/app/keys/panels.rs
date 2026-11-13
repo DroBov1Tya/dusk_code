@@ -23,6 +23,10 @@ impl App {
         match panel {
             Panel::Connect(form) if form.preset.is_none() => match key.code {
                 KeyCode::Esc => self.panel = None,
+                KeyCode::Enter if Preset::ALL[form.choice] == Preset::ChatGpt => {
+                    self.panel = None;
+                    return Action::SignInChatGpt;
+                }
                 KeyCode::Enter => form.pick(Preset::ALL[form.choice]),
                 _ if up || down => step(&mut form.choice, Preset::ALL.len(), down),
                 _ => {}

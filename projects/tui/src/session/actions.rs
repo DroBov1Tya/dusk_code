@@ -445,6 +445,17 @@ pub async fn apply(
             }
             Err(error) => editor_error(app, format!("not saved: {error:#}")),
         },
+        Action::SignInChatGpt => match client.settings().sign_in_chatgpt().await {
+            Ok(page) => {
+                let notice = match open_in_browser(&page) {
+                    true => "Sign-in with ChatGPT opened in the browser".to_owned(),
+                    false => format!("Sign in with ChatGPT: open {page} in a browser"),
+                };
+                app.transcript.notice(notice, Tone::Info);
+                app.flash = Some("the provider is saved once you have signed in".into());
+            }
+            Err(error) => app.flash = Some(format!("cannot sign in with ChatGPT: {error:#}")),
+        },
         Action::SignInMcp(name) => match client.catalog().sign_in_mcp(&name).await {
             Ok(page) => {
                 // The full address carries the sign-in's state; shown only when needed.
