@@ -42,6 +42,9 @@ impl Server {
                 let name = runtime.connect_provider(kind, name, base_url, api_key)?;
                 return Ok(Response::Text(name));
             }
+            SettingsRequest::SignInChatGpt => {
+                return Ok(Response::Text(runtime.sign_in_chatgpt().await?.to_string()));
+            }
             SettingsRequest::CheckProvider(target) => {
                 return Ok(Response::Provider(runtime.check_provider(target).await?));
             }

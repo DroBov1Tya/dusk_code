@@ -101,6 +101,8 @@ pub enum Action {
     RestartMcp(String),
     /// Opens the OAuth sign-in of a remote MCP server in the browser.
     SignInMcp(String),
+    /// Open OpenAI's sign-in page; the provider is saved once the browser comes back.
+    SignInChatGpt,
     Resend(String),
     /// A command the core answers for the client, such as the threads for /resume.
     Command(Command),

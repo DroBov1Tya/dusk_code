@@ -21,4 +21,4 @@ pub use request::{
 };
 pub use response::Response;
 pub use secret::Secret;
-pub use status::Status;
+pub use status::{ChatGpt, Status};

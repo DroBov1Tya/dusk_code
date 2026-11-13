@@ -54,6 +54,8 @@ sha1 = "0.11"
 unicode-width = "0.2"
 axum = { version = "0.8.9", default-features = false, features = ["http1", "json", "query", "tokio", "ws"] }
 getrandom = "0.3"
+# Already in the tree under rustls; named here to check the signature of a sign-in.
+aws-lc-rs = "1"
 subtle = "2.6"
 rust-embed = "8"
 dusk_web = { path = "projects/web" }

@@ -31,6 +31,7 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         available_update: runtime.available_update(),
         install,
         updated_builtin: runtime.updated_builtin().to_vec(),
+        chatgpt: runtime.chatgpt(),
         artifacts_dir: runtime.paths().artifacts_dir(),
         workspace_dir: runtime.paths().workspace_root().to_path_buf(),
     }

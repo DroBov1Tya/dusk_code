@@ -1,7 +1,10 @@
 //! The card that connects a provider: its kind, its address and key, and a check that finds
 //! out whether it answers before anything is saved.
 
-use dusk_protocol::{client::ProviderTarget, config::ProviderKind};
+use dusk_protocol::{
+    client::{ChatGpt, ProviderTarget},
+    config::ProviderKind,
+};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, IconName, Sizable,
@@ -35,6 +38,76 @@ const KINDS: [(ProviderKind, &str, &str); 4] = [
         "generativelanguage.googleapis.com",
     ),
 ];
+
+/// Signing in with a ChatGPT account: no key, the browser asks and the plan pays.
+fn chatgpt(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let (muted, danger, border) = {
+        let theme = cx.theme();
+        (theme.muted_foreground, theme.danger, theme.border)
+    };
+    let state = &ws.status.chatgpt;
+    let (said, color) = match state {
+        ChatGpt::SignedOut => (
+            "Use the models of your ChatGPT plan, with no API key".to_owned(),
+            muted,
+        ),
+        ChatGpt::Waiting => ("Waiting for the sign-in in your browser".to_owned(), muted),
+        ChatGpt::SignedIn { account } => (format!("Signed in as {account}"), muted),
+        ChatGpt::Failed(error) => (error.clone(), danger),
+    };
+    let label = match state {
+        ChatGpt::SignedIn { .. } => "Sign in again",
+        _ => "Sign in with ChatGPT",
+    };
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_3()
+        .p_3()
+        .rounded_lg()
+        .border_1()
+        .border_color(border)
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .child(
+                    div()
+                        .body()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child("ChatGPT"),
+                )
+                .child(div().small().text_color(color).child(said)),
+        )
+        .child(
+            Button::new("provider-chatgpt")
+                .outline()
+                .label(label)
+                .disabled(*state == ChatGpt::Waiting)
+                .tooltip("Opens OpenAI's sign-in page in your browser")
+                .on_click(cx.listener(|ws, _, _, cx| ws.sign_in_chatgpt(cx))),
+        )
+}
+
+impl Workspace {
+    /// The core answers with OpenAI's sign-in page; the system browser opens it, and the
+    /// status says how it ended.
+    fn sign_in_chatgpt(&mut self, cx: &mut Context<Self>) {
+        self.core.call(
+            cx,
+            |client| async move { client.settings().sign_in_chatgpt().await },
+            |ws, result, cx| match result {
+                Ok(url) if url.starts_with("https://auth.openai.com/") => cx.open_url(&url),
+                Ok(_) => ws.fail(anyhow::anyhow!("refused to open the sign-in page"), cx),
+                Err(error) => ws.fail(error, cx),
+            },
+        );
+    }
+}
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let page = &ws.providers_page;
@@ -113,6 +186,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 "Several can be connected at once; the model menu lists the models of each.",
             ),
         )
+        .child(chatgpt(ws, cx))
         .child(
             labeled("Provider name", "optional; it shows in the model menu", cx)
                 .child(Input::new(&page.name).large()),

@@ -6,6 +6,21 @@ use std::path::PathBuf;
 use crate::config::{ApprovalPolicy, ContextPolicy, McpStatus, PluginInfo};
 use crate::model::Effort;
 use crate::release::InstallProgress;
+/// The sign-in with a ChatGPT account, which connects OpenAI without an API key.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ChatGpt {
+    #[default]
+    SignedOut,
+    /// The browser has the sign-in page; the core waits for it to come back.
+    Waiting,
+    SignedIn {
+        /// The account's email, or a plain name when it gave none.
+        account: String,
+    },
+    /// The last sign-in did not complete, and why.
+    Failed(String),
+}
+
 /// Everything a client shows that changes without being asked: sent again whole
 /// whenever any of it changes.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,6 +48,9 @@ pub struct Status {
     pub install: Option<InstallProgress>,
     /// Shipped files this start brought to the build's version.
     pub updated_builtin: Vec<String>,
+    /// How the sign-in with ChatGPT stands.
+    #[serde(default)]
+    pub chatgpt: ChatGpt,
     /// Where pictures of messages and tool results are kept.
     pub artifacts_dir: PathBuf,
     /// Where a chat without a project works: the root of the workspace folders.

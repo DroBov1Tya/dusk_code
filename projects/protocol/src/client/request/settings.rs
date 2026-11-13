@@ -33,6 +33,9 @@ pub enum SettingsRequest {
         base_url: String,
         api_key: Option<Secret>,
     },
+    /// Starts a sign-in with a ChatGPT account. Answers with the page to open in the
+    /// browser; the status tells how it ends.
+    SignInChatGpt,
     /// Asks a provider for its models and balance, to see whether it answers; nothing is
     /// saved. Answers with `Response::Provider`.
     CheckProvider(ProviderTarget),

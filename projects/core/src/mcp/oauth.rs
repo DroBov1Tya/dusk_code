@@ -190,7 +190,7 @@ pub async fn sign_in(
         .map(|(_, value)| value.into_owned())
         .context("the authorization page has no state")?;
     let finish = async move {
-        let wait = redirected(&listener, port, &sent_state);
+        let wait = redirected(&listener, port, "/callback", &sent_state);
         let callback = tokio::time::timeout(SIGN_IN_TIMEOUT, wait)
             .await
             .map_err(|_| anyhow!("the browser did not come back in time"))??;
@@ -206,7 +206,12 @@ pub async fn sign_in(
 /// The redirect URL the browser comes back with, carrying the `state` this sign-in
 /// sent. Anything else, a stalled connection included, is turned away and the wait goes
 /// on, so another local process cannot end it.
-async fn redirected(listener: &TcpListener, port: u16, state: &str) -> Result<String> {
+pub(crate) async fn redirected(
+    listener: &TcpListener,
+    port: u16,
+    path: &str,
+    state: &str,
+) -> Result<String> {
     loop {
         let Ok((mut stream, _)) = listener.accept().await else {
             continue;
@@ -215,7 +220,7 @@ async fn redirected(listener: &TcpListener, port: u16, state: &str) -> Result<St
         else {
             continue;
         };
-        let callback = callback_url(&head, port).filter(|callback| {
+        let callback = callback_url(&head, port, path).filter(|callback| {
             callback
                 .query_pairs()
                 .any(|(key, value)| key == "state" && value == state)
@@ -261,8 +266,8 @@ async fn read_head(stream: &mut tokio::net::TcpStream) -> std::io::Result<Vec<u8
     Ok(head)
 }
 
-/// `GET /callback?...` as a full URL on this machine.
-fn callback_url(head: &[u8], port: u16) -> Option<Url> {
+/// `GET <path>?...` as a full URL on this machine.
+fn callback_url(head: &[u8], port: u16, path: &str) -> Option<Url> {
     let line = String::from_utf8_lossy(head);
     let target = line
         .lines()
@@ -270,7 +275,11 @@ fn callback_url(head: &[u8], port: u16) -> Option<Url> {
         .strip_prefix("GET ")?
         .split(' ')
         .next()
-        .filter(|target| target.starts_with("/callback?"))?;
+        .filter(|target| {
+            target
+                .strip_prefix(path)
+                .is_some_and(|rest| rest.starts_with('?'))
+        })?;
     Url::parse(&format!("http://127.0.0.1:{port}{target}")).ok()
 }
 
@@ -327,7 +336,7 @@ mod tests {
                 stream.read_to_string(&mut answer).await.unwrap();
             }
         });
-        let callback = redirected(&listener, port, "s").await.unwrap();
+        let callback = redirected(&listener, port, "/callback", "s").await.unwrap();
         assert_eq!(
             callback,
             format!("http://127.0.0.1:{port}/callback?code=c&state=s")
