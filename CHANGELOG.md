@@ -39,6 +39,10 @@ testing.
   skill shows by its name among the steps; More models has no heading of its own beside
   the menu.
 
+- GUI: the falling star is one smooth stroke of light on a shallow path, white at the
+  head and blue behind, gone in a quarter of a second; one in a few crosses the whole
+  sky.
+
 ### Fixed
 
 - A model whose provider did not answer at the start stayed at the unknown window of
