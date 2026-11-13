@@ -8,6 +8,14 @@ testing.
 
 ### Changed
 
+- TUI: a sky over the thread. A few stars stand on the header's rows and above the
+  horizon of a new thread; they twinkle while a turn runs, when now and then one falls,
+  and stand still otherwise, so an idle terminal is not redrawn.
+- TUI: the rail reads as a dashboard. The model and its mode sit on a card edged in the
+  mode's colour, each section starts under a hairline, the context gauge warms toward
+  its end and marks where compaction starts, and a task shows how far it is as a bar.
+- TUI: a step carries the mark of its kind: a prompt for a command, lines for reading,
+  plus and minus for an edit, and so on. Its colour still says how the step stands.
 - GUI: small falling stars are short white scratches that fall at any lean, as the first
   ones did, only smooth. The great flaming one stays rare.
 
