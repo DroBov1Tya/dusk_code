@@ -4,4 +4,4 @@ mod report;
 mod simulator;
 
 pub use report::{ProcessUsage, SystemReport};
-pub use simulator::{SimDevice, Simulator};
+pub use simulator::{SimButton, SimDevice, SimScreen, Simulator};

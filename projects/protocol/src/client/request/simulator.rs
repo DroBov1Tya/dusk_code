@@ -1,8 +1,14 @@
-//! The iOS Simulator, for the user to see an app they build; macOS only.
+//! The iOS Simulator, for the user to see and use an app they build; macOS only.
 
 use serde::{Deserialize, Serialize};
 
-/// A device is named by its UDID as the core listed it.
+use crate::system::SimButton;
+
+/// The most characters one `Type` carries.
+pub const MAX_SIM_TEXT: usize = 4096;
+
+/// A device is named by its UDID as the core listed it; places on its screen are in
+/// points from the top left corner.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SimulatorRequest {
     /// Answers with `Response::Simulator`.
@@ -15,10 +21,29 @@ pub enum SimulatorRequest {
     Shutdown {
         udid: String,
     },
-    /// The device's screen now, as `Response::Picture` holding a JPEG.
+    /// The device's screen now, as `Response::SimScreen`.
     Screen {
         udid: String,
     },
-    /// Opens Simulator.app, where the device takes clicks and keys.
+    Tap {
+        udid: String,
+        x: u32,
+        y: u32,
+    },
+    Swipe {
+        udid: String,
+        from: (u32, u32),
+        to: (u32, u32),
+    },
+    /// Text typed on the device's keyboard.
+    Type {
+        udid: String,
+        text: String,
+    },
+    Button {
+        udid: String,
+        button: SimButton,
+    },
+    /// Opens Simulator.app with its own window of the devices.
     OpenApp,
 }

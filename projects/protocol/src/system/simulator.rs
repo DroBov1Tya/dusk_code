@@ -1,4 +1,5 @@
-//! The iOS Simulator of Xcode on a Mac: what is installed and which devices there are.
+//! The iOS Simulator of Xcode on a Mac: what is installed, which devices there are and
+//! what one of them shows.
 
 use serde::{Deserialize, Serialize};
 
@@ -15,6 +16,8 @@ pub struct Simulator {
     pub install_failed: Option<String>,
     /// The iOS devices that can boot, booted ones first.
     pub devices: Vec<SimDevice>,
+    /// AXe is installed, so touches, typing and buttons reach a device.
+    pub input: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -24,4 +27,35 @@ pub struct SimDevice {
     /// The runtime's name, such as "iOS 26.2".
     pub runtime: String,
     pub booted: bool,
+}
+
+/// A device's screen at one moment.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SimScreen {
+    pub jpeg: Vec<u8>,
+    /// The screen's size in points, the unit touches are given in.
+    pub width: f32,
+    pub height: f32,
+}
+
+/// The hardware buttons a device has.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, schemars::JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SimButton {
+    Home,
+    Lock,
+    SideButton,
+    Siri,
+}
+
+impl SimButton {
+    /// The name AXe knows the button by.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Home => "home",
+            Self::Lock => "lock",
+            Self::SideButton => "side-button",
+            Self::Siri => "siri",
+        }
+    }
 }

@@ -15,9 +15,9 @@ pub use event::Event;
 pub use frame::{RequestFrame, ServerFrame};
 pub use hello::{Hello, PROTOCOL_VERSION};
 pub use request::{
-    CatalogRequest, MAX_PICTURE_UPLOAD, MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE, MAX_TERMINALS,
-    ProjectRequest, ProviderTarget, Request, SettingsRequest, SimulatorRequest, Switch,
-    TerminalRequest, ThreadRequest, VoiceRequest, WorkRequest,
+    CatalogRequest, MAX_PICTURE_UPLOAD, MAX_SIM_TEXT, MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE,
+    MAX_TERMINALS, ProjectRequest, ProviderTarget, Request, SettingsRequest, SimulatorRequest,
+    Switch, TerminalRequest, ThreadRequest, VoiceRequest, WorkRequest,
 };
 pub use response::Response;
 pub use secret::Secret;
