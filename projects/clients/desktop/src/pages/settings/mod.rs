@@ -11,13 +11,13 @@ mod system;
 pub mod uninstall;
 
 use gpui_kit::{
-    component::{ActiveTheme, Colorize, IconName},
+    component::{ActiveTheme, Colorize, Icon, IconName},
     prelude::FluentBuilder,
     *,
 };
 
 use crate::{
-    ui::{Type, widgets},
+    ui::{Type, icons, widgets},
     workspace::Workspace,
 };
 
@@ -40,7 +40,14 @@ pub enum SettingsPage {
     Plugins,
 }
 
-type Page = (SettingsPage, IconName, &'static str);
+/// A page's icon in the menu: one of the kit's, or one of the app's own SVGs.
+#[derive(Clone)]
+enum Glyph {
+    Kit(IconName),
+    Own(&'static str),
+}
+
+type Page = (SettingsPage, Glyph, &'static str);
 
 /// The pages in the order they are reached for: what the agent is and may do first, then
 /// how the window looks and speaks, then what it keeps, then the machine. Each group has
@@ -49,29 +56,53 @@ const GROUPS: &[(&str, &[Page])] = &[
     (
         "Agent",
         &[
-            (SettingsPage::Model, IconName::Cpu, "Model"),
-            (SettingsPage::Chat, IconName::Inbox, "Chat"),
-            (SettingsPage::Safety, IconName::CircleCheck, "Safety"),
-            (SettingsPage::Memory, IconName::MemoryStick, "Memory"),
-            (SettingsPage::AboutMe, IconName::User, "About me"),
+            (SettingsPage::Model, Glyph::Kit(IconName::Cpu), "Model"),
+            (SettingsPage::Chat, Glyph::Kit(IconName::Inbox), "Chat"),
+            (
+                SettingsPage::Safety,
+                Glyph::Kit(IconName::CircleCheck),
+                "Safety",
+            ),
+            (
+                SettingsPage::Memory,
+                Glyph::Kit(IconName::MemoryStick),
+                "Memory",
+            ),
+            (
+                SettingsPage::AboutMe,
+                Glyph::Kit(IconName::User),
+                "About me",
+            ),
         ],
     ),
     (
         "Window",
         &[
-            (SettingsPage::Appearance, IconName::Palette, "Appearance"),
-            (SettingsPage::Notifications, IconName::Bell, "Notifications"),
-            (SettingsPage::Keyboard, IconName::SquareTerminal, "Keyboard"),
-            (SettingsPage::Plugins, IconName::LayoutDashboard, "Plugins"),
+            (
+                SettingsPage::Appearance,
+                Glyph::Kit(IconName::Palette),
+                "Appearance",
+            ),
+            (
+                SettingsPage::Notifications,
+                Glyph::Kit(IconName::Bell),
+                "Notifications",
+            ),
+            (
+                SettingsPage::Keyboard,
+                Glyph::Kit(IconName::SquareTerminal),
+                "Keyboard",
+            ),
+            (SettingsPage::Plugins, Glyph::Own(icons::PUZZLE), "Plugins"),
         ],
     ),
     (
         "Data",
         &[
-            (SettingsPage::Secrets, IconName::Eye, "Secrets"),
+            (SettingsPage::Secrets, Glyph::Kit(IconName::Eye), "Secrets"),
             (
                 SettingsPage::VersionControl,
-                IconName::Github,
+                Glyph::Kit(IconName::Github),
                 "Version control",
             ),
         ],
@@ -79,9 +110,21 @@ const GROUPS: &[(&str, &[Page])] = &[
     (
         "System",
         &[
-            (SettingsPage::Updates, IconName::RefreshCw, "Updates"),
-            (SettingsPage::Usage, IconName::ChartPie, "System usage"),
-            (SettingsPage::Advanced, IconName::Settings2, "Advanced"),
+            (
+                SettingsPage::Updates,
+                Glyph::Kit(IconName::RefreshCw),
+                "Updates",
+            ),
+            (
+                SettingsPage::Usage,
+                Glyph::Kit(IconName::ChartPie),
+                "System usage",
+            ),
+            (
+                SettingsPage::Advanced,
+                Glyph::Kit(IconName::Settings2),
+                "Advanced",
+            ),
         ],
     ),
 ];
@@ -121,7 +164,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
 
             widgets::row(*label, ws.settings_page == page, cx)
                 .h(px(36.))
-                .child(widgets::icon(icon.clone(), muted))
+                .child(match icon {
+                    Glyph::Kit(name) => widgets::icon(name.clone(), muted),
+                    Glyph::Own(path) => Icon::default()
+                        .path(*path)
+                        .size(px(crate::ui::size::ICON))
+                        .text_color(muted),
+                })
                 .child(div().flex_1().child(*label))
                 .when(
                     page == SettingsPage::Updates && ws.status.available_update.is_some(),

@@ -80,6 +80,10 @@ pub struct Dock {
 pub struct Plugins {
     pub right: Dock,
     pub bottom: Dock,
+    /// The bottom dock's height, and the pointer's height and the dock's when a drag of
+    /// its edge began.
+    pub bottom_height: f32,
+    pub bottom_drag: Option<(Pixels, f32)>,
     /// The part shown on the Settings page of plugins.
     pub settings: Option<Key>,
     /// The latest view of each open part.
@@ -114,6 +118,8 @@ impl Plugins {
         Self {
             right: Dock::default(),
             bottom: Dock::default(),
+            bottom_height: dock::HEIGHT,
+            bottom_drag: None,
             settings: None,
             views: HashMap::new(),
             frames: HashMap::new(),

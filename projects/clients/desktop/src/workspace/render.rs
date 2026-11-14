@@ -57,7 +57,7 @@ impl Render for Workspace {
         let right_dock = crate::plugins::right_dock(self, cx);
         let bottom_dock = crate::plugins::bottom_dock(self, window, cx);
         let plugins_menu = crate::plugins::menu(self, cx);
-        let dragging = self.terminal.dragging();
+        let dragging = self.terminal.dragging() || self.plugins.bottom_drag.is_some();
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
         let artifact_menu = artifacts::menu(self, window, cx);
@@ -165,15 +165,21 @@ impl Render for Workspace {
             .children(artifact_menu)
             .children(audio_menu)
             .children(plugins_menu)
+            .children(super::toast::render(self, cx))
             .children(crate::columns::fog::render(self, window, cx))
-            // While the terminal's edge is held, the whole window follows the pointer.
+            // While the terminal's or the bottom dock's edge is held, the whole window
+            // follows the pointer.
             .when(dragging, |root| {
-                root.on_mouse_move(
-                    cx.listener(|ws, event: &MouseMoveEvent, _, cx| ws.drag_terminal(event, cx)),
-                )
+                root.on_mouse_move(cx.listener(|ws, event: &MouseMoveEvent, window, cx| {
+                    ws.drag_terminal(event, cx);
+                    ws.drag_plugin_dock(event, window, cx);
+                }))
                 .on_mouse_up(
                     MouseButton::Left,
-                    cx.listener(|ws, _, _, cx| ws.drop_terminal_edge(cx)),
+                    cx.listener(|ws, _, _, cx| {
+                        ws.plugins.bottom_drag = None;
+                        ws.drop_terminal_edge(cx);
+                    }),
                 )
             })
             .capture_any_mouse_down(cx.listener(|ws, _, _, cx| ws.attended(cx)))

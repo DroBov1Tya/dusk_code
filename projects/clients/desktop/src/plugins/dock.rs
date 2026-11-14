@@ -25,8 +25,11 @@ use crate::{
 pub const WIDTH: f32 = 400.;
 /// The right dock folded: a strip of its tabs' icons.
 const FOLDED: f32 = 44.;
-/// The bottom dock's height, and its strip of tabs.
-const HEIGHT: f32 = 300.;
+/// The bottom dock's height at first, the least a drag of its edge leaves, and the most
+/// as a share of the window's height; and its strip of tabs.
+pub const HEIGHT: f32 = 300.;
+const MIN_HEIGHT: f32 = 160.;
+const MAX_SHARE: f32 = 0.7;
 const TABS: f32 = 36.;
 const PADDING: f32 = 16.;
 
@@ -123,23 +126,32 @@ pub fn bottom(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> O
         .child(div().flex_1().min_w_0().child(strip(ws, Side::Bottom, cx)))
         .child(fold_button(Side::Bottom, dock.collapsed, cx))
         .child(div().w_2());
-    let frame = div()
-        .flex_none()
-        .flex()
-        .flex_col()
-        .bg(surface)
-        .border_t_1()
-        .border_color(border)
-        .child(bar);
+    let frame = div().flex_none().flex().flex_col().bg(surface);
     if dock.collapsed {
-        return Some(frame);
+        return Some(frame.border_t_1().border_color(border).child(bar));
     }
+    let height = bottom_height(ws.plugins.bottom_height, window);
     let room = Room {
         width: (ws.chat_width(window) - 2. * PADDING).max(1.),
-        height: HEIGHT - TABS - PADDING,
+        height: height - TABS - PADDING,
     };
+    // The edge is the handle, as the terminal's: drag it for more room or less.
+    let edge = div()
+        .id("plugin-dock-edge")
+        .h(px(5.))
+        .flex_none()
+        .border_t_1()
+        .border_color(border)
+        .cursor_row_resize()
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |ws, event: &MouseDownEvent, _, cx| {
+                ws.plugins.bottom_drag = Some((event.position.y, height));
+                cx.notify();
+            }),
+        );
     Some(
-        frame.h(px(HEIGHT)).child(
+        frame.h(px(height)).child(edge).child(bar).child(
             div()
                 .id("plugin-dock-bottom")
                 .flex_1()
@@ -281,4 +293,33 @@ fn fold_button(side: Side, folded: bool, cx: &mut Context<Workspace>) -> Button 
         dock.collapsed = !dock.collapsed;
         cx.notify();
     }))
+}
+
+/// The bottom dock's height kept within its bounds for this window, which may have shrunk
+/// since it was set.
+fn bottom_height(height: f32, window: &Window) -> f32 {
+    let most = window.viewport_size().height.as_f32() * MAX_SHARE;
+    height.min(most).max(MIN_HEIGHT)
+}
+
+impl Workspace {
+    /// The pointer moved while the bottom dock's edge is held: the dock follows it.
+    pub fn drag_plugin_dock(
+        &mut self,
+        event: &MouseMoveEvent,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) {
+        let Some((from, height)) = self.plugins.bottom_drag else {
+            return;
+        };
+        // Released outside the window, the button is up without a word: stop here.
+        if event.pressed_button != Some(MouseButton::Left) {
+            self.plugins.bottom_drag = None;
+        } else {
+            let moved = (from - event.position.y).as_f32();
+            self.plugins.bottom_height = bottom_height(height + moved, window);
+        }
+        cx.notify();
+    }
 }

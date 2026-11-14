@@ -154,11 +154,10 @@ impl Workspace {
         }
     }
 
-    /// A plugin's short note, said where the window says its errors.
+    /// A plugin's short note, shown for a moment over any page: news, not an error.
     pub fn plugin_notice(&mut self, plugin: &str, text: &str, cx: &mut Context<Self>) {
         let text: String = text.chars().take(MAX_NOTICE).collect();
-        self.notice = Some(format!("{plugin}: {text}"));
-        cx.notify();
+        self.toast(format!("{plugin}: {text}"), cx);
     }
 
     /// Closes, without a word to the core, the parts of plugins that are gone from the

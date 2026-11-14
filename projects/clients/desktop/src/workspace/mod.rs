@@ -3,12 +3,14 @@
 //! - `new`: the view's first state and the streams it follows;
 //! - `events`: what the core sends, folded into that state;
 //! - `render`: the window drawn from it;
-//! - `keys`: the shortcuts and what Escape closes.
+//! - `keys`: the shortcuts and what Escape closes;
+//! - `toast`: short notes over any page that go away on their own.
 
 mod events;
 pub mod keys;
 mod new;
 mod render;
+mod toast;
 
 use std::{
     collections::{BTreeMap, HashMap, HashSet},
@@ -180,6 +182,8 @@ pub struct Workspace {
     pub me: crate::pages::settings::about_me::AboutMe,
     /// The last error, shown until it is dismissed.
     pub notice: Option<String>,
+    /// A short note over any page, and when it came; see `toast`.
+    pub toast: Option<(std::time::Instant, String)>,
     pub git: Option<GitInfo>,
     pub touched: Vec<dusk_protocol::project::Change>,
     pub review: crate::pages::review::Review,

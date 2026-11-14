@@ -23,7 +23,8 @@
 //!   `ios-simulator/device` (side dock, a phone), `notes/scratch` (bottom dock),
 //!   `translator/translate` (window), `telegram/account` (Settings), `plugin-07/part-1`;
 //!   `plugins=fold:right|bottom`: fold a dock away or back; `plugins=real:PLUGIN/PART`:
-//!   open a part of a real plugin through the core;
+//!   open a part of a real plugin through the core; `plugins=height:PX`: set the bottom
+//!   dock's height as a drag would; `plugins=notice:TEXT`: a plugin's note;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
@@ -404,6 +405,12 @@ fn act(
                     };
                     dock.collapsed = !dock.collapsed;
                 }
+                // As if the bottom dock's edge were dragged to this height.
+                "height" => match arg.parse::<f32>() {
+                    Ok(height) => ws.plugins.bottom_height = height,
+                    Err(_) => eprintln!("plugins=height wants a number: {arg}"),
+                },
+                "notice" => ws.plugin_notice("notes", arg, cx),
                 other => eprintln!("no such plugins step: {other}"),
             }
             cx.notify();

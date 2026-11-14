@@ -2,9 +2,10 @@
 //! the header, the rail and beside the message box.
 //!
 //! A part is pinned by hand from the menu, or by default when it is one of the first
-//! `PINNED_FIRST` of its place: one plugin's icons show without a step, a hundred do not
-//! crowd the window. A place shows at most `SHOWN` pinned icons; the rest are reached from
-//! the menu.
+//! `PINNED_FIRST` of its place, ranked by plugin name and then the plugin's own order:
+//! one plugin's icons show without a step, a hundred do not crowd the window, and
+//! switching another plugin on moves a default pin only when its name ranks first. A
+//! place shows at most `SHOWN` pinned icons; the rest are reached from the menu.
 
 use dusk_protocol::plugin::{Client, Opens, Part, Place};
 use gpui_kit::{
@@ -37,29 +38,38 @@ pub fn offered(ws: &Workspace) -> impl Iterator<Item = &Part> {
         .filter(|part| part.shown_in(Client::Gui))
 }
 
-/// Whether the part is pinned, given its index among the offered parts of its place.
-fn pinned_at(part: &Part, index: usize, cx: &App) -> bool {
+/// The offered parts of a place, by plugin name and then the plugin's own order, so a
+/// default pin does not move with the order plugins happen to start in.
+fn ranked(ws: &Workspace, place: Place) -> Vec<&Part> {
+    let mut parts: Vec<&Part> = offered(ws).filter(|part| part.place == place).collect();
+    // Stable: the parts of one plugin keep the order of its manifest.
+    parts.sort_by(|a, b| a.plugin.cmp(&b.plugin));
+    parts
+}
+
+/// Whether the part is pinned, given its rank among the offered parts of its place.
+fn pinned_at(part: &Part, rank: usize, cx: &App) -> bool {
     let pins = &crate::ui::theme::prefs(cx).plugin_pins;
     pins.get(&Key::of(part).pin())
         .copied()
-        .unwrap_or(index < PINNED_FIRST)
+        .unwrap_or(rank < PINNED_FIRST)
 }
 
 /// Whether the part is pinned now.
 pub fn is_pinned(ws: &Workspace, part: &Part, cx: &App) -> bool {
-    let index = offered(ws)
-        .filter(|other| other.place == part.place)
-        .position(|other| other == part)
+    let rank = ranked(ws, part.place)
+        .iter()
+        .position(|other| *other == part)
         .unwrap_or(usize::MAX);
-    pinned_at(part, index, cx)
+    pinned_at(part, rank, cx)
 }
 
-/// The pinned parts a place shows, at most `SHOWN`.
+/// The pinned parts a place shows, at most `SHOWN`, in their rank.
 pub fn pinned<'a>(ws: &'a Workspace, place: Place, cx: &App) -> Vec<&'a Part> {
-    offered(ws)
-        .filter(|part| part.place == place)
+    ranked(ws, place)
+        .into_iter()
         .enumerate()
-        .filter(|(index, part)| pinned_at(part, *index, cx))
+        .filter(|(rank, part)| pinned_at(part, *rank, cx))
         .map(|(_, part)| part)
         .take(SHOWN)
         .collect()
