@@ -3,6 +3,7 @@
 
 use anyhow::Result;
 use dusk_core::client::Client;
+use dusk_protocol::plugin::Listing;
 use ratatui::DefaultTerminal;
 
 use crate::app::{App, Panel, Step, Workshop};
@@ -22,12 +23,12 @@ pub async fn install(
     client: &Client,
     app: &mut App,
     terminal: &mut DefaultTerminal,
-    name: String,
-    version: String,
+    listing: &Listing,
 ) -> Result<()> {
+    let (name, version) = (&listing.name, &listing.version);
     working(app, format!("installing {name} {version}"));
     terminal.draw(|frame| ui::draw(frame, app))?;
-    let step = match client.plugins().install(&name, &version).await {
+    let step = match client.plugins().install(listing).await {
         Ok(()) => Step::Done(format!("{name} {version} installed and switched on")),
         Err(error) => Step::Failed(format!("{name} not installed: {error:#}")),
     };

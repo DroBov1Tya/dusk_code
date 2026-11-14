@@ -31,10 +31,7 @@ pub enum Action {
     /// Reads the plugin store into the Workshop.
     LoadStore,
     /// Installs or updates a plugin from the store at the version the user saw.
-    InstallPlugin {
-        name: String,
-        version: String,
-    },
+    InstallPlugin(Box<dusk_protocol::plugin::Listing>),
     /// Removes a plugin the store installed.
     RemovePlugin(String),
     Connect {

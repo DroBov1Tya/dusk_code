@@ -56,11 +56,13 @@ impl Plugins<'_> {
         }
     }
 
-    /// Installs or updates `name` at the `version` the user saw, and switches it on.
-    pub async fn install(&self, name: &str, version: &str) -> Result<()> {
+    /// Installs or updates the plugin of `listing`, as the user saw it, and switches it
+    /// on; refused when the store's listing changed since.
+    pub async fn install(&self, listing: &Listing) -> Result<()> {
         let request = StoreRequest::Install {
-            name: name.to_owned(),
-            version: version.to_owned(),
+            name: listing.name.clone(),
+            version: listing.version.clone(),
+            agreed: listing.permissions.clone(),
         };
         self.0.done(Request::Store(request)).await
     }

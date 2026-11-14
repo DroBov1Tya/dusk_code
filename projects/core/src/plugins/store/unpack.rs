@@ -16,13 +16,19 @@ use tar::{Archive, EntryType};
 
 const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_FILES: usize = 4000;
+/// Everything the gzip stream gives, headers and skipped entries included, so a small
+/// package cannot make the core read gigabytes.
+const MAX_DECOMPRESSED_BYTES: u64 = MAX_UNPACKED_BYTES + 16 * 1024 * 1024;
 const MAX_PATH: usize = 300;
 
 /// Unpacks the `.tar.gz` in `package` into `into`, which must not exist yet.
 pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
     fs::create_dir(into).with_context(|| format!("cannot create {}", into.display()))?;
     set_mode(into, 0o700)?;
-    let mut archive = Archive::new(GzDecoder::new(package));
+    let mut archive = Archive::new(Capped {
+        inner: GzDecoder::new(package),
+        left: MAX_DECOMPRESSED_BYTES,
+    });
     let mut total = 0u64;
     let mut count = 0usize;
     for entry in archive.entries().context("the package is not a tar.gz")? {
@@ -105,4 +111,23 @@ fn set_mode(path: &Path, mode: u32) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
     fs::set_permissions(path, fs::Permissions::from_mode(mode))
         .with_context(|| format!("cannot set the mode of {}", path.display()))
+}
+
+/// A reader that fails once it has given `left` bytes.
+struct Capped<R> {
+    inner: R,
+    left: u64,
+}
+
+impl<R: Read> Read for Capped<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let read = self.inner.read(buf)?;
+        self.left = self.left.checked_sub(read as u64).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "the package unpacks to too much",
+            )
+        })?;
+        Ok(read)
+    }
 }

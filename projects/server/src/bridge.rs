@@ -6,7 +6,7 @@ use axum::extract::ws::{CloseFrame, Message, WebSocket};
 use dusk_core::client::{Client, Hub};
 use dusk_protocol::client::{
     CatalogRequest, Hello, PROTOCOL_VERSION, ProjectRequest, Request, RequestFrame, Response,
-    ServerFrame, VoiceRequest, WorkRequest,
+    ServerFrame, SettingsRequest, VoiceRequest, WorkRequest,
 };
 use dusk_protocol::plugin::StoreRequest;
 use std::{sync::Arc, time::Duration};
@@ -157,6 +157,9 @@ fn refused(request: &Request, size: usize) -> Option<&'static str> {
         // A plugin runs programs on this machine; only a client on it may install one.
         Request::Store(StoreRequest::Install { .. } | StoreRequest::Remove { .. }) => {
             Some("plugins are installed in the desktop app or the terminal")
+        }
+        Request::Settings(SettingsRequest::PluginEnabled { enabled: true, .. }) => {
+            Some("plugins are switched on in the desktop app or the terminal")
         }
         Request::Project(ProjectRequest::WriteFile { .. }) => {
             Some("a file is edited in the desktop app only")
