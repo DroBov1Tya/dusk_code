@@ -2,8 +2,7 @@
 
 use crate::{
     api,
-    sidebar::confirm,
-    ui::{run, size, when},
+    ui::{confirm, run, size, when},
 };
 use dusk_protocol::project::{OutputFile, OutputKind};
 use leptos::prelude::*;

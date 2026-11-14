@@ -1,11 +1,8 @@
 //! The transcript: the items of a chat, with runs of tool steps folded into one line.
 
 use super::data::{ChatData, Entry, Item, Shown, Tool, ToolState};
-use crate::{
-    markdown::Markdown,
-    state::{Chat, state},
-    voice,
-};
+use super::{markdown::Markdown, voice};
+use crate::state::{Chat, state};
 use dusk_protocol::thread::{Part, split};
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;

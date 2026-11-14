@@ -5,7 +5,7 @@ use crate::{
     link::Conn,
     pages::{connectors::Tab, project::ProjectDialog, settings::Page},
     state::{AppState, View, state},
-    ui::run,
+    ui::{confirm, run},
 };
 use dusk_protocol::{project::Project, thread::Thread};
 use leptos::prelude::*;
@@ -93,7 +93,7 @@ pub fn Sidebar() -> impl IntoView {
                 <NavButton label="Artifacts" target=View::Artifacts />
                 <NavButton label="Settings" target=View::Settings(Page::Appearance) />
                 <button class="nav-item" on:click=move |_| leptos::task::spawn_local(async {
-                    crate::session::sign_out().await;
+                    crate::auth::sign_out().await;
                     if let Some(window) = web_sys::window() {
                         let _ = window.location().reload();
                     }
@@ -197,11 +197,4 @@ fn NavButton(label: &'static str, target: View) -> impl IntoView {
             {label}
         </button>
     }
-}
-
-/// A native yes/no question; the page has nothing else to ask it with.
-pub fn confirm(question: &str) -> bool {
-    web_sys::window()
-        .and_then(|window| window.confirm_with_message(question).ok())
-        .unwrap_or(false)
 }

@@ -1,4 +1,4 @@
-//! Small pieces every page uses.
+//! Controls every page draws: switches, titled sections, rows, a yes-or-no question.
 
 use leptos::prelude::*;
 
@@ -51,59 +51,9 @@ pub fn Row(
     }
 }
 
-/// Bytes as a short size.
-pub fn size(bytes: u64) -> String {
-    const UNITS: [&str; 4] = ["B", "KB", "MB", "GB"];
-    let mut value = bytes as f64;
-    let mut unit = 0;
-    while value >= 1024.0 && unit < UNITS.len() - 1 {
-        value /= 1024.0;
-        unit += 1;
-    }
-    if unit == 0 {
-        format!("{bytes} B")
-    } else {
-        format!("{value:.1} {}", UNITS[unit])
-    }
-}
-
-/// A count with thousands marked, such as `12.3k`.
-pub fn compact(number: u64) -> String {
-    match number {
-        0..=999 => number.to_string(),
-        1_000..=999_999 => format!("{:.1}k", number as f64 / 1e3),
-        _ => format!("{:.1}M", number as f64 / 1e6),
-    }
-}
-
-/// Seconds since the epoch as a local date and time.
-pub fn when(seconds: i64) -> String {
-    let date = js_sys::Date::new(&wasm_bindgen::JsValue::from_f64(seconds as f64 * 1000.0));
-    date.to_locale_string("en-GB", &js_sys::Object::new())
-        .as_string()
-        .unwrap_or_default()
-}
-
-/// Runs a call and shows its error as a toast; `then` runs on success.
-pub fn run<T: 'static>(
-    call: impl std::future::Future<Output = Result<T, String>> + 'static,
-    then: impl FnOnce(T) + 'static,
-) {
-    let app = crate::state::state();
-    leptos::task::spawn_local(async move {
-        match call.await {
-            Ok(value) => then(value),
-            Err(error) => app.fail(error),
-        }
-    });
-}
-
-/// Waits `ms` milliseconds.
-pub async fn sleep(ms: i32) {
-    let promise = js_sys::Promise::new(&mut |resolve, _| {
-        if let Some(window) = web_sys::window() {
-            let _ = window.set_timeout_with_callback_and_timeout_and_arguments_0(&resolve, ms);
-        }
-    });
-    let _ = wasm_bindgen_futures::JsFuture::from(promise).await;
+/// A native yes/no question; the page has nothing else to ask it with.
+pub fn confirm(question: &str) -> bool {
+    web_sys::window()
+        .and_then(|window| window.confirm_with_message(question).ok())
+        .unwrap_or(false)
 }

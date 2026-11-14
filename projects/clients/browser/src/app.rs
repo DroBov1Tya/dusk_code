@@ -1,14 +1,14 @@
 //! The page: sign-in first, then the sidebar, the main view and the inspector.
 
 use crate::{
+    auth,
     chat::{Chat, inspector::Inspector, subagent::SubagentWindow},
+    columns::Sidebar,
     pages::{
         artifacts::Artifacts, connectors::Connectors, project::ProjectPage, settings::SettingsPage,
     },
-    session,
-    sidebar::Sidebar,
     state::{AppState, View, state},
-    theme,
+    ui::theme,
 };
 use leptos::{prelude::*, task::spawn_local};
 
@@ -24,9 +24,9 @@ pub fn App() -> impl IntoView {
     let auth = RwSignal::new(Auth::Checking);
     reload_on_new_address();
     spawn_local(async move {
-        let result = match session::take_fragment_token() {
-            Some(token) => session::sign_in(&token).await.map(|()| true),
-            None => Ok(session::is_signed_in().await),
+        let result = match auth::take_fragment_token() {
+            Some(token) => auth::sign_in(&token).await.map(|()| true),
+            None => Ok(auth::is_signed_in().await),
         };
         auth.set(match result {
             Ok(true) => Auth::SignedIn,
@@ -62,7 +62,7 @@ fn SignIn(note: Option<String>, auth: RwSignal<Auth>) -> impl IntoView {
     let submit = move || {
         let value = token.get_untracked();
         spawn_local(async move {
-            match session::sign_in(&value).await {
+            match auth::sign_in(&value).await {
                 Ok(()) => auth.set(Auth::SignedIn),
                 Err(error) => note.set(Some(error)),
             }

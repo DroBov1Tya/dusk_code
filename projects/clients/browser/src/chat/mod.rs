@@ -4,7 +4,9 @@ pub mod approval;
 mod blocks;
 mod composer;
 mod controls;
+mod markdown;
 mod pictures;
+mod voice;
 pub use pictures::Picture;
 pub mod data;
 pub mod inspector;
@@ -12,7 +14,7 @@ pub mod subagent;
 
 use crate::{
     api,
-    sidebar::chat_title,
+    columns::chat_title,
     state::{AppState, Chat as ChatSignal, state},
     ui::run,
 };

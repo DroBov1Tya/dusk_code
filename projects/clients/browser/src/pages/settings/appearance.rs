@@ -1,6 +1,9 @@
 //! Settings: every page of the desktop app, each a view over the same core settings.
 
-use crate::{state::state, theme::THEMES, ui::Section};
+use crate::{
+    state::state,
+    ui::{Section, theme::THEMES},
+};
 use leptos::prelude::*;
 
 #[component]
