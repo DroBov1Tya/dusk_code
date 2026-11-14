@@ -14,8 +14,6 @@ use super::{broker::Origin, ui::icon};
 use crate::config::{McpServerConfig, ProviderConfig};
 
 pub const MANIFEST_FILE: &str = "plugin.yml";
-/// The first word of a command that stands for this duskcode binary.
-pub const SELF_COMMAND: &str = "duskcode";
 const MAX_MANIFEST_BYTES: u64 = 64 * 1024;
 const MAX_TITLE: usize = 60;
 
@@ -367,6 +365,9 @@ mod tests {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../resources/plugins");
         for entry in std::fs::read_dir(root).unwrap() {
             let folder = entry.unwrap().path();
+            if !folder.is_dir() {
+                continue;
+            }
             Manifest::load(&folder)
                 .unwrap_or_else(|error| panic!("{}: {error:#}", folder.display()));
         }

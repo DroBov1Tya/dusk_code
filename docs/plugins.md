@@ -316,14 +316,8 @@ store but not install from it: a plugin runs programs on this machine.
 `DUSKCODE_STORE_URL` points duskcode at another list, such as a fork's; it is still
 checked against the built-in key.
 
-## Built-in plugins
+## Plugins of the store
 
-duskcode ships its own plugins the same way, so they follow each update:
-
-| Plugin | What it does | Settings |
-| --- | --- | --- |
-| `telegram` | Talk to duskcode from Telegram: messages, answers, questions and approvals | `token`, from @BotFather |
-
-To use the Telegram bot, add its token under `plugins: telegram: settings:` in
-`config.yml`, switch it on in `/plugins`, and send the bot the `/start` code that
-`/plugins` shows.
+Telegram and the rest live in their own repository,
+[duskcode-plugins](https://github.com/DroBov1Tya/duskcode-plugins), and install from
+Plugins, Workshop. duskcode ships no plugin in its binary.

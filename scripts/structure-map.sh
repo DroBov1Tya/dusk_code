@@ -6,7 +6,7 @@
 set -eu
 
 here=$(cd "$(dirname "$0")/.." && pwd)
-crates="protocol core server clients/terminal clients/desktop clients/browser plugins/telegram evals"
+crates="protocol core server clients/terminal clients/desktop clients/browser evals"
 [ $# -gt 0 ] && crates="$*"
 
 for crate in $crates; do
