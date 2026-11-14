@@ -1,5 +1,14 @@
 //! The menu over the model bar: the current provider's models with a check on the one
 //! in use, then Effort and More models, each opening its submenu to the side.
+//! The submenus live apart (`efforts`, `more`), and so do the keys that work while it is
+//! open (`keys`).
+
+mod efforts;
+mod keys;
+mod more;
+
+use efforts::efforts;
+use more::all_models;
 
 use gpui_kit::{
     component::{
@@ -15,16 +24,13 @@ use gpui_kit::{
 use super::model_bar::{picker_hint, picker_panel};
 use crate::{
     ui::{Type, widgets},
-    workspace::{Center, Picker, Workspace},
+    workspace::{Picker, Workspace},
 };
 
 /// How many models of the current provider the menu lists before More models.
-const FIRST: usize = 6;
+pub const FIRST: usize = 6;
 const WIDTH: f32 = 344.;
-const ROW: f32 = 36.;
-const EFFORTS: &[&str] = &[
-    "default", "off", "minimal", "low", "medium", "high", "xhigh", "max",
-];
+pub const ROW: f32 = 36.;
 
 pub fn render(
     ws: &Workspace,
@@ -188,7 +194,7 @@ pub fn render(
     )
 }
 
-fn catalog_status(ws: &Workspace) -> &'static str {
+pub fn catalog_status(ws: &Workspace) -> &'static str {
     if ws.models_loading {
         "Loading the models..."
     } else {
@@ -262,7 +268,7 @@ fn current_model(current: &str, cx: &App) -> Stateful<Div> {
         .tooltip(move |window, cx| Tooltip::new(label.clone()).build(window, cx))
 }
 
-fn model_row(
+pub fn model_row(
     name: &str,
     label: &str,
     current: &str,
@@ -329,142 +335,7 @@ fn separator(cx: &App) -> Div {
     div().h(px(1.)).mx_2().my_1().bg(cx.theme().border)
 }
 
-fn efforts(
-    effort: &str,
-    max_height: f32,
-    width: f32,
-    side_by_side: bool,
-    cx: &mut Context<Workspace>,
-) -> Div {
-    let accent = cx.theme().primary;
-    // Beside the menu the row it opened from already names it; alone, it needs the way back.
-    let list = picker_panel(cx).w(px(width)).when(!side_by_side, |list| {
-        list.child(back_row("Effort", side_by_side, cx))
-    });
-    let mut options = div()
-        .id("effort-options")
-        .flex()
-        .flex_col()
-        .max_h(px(max_height - 54.))
-        .overflow_y_scroll();
-    for level in EFFORTS {
-        options = options.child(
-            widgets::row(
-                SharedString::from(format!("effort-{level}")),
-                *level == effort,
-                cx,
-            )
-            .role(Role::Button)
-            .h(px(ROW))
-            .flex_none()
-            .when(*level == effort, |row| {
-                row.aria_description("Selected effort")
-            })
-            .child(div().flex_1().child(widgets::capitalize(level)))
-            .when(*level == effort, |row| {
-                row.child(widgets::icon(IconName::Check, accent))
-            })
-            .on_click(cx.listener(move |ws, _, _, cx| ws.choose_effort(level, cx))),
-        );
-    }
-    list.child(options)
-}
-
-fn all_models(
-    ws: &Workspace,
-    current: &str,
-    max_height: f32,
-    width: f32,
-    side_by_side: bool,
-    cx: &mut Context<Workspace>,
-) -> Div {
-    let mut scroll = div()
-        .id("all-models")
-        .max_h(px(max_height - 54.))
-        .flex()
-        .flex_col()
-        .overflow_y_scroll();
-    if ws.providers.is_empty() {
-        scroll = scroll.child(widgets::muted(catalog_status(ws), cx));
-    }
-    let (foreground, hint) = (cx.theme().foreground, picker_hint(cx));
-    // A provider switched off offers nothing, so it is not listed.
-    for provider in ws.providers.iter().filter(|provider| provider.enabled) {
-        let name = provider.name.clone();
-        let open = ws.models_open.contains(&provider.name);
-        let toggled = provider.name.clone();
-        let count = provider.models.as_ref().map_or(0, Vec::len);
-        // The provider's name is the landmark of the list: larger and brighter than its
-        // models, and it folds them, so two providers' models are never read as one.
-        scroll = scroll.child(
-            widgets::row(
-                SharedString::from(format!("models-provider-{}", provider.name)),
-                false,
-                cx,
-            )
-            .role(Role::Button)
-            .aria_label(provider.name.clone())
-            .h(px(ROW + 4.))
-            .child(widgets::icon(
-                if open {
-                    IconName::ChevronDown
-                } else {
-                    IconName::ChevronRight
-                },
-                hint,
-            ))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .truncate()
-                    .body()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .text_color(foreground)
-                    .child(provider.name.clone()),
-            )
-            .children(
-                provider
-                    .balance
-                    .as_ref()
-                    .and_then(|balance| balance.as_ref().ok())
-                    .map(|balance| div().small().text_color(hint).child(balance.text())),
-            )
-            .child(div().small().text_color(hint).child(count.to_string()))
-            .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
-            .on_click(cx.listener(move |ws, _, _, cx| {
-                if !ws.models_open.remove(&toggled) {
-                    ws.models_open.insert(toggled.clone());
-                }
-                cx.notify();
-            })),
-        );
-        if !open {
-            continue;
-        }
-        match &provider.models {
-            Ok(models) if models.is_empty() => {
-                scroll = scroll.child(widgets::muted("No listed models", cx));
-            }
-            Ok(models) => {
-                for model in models {
-                    let name = format!("{}/{}", provider.name, model.id);
-                    scroll = scroll.child(model_row(&name, &model.id, current, None, cx).pl_6());
-                }
-            }
-            Err(error) => scroll = scroll.child(widgets::muted(error.clone(), cx)),
-        }
-    }
-    // Beside the menu the row it opened from already names it; alone, it needs the way back.
-    picker_panel(cx)
-        .w(px(width))
-        .when(!side_by_side, |list| {
-            list.child(back_row("More models", side_by_side, cx))
-        })
-        .child(scroll)
-}
-
-fn back_row(label: &str, side_by_side: bool, cx: &mut Context<Workspace>) -> Stateful<Div> {
+pub fn back_row(label: &str, side_by_side: bool, cx: &mut Context<Workspace>) -> Stateful<Div> {
     widgets::row("models-back", false, cx)
         .role(Role::Button)
         .aria_label("Back to Models")
@@ -488,88 +359,6 @@ fn back_row(label: &str, side_by_side: bool, cx: &mut Context<Workspace>) -> Sta
 }
 
 impl Workspace {
-    /// The first models the menu lists, as `provider/model`, each picked by its digit.
-    fn first_models(&self) -> Vec<String> {
-        let current = self.status.model.clone().unwrap_or_default();
-        let provider = current.split('/').next().unwrap_or_default();
-        let mine = self
-            .providers
-            .iter()
-            .find(|p| p.name == provider)
-            .or(self.providers.first());
-        let Some((p, Ok(models))) = mine.map(|p| (p, &p.models)) else {
-            return Vec::new();
-        };
-        models
-            .iter()
-            .take(FIRST)
-            .map(|model| format!("{}/{}", p.name, model.id))
-            .collect()
-    }
-
-    /// While a menu over the model bar is open, Escape closes it; in the model menu
-    /// the digits 1-6 pick its models, before the text box takes them.
-    pub fn menu_keys(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        // Escape and the arrows are the shell's while it has the keyboard.
-        if self.terminal_focused(window) {
-            return;
-        }
-        let Some(picker) = self.picker else {
-            self.page_keys(event, window, cx);
-            return;
-        };
-        let keys = &event.keystroke;
-        if keys.modifiers.modified() {
-            return;
-        }
-        if keys.key == "escape" {
-            cx.stop_propagation();
-            self.picker = None;
-            cx.notify();
-            return;
-        }
-        let digit = keys
-            .key
-            .parse::<usize>()
-            .ok()
-            .filter(|d| (1..=FIRST).contains(d));
-        if picker != Picker::Model || self.model_input.focus_handle(cx).is_focused(window) {
-            return;
-        }
-        if let Some(name) = digit.and_then(|digit| self.first_models().get(digit - 1).cloned()) {
-            cx.stop_propagation();
-            self.choose_model(name, cx);
-        }
-    }
-
-    /// Keys of the page in the middle: on the review, Up and Down choose the file and
-    /// Escape goes back to the chat. Letters are left alone, so typing still reaches
-    /// the boxes.
-    fn page_keys(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let keys = &event.keystroke;
-        if keys.modifiers.modified() {
-            return;
-        }
-        match keys.key.as_str() {
-            "escape" => {
-                // Nothing open: Escape leaves the box for the window, from where Tab walks
-                // the rows.
-                if !self.close_top(window, cx) {
-                    if self.focus.is_focused(window) {
-                        return;
-                    }
-                    window.focus(&self.focus, cx);
-                }
-            }
-            "down" | "up" if self.center == Center::Review && self.modal.is_none() => {
-                self.review.step(if keys.key == "down" { 1 } else { -1 })
-            }
-            _ => return,
-        }
-        cx.stop_propagation();
-        cx.notify();
-    }
-
     /// Opens a submenu, or goes back to the menu alone when it is open.
     fn open_submenu(&mut self, submenu: Picker, cx: &mut Context<Self>) {
         self.picker = Some(if self.picker == Some(submenu) {

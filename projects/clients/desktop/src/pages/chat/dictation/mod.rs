@@ -1,3 +1,8 @@
+//! Dictation: the microphone's words go into the message box while it is on. The
+//! `microphone` reads sound on a thread of its own, `pieces` cuts it at pauses into WAV for
+//! the speech server, and this module sends the pieces one at a time and puts what comes
+//! back in the box.
+
 use crate::workspace::Workspace;
 use gpui_kit::*;
 use parking_lot::Mutex;

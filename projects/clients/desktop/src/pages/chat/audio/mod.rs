@@ -1,3 +1,6 @@
+//! Sound in the chat: a clip the agent made, or an answer read aloud. `card` draws a clip,
+//! `player` plays one at a time, and `menu` is what the `...` on a card offers.
+
 mod card;
 mod menu;
 mod player;

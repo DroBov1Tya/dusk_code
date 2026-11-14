@@ -1,7 +1,7 @@
 //! duskcode-gui: the desktop client. It only draws and calls the core through the
 //! protocol, the same way the TUI does. The tree follows what the window is made of:
 //! - `core`: the bridge from the window to the core's client;
-//! - `workspace`: the window's state and its three columns;
+//! - `workspace`: the window's state, its three columns and the keyboard shortcuts;
 //! - `columns`: the side columns: the `sidebar` (projects, chats, search) and the
 //!   `inspector` (git, files, context, todo, agents, jobs);
 //! - `pages`: what the middle column shows: the `chat`, the `artifacts` the agents made, the
@@ -10,16 +10,15 @@
 //! - `modal`: what opens over the window: search, a new project, a file viewer, confirmations;
 //! - `ui`: the design system: its scale and pieces, the `widgets` and the `theme`;
 //! - `platform`: what the window takes from the machine: the icon and notifications;
-//! - `keys`: the keyboard shortcuts.
+//! - `dev`: tools for working on the window, behind their cargo features.
 
 mod columns;
 mod core;
-mod keys;
+#[cfg(feature = "screenshot")]
+mod dev;
 mod modal;
 mod pages;
 mod platform;
-#[cfg(feature = "screenshot")]
-mod screenshot;
 mod ui;
 mod workspace;
 
@@ -72,7 +71,7 @@ fn main() -> Result<()> {
         .with_http_client(Arc::new(http))
         .run(move |cx| {
             gpui_kit::init(cx);
-            keys::bind(cx);
+            workspace::keys::bind(cx);
             platform::icon::set_dock_icon();
             ui::theme::init(look_file, cx);
             let core = core::Core::new(client, Arc::clone(&runtime), Arc::clone(&hub));
@@ -90,7 +89,7 @@ fn main() -> Result<()> {
             });
             match opened {
                 #[cfg(feature = "screenshot")]
-                Ok(handle) => screenshot::run(handle, cx),
+                Ok(handle) => dev::screenshot::run(handle, cx),
                 #[cfg(not(feature = "screenshot"))]
                 Ok(_) => {}
                 Err(error) => {

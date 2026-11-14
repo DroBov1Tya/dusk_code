@@ -6,6 +6,7 @@ mod behavior;
 pub mod providers;
 mod secrets;
 pub use secrets::TokenBox;
+mod shortcuts;
 mod system;
 pub mod uninstall;
 
@@ -131,7 +132,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let body = match ws.settings_page {
         SettingsPage::Appearance => appearance::render(ws, window, cx),
         SettingsPage::AboutMe => about_me::render(ws, window, cx),
-        SettingsPage::Keyboard => crate::keys::page(cx),
+        SettingsPage::Keyboard => shortcuts::page(cx),
         SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
         SettingsPage::Secrets => secrets::render(ws, cx),
         page => behavior::render(ws, page, cx),
