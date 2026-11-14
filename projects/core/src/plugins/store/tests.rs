@@ -142,3 +142,23 @@ fn a_package_asking_more_than_its_listing_is_refused() {
     assert!(place(&root, &index.plugins[0], &bytes, SHA).is_err());
     assert!(root.join("hello/plugin.yml").is_file());
 }
+
+/// The live store, end to end: the signed list on GitHub Pages, a package from a release.
+#[tokio::test]
+#[ignore = "reaches the network"]
+async fn the_live_store_installs_a_plugin() {
+    let paths = crate::testing::temp_paths("store-live");
+    crate::init::create_private_dir(&super::super::catalog::folder(&paths)).unwrap();
+    let listed = super::list(&paths).await.unwrap();
+    let telegram = listed.iter().find(|item| item.name == "telegram").unwrap();
+    install(&paths, "telegram", &telegram.version)
+        .await
+        .unwrap();
+    let folder = super::super::catalog::folder(&paths).join("telegram");
+    assert!(folder.join("bin/telegram").is_file());
+    let listed = super::list(&paths).await.unwrap();
+    let again = listed.iter().find(|item| item.name == "telegram").unwrap();
+    assert_eq!(again.installed.as_deref(), Some(telegram.version.as_str()));
+    remove(&paths, "telegram").unwrap();
+    assert!(!folder.exists());
+}
