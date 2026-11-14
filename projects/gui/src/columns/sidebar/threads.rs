@@ -80,7 +80,7 @@ pub fn chat_row(
         .when(thread.temporary, |row| {
             row.child(
                 Icon::default()
-                    .path(crate::ui::icons::HOURGLASS)
+                    .path(crate::ui::icons::TEMPORARY)
                     .size_3()
                     .text_color(muted),
             )

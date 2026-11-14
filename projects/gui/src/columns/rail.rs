@@ -153,7 +153,7 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
         .into_any_element(),
         Part::Temporary => item(
             "rail-temporary",
-            Icon::default().path(crate::ui::icons::HOURGLASS),
+            Icon::default().path(crate::ui::icons::TEMPORARY),
             "Temporary chat: kept in memory, gone when the app closes".into(),
             ws.center == Center::Chat && ws.shown.is_none() && ws.temporary_next,
             cx,
