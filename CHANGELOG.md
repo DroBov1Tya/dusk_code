@@ -8,6 +8,9 @@ testing.
 
 ### Added
 
+- In the connect form the fields follow the provider: Sign in with ChatGPT shows under
+  OpenAI, and an address is asked only of a custom server.
+- More models has a button that asks the providers for their models again.
 - The iOS Simulator in the desktop window on macOS: a phone in the header opens it at
   the right edge. It walks through the setup (Xcode, the iOS runtime, a device) and
   downloads the runtime on request. The device is drawn as a phone with its screen kept
@@ -55,6 +58,12 @@ testing.
 
 ### Fixed
 
+- Sign in with ChatGPT refused an identity whose audience lists this app among others
+  without naming an authorized party; the check now follows OpenID Connect, and a refusal
+  logs the audience it saw.
+- The iOS Simulator panel was slow and its screen took no clicks: frames now come as a
+  stream from AXe, a click on the screen is a tap and a drag a swipe, and a device that
+  is booting is waited for instead of failing with "Error creating the image".
 - Web: a turn that only thought and answered, with no tool, drew its "Worked for" line
   twice and never showed the answer. The line's fold and the answer had the same key in
   the list, since the fold began with the answer's own thinking.

@@ -55,8 +55,10 @@ pub struct Panel {
     pulling: bool,
     /// Where the screen was drawn last, to turn a click into points.
     drawn: Rc<Cell<Option<Bounds<Pixels>>>>,
-    /// Where a press on the screen began, in points.
-    pressed: Option<(u32, u32)>,
+    /// The last frame shown, to ask for the one after it.
+    seq: u64,
+    /// Screens that failed in a row; a few are asked again quietly.
+    failed: u32,
 }
 
 /// A picture of the device's screen and its size in points.
@@ -64,6 +66,7 @@ struct Screen {
     picture: Arc<RenderImage>,
     width: f32,
     height: f32,
+    seq: u64,
 }
 
 impl Panel {

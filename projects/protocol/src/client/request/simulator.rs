@@ -21,9 +21,11 @@ pub enum SimulatorRequest {
     Shutdown {
         udid: String,
     },
-    /// The device's screen now, as `Response::SimScreen`.
+    /// The device's screen as `Response::SimScreen`: the first frame after `after`, or
+    /// the last one when the screen holds still for a moment.
     Screen {
         udid: String,
+        after: u64,
     },
     Tap {
         udid: String,
