@@ -3,6 +3,7 @@
 
 mod input;
 mod panels;
+mod workshop;
 
 use super::{
     Action, App, Focus, Panel,

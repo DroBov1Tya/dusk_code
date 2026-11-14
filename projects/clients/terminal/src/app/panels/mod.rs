@@ -4,6 +4,7 @@
 pub mod agents;
 mod panel;
 pub mod settings;
+mod workshop;
 
 pub use agents::{AgentWindow, SubagentView};
 pub use panel::{
@@ -14,3 +15,4 @@ pub use settings::{
     AgentRow, FileButton, FileEditor, HitTarget, McpRow, SettingCategory, SettingsHit,
     SettingsView, SwitchKind,
 };
+pub use workshop::{Choice, Confirm, Step, Workshop, choices};

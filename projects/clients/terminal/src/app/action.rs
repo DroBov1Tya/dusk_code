@@ -28,6 +28,15 @@ pub enum Action {
         key: String,
         value: String,
     },
+    /// Reads the plugin store into the Workshop.
+    LoadStore,
+    /// Installs or updates a plugin from the store at the version the user saw.
+    InstallPlugin {
+        name: String,
+        version: String,
+    },
+    /// Removes a plugin the store installed.
+    RemovePlugin(String),
     Connect {
         kind: ProviderKind,
         /// `None` takes the next free `provider-N`.
@@ -135,7 +144,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ),
         (
             "/plugins",
-            "the plugins found, to switch on or off; they live in rules/plugins/",
+            "the plugins found, to switch on or off; /plugins store installs more",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
         ("/files", "the files this chat's commands changed"),

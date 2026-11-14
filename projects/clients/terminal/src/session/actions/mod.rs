@@ -4,6 +4,7 @@
 //! - `thread`: the thread on screen, its turns, agents and access mode;
 //! - `work`: what a thread works on: plan, changes, sources, jobs;
 //! - `settings`: providers, plugins and the values of the settings panel;
+//! - `store`: the Workshop's list of the plugin store, installs and removals;
 //! - `files`: the files the app edits in place: @me, snippets, skills, agents, MCP servers;
 //! - `panels`: commands answered in a panel, and the update window;
 //! - `browser`: pages opened in the system's browser.
@@ -12,6 +13,7 @@ mod browser;
 mod files;
 mod panels;
 mod settings;
+mod store;
 mod thread;
 mod work;
 
@@ -55,6 +57,11 @@ pub async fn apply(
         Action::SetPluginSecret { plugin, key, value } => {
             settings::set_plugin_secret(client, app, plugin, key, value).await
         }
+        Action::LoadStore => store::load(client, app, terminal).await?,
+        Action::InstallPlugin { name, version } => {
+            store::install(client, app, terminal, name, version).await?
+        }
+        Action::RemovePlugin(name) => store::remove(client, app, terminal, name).await?,
         Action::Send(text) => send(client, app, open, text, false).await,
         Action::Approve { id, decision } => thread::approve(client, app, id, decision).await,
         Action::SendNow(text) => send(client, app, open, text, true).await,
