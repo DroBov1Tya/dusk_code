@@ -219,6 +219,8 @@ pub struct Workspace {
     /// The next start listens on every address, for other devices on the network.
     pub web_global: bool,
     pub voice_form: crate::pages::connectors::voice::VoiceForm,
+    /// The plugin store on the plugins shelf.
+    pub workshop: crate::pages::connectors::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,

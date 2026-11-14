@@ -3,7 +3,7 @@
 use super::EFFORTS;
 use crate::app::{
     Action, App, Panel,
-    panels::{Connection, ModelRow, Preset, SecretEntry, step},
+    panels::{Connection, ModelRow, Preset, SecretEntry, Workshop, step},
     schedule::ScheduleAction,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -13,6 +13,9 @@ impl App {
     pub(super) fn panel_key(&mut self, key: KeyEvent) -> Action {
         if matches!(self.panel, Some(Panel::Settings(_))) {
             return self.settings_key(key);
+        }
+        if matches!(self.panel, Some(Panel::Workshop(_))) {
+            return self.workshop_key(key);
         }
         let busy = self.is_busy();
         let Some(panel) = &mut self.panel else {
@@ -309,6 +312,10 @@ impl App {
                     KeyCode::Char(' ') | KeyCode::Enter => {
                         return plugin.map_or(Action::None, Action::TogglePlugin);
                     }
+                    KeyCode::Char('w') => {
+                        self.panel = Some(Panel::Workshop(Workshop::default()));
+                        return Action::LoadStore;
+                    }
                     KeyCode::Esc => self.panel = None,
                     _ => {}
                 }
@@ -455,7 +462,7 @@ impl App {
                 KeyCode::Esc => self.panel = None,
                 _ => {}
             },
-            Panel::Settings(_) => {}
+            Panel::Settings(_) | Panel::Workshop(_) => {}
         }
         Action::None
     }

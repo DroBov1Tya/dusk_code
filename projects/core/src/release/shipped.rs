@@ -20,7 +20,7 @@ const OLD_NEW_SUFFIX: &str = ".new";
 /// Files older builds shipped and this one does not, by path in the rules folder, with
 /// the SHA-256 they were shipped with. One still as shipped is removed at start; one the
 /// user changed is theirs and stays.
-const DROPPED: [(&str, &str); 44] = [
+const DROPPED: [(&str, &str); 48] = [
     (
         "skills/frontend-design/LICENSE.txt",
         "0d542e0c8804e39aa7f37eb00da5a762149dc682d7829451287e11b938e94594",
@@ -196,6 +196,22 @@ const DROPPED: [(&str, &str); 44] = [
     (
         "prompts/RETIRED_SKILL_FILES.md",
         "373c98debfc2c6dd9220d1b405160ab21b706113e1c9e317b615d565abf9bccf",
+    ),
+    (
+        "plugins/telegram/plugin.yml",
+        "101e4264770a4a7de04f0a64a9f80318463a4deb4944a6fe34082d942ebb66c2",
+    ),
+    (
+        "plugins/telegram/plugin.yml",
+        "2b5905ab81bdbb9ad3b1a5af342ddc17240bb270007da80c73e4daa3650f7570",
+    ),
+    (
+        "plugins/telegram/plugin.yml",
+        "9db712ce3f4c155edc352110f4904e28bc25e86660ffc915f1dc83c05557ba17",
+    ),
+    (
+        "plugins/telegram/plugin.yml",
+        "f382c5dd1ec0989ba54dce76e1c67a85e77b0e377a442166ddd645822c008537",
     ),
 ];
 /// In the release only so that 0.70.2, which wants it there, can update; never shipped.

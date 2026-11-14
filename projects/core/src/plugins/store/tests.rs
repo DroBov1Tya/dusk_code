@@ -91,6 +91,7 @@ fn a_package_unpacks_only_into_its_folder() {
     let root = crate::testing::temp_dir("store-unpack");
     std::fs::create_dir_all(&root).unwrap();
     let good = package(&[
+        ("./", Directory, b""),
         ("./plugin.yml", Regular, b"name: hello\n"),
         ("bin/", Directory, b""),
         ("bin/run", Regular, b"#!/bin/sh\n"),
@@ -109,6 +110,7 @@ fn a_package_unpacks_only_into_its_folder() {
             package(&[("a", Regular, b"x"), ("a", Regular, b"y")]),
         ),
         ("not a tar.gz", b"plain text".to_vec()),
+        ("file without a name", package(&[("./", Regular, b"x")])),
     ] {
         let into = root.join(why.replace(' ', "-"));
         assert!(unpack(&bad, &into).is_err(), "{why}");
@@ -139,4 +141,24 @@ fn a_package_asking_more_than_its_listing_is_refused() {
     std::fs::remove_file(root.join("hello").join(MARKER)).unwrap();
     assert!(place(&root, &index.plugins[0], &bytes, SHA).is_err());
     assert!(root.join("hello/plugin.yml").is_file());
+}
+
+/// The live store, end to end: the signed list on GitHub Pages, a package from a release.
+#[tokio::test]
+#[ignore = "reaches the network"]
+async fn the_live_store_installs_a_plugin() {
+    let paths = crate::testing::temp_paths("store-live");
+    crate::init::create_private_dir(&super::super::catalog::folder(&paths)).unwrap();
+    let listed = super::list(&paths).await.unwrap();
+    let telegram = listed.iter().find(|item| item.name == "telegram").unwrap();
+    install(&paths, "telegram", &telegram.version)
+        .await
+        .unwrap();
+    let folder = super::super::catalog::folder(&paths).join("telegram");
+    assert!(folder.join("bin/telegram").is_file());
+    let listed = super::list(&paths).await.unwrap();
+    let again = listed.iter().find(|item| item.name == "telegram").unwrap();
+    assert_eq!(again.installed.as_deref(), Some(telegram.version.as_str()));
+    remove(&paths, "telegram").unwrap();
+    assert!(!folder.exists());
 }

@@ -35,6 +35,14 @@ pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
             continue;
         }
         let relative = relative(&entry.path().context("a path in the package")?)?;
+        // The archive's own root, `./`, is the folder made above.
+        if relative.as_os_str().is_empty() && kind == EntryType::Directory {
+            continue;
+        }
+        ensure!(
+            !relative.as_os_str().is_empty(),
+            "the package has a file without a name"
+        );
         count += 1;
         ensure!(count <= MAX_FILES, "the package has over {MAX_FILES} files");
         let target = into.join(&relative);
@@ -73,7 +81,7 @@ pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
 }
 
 /// The path as a plain relative one: only names, none of `..`, `/` at the start or a
-/// drive; a leading `./` is dropped.
+/// drive; `./` is dropped, so the archive's root comes out empty.
 fn relative(path: &Path) -> Result<PathBuf> {
     let mut clean = PathBuf::new();
     for component in path.components() {
@@ -87,8 +95,8 @@ fn relative(path: &Path) -> Result<PathBuf> {
         }
     }
     ensure!(
-        !clean.as_os_str().is_empty() && clean.as_os_str().len() <= MAX_PATH,
-        "the package has an empty or overlong path"
+        clean.as_os_str().len() <= MAX_PATH,
+        "the package has an overlong path"
     );
     Ok(clean)
 }

@@ -21,6 +21,7 @@ use super::schedules::schedules;
 use super::threads::draw_threads;
 use super::unsent::unsent;
 use super::update::draw_update;
+use super::workshop::workshop;
 use crate::app::{App, EFFORTS, Panel, compact_number, paste};
 use crate::ui::windows::{
     agent_window, settings,
@@ -71,11 +72,21 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
                 if entry.is_some() {
                     "enter keep for this session  esc cancel"
                 } else {
-                    "up/down choose  enter switch on/off  s enter a secret  esc close"
+                    "up/down choose  enter on/off  s secret  w workshop  esc close"
                 },
                 lines,
                 Some(row),
             )
+        }
+        Panel::Workshop(view) => {
+            let (lines, row) = workshop(view, screen.width.saturating_sub(8) as usize);
+            let hints = match &view.confirm {
+                Some(_) => "left/right choose  enter do it  esc cancel",
+                None => {
+                    "type to narrow  up/down choose  enter install/remove  ctrl+r reload  esc back"
+                }
+            };
+            ("workshop", hints, lines, Some(row))
         }
         Panel::Unsent { selected } => {
             let (lines, row) = unsent(app, *selected, screen.width.saturating_sub(8) as usize);

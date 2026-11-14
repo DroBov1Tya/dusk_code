@@ -15,8 +15,6 @@ projects/
     terminal/        `duskcode`
     desktop/         `duskcode-gui`
     browser/         the web page, built to wasm and embedded by the server
-  plugins/
-    telegram/        the program of the built-in telegram plugin
   evals/             tasks that measure the engine, and their runner
 ```
 
@@ -74,6 +72,26 @@ tools/  (6)
 ### core
 
 ```
+agent/  (2)
+catalog/  (5)
+client/  (19)
+  command/  (2)
+  request/  (10)
+config/  (12)
+model/  (6)
+plugin/  (7)
+project/  (6)
+release/  (4)
+system/  (4)
+thread/  (21)
+  message/  (6)
+  transcript/  (5)
+tools/  (6)
+```
+
+### clients/desktop
+
+```
 backup/  (13)
   archive/  (11)
 catalog/  (6)
@@ -90,9 +108,10 @@ platform/  (19)
   linux/  (2)
   macos/  (11)
     simulator/  (9)
-plugins/  (21)
+plugins/  (25)
   broker/  (5)
   platform/  (5)
+  store/  (4)
   ui/  (5)
 project/  (8)
 providers/  (29)
@@ -133,7 +152,7 @@ voice/  (15)
   local/  (7)
 ```
 
-### clients/desktop
+### server
 
 ```
 columns/  (34)
@@ -142,9 +161,9 @@ columns/  (34)
   simulator/  (6)
   terminal/  (4)
   topbar/  (3)
-dev/  (3)
+dev/  (4)
 modal/  (11)
-pages/  (79)
+pages/  (82)
   artifacts/  (3)
   chat/  (41)
     audio/  (4)
@@ -152,7 +171,8 @@ pages/  (79)
     dictation/  (3)
     messages/  (7)
     model_menu/  (4)
-  connectors/  (12)
+  connectors/  (15)
+    plugins/  (4)
     voice/  (5)
   file/  (2)
   review/  (3)
@@ -163,14 +183,7 @@ platform/  (3)
 plugins/  (9)
 ui/  (8)
   theme/  (2)
-workspace/  (5)
-```
-
-### server
-
-```
-auth/  (4)
-files/  (4)
+workspace/  (6)
 ```
 
 The library the terminal and desktop clients link to serve browsers; it has no binary of its own and the
@@ -182,16 +195,8 @@ start, stop). Everything else is the core's.
 ### clients/browser
 
 ```
-api/  (8)
-auth/  (2)
-chat/  (18)
-  data/  (2)
-  inspector/  (7)
-columns/  (2)
-pages/  (24)
-  connectors/  (8)
-  settings/  (11)
-ui/  (5)
+auth/  (4)
+files/  (4)
 ```
 
 The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls by domain,
@@ -201,39 +206,32 @@ browser), `markdown` model output as DOM text only. It draws and calls; it decid
 ### clients/terminal
 
 ```
-app/  (31)
+app/  (33)
   composer/  (5)
-  keys/  (3)
-  panels/  (8)
+  keys/  (4)
+  panels/  (9)
     settings/  (5)
   thread/  (7)
 cli/  (7)
 host/  (4)
 screensaver/  (12)
   scenes/  (6)
-session/  (12)
-  actions/  (7)
-ui/  (50)
+session/  (13)
+  actions/  (8)
+ui/  (51)
   sidebar/  (7)
   text/  (5)
   thread/  (14)
     input/  (8)
     transcript/  (3)
-  windows/  (20)
-    panels/  (14)
+  windows/  (21)
+    panels/  (15)
     settings/  (4)
 ```
 
-A number is the count of Rust files in a directory. `evals` and `external/telegram` are small and keep their own layout.
+A number is the count of Rust files in a directory. `evals` is small and keeps its own layout.
 
 When a file grows past what one reason to change holds, split it the way the existing ones were: a type's `impl` blocks by area into files of a directory module that keeps the type's path (`runtime/api`, `config/file`, `runtime/agent/agent`), tests into a `tests` file or directory beside the code.
-
-### plugins/telegram
-
-```
-app/  (13)
-  bot/  (9)
-```
 
 ### evals
 

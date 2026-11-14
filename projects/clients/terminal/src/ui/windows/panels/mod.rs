@@ -13,5 +13,6 @@ mod schedules;
 mod threads;
 mod unsent;
 mod update;
+mod workshop;
 
 pub use frame::{draw, window};

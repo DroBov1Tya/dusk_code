@@ -22,7 +22,7 @@ use super::{
     hooks::{Hook, Hooks},
     install,
     isolation::Isolation,
-    manifest::{MANIFEST_FILE, Manifest, SELF_COMMAND},
+    manifest::{MANIFEST_FILE, Manifest},
     platform::{PlatformSpec, Platforms},
     ui::{UiHost, UiSpec},
 };
@@ -365,15 +365,11 @@ fn env(folder: &Path, data: &Path, settings: &BTreeMap<String, String>) -> Vec<(
     ]
 }
 
-/// `duskcode` first stands for this binary; `./` begins a path in the plugin's folder.
+/// `./` begins a path in the plugin's folder.
 fn resolve(command: &[String], folder: &Path) -> Vec<String> {
     command
         .iter()
-        .enumerate()
-        .map(|(index, word)| match word.strip_prefix("./") {
-            _ if index == 0 && word == SELF_COMMAND => std::env::current_exe()
-                .map(|exe| exe.display().to_string())
-                .unwrap_or_else(|_| word.clone()),
+        .map(|word| match word.strip_prefix("./") {
             Some(path) => folder.join(path).display().to_string(),
             None => word.clone(),
         })

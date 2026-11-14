@@ -25,6 +25,9 @@
 //!   `plugins=fold:right|bottom`: fold a dock away or back; `plugins=real:PLUGIN/PART`:
 //!   open a part of a real plugin through the core; `plugins=height:PX`: set the bottom
 //!   dock's height as a drag would; `plugins=notice:TEXT`: a plugin's note;
+//! - `fake=store`: thirty made-up listings in the Workshop (see `dev::store`); `workshop`:
+//!   show the Workshop; `workshop=install:NAME|remove:NAME`: its window that asks first;
+//!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
@@ -415,6 +418,8 @@ fn act(
             }
             cx.notify();
         }
+        "fake" if value == "store" => super::store::fake(ws, cx),
+        "workshop" => super::store::step(ws, value, cx),
         "fake" if value == "limits" => {
             use dusk_protocol::model::{RateLimit, RateLimits};
             ws.status.limits = Some(RateLimits {

@@ -26,6 +26,8 @@ pub enum Panel {
         /// The masked form for a secret setting, while one is being typed.
         entry: Option<SecretEntry>,
     },
+    /// The plugin store, opened from the plugins panel.
+    Workshop(super::Workshop),
     Unsent {
         selected: usize,
     },

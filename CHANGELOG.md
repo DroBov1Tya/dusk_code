@@ -23,6 +23,8 @@ testing.
 - A plugin store: the core lists the plugins of a signed `index.json` and installs one
   after checking the signature, the package's hash and size, every path in it and that
   its manifest asks for what the list showed. A browser may look but not install.
+- A Workshop under Plugins in the desktop app and the terminal (`w` in `/plugins`, or
+  `/plugins store`) to install, update and remove plugins of the store in one step.
 - `platforms` and `clients` in `plugin.yml`: the systems a plugin is built for and the
   clients that can draw its parts.
 
@@ -32,6 +34,9 @@ testing.
   key may go to. The built-in Telegram plugin asks for api.telegram.org only and is off
   after this update until you switch it on again. On Linux, plugins that need the
   network do not start, since Landlock cannot hold them to the broker.
+- Telegram is no longer in the binary: it is a plugin of the store, installed from
+  the Workshop (macOS for now). The copy older versions put in the config folder is
+  removed at start unless you edited it.
 
 ## 0.74.0 - 2026-11-14
 

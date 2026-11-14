@@ -27,6 +27,7 @@ pub use panels::{
     McpRow, ModelList, Panel, PluginRow, Preset, Preview, SecretEntry, SettingCategory,
     SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
+pub use panels::{Choice, Confirm, Step, Workshop, choices};
 pub use state::{App, compact_number};
 pub use thread::approval::{ApprovalHit, Asked};
 pub use thread::goal::{GoalButton, GoalHit, buttons as goal_buttons};

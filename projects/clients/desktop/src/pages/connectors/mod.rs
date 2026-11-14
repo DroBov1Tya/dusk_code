@@ -5,7 +5,7 @@
 mod card;
 mod graph;
 mod mcp;
-mod plugins;
+pub mod plugins;
 mod skills;
 mod tools;
 pub mod voice;

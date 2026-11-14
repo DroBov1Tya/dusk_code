@@ -7,7 +7,6 @@ members = [
     "projects/clients/terminal",
     "projects/clients/desktop",
     "projects/clients/browser",
-    "projects/plugins/telegram",
     "projects/evals",
 ]
 default-members = ["projects/clients/terminal"]
@@ -70,7 +69,6 @@ rust-embed = "8"
 dusk_server = { path = "projects/server" }
 dusk_core = { path = "projects/core" }
 dusk_protocol = { path = "projects/protocol" }
-dusk_telegram = { path = "projects/plugins/telegram" }
 
 # Dependencies carry no debug info in dev builds: it was most of target/ and nobody steps
 # into them. Our own crates keep line tables, enough for backtraces.

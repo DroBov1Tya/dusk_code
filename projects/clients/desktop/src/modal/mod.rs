@@ -90,6 +90,8 @@ pub enum Modal {
     Uninstall(crate::pages::settings::uninstall::Uninstall),
     /// Forgetting every connected provider, after a yes.
     RemoveProviders,
+    /// Installing or removing a plugin of the store, after a yes.
+    Workshop(crate::pages::connectors::plugins::Confirm),
     /// A plugin's part that opens as a window.
     Plugin(crate::plugins::Key),
     /// Going back to a message of the chat erases it and all after it; asks first.
@@ -185,6 +187,14 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             480.,
             crate::pages::connectors::voice::missing(*speech, cx),
         ),
+        Modal::Workshop(confirm) => {
+            let confirm = confirm.clone();
+            (
+                confirm.title(),
+                480.,
+                crate::pages::connectors::plugins::confirm(&confirm, cx),
+            )
+        }
         Modal::Rollback { .. } => ("Go back".to_owned(), 480., rollback(cx)),
         Modal::Arbiter { thread_id } => {
             let thread_id = thread_id.clone();

@@ -118,7 +118,6 @@ account only in its own apps. Claude models work here with an API key.
 | `projects/core` | All logic and state: providers, runtime, tools, agents, config |
 | `projects/server` | The way into the core from outside its process: the web server today |
 | `projects/clients/terminal`, `desktop`, `browser` | What a person sees: they draw and call the core; the browser page is Leptos, WebAssembly |
-| `projects/plugins/telegram` | The bot of the built-in `telegram` plugin |
 | `projects/evals` | Tasks that measure the engine, and their runner |
 | `resources/` | Shipped modes, agents, skills, plugins and prompts |
 
