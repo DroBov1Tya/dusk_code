@@ -50,6 +50,7 @@ fn place(
             .then(|| super::navigator::render(ws, &ws.sent_rows, window, cx))?
             .into_any_element(),
         Part::Agents => super::composer::agents_button(ws, cx)?.into_any_element(),
+        Part::Plugins => crate::plugins::place::composer(ws, cx)?,
         // The account's limits sit over the context, when the provider reports them.
         Part::Context => div()
             .flex()

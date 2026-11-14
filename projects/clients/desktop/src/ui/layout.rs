@@ -31,6 +31,9 @@ pub enum Part {
     /// The iOS Simulator, on macOS.
     Simulator,
     SidePanel,
+    /// Plugins' pinned parts of the place it stands in; in the header also the button of
+    /// the menu of all their parts.
+    Plugins,
     // Around the message box.
     Attach,
     Access,
@@ -67,26 +70,31 @@ impl Default for Layout {
         use Part::*;
         Self {
             rail: vec![
-                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
+                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Plugins, Spacer,
                 Temporary, Terminal, Quiet, Settings,
             ],
-            header: vec![Review, Search, More, Simulator, SidePanel],
+            header: vec![Review, Search, More, Plugins, Simulator, SidePanel],
             box_left: vec![Attach, Access],
             box_right: vec![Microphone, Send],
             under_left: vec![Mode],
             under_right: vec![Model],
-            side_left: vec![History],
+            side_left: vec![History, Plugins],
             side_right: vec![Agents, Context],
         }
     }
 }
 
 impl Layout {
-    /// A kept rail or header that is the order shipped before takes today's order: `gui.json`
-    /// holds the whole map, so a rail nobody reshaped would otherwise never change.
+    /// A kept rail, header or side of the box that is the order shipped before takes
+    /// today's order: `gui.json` holds the whole map, so a rail nobody reshaped would
+    /// otherwise never change.
     pub fn refreshed(mut self) -> Self {
         use Part::*;
-        let before: [&[Part]; 3] = [
+        let before: [&[Part]; 4] = [
+            &[
+                NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
+                Temporary, Terminal, Quiet, Settings,
+            ],
             &[
                 NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
                 Terminal, Quiet, Settings,
@@ -103,8 +111,15 @@ impl Layout {
         if before.contains(&self.rail.as_slice()) {
             self.rail = Self::default().rail;
         }
-        if self.header == [Review, Search, More, SidePanel] {
+        let headers: [&[Part]; 2] = [
+            &[Review, Search, More, SidePanel],
+            &[Review, Search, More, Simulator, SidePanel],
+        ];
+        if headers.contains(&self.header.as_slice()) {
             self.header = Self::default().header;
+        }
+        if self.side_left == [History] {
+            self.side_left = Self::default().side_left;
         }
         self
     }
@@ -121,5 +136,23 @@ mod tests {
         assert_eq!(layout.rail, vec![Part::Settings, Part::Spacer, Part::Chats]);
         assert_eq!(layout.header, Layout::default().header);
         assert!(serde_json::from_str::<Layout>(r#"{ "rail": ["nonsense"] }"#).is_err());
+    }
+
+    #[test]
+    fn a_header_shipped_before_takes_the_plugins_button() {
+        use Part::*;
+        let old = Layout {
+            header: vec![Review, Search, More, Simulator, SidePanel],
+            side_left: vec![History],
+            ..Layout::default()
+        };
+        let refreshed = old.refreshed();
+        assert!(refreshed.header.contains(&Plugins));
+        assert!(refreshed.side_left.contains(&Plugins));
+        let own = Layout {
+            header: vec![Search],
+            ..Layout::default()
+        };
+        assert_eq!(own.refreshed().header, vec![Search]);
     }
 }

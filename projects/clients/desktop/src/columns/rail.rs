@@ -137,6 +137,7 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
             ws.load_settings(cx);
         }))
         .into_any_element(),
+        Part::Plugins => crate::plugins::place::rail(ws, cx)?,
         Part::Terminal => item(
             "rail-terminal",
             IconName::SquareTerminal,

@@ -39,6 +39,7 @@ impl Workspace {
 impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.record_place();
+        crate::plugins::settle(self, window, cx);
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
         let (frame, theme_border) = (rail::color(cx), theme.border);
@@ -53,6 +54,9 @@ impl Render for Workspace {
         };
         let terminal = crate::columns::terminal::render(self, window, cx);
         let simulator = crate::columns::simulator::render(self, window, cx);
+        let right_dock = crate::plugins::right_dock(self, cx);
+        let bottom_dock = crate::plugins::bottom_dock(self, window, cx);
+        let plugins_menu = crate::plugins::menu(self, cx);
         let dragging = self.terminal.dragging();
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
@@ -147,10 +151,12 @@ impl Render for Workspace {
                                     .flex()
                                     .flex_col()
                                     .child(div().flex_1().min_h_0().child(center))
-                                    .children(terminal),
+                                    .children(terminal)
+                                    .children(bottom_dock),
                             )
                             .children(inspector)
-                            .children(simulator),
+                            .children(simulator)
+                            .children(right_dock),
                     ),
             )
             .children(crate::columns::flyout::render(self, window, cx))
@@ -158,6 +164,7 @@ impl Render for Workspace {
             .children(chat_menu)
             .children(artifact_menu)
             .children(audio_menu)
+            .children(plugins_menu)
             .children(crate::columns::fog::render(self, window, cx))
             // While the terminal's edge is held, the whole window follows the pointer.
             .when(dragging, |root| {

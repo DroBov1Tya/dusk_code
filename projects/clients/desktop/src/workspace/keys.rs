@@ -149,7 +149,10 @@ impl Workspace {
         {
             return true;
         }
-        if std::mem::take(&mut self.path_menu) || std::mem::take(&mut self.attach_open) {
+        if std::mem::take(&mut self.path_menu)
+            || std::mem::take(&mut self.attach_open)
+            || std::mem::take(&mut self.plugins.menu)
+        {
             return true;
         }
         if std::mem::take(&mut self.navigator_open) {

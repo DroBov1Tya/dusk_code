@@ -15,4 +15,6 @@ pub mod usage;
 pub use detect::{Needs, Platform};
 #[cfg(target_os = "macos")]
 pub use macos::simulator;
-pub use sandbox::{Confinement, shell};
+pub use sandbox::{
+    Confinement, Network, available as sandbox_available, confined_program, shell, temp_folders,
+};

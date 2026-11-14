@@ -32,6 +32,7 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         install,
         updated_builtin: runtime.updated_builtin().to_vec(),
         chatgpt: runtime.chatgpt(),
+        plugin_parts: runtime.plugin_parts(),
         limits: runtime.model().and_then(|choice| {
             let settings = config.providers().get(&choice.provider_name)?;
             crate::providers::Account::of(settings).limits()

@@ -30,6 +30,9 @@ pub struct StdioServerConfig {
     /// A picture in the config's `icons` folder, by file name, shown on its card.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// Set for a plugin's server, which then runs confined like its other programs.
+    #[serde(skip)]
+    pub isolation: Option<crate::plugins::Isolation>,
 }
 
 /// A remote server over Streamable HTTP. `headers` go with every request and may hold

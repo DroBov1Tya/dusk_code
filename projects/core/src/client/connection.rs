@@ -12,7 +12,7 @@ use dusk_protocol::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
-    Catalog, ClientId, Hub, Projects, Settings, Simulator, Terminal, Threads, Work,
+    Catalog, ClientId, Hub, Plugins, Projects, Settings, Simulator, Terminal, Threads, Work,
     serve::{Call, Message},
 };
 
@@ -58,6 +58,10 @@ impl Client {
 
     pub fn simulator(&self) -> Simulator<'_> {
         Simulator(self)
+    }
+
+    pub fn plugins(&self) -> Plugins<'_> {
+        Plugins(self)
     }
 
     /// A slash command that does not run in a thread.

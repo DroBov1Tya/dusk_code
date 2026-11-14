@@ -250,6 +250,7 @@ impl Runtime {
     pub async fn shutdown(self) {
         // A platform would keep its thread open, so it goes before the threads end.
         self.platforms.stop_all();
+        self.plugins.ui().stop_all();
         let mut threads = std::mem::take(&mut *self.launcher.threads.lock());
         while threads.join_next().await.is_some() {}
         // No agent starts from here on; those at work are stopped until none is left,

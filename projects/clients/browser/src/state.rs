@@ -186,7 +186,12 @@ impl AppState {
                 }
             }
             // A terminal is the desktop window's; the core never sends one to a browser.
-            Event::Terminal { .. } | Event::TerminalClosed { .. } => {}
+            // Terminals and plugin parts are drawn by the desktop app only.
+            Event::Terminal { .. }
+            | Event::TerminalClosed { .. }
+            | Event::PluginView { .. }
+            | Event::PluginFrame { .. }
+            | Event::PluginNotice { .. } => {}
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chat(&thread_id) {
                     chat.update(|data| {

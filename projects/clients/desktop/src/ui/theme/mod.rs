@@ -46,6 +46,9 @@ pub struct Prefs {
     pub fireflies: bool,
     /// Where each part of the window stands; see `ui::layout`.
     pub layout: crate::ui::layout::Layout,
+    /// Plugin parts pinned (true) or unpinned (false) by hand, keyed `plugin/part`; a
+    /// part not here follows the default of `plugins::place`.
+    pub plugin_pins: std::collections::BTreeMap<String, bool>,
 }
 
 impl Default for Prefs {
@@ -65,6 +68,7 @@ impl Default for Prefs {
             fog: true,
             fireflies: true,
             layout: Default::default(),
+            plugin_pins: Default::default(),
         }
     }
 }

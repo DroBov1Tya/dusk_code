@@ -17,6 +17,10 @@ pub struct PluginConfig {
     /// Handed to the plugin's programs, such as a bot's token.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub settings: BTreeMap<String, String>,
+    /// What the user allowed when switching it on; an update that asks for more keeps
+    /// it off until it is switched on again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub allowed: Option<dusk_protocol::plugin::Permissions>,
 }
 
 /// What the plugins that are on add: kept in memory only, never written to the file.

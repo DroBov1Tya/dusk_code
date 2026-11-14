@@ -239,7 +239,8 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
         | SettingsPage::Keyboard
         | SettingsPage::Updates
         | SettingsPage::Usage
-        | SettingsPage::Secrets => body,
+        | SettingsPage::Secrets
+        | SettingsPage::Plugins => body,
     }
 }
 

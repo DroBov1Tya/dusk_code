@@ -124,6 +124,7 @@ fn tool_of(
         .when(ws.simulator.open, |button| button.selected(true))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_simulator(cx)))
         .into_any_element(),
+        Part::Plugins => crate::plugins::place::header(ws, cx)?,
         Part::SidePanel if ws.side_panel_allowed() => tool(
             "top-panel",
             if ws.right_hidden {

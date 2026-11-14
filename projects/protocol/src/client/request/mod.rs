@@ -19,6 +19,8 @@ pub enum Request {
     Terminal(TerminalRequest),
     /// Xcode's iOS Simulator, for the desktop app on macOS.
     Simulator(SimulatorRequest),
+    /// The parts plugins add to the window.
+    Plugin(PluginRequest),
     /// Installs release `tag`; progress shows in the status until it is done.
     InstallUpdate {
         tag: String,
@@ -28,6 +30,7 @@ pub enum Request {
 }
 
 mod catalog;
+mod plugin;
 mod project;
 mod settings;
 mod simulator;
@@ -37,6 +40,7 @@ mod voice;
 mod work;
 
 pub use catalog::CatalogRequest;
+pub use plugin::PluginRequest;
 pub use project::ProjectRequest;
 pub use settings::{ProviderTarget, SettingsRequest, Switch};
 pub use simulator::{MAX_SIM_TEXT, SimulatorRequest};

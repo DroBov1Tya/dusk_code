@@ -1,8 +1,14 @@
 name: telegram
 version: 1.0.0
 description: "Talk to duskcode from Telegram: messages, answers, questions and approvals."
-# A bot token from @BotFather. It is a secret: type it in /plugins each session; it is
-# kept in memory only and never saved.
-secrets: [token]
+permissions:
+  # It reaches Telegram only, through the core's broker.
+  network: [https://api.telegram.org]
+  # A bot token from @BotFather: typed in /plugins each session, kept in memory only and
+  # never saved. Its bot library talks to Telegram itself, so it reads the token.
+  keys:
+    - name: token
+      origins: [https://api.telegram.org]
+      handed: true
 platform:
   command: [duskcode, --platform, telegram]

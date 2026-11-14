@@ -36,6 +36,8 @@ pub enum SettingsPage {
     Updates,
     Usage,
     Secrets,
+    /// The pages plugins add; listed while one does.
+    Plugins,
 }
 
 type Page = (SettingsPage, IconName, &'static str);
@@ -60,6 +62,7 @@ const GROUPS: &[(&str, &[Page])] = &[
             (SettingsPage::Appearance, IconName::Palette, "Appearance"),
             (SettingsPage::Notifications, IconName::Bell, "Notifications"),
             (SettingsPage::Keyboard, IconName::SquareTerminal, "Keyboard"),
+            (SettingsPage::Plugins, IconName::LayoutDashboard, "Plugins"),
         ],
     ),
     (
@@ -108,7 +111,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .text_color(muted.opacity(0.8))
                 .child(*group),
         );
-        menu = menu.children(GROUPS[index].1.iter().map(|(page, icon, label)| {
+        let plugins = crate::plugins::any_settings(ws);
+        let listed = GROUPS[index]
+            .1
+            .iter()
+            .filter(|(page, ..)| *page != SettingsPage::Plugins || plugins);
+        menu = menu.children(listed.map(|(page, icon, label)| {
             let page = *page;
 
             widgets::row(*label, ws.settings_page == page, cx)
@@ -135,6 +143,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         SettingsPage::Keyboard => shortcuts::page(cx),
         SettingsPage::Updates | SettingsPage::Usage => system::render(ws, ws.settings_page, cx),
         SettingsPage::Secrets => secrets::render(ws, cx),
+        SettingsPage::Plugins => crate::plugins::settings_page(ws, cx),
         page => behavior::render(ws, page, cx),
     };
     div().size_full().flex().flex_row().child(menu).child(
@@ -176,6 +185,7 @@ fn about(page: SettingsPage) -> &'static str {
         SettingsPage::Updates => "The version you run and the newest one.",
         SettingsPage::Usage => "What duskcode takes from this machine.",
         SettingsPage::Secrets => "Keys and tokens, kept in the system keychain.",
+        SettingsPage::Plugins => "Settings the switched-on plugins add.",
     }
 }
 

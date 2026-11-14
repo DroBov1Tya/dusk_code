@@ -2,6 +2,7 @@
 //! the order they come, forwards the events of open threads and keeps the status fresh.
 
 mod catalog;
+mod plugin;
 mod projects;
 mod schedules;
 mod settings;
@@ -192,6 +193,7 @@ impl Server {
             Request::Voice(request) => self.voice(request).await,
             Request::Terminal(request) => self.terminal(request).await,
             Request::SystemReport => Ok(Response::System(self.runtime.system_report().await?)),
+            Request::Plugin(request) => self.plugin(request),
             Request::InstallUpdate { .. } | Request::Simulator(_) | Request::Shutdown => {
                 Err(anyhow!("this request is answered by the loop"))
             }
