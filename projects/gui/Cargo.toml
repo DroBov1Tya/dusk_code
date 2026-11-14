@@ -12,12 +12,13 @@ path = "src/main.rs"
 [features]
 # A development tool: the window can save pictures of its pages from a script, with no
 # screen-recording permission. See `screenshot.rs`.
-screenshot = ["dep:image", "dep:gpui_pre", "dep:gpui_pre_platform"]
+screenshot = ["dep:gpui_pre", "dep:gpui_pre_platform"]
 
 [dependencies]
 chrono.workspace = true
 anyhow.workspace = true
-image = { workspace = true, optional = true }
+# Decodes the iOS Simulator's screens; gpui-kit already builds it.
+image.workspace = true
 # Only for the screenshot tool: the same versions gpui-kit uses, with the in-memory renderer.
 gpui_pre = { package = "gpui-pre", version = "=0.3.11", features = ["test-support"], optional = true }
 gpui_pre_platform = { package = "gpui-pre-platform", version = "=0.3.11", features = ["test-support"], optional = true }

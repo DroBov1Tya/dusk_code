@@ -10,6 +10,7 @@
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all`: open a window; unfold the right column;
 //! - `detail=mcp|skill`: open the window of the first of those;
+//! - `simulator`: open the iOS Simulator panel, as its button in the header would;
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
@@ -354,6 +355,7 @@ fn act(
             }
             cx.notify();
         }
+        "simulator" => ws.toggle_simulator(cx),
         "right" => {
             ws.folded.clear();
             ws.right_hidden = false;

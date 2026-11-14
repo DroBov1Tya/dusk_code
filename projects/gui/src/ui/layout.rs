@@ -28,6 +28,8 @@ pub enum Part {
     // The header's tools.
     Review,
     More,
+    /// The iOS Simulator, on macOS.
+    Simulator,
     SidePanel,
     // Around the message box.
     Attach,
@@ -68,7 +70,7 @@ impl Default for Layout {
                 NewChat, Search, Divider, Chats, Schedules, Connectors, Artifacts, Spacer,
                 Temporary, Terminal, Quiet, Settings,
             ],
-            header: vec![Review, Search, More, SidePanel],
+            header: vec![Review, Search, More, Simulator, SidePanel],
             box_left: vec![Attach, Access],
             box_right: vec![Microphone, Send],
             under_left: vec![Mode],
@@ -80,7 +82,7 @@ impl Default for Layout {
 }
 
 impl Layout {
-    /// A kept rail that is the order shipped before takes today's order: `gui.json`
+    /// A kept rail or header that is the order shipped before takes today's order: `gui.json`
     /// holds the whole map, so a rail nobody reshaped would otherwise never change.
     pub fn refreshed(mut self) -> Self {
         use Part::*;
@@ -100,6 +102,9 @@ impl Layout {
         ];
         if before.contains(&self.rail.as_slice()) {
             self.rail = Self::default().rail;
+        }
+        if self.header == [Review, Search, More, SidePanel] {
+            self.header = Self::default().header;
         }
         self
     }

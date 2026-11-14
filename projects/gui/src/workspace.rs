@@ -229,6 +229,8 @@ pub struct Workspace {
     pub fog_dawn: Option<(std::time::Instant, f32)>,
     /// The terminal panel at the foot of the work area.
     pub terminal: crate::columns::terminal::Panel,
+    /// The iOS Simulator at the right edge, on macOS.
+    pub simulator: crate::columns::simulator::Panel,
     pub jobs: Vec<JobInfo>,
     /// The shown chat's sources, as the core lists them.
     pub sources: Vec<dusk_protocol::thread::Source>,
@@ -428,6 +430,7 @@ impl Workspace {
             fog_cleared: None,
             fog_dawn: None,
             terminal: crate::columns::terminal::Panel::new(cx),
+            simulator: Default::default(),
             jobs: Vec::new(),
             sources: Vec::new(),
             settings: None,
@@ -673,6 +676,7 @@ impl Render for Workspace {
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
         };
         let terminal = crate::columns::terminal::render(self, window, cx);
+        let simulator = crate::columns::simulator::render(self, window, cx);
         let dragging = self.terminal.dragging();
         let modal = modal::render(self, window, cx);
         let chat_menu = modal::chat_menu(self, window, cx);
@@ -769,7 +773,8 @@ impl Render for Workspace {
                                     .child(div().flex_1().min_h_0().child(center))
                                     .children(terminal),
                             )
-                            .children(inspector),
+                            .children(inspector)
+                            .children(simulator),
                     ),
             )
             .children(crate::columns::flyout::render(self, window, cx))
