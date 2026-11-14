@@ -2236,7 +2236,7 @@ checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
 name = "dusk_browser"
-version = "0.74.0"
+version = "0.74.1"
 dependencies = [
  "console_error_panic_hook",
  "dusk_protocol",
@@ -2253,7 +2253,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_core"
-version = "0.74.0"
+version = "0.74.1"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -2305,7 +2305,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_desktop"
-version = "0.74.0"
+version = "0.74.1"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
@@ -2331,7 +2331,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_evals"
-version = "0.74.0"
+version = "0.74.1"
 dependencies = [
  "anyhow",
  "clap",
@@ -2346,7 +2346,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_protocol"
-version = "0.74.0"
+version = "0.74.1"
 dependencies = [
  "anyhow",
  "schemars",
@@ -2356,7 +2356,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_server"
-version = "0.74.0"
+version = "0.74.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -2378,7 +2378,7 @@ dependencies = [
 
 [[package]]
 name = "dusk_terminal"
-version = "0.74.0"
+version = "0.74.1"
 dependencies = [
  "anyhow",
  "chrono",
