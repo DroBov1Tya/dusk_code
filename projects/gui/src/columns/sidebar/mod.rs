@@ -54,7 +54,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                         Button::new("sidebar-temporary-chat")
                             .ghost()
                             .xsmall()
-                            .icon(Icon::default().path(crate::ui::icons::HOURGLASS))
+                            .icon(Icon::default().path(crate::ui::icons::TEMPORARY))
                             .tooltip("Temporary chat: kept in memory, gone when the app closes")
                             .on_click(cx.listener(|ws, _, window, cx| {
                                 cx.stop_propagation();

@@ -30,6 +30,11 @@ testing.
   cannot be made from a form or pointed at another address. New direct dependency:
   `aws-lc-rs`, already in the tree under rustls.
 
+### Changed
+
+- A temporary chat is marked by a speech bubble drawn in dashes, the sign most apps use
+  for it, in place of the hourglass.
+
 ### Fixed
 
 - Web: a turn that only thought and answered, with no tool, drew its "Worked for" line
