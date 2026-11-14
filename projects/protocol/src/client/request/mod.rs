@@ -17,6 +17,8 @@ pub enum Request {
     Voice(VoiceRequest),
     /// The user's own shell in the window; the agents never see it.
     Terminal(TerminalRequest),
+    /// Xcode's iOS Simulator, for the desktop app on macOS.
+    Simulator(SimulatorRequest),
     /// Installs release `tag`; progress shows in the status until it is done.
     InstallUpdate {
         tag: String,
@@ -28,6 +30,7 @@ pub enum Request {
 mod catalog;
 mod project;
 mod settings;
+mod simulator;
 mod terminal;
 mod thread;
 mod voice;
@@ -36,6 +39,7 @@ mod work;
 pub use catalog::CatalogRequest;
 pub use project::ProjectRequest;
 pub use settings::{ProviderTarget, SettingsRequest, Switch};
+pub use simulator::SimulatorRequest;
 pub use terminal::{MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE, MAX_TERMINALS, TerminalRequest};
 pub use thread::ThreadRequest;
 pub use voice::VoiceRequest;

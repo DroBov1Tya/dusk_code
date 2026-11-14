@@ -8,6 +8,13 @@ testing.
 
 ### Added
 
+- The iOS Simulator in the desktop window on macOS: a phone in the header opens it at
+  the right edge. It walks through the setup (Xcode, the iOS runtime, a device),
+  downloads the runtime on request, boots and shuts down a device and shows its screen
+  a few times a second; clicks and keys go to the device in Simulator.app, which one
+  button opens. The core runs `xcrun simctl` without a shell and names a device only by
+  a UDID that parses as one; the web client cannot ask for it. A header that was never
+  reshaped takes the new button.
 - A page for the project on GitHub Pages, `site/index.html`, published by its own
   workflow with the readme's screenshots. No scripts or fonts from other hosts.
 - The readme shows the three clients, says how a model is connected and how sign-in

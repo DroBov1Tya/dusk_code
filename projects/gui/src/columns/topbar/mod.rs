@@ -7,7 +7,7 @@ mod sky;
 
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Icon, IconName,
+        ActiveTheme, Disableable, Icon, IconName, Selectable,
         button::{Button, ButtonVariants},
         tooltip::Tooltip,
     },
@@ -112,6 +112,18 @@ fn tool_of(
                 }))
                 .into_any_element()
         }
+        Part::Simulator if cfg!(target_os = "macos") => tool(
+            "top-simulator",
+            Icon::default().path(crate::ui::icons::PHONE),
+            if ws.simulator.open {
+                "Close the iOS Simulator"
+            } else {
+                "Open the iOS Simulator"
+            },
+        )
+        .when(ws.simulator.open, |button| button.selected(true))
+        .on_click(cx.listener(|ws, _, _, cx| ws.toggle_simulator(cx)))
+        .into_any_element(),
         Part::SidePanel if ws.side_panel_allowed() => tool(
             "top-panel",
             if ws.right_hidden {

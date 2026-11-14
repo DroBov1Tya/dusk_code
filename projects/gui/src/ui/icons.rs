@@ -19,6 +19,11 @@ pub const HOURGLASS: &str = "icons/dusk/hourglass.svg";
 
 const HOURGLASS_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 22h14" /><path d="M5 2h14" /><path d="M17 22v-4.172a2 2 0 0 0-.586-1.414L12 12l-4.414 4.414A2 2 0 0 0 7 17.828V22" /><path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2" /></svg>"#;
 
+/// A phone: the iOS Simulator.
+pub const PHONE: &str = "icons/dusk/phone.svg";
+
+const PHONE_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" /></svg>"#;
+
 /// The kit's icons, with ours answered first.
 pub struct Assets;
 
@@ -28,6 +33,7 @@ impl AssetSource for Assets {
             MOON => return Ok(Some(Cow::Borrowed(MOON_SVG))),
             MOON_FILL => return Ok(Some(Cow::Borrowed(MOON_FILL_SVG))),
             HOURGLASS => return Ok(Some(Cow::Borrowed(HOURGLASS_SVG))),
+            PHONE => return Ok(Some(Cow::Borrowed(PHONE_SVG))),
             _ => {}
         }
         gpui_kit::assets::Assets.load(path)
