@@ -373,7 +373,7 @@ fn act(
             ws.refresh_inspector(cx);
         }
         "fake" if value == "plugins" => {
-            ws.status.plugin_parts = super::plugins::parts();
+            ws.status.plugin_parts = std::sync::Arc::new(super::plugins::parts());
             cx.notify();
         }
         "plugins" => {
