@@ -173,6 +173,14 @@ pub fn is_plain_folder_name(name: &str) -> bool {
             .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-' || byte == b'_')
 }
 
+/// A leading `~/` as people write it; the rest stays as typed.
+pub fn expand_home(path: &str) -> std::path::PathBuf {
+    match (path.strip_prefix("~/"), std::env::var_os("HOME")) {
+        (Some(rest), Some(home)) => std::path::PathBuf::from(home).join(rest),
+        _ => std::path::PathBuf::from(path),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

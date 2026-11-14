@@ -10,7 +10,7 @@ use crate::{
     providers::{ChatMessage, ToolSpec},
     runtime::{
         model_choice::ModelChoice,
-        thread::thread_start::{FORK_INTRO, NO_PROMPT, display_name},
+        thread::start::{FORK_INTRO, NO_PROMPT, display_name},
     },
     state::{Compaction, LastPrompt, Message, MessageRole, State, estimate_tokens},
     tools::{ToolRegistry, ToolScope},

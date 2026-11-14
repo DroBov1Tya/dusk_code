@@ -6,7 +6,7 @@ use crate::{
     chat::data::ChatData,
     link::{self, Conn, Handlers},
     pages::{connectors::Tab, settings::Page},
-    theme,
+    ui::theme,
 };
 use dusk_protocol::{
     client::{Event, Status},
@@ -97,7 +97,7 @@ impl AppState {
                     Conn::Lost => {
                         let signed_out = std::rc::Rc::clone(&signed_out);
                         spawn_local(async move {
-                            if !crate::session::is_signed_in().await {
+                            if !crate::auth::is_signed_in().await {
                                 signed_out();
                             }
                         });

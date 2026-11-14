@@ -7,7 +7,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Desktop, Screen, shared::blocking};
+use super::{Desktop, Screen, blocking};
 use crate::{
     BoxFuture,
     platform::Needs,

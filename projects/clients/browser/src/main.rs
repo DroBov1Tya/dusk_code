@@ -3,16 +3,13 @@
 
 mod api;
 mod app;
+mod auth;
 mod chat;
+mod columns;
 mod link;
-mod markdown;
 mod pages;
-mod session;
-mod sidebar;
 mod state;
-mod theme;
 mod ui;
-mod voice;
 
 fn main() {
     console_error_panic_hook::set_once();

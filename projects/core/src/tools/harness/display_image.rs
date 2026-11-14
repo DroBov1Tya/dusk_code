@@ -20,11 +20,11 @@ use serde_json::Value;
 use tokio::sync::Semaphore;
 
 use crate::tools::{Tool, ToolContext, ToolResult, schema, schema::parse_arguments};
-use crate::util::fs::{printable, read_regular};
 use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, Card, MAX_IMAGE_BYTES, MAX_THUMBNAIL_BYTES, THUMBNAIL_EDGE},
 };
+use crate::{init::files::read_regular, tools::tool::printable};
 
 const TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_REDIRECTS: usize = 3;

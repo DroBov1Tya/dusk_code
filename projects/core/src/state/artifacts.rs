@@ -6,7 +6,7 @@ use anyhow::{Context, Result, ensure};
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use crate::util::fs::read_regular;
+use crate::init::files::read_regular;
 
 pub use dusk_protocol::tools::Card;
 

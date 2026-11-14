@@ -11,7 +11,7 @@ path = "src/main.rs"
 
 [features]
 # A development tool: the window can save pictures of its pages from a script, with no
-# screen-recording permission. See `screenshot.rs`.
+# screen-recording permission. See `dev/screenshot.rs`.
 screenshot = ["dep:gpui_pre", "dep:gpui_pre_platform"]
 
 [dependencies]

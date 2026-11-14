@@ -15,9 +15,10 @@ pub use crate::{
     catalog::mentions::complete as complete_mention,
     init::{
         logs::{Telemetry, init as init_logs},
-        paths::Paths,
+        paths::{Paths, expand_home},
     },
     message::path_completion,
+    platform::{notify, usage::process as process_usage},
     release::{
         app_update::running_bundle,
         complete::{Step, complete, ensure_installed},
@@ -27,7 +28,6 @@ pub use crate::{
     },
     secrets::forget_all as forget_secrets,
     state::artifacts::ArtifactStore,
-    util::{fs::expand_home, notify, usage::process as process_usage},
 };
 use crate::{
     client::{self, Client, Hub},

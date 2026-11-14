@@ -1,7 +1,7 @@
 //! The right column of a chat: its plan and tasks, subagents, changed files, background
 //! jobs and what the context holds.
 
-use crate::{api, markdown::Markdown, ui::run};
+use crate::{api, chat::markdown::Markdown, ui::run};
 use leptos::prelude::*;
 
 #[component]

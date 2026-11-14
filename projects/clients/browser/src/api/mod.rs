@@ -1,9 +1,6 @@
 //! The core's requests as typed calls, so a view says what it wants and not which
 //! response variant carries it. Every error is the core's own text.
 
-//! The core's requests as typed calls, so a view says what it wants and not which
-//! response variant carries it. Every error is the core's own text.
-
 use crate::link::request;
 use dusk_protocol::client::{
     CatalogRequest, ProjectRequest, Request, Response, SettingsRequest, ThreadRequest, WorkRequest,

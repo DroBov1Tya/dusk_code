@@ -25,7 +25,7 @@ use dusk_protocol::{
 };
 
 use super::graph::{read_text, split_front_matter};
-use crate::{init::create_private_dir, util::atomic::write_private};
+use crate::init::{create_private_dir, files::write_private};
 
 const SNIPPETS_DIR: &str = "snippets";
 const ME_DIR: &str = "me";

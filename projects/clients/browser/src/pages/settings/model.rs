@@ -2,9 +2,8 @@
 
 use crate::{
     api,
-    sidebar::confirm,
     state::state,
-    ui::{Section, run},
+    ui::{Section, confirm, run},
 };
 use dusk_protocol::{
     client::{Answer, Command, SettingsRequest},

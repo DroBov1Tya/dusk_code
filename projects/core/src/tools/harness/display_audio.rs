@@ -8,11 +8,11 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::tools::{Tool, ToolContext, ToolResult, schema, schema::parse_arguments};
-use crate::util::fs::{printable, read_regular};
 use crate::{
     BoxFuture,
     state::artifacts::{ArtifactStore, Card, MAX_AUDIO_BYTES},
 };
+use crate::{init::files::read_regular, tools::tool::printable};
 use dusk_protocol::tools::CardKind;
 
 pub struct DisplayAudio {

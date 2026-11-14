@@ -11,7 +11,7 @@ use std::{
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::project::{FileStamp, FileText, MAX_EDIT_BYTES};
 
-use crate::util::{atomic, fs::read_regular};
+use crate::init::files::{read_regular, write_keeping};
 
 pub async fn read(path: &Path, roots: &[PathBuf]) -> Result<FileText> {
     let path = super::within(path, roots).await?;
@@ -75,7 +75,7 @@ fn replace(path: &Path, bytes: &[u8], seen: Option<FileStamp>) -> Result<FileSta
             "the file changed on disk since it was opened"
         );
     }
-    atomic::write_keeping(path, bytes, on_disk.map(|metadata| metadata.permissions()))?;
+    write_keeping(path, bytes, on_disk.map(|metadata| metadata.permissions()))?;
     Ok(stamp(
         &std::fs::symlink_metadata(path).context("cannot read the file")?,
     ))

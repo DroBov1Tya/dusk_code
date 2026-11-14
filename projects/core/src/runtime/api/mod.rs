@@ -1,5 +1,5 @@
 //! The runtime's calls, one file for each area a client asks about. Each file is an `impl Runtime`
-//! block: the struct and its start are in `runtime.rs`.
+//! block: the struct and its start are in `runtime/start.rs`.
 
 mod agents;
 mod chatgpt;

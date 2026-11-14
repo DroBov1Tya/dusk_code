@@ -23,7 +23,7 @@ use crate::{
     catalog::agents::{GENERAL_AGENT, GENERAL_DESCRIPTION},
     catalog::skills,
     config::Effort,
-    runtime::thread::thread_start::{self, display_name, read_prompt, start_agent_thread},
+    runtime::thread::start::{self, display_name, read_prompt, start_agent_thread},
     runtime::{Launcher, ThreadEvent},
     state::Identity,
     state::Thread,
@@ -183,7 +183,7 @@ impl AskAgent {
         let thread = start_agent_thread(state, paths, &self.thread_id, agent_name, prompt).await?;
         let name = thread
             .name
-            .unwrap_or_else(|| thread_start::agent_name(&thread.thread_id));
+            .unwrap_or_else(|| start::agent_name(&thread.thread_id));
         Ok((thread.thread_id, name, agent_name.to_owned()))
     }
 

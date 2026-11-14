@@ -3,9 +3,8 @@
 use super::review::DiffView;
 use crate::{
     api,
-    sidebar::confirm,
     state::{View, state},
-    ui::{Section, run},
+    ui::{Section, confirm, run},
 };
 use dusk_protocol::project::{FileDiff, FileEntry, GitInfo, Project};
 use leptos::prelude::*;

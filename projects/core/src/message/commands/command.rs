@@ -48,7 +48,7 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
     match command {
         Command::Migrate { path } => Ok(Answer::Migrated(
             runtime
-                .migrate(path.as_deref().map(crate::util::fs::expand_home))
+                .migrate(path.as_deref().map(crate::init::paths::expand_home))
                 .await?,
         )),
         Command::Resume { cwd } => Ok(Answer::Threads(resume::run(runtime, cwd).await?)),
@@ -108,7 +108,7 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
         } => {
             if let Some(path) = add {
                 runtime
-                    .add_source(&thread_id, &crate::util::fs::expand_home(&path))
+                    .add_source(&thread_id, &crate::init::paths::expand_home(&path))
                     .await?;
             }
             Ok(Answer::Sources(runtime.sources(&thread_id).await?))

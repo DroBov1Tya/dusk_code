@@ -14,7 +14,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::util::fs::read_regular;
+use crate::init::files::read_regular;
 use crate::{
     BoxFuture,
     tools::{

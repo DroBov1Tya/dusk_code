@@ -6,7 +6,7 @@ use crate::runtime::Runtime;
 
 use crate::{
     init::paths::Paths,
-    util::usage::{self},
+    platform::usage::{self},
 };
 
 use anyhow::Result;

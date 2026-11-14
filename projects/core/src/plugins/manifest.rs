@@ -82,7 +82,7 @@ impl Manifest {
     /// Reads `plugin.yml` in `folder`, whose name the plugin must carry.
     pub fn load(folder: &Path) -> Result<Self> {
         let file = folder.join(MANIFEST_FILE);
-        let bytes = crate::util::fs::read_regular(&file, MAX_MANIFEST_BYTES)
+        let bytes = crate::init::files::read_regular(&file, MAX_MANIFEST_BYTES)
             .with_context(|| format!("cannot read {}", file.display()))?;
         let manifest: Self = serde_saphyr::from_slice(&bytes).context("invalid plugin.yml")?;
         let folder_name = folder.file_name().and_then(|name| name.to_str());

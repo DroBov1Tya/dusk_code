@@ -1,10 +1,9 @@
 //! The message box: send, send now, stop, dictate, and the slash commands it offers.
 
-use super::data::ChatData;
+use super::{data::ChatData, voice};
 use crate::{
     api,
     state::{Chat, state},
-    voice,
 };
 use dusk_protocol::client::COMMANDS;
 use leptos::{html, prelude::*, task::spawn_local};

@@ -13,7 +13,7 @@ use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
     catalog::modes::Modes,
     providers::{ChatMessage, ChatRequest},
-    runtime::thread::thread_start::{NO_PROMPT, read_prompt},
+    runtime::thread::start::{NO_PROMPT, read_prompt},
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
 pub use dusk_protocol::thread::AUTO_COMPACT_PERCENT;

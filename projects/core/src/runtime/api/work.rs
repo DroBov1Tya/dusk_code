@@ -5,7 +5,7 @@ use crate::runtime::jobs::JobInfo;
 use crate::{
     catalog::mentions::Mentions,
     message::sources::ThreadSources,
-    runtime::thread::thread_start::{self},
+    runtime::thread::start::{self},
     state::{Source, UndoPoint},
     tools::Decision,
 };
@@ -36,7 +36,7 @@ impl Runtime {
             .project
             .map(PathBuf::from)
             .context("the chat has no project folder")?;
-        let workspace = thread_start::workspace(state, &launcher.paths, thread_id).await?;
+        let workspace = start::workspace(state, &launcher.paths, thread_id).await?;
         let context = crate::tools::ToolContext {
             scope: Arc::new(launcher.scope(&cwd, &workspace)?),
             config: self.config().current(),
@@ -52,8 +52,7 @@ impl Runtime {
     /// thread's sources.
     pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
         let launcher = self.of(thread_id).await;
-        let workspace =
-            thread_start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         let sources = ThreadSources {
             state: &launcher.state,
             workspace: &workspace,
@@ -75,8 +74,7 @@ impl Runtime {
     /// Copies the file at `path` among the thread's sources.
     pub async fn add_source(&self, thread_id: &str, path: &Path) -> Result<Source> {
         let launcher = self.of(thread_id).await;
-        let workspace =
-            thread_start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         ThreadSources {
             state: &launcher.state,
             workspace: &workspace,
@@ -90,8 +88,7 @@ impl Runtime {
     /// the tag that puts it in a message.
     pub async fn add_picture(&self, thread_id: &str, name: &str, bytes: &[u8]) -> Result<String> {
         let launcher = self.of(thread_id).await;
-        let workspace =
-            thread_start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         let source = ThreadSources {
             state: &launcher.state,
             workspace: &workspace,
@@ -110,8 +107,7 @@ impl Runtime {
     /// Forgets a source and deletes its file.
     pub async fn remove_source(&self, thread_id: &str, id: &str) -> Result<()> {
         let launcher = self.of(thread_id).await;
-        let workspace =
-            thread_start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         ThreadSources {
             state: &launcher.state,
             workspace: &workspace,
@@ -125,7 +121,7 @@ impl Runtime {
     pub async fn plan(&self, thread_id: &str) -> Result<Option<String>> {
         let launcher = self.of(thread_id).await;
         let state = &launcher.state;
-        let workspace = thread_start::workspace(state, &launcher.paths, thread_id).await?;
+        let workspace = start::workspace(state, &launcher.paths, thread_id).await?;
         crate::tools::read_plan(state, &workspace, thread_id).await
     }
 
@@ -133,7 +129,7 @@ impl Runtime {
     pub async fn save_plan(&self, thread_id: &str, text: &str) -> Result<()> {
         let launcher = self.of(thread_id).await;
         let state = &launcher.state;
-        let workspace = thread_start::workspace(state, &launcher.paths, thread_id).await?;
+        let workspace = start::workspace(state, &launcher.paths, thread_id).await?;
         if text.trim().is_empty() {
             return crate::tools::clear_plan(state, &workspace, thread_id).await;
         }

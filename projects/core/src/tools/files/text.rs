@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
 
-use crate::util::fs::read_regular;
+use crate::init::files::read_regular;
 
 /// Larger files would not fit the result limit anyway.
 const MAX_READ_BYTES: u64 = 1024 * 1024;

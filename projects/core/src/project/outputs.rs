@@ -146,7 +146,7 @@ fn artifact_thumbnail(original: &Path, artifacts: &Path) -> OutputPreview {
         return OutputPreview::Unavailable;
     }
     let Ok(mut file) =
-        crate::util::fs::open_no_follow(std::fs::OpenOptions::new().read(true), &path)
+        crate::init::files::open_no_follow(std::fs::OpenOptions::new().read(true), &path)
     else {
         return OutputPreview::Unavailable;
     };
@@ -171,7 +171,7 @@ fn artifact_thumbnail(original: &Path, artifacts: &Path) -> OutputPreview {
 fn is_extensionless_image(path: &Path) -> bool {
     let mut signature = [0; 12];
     let Ok(mut file) =
-        crate::util::fs::open_no_follow(std::fs::OpenOptions::new().read(true), path)
+        crate::init::files::open_no_follow(std::fs::OpenOptions::new().read(true), path)
     else {
         return false;
     };

@@ -2,8 +2,7 @@
 
 use crate::{
     api,
-    sidebar::confirm,
-    ui::{Row, Section, run, sleep},
+    ui::{Row, Section, confirm, run, sleep},
 };
 use dusk_protocol::{
     client::{SettingsRequest, VoiceRequest},

@@ -2,27 +2,23 @@
 //! types, presses keys and scrolls by the coordinates of that picture. Offered only with
 //! a screen, to a model that sees pictures, after one yes from the user a session.
 //!
-//! The desktop is `macos` or `linux`. On macOS, `window_session` pins captures and
+//! The desktop is macOS or Linux. On macOS, `window_session` pins captures and
 //! semantic clicks to one app window. A macOS click presses the control and leaves the
 //! user's pointer alone; only system mode, with a yes of its own, moves the pointer. A
 //! screenshot can be of one window, and a cursor of dusk's own marks where the agent
 //! last acted. On Linux every click moves the pointer, through the X11 or Wayland tools
 //! the desktop has.
+//!
+//! The tools are the flat files here (`click`, `press_keys`, `screenshot`, `scroll`,
+//! `type_text`, `window_session`) over `screen`, the screen as the model sees it, and
+//! `offer`, how they are offered. `backend` is the desktop they drive; `overlay` is
+//! dusk's own cursor on macOS.
 
 #[macro_use]
-mod shared;
+mod offer;
 
-#[cfg(target_os = "macos")]
-mod accessibility;
+mod backend;
 mod click;
-#[cfg(target_os = "macos")]
-mod cursor;
-#[cfg(target_os = "linux")]
-mod linux;
-#[cfg(target_os = "macos")]
-mod macos;
-#[cfg(target_os = "macos")]
-mod native_window;
 #[cfg(target_os = "macos")]
 mod overlay;
 mod press_keys;
@@ -33,10 +29,8 @@ mod type_text;
 #[cfg(target_os = "macos")]
 mod window_session;
 
-#[cfg(target_os = "linux")]
-use linux::Desktop;
-#[cfg(target_os = "macos")]
-use macos::Desktop;
+use anyhow::{Context, Result};
+use backend::Desktop;
 
 pub use click::Click;
 #[cfg(target_os = "macos")]
@@ -104,4 +98,13 @@ pub struct Keys {
     pub shift: bool,
     pub ctrl: bool,
     pub alt: bool,
+}
+
+/// Runs desktop work off the async runtime: every backend call blocks.
+pub async fn blocking<T: Send + 'static>(
+    work: impl FnOnce() -> Result<T> + Send + 'static,
+) -> Result<T> {
+    tokio::task::spawn_blocking(work)
+        .await
+        .context("the screen action stopped")?
 }
