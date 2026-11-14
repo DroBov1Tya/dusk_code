@@ -10,7 +10,7 @@ use serde_json::Value;
 
 #[cfg(test)]
 use super::Desktop;
-use super::{screen::Screen, shared::blocking};
+use super::{blocking, screen::Screen};
 use crate::{
     BoxFuture,
     platform::Needs,

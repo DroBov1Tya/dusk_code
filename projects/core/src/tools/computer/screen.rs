@@ -51,7 +51,7 @@ pub enum Target {
 pub struct Screen {
     operation: Mutex<()>,
     #[cfg(target_os = "macos")]
-    session: Mutex<Option<super::native_window::NativeWindow>>,
+    session: Mutex<Option<super::backend::NativeWindow>>,
     view: Mutex<Option<View>>,
     artifacts: ArtifactStore,
 }
@@ -92,7 +92,7 @@ impl Screen {
     #[cfg(target_os = "macos")]
     pub(super) fn select(
         &self,
-        session: super::native_window::NativeWindow,
+        session: super::backend::NativeWindow,
         expected: Option<&str>,
     ) -> Result<()> {
         let _operation = self

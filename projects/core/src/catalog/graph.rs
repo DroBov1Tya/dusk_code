@@ -28,7 +28,7 @@ use anyhow::{Context, Result, anyhow, ensure};
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{init::paths::is_plain_folder_name, util::fs::read_regular};
+use crate::init::{files::read_regular, paths::is_plain_folder_name};
 
 pub use dusk_protocol::catalog::{NodeText, Problem};
 
@@ -325,7 +325,7 @@ pub fn save_node_text(directory: &Path, file: &str, name: &str, text: &str) -> R
     let path = node_file(directory, file, name)?;
     ensure!(path.is_file(), "{name} does not exist");
     Node::check(text, name)?;
-    crate::util::atomic::write_private(&path, text.as_bytes())?;
+    crate::init::files::write_private(&path, text.as_bytes())?;
     read_node_text(directory, file, name)
 }
 

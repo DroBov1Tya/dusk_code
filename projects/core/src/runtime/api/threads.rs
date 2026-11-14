@@ -3,7 +3,7 @@
 use crate::runtime::agent::Input;
 use crate::runtime::{Runtime, ThreadHandle};
 use crate::{
-    runtime::thread::thread_start::{FORK_INTRO, project_dir, start_thread},
+    runtime::thread::start::{FORK_INTRO, project_dir, start_thread},
     state::{LocalUnsent, Message, State, Task, Thread},
 };
 use anyhow::{Result, ensure};

@@ -269,7 +269,7 @@ impl Synced {
                     continue;
                 };
                 let metadata = fs::symlink_metadata(&file)?;
-                let contents = crate::util::fs::read_regular(&file, metadata.len())?;
+                let contents = crate::init::files::read_regular(&file, metadata.len())?;
                 if hash(&contents) != shipped_hash {
                     continue;
                 }

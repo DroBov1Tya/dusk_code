@@ -13,8 +13,8 @@ use crate::{
         graph::{Node, SKILL_FILE},
         skills::{SkillSave, SkillSaveAction},
     },
+    init::files::read_regular,
     tools::ToolScope,
-    util::fs::read_regular,
 };
 
 /// Deeper folders are not skills; the walk stops there.

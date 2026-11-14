@@ -124,7 +124,7 @@ fn write(file: &Path, memory: &str) -> Result<()> {
     if let Some(folder) = file.parent() {
         create_private_dir(folder)?;
     }
-    crate::util::atomic::write_private(file, memory.as_bytes())
+    crate::init::files::write_private(file, memory.as_bytes())
 }
 
 impl Tool for Remember {
@@ -152,7 +152,7 @@ impl Tool for Remember {
             memory
         };
         let prompt = self.rules.join("prompts").join(self.prompt());
-        let template = crate::runtime::thread::thread_start::read_prompt(&prompt)
+        let template = crate::runtime::thread::start::read_prompt(&prompt)
             .ok()
             .flatten()
             .or_else(|| {

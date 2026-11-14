@@ -8,7 +8,7 @@ use crate::{config::live::LiveConfig, secrets::MemoryStore, testing::temp_dir};
 fn local_voice(name: &str) -> (LocalVoice, std::path::PathBuf) {
     let dir = temp_dir(name);
     std::fs::create_dir_all(&dir).unwrap();
-    crate::util::atomic::write_private(&dir.join("config.yml"), b"providers: {}\n").unwrap();
+    crate::init::files::write_private(&dir.join("config.yml"), b"providers: {}\n").unwrap();
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

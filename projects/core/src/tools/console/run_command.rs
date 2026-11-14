@@ -20,13 +20,13 @@ use parking_lot::Mutex;
 use crate::BoxFuture;
 use crate::config::ApprovalPolicy;
 use crate::platform::{self, Confinement};
+use crate::tools::tool::printable;
 use crate::tools::{
     schema,
     schema::parse_arguments,
     scope::{Place, ToolScope},
     tool::{Tool, ToolContext, ToolKind},
 };
-use crate::util::fs::printable;
 
 use super::process::{CommandEnv, Running};
 use crate::runtime::jobs::Launch;

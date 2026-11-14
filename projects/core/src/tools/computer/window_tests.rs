@@ -11,7 +11,7 @@ use std::{
     time::Duration,
 };
 
-use super::super::{click::PointerMode, native_window::NativeWindow};
+use super::super::{backend::NativeWindow, click::PointerMode};
 use super::*;
 use serde_json::Value;
 

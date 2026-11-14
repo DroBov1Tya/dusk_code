@@ -31,7 +31,8 @@ pub fn sync(paths: &Paths, plugin: &str, folder: Option<&Path>) -> Result<()> {
                 continue;
             }
             for relative in resources::files(&source)? {
-                let bytes = crate::util::fs::read_regular(&source.join(&relative), MAX_FILE_BYTES)?;
+                let bytes =
+                    crate::init::files::read_regular(&source.join(&relative), MAX_FILE_BYTES)?;
                 wanted.insert(Path::new(part).join(plugin).join(relative), bytes);
             }
         }
@@ -44,7 +45,7 @@ pub fn sync(paths: &Paths, plugin: &str, folder: Option<&Path>) -> Result<()> {
         // Missing, or still as the plugin wrote it: the plugin's version goes in.
         if on_disk.is_none() || on_disk.as_ref() == ours {
             crate::init::create_private_dir(target.parent().context("no folder")?)?;
-            crate::util::atomic::write_private(&target, bytes)?;
+            crate::init::files::write_private(&target, bytes)?;
             record.insert(relative.clone(), hash(bytes));
         }
     }
@@ -96,7 +97,7 @@ fn write_record(file: &Path, record: &BTreeMap<PathBuf, String>) -> Result<()> {
         );
         text.push_str(&format!("{hash} {path}\n"));
     }
-    crate::util::atomic::write_private(file, text.as_bytes())
+    crate::init::files::write_private(file, text.as_bytes())
 }
 
 fn hash(bytes: &[u8]) -> String {

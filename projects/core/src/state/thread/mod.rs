@@ -1,10 +1,11 @@
 //! What a thread is made of: its record, then in three parts the conversation (its
 //! messages, the messages waiting for it, compactions, undo points and sources), the
 //! work done in it (turns, token usage, the task board and background jobs) and its
-//! standing goal.
+//! standing goal. `files` keeps the files its commands touched.
 
 mod approvals;
 mod conversation;
+mod files;
 mod goal;
 mod threads;
 mod work;

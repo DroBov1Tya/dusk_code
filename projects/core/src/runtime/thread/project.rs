@@ -8,7 +8,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
-use crate::util::fs::read_regular;
+use crate::init::files::read_regular;
 
 /// The files a project speaks to agents in; the first one found in a folder counts.
 const INSTRUCTIONS: [&str; 2] = ["AGENTS.md", "CLAUDE.md"];

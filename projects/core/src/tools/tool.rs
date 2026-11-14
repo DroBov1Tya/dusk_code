@@ -212,3 +212,10 @@ pub trait Tool: Send + Sync {
         })
     }
 }
+
+/// Control characters in names or lines would reach the model and terminals as markup.
+pub fn printable(text: &str) -> String {
+    text.chars()
+        .map(|c| if c.is_control() && c != '\t' { '?' } else { c })
+        .collect()
+}

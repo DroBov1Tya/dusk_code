@@ -6,7 +6,7 @@ use crate::plugins::HookEvent;
 use crate::runtime::agent::{Inbox, Stop};
 use crate::runtime::{
     ThreadEvent,
-    thread::{Conversation, thread_start::NO_PROMPT},
+    thread::{Conversation, start::NO_PROMPT},
 };
 use crate::state::{AgentPhase, Goal, GoalStatus, PendingMessage, Turn, TurnOutcome, TurnStatus};
 use anyhow::Result;

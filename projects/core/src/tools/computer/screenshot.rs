@@ -7,8 +7,8 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use super::{
+    blocking,
     screen::{Region, Screen, Target},
-    shared::blocking,
 };
 use crate::{
     BoxFuture,

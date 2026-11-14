@@ -1,3 +1,7 @@
+//! Checking a goal before it is marked done. `verify` claims one pending attempt, runs the
+//! review in `audit` over the evidence that `evidence` reads back, and records the verdict
+//! in the same transaction; a timeout or failure never records a pass.
+
 use crate::state::{Goal, State};
 use anyhow::Result;
 use std::time::Duration;

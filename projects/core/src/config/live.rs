@@ -101,7 +101,7 @@ impl LiveConfig {
         };
         // Parsing what will be written proves the file will load again.
         Config::parse(yaml.as_bytes())?;
-        crate::util::atomic::write_private(&self.path, yaml.as_bytes())?;
+        crate::init::files::write_private(&self.path, yaml.as_bytes())?;
         *loaded = FileStamp::of(&self.path)?;
         self.delete_keys(&doomed);
         config.set_plugged(self.plugged.read().clone());
@@ -196,7 +196,7 @@ impl LiveConfig {
         });
         let written = stored.and_then(|()| {
             let yaml = config.without_keys().to_yaml()?;
-            crate::util::atomic::write_private(&self.path, yaml.as_bytes())
+            crate::init::files::write_private(&self.path, yaml.as_bytes())
         });
         match written {
             Ok(()) => {
@@ -293,7 +293,7 @@ mod tests {
         let directory = temp_dir(name);
         fs::create_dir_all(&directory).unwrap();
         let path = directory.join("config.yml");
-        crate::util::atomic::write_private(&path, yaml.as_bytes()).unwrap();
+        crate::init::files::write_private(&path, yaml.as_bytes()).unwrap();
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -307,7 +307,7 @@ mod tests {
         let path = config_file("live_hand_edit", CONFIG);
         let live = LiveConfig::load(&path).unwrap();
         let edited = format!("{CONFIG}session:\n  record: answer\n");
-        crate::util::atomic::write_private(&path, edited.as_bytes()).unwrap();
+        crate::init::files::write_private(&path, edited.as_bytes()).unwrap();
 
         live.update(|config| config.set_tool_enabled("run_command", false))
             .unwrap();
@@ -321,7 +321,7 @@ mod tests {
     fn a_broken_file_keeps_the_last_good_config() {
         let path = config_file("live_broken", CONFIG);
         let live = LiveConfig::load(&path).unwrap();
-        crate::util::atomic::write_private(&path, b"providers: [not, a, map]\n").unwrap();
+        crate::init::files::write_private(&path, b"providers: [not, a, map]\n").unwrap();
 
         assert!(live.reload().is_err());
         assert!(live.reload_if_changed().is_err());
@@ -439,13 +439,13 @@ mod tests {
         let live = LiveConfig::load_with(&path, Some(store.clone())).unwrap();
         assert!(store.get("provider/main").unwrap().is_some());
 
-        crate::util::atomic::write_private(&path, b"session:\n  record: answer\n").unwrap();
+        crate::init::files::write_private(&path, b"session:\n  record: answer\n").unwrap();
         live.reload().unwrap();
 
         assert_eq!(store.get("provider/main").unwrap(), None);
         // A provider of the same name added later starts without the old key.
         let readded = CONFIG.replace("sk-test", "").replace("api_key: ''\n", "");
-        crate::util::atomic::write_private(&path, readded.as_bytes()).unwrap();
+        crate::init::files::write_private(&path, readded.as_bytes()).unwrap();
         live.reload().unwrap();
         assert!(live.current().providers()["main"].api_key.0.is_empty());
     }
