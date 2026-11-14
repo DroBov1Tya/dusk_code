@@ -7,7 +7,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, ensure};
-use dusk_protocol::plugin::{Opens, Permissions, Place};
+use dusk_protocol::plugin::{Client, Opens, Os, Permissions, Place, allows, runs_here};
 use serde::Deserialize;
 
 use super::{broker::Origin, ui::icon};
@@ -28,6 +28,12 @@ pub struct Manifest {
     pub version: String,
     #[serde(default)]
     pub description: String,
+    /// The systems its programs are built for; all when empty.
+    #[serde(default)]
+    pub platforms: Vec<Os>,
+    /// The clients that can draw its parts; all when empty.
+    #[serde(default)]
+    pub clients: Vec<Client>,
     /// Settings the user gives it under `plugins:` in the config, such as a token.
     #[serde(default)]
     pub settings: Vec<String>,
@@ -68,7 +74,7 @@ pub struct PartConfig {
     pub icon: Option<String>,
     pub place: Place,
     pub opens: Opens,
-    /// All when empty.
+    /// Narrows the plugin's platforms; all of them when empty.
     #[serde(default)]
     pub platforms: Vec<Os>,
     /// The icon's text, once checked.
@@ -76,34 +82,9 @@ pub struct PartConfig {
     pub svg: Option<String>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Os {
-    Macos,
-    Linux,
-}
-
-impl Os {
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Macos => "macos",
-            Self::Linux => "linux",
-        }
-    }
-
-    /// This system, when it is one a part can be offered on.
-    pub fn current() -> Option<Self> {
-        match std::env::consts::OS {
-            "macos" => Some(Self::Macos),
-            "linux" => Some(Self::Linux),
-            _ => None,
-        }
-    }
-}
-
 impl PartConfig {
     pub fn offered_here(&self) -> bool {
-        self.platforms.is_empty() || Os::current().is_some_and(|os| self.platforms.contains(&os))
+        runs_here(&self.platforms)
     }
 }
 
@@ -174,7 +155,7 @@ impl Manifest {
             ensure!(!platform.command.is_empty(), "the platform has no command");
         }
         if let Some(ui) = &mut manifest.ui {
-            check_ui(ui, folder)?;
+            check_ui(ui, folder, &manifest.platforms)?;
         }
         Ok(manifest)
     }
@@ -182,6 +163,11 @@ impl Manifest {
     /// The names of its keys, the settings that are secrets.
     pub fn secrets(&self) -> impl Iterator<Item = &String> {
         self.permissions.keys.iter().map(|key| &key.name)
+    }
+
+    /// Whether it is built for this system.
+    pub fn runs_here(&self) -> bool {
+        runs_here(&self.platforms)
     }
 
     /// Whether it runs programs of its own, which then run confined.
@@ -241,7 +227,7 @@ fn check_permissions(permissions: &Permissions, settings: &[String]) -> Result<(
     Ok(())
 }
 
-fn check_ui(ui: &mut Ui, folder: &Path) -> Result<()> {
+fn check_ui(ui: &mut Ui, folder: &Path, platforms: &[Os]) -> Result<()> {
     ensure!(!ui.command.is_empty(), "the ui has no command");
     ensure!(!ui.parts.is_empty(), "the ui has no parts");
     let mut ids = BTreeSet::new();
@@ -261,6 +247,13 @@ fn check_ui(ui: &mut Ui, folder: &Path) -> Result<()> {
             "the part {} needs a title of up to {MAX_TITLE} characters",
             part.id
         );
+        if let Some(os) = part.platforms.iter().find(|os| !allows(platforms, os)) {
+            anyhow::bail!(
+                "the part {} is for {}, which the plugin is not",
+                part.id,
+                os.name()
+            );
+        }
         if let Some(path) = &part.icon {
             let svg = icon::load(folder, path)
                 .with_context(|| format!("the icon of part {}", part.id))?;
@@ -319,7 +312,14 @@ mod tests {
             (part("id: a, title: T, icon: bad.svg"), "icon with a script"),
             (part("id: a, title: T, icon: none.svg"), "missing icon"),
             (part("id: a, title: T, color: red"), "unknown field"),
-            (part("id: a, title: T, platforms: [windows]"), "platform"),
+            (part("id: a, title: T, platforms: [beos]"), "platform"),
+            (
+                format!(
+                    "platforms: [linux]\n{}",
+                    part("id: a, title: T, platforms: [macos]")
+                ),
+                "part outside the plugin's platforms",
+            ),
             (
                 ui(
                     "    - {id: a, title: T, place: header, opens: window}\n    - {id: a, title: U, place: rail, opens: window}\n",
@@ -331,6 +331,15 @@ mod tests {
             let files = [("icon.svg", ICON), ("bad.svg", "<svg><script/></svg>")];
             assert!(load(&yaml, &files).is_err(), "{why}");
         }
+    }
+
+    #[test]
+    fn platforms_and_clients_are_read() {
+        let manifest = load("platforms: [macos, windows]\nclients: [gui, web]\n", &[]).unwrap();
+        assert_eq!(manifest.platforms, [Os::Macos, Os::Windows]);
+        assert_eq!(manifest.clients, [Client::Gui, Client::Web]);
+        assert!(load("clients: [phone]\n", &[]).is_err());
+        assert!(load("platforms: macos\n", &[]).is_err());
     }
 
     #[test]

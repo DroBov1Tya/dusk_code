@@ -6,7 +6,7 @@
 //! crowd the window. A place shows at most `SHOWN` pinned icons; the rest are reached from
 //! the menu.
 
-use dusk_protocol::plugin::{Opens, Part, Place};
+use dusk_protocol::plugin::{Client, Opens, Part, Place};
 use gpui_kit::{
     component::{
         ActiveTheme, Icon, IconName,
@@ -28,13 +28,13 @@ pub const SHOWN: usize = 3;
 /// How many parts of a place are pinned until the user says otherwise.
 const PINNED_FIRST: usize = 2;
 
-/// The parts offered on this platform, in the status's order.
+/// The parts the window can draw, in the status's order; the core sends only those
+/// offered on this system.
 pub fn offered(ws: &Workspace) -> impl Iterator<Item = &Part> {
-    let os = std::env::consts::OS;
     ws.status
         .plugin_parts
         .iter()
-        .filter(move |part| part.platforms.is_empty() || part.platforms.iter().any(|p| p == os))
+        .filter(|part| part.shown_in(Client::Gui))
 }
 
 /// Whether the part is pinned, given its index among the offered parts of its place.

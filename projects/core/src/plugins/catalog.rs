@@ -177,10 +177,14 @@ impl Plugins {
                 .is_some_and(|allowed| covers(allowed, &manifest.permissions))
                 || manifest.permissions == Permissions::default();
             let mut problem = None;
-            if settings.enabled && !allowed {
+            let here = manifest.runs_here();
+            if !here {
+                let names: Vec<&str> = manifest.platforms.iter().map(|os| os.name()).collect();
+                problem = Some(format!("made for {} only", names.join(", ")));
+            } else if settings.enabled && !allowed {
                 problem = Some("it asks for more than you allowed: switch it on again".into());
             }
-            let mut enabled = settings.enabled && missing_settings.is_empty() && allowed;
+            let mut enabled = settings.enabled && missing_settings.is_empty() && allowed && here;
             let mut isolation = None;
             if enabled && manifest.runs_programs() {
                 match self.isolate(&manifest, &folder, &values, &keys) {
@@ -446,11 +450,7 @@ fn ui_spec(
                 icon: part.svg.clone(),
                 place: part.place,
                 opens: part.opens,
-                platforms: part
-                    .platforms
-                    .iter()
-                    .map(|os| os.name().to_owned())
-                    .collect(),
+                clients: manifest.clients.clone(),
             };
             (shown, part.offered_here())
         })
@@ -495,6 +495,8 @@ fn info(
         missing_settings,
         secrets,
         permissions: manifest.permissions.lines(),
+        platforms: manifest.platforms.clone(),
+        clients: manifest.clients.clone(),
     }
 }
 
@@ -525,6 +527,8 @@ fn broken(name: String, enabled: bool, error: &anyhow::Error) -> PluginInfo {
         missing_settings: Vec::new(),
         secrets: Vec::new(),
         permissions: Vec::new(),
+        platforms: Vec::new(),
+        clients: Vec::new(),
         problem: Some(format!("{error:#}")),
     }
 }

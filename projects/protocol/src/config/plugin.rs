@@ -18,6 +18,12 @@ pub struct PluginInfo {
     /// What it may do, one line each, as the user allows it by switching it on.
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// The systems it runs on; all when empty.
+    #[serde(default)]
+    pub platforms: Vec<crate::plugin::Os>,
+    /// The clients that can draw its parts; all when empty.
+    #[serde(default)]
+    pub clients: Vec<crate::plugin::Client>,
     /// Why it cannot load, when it cannot.
     pub problem: Option<String>,
 }
