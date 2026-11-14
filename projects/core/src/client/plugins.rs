@@ -1,10 +1,10 @@
 //! The parts plugins add to the window, for a client that draws them.
 
 use super::Client;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use dusk_protocol::{
-    client::{PluginRequest, Request},
-    plugin::UiEvent,
+    client::{PluginRequest, Request, Response},
+    plugin::{Listing, StoreRequest, UiEvent},
 };
 
 /// Views, frames and notes of the parts this client opened come as `Event::PluginView`,
@@ -42,5 +42,33 @@ impl Plugins<'_> {
             event,
         };
         self.0.done(Request::Plugin(request)).await
+    }
+}
+
+/// The plugin store. The core checks the signed list and every package; a client shows
+/// the list and asks the user before `install`, showing the listing's permissions.
+impl Plugins<'_> {
+    pub async fn store(&self) -> Result<Vec<Listing>> {
+        match self.0.call(Request::Store(StoreRequest::List)).await? {
+            Response::Store(listings) => Ok(listings),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
+    }
+
+    /// Installs or updates `name` at the `version` the user saw, and switches it on.
+    pub async fn install(&self, name: &str, version: &str) -> Result<()> {
+        let request = StoreRequest::Install {
+            name: name.to_owned(),
+            version: version.to_owned(),
+        };
+        self.0.done(Request::Store(request)).await
+    }
+
+    pub async fn remove(&self, name: &str) -> Result<()> {
+        let request = StoreRequest::Remove {
+            name: name.to_owned(),
+        };
+        self.0.done(Request::Store(request)).await
     }
 }
