@@ -91,6 +91,7 @@ fn a_package_unpacks_only_into_its_folder() {
     let root = crate::testing::temp_dir("store-unpack");
     std::fs::create_dir_all(&root).unwrap();
     let good = package(&[
+        ("./", Directory, b""),
         ("./plugin.yml", Regular, b"name: hello\n"),
         ("bin/", Directory, b""),
         ("bin/run", Regular, b"#!/bin/sh\n"),
@@ -109,6 +110,7 @@ fn a_package_unpacks_only_into_its_folder() {
             package(&[("a", Regular, b"x"), ("a", Regular, b"y")]),
         ),
         ("not a tar.gz", b"plain text".to_vec()),
+        ("file without a name", package(&[("./", Regular, b"x")])),
     ] {
         let into = root.join(why.replace(' ', "-"));
         assert!(unpack(&bad, &into).is_err(), "{why}");
