@@ -5,6 +5,13 @@ project, runs commands, hands work to specialist agents, and keeps everything it
 your machine.
 
 <p align="center">
+  <a href="https://drobov1tya.github.io/dusk_code/">Site</a> ·
+  <a href="https://drobov1tya.github.io/duskcode-plugins/">Plugin Workshop</a> ·
+  <a href="https://github.com/DroBov1Tya/duskcode-plugins">Plugins repository</a> ·
+  <a href="https://github.com/DroBov1Tya/dusk_code/releases">Releases</a>
+</p>
+
+<p align="center">
   <img src="docs/screenshots/desktop.png" alt="The desktop window: a chat with its steps, the context, the tool runs and the todo list" width="900">
 </p>
 
@@ -89,8 +96,11 @@ account only in its own apps. Claude models work here with an API key.
   approval nobody can give is denied.
 - **Skills, MCP servers and plugins**: skills are loaded when a task needs them; MCP
   servers add tools, with OAuth where the server asks; plugins bring skills, agents,
-  providers, hooks and platforms such as the built-in Telegram bot
-  ([docs/plugins.md](docs/plugins.md)).
+  providers, hooks, platforms and panels. Each runs in a sandbox, never sees your keys
+  and installs in one click from the signed store, the
+  [Workshop](https://drobov1tya.github.io/duskcode-plugins/); its plugins, Telegram
+  among them, live in [duskcode-plugins](https://github.com/DroBov1Tya/duskcode-plugins)
+  ([writing one](docs/plugins.md)).
 - **Memory you can read**: notes per project and about you, as plain files. A temporary
   chat is kept in memory only and leaves nothing on disk.
 - **Long work**: task lists, goals with acceptance criteria (`/goal`), scheduled runs,
