@@ -53,7 +53,7 @@ pub struct Status {
     pub chatgpt: ChatGpt,
     /// The parts switched-on plugins add to the window.
     #[serde(default)]
-    pub plugin_parts: Vec<crate::plugin::Part>,
+    pub plugin_parts: std::sync::Arc<Vec<crate::plugin::Part>>,
     /// The rate limits of the current model's account, when its provider reports them.
     #[serde(default)]
     pub limits: Option<crate::model::RateLimits>,

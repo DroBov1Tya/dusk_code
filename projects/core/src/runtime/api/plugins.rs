@@ -11,7 +11,7 @@ impl Runtime {
     }
 
     /// The parts plugins that are on add to the window, on this system.
-    pub fn plugin_parts(&self) -> Vec<dusk_protocol::plugin::Part> {
+    pub fn plugin_parts(&self) -> Arc<Vec<dusk_protocol::plugin::Part>> {
         self.plugins.ui().parts()
     }
 

@@ -58,20 +58,17 @@ pub(super) struct Running {
 #[derive(Default)]
 pub struct UiHost {
     specs: RwLock<BTreeMap<String, Arc<UiSpec>>>,
+    /// The offered parts, made once per change: the status is read every 100 ms, and a
+    /// shared list compares by pointer instead of by every icon's text.
+    offered: RwLock<Arc<Vec<Part>>>,
     running: Arc<Mutex<BTreeMap<String, Running>>>,
     next: AtomicU64,
 }
 
 impl UiHost {
     /// The parts of the plugins that are on, as offered on this system.
-    pub fn parts(&self) -> Vec<Part> {
-        self.specs
-            .read()
-            .values()
-            .flat_map(|spec| spec.parts.iter())
-            .filter(|(_, offered)| *offered)
-            .map(|(part, _)| part.clone())
-            .collect()
+    pub fn parts(&self) -> Arc<Vec<Part>> {
+        Arc::clone(&self.offered.read())
     }
 
     /// The interfaces of the plugins that are on; one that went or changed stops.
@@ -92,6 +89,15 @@ impl UiHost {
             }
             keep
         });
+        let offered: Vec<Part> = specs
+            .values()
+            .flat_map(|spec| spec.parts.iter())
+            .filter(|(_, offered)| *offered)
+            .map(|(part, _)| part.clone())
+            .collect();
+        if **self.offered.read() != offered {
+            *self.offered.write() = Arc::new(offered);
+        }
         *self.specs.write() = specs;
     }
 
