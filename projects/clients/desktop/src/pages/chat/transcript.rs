@@ -5,7 +5,10 @@ use std::{collections::BTreeMap, time::Instant};
 
 use dusk_protocol::{
     model::ModelEvent,
-    thread::{Message, MessageRole, Task, ThreadEvent, ThreadTokens},
+    thread::{
+        AgentState, DETAIL_KEYS, Message, MessageRole, Note, Task, ThreadEvent, ThreadTokens, Tool,
+        ToolState, clip, note,
+    },
     tools::{ApprovalRequest, Card, Question},
 };
 
@@ -78,35 +81,6 @@ impl From<&Card> for Picture {
     }
 }
 
-pub struct Tool {
-    pub call_id: String,
-    pub name: String,
-    pub detail: String,
-    /// The arguments in full, for the unfolded step.
-    pub arguments: String,
-    /// The start of what the tool answered, once it has.
-    pub output: String,
-    pub state: ToolState,
-}
-
-/// How much of a tool's arguments and answer an unfolded step shows.
-const SHOWN_CHARS: usize = 4000;
-
-fn clip(text: &str) -> String {
-    let mut clipped: String = text.chars().take(SHOWN_CHARS).collect();
-    if clipped.len() < text.len() {
-        clipped.push_str("\n...");
-    }
-    clipped
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum ToolState {
-    Running,
-    Done,
-    Failed,
-}
-
 /// One thing that passed between the agents, the user's approvals and the arbiter, as
 /// the arbiter window shows it.
 pub struct Exchange {
@@ -146,16 +120,6 @@ pub struct Agent {
     pub running: Vec<(String, String)>,
     pub started: Instant,
     pub ended: Option<Instant>,
-}
-
-/// What a subagent does now, from the events of its thread.
-#[derive(Clone, PartialEq, Eq)]
-pub enum AgentState {
-    Thinking,
-    Writing,
-    Tool(String),
-    Done,
-    Failed,
 }
 
 impl Agent {
@@ -331,14 +295,7 @@ impl Transcript {
                     });
                 }
                 for call in &message.tool_calls {
-                    self.items.push(Item::Tool(Tool {
-                        call_id: call.id.clone(),
-                        name: call.name.clone(),
-                        detail: summary(&call.arguments),
-                        arguments: clip(&call.arguments.to_string()),
-                        output: String::new(),
-                        state: ToolState::Done,
-                    }));
+                    self.items.push(Item::Tool(tool(call, ToolState::Done)));
                 }
             }
             MessageRole::Tool => {
@@ -372,6 +329,22 @@ impl Transcript {
     }
 
     pub fn apply(&mut self, event: ThreadEvent) {
+        if let Some(note) = note(&event) {
+            match &event {
+                ThreadEvent::Failed(_) => self.working = false,
+                ThreadEvent::ArbiterDecided {
+                    what,
+                    allow,
+                    reason,
+                } => self.decided(CHAT, what, *allow, reason),
+                _ => {}
+            }
+            self.items.push(match note {
+                Note::Notice(text) => Item::Notice(text),
+                Note::Error(text) => Item::Error(text),
+            });
+            return;
+        }
         match event {
             ThreadEvent::FromAgent(message) => {
                 let from = message
@@ -392,11 +365,11 @@ impl Transcript {
                 })
             }
             ThreadEvent::TurnStarted(_) => {
-                self.activity_boundary(super::timing::now_ms());
+                self.activity_boundary(dusk_protocol::system::now_ms());
                 self.working = true;
             }
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
-                self.activity_boundary(super::timing::now_ms());
+                self.activity_boundary(dusk_protocol::system::now_ms());
                 if self.working {
                     self.finished_at = Some(Instant::now());
                 }
@@ -406,23 +379,11 @@ impl Transcript {
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => {
-                self.items.push(Item::Tool(Tool {
-                    detail: summary(&call.arguments),
-                    arguments: clip(&call.arguments.to_string()),
-                    output: String::new(),
-                    call_id: call.id,
-                    name: call.name,
-                    state: ToolState::Running,
-                }));
+                self.items.push(Item::Tool(tool(&call, ToolState::Running)));
             }
             ThreadEvent::ToolFinished { call_id, result } => {
                 if let Some(tool) = self.tool_mut(&call_id) {
-                    tool.state = if result.is_error {
-                        ToolState::Failed
-                    } else {
-                        ToolState::Done
-                    };
-                    tool.output = clip(&result.content);
+                    tool.finish(&result);
                 }
                 self.add_pictures(&call_id, &result.artifacts);
             }
@@ -515,47 +476,8 @@ impl Transcript {
                 }
                 self.offered = Some(text);
             }
-            ThreadEvent::Failed(error) => {
-                self.working = false;
-                self.items.push(Item::Error(error));
-            }
-            ThreadEvent::Rejected { reason } => self.items.push(Item::Error(reason)),
-            ThreadEvent::ProviderUnavailable => self.items.push(Item::Error(
-                "The provider is unavailable; check the connection in the settings.".into(),
-            )),
-            ThreadEvent::Retrying { attempt, error } => {
-                self.notice(&format!("Retrying ({attempt}): {error}"));
-            }
-            ThreadEvent::AnswerCut { error } => self.items.push(Item::Error(error)),
-            ThreadEvent::CompactionFailed { error } => {
-                self.items
-                    .push(Item::Error(format!("Compaction failed: {error}")));
-            }
-            ThreadEvent::OutputLimitReached => self.notice("The answer reached the output limit."),
-            ThreadEvent::PicturesRefused { model } => {
-                self.notice(&format!("{model} does not take pictures."));
-            }
-            ThreadEvent::CompactionStarted => self.notice("Compacting the context..."),
-            ThreadEvent::CompactionFinished(_) => self.notice("The context was compacted."),
-            ThreadEvent::ContextTooLarge { tokens, limit } => self.items.push(Item::Error(
-                format!("The context is too large: {tokens} of {limit} tokens."),
-            )),
-            ThreadEvent::ArbiterDecided {
-                what,
-                allow,
-                reason,
-            } => {
-                let verdict = if allow { "allowed" } else { "denied" };
-                self.notice(&format!("Arbiter {verdict} {what}: {reason}"));
-                self.decided(CHAT, &what, allow, &reason);
-            }
-            ThreadEvent::Goal { note, .. } => self.notice(&note),
-            ThreadEvent::Forked { .. } => self.notice("Forked into a new chat."),
-            ThreadEvent::AgentPhase { .. }
-            | ThreadEvent::LocalUnsent(_)
-            | ThreadEvent::Queued { .. }
-            // Ignored until the rate UI lands.
-            | ThreadEvent::OutputRate { .. } => {}
+            // The rest left a note above or is not shown; the rate waits for its UI.
+            _ => {}
         }
     }
 
@@ -634,10 +556,6 @@ impl Transcript {
         }
     }
 
-    fn notice(&mut self, text: &str) {
-        self.items.push(Item::Notice(text.to_owned()));
-    }
-
     fn activity_boundary(&mut self, at: i64) {
         let end = self.items.len();
         if end > 0 && self.activity_boundaries.last() != Some(&end) {
@@ -697,23 +615,23 @@ fn context(tokens: &ThreadTokens) -> u64 {
     tokens.context
 }
 
-/// A line of what a tool was asked: its command, path or first argument.
-fn summary(arguments: &serde_json::Value) -> String {
-    let text = [
-        "description",
-        "command",
-        "path",
-        "query",
-        "url",
-        "pattern",
-        "task",
-        // A skill is loaded by its name.
-        "name",
-    ]
-    .iter()
-    .find_map(|key| arguments.get(key).and_then(|value| value.as_str()))
-    .map(str::to_owned)
-    .unwrap_or_default();
-    let line = text.lines().next().unwrap_or_default();
-    line.chars().take(160).collect()
+/// A step as the shared transcript makes it; a skill, loaded by its name, shows that
+/// name where no other argument says what the tool was asked.
+fn tool(call: &dusk_protocol::model::ToolCall, state: ToolState) -> Tool {
+    let mut tool = Tool::new(call, state);
+    let has_detail = DETAIL_KEYS.iter().any(|key| {
+        call.arguments
+            .get(key)
+            .is_some_and(serde_json::Value::is_string)
+    });
+    if !has_detail && let Some(name) = call.arguments.get("name").and_then(|value| value.as_str()) {
+        tool.detail = name
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .chars()
+            .take(160)
+            .collect();
+    }
+    tool
 }

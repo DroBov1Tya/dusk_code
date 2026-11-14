@@ -2,10 +2,11 @@
 
 use std::{
     collections::{HashSet, VecDeque},
-    time::{Instant, SystemTime, UNIX_EPOCH},
+    time::Instant,
 };
 
 use dusk_protocol::client::Status;
+use dusk_protocol::system::now_ms;
 use dusk_protocol::{
     config::McpStatus,
     model::Effort,
@@ -120,7 +121,7 @@ pub struct App {
     /// Whether the terminal is in front, when it says; none until it does.
     pub focused: Option<bool>,
     /// The repository the client runs in, for the line under the box.
-    pub git: Option<crate::host::git::GitSummary>,
+    pub git: Option<dusk_protocol::project::GitSummary>,
     /// When Ctrl+C last cleared the box; another soon after quits.
     pub quit_armed: Option<Instant>,
     pub command_popup: Option<Rect>,
@@ -463,12 +464,6 @@ impl App {
             self.input.set(text);
         }
     }
-}
-
-pub fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 /// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M".

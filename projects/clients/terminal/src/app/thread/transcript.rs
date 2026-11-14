@@ -286,7 +286,7 @@ impl Transcript {
         }
         self.entries.push(entry);
         // Also drops the times of entries popped through `entries_mut`.
-        let at = self.stamp.unwrap_or_else(crate::app::now_ms);
+        let at = self.stamp.unwrap_or_else(dusk_protocol::system::now_ms);
         self.times.resize(self.entries.len(), at);
         self.changed();
     }

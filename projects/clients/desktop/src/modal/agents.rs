@@ -3,6 +3,7 @@
 //! figure with a bubble that says what it does this moment: thinking, writing, or the tool
 //! it runs. A figure that works moves; one that is done rests. A click opens its chat.
 
+use dusk_protocol::thread::AgentState;
 use std::time::Duration;
 
 use gpui_kit::{
@@ -17,7 +18,7 @@ use dusk_protocol::agent::Zone;
 
 use crate::{
     columns::inspector::mascot,
-    pages::chat::transcript::{Agent, AgentState},
+    pages::chat::transcript::Agent,
     ui::{
         Type,
         widgets::{self, Focusable},

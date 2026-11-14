@@ -4,8 +4,4 @@
 /// When a turn began and, once it is over, when it ended, in Unix milliseconds.
 pub type Span = (i64, Option<i64>);
 
-pub fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
-}
-
 pub use dusk_protocol::thread::duration_words as duration;

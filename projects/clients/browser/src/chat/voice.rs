@@ -2,6 +2,7 @@
 //! speech recognition, and a spoken answer is a sound card the page plays.
 
 use crate::{api, state::state};
+use dusk_protocol::client::wav;
 use leptos::prelude::*;
 use std::{cell::RefCell, rc::Rc};
 use wasm_bindgen::{JsCast, JsValue, closure::Closure};
@@ -121,12 +122,12 @@ impl Recording {
         }
         let rate = self.context.sample_rate() as u32;
         let _ = self.context.close();
-        wav(&downsample(&self.samples.borrow(), rate))
+        wav(&downsample(&self.samples.borrow(), rate), RATE)
     }
 }
 
-/// Mono samples at `from` Hz as 16 kHz 16-bit samples, by averaging each window.
-fn downsample(samples: &[f32], from: u32) -> Vec<i16> {
+/// Mono samples at `from` Hz as 16 kHz samples, by averaging each window.
+fn downsample(samples: &[f32], from: u32) -> Vec<f32> {
     let ratio = from as f64 / RATE as f64;
     let count = (samples.len() as f64 / ratio) as usize;
     (0..count)
@@ -134,31 +135,9 @@ fn downsample(samples: &[f32], from: u32) -> Vec<i16> {
             let start = (i as f64 * ratio) as usize;
             let end = (((i + 1) as f64 * ratio) as usize).clamp(start + 1, samples.len());
             let window = &samples[start..end];
-            let mean = window.iter().sum::<f32>() / window.len() as f32;
-            (mean.clamp(-1.0, 1.0) * f32::from(i16::MAX)) as i16
+            window.iter().sum::<f32>() / window.len() as f32
         })
         .collect()
-}
-
-fn wav(samples: &[i16]) -> Vec<u8> {
-    let data_len = (samples.len() * 2) as u32;
-    let mut bytes = Vec::with_capacity(44 + samples.len() * 2);
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data_len).to_le_bytes());
-    bytes.extend_from_slice(b"WAVEfmt ");
-    bytes.extend_from_slice(&16u32.to_le_bytes());
-    bytes.extend_from_slice(&1u16.to_le_bytes());
-    bytes.extend_from_slice(&1u16.to_le_bytes());
-    bytes.extend_from_slice(&RATE.to_le_bytes());
-    bytes.extend_from_slice(&(RATE * 2).to_le_bytes());
-    bytes.extend_from_slice(&2u16.to_le_bytes());
-    bytes.extend_from_slice(&16u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data_len.to_le_bytes());
-    for sample in samples {
-        bytes.extend_from_slice(&sample.to_le_bytes());
-    }
-    bytes
 }
 
 fn js_error(error: JsValue) -> String {
@@ -175,15 +154,6 @@ fn js_error(error: JsValue) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn a_wav_has_its_header_and_size() {
-        let bytes = wav(&[1, -1, 2]);
-        assert_eq!(&bytes[..4], b"RIFF");
-        assert_eq!(&bytes[8..12], b"WAVE");
-        assert_eq!(bytes.len(), 44 + 6);
-        assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), 6);
-    }
 
     #[test]
     fn downsampling_keeps_the_length_in_seconds() {

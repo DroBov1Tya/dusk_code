@@ -7,7 +7,7 @@ use crate::{
     ui::{run, when},
 };
 use dusk_protocol::project::{
-    Clock, DAY_NAMES, Repeat, Schedule, ScheduleDraft, WEEKDAYS, interval_name,
+    Clock, DAY_NAMES, Repeat, RepeatKind, Schedule, ScheduleDraft, WEEKDAYS, interval_name,
 };
 use leptos::prelude::*;
 
@@ -79,26 +79,17 @@ impl Form {
     }
 
     fn draft(&self) -> Result<ScheduleDraft, String> {
-        let at = || Clock::parse(&self.time).ok_or("write the time as 09:30".to_owned());
-        let repeat = match self.kind.as_str() {
-            "once" => Repeat::Once {
-                at: moment(&self.date, at()?)?,
-            },
-            "interval" => Repeat::Interval {
-                minutes: self.interval,
-            },
-            "weekdays" => Repeat::Weekdays { at: at()? },
-            "weekends" => Repeat::Weekends { at: at()? },
-            "weekly" => Repeat::Weekly {
-                day: self.day,
-                at: at()?,
-            },
-            "custom" => Repeat::Custom {
-                days: self.days,
-                at: at()?,
-            },
-            _ => Repeat::Daily { at: at()? },
+        let kind = match self.kind.as_str() {
+            "once" => RepeatKind::Once,
+            "interval" => RepeatKind::Interval,
+            "weekdays" => RepeatKind::Weekdays,
+            "weekends" => RepeatKind::Weekends,
+            "weekly" => RepeatKind::Weekly,
+            "custom" => RepeatKind::Custom,
+            _ => RepeatKind::Daily,
         };
+        let once = |at| moment(&self.date, at);
+        let repeat = kind.repeat(&self.time, self.interval, self.day, self.days, once)?;
         Ok(ScheduleDraft {
             id: self.id.clone(),
             project_id: self.project_id.clone(),

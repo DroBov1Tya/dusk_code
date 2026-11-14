@@ -37,9 +37,10 @@ pub use files::{
     FileEntry, FileStamp, FileText, MAX_EDIT_BYTES, MAX_PREVIEW_BYTES, OutputFile, OutputKind,
     OutputPreview,
 };
-pub use git::{Change, ChangeKind, GitInfo, Worktree};
+pub use git::{Change, ChangeKind, GitInfo, GitSummary, Worktree};
 pub use path::{PathCompletion, PathEntry};
 pub use schedule::{
     Clock, DAY_NAMES, EVERY_DAY, MAX_INTERVAL_MINUTES, MAX_PROMPT_CHARS, MAX_SCHEDULES,
-    MIN_INTERVAL_MINUTES, Repeat, Schedule, ScheduleDraft, WEEKDAYS, WEEKENDS, interval_name,
+    MIN_INTERVAL_MINUTES, Repeat, RepeatKind, SCHEDULE_USAGE, Schedule, ScheduleDraft, WEEKDAYS,
+    WEEKENDS, When, interval_name, parse_schedule,
 };

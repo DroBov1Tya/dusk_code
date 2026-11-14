@@ -296,7 +296,7 @@ pub async fn run(
                 Action::None
             }
             _ = git_clock.tick() => {
-                app.git = crate::host::git::summary(&cwd).await;
+                app.git = dusk_core::app::git_summary(&cwd).await;
                 Action::None
             }
             _ = clock.tick(), if app.is_busy()

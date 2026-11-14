@@ -9,8 +9,11 @@ server, web-ui = clients/browser, external/telegram = plugins/telegram).
 Done as moves and splits, with no behavior change: 2, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
 17, 18, 19, 20 (`scripts/structure-map.sh` regenerates the map), 21, 22, 24, 25.
 
-Open: 1, 3, 4, 5, 6 and 23 move logic out of the clients into the core and the protocol,
-so they change behavior and are their own work. New candidates seen on the way:
+Then moved out of the clients: 3 (`core::app::git_summary`), 4 (`protocol::project`
+parses schedules), 5 (`core::app::Uninstall`), 6 (`protocol::client::wav`), 23 (`now_ms` in
+`protocol::system`). Of 1, what the desktop and the browser fold identically is in
+`protocol/src/thread/transcript/`; one fold for all three clients needs decisions on what
+each shows (the terminal keeps a different model) and is left. New candidates seen on the way:
 `core/src/runtime/agent/agent/` (a module inside one of the same name), the desktop's
 `pages/schedules/editor.rs` (602), `pages/settings/behavior.rs` (581),
 `columns/terminal/mod.rs` (508), and the terminal's `app/panels/agents.rs` (447, three

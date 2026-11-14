@@ -32,7 +32,7 @@ fn late(ws: &Workspace, cx: &App) -> Option<f32> {
     let chat = ws.shown_chat()?;
     let seconds = if chat.working {
         let (began, _) = chat.span(chat.activity_boundaries.len())?;
-        (crate::pages::chat::timing::now_ms() - began).max(0) as f32 / 1000.
+        (dusk_protocol::system::now_ms() - began).max(0) as f32 / 1000.
     } else {
         let first = chat
             .agents
@@ -145,7 +145,7 @@ fn meteor() -> impl IntoElement {
         "sky-meteor",
         Animation::new(Duration::from_millis(METEOR_EVERY as u64)).repeat(),
         |sky, _| {
-            let now = crate::pages::chat::timing::now_ms();
+            let now = dusk_protocol::system::now_ms();
             let seed = ((now / METEOR_EVERY) as u32).wrapping_mul(2_654_435_761);
             let at = (now % METEOR_EVERY) as f32;
             // The screenshot tool cannot wait for the sky: it names the moment itself.

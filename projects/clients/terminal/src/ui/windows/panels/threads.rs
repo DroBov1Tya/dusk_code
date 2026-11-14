@@ -108,7 +108,7 @@ pub fn preview(list: &ThreadList, width: usize, height: usize) -> Vec<Line<'stat
     let Some(thread) = list.threads.get(list.selected) else {
         return Vec::new();
     };
-    let now = crate::app::now_ms();
+    let now = dusk_protocol::system::now_ms();
     let title = thread.title.clone().unwrap_or_else(|| "no messages".into());
     let mut head = vec![Line::from(Span::styled(
         wrap::clip(&title, width),
@@ -192,7 +192,7 @@ pub fn threads(list: &ThreadList, current: Option<&str>) -> Vec<Line<'static>> {
     if list.threads.is_empty() {
         return vec![Line::from(Span::styled(" no threads yet", thought()))];
     }
-    let now = crate::app::now_ms();
+    let now = dusk_protocol::system::now_ms();
     list.threads
         .iter()
         .enumerate()

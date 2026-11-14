@@ -1,7 +1,8 @@
 //! A subagent's own chat in a window over the page, with its steps folded as in a chat.
 
-use super::{blocks::Transcript, data::AgentState};
+use super::blocks::Transcript;
 use crate::{api, state::state, ui::run};
+use dusk_protocol::thread::AgentState;
 use leptos::prelude::*;
 
 #[component]

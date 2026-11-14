@@ -12,11 +12,11 @@ use super::{
     Sidebar,
     section::{PAD, fill, ruled, section},
 };
-use crate::app::now_ms;
 use crate::ui::{
     text::format::{format_duration, one_line},
     theme::{ACCENT, DEEP, ON, TEXT, TEXT_MUTED, TEXT_SOFT, fg},
 };
+use dusk_protocol::system::now_ms;
 
 /// Running jobs the rail lists before it sums up the rest.
 pub const MAX_JOB_ROWS: usize = 4;

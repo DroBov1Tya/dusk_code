@@ -23,6 +23,20 @@ pub struct GitInfo {
     pub stat: DiffStat,
 }
 
+/// The repository a client's own folder is in, for a status line.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitSummary {
+    /// The name of the repository's top folder.
+    pub repository: String,
+    /// `None` on a detached head.
+    pub branch: Option<String>,
+    pub commits: u64,
+    /// Changed files in the whole repository; an untracked folder counts once.
+    pub changed: usize,
+    /// Commits ahead of and behind the upstream, when there is one.
+    pub ahead_behind: Option<(u64, u64)>,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Worktree {
     pub path: PathBuf,

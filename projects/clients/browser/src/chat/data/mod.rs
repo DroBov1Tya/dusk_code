@@ -4,7 +4,10 @@
 use dusk_protocol::{
     config::ApprovalPolicy,
     model::ModelEvent,
-    thread::{Message, MessageRole, Task, ThreadEvent, agent_name},
+    thread::{
+        AgentState, Message, MessageRole, Note, Task, ThreadEvent, Tool, ToolState, agent_name,
+        clip, note,
+    },
     tools::{ApprovalRequest, Card, CardKind, Question},
 };
 use std::collections::BTreeMap;
@@ -46,27 +49,6 @@ impl From<&Card> for Shown {
     }
 }
 
-#[derive(Clone, PartialEq)]
-pub struct Tool {
-    pub call_id: String,
-    pub name: String,
-    /// The first line of what it was asked: its command, path or query.
-    pub detail: String,
-    pub arguments: String,
-    pub output: String,
-    pub state: ToolState,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum ToolState {
-    Running,
-    Done,
-    Failed,
-}
-
-/// How much of a tool's arguments and answer an unfolded step shows.
-const SHOWN_CHARS: usize = 4000;
-
 /// An item with a number that stays the same while the list changes, for keyed drawing.
 #[derive(Clone, PartialEq)]
 pub struct Entry {
@@ -84,21 +66,6 @@ pub struct Agent {
     pub role: String,
     pub task: String,
     pub state: AgentState,
-}
-
-#[derive(Clone, PartialEq, Eq)]
-pub enum AgentState {
-    Thinking,
-    Writing,
-    Tool(String),
-    Done,
-    Failed,
-}
-
-impl AgentState {
-    pub fn working(&self) -> bool {
-        !matches!(self, Self::Done | Self::Failed)
-    }
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -170,14 +137,7 @@ impl ChatData {
                     });
                 }
                 for call in &message.tool_calls {
-                    self.push(Item::Tool(Tool {
-                        call_id: call.id.clone(),
-                        name: call.name.clone(),
-                        detail: summary(&call.arguments),
-                        arguments: clip(&call.arguments.to_string()),
-                        output: String::new(),
-                        state: ToolState::Done,
-                    }));
+                    self.push(Item::Tool(Tool::new(call, ToolState::Done)));
                 }
             }
             MessageRole::Tool => {
@@ -206,6 +166,16 @@ impl ChatData {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         self.clock = now_ms();
+        if let Some(note) = note(&event) {
+            if matches!(event, ThreadEvent::Failed(_)) {
+                self.working = false;
+            }
+            self.push(match note {
+                Note::Notice(text) => Item::Notice(text),
+                Note::Error(text) => Item::Error(text),
+            });
+            return;
+        }
         match event {
             ThreadEvent::FromAgent(message) => {
                 let from = message
@@ -228,21 +198,12 @@ impl ChatData {
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
-            ThreadEvent::ToolStarted(call) => self.push(Item::Tool(Tool {
-                detail: summary(&call.arguments),
-                arguments: clip(&call.arguments.to_string()),
-                output: String::new(),
-                call_id: call.id,
-                name: call.name,
-                state: ToolState::Running,
-            })),
+            ThreadEvent::ToolStarted(call) => {
+                self.push(Item::Tool(Tool::new(&call, ToolState::Running)))
+            }
             ThreadEvent::ToolFinished { call_id, result } => {
                 if let Some(tool) = self.tool_mut(&call_id) {
-                    tool.state = match result.is_error {
-                        true => ToolState::Failed,
-                        false => ToolState::Done,
-                    };
-                    tool.output = clip(&result.content);
+                    tool.finish(&result);
                 }
                 self.add_cards(&result.artifacts);
             }
@@ -281,44 +242,8 @@ impl ChatData {
             ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|r| r.id != id),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::Undone { text } => self.offered = Some(text),
-            ThreadEvent::Failed(error) => {
-                self.working = false;
-                self.push(Item::Error(error));
-            }
-            ThreadEvent::Rejected { reason } => self.push(Item::Error(reason)),
-            ThreadEvent::ProviderUnavailable => self.push(Item::Error(
-                "The provider is unavailable; check the connection in the settings.".into(),
-            )),
-            ThreadEvent::Retrying { attempt, error } => {
-                self.notice(&format!("Retrying ({attempt}): {error}"));
-            }
-            ThreadEvent::AnswerCut { error } => self.push(Item::Error(error)),
-            ThreadEvent::CompactionFailed { error } => {
-                self.push(Item::Error(format!("Compaction failed: {error}")));
-            }
-            ThreadEvent::OutputLimitReached => self.notice("The answer reached the output limit."),
-            ThreadEvent::PicturesRefused { model } => {
-                self.notice(&format!("{model} does not take pictures."));
-            }
-            ThreadEvent::CompactionStarted => self.notice("Compacting the context..."),
-            ThreadEvent::CompactionFinished(_) => self.notice("The context was compacted."),
-            ThreadEvent::ContextTooLarge { tokens, limit } => self.push(Item::Error(format!(
-                "The context is too large: {tokens} of {limit} tokens."
-            ))),
-            ThreadEvent::ArbiterDecided {
-                what,
-                allow,
-                reason,
-            } => {
-                let verdict = if allow { "allowed" } else { "denied" };
-                self.notice(&format!("Arbiter {verdict} {what}: {reason}"));
-            }
-            ThreadEvent::Goal { note, .. } => self.notice(&note),
-            ThreadEvent::Forked { .. } => self.notice("Forked into a new chat."),
-            ThreadEvent::AgentPhase { .. }
-            | ThreadEvent::LocalUnsent(_)
-            | ThreadEvent::Queued { .. }
-            | ThreadEvent::OutputRate { .. } => {}
+            // The rest left a note above or is not shown.
+            _ => {}
         }
     }
 
@@ -337,10 +262,6 @@ impl ChatData {
                 Item::Tool(tool) if tool.call_id == call_id => Some(tool),
                 _ => None,
             })
-    }
-
-    fn notice(&mut self, text: &str) {
-        self.push(Item::Notice(text.to_owned()));
     }
 
     /// The answer being written: the last item, or a new one after a tool or a message.
@@ -379,32 +300,6 @@ impl Agent {
             _ => return,
         };
     }
-}
-
-fn clip(text: &str) -> String {
-    let mut clipped: String = text.chars().take(SHOWN_CHARS).collect();
-    if clipped.len() < text.len() {
-        clipped.push_str("\n...");
-    }
-    clipped
-}
-
-/// A line of what a tool was asked: its command, path or first argument.
-fn summary(arguments: &serde_json::Value) -> String {
-    let text = [
-        "description",
-        "command",
-        "path",
-        "query",
-        "url",
-        "pattern",
-        "task",
-    ]
-    .iter()
-    .find_map(|key| arguments.get(key).and_then(|value| value.as_str()))
-    .unwrap_or_default();
-    let line = text.lines().next().unwrap_or_default();
-    line.chars().take(160).collect()
 }
 
 #[cfg(test)]

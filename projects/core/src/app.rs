@@ -11,7 +11,10 @@ use dusk_protocol::client::Hello;
 #[cfg(target_os = "macos")]
 pub use crate::tools::run_overlay_if_asked;
 pub use crate::{
-    backup::archive::{RemovalGuard, RestoreGuard, recover, resolve_state_db, restore},
+    backup::{
+        Uninstall,
+        archive::{RestoreGuard, recover, resolve_state_db, restore},
+    },
     catalog::mentions::complete as complete_mention,
     init::{
         logs::{Telemetry, init as init_logs},
@@ -19,14 +22,14 @@ pub use crate::{
     },
     message::path_completion,
     platform::{notify, usage::process as process_usage},
+    project::git_summary,
     release::{
         app_update::running_bundle,
         complete::{Step, complete, ensure_installed},
         notes::{Notes, notes_since},
-        resources::{data_root, install_snapshot},
+        resources::install_snapshot,
         update::{VERSION, update_now},
     },
-    secrets::forget_all as forget_secrets,
     state::artifacts::ArtifactStore,
 };
 use crate::{

@@ -1,70 +1,39 @@
-//! `duskcode remove`: takes duskcode off this machine after one question. Thread files in
-//! the workspace folder are the user's work and stay, unless `--files` says otherwise. The
-//! desktop client runs it as `remove --yes` after it has closed, having asked the user
-//! itself.
+//! `duskcode remove`: takes duskcode off this machine after one question. The core works
+//! out and deletes what goes; this asks and prints. The desktop client runs it as
+//! `remove --yes` after it has closed, having asked the user itself.
 
-use std::{
-    env, fs,
-    io::{self, Write},
-    path::{Path, PathBuf},
-};
+use std::io::{self, Write};
 
-use anyhow::{Context, Result, ensure};
-use dusk_core::app::{self, Paths};
+use anyhow::Result;
+use dusk_core::app::{Paths, Uninstall};
 
 use super::args::RemoveOptions;
 
-const BINARY: &str = "duskcode";
-
 pub fn run(paths: &Paths, options: &RemoveOptions) -> Result<()> {
-    let removal = acquire(options.assume_yes)?;
-    let home = PathBuf::from(env::var_os("HOME").context("HOME is not set")?);
-    let exe = env::current_exe().context("cannot find this binary")?;
-    let exe = fs::canonicalize(&exe).unwrap_or(exe);
-    let links = links_to(&exe, &home);
-    let install_dir = app::data_root()?;
-    removal.validate_application_data_root(&install_dir)?;
-    let config = paths.config_root();
-    ensure!(
-        config.ends_with("duskcode"),
-        "unexpected config folder {}",
-        config.display()
-    );
-
+    let removal = Uninstall::plan(paths, options.files, options.assume_yes)?;
     println!("This removes:");
-    println!("  {}", exe.display());
-    for link in &links {
+    println!("  {}", removal.exe.display());
+    for link in &removal.links {
         println!("  {} (link)", link.display());
     }
-    if fs::symlink_metadata(&install_dir).is_ok() {
-        ensure!(
-            fs::symlink_metadata(&install_dir)?.is_dir(),
-            "install directory must not be a symlink"
-        );
-        println!("  {} (application data)", install_dir.display());
+    if let Some(data) = &removal.data {
+        println!("  {} (application data)", data.display());
         println!(
             "    {} (all versioned resources)",
-            install_dir.join("resources").display()
+            data.join("resources").display()
         );
     }
     println!(
         "  {} (config, history, skills, agents) and the keys in the system keychain",
-        config.display()
+        removal.config.display()
     );
-    let extras = desktop_leftovers(&home, &install_dir);
-    for extra in &extras {
+    for extra in &removal.extras {
         println!("  {} (desktop client)", extra.display());
     }
-    let workspace = paths.workspace_root();
-    if options.files {
-        ensure!(
-            workspace.ends_with("duskcode") && workspace.starts_with(&home),
-            "unexpected workspace folder {}",
-            workspace.display()
-        );
-        println!("  {} (the chats' files)", workspace.display());
+    if removal.files {
+        println!("  {} (the chats' files)", removal.workspace.display());
     } else {
-        println!("Thread files in {} are kept.", workspace.display());
+        println!("Thread files in {} are kept.", removal.workspace.display());
     }
     println!(
         "The coordination lock {} is kept.",
@@ -80,113 +49,7 @@ pub fn run(paths: &Paths, options: &RemoveOptions) -> Result<()> {
             return Ok(());
         }
     }
-
-    // What the user wants gone goes first and the program last, and one failure does not
-    // stop the rest: a run that could not finish leaves a program that can be asked again,
-    // never a removed program beside the data it was meant to take along.
-    let mut failures: Vec<String> = Vec::new();
-    let mut step = |result: Result<()>| {
-        if let Err(error) = result {
-            failures.push(format!("{error:#}"));
-        }
-    };
-    // While the config still names the providers; a locked keychain must not stop the
-    // removal, so what it leaves is only reported.
-    if let Err(error) = app::forget_secrets(&paths.config_file()) {
-        eprintln!("duskcode: {error:#}; delete them in the keychain app");
-    }
-    step(remove_path(config));
-    if options.files {
-        step(remove_path(workspace));
-    }
-    step(removal.remove_application_data(&install_dir));
-    for extra in &extras {
-        step(remove_path(extra));
-    }
-    for link in &links {
-        step(fs::remove_file(link).with_context(|| format!("cannot remove {}", link.display())));
-    }
-    if failures.is_empty() {
-        fs::remove_file(&exe).with_context(|| format!("cannot remove {}", exe.display()))?;
-        println!("duskcode is removed.");
-        return Ok(());
-    }
-    // Started by the desktop client nobody reads this process's output, so what failed is
-    // also kept beside the lock, which stays.
-    let report = failures.join("\n");
-    if let Some(folder) = removal.lock_path().parent() {
-        let _ = fs::write(folder.join("removal.log"), format!("{report}\n"));
-    }
-    anyhow::bail!("the removal did not finish; run `duskcode remove` again:\n{report}")
-}
-
-/// The lock that keeps other duskcode processes out. Started by the desktop client, this
-/// process may begin while the window is still closing, so it waits for it a while.
-fn acquire(wait: bool) -> Result<app::RemovalGuard> {
-    let mut tries = 0;
-    loop {
-        match app::RemovalGuard::acquire() {
-            Err(_) if wait && tries < 60 => {
-                tries += 1;
-                std::thread::sleep(std::time::Duration::from_millis(500));
-            }
-            result => return result,
-        }
-    }
-}
-
-/// What the desktop client's installer left outside the data folder: the app bundle on a
-/// Mac, the desktop entry and the icon elsewhere. Only what exists is listed.
-fn desktop_leftovers(home: &Path, install_dir: &Path) -> Vec<PathBuf> {
-    let data_home = install_dir.parent().unwrap_or(home);
-    let candidates = [
-        home.join("Applications/Duskcode.app"),
-        data_home.join("applications/duskcode.desktop"),
-        data_home.join("icons/hicolor/512x512/apps/duskcode.png"),
-    ];
-    candidates
-        .into_iter()
-        .filter(|path| fs::symlink_metadata(path).is_ok())
-        .collect()
-}
-
-/// A file, a link or a folder, links not followed.
-fn remove_path(path: &Path) -> Result<()> {
-    let Ok(meta) = fs::symlink_metadata(path) else {
-        return Ok(());
-    };
-    if !meta.is_dir() {
-        return fs::remove_file(path).with_context(|| format!("cannot remove {}", path.display()));
-    }
-    // A process that is still closing may write one more file into the folder while it is
-    // emptied, which fails the removal of the folder itself: a few tries outlast that.
-    let mut tries = 0;
-    loop {
-        match fs::remove_dir_all(path) {
-            Err(error) if error.kind() == io::ErrorKind::DirectoryNotEmpty && tries < 10 => {
-                tries += 1;
-                std::thread::sleep(std::time::Duration::from_millis(300));
-            }
-            result => {
-                return result.with_context(|| format!("cannot remove {}", path.display()));
-            }
-        }
-    }
-}
-
-/// Links named duskcode on PATH and in the usual places that lead to `exe`.
-fn links_to(exe: &Path, home: &Path) -> Vec<PathBuf> {
-    let mut folders = vec![PathBuf::from("/usr/local/bin"), home.join(".local/bin")];
-    if let Some(path) = env::var_os("PATH") {
-        folders.extend(env::split_paths(&path));
-    }
-    let mut links: Vec<PathBuf> = Vec::new();
-    for link in folders.into_iter().map(|folder| folder.join(BINARY)) {
-        let is_link = fs::symlink_metadata(&link).is_ok_and(|meta| meta.file_type().is_symlink());
-        let target = fs::canonicalize(&link).ok();
-        if is_link && target.as_deref() == Some(exe) && !links.contains(&link) {
-            links.push(link);
-        }
-    }
-    links
+    removal.run(|error| eprintln!("duskcode: {error:#}; delete them in the keychain app"))?;
+    println!("duskcode is removed.");
+    Ok(())
 }

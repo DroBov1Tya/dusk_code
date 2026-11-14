@@ -4,7 +4,7 @@
 use std::{path::Path, process::Stdio, time::Duration};
 
 use anyhow::{Context, Result, bail, ensure};
-use dusk_protocol::project::{Change, ChangeKind, GitInfo, Project, Worktree};
+use dusk_protocol::project::{Change, ChangeKind, GitInfo, GitSummary, Project, Worktree};
 use tokio::process::Command;
 
 const TIMEOUT: Duration = Duration::from_secs(10);
@@ -27,14 +27,7 @@ pub async fn info(project: &Project) -> Result<GitInfo> {
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
     )
     .await?;
-    // No upstream is no error worth showing: the counts are just left out.
-    let ahead_behind = git(dir, &["rev-list", "--left-right", "--count", "HEAD...@{u}"])
-        .await
-        .ok()
-        .and_then(|counts| {
-            let mut parts = counts.split_whitespace().map(str::parse::<u64>);
-            Some((parts.next()?.ok()?, parts.next()?.ok()?))
-        });
+    let ahead_behind = ahead_behind(dir).await;
     let web = git(dir, &["remote", "get-url", "origin"])
         .await
         .ok()
@@ -51,6 +44,44 @@ pub async fn info(project: &Project) -> Result<GitInfo> {
         web,
         stat,
     })
+}
+
+/// The repository the client's own folder is in, for its status line. Unlike `info`
+/// this is not bound to a saved project: it reads only names and counts, never files.
+/// `None` outside a repository or where git is missing.
+pub async fn summary(dir: &Path) -> Option<GitSummary> {
+    let top = git(dir, &["rev-parse", "--show-toplevel"]).await.ok()?;
+    let repository = Path::new(top.trim())
+        .file_name()?
+        .to_string_lossy()
+        .into_owned();
+    let branch = git(dir, &["branch", "--show-current"]).await.ok()?;
+    // Untracked folders count once, as `git status` lists them.
+    let status = git(dir, &["status", "--porcelain=v1", "-z"]).await.ok()?;
+    // A new repository has no commits yet, and rev-list then fails.
+    let commits = git(dir, &["rev-list", "--count", "HEAD"])
+        .await
+        .ok()
+        .and_then(|count| count.trim().parse().ok())
+        .unwrap_or(0);
+    let branch = branch.trim();
+    Some(GitSummary {
+        repository,
+        branch: (!branch.is_empty()).then(|| branch.to_owned()),
+        commits,
+        changed: parse_status(&status, "").len(),
+        ahead_behind: ahead_behind(dir).await,
+    })
+}
+
+/// Commits ahead of and behind the upstream. No upstream is no error worth showing:
+/// the counts are just left out.
+async fn ahead_behind(dir: &Path) -> Option<(u64, u64)> {
+    let counts = git(dir, &["rev-list", "--left-right", "--count", "HEAD...@{u}"])
+        .await
+        .ok()?;
+    let mut parts = counts.split_whitespace().map(str::parse::<u64>);
+    Some((parts.next()?.ok()?, parts.next()?.ok()?))
 }
 
 /// The https page of a remote such as `git@github.com:owner/repo.git`,

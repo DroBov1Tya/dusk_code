@@ -1,6 +1,7 @@
 //! The agent's steps: a run of them with the latest in sight, and one step unfolded to
 //! its arguments and answer.
 
+use dusk_protocol::thread::{Tool, ToolState};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -15,7 +16,7 @@ use super::{
     activity::{disclosure, disclosure_icon, fold_foot, long, step_muted},
 };
 use crate::{
-    pages::chat::transcript::{Item, Tool, ToolState},
+    pages::chat::transcript::Item,
     ui::{Type, widgets},
     workspace::Workspace,
 };

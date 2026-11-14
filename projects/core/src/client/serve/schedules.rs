@@ -9,6 +9,7 @@ use chrono::Local;
 use dusk_protocol::{
     client::{ProjectRequest, Response},
     project::{MAX_SCHEDULES, Schedule, ScheduleDraft},
+    system::now_ms,
 };
 use std::sync::{Arc, atomic::Ordering};
 use tracing::{info, warn};
@@ -162,8 +163,4 @@ impl Server {
         info!("scheduled task {} started chat {thread_id}", task.id);
         Ok(thread_id)
     }
-}
-
-fn now_ms() -> i64 {
-    chrono::Utc::now().timestamp_millis()
 }
