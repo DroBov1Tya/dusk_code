@@ -11,7 +11,8 @@
 //! - `platform` — programs that bring the user in from elsewhere;
 //! - `ui` — programs that draw parts of the window;
 //! - `isolation` — how every program of a plugin is confined;
-//! - `broker` — a plugin's only way to the network, which holds its keys.
+//! - `broker` — a plugin's only way to the network, which holds its keys;
+//! - `store` — installing plugins from the signed store.
 
 pub mod broker;
 pub mod catalog;
@@ -20,6 +21,7 @@ mod install;
 pub mod isolation;
 pub mod manifest;
 pub mod platform;
+pub mod store;
 pub mod ui;
 
 pub use catalog::{PluginInfo, Plugins};

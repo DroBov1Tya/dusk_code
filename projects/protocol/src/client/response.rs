@@ -62,6 +62,7 @@ pub enum Response {
     Simulator(crate::system::Simulator),
     SimScreen(crate::system::SimScreen),
     Answer(Box<Answer>),
+    Store(Vec<crate::plugin::Listing>),
     /// The request failed; the text says why in full.
     Error(String),
 }

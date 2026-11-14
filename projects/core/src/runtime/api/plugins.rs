@@ -20,6 +20,32 @@ impl Runtime {
         std::sync::Arc::clone(self.plugins.ui())
     }
 
+    /// Lists, installs or removes plugins of the store. An installed plugin is switched
+    /// on, allowing what its listing showed, which its manifest was checked to match.
+    pub async fn store(
+        &self,
+        request: dusk_protocol::plugin::StoreRequest,
+    ) -> Result<dusk_protocol::client::Response> {
+        use crate::plugins::store;
+        use dusk_protocol::{client::Response, plugin::StoreRequest};
+        match request {
+            StoreRequest::List => return Ok(Response::Store(store::list(self.paths()).await?)),
+            StoreRequest::Install { name, version } => {
+                store::install(self.paths(), &name, &version).await?;
+                tracing::info!("plugin {name} {version} installed from the store");
+                self.set_plugin_enabled(&name, true)?;
+            }
+            StoreRequest::Remove { name } => {
+                self.set_plugin_enabled(&name, false)?;
+                store::remove(self.paths(), &name)?;
+                tracing::info!("plugin {name} removed");
+                let plugins = Arc::clone(&self.plugins);
+                tokio::task::spawn_blocking(move || plugins.scan());
+            }
+        }
+        Ok(Response::Done)
+    }
+
     /// Switches a plugin on, allowing what its manifest asks for now, or off; it applies
     /// at once.
     pub fn set_plugin_enabled(&self, name: &str, enabled: bool) -> Result<()> {

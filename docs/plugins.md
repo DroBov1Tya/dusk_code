@@ -283,6 +283,39 @@ for line in sys.stdin:
         send({"type": "notice", "text": "Hi!"})
 ```
 
+## The store
+
+The Workshop under Plugins lists the plugins of the store at
+`https://drobov1tya.github.io/duskcode-plugins/` and installs one with a click, after
+showing what it may do. The core installs a plugin only when:
+
+- the store's `index.json` is signed (Ed25519) by the key built into duskcode;
+- the package for this system and processor has the size and SHA-256 the list names;
+- it unpacks to plain files and folders inside its own folder: no links, no `..`, no
+  absolute paths, at most 4000 files and 256 MiB;
+- its `plugin.yml` asks for exactly the permissions, systems and clients the list
+  showed you.
+
+The store updates and removes only what it installed (a `.store.json` in the plugin's
+folder says so); a folder you made yourself is never replaced. A browser can look at the
+store but not install from it: a plugin runs programs on this machine.
+
+`index.json`, format 1:
+
+```json
+{"format": 1, "plugins": [{
+  "name": "telegram", "version": "1.0.0", "description": "...",
+  "platforms": ["macos"], "clients": ["gui", "tui"],
+  "permissions": {"network": ["https://api.telegram.org"]},
+  "homepage": "https://...",
+  "downloads": [{"os": "macos", "arch": "aarch64", "url": "https://...tar.gz",
+                 "sha256": "...", "size": 123456}]}]}
+```
+
+`index.json.sig` beside it holds the base64 of the signature of the file's exact bytes.
+`DUSKCODE_STORE_URL` points duskcode at another list, such as a fork's; it is still
+checked against the built-in key.
+
 ## Built-in plugins
 
 duskcode ships its own plugins the same way, so they follow each update:

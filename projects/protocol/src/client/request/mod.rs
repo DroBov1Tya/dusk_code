@@ -21,6 +21,8 @@ pub enum Request {
     Simulator(SimulatorRequest),
     /// The parts plugins add to the window.
     Plugin(PluginRequest),
+    /// The plugin store; it goes to the network, so it is answered beside the loop.
+    Store(crate::plugin::StoreRequest),
     /// Installs release `tag`; progress shows in the status until it is done.
     InstallUpdate {
         tag: String,

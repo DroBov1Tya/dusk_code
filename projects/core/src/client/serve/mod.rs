@@ -145,6 +145,9 @@ impl Server {
                     Some(Message::Call(Call { request: Request::Simulator(request), reply, .. })) => {
                         simulator::answer(request, reply);
                     }
+                    Some(Message::Call(Call { request: Request::Store(request), reply, .. })) => {
+                        self.store(request, reply);
+                    }
                     Some(Message::Call(Call { client, request, reply })) => {
                         self.caller = client;
                         let response = match self.handle(request).await {
@@ -194,9 +197,10 @@ impl Server {
             Request::Terminal(request) => self.terminal(request).await,
             Request::SystemReport => Ok(Response::System(self.runtime.system_report().await?)),
             Request::Plugin(request) => self.plugin(request),
-            Request::InstallUpdate { .. } | Request::Simulator(_) | Request::Shutdown => {
-                Err(anyhow!("this request is answered by the loop"))
-            }
+            Request::InstallUpdate { .. }
+            | Request::Simulator(_)
+            | Request::Store(_)
+            | Request::Shutdown => Err(anyhow!("this request is answered by the loop")),
         }
     }
 }

@@ -8,6 +8,7 @@ use dusk_protocol::client::{
     CatalogRequest, Hello, PROTOCOL_VERSION, ProjectRequest, Request, RequestFrame, Response,
     ServerFrame, VoiceRequest, WorkRequest,
 };
+use dusk_protocol::plugin::StoreRequest;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Semaphore, mpsc, watch};
 use tracing::{debug, warn};
@@ -139,7 +140,7 @@ const MAX_REQUEST: usize = 1024 * 1024;
 
 /// What a browser may not ask, though the protocol has it: stopping the core is for the
 /// process that started the server, an MCP server's config text holds its keys and tokens,
-/// a shell and the files of a project are the desktop app's to open and change, and a
+/// installing a plugin runs its programs here, a shell and the files of a project are the desktop app's to open and change, and a
 /// request over the ordinary size is only for a recording.
 fn refused(request: &Request, size: usize) -> Option<&'static str> {
     match request {
@@ -153,6 +154,10 @@ fn refused(request: &Request, size: usize) -> Option<&'static str> {
         Request::Terminal(_) => Some("a terminal opens in the desktop app only"),
         Request::Simulator(_) => Some("the iOS Simulator opens in the desktop app only"),
         Request::Plugin(_) => Some("plugin parts open in the desktop app only"),
+        // A plugin runs programs on this machine; only a client on it may install one.
+        Request::Store(StoreRequest::Install { .. } | StoreRequest::Remove { .. }) => {
+            Some("plugins are installed in the desktop app or the terminal")
+        }
         Request::Project(ProjectRequest::WriteFile { .. }) => {
             Some("a file is edited in the desktop app only")
         }
