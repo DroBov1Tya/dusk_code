@@ -37,6 +37,13 @@ pub struct Part {
     pub icon: Option<String>,
     pub place: Place,
     pub opens: Opens,
-    /// The platforms it is offered on, such as `macos`; all when empty.
-    pub platforms: Vec<String>,
+    /// The clients that can draw it; all when empty.
+    #[serde(default)]
+    pub clients: Vec<super::Client>,
+}
+
+impl Part {
+    pub fn shown_in(&self, client: super::Client) -> bool {
+        super::allows(&self.clients, &client)
+    }
 }

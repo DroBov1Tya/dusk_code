@@ -26,6 +26,8 @@ rules/plugins/my-plugin/
 name: my-plugin            # the same as the folder
 version: 0.1.0
 description: What it brings, in a line.
+platforms: [macos, linux]  # systems its programs are built for: macos | linux | windows; all when left out
+clients: [gui, tui]        # clients that can draw its parts: gui | tui | web; all when left out
 settings: [token]          # settings it needs, given under plugins: in config.yml
 
 providers:                 # model providers on the protocols the core speaks
@@ -46,6 +48,9 @@ hooks:                     # programs run on thread events
 platform:                  # a program the core keeps running, such as a chat bot
   command: [./bot]
 ```
+
+On a system not in `platforms` the plugin is listed but cannot be switched on, and the
+store shows why. A client not in `clients` does not show its parts.
 
 Unknown fields are refused, so a typo shows in `/plugins` as an error instead of a
 part that silently does nothing. When a name in `providers` or `mcp` is also in your
@@ -210,7 +215,7 @@ ui:
       icon: icons/phone.svg   # SVG in the plugin's folder, at most 16 KiB
       place: header           # header | rail | composer | settings
       opens: right_panel      # right_panel | bottom_panel | window
-      platforms: [macos]      # where it is offered; everywhere when left out
+      platforms: [macos]      # narrows the plugin's platforms; theirs when left out
 ```
 
 The icon is drawn in the theme's colour; use `currentColor` for strokes. An SVG that

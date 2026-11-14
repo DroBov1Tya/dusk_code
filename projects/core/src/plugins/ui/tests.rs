@@ -33,7 +33,7 @@ fn part(id: &str) -> Part {
         icon: None,
         place: Place::Header,
         opens: Opens::RightPanel,
-        platforms: Vec::new(),
+        clients: Vec::new(),
     }
 }
 

@@ -22,7 +22,7 @@ pub fn parts() -> Vec<Part> {
         icon: icon.map(str::to_owned),
         place,
         opens,
-        platforms: Vec::new(),
+        clients: Vec::new(),
     };
     let mut parts = vec![
         part(
