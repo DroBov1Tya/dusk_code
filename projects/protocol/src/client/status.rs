@@ -51,6 +51,9 @@ pub struct Status {
     /// How the sign-in with ChatGPT stands.
     #[serde(default)]
     pub chatgpt: ChatGpt,
+    /// The rate limits of the current model's account, when its provider reports them.
+    #[serde(default)]
+    pub limits: Option<crate::model::RateLimits>,
     /// Where pictures of messages and tool results are kept.
     pub artifacts_dir: PathBuf,
     /// Where a chat without a project works: the root of the workspace folders.

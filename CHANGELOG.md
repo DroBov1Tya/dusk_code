@@ -8,6 +8,10 @@ testing.
 
 ### Added
 
+- While Sign in with ChatGPT waits for the browser, Copy URL takes the page to another
+  browser; the terminal prints the address too.
+- A ring over the context ring shows how much of its rate limits the current model's
+  account has used, when the provider reports them.
 - In the connect form the fields follow the provider: Sign in with ChatGPT shows under
   OpenAI, and an address is asked only of a custom server.
 - More models has a button that asks the providers for their models again.
@@ -62,6 +66,9 @@ testing.
 
 ### Fixed
 
+- A turn whose model call failed showed as finished with no word of why; it now says
+  the error. Behind one such case, ChatGPT answers that are not marked as an event stream
+  are read as one, and a JSON answer gives the server's own message.
 - Sign in with ChatGPT refused an identity whose audience lists this app among others
   without naming an authorized party; the check now follows OpenID Connect, and a refusal
   logs the audience it saw.

@@ -32,6 +32,10 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         install,
         updated_builtin: runtime.updated_builtin().to_vec(),
         chatgpt: runtime.chatgpt(),
+        limits: runtime.model().and_then(|choice| {
+            let settings = config.providers().get(&choice.provider_name)?;
+            crate::providers::Account::of(settings).limits()
+        }),
         artifacts_dir: runtime.paths().artifacts_dir(),
         workspace_dir: runtime.paths().workspace_root().to_path_buf(),
     }

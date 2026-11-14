@@ -16,6 +16,7 @@
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
+//! - `fake=limits`: rate limits in the status, as a provider reports them;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
@@ -362,6 +363,18 @@ fn act(
             ws.folded.clear();
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
+        }
+        "fake" if value == "limits" => {
+            use dusk_protocol::model::{RateLimit, RateLimits};
+            ws.status.limits = Some(RateLimits {
+                requests: Some(RateLimit {
+                    limit: 100,
+                    remaining: 35,
+                    resets_in: Some(360),
+                }),
+                tokens: None,
+            });
+            cx.notify();
         }
         "fake" if value == "agents" => {
             use dusk_protocol::{
