@@ -114,6 +114,7 @@ impl Workspace {
             fill_composer: None,
             me: crate::pages::settings::about_me::AboutMe::new(window, cx),
             notice: None,
+            toast: None,
             pending: Vec::new(),
             rates: HashMap::new(),
             git: None,
