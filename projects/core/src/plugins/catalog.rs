@@ -15,11 +15,16 @@ use parking_lot::{Mutex, RwLock};
 use serde_json::json;
 use tracing::{info, warn};
 
+use dusk_protocol::plugin::{Part, Permissions};
+
 use super::{
+    broker::{self, Broker, Key, Origin, Policy},
     hooks::{Hook, Hooks},
     install,
+    isolation::Isolation,
     manifest::{MANIFEST_FILE, Manifest, SELF_COMMAND},
     platform::{PlatformSpec, Platforms},
+    ui::{UiHost, UiSpec},
 };
 use crate::{
     config::{McpServerConfig, Plugged, live::LiveConfig},
@@ -50,6 +55,10 @@ pub struct Plugins {
     mcp: Arc<McpServers>,
     hooks: Arc<Hooks>,
     platforms: Arc<Platforms>,
+    ui: Arc<UiHost>,
+    /// The broker of each plugin that is on and may connect; kept across scans, so its
+    /// port and token stay while the plugin runs.
+    brokers: Mutex<BTreeMap<String, Broker>>,
     found: RwLock<Vec<PluginInfo>>,
     /// Secret settings by (plugin, key), typed in this session; never saved.
     secrets: Mutex<BTreeMap<(String, String), Secret>>,
@@ -76,10 +85,22 @@ impl Plugins {
             mcp,
             hooks,
             platforms,
+            ui: Arc::default(),
+            brokers: Mutex::default(),
             found: RwLock::default(),
             secrets: Mutex::default(),
             started_mcp: Mutex::default(),
         })
+    }
+
+    pub fn ui(&self) -> &Arc<UiHost> {
+        &self.ui
+    }
+
+    /// What `plugin`'s manifest asks for now, to keep as allowed when it is switched on.
+    pub fn permissions(&self, plugin: &str) -> Result<Permissions> {
+        ensure!(is_plain_folder_name(plugin), "invalid plugin name");
+        Ok(Manifest::load(&folder(&self.paths).join(plugin))?.permissions)
     }
 
     pub fn list(&self) -> Vec<PluginInfo> {
@@ -113,6 +134,8 @@ impl Plugins {
         let mut plugged = Plugged::default();
         let mut hooks = Vec::new();
         let mut platforms = Vec::new();
+        let mut interfaces = Vec::new();
+        let mut connecting = Vec::new();
         for folder in plugin_folders(&folder(&self.paths)) {
             let name = folder_name(&folder);
             let settings = config.plugin(&name);
@@ -125,66 +148,126 @@ impl Plugins {
             };
             let secret_of = |key: &String| secrets.get(&(name.clone(), key.clone()));
             let mut values = settings.settings.clone();
-            // A secret in the file is not read: it is typed in, never saved.
-            for key in &manifest.secrets {
-                values.remove(key);
-                if let Some(secret) = secret_of(key) {
-                    values.insert(key.clone(), secret.0.clone());
+            let mut keys = Vec::new();
+            // A key in the file is not read: it is typed in, never saved. Only a key the
+            // plugin reads itself is handed to it; the others only its broker puts in.
+            for key in &manifest.permissions.keys {
+                values.remove(&key.name);
+                if let Some(secret) = secret_of(&key.name) {
+                    if key.handed {
+                        values.insert(key.name.clone(), secret.0.clone());
+                    }
+                    keys.push((key, secret.0.clone()));
                 }
             }
             let missing_settings: Vec<String> = manifest
                 .settings
                 .iter()
-                .chain(&manifest.secrets)
-                .filter(|key| !values.contains_key(*key))
+                .chain(manifest.secrets())
+                .filter(|key| !values.contains_key(*key) && secret_of(key).is_none())
                 .cloned()
                 .collect();
             let secret_state: Vec<(String, bool)> = manifest
-                .secrets
-                .iter()
+                .secrets()
                 .map(|key| (key.clone(), secret_of(key).is_some()))
                 .collect();
-            let enabled = settings.enabled && missing_settings.is_empty();
-            let env = env(&self.paths, &folder, &values);
+            let allowed = settings
+                .allowed
+                .as_ref()
+                .is_some_and(|allowed| covers(allowed, &manifest.permissions))
+                || manifest.permissions == Permissions::default();
+            let mut problem = None;
+            if settings.enabled && !allowed {
+                problem = Some("it asks for more than you allowed: switch it on again".into());
+            }
+            let mut enabled = settings.enabled && missing_settings.is_empty() && allowed;
+            let mut isolation = None;
+            if enabled && manifest.runs_programs() {
+                match self.isolate(&manifest, &folder, &values, &keys) {
+                    Ok(made) => {
+                        if !manifest.permissions.network.is_empty() {
+                            connecting.push(name.clone());
+                        }
+                        isolation = Some(made);
+                    }
+                    Err(error) => {
+                        warn!("plugin {name} cannot be confined: {error:#}");
+                        problem = Some(format!("{error:#}"));
+                        enabled = false;
+                    }
+                }
+            }
             if let Err(error) = install::sync(&self.paths, &name, enabled.then_some(&*folder)) {
                 warn!("cannot install the files of plugin {name}: {error:#}");
             }
             if enabled {
                 plugged.providers.extend(manifest.providers.clone());
+            }
+            if let (true, Some(isolation)) = (enabled, isolation) {
                 for (server, mcp) in &manifest.mcp {
                     plugged
                         .mcp
-                        .insert(server.clone(), resolve_mcp(mcp, &folder, &env));
+                        .insert(server.clone(), resolve_mcp(mcp, &folder, &isolation));
                 }
                 hooks.extend(manifest.hooks.iter().map(|hook| Hook {
                     plugin: name.clone(),
                     config: hook.clone(),
                     command: resolve(&hook.command, &folder),
-                    folder: folder.clone(),
-                    env: env.clone(),
+                    isolation: isolation.clone(),
                 }));
                 if let Some(platform) = &manifest.platform {
                     platforms.push(PlatformSpec {
                         plugin: name.clone(),
                         command: resolve(&platform.command, &folder),
-                        folder: folder.clone(),
-                        env: env.clone(),
+                        isolation: isolation.clone(),
                     });
                 }
+                if let Some(ui) = &manifest.ui {
+                    interfaces.push(ui_spec(&manifest, ui, &folder, isolation));
+                }
             }
-            found.push(info(
-                &manifest,
-                &folder,
-                enabled,
-                missing_settings,
-                secret_state,
-            ));
+            let mut info = info(&manifest, &folder, enabled, missing_settings, secret_state);
+            if info.problem.is_none() {
+                info.problem = problem;
+            }
+            found.push(info);
         }
+        self.brokers
+            .lock()
+            .retain(|name, _| connecting.contains(name));
         self.apply_mcp(&plugged.mcp);
         self.config.set_plugged(plugged);
         self.hooks.set(hooks);
         self.platforms.set(platforms);
+        self.ui.set(interfaces);
         *self.found.write() = found;
+    }
+
+    /// The confinement of a plugin's programs, with its broker when it may connect.
+    fn isolate(
+        &self,
+        manifest: &Manifest,
+        folder: &Path,
+        values: &BTreeMap<String, String>,
+        keys: &[(&dusk_protocol::plugin::KeyUse, String)],
+    ) -> Result<Isolation> {
+        let data = data_folder(&self.paths, folder)?;
+        let env = env(folder, &data, values);
+        let permissions = &manifest.permissions;
+        if permissions.network.is_empty() {
+            return Isolation::new(&self.paths, folder, &data, permissions, env, None);
+        }
+        let policy = policy(permissions, keys)?;
+        let mut brokers = self.brokers.lock();
+        match brokers.get(&manifest.name) {
+            Some(broker) => broker.set_policy(policy),
+            None => {
+                let broker = Broker::start(policy)?;
+                brokers.insert(manifest.name.clone(), broker);
+            }
+        }
+        let broker = brokers.get(&manifest.name);
+        Isolation::new(&self.paths, folder, &data, permissions, env, broker)
     }
 
     /// Reads the folder again every `period`.
@@ -209,7 +292,12 @@ impl Plugins {
             .iter()
             .filter(|(name, _)| !own.contains_key(*name))
             .map(|(name, server)| {
-                let text = serde_json::to_string(server).unwrap_or_default();
+                let mut text = serde_json::to_string(server).unwrap_or_default();
+                if let McpServerConfig::Stdio(stdio) = server
+                    && let Some(isolation) = &stdio.isolation
+                {
+                    text.push_str(&isolation.fingerprint());
+                }
                 (name.clone(), (text, server.clone()))
             })
             .collect();
@@ -253,13 +341,16 @@ fn folder_name(folder: &Path) -> String {
         .unwrap_or_default()
 }
 
-/// What every program of a plugin is given: its folder, a private folder for what it
-/// keeps, such as a paired owner, and its settings as JSON.
-fn env(paths: &Paths, folder: &Path, settings: &BTreeMap<String, String>) -> Vec<(String, String)> {
+/// A private folder for what the plugin keeps, such as a paired owner.
+fn data_folder(paths: &Paths, folder: &Path) -> Result<PathBuf> {
     let data = paths.config_root().join(DATA_DIR).join(folder_name(folder));
-    if let Err(error) = crate::init::create_private_dir(&data) {
-        warn!("cannot make the data folder of a plugin: {error:#}");
-    }
+    crate::init::create_private_dir(&data)?;
+    Ok(data)
+}
+
+/// What every program of a plugin is given: its folder, its data folder and its
+/// settings as JSON, the keys it reads itself among them.
+fn env(folder: &Path, data: &Path, settings: &BTreeMap<String, String>) -> Vec<(String, String)> {
     vec![
         ("DUSKCODE_PLUGIN_DIR".into(), folder.display().to_string()),
         ("DUSKCODE_PLUGIN_DATA".into(), data.display().to_string()),
@@ -285,11 +376,7 @@ fn resolve(command: &[String], folder: &Path) -> Vec<String> {
         .collect()
 }
 
-fn resolve_mcp(
-    server: &McpServerConfig,
-    folder: &Path,
-    env: &[(String, String)],
-) -> McpServerConfig {
+fn resolve_mcp(server: &McpServerConfig, folder: &Path, isolation: &Isolation) -> McpServerConfig {
     let mut server = server.clone();
     if let McpServerConfig::Stdio(stdio) = &mut server {
         let mut line = vec![stdio.command.clone()];
@@ -297,9 +384,83 @@ fn resolve_mcp(
         let mut line = resolve(&line, folder).into_iter();
         stdio.command = line.next().unwrap_or_default();
         stdio.args = line.collect();
-        stdio.env.extend(env.iter().cloned());
+        stdio.isolation = Some(isolation.clone());
     }
     server
+}
+
+/// Whether what the user allowed covers all that `wanted` asks for.
+fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
+    let within = |have: &[String], want: &[String]| want.iter().all(|item| have.contains(item));
+    within(&allowed.network, &wanted.network)
+        && within(&allowed.exec, &wanted.exec)
+        && within(&allowed.read, &wanted.read)
+        && wanted.keys.iter().all(|key| {
+            allowed.keys.iter().any(|had| {
+                had.name == key.name
+                    && within(&had.origins, &key.origins)
+                    && (had.handed || !key.handed)
+            })
+        })
+}
+
+/// What the broker lets out: the origins, and each key typed in with where it may go.
+fn policy(
+    permissions: &Permissions,
+    keys: &[(&dusk_protocol::plugin::KeyUse, String)],
+) -> Result<Policy> {
+    let origins = permissions
+        .network
+        .iter()
+        .map(|origin| Origin::parse(origin))
+        .collect::<Result<Vec<_>>>()?;
+    let mut granted = Vec::new();
+    for (key, value) in keys {
+        granted.push(Key {
+            name: key.name.clone(),
+            value: dusk_protocol::client::Secret(value.clone()),
+            origins: key
+                .origins
+                .iter()
+                .map(|origin| Origin::parse(origin))
+                .collect::<Result<Vec<_>>>()?,
+        });
+    }
+    Ok(Policy::new(broker::new_token()?, origins, granted))
+}
+
+fn ui_spec(
+    manifest: &Manifest,
+    ui: &super::manifest::Ui,
+    folder: &Path,
+    isolation: Isolation,
+) -> UiSpec {
+    let parts = ui
+        .parts
+        .iter()
+        .map(|part| {
+            let shown = Part {
+                plugin: manifest.name.clone(),
+                id: part.id.clone(),
+                title: part.title.clone(),
+                icon: part.svg.clone(),
+                place: part.place,
+                opens: part.opens,
+                platforms: part
+                    .platforms
+                    .iter()
+                    .map(|os| os.name().to_owned())
+                    .collect(),
+            };
+            (shown, part.offered_here())
+        })
+        .collect();
+    UiSpec {
+        plugin: manifest.name.clone(),
+        command: resolve(&ui.command, folder),
+        isolation,
+        parts,
+    }
 }
 
 fn info(
@@ -317,6 +478,7 @@ fn info(
         (!manifest.mcp.is_empty(), "mcp"),
         (!manifest.hooks.is_empty(), "hooks"),
         (manifest.platform.is_some(), "platform"),
+        (manifest.ui.is_some(), "ui"),
     ] {
         if has {
             parts.push(part.to_owned());
@@ -332,6 +494,7 @@ fn info(
             .then(|| format!("needs settings: {}", missing_settings.join(", "))),
         missing_settings,
         secrets,
+        permissions: manifest.permissions.lines(),
     }
 }
 
@@ -339,7 +502,7 @@ fn info(
 /// one line of printable text. Errors never carry the value.
 fn check_secret(manifest: &Manifest, key: &str, value: &str) -> Result<String> {
     ensure!(
-        manifest.secrets.iter().any(|secret| secret == key),
+        manifest.secrets().any(|secret| secret == key),
         "plugin {} has no secret {key}",
         manifest.name
     );
@@ -361,6 +524,7 @@ fn broken(name: String, enabled: bool, error: &anyhow::Error) -> PluginInfo {
         parts: Vec::new(),
         missing_settings: Vec::new(),
         secrets: Vec::new(),
+        permissions: Vec::new(),
         problem: Some(format!("{error:#}")),
     }
 }
@@ -370,7 +534,11 @@ mod tests {
     use super::*;
 
     fn manifest() -> Manifest {
-        serde_saphyr::from_str("name: bot\nsecrets: [token]\nsettings: [chat]\n").unwrap()
+        serde_saphyr::from_str(
+            "name: bot\nsettings: [chat]\npermissions:\n  network: [https://api.example.com]\n  \
+             keys: [{name: token, origins: [https://api.example.com]}]\n",
+        )
+        .unwrap()
     }
 
     #[test]
@@ -388,6 +556,26 @@ mod tests {
         assert!(check_secret(&manifest, "token", "  ").is_err());
         assert!(check_secret(&manifest, "token", "a\nb").is_err());
         assert!(check_secret(&manifest, "token", &"x".repeat(MAX_SECRET_BYTES + 1)).is_err());
+    }
+
+    /// An update that asks for more stays off until the user allows it again.
+    #[test]
+    fn allowed_permissions_cover_only_what_was_allowed() {
+        let read = |yaml: &str| -> Permissions { serde_saphyr::from_str(yaml).unwrap() };
+        let allowed = read(
+            "network: [https://a.example.com]\nkeys: [{name: token, origins: [https://a.example.com]}]\n",
+        );
+        assert!(covers(&allowed, &allowed));
+        assert!(covers(&allowed, &Permissions::default()));
+        for more in [
+            "network: [https://a.example.com, https://b.example.com]\n",
+            "exec: [xcrun]\n",
+            "read: [~/Library]\n",
+            "keys: [{name: token, origins: [https://a.example.com], handed: true}]\n",
+            "keys: [{name: other, origins: [https://a.example.com]}]\n",
+        ] {
+            assert!(!covers(&allowed, &read(more)), "{more}");
+        }
     }
 
     #[test]

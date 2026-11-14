@@ -34,6 +34,7 @@ impl Workspace {
                     // A sign-in that just ended brought a provider: show it.
                     let signed = this.status.chatgpt != next.chatgpt;
                     this.status = next;
+                    this.prune_plugin_parts(cx);
                     if signed {
                         this.load_settings(cx);
                     }
@@ -104,6 +105,14 @@ impl Workspace {
             }
             Event::Terminal { id, data } => self.terminal_output(&id, &data, cx),
             Event::TerminalClosed { id, code } => self.terminal_closed(&id, code, cx),
+            Event::PluginView { plugin, part, root } => self.plugin_view(plugin, part, root, cx),
+            Event::PluginFrame {
+                plugin,
+                part,
+                widget,
+                jpeg,
+            } => self.plugin_frame(plugin, part, widget, jpeg, cx),
+            Event::PluginNotice { plugin, text } => self.plugin_notice(&plugin, &text, cx),
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;

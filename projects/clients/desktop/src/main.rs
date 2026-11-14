@@ -8,6 +8,7 @@
 //!   `connectors` (servers, skills, plugins, tools, speech), the `settings`, the `review` of
 //!   changes and a `file` in full;
 //! - `modal`: what opens over the window: search, a new project, a file viewer, confirmations;
+//! - `plugins`: the parts plugins add: their icons, the menu of them, the docks they open in;
 //! - `ui`: the design system: its scale and pieces, the `widgets` and the `theme`;
 //! - `platform`: what the window takes from the machine: the icon and notifications;
 //! - `dev`: tools for working on the window, behind their cargo features.
@@ -19,6 +20,7 @@ mod dev;
 mod modal;
 mod pages;
 mod platform;
+mod plugins;
 mod ui;
 mod workspace;
 

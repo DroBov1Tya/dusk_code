@@ -51,6 +51,9 @@ pub struct Status {
     /// How the sign-in with ChatGPT stands.
     #[serde(default)]
     pub chatgpt: ChatGpt,
+    /// The parts switched-on plugins add to the window.
+    #[serde(default)]
+    pub plugin_parts: Vec<crate::plugin::Part>,
     /// The rate limits of the current model's account, when its provider reports them.
     #[serde(default)]
     pub limits: Option<crate::model::RateLimits>,

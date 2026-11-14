@@ -14,6 +14,7 @@
 //!   plugins, the profile;
 //! - `catalog`: skills and agents as files, and their problems;
 //! - `project`: projects, their git state, diffs and files;
+//! - `plugin`: what a plugin may do, where its parts show and the views it draws;
 //! - `release`, `system`: releases and installs, and what the process takes.
 //!
 //! A new type goes into the domain it belongs to, in a file of its own when it has its own
@@ -24,6 +25,7 @@ pub mod catalog;
 pub mod client;
 pub mod config;
 pub mod model;
+pub mod plugin;
 pub mod project;
 pub mod release;
 pub mod system;

@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use parking_lot::RwLock;
 use tokio::{
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
-    process::{ChildStdin, Command},
+    process::ChildStdin,
 };
 use tracing::warn;
 
@@ -46,11 +46,10 @@ impl<'a> Session<'a> {
         spec: &'a PlatformSpec,
         statuses: &RwLock<BTreeMap<String, String>>,
     ) -> Result<()> {
-        let (program, arguments) = spec.command.split_first().context("no command")?;
-        let mut child = Command::new(program)
-            .args(arguments)
-            .current_dir(&spec.folder)
-            .envs(spec.env.iter().map(|(key, value)| (key, value)))
+        let program = spec.command.first().context("no command")?;
+        let mut child = spec
+            .isolation
+            .command(&spec.command)?
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())

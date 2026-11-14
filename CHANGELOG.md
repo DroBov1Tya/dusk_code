@@ -4,6 +4,30 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- Plugins can add parts to the desktop window: an icon in the header, the rail or beside
+  the message box, or a page under Settings, opening a panel, a bottom panel or a
+  window. A part is drawn from a tree of the window's own widgets that the plugin's
+  program sends, including a live screen that takes taps and swipes. Pinned parts show
+  their icon; the rest are under a Plugins button with search and folding groups, and
+  panels open as tabs of one dock, so many plugins stay calm.
+- Plugin isolation: every program a plugin runs starts with an empty environment, under
+  the system's sandbox, without access to the config folder, other plugins or the
+  keychain. It reaches the network only through the core's broker and only to the
+  origins its manifest lists; a plugin's own key is put into its requests by the core
+  and never seen by the plugin unless it is marked handed. The permissions are shown
+  before a plugin is switched on, and an update that asks for more turns it off.
+
+### Changed
+
+- The `secrets` field of `plugin.yml` is now `permissions.keys`, with the origins each
+  key may go to. The built-in Telegram plugin asks for api.telegram.org only and is off
+  after this update until you switch it on again. On Linux, plugins that need the
+  network do not start, since Landlock cannot hold them to the broker.
+
 ## 0.74.0 - 2026-11-14
 
 ### Added

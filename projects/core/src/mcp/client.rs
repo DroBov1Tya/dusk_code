@@ -152,8 +152,19 @@ impl McpClient {
 }
 
 async fn start_child(config: &StdioServerConfig) -> Result<RunningService<RoleClient, ()>> {
-    let mut command = Command::new(&config.command);
-    command.args(&config.args).envs(&config.env);
+    let mut command = match &config.isolation {
+        Some(isolation) => {
+            let mut line = vec![config.command.clone()];
+            line.extend(config.args.iter().cloned());
+            isolation.command(&line)?
+        }
+        None => {
+            let mut command = Command::new(&config.command);
+            command.args(&config.args);
+            command
+        }
+    };
+    command.envs(&config.env);
     let (transport, _) = TokioChildProcess::builder(command)
         .stderr(Stdio::null())
         .spawn()

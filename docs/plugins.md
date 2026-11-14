@@ -131,6 +131,153 @@ From the platform to the core:
 Whoever reaches the platform acts as you, so the platform decides who that is. The
 Telegram plugin, for example, answers only the one user who paired with it.
 
+## Permissions and isolation
+
+A plugin's programs never see what the core keeps: provider keys, sign-in tokens and
+the keychain are out of their reach, and a plugin gets nothing it does not ask for.
+
+- **Environment.** Every program a plugin runs starts with an empty environment plus
+  `PATH`, `HOME`, the locale, `TMPDIR`, the `DUSKCODE_PLUGIN_*` variables and the proxy
+  below. No provider key travels in an environment variable.
+- **Files.** A program writes only in `DUSKCODE_PLUGIN_DATA` and the temporary folder. It
+  reads its own folder, but not the rest of `~/.config/duskcode`, other plugins or the
+  keychain.
+- **Network.** A program cannot connect anywhere itself. Its requests go through the
+  core, at `DUSKCODE_PLUGIN_PROXY` (also set as `HTTPS_PROXY`), which lets them out only
+  to the origins the manifest lists, and never to private or local addresses.
+- **Keys.** A plugin that needs a key for its own service names it and where it may go.
+  The core keeps the key and puts it into requests to those origins only: the plugin
+  writes `{{key:token}}` in a URL or a header and never sees the value. A key that must
+  be read by the plugin itself, for a protocol the core cannot carry, is marked
+  `handed`, and you are told plainly that the plugin will see it. Even then it can only
+  send it to the origins it may reach.
+- **Your keys.** The keys of your providers and your sign-ins are never given to a
+  plugin, by any message or setting.
+
+```yaml
+permissions:
+  network: [https://api.example.com]     # origins, through the core
+  exec: [xcrun, axe]                     # programs it may start besides its own
+  read: [~/Library/Developer]            # folders outside its own it may read
+  keys:
+    - name: token
+      origins: [https://api.example.com]
+      handed: false                      # true: the plugin reads the key itself
+```
+
+### Talking to the network
+
+The core's broker is an HTTP proxy at `DUSKCODE_PLUGIN_PROXY`, guarded by the token in
+`DUSKCODE_PLUGIN_PROXY_TOKEN` (`Proxy-Authorization: Basic` of `dusk:<token>`; the
+`HTTPS_PROXY` variables carry it already, so most HTTP libraries just work).
+
+- A request in absolute form, `GET https://api.example.com/v1/items HTTP/1.1`, goes out
+  when its origin is listed. `{{key:token}}` in the URL or a header value becomes the key
+  on the way, only for an origin the key is for.
+- `CONNECT api.example.com:443` opens a tunnel to a listed origin; nothing is put into
+  a tunnel, so a key used this way must be `handed`.
+- Addresses that are not public (private, loopback, link-local, metadata) are refused
+  after the name is resolved, and the connection goes to the address that was checked.
+  Redirects come back to the plugin; following one is a new request, checked again.
+- Bodies are capped at 16 MiB and a request at 60 seconds. A key a server echoes back
+  is hidden from the plugin.
+
+### Where the rules are enforced
+
+On macOS by the system's sandbox (Seatbelt): the keychain services are closed, network
+is closed except the plugin's broker port, and only system programs, the plugin's own
+and the ones it lists may start. On Linux by Landlock, which cannot keep a program to a
+single port: a plugin that asks for network does not start there, and the keychain
+(Secret Service, over D-Bus) cannot be closed. Landlock needs Linux 6.7 to close the
+network at all; on an older kernel plugin programs do not start. Where a rule cannot be
+enforced the program does not start.
+
+You see the permissions as plain lines before you switch the plugin on, and a plugin
+update that asks for more stays off until you switch it on again.
+
+## Interface parts
+
+A plugin can add parts to the desktop window: an icon in the header, the rail or beside
+the message box, or a page under Settings, which opens a panel, a bottom panel or a
+window.
+
+```yaml
+ui:
+  command: [./panel]          # the program that draws the parts; started when one opens
+  parts:
+    - id: simulator           # a-z, 0-9 and -, unique in the plugin
+      title: iOS Simulator
+      icon: icons/phone.svg   # SVG in the plugin's folder, at most 16 KiB
+      place: header           # header | rail | composer | settings
+      opens: right_panel      # right_panel | bottom_panel | window
+      platforms: [macos]      # where it is offered; everywhere when left out
+```
+
+The icon is drawn in the theme's colour; use `currentColor` for strokes. An SVG that
+loads anything (scripts, images, external links or styles) is refused.
+
+Many plugins stay calm: only parts you pin show their icon; the rest are under the
+Plugins button, searchable and grouped by plugin. Panels open as tabs of one dock, and
+a plugin's program runs only while one of its parts is open.
+
+### The panel program
+
+It reads one JSON object per line on stdin and writes one per line on stdout.
+
+From the core:
+
+| Message | Meaning |
+| --- | --- |
+| `{"type": "open", "part": "simulator"}` | a part opened; answer with its view |
+| `{"type": "close", "part": "simulator"}` | it closed; stop its work |
+| `{"type": "event", "part": "…", "widget": "boot", "event": {"kind": "click"}}` | a widget was used |
+
+Events are `click`, `input` (`value`), `select` (`item`), `tap` (`x`, `y`) and
+`swipe` (`from`, `to`), places in the screen widget's own units.
+
+To the core:
+
+| Message | Meaning |
+| --- | --- |
+| `{"type": "view", "part": "…", "root": {…}}` | the part's whole view, replacing the last |
+| `{"type": "frame", "part": "…", "widget": "screen", "jpeg": "<base64>"}` | a new picture for a screen |
+| `{"type": "notice", "text": "…"}` | a short note in the window |
+
+A view is a tree of the window's own widgets; a plugin never draws itself.
+
+| Widget | Fields |
+| --- | --- |
+| `column`, `row` | `children` |
+| `text` | `text`, `tone` (normal, muted, good, danger), `size` (title, body, small) |
+| `button` | `id`, `label`, `primary`, `disabled` |
+| `input` | `id`, `placeholder`, `value`; sends `input` on Enter |
+| `list` | `id`, `items` (`id`, `title`, `detail`), `selected`, `menu` (a drop-down) |
+| `screen` | `id`, `width`, `height`, `phone` (draw a phone around it); takes taps and swipes |
+| `progress` | `text` |
+| `divider` | |
+
+Limits: 500 widgets, 8 levels, 4000 characters a text, 4 MiB a line, 3 MiB a frame. A
+view past them is refused with a note, a longer line stops the program.
+
+A minimal panel in Python:
+
+```python
+#!/usr/bin/env python3
+import json, sys
+
+def send(message):
+    print(json.dumps(message), flush=True)
+
+for line in sys.stdin:
+    message = json.loads(line)
+    if message["type"] == "open":
+        send({"type": "view", "part": message["part"], "root": {"kind": "column", "children": [
+            {"kind": "text", "text": "Hello from a plugin", "size": "title"},
+            {"kind": "button", "id": "hi", "label": "Say hi", "primary": True}]}})
+    elif message["type"] == "event" and message["widget"] == "hi":
+        send({"type": "notice", "text": "Hi!"})
+```
+
 ## Built-in plugins
 
 duskcode ships its own plugins the same way, so they follow each update:

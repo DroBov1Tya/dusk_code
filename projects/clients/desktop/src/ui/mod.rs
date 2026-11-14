@@ -13,6 +13,7 @@
 pub mod controls;
 pub mod icons;
 pub mod layout;
+pub mod phone;
 pub mod theme;
 pub mod widgets;
 

@@ -230,6 +230,8 @@ pub struct Workspace {
     pub terminal: crate::columns::terminal::Panel,
     /// The iOS Simulator at the right edge, on macOS.
     pub simulator: crate::columns::simulator::Panel,
+    /// The parts plugins add, and the docks they are open in.
+    pub plugins: crate::plugins::Plugins,
     pub jobs: Vec<JobInfo>,
     /// The shown chat's sources, as the core lists them.
     pub sources: Vec<dusk_protocol::thread::Source>,

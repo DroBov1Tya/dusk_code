@@ -11,19 +11,19 @@
 //! the call, since a check that could not run has not allowed anything; other hooks that
 //! fail are logged and skipped.
 
-use std::{path::PathBuf, process::Stdio, sync::Arc, time::Duration};
+use std::{process::Stdio, sync::Arc, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use parking_lot::RwLock;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt},
-    process::Command,
-};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tracing::warn;
 
-use super::manifest::{HookConfig, HookEvent};
+use super::{
+    isolation::Isolation,
+    manifest::{HookConfig, HookEvent},
+};
 
 /// Far above any decision; a hook that prints more is not one to trust.
 const MAX_ANSWER_BYTES: u64 = 64 * 1024;
@@ -35,8 +35,7 @@ pub struct Hook {
     pub config: HookConfig,
     /// The program and its arguments, `./` resolved to the plugin's folder.
     pub command: Vec<String>,
-    pub folder: PathBuf,
-    pub env: Vec<(String, String)>,
+    pub isolation: Isolation,
 }
 
 /// The hooks of every plugin that is on; replaced whole when plugins change.
@@ -116,14 +115,10 @@ fn applies(hook: &Hook, event: HookEvent, tool: Option<&str>) -> bool {
 }
 
 async fn run_one(hook: &Hook, input: &Value) -> Result<Answer> {
-    let (program, arguments) = hook
-        .command
-        .split_first()
-        .context("the hook has no command")?;
-    let mut child = Command::new(program)
-        .args(arguments)
-        .current_dir(&hook.folder)
-        .envs(hook.env.iter().map(|(key, value)| (key, value)))
+    let program = hook.command.first().context("the hook has no command")?;
+    let mut child = hook
+        .isolation
+        .command(&hook.command)?
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
@@ -179,6 +174,16 @@ mod tests {
     use super::*;
     use crate::plugins::manifest::HookConfig;
 
+    fn isolation() -> Isolation {
+        let paths = crate::testing::temp_paths("hook");
+        let folder = paths.rules_root().join("plugins/test");
+        let data = paths.config_root().join("plugin-data/test");
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::create_dir_all(&data).unwrap();
+        let permissions = Default::default();
+        Isolation::new(&paths, &folder, &data, &permissions, Vec::new(), None).unwrap()
+    }
+
     fn hook(event: HookEvent, script: &str) -> Hook {
         Hook {
             plugin: "test".into(),
@@ -188,9 +193,8 @@ mod tests {
                 command: Vec::new(),
                 timeout: 2,
             },
-            command: vec!["sh".into(), "-c".into(), script.into()],
-            folder: std::env::temp_dir(),
-            env: Vec::new(),
+            command: vec!["/bin/sh".into(), "-c".into(), script.into()],
+            isolation: isolation(),
         }
     }
 

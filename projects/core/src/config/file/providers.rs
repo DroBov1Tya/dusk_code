@@ -53,8 +53,15 @@ impl Config {
         self.plugins.get(name).cloned().unwrap_or_default()
     }
 
-    pub fn set_plugin_enabled(&mut self, name: &str, enabled: bool) {
-        self.plugins.entry(name.to_owned()).or_default().enabled = enabled;
+    /// Switches a plugin on with what it was allowed, or off.
+    pub fn set_plugin_enabled(
+        &mut self,
+        name: &str,
+        allowed: Option<dusk_protocol::plugin::Permissions>,
+    ) {
+        let plugin = self.plugins.entry(name.to_owned()).or_default();
+        plugin.enabled = allowed.is_some();
+        plugin.allowed = allowed;
     }
 
     pub fn set_plugged(&mut self, plugged: Plugged) {

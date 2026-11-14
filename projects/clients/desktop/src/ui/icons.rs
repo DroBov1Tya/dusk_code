@@ -57,6 +57,18 @@ const LOCK_SVG: &[u8] = lucide!(
 const POWER_SVG: &[u8] =
     lucide!(r#"<path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.77.04" />"#);
 
+/// Plugins: the one button their parts wait behind, and the pin that keeps a part's icon
+/// in its place.
+pub const PUZZLE: &str = "icons/dusk/puzzle.svg";
+pub const PIN: &str = "icons/dusk/pin.svg";
+
+const PUZZLE_SVG: &[u8] = lucide!(
+    r#"<path d="M15.39 4.39a1 1 0 0 0 1.68-.474 2.5 2.5 0 1 1 3.014 3.015 1 1 0 0 0-.474 1.68l1.683 1.682a2.414 2.414 0 0 1 0 3.414L19.61 15.39a1 1 0 0 1-1.68-.474 2.5 2.5 0 1 0-3.014 3.015 1 1 0 0 1 .474 1.68l-1.683 1.682a2.414 2.414 0 0 1-3.414 0L8.61 19.61a1 1 0 0 0-1.68.474 2.5 2.5 0 1 1-3.014-3.015 1 1 0 0 0 .474-1.68l-1.683-1.682a2.414 2.414 0 0 1 0-3.414L4.39 8.61a1 1 0 0 1 1.68.474 2.5 2.5 0 1 0 3.014-3.015 1 1 0 0 1-.474-1.68l1.683-1.682a2.414 2.414 0 0 1 3.414 0z" />"#
+);
+const PIN_SVG: &[u8] = lucide!(
+    r#"<path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />"#
+);
+
 /// The kit's icons, with ours answered first.
 pub struct Assets;
 
@@ -71,6 +83,8 @@ impl AssetSource for Assets {
             REFRESH => return Ok(Some(Cow::Borrowed(REFRESH_SVG))),
             LOCK => return Ok(Some(Cow::Borrowed(LOCK_SVG))),
             POWER => return Ok(Some(Cow::Borrowed(POWER_SVG))),
+            PUZZLE => return Ok(Some(Cow::Borrowed(PUZZLE_SVG))),
+            PIN => return Ok(Some(Cow::Borrowed(PIN_SVG))),
             _ => {}
         }
         gpui_kit::assets::Assets.load(path)

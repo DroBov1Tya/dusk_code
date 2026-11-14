@@ -1,13 +1,13 @@
 //! The platforms of plugins that are on, each kept running: one that ends is started
 //! again after a wait.
 
-use std::{collections::BTreeMap, path::PathBuf, sync::Arc, time::Duration};
+use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use parking_lot::{Mutex, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-use crate::runtime::Launcher;
+use crate::{plugins::Isolation, runtime::Launcher};
 
 use super::session::Session;
 
@@ -19,8 +19,7 @@ const RESTART_WAITS: [u64; 4] = [2, 10, 30, 60];
 pub struct PlatformSpec {
     pub plugin: String,
     pub command: Vec<String>,
-    pub folder: PathBuf,
-    pub env: Vec<(String, String)>,
+    pub isolation: Isolation,
 }
 
 #[derive(Default)]
@@ -49,7 +48,7 @@ impl Platforms {
         let wanted: BTreeMap<String, (String, PlatformSpec)> = specs
             .into_iter()
             .map(|spec| {
-                let started_from = format!("{:?} {:?}", spec.command, spec.env);
+                let started_from = format!("{:?} {}", spec.command, spec.isolation.fingerprint());
                 (spec.plugin.clone(), (started_from, spec))
             })
             .collect();

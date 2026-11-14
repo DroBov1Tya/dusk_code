@@ -152,6 +152,7 @@ fn refused(request: &Request, size: usize) -> Option<&'static str> {
         }
         Request::Terminal(_) => Some("a terminal opens in the desktop app only"),
         Request::Simulator(_) => Some("the iOS Simulator opens in the desktop app only"),
+        Request::Plugin(_) => Some("plugin parts open in the desktop app only"),
         Request::Project(ProjectRequest::WriteFile { .. }) => {
             Some("a file is edited in the desktop app only")
         }

@@ -17,4 +17,19 @@ pub enum Event {
     /// The terminal's shell ended, by itself or because the terminal was closed. `code`
     /// is its exit code, or none when a signal ended it.
     TerminalClosed { id: String, code: Option<i32> },
+    /// The view of a plugin's part this client opened, replacing the one before.
+    PluginView {
+        plugin: String,
+        part: String,
+        root: crate::plugin::Widget,
+    },
+    /// A new picture for a `screen` widget of an open part, as JPEG.
+    PluginFrame {
+        plugin: String,
+        part: String,
+        widget: String,
+        jpeg: Vec<u8>,
+    },
+    /// A plugin's short note, or why its interface stopped.
+    PluginNotice { plugin: String, text: String },
 }

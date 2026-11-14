@@ -90,6 +90,8 @@ pub enum Modal {
     Uninstall(crate::pages::settings::uninstall::Uninstall),
     /// Forgetting every connected provider, after a yes.
     RemoveProviders,
+    /// A plugin's part that opens as a window.
+    Plugin(crate::plugins::Key),
     /// Going back to a message of the chat erases it and all after it; asks first.
     Rollback {
         thread_id: String,
@@ -221,6 +223,18 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             480.,
             chat_menu::delete_file(path, cx),
         ),
+        Modal::Plugin(key) => {
+            let key = key.clone();
+            let room = crate::plugins::Room {
+                width: 640. - 40.,
+                height: f32::INFINITY,
+            };
+            (
+                crate::plugins::title(ws, &key),
+                640.,
+                div().p_5().child(crate::plugins::view(ws, &key, room, cx)),
+            )
+        }
         Modal::Detail(item) => {
             let item = item.clone();
             (item.title().to_owned(), 720., detail::render(ws, &item, cx))
@@ -334,6 +348,10 @@ impl Workspace {
     }
 
     pub fn close_modal(&mut self, cx: &mut Context<Self>) {
+        // A plugin's window that closes tells its plugin.
+        if let Some(Modal::Plugin(key)) = self.modal.take() {
+            self.close_plugin_part(key, cx);
+        }
         self.modal = None;
         cx.notify();
     }

@@ -15,6 +15,9 @@ pub struct PluginInfo {
     pub missing_settings: Vec<String>,
     /// Its secret settings and whether each is set for this session.
     pub secrets: Vec<(String, bool)>,
+    /// What it may do, one line each, as the user allows it by switching it on.
+    #[serde(default)]
+    pub permissions: Vec<String>,
     /// Why it cannot load, when it cannot.
     pub problem: Option<String>,
 }

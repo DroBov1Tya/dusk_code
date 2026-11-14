@@ -17,6 +17,13 @@
 //! - `fake=agents`: six subagents of different roles at different points of their work;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
 //! - `fake=limits`: rate limits in the status, as a provider reports them;
+//! - `fake=plugins`: about 200 made-up plugin parts of 60 plugins in the status (see
+//!   `dev::plugins`); `plugins=menu`: open the menu of them; `plugins=search:TEXT`: type
+//!   in its search; `plugins=open:PLUGIN/PART`: open a part with a made-up view, such as
+//!   `ios-simulator/device` (side dock, a phone), `notes/scratch` (bottom dock),
+//!   `translator/translate` (window), `telegram/account` (Settings), `plugin-07/part-1`;
+//!   `plugins=fold:right|bottom`: fold a dock away or back; `plugins=real:PLUGIN/PART`:
+//!   open a part of a real plugin through the core;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
@@ -187,6 +194,7 @@ fn act(
                 "keyboard" => SettingsPage::Keyboard,
                 "updates" => SettingsPage::Updates,
                 "usage" => SettingsPage::Usage,
+                "plugins" => SettingsPage::Plugins,
                 _ => SettingsPage::Appearance,
             };
             ws.center = Center::Settings;
@@ -363,6 +371,42 @@ fn act(
             ws.folded.clear();
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
+        }
+        "fake" if value == "plugins" => {
+            ws.status.plugin_parts = super::plugins::parts();
+            cx.notify();
+        }
+        "plugins" => {
+            let (what, arg) = value.split_once(':').unwrap_or((value, ""));
+            match what {
+                "menu" => ws.toggle_plugins_menu(cx),
+                "open" => super::plugins::open(ws, arg, cx),
+                // Through the core, from a real plugin's process.
+                "real" => {
+                    if let Some((plugin, part)) = arg.split_once('/') {
+                        let key = crate::plugins::Key {
+                            plugin: plugin.into(),
+                            part: part.into(),
+                        };
+                        ws.open_plugin_part(key, cx);
+                    }
+                }
+                "search" => {
+                    let search = ws.plugins.search.clone();
+                    search.update(cx, |search, cx| {
+                        search.set_value(arg.to_owned(), window, cx)
+                    });
+                }
+                "fold" => {
+                    let dock = match arg {
+                        "bottom" => &mut ws.plugins.bottom,
+                        _ => &mut ws.plugins.right,
+                    };
+                    dock.collapsed = !dock.collapsed;
+                }
+                other => eprintln!("no such plugins step: {other}"),
+            }
+            cx.notify();
         }
         "fake" if value == "limits" => {
             use dusk_protocol::model::{RateLimit, RateLimits};
