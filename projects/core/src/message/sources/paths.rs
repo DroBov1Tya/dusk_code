@@ -1,10 +1,10 @@
-//! Picture paths in pasted text, as a terminal pastes a dropped file.
+//! Picture and sound paths in pasted text, as a terminal pastes a dropped file.
 
 use std::path::PathBuf;
 
-/// Words of `text` that name a PNG or JPEG by its full path, as a terminal pastes a
-/// dropped file: quoted, with spaces escaped, or as a `file://` URL.
-pub(super) fn picture_paths(text: &str) -> Vec<(std::ops::Range<usize>, PathBuf)> {
+/// Words of `text` that name a picture or a sound by its full path, as a terminal pastes
+/// a dropped file: quoted, with spaces escaped, or as a `file://` URL.
+pub(super) fn file_paths(text: &str) -> Vec<(std::ops::Range<usize>, PathBuf)> {
     let mut found = Vec::new();
     let mut chars = text.char_indices().peekable();
     while let Some(&(start, first)) = chars.peek() {
@@ -46,14 +46,14 @@ pub(super) fn picture_paths(text: &str) -> Vec<(std::ops::Range<usize>, PathBuf)
             trimmed = word.trim_end_matches([',', ';', ':', '!', '?', ')']);
             end -= word.len() - trimmed.len();
         }
-        if let Some(path) = picture_path(trimmed) {
+        if let Some(path) = file_path(trimmed) {
             found.push((start..end, path));
         }
     }
     found
 }
 
-fn picture_path(word: &str) -> Option<PathBuf> {
+fn file_path(word: &str) -> Option<PathBuf> {
     let path = match word.strip_prefix("file://") {
         Some(url) => PathBuf::from(percent_decoded(url)?),
         None => match word.strip_prefix("~/") {
@@ -62,7 +62,11 @@ fn picture_path(word: &str) -> Option<PathBuf> {
         },
     };
     let extension = path.extension()?.to_str()?.to_ascii_lowercase();
-    (path.is_absolute() && matches!(extension.as_str(), "png" | "jpg" | "jpeg")).then_some(path)
+    let known = matches!(
+        extension.as_str(),
+        "png" | "jpg" | "jpeg" | "mp3" | "wav" | "ogg" | "flac" | "m4a"
+    );
+    (path.is_absolute() && known).then_some(path)
 }
 
 fn percent_decoded(text: &str) -> Option<String> {

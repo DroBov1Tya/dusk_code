@@ -13,12 +13,14 @@ use sha2::{Digest, Sha256};
 
 use crate::config::ProviderConfig;
 
-pub use dusk_protocol::model::{RateLimit, RateLimits};
+pub use dusk_protocol::model::{PlanWindow, RateLimit, RateLimits};
 
 /// No provider counts further than this; a larger number is not a limit.
 const MAX_COUNT: u64 = 1_000_000_000_000;
 /// The longest period a limit is counted over is a day.
 const MAX_RESET: Duration = Duration::from_secs(24 * 60 * 60);
+/// The longest usage window a plan has is about a month.
+const MAX_PLAN_WINDOW: Duration = Duration::from_secs(31 * 24 * 60 * 60);
 /// Longer than any number, duration or timestamp a provider writes.
 const MAX_VALUE_BYTES: usize = 40;
 
@@ -34,6 +36,9 @@ pub enum Headers {
     /// `anthropic-ratelimit-{requests,tokens}-{limit,remaining,reset}`, the reset as an
     /// RFC 3339 time.
     Anthropic,
+    /// `x-codex-{primary,secondary}-{used-percent,window-minutes,reset-after-seconds,
+    /// reset-at}`: the ChatGPT plan's usage windows by the share used.
+    ChatGpt,
 }
 
 /// An address and its key, as a digest: the key itself is not kept here.
@@ -43,6 +48,14 @@ pub struct Account([u8; 32]);
 struct Seen {
     requests: Option<Window>,
     tokens: Option<Window>,
+    plan: Vec<Share>,
+}
+
+/// A plan's usage window as last seen.
+struct Share {
+    minutes: Option<u64>,
+    used_percent: u8,
+    reset: Option<Instant>,
 }
 
 struct Window {
@@ -64,6 +77,16 @@ impl Account {
     /// Remembers the limits a response carries; one without them changes nothing.
     pub fn note(&self, headers: Headers, response: &HeaderMap) {
         let now = Instant::now();
+        if matches!(headers, Headers::ChatGpt) {
+            let plan: Vec<Share> = ["primary", "secondary"]
+                .into_iter()
+                .filter_map(|which| plan_share(response, which, now))
+                .collect();
+            if !plan.is_empty() {
+                SEEN.lock().entry(self.0).or_default().plan = plan;
+            }
+            return;
+        }
         let (requests, tokens) = match headers {
             Headers::OpenAi => (
                 openai_window(response, "requests", now),
@@ -75,6 +98,7 @@ impl Account {
                 anthropic_window(response, "tokens", now)
                     .or_else(|| anthropic_window(response, "input-tokens", now)),
             ),
+            Headers::ChatGpt => return,
         };
         if requests.is_none() && tokens.is_none() {
             return;
@@ -97,7 +121,26 @@ impl Account {
         Some(RateLimits {
             requests: account.requests.as_ref().map(|window| window.at(now)),
             tokens: account.tokens.as_ref().map(|window| window.at(now)),
+            plan: account.plan.iter().map(|share| share.at(now)).collect(),
         })
+    }
+}
+
+impl Share {
+    fn at(&self, now: Instant) -> PlanWindow {
+        let wait = self
+            .reset
+            .map(|reset| reset.saturating_duration_since(now))
+            .filter(|wait| !wait.is_zero());
+        PlanWindow {
+            minutes: self.minutes,
+            // Past its reset the window starts empty again.
+            used_percent: match (self.reset, wait) {
+                (Some(_), None) => 0,
+                _ => self.used_percent,
+            },
+            resets_in: wait.map(|wait| wait.as_secs().max(1)),
+        }
     }
 }
 
@@ -135,6 +178,37 @@ fn anthropic_window(headers: &HeaderMap, what: &str, now: Instant) -> Option<Win
         count(value("remaining")?)?,
         value("reset").and_then(until).map(|wait| now + wait),
     )
+}
+
+/// One of the ChatGPT plan's windows; the reset comes as seconds to wait or, from newer
+/// servers, as a Unix time.
+fn plan_share(headers: &HeaderMap, which: &str, now: Instant) -> Option<Share> {
+    let value = |part: &str| value(headers, &format!("x-codex-{which}-{part}"));
+    let used: f64 = value("used-percent")?.parse().ok()?;
+    if !(0.0..=1000.0).contains(&used) {
+        return None;
+    }
+    let minutes = value("window-minutes")
+        .and_then(count)
+        .filter(|minutes| (1..=MAX_PLAN_WINDOW.as_secs() / 60).contains(minutes));
+    let wait = value("reset-after-seconds")
+        .and_then(count)
+        .map(Duration::from_secs)
+        .or_else(|| value("reset-at").and_then(count).and_then(until_unix))
+        .filter(|wait| *wait <= MAX_PLAN_WINDOW);
+    Some(Share {
+        minutes,
+        used_percent: used.round().min(100.) as u8,
+        reset: wait.map(|wait| now + wait),
+    })
+}
+
+/// The wait until a Unix time in seconds; zero when it has passed.
+fn until_unix(seconds: u64) -> Option<Duration> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?;
+    Some(Duration::from_secs(seconds).saturating_sub(now))
 }
 
 fn window(limit: u64, remaining: u64, reset: Option<Instant>) -> Option<Window> {
@@ -271,6 +345,52 @@ mod tests {
             (tokens.limit, tokens.remaining, tokens.resets_in),
             (2_000_000, 2_000_000, None)
         );
+    }
+
+    #[test]
+    fn reads_the_chatgpt_plan_headers() {
+        let account = account("chatgpt-headers");
+        let week = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 3 * 24 * 3600;
+        account.note(
+            Headers::ChatGpt,
+            &headers(&[
+                ("x-codex-primary-used-percent", "5.0"),
+                ("x-codex-primary-window-minutes", "300"),
+                ("x-codex-primary-reset-after-seconds", "7800"),
+                ("x-codex-secondary-used-percent", "100"),
+                ("x-codex-secondary-window-minutes", "10080"),
+                ("x-codex-secondary-reset-at", &week.to_string()),
+            ]),
+        );
+        let limits = account.limits().unwrap();
+        assert_eq!((&limits.requests, &limits.tokens), (&None, &None));
+        let [short, long] = limits.plan.as_slice() else {
+            panic!("two windows: {:?}", limits.plan);
+        };
+        assert_eq!((short.minutes, short.used_percent), (Some(300), 5));
+        assert!(matches!(short.resets_in, Some(7_799..=7_800)));
+        assert_eq!((long.minutes, long.used_percent), (Some(10_080), 100));
+        assert!(matches!(long.resets_in, Some(259_190..=259_200)));
+        assert_eq!(limits.used(), Some(1.));
+
+        // Headers that cannot be read leave what was seen.
+        for bad in ["", "-1", "nan", "inf", "1e9", "abc"] {
+            account.note(
+                Headers::ChatGpt,
+                &headers(&[("x-codex-primary-used-percent", bad)]),
+            );
+        }
+        assert_eq!(account.limits().unwrap().plan.len(), 2);
+        // The ChatGPT headers say nothing about requests and tokens, nor the reverse.
+        account.note(
+            Headers::OpenAi,
+            &headers(&[("x-codex-primary-used-percent", "50")]),
+        );
+        assert_eq!(account.limits().unwrap().plan[0].used_percent, 5);
     }
 
     #[test]

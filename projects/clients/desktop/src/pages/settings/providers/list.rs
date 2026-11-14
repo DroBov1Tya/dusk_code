@@ -85,6 +85,7 @@ fn provider_card(
     let reconnecting = ws.providers_page.reconnecting.as_deref() == Some(name.as_str());
     let (check_name, again_name, remove_name) = (name.clone(), name.clone(), name.clone());
     let (switch_name, enabled) = (name.clone(), provider.enabled);
+    // The switch stands apart from the buttons: it changes state, they act once.
     let buttons = div()
         .flex()
         .flex_row()
@@ -103,7 +104,8 @@ fn provider_card(
                 })
                 .on_click(cx.listener(move |ws, on: &bool, _, cx| {
                     ws.set_provider_enabled(&switch_name, *on, cx)
-                })),
+                }))
+                .mr_3(),
         )
         .child(
             Button::new(SharedString::from(format!("provider-check-{name}")))

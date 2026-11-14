@@ -108,6 +108,20 @@ fn step_icon(tool: &str) -> IconName {
     }
 }
 
+/// The model of the subagent an agent tool's call started, when the core said it.
+fn agent_model(ws: &Workspace, shown: &str, tool: &Tool) -> Option<String> {
+    if !dusk_protocol::tools::is_agent_tool(&tool.name) {
+        return None;
+    }
+    ws.chats
+        .get(shown)?
+        .agents
+        .values()
+        .find(|agent| agent.call_id == tool.call_id)?
+        .model
+        .clone()
+}
+
 pub fn step(
     ws: &Workspace,
     shown: &str,
@@ -162,6 +176,16 @@ pub fn step(
             .text_color(muted)
             .child(detail),
     )
+    // The model the agent answers on, beside the work handed to it.
+    .children(agent_model(ws, shown, tool).map(|model| {
+        div()
+            .flex_none()
+            .max_w(relative(0.30))
+            .truncate()
+            .meta()
+            .text_color(muted)
+            .child(model)
+    }))
     .when(open, |row| {
         row.child(
             div()

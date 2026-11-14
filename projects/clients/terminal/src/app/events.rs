@@ -150,10 +150,11 @@ impl App {
                 agent,
                 task,
                 effort,
+                model,
                 ..
             } => {
                 let parent = self.thread_id.clone();
-                self.start_subagent(thread_id, agent, task, effort, parent);
+                self.start_subagent(thread_id, agent, task, (effort, model), parent);
             }
             ThreadEvent::Subagent { thread_id, event } => self.apply_subagent(&thread_id, *event),
             ThreadEvent::FromJob(message) => {

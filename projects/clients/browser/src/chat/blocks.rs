@@ -229,6 +229,7 @@ fn user_text(text: &str) -> String {
             Part::Text(text) => text.to_owned(),
             Part::Pasted(pasted) => format!("[pasted {} lines]", pasted.lines().count().max(1)),
             Part::Source(name) => format!("[{name}]"),
+            Part::Sound { path, .. } => format!("[{}]", path.rsplit('/').next().unwrap_or(path)),
         })
         .collect()
 }

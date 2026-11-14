@@ -221,7 +221,7 @@ fn head(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Option<Div>
                             .small()
                             .text_color(muted)
                             .truncate()
-                            .child(seen.role.clone()),
+                            .child(seen.role_and_model()),
                     )
                     .child(div().small().text_color(color).truncate().child(format!(
                         "{status} \u{00B7} {}",

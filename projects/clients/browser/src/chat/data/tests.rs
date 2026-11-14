@@ -70,6 +70,7 @@ fn a_subagents_events_go_to_its_own_chat() {
         agent: "general".into(),
         task: "look".into(),
         effort: None,
+        model: None,
     });
     chat.apply(ThreadEvent::Subagent {
         thread_id: "sub".into(),
