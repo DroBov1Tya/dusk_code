@@ -10,12 +10,12 @@ use teloxide::{
 };
 use tracing::info;
 
+use super::{
+    owner,
+    runner::{HandlerResult, MyBot},
+};
 use crate::{
     app::{
-        bot::{
-            handlers::buttons,
-            runner::{HandlerResult, MyBot},
-        },
         bridge::BotEvent,
         context::{Owner, Shared},
     },
@@ -55,7 +55,7 @@ pub async fn pair(bot: MyBot, message: Message, shared: Arc<Shared>, user: User)
     info!("telegram bot {} paired", shared.username);
     let _ = bot.set_my_commands(Command::bot_commands()).await;
     bot.send_message(message.chat.id, config::PAIRED)
-        .reply_markup(buttons::menu::keyboard())
+        .reply_markup(owner::menu())
         .await?;
     shared.emit(BotEvent::Paired { user: name });
     Ok(())

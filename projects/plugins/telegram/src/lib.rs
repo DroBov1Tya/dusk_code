@@ -5,8 +5,8 @@
 //!
 //! Layers, from the outside in:
 //! - `app` — the bot a client connects, starts and stops;
-//! - `app::bot` — Telegram handlers, buttons and texts;
-//! - `app::workers` — the outbox that sends what the client hands over;
+//! - `app::bot` — Telegram handlers, buttons and texts, one file per feature;
+//! - `app::outbox` — sends the owner what the client hands over;
 //! - `platform` — the bot spoken to by the core over the platform protocol.
 
 pub mod app;

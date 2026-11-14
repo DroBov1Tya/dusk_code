@@ -10,10 +10,7 @@ use teloxide::{
 };
 use tokio::task::JoinHandle;
 
-use super::{
-    callback::Callback,
-    handlers::{callbacks, commands},
-};
+use super::{approval, callback::Callback, owner, pick, question};
 use crate::app::{bridge::BotEvent, context::Shared};
 
 pub type MyBot = Throttle<Bot>;
@@ -38,7 +35,7 @@ pub fn start_bot(bot: MyBot, shared: Arc<Shared>) -> (JoinHandle<()>, ShutdownTo
 
 fn schema() -> UpdateHandler<anyhow::Error> {
     dptree::entry()
-        .branch(Update::filter_message().endpoint(commands::owner::on_message))
+        .branch(Update::filter_message().endpoint(owner::on_message))
         .branch(Update::filter_callback_query().endpoint(route_callback))
 }
 
@@ -54,10 +51,10 @@ async fn route_callback(bot: MyBot, query: CallbackQuery, shared: Arc<Shared>) -
     };
     match callback {
         Callback::Choose(_) | Callback::Toggle(_) | Callback::Send => {
-            callbacks::question::press(&bot, &shared, owner.chat, callback).await
+            question::press(&bot, &shared, owner.chat, callback).await
         }
-        Callback::Allow(id) => callbacks::approval::answer(&bot, &shared, &query, id, true).await,
-        Callback::Deny(id) => callbacks::approval::answer(&bot, &shared, &query, id, false).await,
-        Callback::Pick(index) => callbacks::pick::press(&bot, &shared, owner.chat, index).await,
+        Callback::Allow(id) => approval::answer(&bot, &shared, &query, id, true).await,
+        Callback::Deny(id) => approval::answer(&bot, &shared, &query, id, false).await,
+        Callback::Pick(index) => pick::press(&bot, &shared, owner.chat, index).await,
     }
 }

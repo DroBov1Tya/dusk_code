@@ -1,16 +1,29 @@
-//! Allow or Deny under an approval request: the choice stays under the request and
+//! Allow and Deny under an approval request: the choice stays under the request and
 //! goes to the client, which checks that the request still waits.
 
-use teloxide::prelude::*;
+use teloxide::{
+    prelude::*,
+    types::{InlineKeyboardButton, InlineKeyboardMarkup},
+};
 
+use super::{
+    callback::Callback,
+    runner::{HandlerResult, MyBot},
+};
 use crate::{
     app::{
-        bot::runner::{HandlerResult, MyBot},
         bridge::{BotEvent, FromBot},
         context::Shared,
     },
     config,
 };
+
+pub fn keyboard(nonce: &str, id: u64) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new([[
+        InlineKeyboardButton::callback(config::ALLOW, Callback::Allow(id).data(nonce)),
+        InlineKeyboardButton::callback(config::DENY, Callback::Deny(id).data(nonce)),
+    ]])
+}
 
 pub async fn answer(
     bot: &MyBot,

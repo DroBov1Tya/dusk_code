@@ -4,7 +4,7 @@
 pub mod bot;
 pub mod bridge;
 pub mod context;
-pub mod workers;
+pub mod outbox;
 
 use std::sync::{Arc, atomic::Ordering};
 
@@ -95,11 +95,7 @@ impl TelegramBot {
         self.outgoing = Some(outgoing);
         let (polling, token) = bot::runner::start_bot(bot.clone(), Arc::clone(&self.shared));
         self.polling = Some(token);
-        let outbox = tokio::spawn(workers::outbox::run(
-            bot,
-            Arc::clone(&self.shared),
-            incoming,
-        ));
+        let outbox = tokio::spawn(outbox::run(bot, Arc::clone(&self.shared), incoming));
         self.tasks = vec![polling, outbox];
     }
 

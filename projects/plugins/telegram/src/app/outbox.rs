@@ -11,7 +11,7 @@ use tokio::{sync::mpsc, time::Instant};
 
 use crate::{
     app::{
-        bot::{handlers::buttons, runner::MyBot, utils::text},
+        bot::{approval, pick, question, runner::MyBot, text},
         bridge::ToBot,
         context::{OpenMenu, OpenQuestion, Shared},
     },
@@ -89,7 +89,7 @@ async fn deliver(bot: &MyBot, shared: &Shared, message: ToBot) -> anyhow::Result
             };
             let sent = bot
                 .send_message(chat, text)
-                .reply_markup(buttons::question::keyboard(&shared.nonce, &open))
+                .reply_markup(question::keyboard(&shared.nonce, &open))
                 .await?;
             open.message = sent.id;
             *shared.question.lock() = Some(open);
@@ -98,7 +98,7 @@ async fn deliver(bot: &MyBot, shared: &Shared, message: ToBot) -> anyhow::Result
             // One message must carry the whole request, however long the command.
             let text: String = text.chars().take(config::MAX_CHUNK_CHARS).collect();
             bot.send_message(chat, format!("{}\n\n{text}", config::APPROVAL))
-                .reply_markup(buttons::approval::keyboard(&shared.nonce, id))
+                .reply_markup(approval::keyboard(&shared.nonce, id))
                 .await?;
         }
         ToBot::Reply(text) => {
@@ -112,7 +112,7 @@ async fn deliver(bot: &MyBot, shared: &Shared, message: ToBot) -> anyhow::Result
             let title: String = title.chars().take(config::MAX_CHUNK_CHARS).collect();
             let sent = bot
                 .send_message(chat, title)
-                .reply_markup(buttons::pick::keyboard(&shared.nonce, &options))
+                .reply_markup(pick::keyboard(&shared.nonce, &options))
                 .await?;
             *shared.menu.lock() = Some(OpenMenu {
                 command,

@@ -1,17 +1,55 @@
-//! Options under a question: a single choice is sent at once; with several, presses
-//! toggle marks until Send.
+//! A question with options: one a row; with several, a mark on the checked ones and
+//! Send last. A single choice is sent at once; with several, presses toggle marks until
+//! Send.
 
-use teloxide::prelude::*;
-
-use crate::app::{
-    bot::{
-        callback::Callback,
-        handlers::buttons,
-        runner::{HandlerResult, MyBot},
-    },
-    bridge::{BotEvent, FromBot},
-    context::Shared,
+use teloxide::{
+    prelude::*,
+    types::{InlineKeyboardButton, InlineKeyboardMarkup},
 };
+
+use super::{
+    callback::Callback,
+    runner::{HandlerResult, MyBot},
+};
+use crate::{
+    app::{
+        bridge::{BotEvent, FromBot},
+        context::{OpenQuestion, Shared},
+    },
+    config,
+};
+
+/// Telegram shows about this much of a button.
+const MAX_BUTTON_CHARS: usize = 60;
+
+pub fn keyboard(nonce: &str, question: &OpenQuestion) -> InlineKeyboardMarkup {
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = question
+        .options
+        .iter()
+        .enumerate()
+        .map(|(index, option)| {
+            let label: String = option.chars().take(MAX_BUTTON_CHARS).collect();
+            let button = match question.multiple {
+                true => {
+                    let mark = if question.checked[index] {
+                        "\u{2713} "
+                    } else {
+                        ""
+                    };
+                    let data = Callback::Toggle(index).data(nonce);
+                    InlineKeyboardButton::callback(format!("{mark}{label}"), data)
+                }
+                false => InlineKeyboardButton::callback(label, Callback::Choose(index).data(nonce)),
+            };
+            vec![button]
+        })
+        .collect();
+    if question.multiple {
+        let send = InlineKeyboardButton::callback(config::SEND, Callback::Send.data(nonce));
+        rows.push(vec![send]);
+    }
+    InlineKeyboardMarkup::new(rows)
+}
 
 pub async fn press(
     bot: &MyBot,
@@ -32,7 +70,7 @@ pub async fn press(
             }
             Callback::Toggle(index) if index < count && question.multiple => {
                 question.checked[index] ^= true;
-                let keyboard = buttons::question::keyboard(&shared.nonce, question);
+                let keyboard = keyboard(&shared.nonce, question);
                 (None, question.message, Some(keyboard))
             }
             Callback::Send if question.multiple => {

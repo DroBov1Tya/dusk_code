@@ -1,17 +1,20 @@
 //! Messages: commands and text from the owner, pairing for a stranger with the code,
-//! silence for anyone else.
+//! silence for anyone else; and the menu of commands under the message box.
 
 use std::sync::Arc;
 
-use teloxide::{prelude::*, utils::command::BotCommands};
+use teloxide::{
+    prelude::*,
+    types::{KeyboardButton, KeyboardMarkup},
+    utils::command::BotCommands,
+};
 
-use super::pairing;
+use super::{
+    pairing,
+    runner::{HandlerResult, MyBot},
+};
 use crate::{
     app::{
-        bot::{
-            handlers::buttons,
-            runner::{HandlerResult, MyBot},
-        },
         bridge::{BotCommand, BotEvent, FromBot},
         context::Shared,
     },
@@ -35,7 +38,7 @@ pub async fn on_message(bot: MyBot, message: Message, shared: Arc<Shared>) -> Ha
     let input = match Command::parse(text, &shared.username) {
         Ok(Command::Start(_) | Command::Help) => {
             bot.send_message(owner.chat, Command::descriptions().to_string())
-                .reply_markup(buttons::menu::keyboard())
+                .reply_markup(menu())
                 .await?;
             return Ok(());
         }
@@ -53,6 +56,18 @@ pub async fn on_message(bot: MyBot, message: Message, shared: Arc<Shared>) -> Ha
     };
     shared.emit(BotEvent::Input(input));
     Ok(())
+}
+
+/// The buttons under the message box: the commands used most.
+pub fn menu() -> KeyboardMarkup {
+    let row = |labels: [&str; 2]| labels.map(KeyboardButton::new).to_vec();
+    KeyboardMarkup::new([
+        row(["/stop", "/resume"]),
+        row(["/status", "/approve"]),
+        row(["/mode", "/model"]),
+    ])
+    .resize_keyboard()
+    .persistent()
 }
 
 fn bridge_command(command: Command) -> BotCommand {
