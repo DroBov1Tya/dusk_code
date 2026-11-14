@@ -60,8 +60,7 @@ pub enum Response {
     Stamp(FileStamp),
     System(SystemReport),
     Simulator(crate::system::Simulator),
-    /// A JPEG: a simulated device's screen.
-    Picture(Vec<u8>),
+    SimScreen(crate::system::SimScreen),
     Answer(Box<Answer>),
     /// The request failed; the text says why in full.
     Error(String),

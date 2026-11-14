@@ -2,7 +2,8 @@
 
 //!
 //! Each kind of tool has a folder: `files`, `console`, `agents` and `harness`, the tools
-//! about the thread itself. MCP tools come from servers; `mcp` wraps them.
+//! about the thread itself. MCP tools come from servers; `mcp` wraps them. On macOS,
+//! `simulator` is the iOS Simulator.
 
 mod agents;
 mod approvals;
@@ -16,6 +17,8 @@ pub mod mcp;
 mod registry;
 mod schema;
 mod scope;
+#[cfg(target_os = "macos")]
+mod simulator;
 mod tool;
 
 pub use agents::{AgentState, AskAgent, MessageParent};
@@ -35,4 +38,6 @@ pub(crate) use harness::{PLAN_NAME, clear_plan, project_folder, read_plan, save_
 pub use mcp::McpTool;
 pub use registry::{ToolRegistry, ToolResult};
 pub use scope::{Place, ToolScope};
+#[cfg(target_os = "macos")]
+pub use simulator::IosSimulator;
 pub use tool::{Progress, Tool, ToolContext, ToolKind};

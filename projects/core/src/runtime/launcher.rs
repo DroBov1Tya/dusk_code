@@ -158,6 +158,10 @@ impl Launcher {
             #[cfg(target_os = "macos")]
             tools.add(Box::new(crate::tools::WindowSession(screen)));
         }
+        #[cfg(target_os = "macos")]
+        tools.add(Box::new(crate::tools::IosSimulator(ArtifactStore::new(
+            self.paths.artifacts_dir(),
+        ))));
         if depth < MAX_AGENT_DEPTH {
             let asker = agent.map(|agent| agent.name.clone());
             let ask = AskAgent::new(self.clone(), thread_id.to_owned(), asker);

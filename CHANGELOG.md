@@ -9,12 +9,16 @@ testing.
 ### Added
 
 - The iOS Simulator in the desktop window on macOS: a phone in the header opens it at
-  the right edge. It walks through the setup (Xcode, the iOS runtime, a device),
-  downloads the runtime on request, boots and shuts down a device and shows its screen
-  a few times a second; clicks and keys go to the device in Simulator.app, which one
-  button opens. The core runs `xcrun simctl` without a shell and names a device only by
-  a UDID that parses as one; the web client cannot ask for it. A header that was never
-  reshaped takes the new button.
+  the right edge. It walks through the setup (Xcode, the iOS runtime, a device) and
+  downloads the runtime on request. The device is drawn as a phone with its screen kept
+  current; a menu at the top chooses another device. A click on the screen is a tap and
+  a drag a swipe; buttons under it press home and lock, open Simulator.app and shut the
+  device down. Touches and keys go through AXe, a free command line tool the panel says
+  how to install. The agent gets an `ios_simulator` tool on macOS: a picture of the
+  screen in points, its elements as an accessibility tree, taps, swipes, typing,
+  buttons, links and installed apps on the booted device. The core runs simctl and AXe
+  without a shell and names a device only by a UDID that parses as one; the web client
+  cannot ask for the simulator. A header that was never reshaped takes the new button.
 - A page for the project on GitHub Pages, `site/index.html`, published by its own
   workflow with the readme's screenshots. No scripts or fonts from other hosts.
 - The readme shows the three clients, says how a model is connected and how sign-in
