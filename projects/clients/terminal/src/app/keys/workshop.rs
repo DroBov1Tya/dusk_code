@@ -72,10 +72,9 @@ fn confirm_key(view: &mut Workshop, key: KeyEvent) -> Action {
         KeyCode::Enter => {
             let listing = &confirm.listing;
             let action = match offered.get(confirm.focus) {
-                Some(Choice::Install | Choice::Update) => Action::InstallPlugin {
-                    name: listing.name.clone(),
-                    version: listing.version.clone(),
-                },
+                Some(Choice::Install | Choice::Update) => {
+                    Action::InstallPlugin(Box::new(listing.clone()))
+                }
                 Some(Choice::Remove) => Action::RemovePlugin(listing.name.clone()),
                 Some(Choice::Cancel) | None => Action::None,
             };

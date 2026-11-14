@@ -20,7 +20,17 @@ fn signed(json: &str) -> (String, Vec<u8>) {
 const SHA: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 fn list(entry: &str) -> String {
-    format!(r#"{{"format": 1, "plugins": [{entry}]}}"#)
+    format!(
+        r#"{{"format": 1, "serial": 3, "expires": "2030-01-01T00:00:00Z", "plugins": [{entry}]}}"#
+    )
+}
+
+fn now() -> chrono::DateTime<chrono::Utc> {
+    "2026-11-14T00:00:00Z".parse().unwrap()
+}
+
+fn verify(json: &str, signature: &[u8], key: &str) -> Result<index::Index> {
+    index::verify(json.as_bytes(), signature, key, now())
 }
 
 fn entry(extra: &str) -> String {
@@ -33,14 +43,14 @@ fn entry(extra: &str) -> String {
 fn a_list_is_read_only_with_its_signature() {
     let json = list(&entry(""));
     let (key, signature) = signed(&json);
-    let index = index::verify(json.as_bytes(), &signature, &key).unwrap();
+    let index = verify(&json, &signature, &key).unwrap();
     assert_eq!(index.plugins[0].name, "hello");
 
     let other = list(&entry(r#", "description": "changed""#));
-    assert!(index::verify(other.as_bytes(), &signature, &key).is_err());
+    assert!(verify(&other, &signature, &key).is_err());
     let (stranger, _) = signed(&json);
-    assert!(index::verify(json.as_bytes(), &signature, &stranger).is_err());
-    assert!(index::verify(json.as_bytes(), b"not base64!", &key).is_err());
+    assert!(verify(&json, &signature, &stranger).is_err());
+    assert!(verify(&json, b"not base64!", &key).is_err());
 }
 
 #[test]
@@ -53,12 +63,13 @@ fn a_signed_list_is_still_checked() {
         list(&entry("").replace("\"hello\"", "\"../x\"")),
         list(&entry(r#", "secret": 1"#)),
         list(&entry("")).replace("\"format\": 1", "\"format\": 2"),
+        list(&entry("")).replace("2030-01-01", "2026-01-01"),
+        list(&entry("")).replace("2030-01-01T00:00:00Z", "soon"),
+        list(&format!("{}, {}", entry(""), entry(""))),
+        list(&entry(r#", "providers": ["ftp://example.com"]"#)),
     ] {
         let (key, signature) = signed(&bad);
-        assert!(
-            index::verify(bad.as_bytes(), &signature, &key).is_err(),
-            "{bad}"
-        );
+        assert!(verify(&bad, &signature, &key).is_err(), "{bad}");
     }
 }
 
@@ -128,19 +139,27 @@ fn a_package_asking_more_than_its_listing_is_refused() {
     let bytes = package(&[("plugin.yml", tar::EntryType::Regular, manifest.as_bytes())]);
     let json = list(&entry(""));
     let (key, signature) = signed(&json);
-    let index = index::verify(json.as_bytes(), &signature, &key).unwrap();
-    let error = place(&root, &index.plugins[0], &bytes, SHA).unwrap_err();
+    let index = verify(&json, &signature, &key).unwrap();
+    let error = place(&root, &index.plugins[0], &bytes, false).unwrap_err();
     assert!(format!("{error:#}").contains("permissions"), "{error:#}");
     assert!(!root.join("hello").exists());
 
-    // Without the extra permission it goes in, and a folder the user made is kept.
+    // A provider the listing does not show is refused too.
+    let manifest = "name: hello\nversion: 1.0.0\nproviders:\n  x: {kind: openai_compatible, base_url: https://x.example.com/v1}\n";
+    let bytes = package(&[("plugin.yml", tar::EntryType::Regular, manifest.as_bytes())]);
+    let error = place(&root, &index.plugins[0], &bytes, false).unwrap_err();
+    assert!(format!("{error:#}").contains("providers"), "{error:#}");
+
+    // As listed it goes in; a folder the store does not own is never replaced, one it
+    // owns is.
     let manifest = "name: hello\nversion: 1.0.0\n";
     let bytes = package(&[("plugin.yml", tar::EntryType::Regular, manifest.as_bytes())]);
-    place(&root, &index.plugins[0], &bytes, SHA).unwrap();
-    assert!(marker(&root.join("hello")).is_some());
-    std::fs::remove_file(root.join("hello").join(MARKER)).unwrap();
-    assert!(place(&root, &index.plugins[0], &bytes, SHA).is_err());
+    place(&root, &index.plugins[0], &bytes, false).unwrap();
     assert!(root.join("hello/plugin.yml").is_file());
+    assert!(place(&root, &index.plugins[0], &bytes, false).is_err());
+    assert!(root.join("hello/plugin.yml").is_file());
+    place(&root, &index.plugins[0], &bytes, true).unwrap();
+    assert!(!root.join(STAGING).exists());
 }
 
 /// The live store, end to end: the signed list on GitHub Pages, a package from a release.
@@ -151,14 +170,20 @@ async fn the_live_store_installs_a_plugin() {
     crate::init::create_private_dir(&super::super::catalog::folder(&paths)).unwrap();
     let listed = super::list(&paths).await.unwrap();
     let telegram = listed.iter().find(|item| item.name == "telegram").unwrap();
-    install(&paths, "telegram", &telegram.version)
+    install(&paths, "telegram", &telegram.version, &telegram.permissions)
         .await
         .unwrap();
+    let changed = ["connect to https://evil.example.com".to_owned()];
+    assert!(
+        install(&paths, "telegram", &telegram.version, &changed)
+            .await
+            .is_err()
+    );
     let folder = super::super::catalog::folder(&paths).join("telegram");
     assert!(folder.join("bin/telegram").is_file());
     let listed = super::list(&paths).await.unwrap();
     let again = listed.iter().find(|item| item.name == "telegram").unwrap();
     assert_eq!(again.installed.as_deref(), Some(telegram.version.as_str()));
-    remove(&paths, "telegram").unwrap();
+    remove(&paths, "telegram").await.unwrap();
     assert!(!folder.exists());
 }

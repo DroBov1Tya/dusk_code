@@ -30,9 +30,14 @@ pub struct Listing {
 pub enum StoreRequest {
     /// The store's plugins; answered with `Response::Store`.
     List,
-    /// Installs or updates `name` at `version` and switches it on, allowing what its
-    /// listing showed; a list that changed since is refused.
-    Install { name: String, version: String },
+    /// Installs or updates `name` at `version` and switches it on. `agreed` is the
+    /// listing's `permissions` the user was shown; a listing that changed since is
+    /// refused.
+    Install {
+        name: String,
+        version: String,
+        agreed: Vec<String>,
+    },
     /// Removes a plugin installed from the store.
     Remove { name: String },
 }

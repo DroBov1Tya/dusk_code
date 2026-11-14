@@ -123,12 +123,11 @@ impl Workspace {
         cx.notify();
         match confirm {
             Confirm::Install(listing) => {
-                let (name, version) = (listing.name, listing.version);
                 self.store_work(
-                    name.clone(),
+                    listing.name.clone(),
                     "Installing...",
                     cx,
-                    move |client| async move { client.plugins().install(&name, &version).await },
+                    move |client| async move { client.plugins().install(&listing).await },
                 );
             }
             Confirm::Remove(name) => {

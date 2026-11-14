@@ -5,6 +5,7 @@
 use anyhow::{Context, Result, ensure};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use base64::Engine;
+use chrono::{DateTime, Utc};
 use dusk_protocol::plugin::{Client, Os, Permissions};
 use serde::Deserialize;
 
@@ -22,6 +23,11 @@ pub const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 #[serde(deny_unknown_fields)]
 pub struct Index {
     pub format: u32,
+    /// Grows with every list signed; a list older than one seen is refused, so an old
+    /// signed list cannot bring back an old package or hide an update.
+    pub serial: u64,
+    /// RFC 3339; past it the list is refused, so a list held back is not trusted forever.
+    pub expires: String,
     pub plugins: Vec<Entry>,
 }
 
@@ -40,6 +46,10 @@ pub struct Entry {
     #[serde(default)]
     pub permissions: Permissions,
     pub homepage: Option<String>,
+    /// The `base_url` of each model provider it brings, sorted: the core sends chats
+    /// there itself, outside the plugin's sandbox, so the user is told.
+    #[serde(default)]
+    pub providers: Vec<String>,
     pub downloads: Vec<Download>,
 }
 
@@ -58,7 +68,7 @@ pub struct Download {
 }
 
 /// The list in `json`, once `signature` (base64 of 64 bytes) is checked against `key`.
-pub fn verify(json: &[u8], signature: &[u8], key: &str) -> Result<Index> {
+pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> Result<Index> {
     let engine = base64::engine::general_purpose::STANDARD;
     let key = engine
         .decode(key)
@@ -75,15 +85,28 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str) -> Result<Index> {
         "the store's list is in format {}; this duskcode reads {FORMAT}, update it",
         index.format
     );
+    let expires = DateTime::parse_from_rfc3339(&index.expires)
+        .context("the store's list has no valid expiry")?;
+    ensure!(
+        expires > now,
+        "the store's list expired on {}; try again later",
+        index.expires
+    );
+    let mut names = std::collections::BTreeSet::new();
     for entry in &index.plugins {
+        ensure!(
+            names.insert(&entry.name),
+            "the store lists {} twice",
+            entry.name
+        );
         check(entry).with_context(|| format!("the store's entry {}", entry.name))?;
     }
     Ok(index)
 }
 
 /// Checks the list with the key built in.
-pub fn verify_builtin(json: &[u8], signature: &[u8]) -> Result<Index> {
-    verify(json, signature, PUBLIC_KEY)
+pub fn verify_builtin(json: &[u8], signature: &[u8], now: DateTime<Utc>) -> Result<Index> {
+    verify(json, signature, PUBLIC_KEY, now)
 }
 
 fn check(entry: &Entry) -> Result<()> {
@@ -97,6 +120,14 @@ fn check(entry: &Entry) -> Result<()> {
     );
     if let Some(page) = &entry.homepage {
         ensure!(page.starts_with("https://"), "the homepage is not https");
+    }
+    for url in &entry.providers {
+        ensure!(
+            (url.starts_with("https://") || url.starts_with("http://"))
+                && url.len() <= 200
+                && !url.chars().any(char::is_control),
+            "a provider's address is not a plain http(s) URL"
+        );
     }
     for download in &entry.downloads {
         ensure!(
@@ -120,6 +151,15 @@ fn check(entry: &Entry) -> Result<()> {
 }
 
 impl Entry {
+    /// What the user agrees to by installing it, one line each.
+    pub fn consent(&self) -> Vec<String> {
+        let mut lines = self.permissions.lines();
+        for url in &self.providers {
+            lines.push(format!("send your chats to {url} when you pick its model"));
+        }
+        lines
+    }
+
     /// The package for this machine, or why there is none.
     pub fn download_here(&self) -> Result<&Download, String> {
         let os = Os::current();

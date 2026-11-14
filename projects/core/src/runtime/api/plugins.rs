@@ -30,14 +30,19 @@ impl Runtime {
         use dusk_protocol::{client::Response, plugin::StoreRequest};
         match request {
             StoreRequest::List => return Ok(Response::Store(store::list(self.paths()).await?)),
-            StoreRequest::Install { name, version } => {
-                store::install(self.paths(), &name, &version).await?;
+            StoreRequest::Install {
+                name,
+                version,
+                agreed,
+            } => {
+                store::install(self.paths(), &name, &version, &agreed).await?;
                 tracing::info!("plugin {name} {version} installed from the store");
                 self.set_plugin_enabled(&name, true)?;
             }
             StoreRequest::Remove { name } => {
+                store::check_removable(self.paths(), &name)?;
                 self.set_plugin_enabled(&name, false)?;
-                store::remove(self.paths(), &name)?;
+                store::remove(self.paths(), &name).await?;
                 tracing::info!("plugin {name} removed");
                 let plugins = Arc::clone(&self.plugins);
                 tokio::task::spawn_blocking(move || plugins.scan());

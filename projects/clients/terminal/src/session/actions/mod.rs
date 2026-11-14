@@ -58,9 +58,7 @@ pub async fn apply(
             settings::set_plugin_secret(client, app, plugin, key, value).await
         }
         Action::LoadStore => store::load(client, app, terminal).await?,
-        Action::InstallPlugin { name, version } => {
-            store::install(client, app, terminal, name, version).await?
-        }
+        Action::InstallPlugin(listing) => store::install(client, app, terminal, &listing).await?,
         Action::RemovePlugin(name) => store::remove(client, app, terminal, name).await?,
         Action::Send(text) => send(client, app, open, text, false).await,
         Action::Approve { id, decision } => thread::approve(client, app, id, decision).await,
