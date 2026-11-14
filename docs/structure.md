@@ -54,15 +54,15 @@ Regenerate with `scripts/structure-map.sh` in the commit that changes the tree.
 ```
 agent/  (2)
 catalog/  (5)
-client/  (19)
+client/  (18)
   command/  (2)
-  request/  (10)
+  request/  (9)
 config/  (12)
 model/  (6)
-plugin/  (5)
+plugin/  (7)
 project/  (6)
 release/  (4)
-system/  (4)
+system/  (3)
 thread/  (21)
   message/  (6)
   transcript/  (5)
@@ -72,31 +72,11 @@ tools/  (6)
 ### core
 
 ```
-agent/  (2)
-catalog/  (5)
-client/  (19)
-  command/  (2)
-  request/  (10)
-config/  (12)
-model/  (6)
-plugin/  (7)
-project/  (6)
-release/  (4)
-system/  (4)
-thread/  (21)
-  message/  (6)
-  transcript/  (5)
-tools/  (6)
-```
-
-### clients/desktop
-
-```
 backup/  (13)
   archive/  (11)
 catalog/  (6)
-client/  (23)
-  serve/  (12)
+client/  (21)
+  serve/  (11)
 config/  (12)
   file/  (6)
 init/  (5)
@@ -104,14 +84,13 @@ mcp/  (4)
 message/  (17)
   commands/  (9)
   sources/  (6)
-platform/  (19)
+platform/  (10)
   linux/  (2)
-  macos/  (11)
-    simulator/  (9)
-plugins/  (25)
+  macos/  (2)
+plugins/  (26)
   broker/  (5)
   platform/  (5)
-  store/  (4)
+  store/  (5)
   ui/  (5)
 project/  (8)
 providers/  (29)
@@ -140,7 +119,7 @@ state/  (32)
     goal/  (3)
     work/  (5)
 terminal/  (4)
-tools/  (52)
+tools/  (51)
   agents/  (4)
   computer/  (18)
     backend/  (5)
@@ -152,13 +131,12 @@ voice/  (15)
   local/  (7)
 ```
 
-### server
+### clients/desktop
 
 ```
-columns/  (34)
+columns/  (28)
   inspector/  (13)
   sidebar/  (4)
-  simulator/  (6)
   terminal/  (4)
   topbar/  (3)
 dev/  (4)
@@ -186,6 +164,13 @@ ui/  (8)
 workspace/  (6)
 ```
 
+### server
+
+```
+auth/  (4)
+files/  (4)
+```
+
 The library the terminal and desktop clients link to serve browsers; it has no binary of its own and the
 built bundle is embedded in each of them. `auth` (token, sessions, limit), `files` (`assets`:
 the bundle embedded from `clients/browser/dist`; `cards`, `outputs`: pictures and sounds), `guard`
@@ -195,8 +180,16 @@ start, stop). Everything else is the core's.
 ### clients/browser
 
 ```
-auth/  (4)
-files/  (4)
+api/  (8)
+auth/  (2)
+chat/  (18)
+  data/  (2)
+  inspector/  (7)
+columns/  (2)
+pages/  (24)
+  connectors/  (8)
+  settings/  (11)
+ui/  (5)
 ```
 
 The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls by domain,

@@ -22,7 +22,7 @@ use crate::{
     workspace::Workspace,
 };
 
-/// The widest a phone is drawn, as the simulator draws its own.
+/// The widest a phone is drawn.
 const PHONE: f32 = 300.;
 const CHEVRON: &str = "icons/chevron-down.svg";
 

@@ -12,7 +12,7 @@ use dusk_protocol::{
 use tokio::sync::{mpsc, oneshot, watch};
 
 use super::{
-    Catalog, ClientId, Hub, Plugins, Projects, Settings, Simulator, Terminal, Threads, Work,
+    Catalog, ClientId, Hub, Plugins, Projects, Settings, Terminal, Threads, Work,
     serve::{Call, Message},
 };
 
@@ -54,10 +54,6 @@ impl Client {
 
     pub fn terminal(&self) -> Terminal<'_> {
         Terminal(self)
-    }
-
-    pub fn simulator(&self) -> Simulator<'_> {
-        Simulator(self)
     }
 
     pub fn plugins(&self) -> Plugins<'_> {

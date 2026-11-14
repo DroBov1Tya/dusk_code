@@ -152,7 +152,6 @@ fn refused(request: &Request, size: usize) -> Option<&'static str> {
             Some("an existing MCP server is edited in the desktop app")
         }
         Request::Terminal(_) => Some("a terminal opens in the desktop app only"),
-        Request::Simulator(_) => Some("the iOS Simulator opens in the desktop app only"),
         Request::Plugin(_) => Some("plugin parts open in the desktop app only"),
         // A plugin runs programs on this machine; only a client on it may install one.
         Request::Store(StoreRequest::Install { .. } | StoreRequest::Remove { .. }) => {

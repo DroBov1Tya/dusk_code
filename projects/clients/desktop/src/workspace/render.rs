@@ -53,7 +53,6 @@ impl Render for Workspace {
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
         };
         let terminal = crate::columns::terminal::render(self, window, cx);
-        let simulator = crate::columns::simulator::render(self, window, cx);
         let right_dock = crate::plugins::right_dock(self, cx);
         let bottom_dock = crate::plugins::bottom_dock(self, window, cx);
         let plugins_menu = crate::plugins::menu(self, cx);
@@ -155,7 +154,6 @@ impl Render for Workspace {
                                     .children(bottom_dock),
                             )
                             .children(inspector)
-                            .children(simulator)
                             .children(right_dock),
                     ),
             )

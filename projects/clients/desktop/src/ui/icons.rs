@@ -19,11 +19,6 @@ pub const TEMPORARY: &str = "icons/dusk/temporary.svg";
 
 const TEMPORARY_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13.5 3.1c-.5 0-1-.1-1.5-.1s-1 .1-1.5.1" /><path d="M19.3 6.8a10.45 10.45 0 0 0-2.1-2.1" /><path d="M20.9 13.5c.1-.5.1-1 .1-1.5s-.1-1-.1-1.5" /><path d="M17.2 19.3a10.45 10.45 0 0 0 2.1-2.1" /><path d="M10.5 20.9c.5.1 1 .1 1.5.1s1-.1 1.5-.1" /><path d="M3.5 17.5 2 22l4.5-1.5" /><path d="M3.1 10.5c0 .5-.1 1-.1 1.5s.1 1 .1 1.5" /><path d="M6.8 4.7a10.45 10.45 0 0 0-2.1 2.1" /></svg>"#;
 
-/// A phone: the iOS Simulator.
-pub const PHONE: &str = "icons/dusk/phone.svg";
-
-const PHONE_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="20" x="5" y="2" rx="2" ry="2" /><path d="M12 18h.01" /></svg>"#;
-
 /// Lucide's outline, the kit's own style, around the shapes of an icon.
 macro_rules! lucide {
     ($shapes:literal) => {
@@ -42,20 +37,6 @@ pub const REFRESH: &str = "icons/dusk/refresh.svg";
 const REFRESH_SVG: &[u8] = lucide!(
     r#"<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" />"#
 );
-
-/// The iOS Simulator's buttons, which the kit does not ship.
-pub const HOME: &str = "icons/dusk/home.svg";
-pub const LOCK: &str = "icons/dusk/lock.svg";
-pub const POWER: &str = "icons/dusk/power.svg";
-
-const HOME_SVG: &[u8] = lucide!(
-    r#"<path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8" /><path d="M3 10a2 2 0 0 1 .709-1.528l7-5.999a2 2 0 0 1 2.582 0l7 5.999A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />"#
-);
-const LOCK_SVG: &[u8] = lucide!(
-    r#"<rect width="18" height="11" x="3" y="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />"#
-);
-const POWER_SVG: &[u8] =
-    lucide!(r#"<path d="M12 2v10" /><path d="M18.4 6.6a9 9 0 1 1-12.77.04" />"#);
 
 /// Plugins: the one button their parts wait behind, and the pin that keeps a part's icon
 /// in its place.
@@ -78,11 +59,7 @@ impl AssetSource for Assets {
             MOON => return Ok(Some(Cow::Borrowed(MOON_SVG))),
             MOON_FILL => return Ok(Some(Cow::Borrowed(MOON_FILL_SVG))),
             TEMPORARY => return Ok(Some(Cow::Borrowed(TEMPORARY_SVG))),
-            PHONE => return Ok(Some(Cow::Borrowed(PHONE_SVG))),
-            HOME => return Ok(Some(Cow::Borrowed(HOME_SVG))),
             REFRESH => return Ok(Some(Cow::Borrowed(REFRESH_SVG))),
-            LOCK => return Ok(Some(Cow::Borrowed(LOCK_SVG))),
-            POWER => return Ok(Some(Cow::Borrowed(POWER_SVG))),
             PUZZLE => return Ok(Some(Cow::Borrowed(PUZZLE_SVG))),
             PIN => return Ok(Some(Cow::Borrowed(PIN_SVG))),
             _ => {}

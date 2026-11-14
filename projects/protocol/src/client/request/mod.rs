@@ -17,8 +17,6 @@ pub enum Request {
     Voice(VoiceRequest),
     /// The user's own shell in the window; the agents never see it.
     Terminal(TerminalRequest),
-    /// Xcode's iOS Simulator, for the desktop app on macOS.
-    Simulator(SimulatorRequest),
     /// The parts plugins add to the window.
     Plugin(PluginRequest),
     /// The plugin store; it goes to the network, so it is answered beside the loop.
@@ -35,7 +33,6 @@ mod catalog;
 mod plugin;
 mod project;
 mod settings;
-mod simulator;
 mod terminal;
 mod thread;
 mod voice;
@@ -45,7 +42,6 @@ pub use catalog::CatalogRequest;
 pub use plugin::PluginRequest;
 pub use project::ProjectRequest;
 pub use settings::{ProviderTarget, SettingsRequest, Switch};
-pub use simulator::{MAX_SIM_TEXT, SimulatorRequest};
 pub use terminal::{MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE, MAX_TERMINALS, TerminalRequest};
 pub use thread::ThreadRequest;
 pub use voice::{VoiceRequest, wav};

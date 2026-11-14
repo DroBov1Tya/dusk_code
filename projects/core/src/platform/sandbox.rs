@@ -89,8 +89,8 @@ impl Confinement {
     }
 }
 
-/// The developer tools `xcrun` starts: Xcode's chosen folder and the frameworks the
-/// simulator's tools run from. Empty where there are none.
+/// The developer tools `xcrun` starts: Xcode's chosen folder and the private frameworks
+/// its tools run from. Empty where there are none.
 pub fn developer_tools() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
     {

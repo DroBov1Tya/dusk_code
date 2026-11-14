@@ -234,8 +234,6 @@ pub struct Workspace {
     pub fog_dawn: Option<(std::time::Instant, f32)>,
     /// The terminal panel at the foot of the work area.
     pub terminal: crate::columns::terminal::Panel,
-    /// The iOS Simulator at the right edge, on macOS.
-    pub simulator: crate::columns::simulator::Panel,
     /// The parts plugins add, and the docks they are open in.
     pub plugins: crate::plugins::Plugins,
     pub jobs: Vec<JobInfo>,

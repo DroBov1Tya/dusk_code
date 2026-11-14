@@ -59,8 +59,6 @@ pub enum Response {
     /// What a file is on disk after a write.
     Stamp(FileStamp),
     System(SystemReport),
-    Simulator(crate::system::Simulator),
-    SimScreen(crate::system::SimScreen),
     Answer(Box<Answer>),
     Store(Vec<crate::plugin::Listing>),
     /// The request failed; the text says why in full.

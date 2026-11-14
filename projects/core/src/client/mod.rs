@@ -1,6 +1,6 @@
 //! The core's side of the protocol. `Hub` (in `hub`) is the running core that clients
 //! attach to; `Client` (in `connection`) is one client's handle, with a part per area:
-//! `catalog`, `projects`, `settings`, `simulator`, `terminal`, `threads` and `work`.
+//! `catalog`, `plugins`, `projects`, `settings`, `terminal`, `threads` and `work`.
 //! `serve` answers the calls inside the core.
 
 use anyhow::Result;
@@ -15,7 +15,6 @@ mod plugins;
 mod projects;
 mod serve;
 mod settings;
-mod simulator;
 mod terminal;
 mod threads;
 mod work;
@@ -30,7 +29,6 @@ pub use hub::Hub;
 pub use plugins::Plugins;
 pub use projects::Projects;
 pub use settings::Settings;
-pub use simulator::Simulator;
 pub use terminal::Terminal;
 pub use threads::Threads;
 pub use work::Work;

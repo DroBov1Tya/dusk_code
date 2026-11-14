@@ -162,13 +162,18 @@ the keychain are out of their reach, and a plugin gets nothing it does not ask f
 ```yaml
 permissions:
   network: [https://api.example.com]     # origins, through the core
-  exec: [xcrun, axe]                     # programs it may start besides its own
+  exec: [xcrun, axe]                     # programs it may start besides its own;
+                                         # xcrun brings the developer tools of Xcode
   read: [~/Library/Developer]            # folders outside its own it may read
+  sockets: [~/.vphone]                   # folders whose Unix sockets it may connect to
   keys:
     - name: token
       origins: [https://api.example.com]
       handed: false                      # true: the plugin reads the key itself
 ```
+
+A picture an MCP tool returns (PNG or JPEG) reaches the model as an image, checked like
+any other: at most 4 per result and 4 megapixels each.
 
 ### Talking to the network
 

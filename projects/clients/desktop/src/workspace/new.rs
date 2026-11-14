@@ -148,7 +148,6 @@ impl Workspace {
             fog_cleared: None,
             fog_dawn: None,
             terminal: crate::columns::terminal::Panel::new(cx),
-            simulator: Default::default(),
             plugins: crate::plugins::Plugins::new(window, cx),
             jobs: Vec::new(),
             sources: Vec::new(),
