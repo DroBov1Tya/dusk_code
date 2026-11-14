@@ -4,7 +4,7 @@
 use dusk_protocol::system::SimButton;
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Icon, Sizable,
+        ActiveTheme, Disableable, Icon,
         button::{Button, ButtonVariants},
     },
     *,
@@ -75,7 +75,6 @@ pub fn render(panel: &Panel, cx: &mut Context<Workspace>) -> Div {
 fn tool(id: &'static str, icon: &'static str, tip: &'static str) -> Button {
     Button::new(id)
         .ghost()
-        .small()
         .rounded_full()
         .icon(Icon::default().path(icon))
         .tooltip(tip)

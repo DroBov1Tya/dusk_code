@@ -20,7 +20,7 @@ use std::{cell::Cell, rc::Rc, sync::Arc};
 use dusk_protocol::system::{SimDevice, Simulator};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, IconName,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -33,6 +33,8 @@ use crate::{
 };
 
 pub const WIDTH: f32 = 400.;
+/// The panel's top, as tall as the window's header.
+const HEAD: f32 = crate::ui::size::BAR;
 
 #[derive(Default)]
 pub struct Panel {
@@ -100,7 +102,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .flex_row()
         .items_center()
         .gap_2()
-        .h(px(48.))
+        .h(px(HEAD))
         .pl_3()
         .pr_2()
         .border_b_1()
@@ -118,7 +120,6 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .child(
             Button::new("simulator-close")
                 .ghost()
-                .small()
                 .icon(IconName::Close)
                 .tooltip("Close the panel; the device keeps running")
                 .on_click(cx.listener(|ws, _, _, cx| ws.toggle_simulator(cx))),

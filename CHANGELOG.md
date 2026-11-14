@@ -16,7 +16,9 @@ testing.
   device down. Touches and keys go through AXe, a free command line tool the panel says
   how to install. The agent gets an `ios_simulator` tool on macOS: a picture of the
   screen in points, its elements as an accessibility tree, taps, swipes, typing,
-  buttons, links and installed apps on the booted device. The core runs simctl and AXe
+  buttons, links and installed apps on the booted device. The tree is cut down to one line
+  for each labelled element with the point to tap: a home screen goes from about 400 KB of
+  JSON to under 2 KB. The core runs simctl and AXe
   without a shell and names a device only by a UDID that parses as one; the web client
   cannot ask for the simulator. A header that was never reshaped takes the new button.
 - A page for the project on GitHub Pages, `site/index.html`, published by its own

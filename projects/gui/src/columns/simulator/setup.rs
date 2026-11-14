@@ -3,7 +3,7 @@
 use dusk_protocol::system::Simulator;
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, IconName,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -25,7 +25,6 @@ pub fn render(found: &Simulator, cx: &mut Context<Workspace>) -> Div {
         ))
         .child(
             Button::new("simulator-xcode")
-                .small()
                 .label("Open the App Store")
                 .on_click(|_, _, cx| cx.open_url(APP_STORE_XCODE)),
         )
@@ -49,7 +48,6 @@ pub fn render(found: &Simulator, cx: &mut Context<Workspace>) -> Div {
                     .child(
                         Button::new("simulator-runtime")
                             .primary()
-                            .small()
                             .label("Download iOS")
                             .on_click(cx.listener(|ws, _, _, cx| ws.install_runtime(cx))),
                     ),

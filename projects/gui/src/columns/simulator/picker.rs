@@ -7,9 +7,10 @@ use gpui_kit::{
     *,
 };
 
+use super::HEAD;
 use super::Panel;
 use crate::{
-    ui::{Type, widgets},
+    ui::{Type, size, widgets},
     workspace::Workspace,
 };
 
@@ -27,21 +28,16 @@ pub fn button(panel: &Panel, cx: &mut Context<Workspace>) -> Stateful<Div> {
         .flex()
         .flex_row()
         .items_center()
-        .gap_1()
+        .gap_2()
+        .h(px(size::CONTROL))
         .px_2()
-        .py_1()
-        .rounded_md()
+        .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
-        .child(
-            div()
-                .flex()
-                .flex_col()
-                .child(div().small().font_weight(FontWeight::SEMIBOLD).child(name))
-                .when(!runtime.is_empty(), |column| {
-                    column.child(div().meta().text_color(muted).child(runtime))
-                }),
-        )
+        .child(div().body().font_weight(FontWeight::SEMIBOLD).child(name))
+        .when(!runtime.is_empty(), |button| {
+            button.child(div().small().text_color(muted).child(runtime))
+        })
         .child(Icon::default().path(CHEVRON).size_4().text_color(muted))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_device_menu(cx)))
 }
@@ -58,9 +54,9 @@ pub fn menu(panel: &Panel, cx: &mut Context<Workspace>) -> Deferred {
     let mut list = div()
         .id("simulator-devices")
         .absolute()
-        .top(px(46.))
+        .top(px(HEAD - 4.))
         .left(px(10.))
-        .w(px(260.))
+        .w(px(300.))
         .max_h(px(420.))
         .overflow_y_scroll()
         .p_1()
@@ -86,10 +82,10 @@ pub fn menu(panel: &Panel, cx: &mut Context<Workspace>) -> Deferred {
                         .flex_1()
                         .min_w_0()
                         .truncate()
-                        .small()
+                        .body()
                         .child(device.name.clone()),
                 )
-                .child(div().meta().text_color(muted).child(if device.booted {
+                .child(div().small().text_color(muted).child(if device.booted {
                     "on".to_owned()
                 } else {
                     device.runtime.clone()
