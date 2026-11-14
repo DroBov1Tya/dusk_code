@@ -36,6 +36,13 @@ macro_rules! lucide {
     };
 }
 
+/// Two arrows chasing each other round: ask again.
+pub const REFRESH: &str = "icons/dusk/refresh.svg";
+
+const REFRESH_SVG: &[u8] = lucide!(
+    r#"<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8" /><path d="M21 3v5h-5" /><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16" /><path d="M8 16H3v5" />"#
+);
+
 /// The iOS Simulator's buttons, which the kit does not ship.
 pub const HOME: &str = "icons/dusk/home.svg";
 pub const LOCK: &str = "icons/dusk/lock.svg";
@@ -61,6 +68,7 @@ impl AssetSource for Assets {
             TEMPORARY => return Ok(Some(Cow::Borrowed(TEMPORARY_SVG))),
             PHONE => return Ok(Some(Cow::Borrowed(PHONE_SVG))),
             HOME => return Ok(Some(Cow::Borrowed(HOME_SVG))),
+            REFRESH => return Ok(Some(Cow::Borrowed(REFRESH_SVG))),
             LOCK => return Ok(Some(Cow::Borrowed(LOCK_SVG))),
             POWER => return Ok(Some(Cow::Borrowed(POWER_SVG))),
             _ => {}

@@ -6,6 +6,7 @@
 //! - `listing`: Xcode, the runtimes and the devices;
 //! - `download`: the iOS runtime;
 //! - `screen`: a device's picture and its size in points;
+//! - `stream`: its screen as it changes, for the panel;
 //! - `input`: touches, typing, buttons and the accessibility tree;
 //! - `tree`: that tree made short for the model;
 //! - `apps`: links, installed apps and Simulator.app.
@@ -16,6 +17,7 @@ mod input;
 mod listing;
 mod run;
 mod screen;
+mod stream;
 mod tree;
 
 use anyhow::Result;
@@ -44,6 +46,8 @@ pub async fn answer(request: SimulatorRequest) -> Result<Response> {
         Ask::Boot { udid } => {
             let udid = run::device(&udid)?;
             settle(run::simctl(&["boot", &udid], BOOT_LIMIT).await, "Booted")?;
+            // `boot` returns before the device can draw; a picture taken then fails.
+            run::simctl(&["bootstatus", &udid, "-b"], BOOT_LIMIT).await?;
             Response::Done
         }
         Ask::Shutdown { udid } => {
@@ -54,7 +58,10 @@ pub async fn answer(request: SimulatorRequest) -> Result<Response> {
             )?;
             Response::Done
         }
-        Ask::Screen { udid } => Response::SimScreen(screen::take(&run::device(&udid)?).await?),
+        Ask::Screen { udid, after } => {
+            let udid = run::device(&udid)?;
+            Response::SimScreen(stream::next(&udid, after, listing::axe_found()).await?)
+        }
         Ask::Tap { udid, x, y } => {
             input::tap(&run::device(&udid)?, x, y).await?;
             Response::Done

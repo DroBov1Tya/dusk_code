@@ -416,7 +416,17 @@ struct Identity {
     email: Option<String>,
 }
 
-#[derive(Deserialize)]
+/// OpenID Connect Core 3.1.3.7: the client is one of the audiences, and the authorized
+/// party, when one is stated, is the client.
+fn for_client(aud: &Audience, azp: Option<&str>, client_id: &str) -> bool {
+    let among = match aud {
+        Audience::One(one) => one == client_id,
+        Audience::Many(many) => many.iter().any(|one| one == client_id),
+    };
+    among && azp.is_none_or(|azp| azp == client_id)
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Audience {
     One(String),
@@ -499,16 +509,20 @@ fn check_identity(
         )
         .map_err(|_| anyhow!("the sign-in's identity has a wrong signature"))?;
     let identity: Identity = serde_json::from_slice(&decode(body)?).map_err(|_| unsigned())?;
-    let for_client = match &identity.aud {
-        Audience::One(one) => one == client_id,
-        Audience::Many(many) => {
-            many.iter().any(|one| one == client_id) && identity.azp.as_deref() == Some(client_id)
-        }
-    };
     ensure!(
-        identity.iss == ISSUER && for_client,
-        "the sign-in's identity was made by or for someone else"
+        identity.iss == ISSUER,
+        "the sign-in's identity was made by someone other than OpenAI"
     );
+    if !for_client(&identity.aud, identity.azp.as_deref(), client_id) {
+        // Client IDs name an app's registration, not a person; they say what went wrong.
+        tracing::warn!(
+            expected = client_id,
+            aud = ?identity.aud,
+            azp = ?identity.azp,
+            "the ChatGPT sign-in's identity is for another client"
+        );
+        anyhow::bail!("the sign-in's identity was made for another app");
+    }
     ensure!(identity.exp > now, "the sign-in's identity has expired");
     ensure!(
         identity.nonce.as_deref() == Some(nonce),
@@ -565,6 +579,18 @@ mod tests {
         assert!(refused(token(r#"{"alg":"RS256","kid":"k1"}"#)));
         assert!(refused("a.b".into()));
         assert!(refused("a.b.c.d".into()));
+    }
+
+    #[test]
+    fn an_identity_is_for_this_client_only() {
+        let many = |list: &[&str]| Audience::Many(list.iter().map(|one| one.to_string()).collect());
+        assert!(for_client(&Audience::One("c".into()), None, "c"));
+        assert!(for_client(&many(&["c", "api"]), None, "c"));
+        assert!(for_client(&many(&["c", "api"]), Some("c"), "c"));
+        assert!(!for_client(&Audience::One("other".into()), None, "c"));
+        assert!(!for_client(&many(&["other", "api"]), None, "c"));
+        assert!(!for_client(&many(&["c", "api"]), Some("other"), "c"));
+        assert!(!for_client(&Audience::One("c".into()), Some("other"), "c"));
     }
 
     fn credential(saved_at: i64, access_token: &str) -> Credential {

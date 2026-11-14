@@ -1,7 +1,10 @@
 //! What is installed: Xcode, the iOS runtimes and their devices, read from
 //! `simctl list`.
 
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    sync::atomic::{AtomicBool, Ordering},
+};
 
 use anyhow::{Context, Result};
 use dusk_protocol::system::{SimDevice, Simulator};
@@ -63,7 +66,15 @@ pub async fn look() -> Result<Simulator> {
     simulator.runtimes = runtimes;
     simulator.devices = devices;
     simulator.input = run("axe", &["--version"], LIMIT).await.is_ok();
+    AXE.store(simulator.input, Ordering::Relaxed);
     Ok(simulator)
+}
+
+/// Whether AXe was found when the devices were last looked at.
+static AXE: AtomicBool = AtomicBool::new(false);
+
+pub fn axe_found() -> bool {
+    AXE.load(Ordering::Relaxed)
 }
 
 /// The first booted iOS device, which the agent's tool acts on.

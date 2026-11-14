@@ -9,8 +9,10 @@ use gpui_kit::*;
 use super::{Screen, WIDTH};
 use crate::workspace::Workspace;
 
-/// The pause between two screens; simctl itself takes longer for one.
-const FRAME: Duration = Duration::from_millis(60);
+/// A failed screen is asked again after this, at most `RETRIES` times in a row: while a
+/// device boots or its stream starts, a picture can fail for a moment.
+const RETRY: Duration = Duration::from_millis(500);
+const RETRIES: u32 = 6;
 /// How often the setup is looked at again while a runtime downloads.
 const RECHECK: Duration = Duration::from_secs(4);
 /// The widest a screen is kept, in pixels: the panel at twice its points.
@@ -22,6 +24,7 @@ impl Workspace {
         panel.open = !panel.open;
         panel.picking = false;
         panel.run += 1;
+        panel.seq = 0;
         panel.pulling = false;
         if panel.open {
             self.look_simulator(cx);
@@ -100,14 +103,15 @@ impl Workspace {
     }
 
     fn next_screen(&mut self, udid: String, run: u64, cx: &mut Context<Self>) {
-        let asked = udid.clone();
+        let (asked, after, failed) = (udid.clone(), self.simulator.seq, self.simulator.failed);
         self.core.call(
             cx,
             move |client| async move {
-                let screen = client.simulator().screen(asked).await?;
-                let shown = decode(screen)?;
-                tokio::time::sleep(FRAME).await;
-                Ok(shown)
+                if failed > 0 {
+                    tokio::time::sleep(RETRY).await;
+                }
+                let screen = client.simulator().screen(asked, after).await?;
+                decode(screen)
             },
             move |ws, result, cx| {
                 let panel = &mut ws.simulator;
@@ -116,15 +120,25 @@ impl Workspace {
                 }
                 match result {
                     Ok(screen) => {
-                        panel.show(Some(screen));
+                        panel.failed = 0;
+                        if screen.seq != panel.seq {
+                            panel.seq = screen.seq;
+                            panel.show(Some(screen));
+                            cx.notify();
+                        }
+                        ws.next_screen(udid, run, cx);
+                    }
+                    Err(_) if panel.failed < RETRIES => {
+                        panel.failed += 1;
                         ws.next_screen(udid, run, cx);
                     }
                     Err(error) => {
                         panel.pulling = false;
+                        panel.failed = 0;
                         panel.error = Some(format!("{error:#}"));
+                        cx.notify();
                     }
                 }
-                cx.notify();
             },
         );
     }
@@ -139,6 +153,7 @@ impl Workspace {
         panel.chosen = Some(udid);
         panel.picking = false;
         panel.run += 1;
+        panel.seq = 0;
         panel.pulling = false;
         panel.error = None;
         panel.show(None);
@@ -155,6 +170,7 @@ impl Workspace {
         panel.busy = Some(if boot { "Booting" } else { "Shutting down" });
         panel.error = None;
         panel.run += 1;
+        panel.seq = 0;
         panel.pulling = false;
         panel.show(None);
         cx.notify();
@@ -245,10 +261,11 @@ impl Workspace {
 /// A JPEG as the picture the window draws: no wider than the panel needs, its pixels in
 /// the BGRA order the window wants.
 fn decode(screen: SimScreen) -> anyhow::Result<Screen> {
-    let full = image::load_from_memory_with_format(&screen.jpeg, image::ImageFormat::Jpeg)?;
-    let mut pixels = full
-        .resize(SHOWN_WIDTH, u32::MAX, image::imageops::FilterType::Triangle)
-        .into_rgba8();
+    let mut full = image::load_from_memory_with_format(&screen.jpeg, image::ImageFormat::Jpeg)?;
+    if full.width() > SHOWN_WIDTH {
+        full = full.resize(SHOWN_WIDTH, u32::MAX, image::imageops::FilterType::Triangle);
+    }
+    let mut pixels = full.into_rgba8();
     for pixel in pixels.pixels_mut() {
         pixel.0.swap(0, 2);
     }
@@ -257,5 +274,6 @@ fn decode(screen: SimScreen) -> anyhow::Result<Screen> {
         picture: Arc::new(RenderImage::new(vec![frame])),
         width: screen.width,
         height: screen.height,
+        seq: screen.seq,
     })
 }

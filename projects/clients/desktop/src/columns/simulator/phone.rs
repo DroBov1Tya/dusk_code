@@ -64,25 +64,20 @@ pub fn render(panel: &Panel, _found: &Simulator, cx: &mut Context<Workspace>) ->
         )
         .child(island(inner))
         .when(booted && panel.input(), |screen| {
+            // A click carries where the button went down and where it came up: the same
+            // place is a tap, a move is a swipe.
             screen
                 .cursor_pointer()
-                .on_mouse_down(
-                    MouseButton::Left,
-                    cx.listener(|ws, event: &MouseDownEvent, _, cx| {
-                        ws.simulator.pressed = points(&ws.simulator, event.position);
-                        cx.stop_propagation();
-                    }),
-                )
-                .on_mouse_up(
-                    MouseButton::Left,
-                    cx.listener(|ws, event: &MouseUpEvent, _, cx| {
-                        let from = ws.simulator.pressed.take();
-                        let to = points(&ws.simulator, event.position);
-                        if let (Some(from), Some(to)) = (from, to) {
-                            gesture(ws, from, to, cx);
-                        }
-                    }),
-                )
+                .on_click(cx.listener(|ws, event: &ClickEvent, _, cx| {
+                    let ClickEvent::Mouse(click) = event else {
+                        return;
+                    };
+                    let from = points(&ws.simulator, click.down.position);
+                    let to = points(&ws.simulator, click.up.position);
+                    if let (Some(from), Some(to)) = (from, to) {
+                        gesture(ws, from, to, cx);
+                    }
+                }))
         });
     let body = div()
         .relative()

@@ -19,8 +19,10 @@ impl Simulator<'_> {
     }
 
     /// The device's screen and its size in points.
-    pub async fn screen(&self, udid: String) -> Result<SimScreen> {
-        match self.ask(SimulatorRequest::Screen { udid }).await? {
+    /// The device's screen: the first frame after `after`, or the last one when it
+    /// holds still.
+    pub async fn screen(&self, udid: String, after: u64) -> Result<SimScreen> {
+        match self.ask(SimulatorRequest::Screen { udid, after }).await? {
             Response::SimScreen(screen) => Ok(screen),
             other => Err(unexpected(other)),
         }

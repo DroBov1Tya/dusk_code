@@ -186,16 +186,32 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 "Several can be connected at once; the model menu lists the models of each.",
             ),
         )
-        .child(chatgpt(ws, cx))
+        .child(labeled("Provider", "whose API the server speaks", cx).child(kinds))
+        // OpenAI can also be reached through a ChatGPT plan, without a key.
+        .when(page.kind == ProviderKind::OpenAi, |form| {
+            form.child(chatgpt(ws, cx))
+        })
         .child(
             labeled("Provider name", "optional; it shows in the model menu", cx)
                 .child(Input::new(&page.name).large()),
         )
-        .child(labeled("Provider", "whose API the server speaks", cx).child(kinds))
-        .child(labeled("Address", "where the server is", cx).child(Input::new(&page.url).large()))
+        // The known providers have one address; only a custom server needs one typed.
+        .when(page.kind == ProviderKind::OpenAiCompatible, |form| {
+            form.child(
+                labeled("Address", "where the server is", cx).child(Input::new(&page.url).large()),
+            )
+        })
         .child(
-            labeled("API key", "kept in the system keychain", cx)
-                .child(Input::new(&page.key).large()),
+            labeled(
+                "API key",
+                if page.kind == ProviderKind::OpenAi {
+                    "or a key from platform.openai.com; kept in the system keychain"
+                } else {
+                    "kept in the system keychain"
+                },
+                cx,
+            )
+            .child(Input::new(&page.key).large()),
         )
         .child(
             div()

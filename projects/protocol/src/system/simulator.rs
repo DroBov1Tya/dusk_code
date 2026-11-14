@@ -36,6 +36,8 @@ pub struct SimScreen {
     /// The screen's size in points, the unit touches are given in.
     pub width: f32,
     pub height: f32,
+    /// Counts the frames of the device's stream; ask with it for the next one.
+    pub seq: u64,
 }
 
 /// The hardware buttons a device has.
