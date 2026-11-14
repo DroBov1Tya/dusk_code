@@ -49,22 +49,24 @@ ships under `plugins/`; nothing new goes at the root of `projects/`.
 
 ## Map
 
+Regenerate with `scripts/structure-map.sh` in the commit that changes the tree.
+
 ### protocol
 
 ```
 agent/  (2)
 catalog/  (5)
-client/  (17)
+client/  (18)
   command/  (2)
   request/  (9)
-config/  (11)
+config/  (12)
 model/  (6)
-project/  (7)
+project/  (6)
 release/  (4)
 system/  (3)
 thread/  (16)
   message/  (6)
-tools/  (5)
+tools/  (6)
 ```
 
 ### core
@@ -73,67 +75,90 @@ tools/  (5)
 backup/  (12)
   archive/  (11)
 catalog/  (6)
-client/  (18)
+client/  (21)
   serve/  (11)
-config/  (14)
+config/  (12)
   file/  (6)
-init/  (4)
+init/  (5)
 mcp/  (4)
-message/  (12)
+message/  (17)
   commands/  (9)
-platform/  (16)
+  sources/  (6)
+platform/  (18)
   linux/  (2)
   macos/  (10)
     simulator/  (8)
-plugins/  (6)
-project/  (7)
-providers/  (23)
+plugins/  (10)
+  platform/  (5)
+project/  (8)
+providers/  (29)
   anthropic/  (4)
+  google/  (5)
   openai/  (6)
   output/  (3)
   transport/  (3)
 release/  (8)
-runtime/  (60)
-  agent/  (15)
+runtime/  (63)
+  agent/  (16)
+    agent/  (7)
   api/  (16)
   goal/  (10)
+    verification/  (7)
   jobs/  (3)
-  thread/  (5)
-  thread_runner/  (5)
-secrets/  (4)
+  thread/  (13)
+    runner/  (6)
+secrets/  (5)
 state/  (32)
   agents/  (4)
   db/  (3)
-  thread/  (18)
+  project/  (3)
+  thread/  (19)
+    conversation/  (7)
+    goal/  (3)
+    work/  (5)
 terminal/  (4)
-tools/  (50)
+tools/  (52)
   agents/  (4)
-  computer/  (16)
+  computer/  (18)
+    backend/  (5)
+    overlay/  (3)
   console/  (6)
   files/  (4)
   harness/  (11)
-util/  (5)
-voice/  (8)
+voice/  (15)
   local/  (7)
 ```
 
 ### clients/desktop
 
 ```
-columns/  (25)
-  inspector/  (12)
+columns/  (34)
+  inspector/  (13)
   sidebar/  (4)
   simulator/  (6)
+  terminal/  (4)
+  topbar/  (3)
+dev/  (2)
 modal/  (11)
-pages/  (53)
-  artifacts/  (1)
-  chat/  (23)
-  connectors/  (10)
-  schedules/  (2)
-  settings/  (8)
+pages/  (79)
+  artifacts/  (3)
+  chat/  (41)
+    audio/  (4)
+    composer/  (5)
+    dictation/  (3)
+    messages/  (7)
+    model_menu/  (4)
+  connectors/  (12)
+    voice/  (5)
+  file/  (2)
+  review/  (3)
+  schedules/  (3)
+  settings/  (14)
+    providers/  (6)
 platform/  (3)
-ui/  (5)
+ui/  (7)
   theme/  (2)
+workspace/  (5)
 ```
 
 ### server
@@ -153,12 +178,15 @@ start, stop). Everything else is the core's.
 
 ```
 api/  (8)
-chat/  (14)
+auth/  (2)
+chat/  (18)
   data/  (2)
   inspector/  (7)
-pages/  (28)
+columns/  (2)
+pages/  (24)
   connectors/  (8)
   settings/  (11)
+ui/  (5)
 ```
 
 The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls by domain,
@@ -168,22 +196,41 @@ browser), `markdown` model output as DOM text only. It draws and calls; it decid
 ### clients/terminal
 
 ```
-app/  (30)
+app/  (31)
   composer/  (5)
   keys/  (3)
   panels/  (8)
+    settings/  (5)
   thread/  (7)
-cli/  (6)
+cli/  (7)
 host/  (5)
 screensaver/  (12)
   scenes/  (6)
-session/  (5)
-ui/  (43)
+session/  (12)
+  actions/  (7)
+ui/  (50)
+  sidebar/  (7)
   text/  (5)
   thread/  (14)
-  windows/  (19)
+    input/  (8)
+    transcript/  (3)
+  windows/  (20)
+    panels/  (14)
+    settings/  (4)
 ```
 
 A number is the count of Rust files in a directory. `evals` and `external/telegram` are small and keep their own layout.
 
 When a file grows past what one reason to change holds, split it the way the existing ones were: a type's `impl` blocks by area into files of a directory module that keeps the type's path (`runtime/api`, `config/file`, `runtime/agent/agent`), tests into a `tests` file or directory beside the code.
+
+### plugins/telegram
+
+```
+app/  (13)
+  bot/  (9)
+```
+
+### evals
+
+Flat: `args`, `run`, `task`, `sandbox`, `score` beside `main.rs`; the tasks are in
+`projects/evals/tasks/`.

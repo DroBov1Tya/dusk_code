@@ -43,6 +43,13 @@ testing.
   `projects/plugins/telegram` (was `external/telegram`), and `projects/evals` with its
   tasks. The crates are named after their places (`dusk_server`, `dusk_terminal`,
   `dusk_desktop`, `dusk_browser`); the programs keep their names.
+- Inside the crates, each file has one reason to change and each module a documented
+  door: the core's helpers without a domain went to the domains that use them, the
+  thread's runtime is one `runtime/thread` module, large files (the desktop's chat
+  messages, composer and workspace, the terminal's actions and sidebar, the core's
+  sources and platforms) became directories, and the Telegram bot is grouped by feature
+  rather than by layer. `scripts/structure-map.sh` regenerates the map in
+  `docs/structure.md`.
 - A temporary chat is marked by a speech bubble drawn in dashes, the sign most apps use
   for it, in place of the hourglass.
 

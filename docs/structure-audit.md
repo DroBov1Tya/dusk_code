@@ -1,5 +1,24 @@
 # Structure audit
 
+## Status, 2026-11-14
+
+The crates now live under `projects/{protocol,core,server,clients/*,plugins/*,evals}`;
+the paths below use the old names (gui = clients/desktop, tui = clients/terminal, web =
+server, web-ui = clients/browser, external/telegram = plugins/telegram).
+
+Done as moves and splits, with no behavior change: 2, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+17, 18, 19, 20 (`scripts/structure-map.sh` regenerates the map), 21, 22, 24, 25.
+
+Open: 1, 3, 4, 5, 6 and 23 move logic out of the clients into the core and the protocol,
+so they change behavior and are their own work. New candidates seen on the way:
+`core/src/runtime/agent/agent/` (a module inside one of the same name), the desktop's
+`pages/schedules/editor.rs` (602), `pages/settings/behavior.rs` (581),
+`columns/terminal/mod.rs` (508), and the terminal's `app/panels/agents.rs` (447, three
+reasons). On Linux, clippy 1.95 warns of an unread `Confinement::hidden` and of two
+hand-written range checks; 1.99 does not.
+
+## Findings as read on 2026-11-12
+
 What does not fit `docs/structure.md` yet. Read on 2026-11-12 from the working tree of
 `gui-polish-providers` (uncommitted work included). Nothing was moved. Line counts include
 tests in the file. Rule numbers are those of `docs/structure.md`.
