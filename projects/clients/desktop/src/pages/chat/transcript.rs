@@ -65,6 +65,33 @@ impl From<&Card> for Clip {
     }
 }
 
+impl Clip {
+    /// A sound the user sent, by its card and the path it was sent as: named by its file,
+    /// its kind told by its extension, as the core took only these.
+    pub fn sent(id: &str, path: &str) -> Self {
+        let path = std::path::Path::new(path);
+        let extension = path
+            .extension()
+            .map(|extension| extension.to_string_lossy().to_ascii_lowercase());
+        let mime = match extension.as_deref() {
+            Some("mp3") => "audio/mpeg",
+            Some("wav") => "audio/wav",
+            Some("ogg") => "audio/ogg",
+            Some("flac") => "audio/flac",
+            Some("m4a") => "audio/mp4",
+            _ => "",
+        };
+        Self {
+            id: id.to_owned(),
+            title: path
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned()),
+            mime: mime.to_owned(),
+            duration: None,
+        }
+    }
+}
+
 pub struct Picture {
     pub id: String,
     pub title: Option<String>,
@@ -113,6 +140,10 @@ pub struct Agent {
     pub name: String,
     /// The agent it works as, such as `general`.
     pub role: String,
+    /// The model it answers on, `provider/model`; none when the core did not say.
+    pub model: Option<String>,
+    /// The `ask_agent` call that started it, so the step can show its model.
+    pub call_id: String,
     pub task: String,
     pub working: bool,
     pub state: AgentState,
@@ -123,6 +154,14 @@ pub struct Agent {
 }
 
 impl Agent {
+    /// `general · chatgpt/gpt-5.5`: what it works as and on which model.
+    pub fn role_and_model(&self) -> String {
+        match &self.model {
+            Some(model) => format!("{} \u{00B7} {model}", self.role),
+            None => self.role.clone(),
+        }
+    }
+
     pub fn run_time(&self) -> std::time::Duration {
         self.ended.unwrap_or_else(Instant::now) - self.started
     }
@@ -399,9 +438,11 @@ impl Transcript {
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
             ThreadEvent::SubagentStarted {
+                call_id,
                 thread_id,
                 agent,
                 task,
+                model,
                 ..
             } => {
                 let name = dusk_protocol::thread::agent_name(&thread_id);
@@ -411,6 +452,8 @@ impl Transcript {
                     Agent {
                         name,
                         role: agent,
+                        model,
+                        call_id,
                         task,
                         working: true,
                         state: AgentState::Thinking,

@@ -129,7 +129,7 @@ impl ChatGpt {
                 || anyhow!("provider model request failed"),
             )
             .await?;
-        self.account.note(Headers::OpenAi, response.headers());
+        self.account.note(Headers::ChatGpt, response.headers());
         let status = response.status();
         if !status.is_success() {
             bail!(refusal(response, "model").await);
@@ -179,7 +179,7 @@ impl ChatGpt {
                 || anyhow!(Transient("provider completion request failed".into())),
             )
             .await?;
-        self.account.note(Headers::OpenAi, response.headers());
+        self.account.note(Headers::ChatGpt, response.headers());
         let status = response.status();
         if !status.is_success() {
             // A missing service comes back; a spent plan does not until the user acts.

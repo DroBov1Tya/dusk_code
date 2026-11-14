@@ -118,7 +118,10 @@ impl Sidebar<'_> {
                 [
                     top,
                     vec![Span::raw(" ")],
-                    vec![Span::styled(wrap::clip(&agent.agent, width), fg(TEXT_SOFT))],
+                    vec![Span::styled(
+                        wrap::clip(&agent_and_model(agent), width),
+                        fg(TEXT_SOFT),
+                    )],
                 ]
                 .concat(),
             ));
@@ -152,5 +155,13 @@ impl Sidebar<'_> {
                 .scroll((self.app.agent_scroll as u16, 0)),
             area,
         );
+    }
+}
+
+/// The agent it works as and, when known, the model it answers on.
+fn agent_and_model(view: &crate::app::SubagentView) -> String {
+    match &view.model {
+        Some(model) => format!("{} \u{00B7} {model}", view.agent),
+        None => view.agent.clone(),
     }
 }

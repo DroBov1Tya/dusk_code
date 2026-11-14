@@ -33,6 +33,7 @@ pub fn labelled(message: &str) -> String {
             Part::Text(text) => text.to_owned(),
             Part::Pasted(text) => format!("[{}]", label(text)),
             Part::Source(name) => format!("[{name}]"),
+            Part::Sound { path, .. } => format!("[{}]", path.rsplit('/').next().unwrap_or(path)),
         })
         .collect()
 }

@@ -49,6 +49,8 @@ impl Input {
                 Part::Text(text) => self.text.push_str(text),
                 Part::Pasted(text) => self.push_chip(text.to_owned()),
                 Part::Source(name) => self.text.push_str(&paste::source_tag(name)),
+                // Sent again, the path is kept again.
+                Part::Sound { path, .. } => self.text.push_str(path),
             }
         }
         self.cursor = self.text.len();

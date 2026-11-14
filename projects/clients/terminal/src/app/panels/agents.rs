@@ -32,6 +32,8 @@ pub struct SubagentView {
     pub task: String,
     /// How hard it reasons; `None` is the provider's default.
     pub effort: Option<Effort>,
+    /// The model it answers on, `provider/model`; none when not known.
+    pub model: Option<String>,
     /// The thread that asked it.
     pub parent: Option<String>,
     pub started_at: i64,
@@ -232,8 +234,15 @@ impl App {
                 agent,
                 task,
                 effort,
+                model,
                 ..
-            } => self.start_subagent(child, agent, task, effort, Some(thread_id.to_owned())),
+            } => self.start_subagent(
+                child,
+                agent,
+                task,
+                (effort, model),
+                Some(thread_id.to_owned()),
+            ),
             ThreadEvent::Subagent {
                 thread_id: child,
                 event,
@@ -274,7 +283,7 @@ impl App {
             ARBITER_THREAD.into(),
             "arbiter".into(),
             format!("{verdict} {what}"),
-            None,
+            (None, None),
             None,
         );
         if let Some(card) = self.subagents.last_mut() {
@@ -288,7 +297,7 @@ impl App {
         thread_id: String,
         agent: String,
         task: String,
-        effort: Option<Effort>,
+        (effort, model): (Option<Effort>, Option<String>),
         parent: Option<String>,
     ) {
         let earlier = self
@@ -304,6 +313,7 @@ impl App {
             agent,
             task,
             effort,
+            model,
             parent,
             started_at: now_ms(),
             finished_at: None,

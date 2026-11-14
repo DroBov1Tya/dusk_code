@@ -59,6 +59,21 @@ impl Balance {
 pub struct RateLimits {
     pub requests: Option<RateLimit>,
     pub tokens: Option<RateLimit>,
+    /// A subscription's usage windows, such as ChatGPT's five hours and week, by the
+    /// share used; empty for a provider that counts requests and tokens.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plan: Vec<PlanWindow>,
+}
+
+/// One usage window of a subscription: how long it is and how much of it is used.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PlanWindow {
+    /// How long the window is, in minutes; none when the provider did not say.
+    pub minutes: Option<u64>,
+    /// From 0 to 100.
+    pub used_percent: u8,
+    /// Seconds until it is empty again, counted when the status was made.
+    pub resets_in: Option<u64>,
 }
 
 /// One limit: how much the account may use in the provider's period, and what is left.
@@ -72,6 +87,23 @@ pub struct RateLimit {
 }
 
 impl RateLimits {
+    /// The largest share used of any limit, from 0 to 1; none when no limit has a size.
+    pub fn used(&self) -> Option<f32> {
+        let counted = [&self.requests, &self.tokens]
+            .into_iter()
+            .flatten()
+            .filter(|window| window.limit > 0)
+            .map(|window| 1. - window.remaining as f32 / window.limit as f32);
+        let plan = self
+            .plan
+            .iter()
+            .map(|window| f32::from(window.used_percent) / 100.);
+        counted
+            .chain(plan)
+            .map(|share| share.clamp(0., 1.))
+            .reduce(f32::max)
+    }
+
     /// As every client says it: "4 812 of 5 000 requests, 780k of 800k tokens, resets in 12s".
     pub fn text(&self) -> String {
         let windows = [(&self.requests, "requests"), (&self.tokens, "tokens")];
@@ -93,7 +125,32 @@ impl RateLimits {
             let wait = crate::thread::duration_words(ms);
             parts.push(format!("resets in {wait}"));
         }
+        for window in &self.plan {
+            let size = window.minutes.map_or_else(
+                || "plan".to_owned(),
+                |minutes| format!("{} plan", span(minutes)),
+            );
+            let mut part = format!("{}% of the {size} limit used", window.used_percent);
+            if let Some(seconds) = window.resets_in {
+                let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
+                part.push_str(&format!(
+                    " (resets in {})",
+                    crate::thread::duration_words(ms)
+                ));
+            }
+            parts.push(part);
+        }
         parts.join(", ")
+    }
+}
+
+/// A window's length as a plan names it: `5h`, `7d`, `90m`.
+fn span(minutes: u64) -> String {
+    match minutes {
+        0..60 => format!("{minutes}m"),
+        _ if minutes.is_multiple_of(1440) => format!("{}d", minutes / 1440),
+        _ if minutes.is_multiple_of(60) => format!("{}h", minutes / 60),
+        _ => format!("{}h {}m", minutes / 60, minutes % 60),
     }
 }
 
@@ -139,6 +196,7 @@ mod tests {
         let both = RateLimits {
             requests: window(5_000, 4_812, Some(1)),
             tokens: window(800_000, 780_000, Some(12)),
+            plan: Vec::new(),
         };
         assert_eq!(
             both.text(),
@@ -147,8 +205,30 @@ mod tests {
         let tokens = RateLimits {
             requests: None,
             tokens: window(u64::MAX, 1_540_000, None),
+            plan: Vec::new(),
         };
         assert_eq!(tokens.text(), "1.5M of 18446744073709.5M tokens");
+        let plan = RateLimits {
+            requests: None,
+            tokens: None,
+            plan: vec![
+                PlanWindow {
+                    minutes: Some(300),
+                    used_percent: 5,
+                    resets_in: Some(7_800),
+                },
+                PlanWindow {
+                    minutes: Some(10_080),
+                    used_percent: 40,
+                    resets_in: None,
+                },
+            ],
+        };
+        assert_eq!(
+            plan.text(),
+            "5% of the 5h plan limit used (resets in 2h 10m), 40% of the 7d plan limit used"
+        );
+        assert_eq!(plan.used(), Some(0.4));
         // A status saved by an older core has no limits.
         let old: ProviderStatus =
             serde_json::from_str(r#"{"name":"a","models":{"Ok":[]}}"#).unwrap();

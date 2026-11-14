@@ -19,7 +19,7 @@ pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use job::JobInfo;
 pub use message::{
     Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, plain,
-    source_tag, split, wrap,
+    sound_tag, source_tag, split, wrap,
 };
 pub use name::{ARBITER_THREAD, agent_name, fnv1a, name_seed};
 pub use summary::{Found, Thread};

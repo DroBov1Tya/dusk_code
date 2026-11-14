@@ -131,6 +131,11 @@ pub fn save_sound(store: &ArtifactStore, bytes: &[u8], title: Option<String>) ->
     )
 }
 
+/// Whether the first bytes are those of a sound this takes.
+pub fn is_sound(bytes: &[u8]) -> bool {
+    sniff(bytes).is_some()
+}
+
 /// What the first bytes say a file is, or `None` when they are no sound this takes.
 fn sniff(bytes: &[u8]) -> Option<Sound> {
     let sound = |mime_type, duration_ms| {

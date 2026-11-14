@@ -8,6 +8,6 @@ mod usage;
 
 pub use call::ToolCall;
 pub use effort::Effort;
-pub use provider::{Balance, Model, ProviderStatus, RateLimit, RateLimits};
+pub use provider::{Balance, Model, PlanWindow, ProviderStatus, RateLimit, RateLimits};
 pub use stream::{FinishReason, ModelEvent};
 pub use usage::{Cost, CostSource, Usage};

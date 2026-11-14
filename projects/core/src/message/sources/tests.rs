@@ -4,12 +4,16 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use dusk_protocol::thread::wrap;
 use image::ImageFormat;
 
-use super::{FOLDER, ThreadSources, paths::picture_paths, picture, picture::MAX_PICTURE_EDGE};
+use super::{FOLDER, ThreadSources, paths::file_paths, picture, picture::MAX_PICTURE_EDGE};
 use crate::{
     catalog::mentions::Mentions,
     providers::ChatMessage,
     testing::{temp_dir, temp_state},
 };
+
+fn sounds(workspace: &std::path::Path) -> crate::state::artifacts::ArtifactStore {
+    crate::state::artifacts::ArtifactStore::new(workspace.join("artifacts"))
+}
 
 #[tokio::test]
 async fn an_uploaded_picture_must_be_a_small_png_or_jpeg_with_a_plain_name() {
@@ -50,7 +54,10 @@ async fn a_source_goes_once_unless_pinned_and_a_paste_leaves_the_message() {
         thread_id: "thread",
     };
     let message = format!("look: {}", wrap("SECRET BODY"));
-    let kept = sources.keep_pastes(&message).await.unwrap();
+    let kept = sources
+        .keep_pastes(&message, &sounds(&workspace))
+        .await
+        .unwrap();
     assert!(!kept.contains("SECRET BODY") && kept.contains("pasted-1.txt"));
 
     let first = sources.block(true).await.unwrap().unwrap();
@@ -146,7 +153,10 @@ async fn a_pasted_picture_path_becomes_a_source() {
         shot.display(),
         dir.display()
     );
-    let kept = sources.keep_pastes(&message).await.unwrap();
+    let kept = sources
+        .keep_pastes(&message, &sounds(&workspace))
+        .await
+        .unwrap();
     assert_eq!(
         kept,
         format!(
@@ -156,7 +166,43 @@ async fn a_pasted_picture_path_becomes_a_source() {
     );
     assert_eq!(state.sources("thread").await.unwrap().len(), 2);
     let url = format!("file://{}", shot.display().to_string().replace(' ', "%20"));
-    assert_eq!(picture_paths(&url)[0].1, shot);
+    assert_eq!(file_paths(&url)[0].1, shot);
+}
+
+#[tokio::test]
+async fn a_sent_sound_path_becomes_a_card_and_keeps_its_path() {
+    let state = temp_state("sources-sound-path").await;
+    state.create_thread("thread", "test").await.unwrap();
+    let workspace = temp_dir("sources-sound-path-workspace");
+    let sources = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "thread",
+    };
+    let dir = temp_dir("sources-sound-path-files");
+    std::fs::create_dir_all(&dir).unwrap();
+    let voice = dir.join("voice.m4a");
+    std::fs::write(&voice, b"\0\0\0\x20ftypM4A \0\0\0\0").unwrap();
+    let fake = dir.join("fake.mp3");
+    std::fs::write(&fake, "#!/bin/sh").unwrap();
+    let message = format!("hear {} and {}", voice.display(), fake.display());
+    let store = sounds(&workspace);
+    let kept = sources.keep_pastes(&message, &store).await.unwrap();
+    let parts = dusk_protocol::thread::split(&kept);
+    let [_, dusk_protocol::thread::Part::Sound { id, path }, rest] = parts.as_slice() else {
+        panic!("one sound in {kept}");
+    };
+    assert_eq!(*path, voice.display().to_string());
+    let left = format!(" and {}", fake.display());
+    assert!(matches!(rest, dusk_protocol::thread::Part::Text(text) if *text == left));
+    let card = dusk_protocol::tools::Card {
+        id: (*id).to_owned(),
+        ..Default::default()
+    };
+    let copy = store.audio_path(&card).unwrap();
+    assert_eq!(std::fs::read(copy).unwrap(), std::fs::read(&voice).unwrap());
+    // Sounds are not sources: the model reads the file at its own path.
+    assert!(state.sources("thread").await.unwrap().is_empty());
 }
 
 fn png(edge: u32) -> Vec<u8> {

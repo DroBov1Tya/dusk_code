@@ -131,6 +131,8 @@ impl AskAgent {
                 agent: agent.clone(),
                 task: arguments.task.clone(),
                 effort,
+                // Subagents answer on the chat's model.
+                model: self.launcher.model.current().map(|choice| choice.name()),
             });
         }
         self.launcher

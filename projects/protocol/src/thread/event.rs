@@ -86,13 +86,17 @@ pub enum ThreadEvent {
         limit: u64,
     },
     /// The tool call `call_id` gave `task` to `agent`, which works in thread `thread_id`
-    /// and reasons at `effort`; `None` is the provider's default.
+    /// on `model` (`provider/model`) and reasons at `effort`; `None` is the provider's
+    /// default.
     SubagentStarted {
         call_id: String,
         thread_id: String,
         agent: String,
         task: String,
         effort: Option<Effort>,
+        /// None when no model is chosen, and in events of older cores.
+        #[serde(default)]
+        model: Option<String>,
     },
     /// An event of a subagent's thread. A subagent's own subagents come wrapped once more.
     Subagent {

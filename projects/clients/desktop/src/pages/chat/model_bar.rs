@@ -68,15 +68,7 @@ pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 /// provider last reported: the tightest of its windows, as a ring like the context's.
 pub fn limits(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
     let limits = ws.status.limits.as_ref()?;
-    let used = [&limits.requests, &limits.tokens]
-        .into_iter()
-        .flatten()
-        .filter(|window| window.limit > 0)
-        .map(|window| 1. - window.remaining as f32 / window.limit as f32)
-        .fold(None, |most: Option<f32>, share| {
-            Some(most.map_or(share, |most| most.max(share)))
-        })?
-        .clamp(0., 1.);
+    let used = limits.used()?;
     let theme = cx.theme();
     let (muted, accent, warning, danger, border) = (
         theme.muted_foreground,

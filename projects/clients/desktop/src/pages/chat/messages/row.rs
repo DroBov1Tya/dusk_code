@@ -113,22 +113,33 @@ impl Workspace {
                             .flex_col()
                             .items_end()
                             .gap_1()
-                            .child(
-                                // The user's words carry a breath of the accent, so the
-                                // two sides of the chat part at a glance without glare.
-                                div()
-                                    .px_4()
-                                    .py_2()
-                                    .rounded_xl()
-                                    .bg(accent.opacity(0.09))
-                                    .border_1()
-                                    .border_color(accent.opacity(0.16))
-                                    // Selectable like the answers; pastes and files show as labels.
-                                    .child(links::markdown(
-                                        SharedString::from(format!("user-{key}")),
-                                        user_text(text),
-                                    )),
-                            )
+                            .when(!user_text(text).trim().is_empty(), |row| {
+                                row.child(
+                                    // The user's words carry a breath of the accent, so the
+                                    // two sides of the chat part at a glance without glare.
+                                    div()
+                                        .px_4()
+                                        .py_2()
+                                        .rounded_xl()
+                                        .bg(accent.opacity(0.09))
+                                        .border_1()
+                                        .border_color(accent.opacity(0.16))
+                                        // Selectable like the answers; pastes and files show as labels.
+                                        .child(links::markdown(
+                                            SharedString::from(format!("user-{key}")),
+                                            user_text(text),
+                                        )),
+                                )
+                            })
+                            // Sounds the user sent play under the words.
+                            .children(sent_sounds(text).iter().enumerate().map(|(n, clip)| {
+                                crate::pages::chat::audio::card(
+                                    self,
+                                    &format!("{key}-sound-{n}"),
+                                    clip,
+                                    cx,
+                                )
+                            }))
                             .child(tools)
                             .into_any_element()
                     }
@@ -252,6 +263,20 @@ fn user_text(text: &str) -> String {
                 format!("`[{}]`", crate::pages::chat::composer::paste_label(pasted))
             }
             Part::Source(name) => format!("`[{name}]`"),
+            // A sound shows as its card, under the words.
+            Part::Sound { .. } => String::new(),
+        })
+        .collect()
+}
+
+/// The sounds a sent message came with, as cards to play.
+fn sent_sounds(text: &str) -> Vec<crate::pages::chat::transcript::Clip> {
+    use dusk_protocol::thread::{Part, split};
+    split(text)
+        .into_iter()
+        .filter_map(|part| match part {
+            Part::Sound { id, path } => Some(crate::pages::chat::transcript::Clip::sent(id, path)),
+            _ => None,
         })
         .collect()
 }
@@ -275,6 +300,7 @@ pub fn label(text: &str) -> String {
                 format!("[{}]", crate::pages::chat::composer::paste_label(pasted))
             }
             Part::Source(name) => format!("[{name}]"),
+            Part::Sound { path, .. } => format!("[{}]", file_name(path)),
         })
         .collect();
     plain.split_whitespace().collect::<Vec<_>>().join(" ")
@@ -352,4 +378,9 @@ impl Workspace {
         );
         cx.notify();
     }
+}
+
+/// The last part of a path, as a label.
+fn file_name(path: &str) -> &str {
+    path.rsplit(['/', '\\']).next().unwrap_or(path)
 }

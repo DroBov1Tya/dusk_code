@@ -58,7 +58,8 @@ impl Runtime {
             workspace: &workspace,
             thread_id,
         };
-        let kept = sources.keep_pastes(message).await?;
+        let sounds = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
+        let kept = sources.keep_pastes(message, &sounds).await?;
         sources.keep_mentions(&kept, &self.mentions()).await
     }
 

@@ -429,6 +429,43 @@ fn act(
                     resets_in: Some(360),
                 }),
                 tokens: None,
+                plan: Vec::new(),
+            });
+            cx.notify();
+        }
+        // Two providers, to look at a row's switch and buttons.
+        "fake" if value == "providers" => {
+            use dusk_protocol::model::ProviderStatus;
+            ws.providers = ["chatgpt", "openrouter"]
+                .into_iter()
+                .map(|name| ProviderStatus {
+                    name: name.into(),
+                    models: Ok(Vec::new()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                })
+                .collect();
+            cx.notify();
+        }
+        // The ChatGPT plan's windows, as its sign-in reports them.
+        "fake" if value == "plan-limits" => {
+            use dusk_protocol::model::{PlanWindow, RateLimits};
+            ws.status.limits = Some(RateLimits {
+                requests: None,
+                tokens: None,
+                plan: vec![
+                    PlanWindow {
+                        minutes: Some(300),
+                        used_percent: 22,
+                        resets_in: Some(7_800),
+                    },
+                    PlanWindow {
+                        minutes: Some(10_080),
+                        used_percent: 64,
+                        resets_in: Some(259_200),
+                    },
+                ],
             });
             cx.notify();
         }
@@ -455,6 +492,7 @@ fn act(
                         agent: (*role).into(),
                         task: (*task).into(),
                         effort: None,
+                        model: Some("chatgpt/gpt-5.5".into()),
                     });
                     let inner = match index {
                         1 => Some(ThreadEvent::ToolStarted(ToolCall {
@@ -537,6 +575,30 @@ fn act(
                 mime: "audio/mpeg".into(),
                 duration: Some(Duration::from_secs(6)),
             }));
+            // A sound the user sent, and work handed to a subagent with its model.
+            chat.items.push(Item::User {
+                text: format!(
+                    "Compare it with mine {}",
+                    dusk_protocol::thread::sound_tag("0192-cd", "/Users/me/voice-take.m4a")
+                ),
+                sequence: Some(2),
+            });
+            chat.items.push(Item::Tool(dusk_protocol::thread::Tool {
+                call_id: "ask-1".into(),
+                name: "ask_agent".into(),
+                detail: "Compare the two takes".into(),
+                arguments: "{}".into(),
+                output: String::new(),
+                state: dusk_protocol::thread::ToolState::Running,
+            }));
+            chat.apply(dusk_protocol::thread::ThreadEvent::SubagentStarted {
+                call_id: "ask-1".into(),
+                thread_id: "0000000a-fake".into(),
+                agent: "general".into(),
+                task: "Compare the two takes".into(),
+                effort: None,
+                model: Some("chatgpt/gpt-5.5".into()),
+            });
             ws.chats.insert("demo".into(), chat);
             ws.shown = Some("demo".into());
             cx.notify();

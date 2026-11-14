@@ -25,6 +25,14 @@ testing.
   its manifest asks for what the list showed. A browser may look but not install.
 - A Workshop under Plugins in the desktop app and the terminal (`w` in `/plugins`, or
   `/plugins store`) to install, update and remove plugins of the store in one step.
+- The chat shows which model each subagent runs on, in the Subagents window, its chat
+  and the terminal's side panel.
+- A sound file named in a message (mp3, wav, ogg, flac, m4a) shows as a card that plays
+  in the desktop app; the model still gets its path.
+- The limits ring for Sign in with ChatGPT: the 5-hour and weekly windows of the plan,
+  read from the ChatGPT backend's own headers.
+- While the agent works, typing shows the Send button beside a small Stop, so a message
+  can join the turn by click as well as by Enter.
 - `platforms` and `clients` in `plugin.yml`: the systems a plugin is built for and the
   clients that can draw its parts.
 

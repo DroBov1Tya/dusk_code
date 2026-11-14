@@ -227,7 +227,14 @@ fn figure(
                                 .font_weight(FontWeight::MEDIUM)
                                 .child(agent.name.clone()),
                         )
-                        .child(div().meta().text_color(muted).child(agent.role.clone())),
+                        .child(
+                            div()
+                                .min_w_0()
+                                .truncate()
+                                .meta()
+                                .text_color(muted)
+                                .child(agent.role_and_model()),
+                        ),
                 )
                 .child(div().small().truncate().child(headline(&agent.task)))
                 .child(

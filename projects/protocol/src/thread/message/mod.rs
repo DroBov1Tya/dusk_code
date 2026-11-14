@@ -66,7 +66,7 @@ mod undo;
 mod unsent;
 
 pub use compaction::Compaction;
-pub use pasted::{Part, has_pasted, plain, source_tag, split, wrap};
+pub use pasted::{Part, has_pasted, plain, sound_tag, source_tag, split, wrap};
 pub use source::Source;
 pub use undo::UndoPoint;
 pub use unsent::LocalUnsent;

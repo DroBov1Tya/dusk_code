@@ -64,6 +64,12 @@ pub(super) fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
                 Span::styled(format!("{TOOL} "), fg(TEXT_MUTED)),
                 Span::styled(name.to_owned(), fg(TEXT_SOFT)),
             ])),
+            // The terminal does not play sound; it names the file that was sent.
+            Part::Sound { path, .. } => lines.push(Line::from(vec![
+                bar(),
+                Span::styled("\u{266A} ", fg(TEXT_MUTED)),
+                Span::styled(path.to_owned(), fg(TEXT_SOFT)),
+            ])),
             Part::Pasted(pasted) => {
                 lines.push(Line::from(vec![
                     bar(),
