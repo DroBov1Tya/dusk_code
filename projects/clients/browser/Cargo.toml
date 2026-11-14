@@ -1,12 +1,12 @@
 [package]
-name = "dusk_web_ui"
+name = "dusk_browser"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true
 license.workspace = true
 
 [[bin]]
-name = "dusk_web_ui"
+name = "dusk_browser"
 path = "src/main.rs"
 
 [dependencies]

@@ -1,8 +1,8 @@
 //! Serves the web client over a core of its own, for working on the client:
-//! `HOME=/tmp/dusk-home cargo run -p dusk_web --example serve [port]`.
+//! `HOME=/tmp/dusk-home cargo run -p dusk_server --example serve [port]`.
 
 use dusk_core::app::{Paths, start_hub};
-use dusk_web::{Config, start};
+use dusk_server::{Config, start};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

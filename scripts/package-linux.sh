@@ -57,7 +57,7 @@ DESKTOP
 cp "$app/duskcode.desktop" "$app/usr/share/applications/duskcode.desktop"
 
 # The picture is 1024 px; AppImage desktops take 512.
-icon="$here/projects/gui/assets/icon.png"
+icon="$here/projects/clients/desktop/assets/icon.png"
 if command -v convert >/dev/null 2>&1; then
   convert "$icon" -resize 512x512 "$app/duskcode.png"
 else

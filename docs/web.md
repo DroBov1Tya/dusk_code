@@ -1,14 +1,14 @@
 # The web client
 
 A browser client with the chats, projects, review, connectors and settings of the desktop
-app, over the same protocol. Rust only: `projects/web-ui` is a Leptos 0.8 CSR app built to
-wasm with trunk; `projects/web` is the server that embeds the bundle and bridges one
+app, over the same protocol. Rust only: `projects/clients/browser` is a Leptos 0.8 CSR app built to
+wasm with trunk; `projects/server` is the server that embeds the bundle and bridges one
 WebSocket per browser to the core.
 
 ## Running it
 
 ```sh
-scripts/build-web.sh                 # wasm32 target, trunk 0.21.14, writes projects/web-ui/dist
+scripts/build-web.sh                 # wasm32 target, trunk 0.21.14, writes projects/clients/browser/dist
 cargo +1.99.1 run -p dusk_tui -- --web            # serves 127.0.0.1:8080
 cargo +1.99.1 run -p dusk_tui -- --web --port 9000
 ```
@@ -19,8 +19,8 @@ anywhere), clears it from the address bar and trades it for a session cookie. Th
 does the same from Settings > Advanced > Web access (loopback only).
 
 A build that did not run `scripts/build-web.sh` still compiles; the server then serves a page
-that says the client is not built. While working on the client, `projects/web/examples/serve.rs`
-serves it over a core of its own, and debug builds read `web-ui/dist` from disk, so
+that says the client is not built. While working on the client, `projects/server/examples/serve.rs`
+serves it over a core of its own, and debug builds read `clients/browser/dist` from disk, so
 `trunk build` is enough to see a change.
 
 ## One core, several clients

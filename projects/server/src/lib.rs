@@ -1,4 +1,4 @@
-//! dusk_web: the core for browsers. It serves the built web client, signs a browser in
+//! dusk_server: the core for browsers. It serves the built web client, signs a browser in
 //! with a one-run token and carries the protocol's requests, responses and events over a
 //! WebSocket, so a browser sees the same chats as the GUI and the TUI.
 //!

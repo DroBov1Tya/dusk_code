@@ -8,7 +8,7 @@ on:
     paths:
       - site/**
       - docs/screenshots/**
-      - projects/gui/assets/icon.png
+      - projects/clients/desktop/assets/icon.png
       - .github/workflows/pages.yml
   workflow_dispatch:
 
@@ -37,7 +37,7 @@ jobs:
           cp site/index.html _site/
           cp docs/screenshots/desktop.png docs/screenshots/desktop-subagents.png \
             docs/screenshots/terminal.png docs/screenshots/web.png _site/img/
-          cp projects/gui/assets/icon.png _site/img/icon.png
+          cp projects/clients/desktop/assets/icon.png _site/img/icon.png
       - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
       - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:

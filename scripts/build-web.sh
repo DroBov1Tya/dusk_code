@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the web client into projects/web-ui/dist, which the next `cargo build` embeds in
+# Builds the web client into projects/clients/browser/dist, which the next `cargo build` embeds in
 # the binary. Needs the wasm32 target and trunk; both are installed here when missing.
 set -euo pipefail
 
@@ -17,5 +17,5 @@ if ! command -v wasm-bindgen >/dev/null 2>&1 \
   || [[ "$(wasm-bindgen --version)" != "wasm-bindgen $WASM_BINDGEN_VERSION" ]]; then
   cargo install wasm-bindgen-cli --locked --version "$WASM_BINDGEN_VERSION"
 fi
-cd "$here/projects/web-ui"
+cd "$here/projects/clients/browser"
 trunk build --release --locked

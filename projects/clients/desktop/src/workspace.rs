@@ -210,7 +210,7 @@ pub struct Workspace {
     /// A poll of the models is waiting; there is one at a time.
     pub voice_polling: bool,
     /// The web server of this window's core, while the switch in Advanced is on.
-    pub web: Option<dusk_web::WebServer>,
+    pub web: Option<dusk_server::WebServer>,
     /// The server is starting or stopping.
     pub web_busy: bool,
     /// The next start listens on every address, for other devices on the network.

@@ -40,7 +40,7 @@ built=""
 # A release on a Mac is the signed app in a disk image. It is fetched here with curl, which
 # puts no quarantine mark on it, so macOS opens it without the Privacy & Security step a
 # browser download needs. It updates itself from then on.
-if [ "$(uname -s)" = "Darwin" ] && { [ -n "${DUSKCODE_VERSION:-}" ] || [ -z "$here" ] || [ ! -f "$here/projects/gui/Cargo.toml" ]; }; then
+if [ "$(uname -s)" = "Darwin" ] && { [ -n "${DUSKCODE_VERSION:-}" ] || [ -z "$here" ] || [ ! -f "$here/projects/clients/desktop/Cargo.toml" ]; }; then
   version="${DUSKCODE_VERSION:-latest}"
   if [ "$version" = "latest" ]; then
     api="https://api.github.com/repos/$repo/releases/latest"
@@ -73,13 +73,13 @@ if [ "$(uname -s)" = "Darwin" ] && { [ -n "${DUSKCODE_VERSION:-}" ] || [ -z "$he
   printf '\n  %s is ready; open it from Launchpad or Spotlight\n\n' "$tag"
   exit 0
 fi
-if [ -n "$here" ] && [ -f "$here/projects/gui/Cargo.toml" ] && [ -z "${DUSKCODE_VERSION:-}" ]; then
+if [ -n "$here" ] && [ -f "$here/projects/clients/desktop/Cargo.toml" ] && [ -z "${DUSKCODE_VERSION:-}" ]; then
   command -v cargo >/dev/null 2>&1 || fail "cargo is needed to build from source: https://rustup.rs"
   say "building from $here (a few minutes the first time)"
   # gpui needs a newer Rust than some stable installs carry.
-  (cd "$here" && cargo build --release -p dusk_gui) || fail "the build failed; try: rustup update stable"
+  (cd "$here" && cargo build --release -p dusk_desktop) || fail "the build failed; try: rustup update stable"
   built="$here/target/release/duskcode-gui"
-  icon="$here/projects/gui/assets/icon.png"
+  icon="$here/projects/clients/desktop/assets/icon.png"
 else
   version="${DUSKCODE_VERSION:-latest}"
   if [ "$version" = "latest" ]; then
