@@ -1,8 +1,9 @@
 //! The right column of a chat: its plan and tasks, subagents, changed files, background
 //! jobs and what the context holds.
 
-use crate::chat::{data::AgentState, subagent::state_text};
+use crate::chat::subagent::state_text;
 use crate::state::state;
+use dusk_protocol::thread::AgentState;
 use leptos::prelude::*;
 
 #[component]

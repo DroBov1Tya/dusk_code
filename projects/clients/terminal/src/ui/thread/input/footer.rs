@@ -2,12 +2,12 @@
 
 use super::InputView;
 use crate::app::{Activity, App, Focus};
-use crate::host::git::GitSummary;
 use crate::ui::thread::{
     theme::{ACCENT, DEEP, DUSK, NEGATIVE, TEXT_MUTED, TEXT_SOFT, bold, dim, fg},
     transcript::spinner,
 };
 use dusk_protocol::config::ApprovalPolicy;
+use dusk_protocol::project::GitSummary;
 use ratatui::{
     Frame,
     layout::Rect,
@@ -98,7 +98,7 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
             let took = app
                 .turn_started_at
                 .map(|started| {
-                    let ms = crate::app::now_ms() - started;
+                    let ms = dusk_protocol::system::now_ms() - started;
                     format!(" \u{00B7} {}", dusk_protocol::thread::duration_words(ms))
                 })
                 .unwrap_or_default();

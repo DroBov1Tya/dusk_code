@@ -1,6 +1,7 @@
 //! A turn's activity folded into one row, and the foldable texts inside it: thoughts,
 //! agent reports, background results.
 
+use dusk_protocol::thread::ToolState;
 use gpui_kit::{
     component::{ActiveTheme, Colorize, IconName},
     prelude::FluentBuilder,
@@ -13,10 +14,7 @@ use super::{
     step::{background_button, step},
 };
 use crate::{
-    pages::chat::{
-        links,
-        transcript::{Item, ToolState},
-    },
+    pages::chat::{links, transcript::Item},
     ui::{
         Type,
         widgets::{self, Focusable},

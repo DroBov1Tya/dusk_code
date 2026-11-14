@@ -42,5 +42,5 @@ pub use settings::{ProviderTarget, SettingsRequest, Switch};
 pub use simulator::{MAX_SIM_TEXT, SimulatorRequest};
 pub use terminal::{MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE, MAX_TERMINALS, TerminalRequest};
 pub use thread::ThreadRequest;
-pub use voice::VoiceRequest;
+pub use voice::{VoiceRequest, wav};
 pub use work::{MAX_PICTURE_UPLOAD, WorkRequest};

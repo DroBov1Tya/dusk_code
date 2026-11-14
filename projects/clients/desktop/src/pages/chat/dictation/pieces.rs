@@ -1,6 +1,7 @@
 //! Cutting what was heard into pieces a server takes: at a pause, mono, 16 kHz, as WAV.
 
 use super::microphone::Heard;
+use dusk_protocol::client::wav;
 use std::time::Duration;
 
 /// A piece is cut at a pause once it is this long, and cut anyway at the longer one.
@@ -81,33 +82,10 @@ fn resample(samples: &[f32], from: u32, to: u32) -> Vec<f32> {
         .collect()
 }
 
-/// A mono 16-bit PCM WAV.
-fn wav(samples: &[f32], rate: u32) -> Vec<u8> {
-    let data = (samples.len() * 2) as u32;
-    let mut bytes = Vec::with_capacity(44 + data as usize);
-    bytes.extend_from_slice(b"RIFF");
-    bytes.extend_from_slice(&(36 + data).to_le_bytes());
-    bytes.extend_from_slice(b"WAVEfmt ");
-    bytes.extend_from_slice(&16u32.to_le_bytes());
-    bytes.extend_from_slice(&1u16.to_le_bytes());
-    bytes.extend_from_slice(&1u16.to_le_bytes());
-    bytes.extend_from_slice(&rate.to_le_bytes());
-    bytes.extend_from_slice(&(rate * 2).to_le_bytes());
-    bytes.extend_from_slice(&2u16.to_le_bytes());
-    bytes.extend_from_slice(&16u16.to_le_bytes());
-    bytes.extend_from_slice(b"data");
-    bytes.extend_from_slice(&data.to_le_bytes());
-    for sample in samples {
-        let value = (sample.clamp(-1., 1.) * f32::from(i16::MAX)) as i16;
-        bytes.extend_from_slice(&value.to_le_bytes());
-    }
-    bytes
-}
-
 #[cfg(test)]
 mod tests {
     // Named imports: a glob would bring gpui's own `test` macro over the standard one.
-    use super::{Heard, QUIET, resample, rms, take_piece, to_mono, wav};
+    use super::{Heard, QUIET, resample, rms, take_piece, to_mono};
 
     fn heard(seconds: f32, level: f32) -> Heard {
         let rate = 16_000;
@@ -117,23 +95,6 @@ mod tests {
             samples: vec![level; (rate as f32 * seconds) as usize],
             ..Heard::default()
         }
-    }
-
-    #[test]
-    fn a_wav_has_its_header_and_one_two_byte_sample_each() {
-        let bytes = wav(&[0., 1., -1.], 16_000);
-        assert_eq!(&bytes[..4], b"RIFF");
-        assert_eq!(&bytes[8..16], b"WAVEfmt ");
-        assert_eq!(
-            u32::from_le_bytes(bytes[24..28].try_into().unwrap()),
-            16_000
-        );
-        assert_eq!(u32::from_le_bytes(bytes[40..44].try_into().unwrap()), 6);
-        assert_eq!(bytes.len(), 44 + 6);
-        assert_eq!(
-            i16::from_le_bytes(bytes[46..48].try_into().unwrap()),
-            i16::MAX
-        );
     }
 
     #[test]

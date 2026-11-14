@@ -1,6 +1,7 @@
 //! A subagent's chat, to read: what it was asked, what it said and the steps it took,
 //! live while it works. It is the parent chat's to steer, so there is no composer.
 
+use dusk_protocol::thread::AgentState;
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -15,7 +16,7 @@ use crate::{
     pages::chat::{
         links,
         messages::{activity_text, agent_report, run, steps},
-        transcript::{AgentState, Item, Transcript},
+        transcript::{Item, Transcript},
     },
     ui::{Type, widgets},
     workspace::Workspace,

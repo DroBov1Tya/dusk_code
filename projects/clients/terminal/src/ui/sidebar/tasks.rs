@@ -13,7 +13,6 @@ use super::{
     Sidebar,
     section::{GAUGE, PAD, fill, ruled, scroll_limit, section},
 };
-use crate::app::now_ms;
 use crate::ui::{
     text::format::format_duration,
     theme::{
@@ -21,6 +20,7 @@ use crate::ui::{
         fg,
     },
 };
+use dusk_protocol::system::now_ms;
 
 impl Sidebar<'_> {
     /// The tasks still open, each in a small block of its own: what it is and how many steps

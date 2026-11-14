@@ -19,7 +19,7 @@ use crate::state::State;
 pub use diff::diff;
 pub use edit::{read as read_file, write as write_file};
 pub use files::list as files;
-pub use git::{changes as git_changes, info as git, switch_branch};
+pub use git::{changes as git_changes, info as git, summary as git_summary, switch_branch};
 pub use outputs::{delete as delete_output, list as outputs, read as read_output};
 
 /// Saves a new project, or changes the one with `id`. The folder is stored resolved, so

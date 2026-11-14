@@ -9,7 +9,7 @@ use std::time::Duration;
 use dusk_protocol::agent::Doing;
 use gpui_kit::*;
 
-use crate::pages::chat::transcript::AgentState;
+use dusk_protocol::thread::AgentState;
 
 const W: usize = 22;
 const H: usize = 22;

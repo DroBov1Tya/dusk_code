@@ -17,7 +17,7 @@ pub use hello::{Hello, PROTOCOL_VERSION};
 pub use request::{
     CatalogRequest, MAX_PICTURE_UPLOAD, MAX_SIM_TEXT, MAX_TERMINAL_INPUT, MAX_TERMINAL_SIDE,
     MAX_TERMINALS, ProjectRequest, ProviderTarget, Request, SettingsRequest, SimulatorRequest,
-    Switch, TerminalRequest, ThreadRequest, VoiceRequest, WorkRequest,
+    Switch, TerminalRequest, ThreadRequest, VoiceRequest, WorkRequest, wav,
 };
 pub use response::Response;
 pub use secret::Secret;

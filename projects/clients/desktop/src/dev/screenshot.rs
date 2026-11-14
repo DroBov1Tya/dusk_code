@@ -157,7 +157,7 @@ fn act(
                 chat.working = true;
                 chat.activity_boundaries.push(chat.items.len());
                 chat.boundary_times
-                    .push(crate::pages::chat::timing::now_ms() - minutes * 60_000);
+                    .push(dusk_protocol::system::now_ms() - minutes * 60_000);
                 chat.boundary_spend.push((0, 0));
             }
         }
@@ -420,7 +420,8 @@ fn act(
         }
         "fake" if value == "agentchat" => {
             // A subagent's chat with a run of steps and an answer, in the window.
-            use crate::pages::chat::transcript::{Item, Tool, ToolState, Transcript};
+            use crate::pages::chat::transcript::{Item, Transcript};
+            use dusk_protocol::thread::{Tool, ToolState};
             let step = |index: usize, name: &str, detail: &str| {
                 Item::Tool(Tool {
                     call_id: format!("c{index}"),

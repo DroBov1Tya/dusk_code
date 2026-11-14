@@ -15,7 +15,8 @@ use dusk_protocol::{
 };
 use ratatui::layout::{Position, Rect};
 
-use crate::app::{Action, App, Entry, Panel, Selection, Tone, Transcript, TranscriptHit, now_ms};
+use crate::app::{Action, App, Entry, Panel, Selection, Tone, Transcript, TranscriptHit};
+use dusk_protocol::system::now_ms;
 
 /// Output older than this no longer counts toward tokens per second.
 pub const RATE_WINDOW: Duration = Duration::from_secs(3);

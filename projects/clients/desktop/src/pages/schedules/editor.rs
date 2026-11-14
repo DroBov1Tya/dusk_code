@@ -4,7 +4,7 @@
 
 use chrono::{Days, Local, NaiveTime, TimeZone};
 use dusk_protocol::project::{
-    Clock, DAY_NAMES, Repeat, Schedule, ScheduleDraft, WEEKDAYS, interval_name,
+    Clock, DAY_NAMES, Repeat, RepeatKind, Schedule, ScheduleDraft, WEEKDAYS, interval_name,
 };
 use gpui_kit::{
     component::{
@@ -23,26 +23,14 @@ use crate::{
     workspace::Workspace,
 };
 
-/// How a task repeats, as the editor offers it.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum Kind {
-    Once,
-    Interval,
-    Daily,
-    Weekdays,
-    Weekends,
-    Weekly,
-    Custom,
-}
-
-const KINDS: [(Kind, &str); 7] = [
-    (Kind::Once, "Once"),
-    (Kind::Interval, "Interval"),
-    (Kind::Daily, "Every day"),
-    (Kind::Weekdays, "Weekdays"),
-    (Kind::Weekends, "Weekends"),
-    (Kind::Weekly, "Every week"),
-    (Kind::Custom, "Custom"),
+const KINDS: [(RepeatKind, &str); 7] = [
+    (RepeatKind::Once, "Once"),
+    (RepeatKind::Interval, "Interval"),
+    (RepeatKind::Daily, "Every day"),
+    (RepeatKind::Weekdays, "Weekdays"),
+    (RepeatKind::Weekends, "Weekends"),
+    (RepeatKind::Weekly, "Every week"),
+    (RepeatKind::Custom, "Custom"),
 ];
 
 const INTERVALS: [u32; 9] = [15, 30, 60, 120, 180, 360, 720, 1440, 2880];
@@ -63,7 +51,7 @@ pub struct Editor {
     pub id: Option<String>,
     pub project_id: Option<String>,
     pub prompt: Entity<TextareaState>,
-    pub kind: Kind,
+    pub kind: RepeatKind,
     pub interval: u32,
     /// For a weekly task, 0 for Monday.
     pub day: u8,
@@ -121,7 +109,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             cx,
         ));
     match editor.kind {
-        Kind::Once => {
+        RepeatKind::Once => {
             when = when.child(picker(
                 "schedule-date",
                 date_name(editor.date),
@@ -133,7 +121,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 cx,
             ));
         }
-        Kind::Interval => {
+        RepeatKind::Interval => {
             when = when.child(picker(
                 "schedule-interval",
                 format!("Every {}", interval_name(editor.interval)),
@@ -150,7 +138,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 cx,
             ));
         }
-        Kind::Weekly => {
+        RepeatKind::Weekly => {
             when = when.child(picker(
                 "schedule-day",
                 format!("on {}", DAY_NAMES[usize::from(editor.day.min(6))]),
@@ -166,10 +154,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 cx,
             ));
         }
-        Kind::Custom => when = when.child(day_chips(editor.days, cx)),
-        Kind::Daily | Kind::Weekdays | Kind::Weekends => {}
+        RepeatKind::Custom => when = when.child(day_chips(editor.days, cx)),
+        RepeatKind::Daily | RepeatKind::Weekdays | RepeatKind::Weekends => {}
     }
-    if editor.kind != Kind::Interval {
+    if editor.kind != RepeatKind::Interval {
         when = when.child(time_field(editor, cx));
     }
     let mut models: Vec<(String, Pick)> = vec![choice("The chosen model".to_owned(), |editor| {
@@ -460,7 +448,7 @@ impl Workspace {
                 .or(self.projects.first())
                 .map(|project| project.id.clone()),
             prompt,
-            kind: Kind::Daily,
+            kind: RepeatKind::Daily,
             interval: 60,
             day: 0,
             days: WEEKDAYS,
@@ -481,7 +469,7 @@ impl Workspace {
             editor.model = task.model.clone();
             match task.repeat {
                 Repeat::Once { at } => {
-                    editor.kind = Kind::Once;
+                    editor.kind = RepeatKind::Once;
                     if let Some(moment) = Local.timestamp_millis_opt(at).single() {
                         let days = (moment.date_naive() - Local::now().date_naive()).num_days();
                         editor.date = u64::try_from(days).unwrap_or(0);
@@ -489,17 +477,17 @@ impl Workspace {
                     }
                 }
                 Repeat::Interval { minutes } => {
-                    editor.kind = Kind::Interval;
+                    editor.kind = RepeatKind::Interval;
                     editor.interval = minutes;
                 }
-                Repeat::Daily { at } => (editor.kind, time) = (Kind::Daily, at),
-                Repeat::Weekdays { at } => (editor.kind, time) = (Kind::Weekdays, at),
-                Repeat::Weekends { at } => (editor.kind, time) = (Kind::Weekends, at),
+                Repeat::Daily { at } => (editor.kind, time) = (RepeatKind::Daily, at),
+                Repeat::Weekdays { at } => (editor.kind, time) = (RepeatKind::Weekdays, at),
+                Repeat::Weekends { at } => (editor.kind, time) = (RepeatKind::Weekends, at),
                 Repeat::Weekly { day, at } => {
-                    (editor.kind, editor.day, time) = (Kind::Weekly, day, at);
+                    (editor.kind, editor.day, time) = (RepeatKind::Weekly, day, at);
                 }
                 Repeat::Custom { days, at } => {
-                    (editor.kind, editor.days, time) = (Kind::Custom, days, at);
+                    (editor.kind, editor.days, time) = (RepeatKind::Custom, days, at);
                 }
             }
         }
@@ -550,39 +538,23 @@ fn draft(editor: &Editor, cx: &App) -> anyhow::Result<ScheduleDraft> {
         .clone()
         .ok_or_else(|| anyhow::anyhow!("choose a project for the task"))?;
     let typed = editor.time.read(cx).value().to_string();
-    let at = || Clock::parse(&typed).ok_or_else(|| anyhow::anyhow!("write the time as 09:30"));
-    let repeat = match editor.kind {
-        Kind::Once => {
-            let at = at()?;
-            let date = Local::now()
-                .date_naive()
-                .checked_add_days(Days::new(editor.date))
-                .ok_or_else(|| anyhow::anyhow!("the date is out of range"))?;
-            let time = NaiveTime::from_hms_opt(u32::from(at.hour), u32::from(at.minute), 0)
-                .ok_or_else(|| anyhow::anyhow!("write the time as 09:30"))?;
-            let moment = Local
-                .from_local_datetime(&date.and_time(time))
-                .earliest()
-                .ok_or_else(|| anyhow::anyhow!("that time does not exist on this day"))?;
-            Repeat::Once {
-                at: moment.timestamp_millis(),
-            }
-        }
-        Kind::Interval => Repeat::Interval {
-            minutes: editor.interval,
-        },
-        Kind::Daily => Repeat::Daily { at: at()? },
-        Kind::Weekdays => Repeat::Weekdays { at: at()? },
-        Kind::Weekends => Repeat::Weekends { at: at()? },
-        Kind::Weekly => Repeat::Weekly {
-            day: editor.day,
-            at: at()?,
-        },
-        Kind::Custom => Repeat::Custom {
-            days: editor.days,
-            at: at()?,
-        },
+    let once = |at: Clock| -> Result<i64, String> {
+        let date = Local::now()
+            .date_naive()
+            .checked_add_days(Days::new(editor.date))
+            .ok_or("the date is out of range")?;
+        let time = NaiveTime::from_hms_opt(u32::from(at.hour), u32::from(at.minute), 0)
+            .ok_or("write the time as 09:30")?;
+        let moment = Local
+            .from_local_datetime(&date.and_time(time))
+            .earliest()
+            .ok_or("that time does not exist on this day")?;
+        Ok(moment.timestamp_millis())
     };
+    let repeat = editor
+        .kind
+        .repeat(&typed, editor.interval, editor.day, editor.days, once)
+        .map_err(anyhow::Error::msg)?;
     Ok(ScheduleDraft {
         id: editor.id.clone(),
         project_id,

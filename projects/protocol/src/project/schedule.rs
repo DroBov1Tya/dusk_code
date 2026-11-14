@@ -1,4 +1,5 @@
-//! Scheduled tasks: a prompt the core sends, on a timetable, to a new chat in a project.
+//! Scheduled tasks: a prompt the core sends, on a timetable, to a new chat in a project,
+//! and how a client reads one from a form or from typed words.
 
 use serde::{Deserialize, Serialize};
 
@@ -150,5 +151,182 @@ impl Repeat {
             Repeat::Weekly { day, at } => Some((1u8.checked_shl(u32::from(day))?, at)),
             Repeat::Custom { days, at } => Some((days, at)),
         }
+    }
+}
+
+/// How a task repeats, without its times: what a schedule form chooses first.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepeatKind {
+    Once,
+    Interval,
+    Daily,
+    Weekdays,
+    Weekends,
+    Weekly,
+    Custom,
+}
+
+impl RepeatKind {
+    /// The repeat a form makes: `time` as typed, the interval, day and days chosen, and
+    /// `once` placing a single run's time on the client's clock in Unix milliseconds.
+    pub fn repeat(
+        self,
+        time: &str,
+        interval: u32,
+        day: u8,
+        days: u8,
+        once: impl FnOnce(Clock) -> Result<i64, String>,
+    ) -> Result<Repeat, String> {
+        let at = || Clock::parse(time).ok_or_else(|| "write the time as 09:30".to_owned());
+        Ok(match self {
+            RepeatKind::Once => Repeat::Once { at: once(at()?)? },
+            RepeatKind::Interval => Repeat::Interval { minutes: interval },
+            RepeatKind::Daily => Repeat::Daily { at: at()? },
+            RepeatKind::Weekdays => Repeat::Weekdays { at: at()? },
+            RepeatKind::Weekends => Repeat::Weekends { at: at()? },
+            RepeatKind::Weekly => Repeat::Weekly { day, at: at()? },
+            RepeatKind::Custom => Repeat::Custom { days, at: at()? },
+        })
+    }
+}
+
+/// When a typed schedule runs. A single run is a time of day; the client puts it on its
+/// clock, today or tomorrow, since only the client knows its time zone.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum When {
+    Repeat(Repeat),
+    Once(Clock),
+}
+
+/// How a schedule is typed, said when the words cannot be read.
+pub const SCHEDULE_USAGE: &str = "write /schedule daily 09:00 <prompt>; also weekdays, \
+                                  weekends, weekly mon 09:00, every 2h, every 30m, once 14:30";
+
+/// Reads `daily 09:00`, `weekdays 09:00`, `weekends 10:30`, `weekly mon 09:00`, `every 2h`,
+/// `every 30m` or `once 14:30`, then the prompt.
+pub fn parse_schedule(text: &str) -> Result<(When, String), String> {
+    let usage = || SCHEDULE_USAGE.to_owned();
+    let mut words = text.split_whitespace();
+    let kind = words.next().ok_or_else(usage)?.to_lowercase();
+    let clock = |word: Option<&str>| word.and_then(Clock::parse).ok_or_else(usage);
+    let when = match kind.as_str() {
+        "daily" => When::Repeat(Repeat::Daily {
+            at: clock(words.next())?,
+        }),
+        "weekdays" => When::Repeat(Repeat::Weekdays {
+            at: clock(words.next())?,
+        }),
+        "weekends" => When::Repeat(Repeat::Weekends {
+            at: clock(words.next())?,
+        }),
+        "weekly" => {
+            let day = words.next().ok_or_else(usage)?.to_lowercase();
+            let day = DAY_NAMES
+                .iter()
+                .position(|name| name.to_lowercase() == day.get(..3).unwrap_or(&day))
+                .ok_or_else(usage)?;
+            When::Repeat(Repeat::Weekly {
+                day: day as u8,
+                at: clock(words.next())?,
+            })
+        }
+        "every" => When::Repeat(Repeat::Interval {
+            minutes: parse_interval(words.next().ok_or_else(usage)?).ok_or_else(usage)?,
+        }),
+        "once" => When::Once(clock(words.next())?),
+        _ => return Err(usage()),
+    };
+    let prompt = words.collect::<Vec<_>>().join(" ");
+    if prompt.is_empty() {
+        return Err("write what the task should do after when it runs".into());
+    }
+    Ok((when, prompt))
+}
+
+/// `2h`, `30m`, `1d` in minutes.
+fn parse_interval(word: &str) -> Option<u32> {
+    let (count, unit) = word.split_at(word.find(|c: char| !c.is_ascii_digit())?);
+    let count: u32 = count.parse().ok()?;
+    let minutes = match unit {
+        "m" | "min" => 1,
+        "h" => 60,
+        "d" => 24 * 60,
+        _ => return None,
+    };
+    count.checked_mul(minutes)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn clock(hour: u8, minute: u8) -> Clock {
+        Clock { hour, minute }
+    }
+
+    #[test]
+    fn the_words_give_the_repeat_and_the_rest_is_the_prompt() {
+        let (when, prompt) = parse_schedule("daily 9:30 check the build").unwrap();
+        assert_eq!(when, When::Repeat(Repeat::Daily { at: clock(9, 30) }));
+        assert_eq!(prompt, "check the build");
+        let (when, _) = parse_schedule("weekly Friday 18:00 sum up").unwrap();
+        assert_eq!(
+            when,
+            When::Repeat(Repeat::Weekly {
+                day: 4,
+                at: clock(18, 0)
+            })
+        );
+        let (when, _) = parse_schedule("every 2h look").unwrap();
+        assert_eq!(when, When::Repeat(Repeat::Interval { minutes: 120 }));
+        let (when, _) = parse_schedule("ONCE 14:30 ship").unwrap();
+        assert_eq!(when, When::Once(clock(14, 30)));
+    }
+
+    #[test]
+    fn broken_or_empty_specs_are_refused() {
+        for text in [
+            "",
+            "daily",
+            "daily 25:00 x",
+            "daily 9:60 x",
+            "weekly xyz 09:00 x",
+            "weekly",
+            "every 2w x",
+            "every h x",
+            "every -2h x",
+            "once x",
+            "daily 09:00",
+            "every 99999999999h x",
+            "every 9999999d x",
+            "monthly 09:00 x",
+        ] {
+            assert!(parse_schedule(text).is_err(), "{text}");
+        }
+    }
+
+    #[test]
+    fn a_form_needs_a_time_only_where_the_kind_uses_one() {
+        let never = |_| -> Result<i64, String> { unreachable!() };
+        assert_eq!(
+            RepeatKind::Interval.repeat("", 30, 0, 0, never),
+            Ok(Repeat::Interval { minutes: 30 })
+        );
+        assert!(RepeatKind::Daily.repeat("9", 0, 0, 0, never).is_err());
+        assert_eq!(
+            RepeatKind::Custom.repeat("07:05", 0, 0, WEEKENDS, never),
+            Ok(Repeat::Custom {
+                days: WEEKENDS,
+                at: clock(7, 5)
+            })
+        );
+        assert_eq!(
+            RepeatKind::Once.repeat("10:00", 0, 0, 0, |at| Ok(i64::from(at.hour))),
+            Ok(Repeat::Once { at: 10 })
+        );
+        assert_eq!(
+            RepeatKind::Once.repeat("10:00", 0, 0, 0, |_| Err("choose a date".into())),
+            Err("choose a date".into())
+        );
     }
 }

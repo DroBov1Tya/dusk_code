@@ -49,7 +49,7 @@ impl Workspace {
                     Some((began, None)) => format!(
                         "Working \u{00B7} {}",
                         crate::pages::chat::timing::duration(
-                            crate::pages::chat::timing::now_ms() - began
+                            dusk_protocol::system::now_ms() - began
                         )
                     ),
                     _ => "Working".to_owned(),

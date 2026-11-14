@@ -53,6 +53,10 @@ testing.
   sources and platforms) became directories, and the Telegram bot is grouped by feature
   rather than by layer. `scripts/structure-map.sh` regenerates the map in
   `docs/structure.md`.
+- Logic the clients each wrote for themselves has one home: schedule text is parsed in
+  the protocol, one WAV encoder serves the desktop and the browser, the core reads the
+  terminal's git line and decides what an uninstall removes, and the tool and agent
+  state the desktop and the browser both show is shared.
 - A temporary chat is marked by a speech bubble drawn in dashes, the sign most apps use
   for it, in place of the hourglass.
 

@@ -72,7 +72,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 fn ran(job: &dusk_protocol::thread::JobInfo) -> String {
     let end = job
         .finished_at
-        .unwrap_or_else(crate::pages::chat::timing::now_ms);
+        .unwrap_or_else(dusk_protocol::system::now_ms);
     dusk_protocol::thread::duration_words((end - job.started_at).max(0))
 }
 

@@ -17,7 +17,7 @@ pub const JOB_OUTPUT_ROWS: usize = 12;
 
 /// The jobs, one row each, and under them what the chosen one printed.
 pub fn jobs(view: &JobsView, width: usize) -> Vec<Line<'static>> {
-    let now = crate::app::now_ms();
+    let now = dusk_protocol::system::now_ms();
     let mut lines: Vec<Line<'static>> = view
         .jobs
         .iter()
