@@ -14,7 +14,7 @@ mod tasks;
 
 pub use ask_user::{AskUser, Question};
 pub use display_audio::{DisplayAudio, is_sound, save_sound};
-pub use display_image::DisplayImage;
+pub use display_image::{DisplayImage, picture_card};
 pub use goal::GoalTool;
 pub use load_skill::LoadSkill;
 pub use name_session::NameSession;

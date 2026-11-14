@@ -17,6 +17,9 @@ pub struct Permissions {
     pub exec: Vec<String>,
     /// Folders outside its own it may read, such as `~/Library/Developer`.
     pub read: Vec<String>,
+    /// Folders whose Unix sockets it may connect to, such as `~/.vphone`: the way a
+    /// local program such as a virtual machine takes commands.
+    pub sockets: Vec<String>,
     /// Keys of its own the user gives it, and where each may be sent.
     pub keys: Vec<KeyUse>,
 }
@@ -41,10 +44,16 @@ impl Permissions {
             lines.push(format!("connect to {origin}"));
         }
         for program in &self.exec {
-            lines.push(format!("run {program}"));
+            lines.push(match program.as_str() {
+                "xcrun" => "run xcrun, and through it the developer tools of Xcode".into(),
+                _ => format!("run {program}"),
+            });
         }
         for folder in &self.read {
             lines.push(format!("read {folder}"));
+        }
+        for folder in &self.sockets {
+            lines.push(format!("talk to programs through the sockets in {folder}"));
         }
         for key in &self.keys {
             let to = key.origins.join(", ");

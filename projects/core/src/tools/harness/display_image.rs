@@ -339,6 +339,24 @@ fn public_v6(ip: Ipv6Addr) -> bool {
         && !(segments[0] == 0x3fff && segments[1] < 0x1000)
 }
 
+/// A picture another tool got, such as an MCP server's screen, checked like any other
+/// and kept as a card the model sees.
+pub fn picture_card(store: &ArtifactStore, bytes: Vec<u8>, title: &str) -> Result<Card> {
+    let decoded = decode(bytes)?;
+    store.save(
+        Card {
+            title: Some(title.to_owned()),
+            mime_type: decoded.mime_type.into(),
+            width: decoded.width,
+            height: decoded.height,
+            for_model: true,
+            ..Default::default()
+        },
+        &decoded.original,
+        &decoded.thumbnail,
+    )
+}
+
 fn decode(original: Vec<u8>) -> Result<Decoded> {
     let format = image::guess_format(&original).context("unrecognized image content")?;
     let mime_type = match format {

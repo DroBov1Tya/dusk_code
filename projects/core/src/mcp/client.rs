@@ -36,6 +36,14 @@ const CALL_TIMEOUT: Duration = Duration::from_secs(300);
 const MAX_DESCRIPTION_CHARS: usize = 1024;
 /// More than the model is shown of a result; the registry cuts it further.
 const MAX_RESULT_BYTES: usize = 1024 * 1024;
+/// Pictures kept from one result; a server sends one screen, not an album.
+const MAX_IMAGES: usize = 4;
+
+/// What a call gave: its text, and the pictures in it as bytes, still to be checked.
+pub struct CallOutput {
+    pub text: String,
+    pub images: Vec<Vec<u8>>,
+}
 
 pub struct McpClient {
     service: RunningService<RoleClient, ()>,
@@ -118,9 +126,10 @@ impl McpClient {
             .and_then(|info| info.instructions.clone())
     }
 
-    /// The text of the result; a result the server marks as an error is an error.
+    /// The text and pictures of the result; a result the server marks as an error is an
+    /// error.
     #[tracing::instrument(name = "mcp_call", skip_all, fields(tool = name))]
-    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<String> {
+    pub async fn call_tool(&self, name: &str, arguments: Value) -> Result<CallOutput> {
         let Value::Object(arguments) = arguments else {
             bail!("arguments must be a JSON object");
         };
@@ -130,9 +139,17 @@ impl McpClient {
             .map_err(|_| anyhow!("the server did not answer in {}s", CALL_TIMEOUT.as_secs()))?
             .map_err(|error| anyhow!("the call failed: {error}"))?;
         let mut text = String::new();
+        let mut images = Vec::new();
         for part in &result.content {
             if text.len() >= MAX_RESULT_BYTES {
                 break;
+            }
+            if let ContentBlock::Image(image) = part
+                && images.len() < MAX_IMAGES
+                && let Some(bytes) = image_bytes(&image.data)
+            {
+                images.push(bytes);
+                continue;
             }
             if !text.is_empty() {
                 text.push('\n');
@@ -147,7 +164,7 @@ impl McpClient {
         if result.is_error == Some(true) {
             bail!("{text}");
         }
-        Ok(text)
+        Ok(CallOutput { text, images })
     }
 }
 
@@ -214,6 +231,16 @@ async fn serve<C: StreamableHttpClient + Send + Sync + 'static>(
             }
             anyhow!("initialize: {}", text.replace(url.as_str(), "<url>"))
         })
+}
+
+/// The bytes of a base64 picture, when it is small enough to be a picture at all; what
+/// they are is checked by whoever shows them.
+fn image_bytes(data: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+    if data.len() > crate::state::artifacts::MAX_IMAGE_BYTES * 4 / 3 + 4 {
+        return None;
+    }
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
 }
 
 /// Text parts as they are; other parts are named, since the model reads only text.

@@ -24,6 +24,10 @@ pub struct Confinement {
     /// When set, besides the system's own programs only these files, or the programs
     /// under these folders, may be started.
     pub programs: Option<Vec<PathBuf>>,
+    /// Folders whose Unix sockets it may connect to while the network is closed. Only
+    /// macOS keeps to them; on Linux Landlock does not reach Unix sockets.
+    #[cfg_attr(target_os = "linux", allow(dead_code))]
+    pub sockets: Vec<PathBuf>,
 }
 
 /// What a confined program may reach over the network.
@@ -61,6 +65,7 @@ impl Default for Confinement {
             network: Network::Closed,
             keychain: false,
             programs: Some(Vec::new()),
+            sockets: Vec::new(),
         }
     }
 }
@@ -79,8 +84,34 @@ impl Confinement {
             network: Network::Open,
             keychain: true,
             programs: None,
+            sockets: Vec::new(),
         }
     }
+}
+
+/// The developer tools `xcrun` starts: Xcode's chosen folder and the frameworks the
+/// simulator's tools run from. Empty where there are none.
+pub fn developer_tools() -> Vec<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let mut folders = Vec::new();
+        if let Ok(output) = std::process::Command::new("/usr/bin/xcode-select")
+            .arg("-p")
+            .output()
+            && output.status.success()
+        {
+            let chosen = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+            folders.extend(Path::new(&chosen).canonicalize().ok());
+        }
+        folders.extend(
+            Path::new("/Library/Developer/PrivateFrameworks")
+                .canonicalize()
+                .ok(),
+        );
+        folders
+    }
+    #[cfg(not(target_os = "macos"))]
+    Vec::new()
 }
 
 /// The system's temporary folders, resolved.

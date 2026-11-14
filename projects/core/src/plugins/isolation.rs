@@ -7,7 +7,9 @@
 //!   closed, but for its own folder (read-only) and its data folder;
 //! - the keychain is closed;
 //! - it reaches no network but its broker, and that only when it may connect anywhere;
-//! - it starts only the system's programs, its own and the ones it names.
+//! - it starts only the system's programs, its own and the ones it names; `xcrun` brings
+//!   the developer tools of Xcode it starts;
+//! - it connects to the Unix sockets only in the folders it names.
 //!
 //! When the system cannot confine it, it does not start.
 
@@ -86,6 +88,17 @@ impl Isolation {
             );
             reopened.push(path);
         }
+        let mut sockets = Vec::new();
+        for wanted in &permissions.sockets {
+            let Ok(path) = expand_home(wanted).canonicalize() else {
+                continue;
+            };
+            ensure!(
+                !path.starts_with(&config_root) && !config_root.starts_with(&path),
+                "a plugin may not reach sockets in duskcode's config folder: {wanted}"
+            );
+            sockets.push(path);
+        }
         let network = match (permissions.network.is_empty(), broker) {
             (true, _) => Network::Closed,
             (false, Some(broker)) => Network::Broker(broker.port()),
@@ -100,6 +113,9 @@ impl Isolation {
         let mut programs = vec![folder.clone()];
         for name in &permissions.exec {
             programs.extend(locate(name));
+            if name == "xcrun" {
+                programs.extend(platform::developer_tools());
+            }
         }
         let mut writable = vec![data];
         writable.extend(platform::temp_folders());
@@ -116,6 +132,7 @@ impl Isolation {
                 network,
                 keychain: false,
                 programs: Some(programs),
+                sockets,
             },
         })
     }
