@@ -1,7 +1,28 @@
 # How the code is laid out
 
-The workspace is one core and thin clients over one protocol. This file says how a crate is
-built inside, so a new file has an obvious home.
+The workspace is one core and thin clients over one protocol. This file says where a crate
+goes and how one is built inside, so a new file has an obvious home.
+
+## Workspace
+
+```text
+projects/
+  protocol/          the vocabulary of the system; depends on nothing
+  core/              the engine: all logic and state
+  server/            the way into the core from outside its process: browsers today,
+                     paired devices later
+  clients/           what a person sees; they draw and ask, nothing else
+    terminal/        `duskcode`
+    desktop/         `duskcode-gui`
+    browser/         the web page, built to wasm and embedded by the server
+  plugins/
+    telegram/        the program of the built-in telegram plugin
+  evals/             tasks that measure the engine, and their runner
+```
+
+Dependencies point one way, down this tree: `clients -> server -> core -> protocol`. A
+crate never reaches up it. A new client goes under `clients/`, a new program a plugin
+ships under `plugins/`; nothing new goes at the root of `projects/`.
 
 ## Rules
 
@@ -21,7 +42,7 @@ built inside, so a new file has an obvious home.
 5. **The protocol is a framework.** Its domains are the vocabulary of the whole system; the
    core and every client use the same words. A new request goes into `client/request/`
    under the area it belongs to, a new event field into the domain it is about.
-6. **Clients draw, the core decides.** `gui` and `tui` keep presentation only; anything that
+6. **Clients draw, the core decides.** The clients keep presentation only; anything that
    decides, stores or checks lives in the core and reaches them through the protocol.
 7. **Moves are mechanical and checked.** A restructure changes paths and nothing else: no
    behavior, no renames of types, one commit that builds and passes tests.
@@ -96,7 +117,7 @@ voice/  (8)
   local/  (7)
 ```
 
-### gui
+### clients/desktop
 
 ```
 columns/  (25)
@@ -115,20 +136,20 @@ ui/  (5)
   theme/  (2)
 ```
 
-### web
+### server
 
 ```
 auth/  (4)
 files/  (4)
 ```
 
-The library both `tui` and `gui` link to serve browsers; it has no binary of its own and the
+The library the terminal and desktop clients link to serve browsers; it has no binary of its own and the
 built bundle is embedded in each of them. `auth` (token, sessions, limit), `files` (`assets`:
-the bundle embedded from `web-ui/dist`; `cards`, `outputs`: pictures and sounds), `guard`
+the bundle embedded from `clients/browser/dist`; `cards`, `outputs`: pictures and sounds), `guard`
 (host, origin, security headers), `bridge` (one WebSocket per browser), `server` (routes,
 start, stop). Everything else is the core's.
 
-### web-ui
+### clients/browser
 
 ```
 api/  (8)
@@ -144,7 +165,7 @@ The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the 
 `state` what the whole page knows, `chat/data` the transcript as plain data (testable without a
 browser), `markdown` model output as DOM text only. It draws and calls; it decides nothing.
 
-### tui
+### clients/terminal
 
 ```
 app/  (30)

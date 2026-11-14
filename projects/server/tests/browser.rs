@@ -1,7 +1,7 @@
 //! The server against a real core: what a browser may and may not do.
 
 use dusk_core::app::{Paths, start_hub};
-use dusk_web::{Config, WebServer, start};
+use dusk_server::{Config, WebServer, start};
 use std::sync::atomic::{AtomicU32, Ordering};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},

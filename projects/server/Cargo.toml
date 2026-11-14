@@ -1,5 +1,5 @@
 [package]
-name = "dusk_web"
+name = "dusk_server"
 version.workspace = true
 edition.workspace = true
 publish.workspace = true

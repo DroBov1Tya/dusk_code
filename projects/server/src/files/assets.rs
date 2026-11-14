@@ -6,7 +6,7 @@ use rust_embed::RustEmbed;
 use sha2::{Digest, Sha256};
 
 #[derive(RustEmbed)]
-#[folder = "../web-ui/dist"]
+#[folder = "../clients/browser/dist"]
 struct Bundle;
 
 const MISSING: &str = "<!doctype html><meta charset=utf-8><title>duskcode</title>\

@@ -88,8 +88,8 @@ jobs:
         # The desktop client builds with the terminal one in a single call on macOS, so
         # cargo shares the dependencies and compiles both at once.
         run: |
-          packages=(-p dusk_tui)
-          if [[ "$RUNNER_OS" == macOS ]]; then packages+=(-p dusk_gui); fi
+          packages=(-p dusk_terminal)
+          if [[ "$RUNNER_OS" == macOS ]]; then packages+=(-p dusk_desktop); fi
           cargo build --release --locked --target ${{ matrix.target }} "${packages[@]}"
       - name: Signing certificate
         # Every release is signed by the same certificate, so macOS keeps the permissions
@@ -206,7 +206,7 @@ jobs:
       - name: Web client
         run: scripts/build-web.sh
       - name: Build
-        run: cargo build --release --locked -p dusk_gui
+        run: cargo build --release --locked -p dusk_desktop
       - name: Package
         shell: bash
         run: |

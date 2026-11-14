@@ -38,6 +38,11 @@ testing.
 
 ### Changed
 
+- The crates are laid out by role: `projects/server` (was `web`), `projects/clients/`
+  `terminal`, `desktop` and `browser` (were `tui`, `gui` and `web-ui`),
+  `projects/plugins/telegram` (was `external/telegram`), and `projects/evals` with its
+  tasks. The crates are named after their places (`dusk_server`, `dusk_terminal`,
+  `dusk_desktop`, `dusk_browser`); the programs keep their names.
 - A temporary chat is marked by a speech bubble drawn in dashes, the sign most apps use
   for it, in place of the hourglass.
 

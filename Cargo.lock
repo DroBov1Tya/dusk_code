@@ -2332,6 +2332,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "92773504d58c093f6de2459af4af33faa518c13451eb8f2b5698ed3d36e7c813"
 
 [[package]]
+name = "dusk_browser"
+version = "0.73.5"
+dependencies = [
+ "console_error_panic_hook",
+ "dusk_protocol",
+ "futures",
+ "js-sys",
+ "leptos",
+ "pulldown-cmark",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "dusk_core"
 version = "0.73.5"
 dependencies = [
@@ -2381,22 +2398,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dusk_evals"
-version = "0.73.5"
-dependencies = [
- "anyhow",
- "clap",
- "dusk_core",
- "dusk_protocol",
- "regex",
- "serde",
- "serde_json",
- "tokio",
- "uuid",
-]
-
-[[package]]
-name = "dusk_gui"
+name = "dusk_desktop"
 version = "0.73.5"
 dependencies = [
  "alacritty_terminal",
@@ -2404,7 +2406,7 @@ dependencies = [
  "chrono",
  "dusk_core",
  "dusk_protocol",
- "dusk_web",
+ "dusk_server",
  "gpui-kit",
  "gpui-pre",
  "gpui-pre-platform",
@@ -2422,6 +2424,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "dusk_evals"
+version = "0.73.5"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dusk_core",
+ "dusk_protocol",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
+ "uuid",
+]
+
+[[package]]
 name = "dusk_protocol"
 version = "0.73.5"
 dependencies = [
@@ -2432,43 +2449,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "dusk_telegram"
-version = "0.73.5"
-dependencies = [
- "anyhow",
- "parking_lot",
- "serde",
- "serde_json",
- "teloxide",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "dusk_tui"
-version = "0.73.5"
-dependencies = [
- "anyhow",
- "chrono",
- "clap",
- "crossterm",
- "dusk_core",
- "dusk_protocol",
- "dusk_telegram",
- "dusk_web",
- "futures",
- "image",
- "ratatui",
- "ratatui-image",
- "serde_json",
- "tokio",
- "tracing",
- "unicode-width",
-]
-
-[[package]]
-name = "dusk_web"
+name = "dusk_server"
 version = "0.73.5"
 dependencies = [
  "anyhow",
@@ -2490,20 +2471,39 @@ dependencies = [
 ]
 
 [[package]]
-name = "dusk_web_ui"
+name = "dusk_telegram"
 version = "0.73.5"
 dependencies = [
- "console_error_panic_hook",
- "dusk_protocol",
- "futures",
- "js-sys",
- "leptos",
- "pulldown-cmark",
+ "anyhow",
+ "parking_lot",
  "serde",
  "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
+ "teloxide",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "dusk_terminal"
+version = "0.73.5"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "clap",
+ "crossterm",
+ "dusk_core",
+ "dusk_protocol",
+ "dusk_server",
+ "dusk_telegram",
+ "futures",
+ "image",
+ "ratatui",
+ "ratatui-image",
+ "serde_json",
+ "tokio",
+ "tracing",
+ "unicode-width",
 ]
 
 [[package]]

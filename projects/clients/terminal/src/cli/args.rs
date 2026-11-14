@@ -234,7 +234,7 @@ pub fn parse_args() -> Args {
         port: matches
             .get_one::<u16>("port")
             .copied()
-            .unwrap_or(dusk_web::DEFAULT_PORT),
+            .unwrap_or(dusk_server::DEFAULT_PORT),
         allow_hosts: matches
             .get_many::<String>("allow-host")
             .map(|hosts| hosts.cloned().collect())

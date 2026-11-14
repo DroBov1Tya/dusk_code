@@ -440,7 +440,7 @@ impl Workspace {
         }
         let typed = self.web_port.read(cx).value().trim().to_owned();
         let port = match typed.as_str() {
-            "" => dusk_web::DEFAULT_PORT,
+            "" => dusk_server::DEFAULT_PORT,
             text => match text.parse::<u16>() {
                 Ok(port) if port > 0 => port,
                 _ => {
@@ -458,11 +458,11 @@ impl Workspace {
             self.core.call_hub(
                 cx,
                 move |hub| async move {
-                    let config = dusk_web::Config {
+                    let config = dusk_server::Config {
                         bind: (address, port).into(),
-                        ..dusk_web::Config::default()
+                        ..dusk_server::Config::default()
                     };
-                    dusk_web::start(hub, config).await
+                    dusk_server::start(hub, config).await
                 },
                 |ws, result, cx| {
                     ws.web_busy = false;

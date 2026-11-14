@@ -18,7 +18,8 @@ what you ran and what it showed, and what you did not check.
 ## How the code is laid out
 
 One core (`projects/core`) holds all logic and state; the terminal and the window
-(`projects/tui`, `projects/gui`) draw and call it through one protocol (`projects/protocol`),
+(`projects/clients/terminal`, `projects/clients/desktop`) draw and call it through one
+protocol (`projects/protocol`),
 and never reach into the core directly. A new feature is a request and a response in the
 protocol first, and both clients get it. Prompts, agents and skills shipped with the app live
 in `resources/`.
@@ -35,7 +36,8 @@ in `resources/`.
 
 ## Benchmarks
 
-`evals/` holds small tasks with a script that checks the result, run by `projects/evals`.
+`projects/evals/tasks/` holds small tasks with a script that checks the result, run by
+`projects/evals`.
 Changes to prompts, tools or the agent loop should show their effect there; see
 `evals/README.md`.
 

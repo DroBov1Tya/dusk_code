@@ -36,7 +36,7 @@ pub fn parse_args() -> Args {
         .arg(
             Arg::new("tasks")
                 .long("tasks")
-                .default_value("evals/tasks")
+                .default_value("projects/evals/tasks")
                 .value_parser(value_parser!(PathBuf)),
         )
         .arg(
@@ -79,7 +79,7 @@ pub fn parse_args() -> Args {
         .arg(
             Arg::new("out")
                 .long("out")
-                .default_value("evals/results/latest.json")
+                .default_value("projects/evals/results/latest.json")
                 .value_parser(value_parser!(PathBuf)),
         )
         .arg(

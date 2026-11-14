@@ -10,7 +10,7 @@
 *.zip
 
 # Eval runs
-/evals/results/
+/projects/evals/results/
 
 # Working notes: plans, the todo list and analyses stay on the machine of whoever keeps them
 /docs/todo.md
@@ -48,7 +48,7 @@ scratch/
 .tree/
 
 # Trunk's staging folder and core dumps
-/projects/web-ui/.trunk/
+/projects/clients/browser/.trunk/
 core.[0-9]*
 
 # Editors and systems
@@ -64,4 +64,4 @@ Thumbs.db
 .opencode/
 .cursor/
 .aider*
-/projects/web-ui/dist/
+/projects/clients/browser/dist/
