@@ -6,10 +6,7 @@ use std::rc::Rc;
 
 use dusk_protocol::system::Simulator;
 use gpui_kit::{
-    component::{
-        Sizable,
-        button::{Button, ButtonVariants},
-    },
+    component::button::{Button, ButtonVariants},
     prelude::FluentBuilder,
     *,
 };
@@ -46,7 +43,6 @@ pub fn render(panel: &Panel, _found: &Simulator, cx: &mut Context<Workspace>) ->
         (_, None, false) => centered(
             Button::new("simulator-boot")
                 .primary()
-                .small()
                 .label("Boot")
                 .on_click(cx.listener(|ws, _, _, cx| ws.power(true, cx))),
         ),

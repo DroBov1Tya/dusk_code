@@ -7,6 +7,7 @@
 //! - `download`: the iOS runtime;
 //! - `screen`: a device's picture and its size in points;
 //! - `input`: touches, typing, buttons and the accessibility tree;
+//! - `tree`: that tree made short for the model;
 //! - `apps`: links, installed apps and Simulator.app.
 
 mod apps;
@@ -15,6 +16,7 @@ mod input;
 mod listing;
 mod run;
 mod screen;
+mod tree;
 
 use anyhow::Result;
 use dusk_protocol::client::{Response, SimulatorRequest};
