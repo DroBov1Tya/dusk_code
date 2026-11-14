@@ -139,6 +139,7 @@ impl Workspace {
             web_busy: false,
             web_global: false,
             voice_form: crate::pages::connectors::voice::VoiceForm::new(window, cx),
+            workshop: Default::default(),
             token_box: crate::pages::settings::TokenBox::new(window, cx),
             context_open: HashSet::new(),
             context_load: Default::default(),
