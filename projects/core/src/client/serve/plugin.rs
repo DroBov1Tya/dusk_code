@@ -3,7 +3,12 @@
 
 use super::Server;
 use anyhow::{Context, Result};
-use dusk_protocol::client::{PluginRequest, Response};
+use dusk_protocol::{
+    client::{PluginRequest, Response},
+    plugin::StoreRequest,
+};
+use std::sync::Arc;
+use tokio::sync::oneshot;
 
 impl Server {
     /// Answers at once: starting an interface spawns its process and returns, and its
@@ -30,5 +35,20 @@ impl Server {
             } => host.event(self.caller, &plugin, &part, &widget, event)?,
         }
         Ok(Response::Done)
+    }
+}
+
+impl Server {
+    /// Answers beside the loop: the store is on the network, and an install may take a
+    /// while; the plugins list in the status shows the result.
+    pub(super) fn store(&self, request: StoreRequest, reply: oneshot::Sender<Response>) {
+        let runtime = Arc::clone(&self.runtime);
+        tokio::spawn(async move {
+            let response = match runtime.store(request).await {
+                Ok(response) => response,
+                Err(error) => Response::Error(format!("{error:#}")),
+            };
+            let _ = reply.send(response);
+        });
     }
 }

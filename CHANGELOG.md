@@ -20,6 +20,9 @@ testing.
   origins its manifest lists; a plugin's own key is put into its requests by the core
   and never seen by the plugin unless it is marked handed. The permissions are shown
   before a plugin is switched on, and an update that asks for more turns it off.
+- A plugin store: the core lists the plugins of a signed `index.json` and installs one
+  after checking the signature, the package's hash and size, every path in it and that
+  its manifest asks for what the list showed. A browser may look but not install.
 - `platforms` and `clients` in `plugin.yml`: the systems a plugin is built for and the
   clients that can draw its parts.
 
