@@ -64,6 +64,62 @@ pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 
 /// How full the context is: a ring with the share beside it; the counts and the cost
 /// on hover.
+/// How much of its rate limits the current model's account has used, from what the
+/// provider last reported: the tightest of its windows, as a ring like the context's.
+pub fn limits(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
+    let limits = ws.status.limits.as_ref()?;
+    let used = [&limits.requests, &limits.tokens]
+        .into_iter()
+        .flatten()
+        .filter(|window| window.limit > 0)
+        .map(|window| 1. - window.remaining as f32 / window.limit as f32)
+        .fold(None, |most: Option<f32>, share| {
+            Some(most.map_or(share, |most| most.max(share)))
+        })?
+        .clamp(0., 1.);
+    let theme = cx.theme();
+    let (muted, accent, warning, danger, border) = (
+        theme.muted_foreground,
+        theme.primary,
+        theme.warning,
+        theme.danger,
+        theme.border,
+    );
+    let meter = if used > 0.9 {
+        danger
+    } else if used > 0.7 {
+        warning
+    } else {
+        accent
+    };
+    let tip = SharedString::from(format!("Rate limits: {}", limits.text()));
+    Some(
+        div()
+            .id("limits-ring")
+            .relative()
+            .size(px(super::composer::SIDE_MARK))
+            .flex()
+            .items_center()
+            .justify_center()
+            .child(div().absolute().inset_0().child(super::ring::render(
+                super::composer::SIDE_MARK,
+                used,
+                meter,
+                border,
+            )))
+            .child(
+                div()
+                    .text_size(px(9.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(muted)
+                    .child(format!("{:.0}", used * 100.)),
+            )
+            .tooltip(move |window, cx| {
+                gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
+            }),
+    )
+}
+
 pub fn context(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, accent, warning, danger, border) = (

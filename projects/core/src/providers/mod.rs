@@ -23,6 +23,7 @@ pub use errors::{
     OutputLimit, RetryAfter, Transient, is_output_limit, is_transient, is_unsupported_effort,
     is_unsupported_pictures, retry_after, stream_error,
 };
+pub use limits::Account;
 #[cfg(test)]
 pub use output::{ChatStream, FinishReason};
 pub use output::{ModelEvent, ModelOutput, ToolCall, Usage, text_calls};

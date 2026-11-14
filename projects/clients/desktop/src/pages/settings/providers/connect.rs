@@ -83,6 +83,25 @@ fn chatgpt(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 )
                 .child(div().small().text_color(color).child(said)),
         )
+        // While the browser is out, the page can be opened in another browser too.
+        .when_some(
+            ws.providers_page
+                .sign_in_url
+                .clone()
+                .filter(|_| *state == ChatGpt::Waiting),
+            |row, url| {
+                row.child(
+                    Button::new("provider-chatgpt-copy")
+                        .ghost()
+                        .icon(IconName::Copy)
+                        .label("Copy URL")
+                        .tooltip("Copy the sign-in page to open it in another browser")
+                        .on_click(move |_, _, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(url.clone()))
+                        }),
+                )
+            },
+        )
         .child(
             Button::new("provider-chatgpt")
                 .outline()
@@ -101,7 +120,11 @@ impl Workspace {
             cx,
             |client| async move { client.settings().sign_in_chatgpt().await },
             |ws, result, cx| match result {
-                Ok(url) if url.starts_with("https://auth.openai.com/") => cx.open_url(&url),
+                Ok(url) if url.starts_with("https://auth.openai.com/") => {
+                    cx.open_url(&url);
+                    ws.providers_page.sign_in_url = Some(url);
+                    cx.notify();
+                }
                 Ok(_) => ws.fail(anyhow::anyhow!("refused to open the sign-in page"), cx),
                 Err(error) => ws.fail(error, cx),
             },

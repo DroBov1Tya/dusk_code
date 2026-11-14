@@ -143,6 +143,13 @@ impl Agent {
             self.runtime_phase(phase).await;
         }
         let details = json!({ "status": format!("{status:?}").to_lowercase() });
+        // A turn whose step failed ends normally for the runner; without this the clients
+        // would show it as done with no word of why there is no answer.
+        if status == TurnStatus::Failed
+            && let Some(error) = &turn.error_message
+        {
+            self.emit(ThreadEvent::Failed(error.clone()));
+        }
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;
         self.hook_notes(HookEvent::TurnEnd, details).await?;

@@ -12,7 +12,7 @@ use std::{
 use anyhow::{Result, anyhow, bail, ensure};
 use reqwest::{
     Client, Response, StatusCode, Url,
-    header::{ACCEPT, AUTHORIZATION, HeaderValue},
+    header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -192,10 +192,20 @@ impl ChatGpt {
             }
             bail!(refusal(response, "completion").await);
         }
-        ensure!(
-            http::is_event_stream(&response),
-            "provider did not return a stream"
-        );
+        // The documentation names the events, not the content type: anything but JSON is
+        // read as events, and JSON is an answer that says why there is no stream.
+        if !http::is_event_stream(&response) {
+            let kind = response
+                .headers()
+                .get(CONTENT_TYPE)
+                .and_then(|value| value.to_str().ok())
+                .unwrap_or("none")
+                .to_owned();
+            tracing::warn!(content_type = %kind, "ChatGPT answered without an event stream");
+            if kind.starts_with("application/json") {
+                bail!(refusal(response, "completion").await);
+            }
+        }
         Ok(ResponseStream {
             response,
             parser: Parser::default(),
@@ -224,16 +234,26 @@ async fn body(mut response: Response) -> Result<Vec<u8>> {
 /// Why a request was refused, from the error's code alone: its message can echo input.
 async fn refusal(response: Response, what: &str) -> String {
     let status = response.status();
-    let code = tokio::time::timeout(ERROR_BODY_TIMEOUT, body(response))
+    let error = tokio::time::timeout(ERROR_BODY_TIMEOUT, body(response))
         .await
         .ok()
         .and_then(Result::ok)
         .and_then(|bytes| serde_json::from_slice::<Value>(&bytes).ok())
-        .and_then(|body| Some(body.get("error")?.get("code")?.as_str()?.to_owned()))
+        .and_then(|body| body.get("error").cloned())
         .unwrap_or_default();
-    said(&code).unwrap_or_else(|| match status {
+    let field = |name: &str| error.get(name).and_then(Value::as_str).unwrap_or_default();
+    said(field("code")).unwrap_or_else(|| match status {
         // There is no key to change here: the token was renewed once and refused again.
         StatusCode::UNAUTHORIZED => SIGN_IN_AGAIN.to_owned(),
+        // The server's own words, short and printable, say more than the status.
+        status if !field("message").is_empty() => {
+            let message: String = field("message")
+                .chars()
+                .filter(|c| !c.is_control())
+                .take(200)
+                .collect();
+            format!("{}: {message}", http::refused(what, status))
+        }
         status => http::refused(what, status),
     })
 }

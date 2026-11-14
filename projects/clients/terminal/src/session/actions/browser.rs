@@ -8,7 +8,8 @@ pub async fn sign_in_chatgpt(client: &Client, app: &mut App) {
     match client.settings().sign_in_chatgpt().await {
         Ok(page) => {
             let notice = match open_in_browser(&page) {
-                true => "Sign-in with ChatGPT opened in the browser".to_owned(),
+                // The address too, for a browser other than the system's own.
+                true => format!("Sign-in with ChatGPT opened in the browser; or open {page}"),
                 false => format!("Sign in with ChatGPT: open {page} in a browser"),
             };
             app.transcript.notice(notice, Tone::Info);

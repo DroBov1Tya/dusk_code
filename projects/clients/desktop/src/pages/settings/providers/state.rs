@@ -22,6 +22,8 @@ pub struct State {
     /// The provider whose key is being entered anew.
     pub(super) reconnecting: Option<String>,
     pub(super) reconnect_key: Entity<InputState>,
+    /// The ChatGPT sign-in page of the attempt under way, to copy into another browser.
+    pub(super) sign_in_url: Option<String>,
 }
 
 impl State {
@@ -48,6 +50,7 @@ impl State {
                 window,
                 cx,
             ),
+            sign_in_url: None,
         }
     }
 }
