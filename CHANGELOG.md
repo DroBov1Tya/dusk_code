@@ -4,6 +4,25 @@ What changed in each release. A release's section here is also its notes on GitH
 Patch versions are pre-releases; minor versions are full releases, made after end-to-end
 testing.
 
+## Unreleased
+
+### Added
+
+- Plugins may run Xcode's tools (`exec: [xcrun]`) and connect to the Unix sockets of the
+  folders they name (`sockets:`), both shown before a plugin is switched on.
+- Pictures an MCP tool returns reach the model, checked like any image.
+
+### Fixed
+
+- The weekly window of a ChatGPT plan now shows in the limits ring: it is read from the
+  answer's stream as well, and kept per account rather than per renewed token.
+
+### Changed
+
+- The iOS Simulator panel and the agent's `ios_simulator` tool move from the app into the
+  plugin ios-simulator, installed from the Workshop. A saved window layout that still
+  names the simulator loads without it.
+
 ## 0.74.1 - 2026-11-14
 
 ### Added

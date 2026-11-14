@@ -21,7 +21,7 @@ use crate::{
     workspace::Workspace,
 };
 
-/// The right dock's width, as the simulator's panel.
+/// The right dock's width.
 pub const WIDTH: f32 = 400.;
 /// The right dock folded: a strip of its tabs' icons.
 const FOLDED: f32 = 44.;

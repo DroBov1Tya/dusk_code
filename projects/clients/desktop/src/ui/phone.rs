@@ -1,6 +1,6 @@
 //! A phone drawn around a live screen: a dark body with a metal rim and side buttons, the
 //! island over the screen. A click on the screen comes back as a tap, a drag as a swipe,
-//! in the screen's own units. The iOS Simulator and plugin screens both draw with it.
+//! in the screen's own units. Plugin screens with `phone` draw with it.
 
 use std::{cell::Cell, rc::Rc};
 

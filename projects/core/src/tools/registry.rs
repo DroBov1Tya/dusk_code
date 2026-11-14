@@ -354,10 +354,6 @@ mod tests {
             #[cfg(target_os = "macos")]
             tools.push(Box::new(crate::tools::WindowSession(screen)));
         }
-        #[cfg(target_os = "macos")]
-        tools.push(Box::new(crate::tools::IosSimulator(ArtifactStore::new(
-            dir.clone(),
-        ))));
         for tool in tools {
             let schema = tool.parameters();
             let name = tool.name();

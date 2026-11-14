@@ -6,7 +6,6 @@ mod plugin;
 mod projects;
 mod schedules;
 mod settings;
-mod simulator;
 mod status;
 mod terminal;
 mod thread;
@@ -142,9 +141,6 @@ impl Server {
                     Some(Message::Call(Call { request: Request::InstallUpdate { tag }, reply, .. })) => {
                         self.install_update(tag, reply);
                     }
-                    Some(Message::Call(Call { request: Request::Simulator(request), reply, .. })) => {
-                        simulator::answer(request, reply);
-                    }
                     Some(Message::Call(Call { request: Request::Store(request), reply, .. })) => {
                         self.store(request, reply);
                     }
@@ -197,10 +193,9 @@ impl Server {
             Request::Terminal(request) => self.terminal(request).await,
             Request::SystemReport => Ok(Response::System(self.runtime.system_report().await?)),
             Request::Plugin(request) => self.plugin(request),
-            Request::InstallUpdate { .. }
-            | Request::Simulator(_)
-            | Request::Store(_)
-            | Request::Shutdown => Err(anyhow!("this request is answered by the loop")),
+            Request::InstallUpdate { .. } | Request::Store(_) | Request::Shutdown => {
+                Err(anyhow!("this request is answered by the loop"))
+            }
         }
     }
 }
