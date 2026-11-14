@@ -5,8 +5,8 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use super::{Tool, ToolContext, ToolKind};
-use crate::{BoxFuture, mcp::McpServer};
+use super::{Tool, ToolContext, ToolKind, registry::ToolResult};
+use crate::{BoxFuture, mcp::McpServer, state::artifacts::ArtifactStore};
 
 /// Models accept tool names this long at most.
 const MAX_NAME: usize = 64;
@@ -19,11 +19,13 @@ pub struct McpTool {
     remote: String,
     description: String,
     schema: Value,
+    /// Where the pictures it returns are kept for the model.
+    pictures: ArtifactStore,
 }
 
 impl McpTool {
     /// Every tool of the server whose name fits what models accept.
-    pub fn all(server: &Arc<McpServer>) -> Vec<Self> {
+    pub fn all(server: &Arc<McpServer>, pictures: &ArtifactStore) -> Vec<Self> {
         server
             .tools
             .iter()
@@ -34,6 +36,7 @@ impl McpTool {
                     remote: tool.name.clone(),
                     description: tool.description.clone(),
                     schema: tool.input_schema.clone(),
+                    pictures: pictures.clone(),
                 })
             })
             .collect()
@@ -67,7 +70,45 @@ impl Tool for McpTool {
     }
 
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
-        Box::pin(self.server.client.call_tool(&self.remote, arguments))
+        Box::pin(async move {
+            Ok(self
+                .server
+                .client
+                .call_tool(&self.remote, arguments)
+                .await?
+                .text)
+        })
+    }
+
+    /// Pictures in the result become cards the model sees, such as a device's screen.
+    fn call_result<'a>(
+        &'a self,
+        arguments: Value,
+        _context: ToolContext,
+    ) -> BoxFuture<'a, ToolResult> {
+        Box::pin(async move {
+            let output = self
+                .server
+                .client
+                .call_tool(&self.remote, arguments)
+                .await?;
+            let mut result = ToolResult::text(output.text);
+            for bytes in output.images {
+                let store = self.pictures.clone();
+                let title = self.server.name.clone();
+                let card = tokio::task::spawn_blocking(move || {
+                    super::harness::picture_card(&store, bytes, &title)
+                })
+                .await?;
+                match card {
+                    Ok(card) => result.artifacts.push(card),
+                    Err(error) => result
+                        .content
+                        .push_str(&format!("\n[a picture that could not be read: {error}]")),
+                }
+            }
+            Ok(result)
+        })
     }
 }
 

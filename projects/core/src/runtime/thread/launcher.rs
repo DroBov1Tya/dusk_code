@@ -110,7 +110,8 @@ impl Launcher {
         tools.state = Some(Arc::clone(&self.state));
         tools.thread_id = thread_id.to_owned();
         for server in self.mcp.ready() {
-            for tool in McpTool::all(&server) {
+            let pictures = ArtifactStore::new(self.paths.artifacts_dir());
+            for tool in McpTool::all(&server, &pictures) {
                 tools.add(Box::new(tool));
             }
         }

@@ -188,12 +188,12 @@ fn check_permissions(permissions: &Permissions, settings: &[String]) -> Result<(
             "exec names a program, such as xcrun, not a path: {program}"
         );
     }
-    for folder in &permissions.read {
+    for folder in permissions.read.iter().chain(&permissions.sockets) {
         let path = Path::new(folder.strip_prefix("~/").unwrap_or(folder));
         ensure!(
             (folder.starts_with("~/") || path.is_absolute())
                 && !path.components().any(|part| part == Component::ParentDir),
-            "read names a folder as /path or ~/path, without ..: {folder}"
+            "read and sockets name a folder as /path or ~/path, without ..: {folder}"
         );
     }
     let mut names = BTreeSet::new();
@@ -353,6 +353,8 @@ mod tests {
             "permissions:\n  exec: [/bin/sh]\n",
             "permissions:\n  read: [relative/folder]\n",
             "permissions:\n  read: [~/../etc]\n",
+            "permissions:\n  sockets: [relative]\n",
+            "permissions:\n  sockets: [~/../x]\n",
             "secrets: [token]\n",
             "settings: [token]\npermissions:\n  network: [https://a.example.com]\n  keys: [{name: token, origins: [https://a.example.com]}]\n",
         ] {

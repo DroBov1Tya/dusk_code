@@ -395,6 +395,7 @@ fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
     within(&allowed.network, &wanted.network)
         && within(&allowed.exec, &wanted.exec)
         && within(&allowed.read, &wanted.read)
+        && within(&allowed.sockets, &wanted.sockets)
         && wanted.keys.iter().all(|key| {
             allowed.keys.iter().any(|had| {
                 had.name == key.name

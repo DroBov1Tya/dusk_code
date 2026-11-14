@@ -82,6 +82,14 @@ fn profile(confinement: &Confinement) -> Result<String> {
     } else if !confinement.network.is_open() {
         profile.push_str("(deny network*)\n");
     }
+    if !confinement.network.is_open() {
+        for folder in &confinement.sockets {
+            profile.push_str(&format!(
+                "(allow network-outbound (remote unix-socket (subpath {})))\n",
+                quoted(folder)?
+            ));
+        }
+    }
     if let Some(programs) = &confinement.programs {
         profile.push_str("(deny process-exec)\n(allow process-exec");
         for folder in SYSTEM_PROGRAMS {
@@ -171,6 +179,7 @@ mod tests {
             network: Network::Closed,
             keychain: false,
             programs: Some(vec![plugin.clone()]),
+            sockets: Vec::new(),
         };
         let read = |path: &Path| run(&confinement, "/bin/cat", &[&path.display().to_string()]);
         assert!(!read(&root.join("config.yml")), "the config root is closed");
@@ -212,5 +221,26 @@ mod tests {
             "/usr/bin/nc",
             &["-z", "-w", "2", "1.1.1.1", "53"]
         ));
+        // A Unix socket only in a folder it names.
+        let (named, other) = (root.join("vm"), root.join("other"));
+        for folder in [&named, &other] {
+            std::fs::create_dir_all(folder).unwrap();
+        }
+        let _named = std::os::unix::net::UnixListener::bind(named.join("s.sock")).unwrap();
+        let _other = std::os::unix::net::UnixListener::bind(other.join("s.sock")).unwrap();
+        let confinement = Confinement {
+            network: Network::Closed,
+            hidden: Vec::new(),
+            sockets: vec![named.clone()],
+            ..confinement
+        };
+        let connect = |folder: &Path| {
+            let socket = folder.join("s.sock").display().to_string();
+            let connect = "IO::Socket::UNIX->new(Peer => $ARGV[0]) or exit 1";
+            let arguments = ["-MIO::Socket::UNIX", "-e", connect, &socket];
+            run(&confinement, "/usr/bin/perl", &arguments)
+        };
+        assert!(connect(&named));
+        assert!(!connect(&other));
     }
 }
