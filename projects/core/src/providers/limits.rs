@@ -11,7 +11,7 @@ use parking_lot::Mutex;
 use reqwest::header::HeaderMap;
 use sha2::{Digest, Sha256};
 
-use crate::config::ProviderConfig;
+use crate::config::{ProviderConfig, ProviderKind};
 
 pub use dusk_protocol::model::{PlanWindow, RateLimit, RateLimits};
 
@@ -42,7 +42,17 @@ pub enum Headers {
 }
 
 /// An address and its key, as a digest: the key itself is not kept here.
+#[derive(Clone, Copy)]
 pub struct Account([u8; 32]);
+
+/// One window of the ChatGPT plan as its stream reports it, in a `codex.rate_limits`
+/// event: the share used, the window's length and when it is full again, a Unix time.
+#[derive(Debug, Clone, Copy, serde::Deserialize)]
+pub struct PlanUse {
+    pub used_percent: f64,
+    pub window_minutes: Option<u64>,
+    pub reset_at: Option<u64>,
+}
 
 #[derive(Default)]
 struct Seen {
@@ -66,12 +76,39 @@ struct Window {
 }
 
 impl Account {
+    /// For a ChatGPT sign-in the account is the one OpenAI names, since its record
+    /// changes with every renewed token while the limits stay the account's.
     pub fn of(settings: &ProviderConfig) -> Self {
         let mut hash = Sha256::new();
         hash.update(settings.base_url.as_bytes());
         hash.update([0]);
-        hash.update(settings.api_key.0.as_bytes());
+        let signed_in = (settings.kind == ProviderKind::ChatGpt)
+            .then(|| super::openai::sign_in::Credential::read(&settings.api_key.0).ok())
+            .flatten();
+        match signed_in {
+            Some(credential) => hash.update(credential.subject.as_bytes()),
+            None => hash.update(settings.api_key.0.as_bytes()),
+        }
         Self(hash.finalize().into())
+    }
+
+    /// Remembers the plan's windows a stream reported; none changes nothing.
+    pub fn note_plan(&self, windows: &[PlanUse]) {
+        let now = Instant::now();
+        let plan: Vec<Share> = windows
+            .iter()
+            .filter_map(|window| {
+                share(
+                    window.used_percent,
+                    window.window_minutes,
+                    window.reset_at.and_then(until_unix),
+                    now,
+                )
+            })
+            .collect();
+        if !plan.is_empty() {
+            SEEN.lock().entry(self.0).or_default().plan = plan;
+        }
     }
 
     /// Remembers the limits a response carries; one without them changes nothing.
@@ -185,17 +222,22 @@ fn anthropic_window(headers: &HeaderMap, what: &str, now: Instant) -> Option<Win
 fn plan_share(headers: &HeaderMap, which: &str, now: Instant) -> Option<Share> {
     let value = |part: &str| value(headers, &format!("x-codex-{which}-{part}"));
     let used: f64 = value("used-percent")?.parse().ok()?;
-    if !(0.0..=1000.0).contains(&used) {
-        return None;
-    }
-    let minutes = value("window-minutes")
-        .and_then(count)
-        .filter(|minutes| (1..=MAX_PLAN_WINDOW.as_secs() / 60).contains(minutes));
+    let minutes = value("window-minutes").and_then(count);
     let wait = value("reset-after-seconds")
         .and_then(count)
         .map(Duration::from_secs)
-        .or_else(|| value("reset-at").and_then(count).and_then(until_unix))
-        .filter(|wait| *wait <= MAX_PLAN_WINDOW);
+        .or_else(|| value("reset-at").and_then(count).and_then(until_unix));
+    share(used, minutes, wait, now)
+}
+
+/// A plan window from what the server said, each part checked: a share from 0 to 1000
+/// percent, shown up to 100, a window and a wait of at most `MAX_PLAN_WINDOW`.
+fn share(used: f64, minutes: Option<u64>, wait: Option<Duration>, now: Instant) -> Option<Share> {
+    if !(0.0..=1000.0).contains(&used) {
+        return None;
+    }
+    let minutes = minutes.filter(|minutes| (1..=MAX_PLAN_WINDOW.as_secs() / 60).contains(minutes));
+    let wait = wait.filter(|wait| *wait <= MAX_PLAN_WINDOW);
     Some(Share {
         minutes,
         used_percent: used.round().min(100.) as u8,

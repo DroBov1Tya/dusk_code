@@ -21,7 +21,7 @@ use crate::{
     config::{Effort, ProviderConfig},
     providers::{
         errors::{Transient, UnsupportedPictures},
-        limits::{Account, Headers},
+        limits::{Account, Headers, PlanUse},
         output::{FinishReason, ModelEvent, Usage},
         registry::Model,
         request::{ChatMessage, ChatRequest, Picture},
@@ -208,6 +208,7 @@ impl ChatGpt {
         }
         Ok(ResponseStream {
             response,
+            account: self.account,
             parser: Parser::default(),
             pending: VecDeque::new(),
             finished: false,
@@ -372,6 +373,8 @@ fn spoken(role: &str, text: &str, pictures: &[Picture]) -> Value {
 }
 
 pub struct ResponseStream {
+    /// Where the plan's windows the stream reports are kept.
+    account: Account,
     response: Response,
     parser: Parser,
     pending: VecDeque<ModelEvent>,
@@ -397,6 +400,9 @@ impl ResponseStream {
             match chunk {
                 Some(bytes) => {
                     self.pending.extend(self.parser.feed(&bytes)?);
+                    if let Some(plan) = self.parser.plan.take() {
+                        self.account.note_plan(&plan);
+                    }
                     self.finished = self.parser.done;
                 }
                 None => bail!(Transient(
@@ -416,6 +422,8 @@ struct Parser {
     done: bool,
     /// The tool calls counted; the map may not grow when a stream repeats a place.
     counted: u32,
+    /// The plan's windows, when the stream reported them.
+    plan: Option<Vec<PlanUse>>,
 }
 
 #[derive(Deserialize)]
@@ -427,6 +435,23 @@ struct Event {
     item: Option<Item>,
     response: Option<Finished>,
     code: Option<String>,
+    /// Read apart, so a shape the server changes costs the ring, not the answer.
+    rate_limits: Option<Value>,
+}
+
+/// The windows of a `codex.rate_limits` event; the short one first, then the week. A
+/// window in another shape is left out.
+#[derive(Deserialize)]
+struct PlanWindows {
+    #[serde(default, deserialize_with = "lenient")]
+    primary: Option<PlanUse>,
+    #[serde(default, deserialize_with = "lenient")]
+    secondary: Option<PlanUse>,
+}
+
+fn lenient<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<PlanUse>, D::Error> {
+    let value = Value::deserialize(deserializer)?;
+    Ok(serde_json::from_value(value).ok())
 }
 
 #[derive(Deserialize)]
@@ -552,6 +577,16 @@ impl Parser {
                 };
                 self.finish(event.response, reason, events);
             }
+            // ChatGPT says how much of the plan is used as an event of its own.
+            "codex.rate_limits" => {
+                let windows = event
+                    .rate_limits
+                    .and_then(|value| serde_json::from_value::<PlanWindows>(value).ok());
+                if let Some(windows) = windows {
+                    let plan = [windows.primary, windows.secondary];
+                    self.plan = Some(plan.into_iter().flatten().collect());
+                }
+            }
             "response.failed" | "error" => {
                 self.done = true;
                 let code = event
@@ -612,6 +647,28 @@ mod tests {
             })
             .collect::<String>()
             .into_bytes()
+    }
+
+    #[test]
+    fn the_plan_windows_of_a_stream_are_read_and_a_strange_one_is_left_out() {
+        let body = stream(&[
+            json!({"type":"codex.rate_limits","plan_type":"plus","rate_limits":{
+                "primary":{"used_percent":12.5,"window_minutes":300,"reset_at":1},
+                "secondary":{"used_percent":40,"window_minutes":10080,"reset_at":2}}}),
+            json!({"type":"response.output_text.delta","delta":"Hi"}),
+        ]);
+        let mut parser = Parser::default();
+        let events = parser.feed(&body).unwrap();
+        assert_eq!(events, [ModelEvent::Text("Hi".into())]);
+        let plan = parser.plan.take().unwrap();
+        assert_eq!(plan.len(), 2);
+        assert_eq!(plan[1].window_minutes, Some(10080));
+
+        let odd = stream(&[json!({"type":"codex.rate_limits","rate_limits":{
+            "primary":{"used_percent":"lots"},"secondary":{"used_percent":3}}})]);
+        let mut parser = Parser::default();
+        assert!(parser.feed(&odd).unwrap().is_empty());
+        assert_eq!(parser.plan.unwrap().len(), 1);
     }
 
     #[test]
