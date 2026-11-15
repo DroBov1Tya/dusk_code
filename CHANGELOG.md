@@ -6,6 +6,8 @@ testing.
 
 ## Unreleased
 
+## 0.74.2 - 2026-11-15
+
 ### Added
 
 - Plugins may run Xcode's tools (`exec: [xcrun]`) and connect to the Unix sockets of the
