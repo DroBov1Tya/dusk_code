@@ -17,6 +17,8 @@ testing.
 - A used-up ChatGPT plan now says so, instead of "the provider is unavailable" after
   five retries; a chat too long for the model says to compact it.
 - The log no longer warns on every ChatGPT answer that it came without a content type.
+- A chat scrolled up to read stays where it is when the agent starts a new thought,
+  instead of jumping higher.
 
 - The weekly window of a ChatGPT plan now shows in the limits ring: it is read from the
   answer's stream as well, and kept per account rather than per renewed token.
