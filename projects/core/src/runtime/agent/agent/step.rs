@@ -189,6 +189,12 @@ impl Agent {
             Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),
             // The connection is closed already; what was written so far is kept.
             Ok(Err(error)) if is_output_limit(&error) => {
+                tracing::warn!(
+                    model = choice.model.id,
+                    finish_reason = "length",
+                    completion_tokens = output.usage.map(|usage| usage.completion_tokens),
+                    "provider stopped at its output token limit"
+                );
                 self.emit(ThreadEvent::OutputLimitReached);
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }

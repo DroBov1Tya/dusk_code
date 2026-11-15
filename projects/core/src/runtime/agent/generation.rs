@@ -4,17 +4,13 @@ use std::time::Duration;
 
 use anyhow::{Result, anyhow};
 
-use crate::providers::{
-    ChatRequest, ModelEvent, ModelOutput, ModelProvider, OutputLimit, ToolCall,
-};
+use crate::providers::{ChatRequest, ModelEvent, ModelOutput, ModelProvider, ToolCall};
 
 const MAX_ANSWER_TIME: Duration = Duration::from_secs(30 * 60);
 
 /// The output is owned by the caller so what the model wrote survives when the caller
 /// stops this future early. Returns the tool calls of a normally finished response.
-///
-/// Past `max_output_tokens`, when known, by its own count the stream is dropped, which closes the
-/// connection, in case the provider ignores the limit it was sent.
+/// The provider applies the requested token budget. A byte estimate cannot count its tokens.
 #[tracing::instrument(
     name = "model_call",
     skip_all,
@@ -37,12 +33,6 @@ pub async fn generate(
         while let Some(event) = stream.next_event().await? {
             output.apply(&event)?;
             on_event(&event);
-            if request
-                .max_output_tokens
-                .is_some_and(|limit| output.estimated_tokens() > limit)
-            {
-                return Err(OutputLimit.into());
-            }
         }
         Ok::<_, anyhow::Error>(())
     };

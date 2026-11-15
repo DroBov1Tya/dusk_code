@@ -7,7 +7,7 @@ use reqwest::{
     Client, RequestBuilder, Response, Url,
     header::{ACCEPT, AUTHORIZATION, HeaderValue},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::Value;
 
 use crate::{
@@ -48,6 +48,13 @@ struct ModelEntry {
     /// Named differently by LiteLLM, OpenRouter and others; OpenAI omits it.
     #[serde(alias = "context_length", alias = "context_window")]
     max_input_tokens: Option<u64>,
+    #[serde(default, deserialize_with = "positive_output_limit")]
+    max_output_tokens: Option<u64>,
+}
+
+fn positive_output_limit<'de, D: Deserializer<'de>>(value: D) -> Result<Option<u64>, D::Error> {
+    let value = Value::deserialize(value)?;
+    Ok(value.as_u64().filter(|tokens| *tokens > 0))
 }
 
 impl OpenAiCompatible {
@@ -113,14 +120,14 @@ impl OpenAiCompatible {
                 !model.id.trim().is_empty() && !model.id.chars().any(char::is_control),
                 "provider returned an empty or invalid model ID"
             );
-            models.insert(model.id, model.max_input_tokens);
+            models.insert(model.id, (model.max_input_tokens, model.max_output_tokens));
         }
         Ok(models
             .into_iter()
-            .map(|(id, context_window)| Model {
+            .map(|(id, (context_window, max_output))| Model {
                 id,
                 context_window,
-                max_output: None,
+                max_output,
             })
             .collect())
     }
@@ -228,4 +235,31 @@ pub fn error_rejects_effort_off(error: &Value) -> bool {
     .iter()
     .any(|phrase| message.contains(phrase));
     identifies_effort && explicit
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ModelCatalogue;
+
+    #[test]
+    fn catalogue_keeps_the_advertised_output_budget() {
+        let catalogue: ModelCatalogue = serde_json::from_str(
+            r#"{"data":[
+            {"id":"reasoning","max_input_tokens":262144,"max_output_tokens":262144},
+            {"id":"plain"},
+            {"id":"null","max_output_tokens":null},
+            {"id":"zero","max_output_tokens":0},
+            {"id":"negative","max_output_tokens":-1},
+            {"id":"unknown","max_output_tokens":"unknown"},
+            {"id":"object","max_output_tokens":{"maximum":8192}}
+        ]}"#,
+        )
+        .unwrap();
+        assert_eq!(catalogue.data[0].max_output_tokens, Some(262144));
+        assert!(
+            catalogue.data[1..]
+                .iter()
+                .all(|model| model.max_output_tokens.is_none())
+        );
+    }
 }

@@ -20,7 +20,7 @@ mod request;
 pub(crate) mod transport;
 
 pub use errors::{
-    OutputLimit, RetryAfter, Transient, is_output_limit, is_transient, is_unsupported_effort,
+    RetryAfter, Transient, is_output_limit, is_transient, is_unsupported_effort,
     is_unsupported_pictures, retry_after, stream_error,
 };
 pub use limits::Account;

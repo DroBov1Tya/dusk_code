@@ -84,25 +84,50 @@ async fn a_message_sent_before_a_crash_is_answered_on_the_next_start() {
 }
 
 #[tokio::test]
-async fn a_model_past_the_output_limit_is_stopped_and_its_text_kept() {
-    let state = thread_state("output_limit").await;
-    let config = Arc::new(temp_live_config_with("output_limit_config", ""));
-    // The third piece takes the output to 3 tokens; the stream must not be read on.
-    let script = vec![
-        Step::Text("abcd"),
-        Step::Text("efgh"),
-        Step::Text("ijkl"),
-        Step::Hang,
-    ];
-    let provider = provider(vec![script]);
-    let capped = Model {
+async fn provider_tokens_are_not_recounted_as_four_byte_chunks() {
+    let state = thread_state("output_tokenizer").await;
+    let config = live_config("output_tokenizer_config");
+    let provider = provider(vec![vec![
+        Step::Reasoning("Long reasoning does not measure provider output tokens."),
+        Step::Text("Ответ на русском языке.\n```rust\nlet result = 42;\n```"),
+        Step::Done,
+    ]]);
+    let model = Model {
         max_output: Some(2),
         ..model(None)
     };
-    let (runner, input, mut output) = runner(&state, &provider, &config, capped);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model);
     input.send("write a lot").await.unwrap();
     drop(input);
+    runner.run().await;
+    let mut status = None;
+    while let Some(event) = output.next_event().await {
+        match event {
+            ThreadEvent::OutputLimitReached => panic!("provider finished normally"),
+            ThreadEvent::TurnFinished(turn) => status = Some(turn.status),
+            _ => {}
+        }
+    }
+    assert_eq!(status, Some(TurnStatus::Completed));
+    assert_eq!(
+        transcript(&state).await[1].1,
+        "Ответ на русском языке.\n```rust\nlet result = 42;\n```"
+    );
+    assert_eq!(*provider.output_limits.lock().unwrap(), [Some(2)]);
+}
 
+#[tokio::test]
+async fn genuine_provider_limit_keeps_partial_text_and_refuses_incomplete_tool() {
+    let state = thread_state("provider_length").await;
+    let config = live_config("provider_length_config");
+    let provider = provider(vec![vec![
+        Step::Text("Part of the answer."),
+        Step::PartialCall("{\"text\":\"unfinished"),
+        Step::Length,
+    ]]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    input.send("go").await.unwrap();
+    drop(input);
     runner.run().await;
 
     let mut reached = false;
@@ -110,17 +135,15 @@ async fn a_model_past_the_output_limit_is_stopped_and_its_text_kept() {
     while let Some(event) = output.next_event().await {
         match event {
             ThreadEvent::OutputLimitReached => reached = true,
+            ThreadEvent::ToolStarted(_) => panic!("unfinished tool must not run"),
             ThreadEvent::TurnFinished(turn) => status = Some(turn.status),
             _ => {}
         }
     }
     assert!(reached);
     assert_eq!(status, Some(TurnStatus::Interrupted));
-    let transcript = transcript(&state).await;
-    assert_eq!(
-        transcript[1],
-        (MessageRole::Assistant, "abcdefghijkl".into())
-    );
+    assert_eq!(transcript(&state).await[1].1, "Part of the answer.");
+    assert_eq!(*provider.output_limits.lock().unwrap(), [None]);
 }
 
 #[tokio::test]
