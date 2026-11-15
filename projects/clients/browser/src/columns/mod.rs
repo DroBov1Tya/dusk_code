@@ -3,4 +3,7 @@
 
 mod sidebar;
 
-pub use sidebar::{Sidebar, chat_title};
+pub use sidebar::Sidebar;
+
+mod workspace;
+pub use workspace::Workspace;

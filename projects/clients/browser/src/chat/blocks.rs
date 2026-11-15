@@ -2,7 +2,10 @@
 
 use super::data::{ChatData, Entry, Item, Shown};
 use super::{markdown::Markdown, voice};
-use crate::state::{Chat, state};
+use crate::{
+    state::{Chat, state},
+    ui::{Icon, IconName},
+};
 use dusk_protocol::thread::{Part, split};
 use dusk_protocol::thread::{Tool, ToolState};
 use leptos::{html, prelude::*};
@@ -167,7 +170,7 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
     view! {
         <div class="transcript" node_ref=scroller>
             <Show when=move || chat.with(|c| c.items.is_empty() && c.pending.is_empty())>
-                <div class="empty">"Ask anything. The chat is made with your first message."</div>
+                <div class="empty chat-empty"><h2>"What are we working on?"</h2><p>"Ask a question, explore your code, or start something new."</p></div>
             </Show>
             <For each=move || firsts.get() key=|key| *key let:key>
                 <BlockView all key />
@@ -248,8 +251,12 @@ fn assistant_view(text: String, reasoning: String) -> impl IntoView {
             })}
             <Markdown text=text />
             <div class="msg-actions">
-                <button class="icon" title="Copy" on:click=move |_| copy(&copy_text)>"Copy"</button>
-                <button class="icon" title="Read aloud" on:click=move |_| voice::speak(speak_text.clone())>"Listen"</button>
+                <button class="icon" title="Copy the answer" aria-label="Copy the answer" on:click=move |_| copy(&copy_text)>
+                    <Icon name=IconName::Copy />
+                </button>
+                <button class="icon" title="Read aloud" on:click=move |_| voice::speak(speak_text.clone())>
+                    <Icon name=IconName::Play />"Listen"
+                </button>
             </div>
         </div>
     }

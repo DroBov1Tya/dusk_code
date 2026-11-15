@@ -34,6 +34,8 @@ testing.
 
 ### Changed
 
+- The browser workspace now follows the desktop layout with a navigation rail, a chat list
+  and an inspector. On smaller screens, navigation and the inspector open when needed.
 - The model menu now shows only the model in use; every other model is chosen under More
   models, where the provider in use opens unfolded and its first six models keep their
   number-key shortcuts.

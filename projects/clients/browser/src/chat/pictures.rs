@@ -6,6 +6,7 @@ use leptos::{prelude::*, task::spawn_local};
 use wasm_bindgen::JsCast;
 use wasm_bindgen_futures::JsFuture;
 
+use crate::ui::{Icon, IconName};
 use dusk_protocol::client::MAX_PICTURE_UPLOAD;
 
 #[derive(Clone)]
@@ -85,13 +86,13 @@ pub fn Strip(pictures: RwSignal<Vec<Picture>>) -> impl IntoView {
                 {move || pictures.get().into_iter().enumerate().map(|(index, picture)| view! {
                     <div class="picture" title=picture.name.clone()>
                         <img src=picture.preview.clone() alt=picture.name.clone() />
-                        <button class="icon" title="Take it back" on:click=move |_| {
+                        <button class="icon" title="Remove picture" aria-label="Remove picture" on:click=move |_| {
                             pictures.update(|list| {
                                 if index < list.len() {
                                     list.remove(index).forget();
                                 }
                             })
-                        }>"×"</button>
+                        }><Icon name=IconName::Close /></button>
                     </div>
                 }).collect_view()}
             </div>

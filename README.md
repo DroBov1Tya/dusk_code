@@ -1,34 +1,12 @@
-# duskcode
+# <img src="projects/clients/desktop/assets/mark.png" alt="" width="40" height="40"> duskcode
 
-An open-source coding agent in Rust: one core, three clients. It reads and edits your
-project, runs commands, hands work to specialist agents, and keeps everything it knows on
-your machine.
+An open-source coding agent in Rust. Open the same chats from the desktop app, terminal,
+or browser. Chat history is stored locally, and you choose which model provider to use.
 
-<p align="center">
-  <a href="https://drobov1tya.github.io/dusk_code/">Site</a> ·
-  <a href="https://drobov1tya.github.io/duskcode-plugins/">Plugin Workshop</a> ·
-  <a href="https://github.com/DroBov1Tya/duskcode-plugins">Plugins repository</a> ·
-  <a href="https://github.com/DroBov1Tya/dusk_code/releases">Releases</a>
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/desktop.png" alt="The desktop window: a chat with its steps, the context, the tool runs and the todo list" width="900">
-</p>
-
-- **One core, thin clients.** The desktop window, the terminal client and the web client
-  draw the same threads over one protocol. A feature lands in the core once.
-- **Any model you can reach.** OpenAI, Anthropic, Google, any OpenAI-compatible server,
-  local models, or your ChatGPT plan with no API key.
-- **Local by default.** No account, no telemetry, no project servers. Chats are a SQLite
-  file, secrets are in the system keychain.
-- **Readable.** MIT, about one binary per client, agents and skills as Markdown you can edit.
-
-## The clients
-
-| Desktop | Terminal | Web |
-| --- | --- | --- |
-| <img src="docs/screenshots/desktop-subagents.png" alt="The subagents window: agents by the zone of their work" width="290"> | <img src="docs/screenshots/terminal.png" alt="The terminal client: the rail, the steps of a turn and the answer" width="290"> | <img src="docs/screenshots/web.png" alt="The web client: a chat with the task list beside it" width="290"> |
-| `duskcode-gui`: chats and projects, a file viewer and editor, your own terminal in a panel, subagents and the arbiter in windows of their own. macOS and Linux. | `duskcode`: full screen in any terminal, 24-bit colour, keyboard and mouse. Runs on a server over SSH. | `duskcode --web`: the same chats in a browser, served by the core. `--global` opens it to other devices on your network. |
+[Website](https://drobov1tya.github.io/dusk_code/) ·
+[Releases](https://github.com/DroBov1Tya/dusk_code/releases) ·
+[Plugin Workshop](https://drobov1tya.github.io/duskcode-plugins/) ·
+[Plugins repository](https://github.com/DroBov1Tya/duskcode-plugins)
 
 ## Install
 
@@ -41,13 +19,29 @@ The installer asks what to install: the terminal client, the desktop client, or 
 downloads a release build for macOS arm64 or Linux x86_64 / arm64 and checks it against
 the digest GitHub keeps for the release.
 
-Then, from a project folder:
-
-```sh
-duskcode
-```
+Open the desktop app or run `duskcode` from a project folder. Run `duskcode --web` to
+open the browser client. [Connect a model](#connect-a-model) to start a chat.
 
 `/update` installs a newer release; `duskcode remove` uninstalls and asks first.
+
+<p align="center">
+  <img src="docs/screenshots/desktop.png" alt="The duskcode desktop app showing a project chat and its task list" width="900">
+</p>
+
+- **One core, thin clients.** The desktop window, the terminal client and the web client
+  draw the same threads over one protocol. A feature lands in the core once.
+- **Choice of model.** OpenAI, Anthropic, Google, any OpenAI-compatible server,
+  local models, or your ChatGPT plan with no API key.
+- **Local by default.** Chats are saved in SQLite on your machine. Duskcode needs no
+  account, and tracing is off by default. Model requests go to the provider you configure.
+- **Readable.** MIT, about one binary per client, agents and skills as Markdown you can edit.
+
+## The clients
+
+| Desktop | Terminal | Web |
+| --- | --- | --- |
+| <img src="docs/screenshots/desktop-subagents.png" alt="The subagents window: agents by the zone of their work" width="290"> | <img src="docs/screenshots/terminal.png" alt="The terminal client: the rail, the steps of a turn and the answer" width="290"> | <img src="docs/screenshots/web.png" alt="The web client: a chat with the task list beside it" width="290"> |
+| `duskcode-gui`: chats and projects, a file viewer and editor, your own terminal in a panel, subagents and the arbiter in windows of their own. macOS and Linux. | `duskcode`: full screen in any terminal, 24-bit colour, keyboard and mouse. Runs on a server over SSH. | `duskcode --web`: the same chats in a browser, served by the core. `--global` opens it to other devices on your network. |
 
 ## Connect a model
 
@@ -136,13 +130,12 @@ account only in its own apps. Claude models work here with an API key.
 
 ## Security and privacy
 
-- **Secrets live in the system keychain** (macOS Keychain, Secret Service on Linux), in
-  one item. They are never written to `config.yml`, logs, chat history or backups, never
-  shown in the interface and never sent to a model. Without a keychain they stay in the
-  private config file.
-- **Nothing phones home.** The program talks to the providers, voice servers and MCP
-  servers you configure, and to GitHub to look for a newer release; that request carries
-  no chat data. Tracing is off unless you set an endpoint.
+- **Secrets live in the system keychain** (macOS Keychain, Secret Service on Linux) when
+  available. Without one, provider API keys stay in the private config file. Secrets stay
+  out of logs, chat history and model context.
+- **Network connections.** Duskcode connects to the providers, voice servers and MCP
+  servers you configure. It also checks GitHub for updates and fetches the signed catalog
+  when you open the Workshop. Tracing is off unless you set an endpoint.
 - **Files and git only inside saved projects.** Paths are canonicalized; `..` and
   symlinks that lead out are refused.
 - **Model output is data.** It is drawn as Markdown, links open only as http(s), and

@@ -3,7 +3,7 @@
 
 use crate::chat::subagent::state_text;
 use crate::state::state;
-use dusk_protocol::thread::AgentState;
+use dusk_protocol::{agent::Doing, thread::AgentState};
 use leptos::prelude::*;
 
 #[component]
@@ -20,10 +20,10 @@ pub fn AgentsTab(id: String) -> impl IntoView {
             <Show when=move || !agents.get().is_empty() fallback=|| view! { <p class="muted">"No subagents in this chat."</p> }>
                 {let id = id.clone(); move || agents.get().into_iter().map(|agent| {
                     let (parent, thread_id) = (id.clone(), agent.thread_id.clone());
-                    let working = agent.state.working();
+                    let state = agent.state.clone();
                     view! {
                         <button class="agent" on:click=move |_| app.subagent.set(Some((parent.clone(), thread_id.clone())))>
-                            <FoxBadge working />
+                            <FoxBadge state />
                             <div class="agent-text">
                                 <div class="agent-name">{agent.name.clone()}<span class="muted">{format!(" · {}", agent.role)}</span></div>
                                 <div class="muted">{agent.task.clone()}</div>
@@ -45,15 +45,20 @@ pub fn agent_class(state: &AgentState) -> &'static str {
     }
 }
 
-/// The fox on a subagent's tile; its eyes open while the agent works.
+/// A still frame of Desktop's fox for the current activity.
 #[component]
-pub fn FoxBadge(working: bool) -> impl IntoView {
+fn FoxBadge(state: AgentState) -> impl IntoView {
+    let frame = match &state {
+        AgentState::Thinking => "thinking",
+        AgentState::Writing => "writing",
+        AgentState::Tool(name) => Doing::of_tool(name).label(),
+        AgentState::Done => "done",
+        AgentState::Failed => "failed",
+    };
+    let href = format!("#dusk-fox-{frame}");
     view! {
-        <svg class="fox" class:awake=working viewBox="0 0 32 32" aria-hidden="true">
-            <path d="M3 4l8 5h10l8-5-2 13-9 11h-4L5 17z" class="fox-face" />
-            <path d="M12 28l4-7 4 7z" class="fox-nose" />
-            <circle cx="11.5" cy="16" r="1.6" class="fox-eye" />
-            <circle cx="20.5" cy="16" r="1.6" class="fox-eye" />
+        <svg class="fox" class:working=state.working() viewBox="0 0 22 22" aria-hidden="true" focusable="false">
+            <use href=href />
         </svg>
     }
 }
