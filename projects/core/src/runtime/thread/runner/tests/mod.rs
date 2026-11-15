@@ -43,6 +43,8 @@ enum Step {
     Done,
     /// The call fails before any output, in a way worth retrying.
     Fail,
+    /// The call fails before any output, in a way not worth retrying.
+    Reject,
     /// The connection drops where this step stands.
     Break,
 }
@@ -72,6 +74,9 @@ impl ModelProvider for FakeProvider {
         let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
         if let Some(Step::Fail) = script.first() {
             return Box::pin(async { Err(Transient("server busy".into()).into()) });
+        }
+        if let Some(Step::Reject) = script.first() {
+            return Box::pin(async { Err(anyhow::anyhow!("bad request")) });
         }
         let stream = FakeStream {
             steps: script.into(),
@@ -114,7 +119,7 @@ impl ChatStream for FakeStream {
                 Some(Step::Hang) => std::future::pending().await,
                 Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
                 Some(Step::Break) => return Err(Transient("connection reset".into()).into()),
-                Some(Step::Fail) | None => None,
+                Some(Step::Fail | Step::Reject) | None => None,
             })
         })
     }

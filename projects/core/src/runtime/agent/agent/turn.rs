@@ -85,9 +85,10 @@ impl Agent {
         // The user's stop and the context's compaction end a long run, not a step count.
         let outcome;
         let mut stop = None;
+        let mut received = Vec::new();
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
-            let end = match self.step(turn, inbox).await {
+            let end = match self.step(turn, inbox, &mut received).await {
                 Ok(end) => end,
                 Err(error) => {
                     outcome = TurnOutcome::Failed(format!("{error:#}"));
@@ -116,6 +117,14 @@ impl Agent {
                 }
             }
             break;
+        }
+        // However the turn ended, sources a model read go as a short line from now on.
+        // Each step of this turn carried them in full, since the block is not kept.
+        if let Err(error) = self.state.mark_sources_delivered(&received).await {
+            warn!(
+                "thread {}: cannot mark sources delivered: {error:#}",
+                self.thread_id
+            );
         }
         let turn = self.state.finish_turn(&turn.turn_id, outcome).await?;
         let took = turn.finished_at.unwrap_or(turn.started_at) - turn.started_at;

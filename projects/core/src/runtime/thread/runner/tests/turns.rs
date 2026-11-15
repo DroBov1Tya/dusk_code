@@ -403,3 +403,54 @@ async fn the_context_report_agrees_with_the_tokens_event() {
     };
     tokio::join!(runner.run(), client);
 }
+
+/// A turn that read a source and then failed still delivered it: the next turn names it
+/// in a line instead of sending it in full again.
+#[tokio::test]
+async fn a_source_read_before_a_failure_is_not_sent_again() {
+    let state = thread_state("source_once").await;
+    let config = live_config("runner_config");
+    let provider = provider(vec![
+        vec![Step::Call("ping"), Step::Done],
+        vec![Step::Reject],
+        // The thread's title, asked for after its first turn.
+        vec![Step::Text("Title"), Step::Done],
+        vec![Step::Text("ok"), Step::Done],
+    ]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let sources = crate::message::sources::ThreadSources {
+        state: &state,
+        workspace: runner.agent.scope.workspace(),
+        thread_id: "thread",
+    };
+    let store = ArtifactStore::new(runner.agent.scope.workspace().join("artifacts"));
+    let message = sources
+        .keep_pastes(&dusk_protocol::thread::wrap("SOURCE BODY"), &store)
+        .await
+        .unwrap();
+    let client = async move {
+        input.send(&message).await.unwrap();
+        assert_eq!(
+            next_turn_finished(&mut output).await.status,
+            TurnStatus::Failed
+        );
+        input.send("again").await.unwrap();
+        assert_eq!(
+            next_turn_finished(&mut output).await.status,
+            TurnStatus::Completed
+        );
+    };
+    tokio::join!(runner.run(), client);
+
+    let requests = provider.requests.lock().unwrap();
+    let full = |messages: &Vec<ChatMessage>| {
+        messages.iter().any(
+            |message| matches!(message, ChatMessage::User(text) if text.contains("SOURCE BODY")),
+        )
+    };
+    assert!(
+        full(&requests[0]) && full(&requests[1]),
+        "each step of a turn carries it"
+    );
+    assert!(!full(requests.last().unwrap()), "the next turn does not");
+}

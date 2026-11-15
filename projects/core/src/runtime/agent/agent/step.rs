@@ -20,8 +20,14 @@ use tracing::info;
 
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
+    /// `received` gathers the sources a model call took in full, for the turn to mark.
     #[tracing::instrument(name = "step", skip_all)]
-    pub(super) async fn step(&self, turn: &Turn, inbox: &mut Inbox) -> Result<StepEnd> {
+    pub(super) async fn step(
+        &self,
+        turn: &Turn,
+        inbox: &mut Inbox,
+        received: &mut Vec<String>,
+    ) -> Result<StepEnd> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         // Messages that joined between steps are answered by this turn, not a next one.
         let newest_user = conversation
@@ -171,6 +177,14 @@ impl Agent {
             generated => (output.text, generated),
         };
         let answer = TurnAnswer { reasoning, content };
+        // A model that answered, or wrote anything, has read the sources.
+        if matches!(generated, Ok(Ok(_))) || !answer.content.trim().is_empty() {
+            for id in first_time.unwrap_or_default() {
+                if !received.contains(&id) {
+                    received.push(id);
+                }
+            }
+        }
         let calls = match generated {
             Err(stop) => return Ok(StepEnd::Stopped(stop, interrupted(answer))),
             // The connection is closed already; what was written so far is kept.
@@ -192,9 +206,6 @@ impl Agent {
                 return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
             }
             Ok(Ok(calls)) if calls.is_empty() => {
-                // A turn cut short carries its new sources again next time.
-                let first_time = first_time.unwrap_or_default();
-                self.state.mark_sources_delivered(&first_time).await?;
                 return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
             }
             Ok(Ok(calls)) => calls,

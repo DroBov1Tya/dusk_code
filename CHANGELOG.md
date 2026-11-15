@@ -14,6 +14,10 @@ testing.
 
 ### Fixed
 
+- A file or picture sent into a chat is no longer re-sent in full on the next turn when
+  a turn that read it ended by failing (such as a ChatGPT stream error), being
+  interrupted, or calling tools. A source counts as delivered once any model call of the
+  turn took it.
 - A used-up ChatGPT plan now says so, instead of "the provider is unavailable" after
   five retries; a chat too long for the model says to compact it.
 - The log no longer warns on every ChatGPT answer that it came without a content type.
