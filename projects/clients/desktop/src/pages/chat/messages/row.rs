@@ -12,7 +12,7 @@ use gpui_kit::{
 
 use super::{
     Row,
-    activity::{agent_report, turn_activity},
+    activity::{agent_report, notice, turn_activity},
     command::command_card,
     cost::TurnCost,
     picture::picture,
@@ -228,11 +228,9 @@ impl Workspace {
                     }
                     Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
                     Item::Audio(clip) => crate::pages::chat::audio::card(self, &key, clip, cx),
-                    Item::Notice(text) => div()
-                        .meta()
-                        .text_color(muted)
-                        .child(text.clone())
-                        .into_any_element(),
+                    Item::Notice(text) => {
+                        notice(&key, div().meta().text_color(muted), text).into_any_element()
+                    }
                     Item::Error(text) => div()
                         .px_3()
                         .py_2()

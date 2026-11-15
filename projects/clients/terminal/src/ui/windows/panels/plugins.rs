@@ -58,6 +58,12 @@ pub fn plugins(
         if !plugin.parts.is_empty() {
             about.push_str(&format!(" ({})", plugin.parts.join(", ")));
         }
+        if let Some(version) = &plugin.duskcode_version {
+            if !about.is_empty() {
+                about.push_str(" · ");
+            }
+            about.push_str(&format!("Written for Dusk Code {version}"));
+        }
         if let Some(note) = &plugin.note {
             about.push_str(&format!(" \u{2014} {note}"));
         }

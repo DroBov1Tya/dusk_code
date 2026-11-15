@@ -195,6 +195,7 @@ impl Preview {
 pub struct PluginRow {
     pub name: String,
     pub version: String,
+    pub duskcode_version: Option<String>,
     pub description: String,
     pub enabled: bool,
     /// What it brings, such as `mcp` or `platform`.

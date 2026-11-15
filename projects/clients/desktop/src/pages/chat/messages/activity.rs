@@ -126,13 +126,11 @@ pub fn turn_activity(
                     detail.child(agent_report(ws, shown, index, from, text, cx))
                 }
                 Item::Image(image) => detail.child(picture(&ws.status.artifacts_dir, image, cx)),
-                Item::Notice(text) => detail.child(
-                    div()
-                        .px_2()
-                        .small()
-                        .text_color(step_muted(cx))
-                        .child(text.clone()),
-                ),
+                Item::Notice(text) => detail.child(notice(
+                    &format!("{shown}-{index}"),
+                    div().px_2().small().text_color(step_muted(cx)),
+                    text,
+                )),
                 Item::User {
                     text,
                     sequence: None,
@@ -164,6 +162,21 @@ pub fn turn_activity(
         }
     }
     block
+}
+
+pub fn notice(key: &str, body: Div, text: &str) -> Div {
+    let group = SharedString::from(format!("notice-row-{key}"));
+    div()
+        .group(group.clone())
+        .flex()
+        .items_start()
+        .gap_1()
+        .child(body.flex_1().min_w_0().child(text.to_owned()))
+        .child(widgets::copy(
+            SharedString::from(format!("notice-copy-{key}")),
+            &group,
+            text,
+        ))
 }
 
 pub fn agent_report(

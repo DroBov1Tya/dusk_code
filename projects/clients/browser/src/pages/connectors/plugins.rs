@@ -20,6 +20,9 @@ pub fn Plugins() -> impl IntoView {
                     <div class="card-tile">
                         <div class="tile-head"><b>{plugin.name.clone()}</b><span class="muted">{plugin.version.clone()}</span></div>
                         <p class="muted">{plugin.description.clone()}</p>
+                        {plugin.duskcode_version.as_ref().map(|version| view! {
+                            <p class="muted">{format!("Written for Dusk Code {version}")}</p>
+                        })}
                         {plugin.problem.clone().map(|p| view! { <p class="bad">{p}</p> })}
                         {plugin.missing_settings.clone().into_iter().map(|m| view! { <p class="bad">{format!("Missing setting: {m}")}</p> }).collect_view()}
                         {plugin.secrets.clone().into_iter().map(|(key, set)| {

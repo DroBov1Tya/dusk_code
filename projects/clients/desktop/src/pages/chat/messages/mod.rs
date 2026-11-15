@@ -13,7 +13,7 @@ mod row;
 mod sent_picture;
 mod step;
 
-pub use activity::{activity_text, agent_report};
+pub use activity::{activity_text, agent_report, notice};
 pub use picture::picture_path;
 pub use row::label;
 pub use sent_picture::SentPicture;

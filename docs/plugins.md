@@ -25,6 +25,7 @@ rules/plugins/my-plugin/
 ```yaml
 name: my-plugin            # the same as the folder
 version: 0.1.0
+duskcode_version: "0.74.2"  # optional: Dusk Code version used to write the plugin
 description: What it brings, in a line.
 platforms: [macos, linux]  # systems its programs are built for: macos | linux | windows; all when left out
 clients: [gui, tui]        # clients that can draw its parts: gui | tui | web; all when left out
@@ -51,6 +52,7 @@ platform:                  # a program the core keeps running, such as a chat bo
 
 On a system not in `platforms` the plugin is listed but cannot be switched on, and the
 store shows why. A client not in `clients` does not show its parts.
+The plugin list or details show `duskcode_version` when present. This field is informational.
 
 Unknown fields are refused, so a typo shows in `/plugins` as an error instead of a
 part that silently does nothing. When a name in `providers` or `mcp` is also in your

@@ -15,7 +15,7 @@ use crate::{
     columns::inspector::mascot,
     pages::chat::{
         links,
-        messages::{activity_text, agent_report, run, steps},
+        messages::{activity_text, agent_report, notice, run, steps},
         transcript::{Item, Transcript},
     },
     ui::{Type, widgets},
@@ -122,11 +122,9 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                         .unwrap_or_else(|| "A picture".to_owned()),
                 )
                 .into_any_element(),
-            Item::Notice(text) => div()
-                .text_xs()
-                .text_color(muted)
-                .child(text.clone())
-                .into_any_element(),
+            Item::Notice(text) => {
+                notice(&key("notice"), div().text_xs().text_color(muted), text).into_any_element()
+            }
             // What went wrong must not read as one more quiet note.
             Item::Error(text) => div()
                 .group(group.clone())
