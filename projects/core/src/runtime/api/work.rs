@@ -100,6 +100,19 @@ impl Runtime {
         Ok(dusk_protocol::thread::source_tag(&source.name))
     }
 
+    /// The bytes of the thread's picture source `name`, for a client to draw.
+    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
+        let launcher = self.of(thread_id).await;
+        let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
+        ThreadSources {
+            state: &launcher.state,
+            workspace: &workspace,
+            thread_id,
+        }
+        .picture(name)
+        .await
+    }
+
     pub async fn pin_source(&self, thread_id: &str, id: &str, pinned: bool) -> Result<()> {
         let launcher = self.of(thread_id).await;
         launcher.state.pin_source(thread_id, id, pinned).await

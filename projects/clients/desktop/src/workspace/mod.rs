@@ -226,6 +226,8 @@ pub struct Workspace {
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
     pub models_open: HashSet<String>,
+    /// Pictures of the user's messages, by thread and source name, as the core gave them.
+    pub sent_pictures: HashMap<(String, String), chat::messages::SentPicture>,
     /// The last click or key, for the mist that rises when the window is left alone.
     pub last_input: std::time::Instant,
     /// When the mist was cleared and how thick it stood, while it fades.

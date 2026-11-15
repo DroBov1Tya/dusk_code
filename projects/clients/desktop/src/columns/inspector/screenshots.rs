@@ -59,7 +59,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(div().flex_1().min_w_0().truncate().small().child(name))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.modal = Some(Modal::Picture {
-                        path: large.clone(),
+                        image: large.clone().into(),
                     });
                     cx.notify();
                 })),

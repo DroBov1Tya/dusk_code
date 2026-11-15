@@ -92,6 +92,16 @@ impl Work<'_> {
         self.0.done(Request::Work(request)).await
     }
 
+    /// The bytes of the thread's picture source `name`.
+    pub async fn source_picture(&self, thread_id: &str, name: &str) -> Result<Vec<u8>> {
+        let (thread_id, name) = (thread_id.to_owned(), name.to_owned());
+        let request = WorkRequest::SourcePicture { thread_id, name };
+        match self.0.call(Request::Work(request)).await? {
+            Response::Picture(bytes) => Ok(bytes),
+            other => Err(unexpected(other)),
+        }
+    }
+
     pub async fn remove_source(&self, thread_id: &str, id: &str) -> Result<()> {
         let (thread_id, id) = (thread_id.to_owned(), id.to_owned());
         let request = WorkRequest::RemoveSource { thread_id, id };

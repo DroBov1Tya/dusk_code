@@ -78,7 +78,7 @@ pub enum Modal {
     },
     /// A picture large over the window; a click outside closes it.
     Picture {
-        path: PathBuf,
+        image: ImageSource,
     },
     /// A speech button was pressed with no server connected for it.
     VoiceMissing {
@@ -147,16 +147,21 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
-        Modal::Picture { path } => (
-            "Picture".to_owned(),
-            1100.,
-            div().p_3().child(
-                img(path.clone())
-                    .w_full()
-                    .max_h(px(760.))
-                    .object_fit(ObjectFit::Contain),
-            ),
-        ),
+        Modal::Picture { image } => {
+            // As large as the window allows, below the title and its margins.
+            let room = window.viewport_size();
+            let height = (room.height.as_f32() - 140.).max(120.);
+            (
+                "Picture".to_owned(),
+                (room.width.as_f32() - 32.).clamp(220., 1600.),
+                div().p_3().child(
+                    img(image.clone())
+                        .w_full()
+                        .max_h(px(height))
+                        .object_fit(ObjectFit::Contain),
+                ),
+            )
+        }
         Modal::Uninstall(state) => (
             "Remove duskcode".to_owned(),
             520.,

@@ -37,6 +37,13 @@ pub enum WorkRequest {
         name: String,
         bytes: Vec<u8>,
     },
+    /// The bytes of the thread's picture source `name`, as its tag names it, for a
+    /// client to draw. Answers with `Response::Picture`; a source that is no PNG or
+    /// JPEG is refused.
+    SourcePicture {
+        thread_id: String,
+        name: String,
+    },
     /// The chat's pinned plan, a Markdown text the user and the model both edit.
     Plan {
         thread_id: String,
