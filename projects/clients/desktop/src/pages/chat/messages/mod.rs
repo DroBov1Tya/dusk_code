@@ -202,12 +202,39 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
         ws.measure_again = false;
         ws.list.splice(0..rows.len(), rows.len());
     }
+    // A new thought moves the turn's fold below what was said, so the reader's row may
+    // now sit at another index: follow the row, not the index.
     if let Some(top) = reading
-        && ws.rows.get(top.item_ix) == rows.get(top.item_ix)
-        && top.item_ix < rows.len()
+        && let Some(was) = ws.rows.get(top.item_ix)
+        && let Some(item_ix) = find(rows, was)
     {
-        ws.list.scroll_to(top);
+        let same_kind = std::mem::discriminant(was) == std::mem::discriminant(&rows[item_ix]);
+        ws.list.scroll_to(ListOffset {
+            item_ix,
+            offset_in_item: if same_kind {
+                top.offset_in_item
+            } else {
+                px(0.)
+            },
+        });
     }
+}
+
+/// Where `rows` now shows what `was` showed: the same item, else the fold that took it in.
+fn find(rows: &[Row], was: &Row) -> Option<usize> {
+    let item = match *was {
+        Row::Item(index) | Row::Activity { start: index, .. } => index,
+        Row::Working => return rows.iter().position(|row| *row == Row::Working),
+    };
+    let exact = |row: &Row| match *row {
+        Row::Item(index) | Row::Activity { start: index, .. } => index == item,
+        Row::Working => false,
+    };
+    rows.iter().position(exact).or_else(|| {
+        rows.iter().position(
+            |row| matches!(*row, Row::Activity { start, end, .. } if (start..end).contains(&item)),
+        )
+    })
 }
 
 fn primary_activity(item: &Item) -> bool {
