@@ -41,11 +41,6 @@ struct PendingCall {
 }
 
 impl ModelOutput {
-    /// Estimated size of everything written so far, at four bytes per token.
-    pub fn estimated_tokens(&self) -> u64 {
-        self.size.div_ceil(4) as u64
-    }
-
     /// Whether the model wrote any of its answer or a tool call; reasoning alone is not.
     pub fn answered(&self) -> bool {
         !self.text.trim().is_empty() || !self.calls.is_empty()

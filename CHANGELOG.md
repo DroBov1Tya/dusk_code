@@ -17,6 +17,10 @@ testing.
 
 ### Fixed
 
+- OpenAI-compatible servers now receive the output budget their model catalogue reports,
+  so a server's smaller default does not cut a reasoning model off before its tool call.
+- The model's stream is no longer cut by estimating the provider's tokens from byte counts.
+
 - A file or picture sent into a chat is no longer re-sent in full on the next turn when
   a turn that read it ended by failing (such as a ChatGPT stream error), being
   interrupted, or calling tools. A source counts as delivered once any model call of the

@@ -31,16 +31,20 @@ struct FakeProvider {
     scripts: Mutex<VecDeque<Vec<Step>>>,
     requests: Mutex<Vec<Vec<ChatMessage>>>,
     efforts: Mutex<Vec<Option<crate::config::Effort>>>,
+    output_limits: Mutex<Vec<Option<u64>>>,
 }
 
 #[derive(Clone)]
 enum Step {
     Text(&'static str),
+    Reasoning(&'static str),
     /// Calls the `echo` tool with this text.
     Call(&'static str),
     Tool(String, Value),
+    PartialCall(&'static str),
     Hang,
     Done,
+    Length,
     /// The call fails before any output, in a way worth retrying.
     Fail,
     /// The call fails before any output, in a way not worth retrying.
@@ -70,6 +74,10 @@ impl ModelProvider for FakeProvider {
         // Agent steps only: titles and summaries go without tools.
         if !request.tools.is_empty() {
             self.efforts.lock().unwrap().push(request.effort);
+            self.output_limits
+                .lock()
+                .unwrap()
+                .push(request.max_output_tokens);
         }
         let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
         if let Some(Step::Fail) = script.first() {
@@ -94,6 +102,7 @@ impl ChatStream for FakeStream {
             }
             Ok(match self.steps.pop_front() {
                 Some(Step::Text(text)) => Some(ModelEvent::Text(text.into())),
+                Some(Step::Reasoning(text)) => Some(ModelEvent::Reasoning(text.into())),
                 Some(Step::Call(text)) => {
                     self.pending.push_back(ModelEvent::ToolArguments {
                         index: 0,
@@ -116,8 +125,20 @@ impl ChatStream for FakeStream {
                         name,
                     })
                 }
+                Some(Step::PartialCall(arguments)) => {
+                    self.pending.push_back(ModelEvent::ToolArguments {
+                        index: 0,
+                        fragment: arguments.into(),
+                    });
+                    Some(ModelEvent::ToolCall {
+                        index: 0,
+                        id: "cut_call".into(),
+                        name: "echo".into(),
+                    })
+                }
                 Some(Step::Hang) => std::future::pending().await,
                 Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
+                Some(Step::Length) => Some(ModelEvent::Finished(FinishReason::Length)),
                 Some(Step::Break) => return Err(Transient("connection reset".into()).into()),
                 Some(Step::Fail | Step::Reject) | None => None,
             })
@@ -148,6 +169,7 @@ fn provider(scripts: Vec<Vec<Step>>) -> Arc<FakeProvider> {
         scripts: Mutex::new(scripts.into()),
         requests: Mutex::new(Vec::new()),
         efforts: Mutex::new(Vec::new()),
+        output_limits: Mutex::new(Vec::new()),
     })
 }
 

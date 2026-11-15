@@ -104,8 +104,7 @@ pub fn is_transient(error: &anyhow::Error) -> bool {
         .any(|cause| cause.downcast_ref::<Transient>().is_some())
 }
 
-/// The model wrote as much as it may: the provider cut it at `max_tokens`, or the core
-/// stopped the stream at its own count.
+/// The provider stopped the response at its output token budget.
 #[derive(Debug)]
 pub struct OutputLimit;
 
