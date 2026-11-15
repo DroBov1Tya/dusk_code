@@ -224,6 +224,31 @@ impl ThreadSources<'_> {
         self.store(name, bytes).await
     }
 
+    /// The bytes of the picture source `name`, the newest when names repeat. The name is
+    /// looked up among this chat's sources, never joined as a path, and only a PNG or a
+    /// JPEG is given out.
+    pub async fn picture(&self, name: &str) -> Result<Vec<u8>> {
+        let sources = self.state.sources(self.thread_id).await?;
+        let source = sources
+            .iter()
+            .rev()
+            .find(|source| source.name == name)
+            .context("this chat has no such source")?;
+        ensure!(
+            Path::new(&source.file).file_name() == Some(source.file.as_ref()),
+            "the source's file is not in the sources folder"
+        );
+        ensure!(source.bytes <= MAX_FILE_BYTES, "the picture is over 64 MiB");
+        let bytes = tokio::fs::read(self.folder().join(&source.file))
+            .await
+            .context("read the picture")?;
+        ensure!(
+            is_picture(&bytes[..bytes.len().min(16)]),
+            "the source is not a PNG or JPEG picture"
+        );
+        Ok(bytes)
+    }
+
     pub async fn remove(&self, id: &str) -> Result<()> {
         if let Some(file) = self.state.remove_source(self.thread_id, id).await? {
             // The name came from `store`, and a file already gone is what was asked for.

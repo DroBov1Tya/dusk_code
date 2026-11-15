@@ -27,6 +27,9 @@
 //!   show the Workshop; `workshop=install:NAME|remove:NAME`: its window that asks first;
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
+//! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
+//!   menu; `fake=sentpicture`: a user's message with a picture thumbnail under it;
+//!   `viewer=picture`: the same picture large over the window;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
@@ -444,6 +447,65 @@ fn act(
                 .collect();
             cx.notify();
         }
+        // The chatgpt provider with a list of models and one in use, to look at the model
+        // menu: the menu alone shows only the model in use; `picker=more` opens the rest.
+        "fake" if value == "models" => {
+            use dusk_protocol::model::{Model, ProviderStatus};
+            let model = |id: &str| Model {
+                id: id.into(),
+                context_window: None,
+                max_output: None,
+            };
+            let names = [
+                "gpt-5.6-luna",
+                "gpt-5.7-nova",
+                "gpt-5.8-vega",
+                "gpt-6.1-sol",
+                "gpt-6.2-rigel",
+                "gpt-6-sol",
+                "gpt-6.3-atlas",
+            ];
+            ws.providers = vec![ProviderStatus {
+                name: "chatgpt".into(),
+                models: Ok(names.into_iter().map(model).collect()),
+                balance: None,
+                limits: None,
+                enabled: true,
+            }];
+            ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
+            cx.notify();
+        }
+        // A user's message with a picture thumbnail under it. The bytes are decoded here
+        // in place of the core, so a window with no real chat can show the card.
+        "fake" if value == "sentpicture" => {
+            use crate::pages::chat::messages::SentPicture;
+            use crate::pages::chat::transcript::{Item, Transcript};
+            let name = "diagram.png";
+            let image = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, demo_png()));
+            let thread_id = "shot".to_owned();
+            let mut chat = Transcript::default();
+            chat.items.push(Item::User {
+                text: format!(
+                    "Here is the layout {}",
+                    dusk_protocol::thread::source_tag(name)
+                ),
+                sequence: Some(1),
+            });
+            ws.sent_pictures
+                .insert((thread_id.clone(), name.into()), SentPicture::Ready(image));
+            ws.chats.insert(thread_id.clone(), chat);
+            ws.shown = Some(thread_id);
+            ws.center = Center::Chat;
+            cx.notify();
+        }
+        // The same picture large over the window, as a click on the thumbnail opens it.
+        "viewer" if value == "picture" => {
+            let image = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, demo_png()));
+            ws.modal = Some(Modal::Picture {
+                image: image.into(),
+            });
+            cx.notify();
+        }
         // The ChatGPT plan's windows, as its sign-in reports them.
         "fake" if value == "plan-limits" => {
             use dusk_protocol::model::{PlanWindow, RateLimits};
@@ -535,12 +597,29 @@ fn act(
                     state: ToolState::Done,
                 })
             };
+            // A step with long arguments and a multi-line answer, to show the selectable
+            // Arguments and Answer cells; it is left unfolded below.
+            let long = Item::Tool(Tool {
+                call_id: "c0".into(),
+                name: "run_command".into(),
+                detail: "cargo test -p cache --all-features".into(),
+                arguments:
+                    "{\"command\": \"cargo test -p cache --all-features -- --nocapture expiry\", \
+                     \"cwd\": \"/Users/me/work/cache\", \"timeout_ms\": 120000}"
+                        .into(),
+                output: "running 3 tests\ntest ttl::expires_after_deadline ... ok\n\
+                         test ttl::keeps_live_entries ... ok\ntest ttl::evicts_on_read ... ok\n\
+                         test result: ok. 3 passed; 0 failed"
+                    .into(),
+                state: ToolState::Done,
+            });
             let mut inner = Transcript::default();
             inner.items.push(Item::User {
                 text: "Add expiry to the cache".into(),
                 sequence: Some(1),
             });
-            inner.items.push(step(1, "read_file", "src/cache.rs"));
+            inner.items.push(long);
+            inner.items.push(step(2, "read_file", "src/cache.rs"));
             inner.items.push(step(2, "search_files", "ttl"));
             inner.items.push(step(3, "run_command", "cargo test"));
             inner.items.push(step(4, "run_command", "cargo clippy"));
@@ -551,6 +630,10 @@ fn act(
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
                 chat.agent_chats.insert("fake-agent".into(), inner);
             }
+            // Unfold the run and its first step, so its Arguments and Answer show.
+            use crate::pages::chat::messages::{RUN, STEP};
+            ws.unfolded.insert(("fake-agent".into(), 1 | RUN));
+            ws.unfolded.insert(("fake-agent".into(), 1 | STEP));
             ws.modal = Some(Modal::AgentChat {
                 agent: "fake-agent".into(),
                 name: "backend-engineer".into(),
@@ -643,4 +726,28 @@ fn act(
         }
         other => eprintln!("no such step: {other}"),
     }
+}
+
+/// A small PNG for the picture-thumbnail and viewer shots: a soft gradient with a frame.
+fn demo_png() -> Vec<u8> {
+    use image::{ImageFormat, RgbImage};
+    let (w, h) = (640u32, 400u32);
+    let mut image = RgbImage::from_fn(w, h, |x, y| {
+        let r = 40 + (x * 120 / w) as u8;
+        let g = 60 + (y * 120 / h) as u8;
+        image::Rgb([r, g, 180])
+    });
+    for x in 0..w {
+        for y in [0, 1, h - 2, h - 1] {
+            image.put_pixel(x, y, image::Rgb([230, 230, 240]));
+        }
+    }
+    for y in 0..h {
+        for x in [0, 1, w - 2, w - 1] {
+            image.put_pixel(x, y, image::Rgb([230, 230, 240]));
+        }
+    }
+    let mut bytes = std::io::Cursor::new(Vec::new());
+    let _ = image.write_to(&mut bytes, ImageFormat::Png);
+    bytes.into_inner()
 }

@@ -144,6 +144,7 @@ impl Workspace {
             context_open: HashSet::new(),
             context_load: Default::default(),
             models_open: HashSet::new(),
+            sent_pictures: HashMap::new(),
             last_input: std::time::Instant::now(),
             fog_cleared: None,
             fog_dawn: None,

@@ -16,6 +16,7 @@ use super::{
     command::command_card,
     cost::TurnCost,
     picture::picture,
+    sent_picture::{is_picture_name, sent_pictures},
 };
 use crate::{
     pages::chat::{links, transcript::Item, working},
@@ -26,6 +27,14 @@ use crate::{
 impl Workspace {
     pub fn transcript_row(&mut self, ix: usize, cx: &mut Context<Self>) -> AnyElement {
         let shown = self.shown.clone().unwrap_or_default();
+        // A user's pictures are asked of the core before the chat is borrowed to draw.
+        if let Some(Row::Item(at)) = self.rows.get(ix).copied()
+            && let Some(Item::User { text, .. }) =
+                self.chats.get(&shown).and_then(|chat| chat.items.get(at))
+        {
+            let text = text.clone();
+            self.load_sent_pictures(&shown, &text, cx);
+        }
         let (Some(row), Some(chat)) = (self.rows.get(ix).copied(), self.chats.get(&shown)) else {
             return div().into_any_element();
         };
@@ -131,6 +140,7 @@ impl Workspace {
                                         )),
                                 )
                             })
+                            .children(sent_pictures(self, &shown, &key, text, cx))
                             // Sounds the user sent play under the words.
                             .children(sent_sounds(text).iter().enumerate().map(|(n, clip)| {
                                 crate::pages::chat::audio::card(
@@ -262,6 +272,8 @@ fn user_text(text: &str) -> String {
             Part::Pasted(pasted) => {
                 format!("`[{}]`", crate::pages::chat::composer::paste_label(pasted))
             }
+            // A picture shows as its thumbnail, under the words.
+            Part::Source(name) if is_picture_name(name) => String::new(),
             Part::Source(name) => format!("`[{name}]`"),
             // A sound shows as its card, under the words.
             Part::Sound { .. } => String::new(),

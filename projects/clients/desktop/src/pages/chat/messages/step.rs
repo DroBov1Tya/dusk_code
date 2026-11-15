@@ -208,6 +208,12 @@ pub fn step(
     }
     let mut line = div().flex().flex_col().child(row);
     if open {
+        // The look of the plain monospace cells: `meta` size in the mono font.
+        let mono_meta = gpui::TextStyleRefinement {
+            font_family: Some(mono.clone().into()),
+            font_size: Some(rems(0.78).into()),
+            ..Default::default()
+        };
         let block = |title: &'static str, text: &str| {
             let group = SharedString::from(format!("step-{title}-{shown}-{index}"));
             div()
@@ -228,13 +234,16 @@ pub fn step(
                         )),
                 )
                 .child(
-                    div()
-                        .p_2()
-                        .rounded_md()
-                        .bg(surface)
-                        .meta()
-                        .font_family(mono.clone())
-                        .child(text.to_owned()),
+                    div().p_2().rounded_md().bg(surface).child(
+                        // Selectable so part of the command or output can be copied, not
+                        // only the whole through the button. The raw text is shown as is:
+                        // JSON and output, never markdown.
+                        gpui_kit::base::SelectableText::new(
+                            SharedString::from(format!("step-body-{title}-{shown}-{index}")),
+                            text.to_owned(),
+                        )
+                        .text_style(mono_meta.clone()),
+                    ),
                 )
         };
         let mut details = div()

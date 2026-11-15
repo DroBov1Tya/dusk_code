@@ -68,7 +68,9 @@ pub fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> A
                         .object_fit(ObjectFit::Cover),
                 )
                 .on_click(cx.listener(move |ws, _, _, cx| {
-                    ws.modal = Some(crate::modal::Modal::Picture { path: path.clone() });
+                    ws.modal = Some(crate::modal::Modal::Picture {
+                        image: path.clone().into(),
+                    });
                     cx.notify();
                 })),
         )

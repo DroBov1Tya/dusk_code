@@ -43,6 +43,9 @@ impl Server {
                 name,
                 bytes,
             } => Response::Text(runtime.add_picture(&thread_id, &name, &bytes).await?),
+            WorkRequest::SourcePicture { thread_id, name } => {
+                Response::Picture(runtime.source_picture(&thread_id, &name).await?)
+            }
         })
     }
 }

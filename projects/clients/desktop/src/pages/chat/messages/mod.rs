@@ -3,18 +3,20 @@
 //! folds, pictures are cards, and the agent's steps fold so only the latest shows. The
 //! list follows new output while it is scrolled to the end. `row` draws one row, `activity`
 //! a turn folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
-//! cards and notes beside them.
+//! cards and notes beside them; `sent_picture` the pictures a user's message carries.
 
 mod activity;
 mod command;
 mod cost;
 mod picture;
 mod row;
+mod sent_picture;
 mod step;
 
 pub use activity::{activity_text, agent_report};
 pub use picture::picture_path;
 pub use row::label;
+pub use sent_picture::SentPicture;
 pub use step::{run, steps};
 
 use gpui_kit::*;
@@ -23,8 +25,8 @@ use super::transcript::Item;
 use crate::{ui::widgets, workspace::Workspace};
 
 /// Keys of unfolded things share one set: answers by index, runs and steps apart.
-const RUN: usize = 1 << 40;
-const STEP: usize = 1 << 41;
+pub(crate) const RUN: usize = 1 << 40;
+pub(crate) const STEP: usize = 1 << 41;
 const ACTIVITY: usize = 1 << 42;
 
 /// One row of the list: a visible item, a turn disclosure, or the working figure.

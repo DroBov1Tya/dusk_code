@@ -10,7 +10,7 @@ use gpui_kit::{
     *,
 };
 
-use super::{ROW, back_row, catalog_status, model_row};
+use super::{FIRST, ROW, back_row, catalog_status, model_row};
 use crate::pages::chat::model_bar::{picker_hint, picker_panel};
 use crate::{
     ui::{Type, icons::REFRESH, widgets},
@@ -94,9 +94,11 @@ pub fn all_models(
                 scroll = scroll.child(widgets::muted("No listed models", cx));
             }
             Ok(models) => {
-                for model in models {
+                let keyed = current.split('/').next() == Some(provider.name.as_str());
+                for (index, model) in models.iter().enumerate() {
                     let name = format!("{}/{}", provider.name, model.id);
-                    scroll = scroll.child(model_row(&name, &model.id, current, None, cx).pl_6());
+                    let key = (keyed && index < FIRST).then_some(index + 1);
+                    scroll = scroll.child(model_row(&name, &model.id, current, key, cx).pl_6());
                 }
             }
             Err(error) => scroll = scroll.child(widgets::muted(error.clone(), cx)),

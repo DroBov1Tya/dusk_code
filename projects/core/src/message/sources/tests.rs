@@ -245,3 +245,26 @@ async fn a_picture_goes_to_a_model_that_takes_it_and_is_named_otherwise() {
     assert!(named.pictures.is_empty() && named.text.contains("cannot see"));
     assert!(matches!(named.message(), ChatMessage::User(_)));
 }
+
+#[tokio::test]
+async fn a_client_reads_only_a_picture_source_of_its_chat_by_name() {
+    let state = temp_state("sources-read-picture").await;
+    state.create_thread("thread", "test").await.unwrap();
+    let workspace = temp_dir("sources-read-picture-workspace");
+    let sources = ThreadSources {
+        state: &state,
+        workspace: &workspace,
+        thread_id: "thread",
+    };
+    let png = b"\x89PNG\r\n\x1a\n\0\0\0\rIHDR".to_vec();
+    sources.add_picture("shot.png", &png).await.unwrap();
+    let pasted = sources
+        .keep_pastes(&wrap("plain text"), &sounds(&workspace))
+        .await
+        .unwrap();
+    assert!(pasted.contains("pasted-2.txt"));
+    assert_eq!(sources.picture("shot.png").await.unwrap(), png);
+    assert!(sources.picture("pasted-2.txt").await.is_err());
+    assert!(sources.picture("../state.db").await.is_err());
+    assert!(sources.picture("nothing.png").await.is_err());
+}

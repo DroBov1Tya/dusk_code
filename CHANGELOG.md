@@ -11,6 +11,9 @@ testing.
 - Plugins may run Xcode's tools (`exec: [xcrun]`) and connect to the Unix sockets of the
   folders they name (`sockets:`), both shown before a plugin is switched on.
 - Pictures an MCP tool returns reach the model, checked like any image.
+- A picture sent into a chat now shows as a thumbnail in your message; a click opens it
+  large over the window, closed by Escape or a click outside. The bytes come from the
+  core, by the source's name, never read from a path by the client.
 
 ### Fixed
 
@@ -18,6 +21,8 @@ testing.
   a turn that read it ended by failing (such as a ChatGPT stream error), being
   interrupted, or calling tools. A source counts as delivered once any model call of the
   turn took it.
+- A tool step's Arguments and Answer can now be selected and copied in part, not only in
+  whole through the copy button.
 - A used-up ChatGPT plan now says so, instead of "the provider is unavailable" after
   five retries; a chat too long for the model says to compact it.
 - The log no longer warns on every ChatGPT answer that it came without a content type.
@@ -29,6 +34,9 @@ testing.
 
 ### Changed
 
+- The model menu now shows only the model in use; every other model is chosen under More
+  models, where the provider in use opens unfolded and its first six models keep their
+  number-key shortcuts.
 - The iOS Simulator panel and the agent's `ios_simulator` tool move from the app into the
   plugin ios-simulator, installed from the Workshop. A saved window layout that still
   names the simulator loads without it.
