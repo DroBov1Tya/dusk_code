@@ -3,7 +3,7 @@
 use crate::{
     api,
     state::{View, state},
-    ui::{Row, run},
+    ui::{Icon, IconName, Row, run},
 };
 use dusk_protocol::{
     client::{SettingsRequest, Switch as Flag},
@@ -27,19 +27,19 @@ pub enum Page {
     Usage,
 }
 
-const PAGES: [(Page, &str); 12] = [
-    (Page::Appearance, "Appearance"),
-    (Page::Model, "Model"),
-    (Page::Chat, "Chat"),
-    (Page::Safety, "Safety"),
-    (Page::Secrets, "Secrets"),
-    (Page::AboutMe, "About me"),
-    (Page::Notifications, "Notifications"),
-    (Page::VersionControl, "Version control"),
-    (Page::Memory, "Memory and context"),
-    (Page::Advanced, "Advanced"),
-    (Page::Updates, "Updates"),
-    (Page::Usage, "System usage"),
+const PAGES: [(Page, &str, IconName); 12] = [
+    (Page::Appearance, "Appearance", IconName::Palette),
+    (Page::Model, "Model", IconName::Cpu),
+    (Page::Chat, "Chat", IconName::Inbox),
+    (Page::Safety, "Safety", IconName::CircleCheck),
+    (Page::Secrets, "Secrets", IconName::Eye),
+    (Page::AboutMe, "About me", IconName::User),
+    (Page::Notifications, "Notifications", IconName::Bell),
+    (Page::VersionControl, "Version control", IconName::Github),
+    (Page::Memory, "Memory and context", IconName::MemoryStick),
+    (Page::Advanced, "Advanced", IconName::Settings2),
+    (Page::Updates, "Updates", IconName::RefreshCw),
+    (Page::Usage, "System usage", IconName::ChartPie),
 ];
 
 #[component]
@@ -50,10 +50,13 @@ pub fn SettingsPage(page: Page) -> impl IntoView {
     reload();
     view! {
         <div class="settings">
-            <nav class="settings-nav">
-                {PAGES.map(|(p, label)| view! {
+            <nav class="settings-nav" aria-label="Settings">
+                {PAGES.map(|(p, label, icon)| view! {
                     <button class="nav-item" class:active=move || p == page
-                        on:click=move |_| app.view.set(View::Settings(p))>{label}</button>
+                        aria-current=move || (p == page).then_some("page")
+                        on:click=move |_| app.view.set(View::Settings(p))>
+                        <Icon name=icon />{label}
+                    </button>
                 })}
             </nav>
             <div class="page">

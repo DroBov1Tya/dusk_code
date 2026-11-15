@@ -17,6 +17,7 @@ use gpui_kit::{
 
 use crate::{
     modal::Modal,
+    platform::icon,
     ui::layout::Part,
     ui::{Type, widgets},
     workspace::{Center, Workspace},
@@ -194,9 +195,7 @@ fn nav(ws: &Workspace, width: Pixels, border: Hsla, cx: &mut Context<Workspace>)
         })
 }
 
-/// The mark and the name: a sun half under the horizon with the evening star over it,
-/// then "Dusk" from violet to a sunset orange, one hue per letter, and "code" quiet
-/// beside it.
+/// The app mark and "Dusk" in sunset colors, with "code" quiet beside it.
 fn wordmark(cx: &App) -> Div {
     const DUSK: [(f32, f32, f32); 4] = [
         (268., 0.72, 0.68),
@@ -209,7 +208,7 @@ fn wordmark(cx: &App) -> Div {
         .flex_row()
         .items_center()
         .gap_2()
-        .child(emblem());
+        .child(img(icon::mark()).size(px(22.)).flex_none());
     let mut name = div()
         .flex()
         .flex_row()
@@ -231,58 +230,6 @@ fn wordmark(cx: &App) -> Div {
         ),
     );
     word
-}
-
-/// The setting sun: the upper half of a disc in the wordmark's own colors over a thin
-/// horizon, and a star up to its right.
-fn emblem() -> Div {
-    const DISC: f32 = 14.;
-    let violet = hsla(268. / 360., 0.72, 0.68, 1.);
-    let orange = hsla(24. / 360., 0.92, 0.62, 1.);
-    let rose = hsla(338. / 360., 0.76, 0.66, 1.);
-    div()
-        .relative()
-        .flex_none()
-        .w(px(20.))
-        .h(px(16.))
-        // Only the half above the horizon shows.
-        .child(
-            div()
-                .absolute()
-                .left(px(3.))
-                .top(px(4.))
-                .w(px(DISC))
-                .h(px(DISC / 2.))
-                .overflow_hidden()
-                .child(div().size(px(DISC)).rounded_full().bg(linear_gradient(
-                    180.,
-                    linear_color_stop(orange, 0.),
-                    linear_color_stop(rose, 0.55),
-                ))),
-        )
-        .child(
-            div()
-                .absolute()
-                .left_0()
-                .top(px(12.))
-                .w(px(20.))
-                .h(px(1.5))
-                .rounded_full()
-                .bg(linear_gradient(
-                    90.,
-                    linear_color_stop(violet, 0.),
-                    linear_color_stop(orange, 1.),
-                )),
-        )
-        .child(
-            div()
-                .absolute()
-                .left(px(17.))
-                .top(px(1.))
-                .size(px(2.))
-                .rounded_full()
-                .bg(hsla(0.12, 0.6, 0.92, 1.)),
-        )
 }
 
 /// Where you are: the page, or the chat under a folder icon that names its project on

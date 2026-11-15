@@ -4,7 +4,7 @@ use super::editor::Editor;
 use crate::{
     api,
     state::state,
-    ui::{Switch, run},
+    ui::{Icon, IconName, Switch, run},
 };
 use dusk_protocol::{
     client::Switch as Flag,
@@ -57,7 +57,7 @@ pub fn Mcp() -> impl IntoView {
                             <button class="ghost" on:click=move |_| {
                                 let name = restart.clone();
                                 run(async move { api::restart_mcp(&name).await }, move |()| load());
-                            }>"Restart"</button>
+                            }><Icon name=IconName::RefreshCw />"Restart"</button>
                             {server.remote.then(|| view! { <button class="ghost" on:click=move |_| {
                                 let name = sign_in.clone();
                                 run(async move { api::sign_in_mcp(&name).await }, move |msg| state().fail(msg));

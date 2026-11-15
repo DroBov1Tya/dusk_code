@@ -14,9 +14,8 @@ pub mod subagent;
 
 use crate::{
     api,
-    columns::chat_title,
     state::{AppState, Chat as ChatSignal, state},
-    ui::run,
+    ui::{Icon, IconName, run},
 };
 use blocks::Transcript;
 use composer::Composer;
@@ -33,19 +32,8 @@ pub fn chat_of(app: AppState, id: Option<&str>) -> ChatSignal {
 pub fn Chat(id: Option<String>) -> impl IntoView {
     let app = state();
     let chat = chat_of(app, id.as_deref());
-    let title = {
-        let id = id.clone();
-        move || match &id {
-            None => "New chat".to_owned(),
-            Some(id) => chat
-                .with(|c| c.title.clone())
-                .or_else(|| {
-                    app.threads
-                        .with(|threads| threads.iter().find(|t| t.id == *id).map(chat_title))
-                })
-                .unwrap_or_else(|| "Chat".to_owned()),
-        }
-    };
+    let open = id.is_some();
+    let menu_id = id.clone();
     let project_name = move || {
         app.project
             .get()
@@ -54,13 +42,12 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
     };
     view! {
         <div class="chat">
-            <header class="chat-head">
-                <div class="chat-title-line">
-                    <h2>{title.clone()}</h2>
-                    <span class="muted">{move || project_name().unwrap_or_default()}</span>
-                </div>
-                {id.clone().map(|id| view! { <ChatMenu id /> })}
-            </header>
+            <Show when=move || open || project_name().is_some()>
+                <header class="chat-head">
+                    <span class="chat-project muted">{move || project_name().unwrap_or_default()}</span>
+                    {menu_id.clone().map(|id| view! { <ChatMenu id /> })}
+                </header>
+            </Show>
             <Transcript chat />
             <approval::Approvals chat />
             <approval::AskUser chat id=id.clone() />
@@ -94,8 +81,12 @@ fn ChatMenu(id: String) -> impl IntoView {
     };
     view! {
         <div class="chat-menu">
-            <button class="icon" title="Rename this chat" on:click=rename>"Rename"</button>
-            <button class="icon" title="Stop using it here; it stays in the list" on:click=close>"Close"</button>
+            <button class="ghost" title="Rename this chat" on:click=rename>
+                <Icon name=IconName::FileText />"Rename"
+            </button>
+            <button class="ghost" title="Stop using it here; it stays in the list" on:click=close>
+                <Icon name=IconName::Close />"Close"
+            </button>
         </div>
     }
 }

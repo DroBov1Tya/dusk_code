@@ -4,6 +4,7 @@ use super::{data::ChatData, voice};
 use crate::{
     api,
     state::{Chat, state},
+    ui::{Icon, IconName},
 };
 use dusk_protocol::client::COMMANDS;
 use leptos::{html, prelude::*, task::spawn_local};
@@ -161,15 +162,17 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                                     super::pictures::pick(&input, pictures);
                                 }
                             } />
-                        <button class="icon round" title="Attach pictures" on:click=move |_| {
+                        <button class="icon round" title="Attach pictures" aria-label="Attach pictures" on:click=move |_| {
                             if let Some(input) = picker.get() {
                                 input.click();
                             }
-                        }>"+"</button>
+                        }><Icon name=IconName::Plus /></button>
                         <super::controls::Access id=access_id chat />
                         <span class="grow"></span>
                         <Show when=working>
-                            <button class="ghost" on:click=move |_| stop.run(()) title="Stop the turn">"Stop"</button>
+                            <button class="ghost" on:click=move |_| stop.run(()) title="Stop the turn">
+                                <Icon name=IconName::Square />"Stop"
+                            </button>
                             <button class="ghost" on:click=move |_| send.run(true)
                                 title="Interrupt and send this now">"Send now"</button>
                         </Show>
@@ -180,16 +183,11 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                                 Dictation::Listening => "Stop dictating",
                                 Dictation::Transcribing => "Writing it down",
                             }>
-                            <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">
-                                <rect x="9" y="3" width="6" height="11" rx="3" />
-                                <path d="M5 11a7 7 0 0 0 14 0M12 18v3" />
-                            </svg>
+                            <Icon name=IconName::Mic />
                         </button>
                         <button class="primary round" on:click=move |_| send.run(false)
                             title=move || if working() { "Queue it" } else { "Send" }>
-                            <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true">
-                                <path d="M12 19V5M6 11l6-6 6 6" />
-                            </svg>
+                            <Icon name=IconName::ArrowUp />
                         </button>
                     </div>
                 </div>

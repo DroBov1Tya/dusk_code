@@ -2,10 +2,12 @@
 //! background, and the page's theme.
 
 mod format;
+mod icons;
 mod task;
 pub mod theme;
 mod widgets;
 
 pub use format::{compact, size, when};
+pub use icons::{Icon, IconDefinitions, IconName};
 pub use task::{run, sleep};
 pub use widgets::{Row, Section, Switch, confirm};

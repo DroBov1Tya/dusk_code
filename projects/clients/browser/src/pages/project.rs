@@ -4,7 +4,7 @@ use super::review::DiffView;
 use crate::{
     api,
     state::{View, state},
-    ui::{Section, confirm, run},
+    ui::{Icon, IconName, Section, confirm, run},
 };
 use dusk_protocol::project::{FileDiff, FileEntry, GitInfo, Project};
 use leptos::prelude::*;
@@ -13,6 +13,7 @@ use leptos::prelude::*;
 #[component]
 pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoView {
     let app = state();
+    let dialog = NodeRef::<leptos::html::Dialog>::new();
     let (name, description, dir) = (
         RwSignal::new(String::new()),
         RwSignal::new(String::new()),
@@ -33,6 +34,22 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
             );
         }
     });
+    Effect::new(move |_| {
+        if let Some(element) = dialog.get()
+            && element.is_connected()
+            && !element.open()
+            && element.show_modal().is_err()
+        {
+            editing.set(None);
+            app.fail("Could not open the project editor.");
+        }
+    });
+    let dismiss = move || {
+        if let Some(element) = dialog.get_untracked() {
+            element.close();
+        }
+        editing.set(None);
+    };
     let save = move |_| {
         let id = editing.get_untracked().flatten().map(|p| p.id);
         let (n, d, p) = (
@@ -41,7 +58,7 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
             dir.get_untracked(),
         );
         run(api::save_project(id, n, d, p), move |_| {
-            editing.set(None);
+            dismiss();
             app.refresh();
         });
     };
@@ -53,7 +70,7 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
             run(
                 async move { api::remove_project(&project.id).await },
                 move |()| {
-                    editing.set(None);
+                    dismiss();
                     app.refresh();
                 },
             );
@@ -61,10 +78,18 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
     };
     view! {
         <Show when=move || editing.get().is_some()>
-            <div class="overlay" on:click=move |_| editing.set(None)>
+            <dialog class="project-dialog" node_ref=dialog aria-labelledby="project-dialog-title"
+                on:click=move |_| dismiss()
+                on:keydown=move |event| {
+                    event.stop_propagation();
+                    if event.key() == "Escape" {
+                        event.prevent_default();
+                        dismiss();
+                    }
+                }>
                 <div class="dialog" on:click=|ev| ev.stop_propagation()>
-                    <h3>{move || if editing.get().flatten().is_some() { "Edit project" } else { "Add a project" }}</h3>
-                    <label>"Name"<input prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) /></label>
+                    <h3 id="project-dialog-title">{move || if editing.get().flatten().is_some() { "Edit project" } else { "Add a project" }}</h3>
+                    <label>"Name"<input autofocus prop:value=move || name.get() on:input=move |ev| name.set(event_target_value(&ev)) /></label>
                     <label>"Folder on the machine running duskcode"
                         <input placeholder="/Users/me/code/app" prop:value=move || dir.get()
                             on:input=move |ev| dir.set(event_target_value(&ev)) /></label>
@@ -73,14 +98,14 @@ pub fn ProjectDialog(editing: RwSignal<Option<Option<Project>>>) -> impl IntoVie
                             on:input=move |ev| description.set(event_target_value(&ev))></textarea></label>
                     <div class="row-actions">
                         <button class="primary" on:click=save>"Save"</button>
-                        <button class="ghost" on:click=move |_| editing.set(None)>"Cancel"</button>
+                        <button class="ghost" on:click=move |_| dismiss()>"Cancel"</button>
                         <span class="grow"></span>
                         <Show when=move || editing.get().flatten().is_some()>
                             <button class="ghost danger" on:click=remove>"Remove"</button>
                         </Show>
                     </div>
                 </div>
-            </div>
+            </dialog>
         </Show>
     }
 }
@@ -238,10 +263,10 @@ fn EnvSection(id: String) -> impl IntoView {
                 {move || names.get().into_iter().map(|n| {
                     let (id, remove) = (id.clone(), n.clone());
                     view! { <li><code>{n}</code>
-                        <button class="icon" on:click=move |_| {
+                        <button class="icon" aria-label=format!("Remove environment variable {remove}") on:click=move |_| {
                             let (id, remove) = (id.clone(), remove.clone());
                             run(async move { api::remove_env(&id, remove).await }, move |list| names.set(list));
-                        }>"×"</button></li> }
+                        }><Icon name=IconName::Close /></button></li> }
                 }).collect_view()}
             </ul>
             <div class="row-actions">

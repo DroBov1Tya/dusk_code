@@ -1,7 +1,11 @@
 //! A subagent's own chat in a window over the page, with its steps folded as in a chat.
 
 use super::blocks::Transcript;
-use crate::{api, state::state, ui::run};
+use crate::{
+    api,
+    state::state,
+    ui::{Icon, IconName, run},
+};
 use dusk_protocol::thread::AgentState;
 use leptos::prelude::*;
 
@@ -42,8 +46,10 @@ pub fn SubagentWindow() -> impl IntoView {
                         <button class="ghost danger" on:click=move |_| {
                             let id = stop_id.clone();
                             run(async move { api::stop_agent(&id).await }, |()| ());
-                        }>"Stop"</button>
-                        <button class="icon" on:click=move |_| app.subagent.set(None)>"×"</button>
+                        }><Icon name=IconName::Square />"Stop"</button>
+                        <button id="subagent-close" class="icon" aria-label="Close subagent chat" on:click=move |_| app.subagent.set(None)>
+                            <Icon name=IconName::Close />
+                        </button>
                     </header>
                     <Transcript chat=view_chat />
                 </div>
