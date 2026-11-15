@@ -201,7 +201,10 @@ impl ChatGpt {
                 .and_then(|value| value.to_str().ok())
                 .unwrap_or("none")
                 .to_owned();
-            tracing::warn!(content_type = %kind, "ChatGPT answered without an event stream");
+            // ChatGPT names no type for its stream, so only another type is worth a note.
+            if kind != "none" {
+                tracing::warn!(content_type = %kind, "ChatGPT answered without an event stream");
+            }
             if kind.starts_with("application/json") {
                 bail!(refusal(response, "completion").await);
             }
@@ -264,6 +267,16 @@ fn said(code: &str) -> Option<String> {
     Some(match code {
         "subscription_sharing_usage_limit_exceeded" => {
             format!("the ChatGPT plan's limit for apps is used up; see {USAGE_PAGE}")
+        }
+        "usage_limit_reached" | "rate_limit_exceeded" | "insufficient_quota" => format!(
+            "the ChatGPT plan's usage limit is reached; the limits ring shows when it frees up, \
+             or see {USAGE_PAGE}"
+        ),
+        "usage_not_included" => {
+            format!("this ChatGPT plan does not include use in apps; see {USAGE_PAGE}")
+        }
+        "context_length_exceeded" => {
+            "the chat is longer than the model takes; /compact makes it shorter".to_owned()
         }
         "subscription_sharing_user_not_eligible" => {
             "this ChatGPT account may not use its plan in apps".to_owned()
@@ -435,6 +448,7 @@ struct Event {
     item: Option<Item>,
     response: Option<Finished>,
     code: Option<String>,
+    error: Option<Reason>,
     /// Read apart, so a shape the server changes costs the ring, not the answer.
     rate_limits: Option<Value>,
 }
@@ -593,8 +607,16 @@ impl Parser {
                     .response
                     .and_then(|response| response.error)
                     .and_then(|error| error.code)
+                    .or(event.error.and_then(|error| error.code))
                     .or(event.code)
                     .unwrap_or_default();
+                // The code alone: the message can echo the input.
+                let shown: String = code
+                    .chars()
+                    .filter(char::is_ascii_graphic)
+                    .take(64)
+                    .collect();
+                tracing::warn!(code = %shown, "ChatGPT ended the stream with an error");
                 return Err(match said(&code) {
                     Some(message) => anyhow!(message),
                     None => crate::providers::stream_error(&code),
@@ -647,6 +669,18 @@ mod tests {
             })
             .collect::<String>()
             .into_bytes()
+    }
+
+    #[test]
+    fn a_used_up_plan_says_so_and_is_not_retried() {
+        for event in [
+            json!({"type":"response.failed","response":{"error":{"code":"usage_limit_reached"}}}),
+            json!({"type":"error","error":{"code":"usage_limit_reached","message":"echo"}}),
+        ] {
+            let error = Parser::default().feed(&stream(&[event])).unwrap_err();
+            assert!(error.to_string().contains("usage limit"), "{error}");
+            assert!(!crate::providers::is_transient(&error));
+        }
     }
 
     #[test]
