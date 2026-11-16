@@ -38,7 +38,7 @@ use gpui_kit::{
 
 use crate::{ui::phone::Drawn, workspace::Workspace};
 
-pub use dock::{bottom as bottom_dock, right as right_dock};
+pub use dock::{bottom as bottom_dock, right as right_dock, right_width};
 pub use menu::render as menu;
 pub use settings::{any as any_settings, render as settings_page};
 pub use view::{Room, render as view};

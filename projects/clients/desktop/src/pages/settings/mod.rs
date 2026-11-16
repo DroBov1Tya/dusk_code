@@ -134,9 +134,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     ws.token_box.settle(window, cx);
     let theme = cx.theme();
     let (border, muted) = (theme.border, theme.muted_foreground);
-    let narrow = window.viewport_size().width < px(1200.);
+    let menu_width = if window.viewport_size().width < px(1200.) {
+        176.
+    } else {
+        232.
+    };
     let mut menu = div()
-        .w(px(if narrow { 176. } else { 232. }))
+        .w(px(menu_width))
         .h_full()
         .flex()
         .flex_col()
@@ -190,7 +194,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .size_full()
             .flex()
             .child(menu)
-            .child(ai::render(ws, window, cx));
+            .child(ai::render(ws, menu_width, window, cx));
     }
     let title = pages()
         .find(|(page, ..)| *page == ws.settings_page)

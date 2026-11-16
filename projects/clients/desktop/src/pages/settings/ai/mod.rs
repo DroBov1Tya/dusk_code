@@ -4,9 +4,12 @@ pub mod voice;
 
 use gpui_kit::{
     component::{
-        ActiveTheme, Icon,
+        ActiveTheme, Icon, Sizable,
+        button::Button,
+        menu::{DropdownMenu, PopupMenuItem},
         tab::{Tab as Item, TabBar},
     },
+    prelude::FluentBuilder,
     *,
 };
 
@@ -30,25 +33,77 @@ const TABS: [(Tab, &str, &str); 4] = [
     (Tab::Video, "Video", icons::VIDEO),
 ];
 
-pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(
+    ws: &mut Workspace,
+    menu_width: f32,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let padding = if window.viewport_size().width < px(1200.) {
+        16.
+    } else {
+        32.
+    };
+    let content_width =
+        ws.chat_width(window) - crate::plugins::right_width(ws) - menu_width - 2. * padding;
+    let compact = content_width < 400.;
     let index = TABS
         .iter()
         .position(|(tab, ..)| *tab == ws.ai_tab)
         .unwrap_or_default();
-    let tabs = TabBar::new("ai-tabs")
-        .outline()
-        .w_full()
-        .selected_index(index)
-        .children(
-            TABS.map(|(_, label, icon)| Item::new().label(label).prefix(glyph(icon).size(px(16.)))),
-        )
-        .on_click(cx.listener(|ws, index: &usize, _, cx| {
-            if let Some((tab, ..)) = TABS.get(*index)
-                && ws.ai_tab != *tab
-            {
-                ws.select_ai_tab(*tab, cx);
-            }
-        }));
+    let tabs = if content_width < 240. {
+        let selected = ws.ai_tab;
+        let workspace = cx.weak_entity();
+        Button::new("ai-category")
+            .outline()
+            .small()
+            .label(TABS[index].1)
+            .dropdown_caret(true)
+            .tooltip("Choose an AI category")
+            .dropdown_menu(move |mut menu, _, _| {
+                for (tab, label, _) in TABS {
+                    let workspace = workspace.clone();
+                    menu = menu.item(PopupMenuItem::new(label).checked(tab == selected).on_click(
+                        move |_, _, cx| {
+                            let _ = workspace.update(cx, |ws, cx| {
+                                if ws.ai_tab != tab {
+                                    ws.select_ai_tab(tab, cx);
+                                }
+                            });
+                        },
+                    ));
+                }
+                menu
+            })
+            .into_any_element()
+    } else {
+        TabBar::new("ai-tabs")
+            .outline()
+            .when(compact, |tabs| tabs.small())
+            .menu(content_width < 270.)
+            .w_full()
+            .selected_index(index)
+            .children(TABS.map(|(_, label, icon)| {
+                // GPUI pads the label but draws the prefix separately.
+                Item::new().label(label).when(!compact, |tab| {
+                    tab.prefix(
+                        div()
+                            .flex()
+                            .items_center()
+                            .pl_2()
+                            .child(glyph(icon).size(px(crate::ui::size::ICON))),
+                    )
+                })
+            }))
+            .on_click(cx.listener(|ws, index: &usize, _, cx| {
+                if let Some((tab, ..)) = TABS.get(*index)
+                    && ws.ai_tab != *tab
+                {
+                    ws.select_ai_tab(*tab, cx);
+                }
+            }))
+            .into_any_element()
+    };
     let body = match ws.ai_tab {
         Tab::Llm => super::behavior::llm(ws, cx),
         Tab::Voice => {
@@ -68,12 +123,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             cx,
         ),
     };
-    let padding = if window.viewport_size().width < px(1200.) {
-        px(16.)
-    } else {
-        px(32.)
-    };
-    let column = || div().w_full().max_w(px(880.)).mx_auto().px(padding);
+    let column = || div().w_full().max_w(px(880.)).mx_auto().px(px(padding));
     div()
         .flex_1()
         .min_w_0()
@@ -83,6 +133,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .child(
             column()
                 .pt_6()
+                .pb_3()
                 .flex_none()
                 .child(div().title().pb_4().child("AI"))
                 .child(tabs),

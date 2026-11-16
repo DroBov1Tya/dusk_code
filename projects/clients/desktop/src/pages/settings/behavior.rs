@@ -298,7 +298,7 @@ fn model_line(label: &str, hint: &str, control: Div, cx: &App) -> Div {
         .px_4()
         .py_3()
         .child(names)
-        .child(control.w(px(260.)).max_w_full().min_w_0())
+        .child(control.flex_1().flex_basis(px(260.)).min_w_0())
 }
 
 /// How much of the model's window a request may fill: the model's own, or a fixed size.

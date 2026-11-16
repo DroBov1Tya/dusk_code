@@ -19,6 +19,8 @@ use gpui_kit::{
     *,
 };
 
+const PROVIDER_TRACK: f32 = 220.;
+
 const RECOGNITION: [(&str, &str); 3] = [
     (
         "Qwen3-ASR",
@@ -47,14 +49,18 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let form = &ws.voice_form;
     let current = ws.voice.as_ref();
     let panel = |title, endpoint, cx: &App| {
-        card(cx).flex_1().flex_basis(px(220.)).min_w_0().child(
-            div()
-                .flex()
-                .flex_col()
-                .gap_0p5()
-                .child(div().body().font_weight(FontWeight::SEMIBOLD).child(title))
-                .child(status(endpoint, cx)),
-        )
+        card(cx)
+            .flex_1()
+            .flex_basis(px(PROVIDER_TRACK))
+            .min_w_0()
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_0p5()
+                    .child(div().body().font_weight(FontWeight::SEMIBOLD).child(title))
+                    .child(status(endpoint, cx)),
+            )
     };
     let recognition = panel(
         "Speech recognition",
@@ -145,7 +151,7 @@ fn sources(cx: &mut Context<Workspace>) -> Div {
     div()
         .flex()
         .flex_wrap()
-        .gap_2()
+        .gap_3()
         .child(preset(
             "voice-preset-openai",
             "OpenAI",
@@ -198,8 +204,6 @@ fn tile(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .px_3()
         .py_2()
         .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
         .cursor_pointer()
         .focusable_row(cx)
         .border_color(theme.border)
@@ -217,6 +221,8 @@ fn preset(
 ) -> Stateful<Div> {
     let muted = cx.theme().muted_foreground;
     tile(id, cx)
+        .flex_basis(px(PROVIDER_TRACK))
+        .px_4()
         .child(div().body().font_weight(FontWeight::MEDIUM).child(label))
         .child(div().meta().text_color(muted).child(about))
         .on_click(cx.listener(move |ws, _, _, cx| {
