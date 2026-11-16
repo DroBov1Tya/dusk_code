@@ -42,7 +42,7 @@ impl Workspace {
         }
         let (key, text) = (key.to_owned(), text.to_owned());
         self.when_voice_ready(
-            crate::pages::connectors::voice::Speech::Synthesis,
+            crate::pages::settings::ai::voice::Speech::Synthesis,
             cx,
             Box::new(move |ws, cx| ws.read_aloud(key, text, cx)),
         );

@@ -19,33 +19,6 @@ use crate::{
 pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -> Div {
     let body = div().flex().flex_col().gap_6();
     match page {
-        SettingsPage::Model => {
-            let model = ws
-                .status
-                .model
-                .clone()
-                .unwrap_or_else(|| "none chosen".to_owned());
-            body.child(list(
-                [
-                    line("Model", &model, cx),
-                    context_line(ws, cx),
-                    line(
-                        "Use a model by name",
-                        "For servers that do not list their models: provider/model",
-                        cx,
-                    )
-                    .child(div().w(px(240.)).child(Input::new(&ws.model_input)))
-                    .child(
-                        Button::new("model-use")
-                            .outline()
-                            .label("Use")
-                            .on_click(cx.listener(|ws, _, _, cx| ws.use_typed_model(cx))),
-                    ),
-                ],
-                cx,
-            ))
-            .child(super::providers::render(ws, cx))
-        }
         SettingsPage::Chat => body.child(list(
             [
                 line("Mode", "What the chat may do and how it is told", cx).child(
@@ -234,7 +207,8 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
             };
             body.child(super::uninstall::section(cx))
         }
-        SettingsPage::Appearance
+        SettingsPage::Ai
+        | SettingsPage::Appearance
         | SettingsPage::AboutMe
         | SettingsPage::Keyboard
         | SettingsPage::Updates
@@ -242,6 +216,35 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
         | SettingsPage::Secrets
         | SettingsPage::Plugins => body,
     }
+}
+
+pub(super) fn llm(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let body = div().flex().flex_col().gap_6();
+    let model = ws
+        .status
+        .model
+        .clone()
+        .unwrap_or_else(|| "none chosen".to_owned());
+    body.child(list(
+        [
+            line("Model", &model, cx),
+            context_line(ws, cx),
+            line(
+                "Use a model by name",
+                "For servers that do not list their models: provider/model",
+                cx,
+            )
+            .child(div().w(px(240.)).child(Input::new(&ws.model_input)))
+            .child(
+                Button::new("model-use")
+                    .outline()
+                    .label("Use")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.use_typed_model(cx))),
+            ),
+        ],
+        cx,
+    ))
+    .child(super::providers::render(ws, cx))
 }
 
 /// How much of the model's window a request may fill: the model's own, or a fixed size.

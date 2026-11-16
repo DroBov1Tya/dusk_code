@@ -1,6 +1,7 @@
 //! The settings page: a menu of categories on the left, the chosen one on the right.
 
 pub mod about_me;
+pub mod ai;
 mod appearance;
 mod behavior;
 pub mod providers;
@@ -24,7 +25,7 @@ use crate::{
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum SettingsPage {
     Appearance,
-    Model,
+    Ai,
     Chat,
     Safety,
     AboutMe,
@@ -56,7 +57,7 @@ const GROUPS: &[(&str, &[Page])] = &[
     (
         "Agent",
         &[
-            (SettingsPage::Model, Glyph::Kit(IconName::Cpu), "Model"),
+            (SettingsPage::Ai, Glyph::Kit(IconName::Cpu), "AI"),
             (SettingsPage::Chat, Glyph::Kit(IconName::Inbox), "Chat"),
             (
                 SettingsPage::Safety,
@@ -187,6 +188,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .find(|(page, ..)| *page == ws.settings_page)
         .map_or("", |(.., label)| *label);
     let body = match ws.settings_page {
+        SettingsPage::Ai => ai::render(ws, window, cx),
         SettingsPage::Appearance => appearance::render(ws, window, cx),
         SettingsPage::AboutMe => about_me::render(ws, window, cx),
         SettingsPage::Keyboard => shortcuts::page(cx),
@@ -222,7 +224,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
 fn about(page: SettingsPage) -> &'static str {
     match page {
         SettingsPage::Appearance => "Theme and fonts, kept on this machine.",
-        SettingsPage::Model => "The model in use, how much context it gets, and its providers.",
+        SettingsPage::Ai => "Models and providers used by your agents.",
         SettingsPage::Chat => "How a new chat starts: its mode and what it may do.",
         SettingsPage::Safety => "What the agents may do without asking.",
         SettingsPage::AboutMe => "What the agents know about you, and snippets for @names.",

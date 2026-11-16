@@ -61,7 +61,7 @@ impl Workspace {
         }
         // The microphone is opened only when a server is there to take what it hears.
         self.when_voice_ready(
-            crate::pages::connectors::voice::Speech::Recognition,
+            crate::pages::settings::ai::voice::Speech::Recognition,
             cx,
             Box::new(|ws, cx| ws.start_dictation(cx)),
         );

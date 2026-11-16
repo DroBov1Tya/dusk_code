@@ -158,6 +158,7 @@ pub struct Workspace {
     pub folded: HashSet<Right>,
     pub modal: Option<Modal>,
     pub settings_page: SettingsPage,
+    pub ai_tab: crate::pages::settings::ai::Tab,
     pub font_search: Entity<InputState>,
     /// The machine's font families, read once.
     pub fonts: Vec<String>,
@@ -218,7 +219,7 @@ pub struct Workspace {
     pub web_busy: bool,
     /// The next start listens on every address, for other devices on the network.
     pub web_global: bool,
-    pub voice_form: crate::pages::connectors::voice::VoiceForm,
+    pub voice_form: crate::pages::settings::ai::voice::VoiceForm,
     /// The plugin store on the plugins shelf.
     pub workshop: crate::pages::connectors::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,

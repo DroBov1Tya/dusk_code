@@ -8,7 +8,6 @@ mod mcp;
 pub mod plugins;
 mod skills;
 mod tools;
-pub mod voice;
 
 use dusk_protocol::client::{Answer, Command, Switch as CoreSwitch};
 use gpui_kit::{
@@ -28,16 +27,10 @@ pub enum Shelf {
     Skills,
     Plugins,
     Tools,
-    Voice,
     Agents,
 }
 
-pub fn render(
-    ws: &mut Workspace,
-    window: &mut Window,
-    cx: &mut Context<Workspace>,
-) -> Stateful<Div> {
-    ws.voice_form.settle(window, cx);
+pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let Some(settings) = ws.settings.clone() else {
         return div()
             .id("connectors")
@@ -48,7 +41,6 @@ pub fn render(
         (Shelf::Skills, "Skills", settings.skills.len()),
         (Shelf::Plugins, "Plugins", ws.status.plugins.len()),
         (Shelf::Tools, "Tools", settings.tools.len()),
-        (Shelf::Voice, "Voice", 0),
         (Shelf::Agents, "Agents", 0),
     ];
     let theme = cx.theme();
@@ -90,12 +82,6 @@ pub fn render(
                 })
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.shelf = shelf;
-                    if shelf == Shelf::Voice {
-                        if ws.voice.is_none() {
-                            ws.load_voice(cx);
-                        }
-                        ws.load_voice_models(cx);
-                    }
                     cx.notify();
                 })),
         );
@@ -106,7 +92,6 @@ pub fn render(
         Shelf::Skills => skills::render(&settings, &query, cx),
         Shelf::Plugins => plugins::render(ws, &query, cx),
         Shelf::Tools => tools::render(&settings, &query, cx),
-        Shelf::Voice => voice::render(ws, cx),
         Shelf::Agents => graph::render(ws, &settings.agents, cx),
     };
     div()
@@ -121,7 +106,7 @@ pub fn render(
                 .flex_col()
                 .child(crate::ui::page_title(
                     "Connectors",
-                    "What the agents can reach: servers, skills, plugins, tools, speech and other agents.",
+                    "What the agents can reach: servers, skills, plugins, tools and other agents.",
                     cx,
                 ))
                 .child(
@@ -134,7 +119,7 @@ pub fn render(
                         .pb_4()
                         .child(tabs)
                         .child(div().flex_1())
-                        .when(!matches!(ws.shelf, Shelf::Agents | Shelf::Voice), |row| {
+                        .when(ws.shelf != Shelf::Agents, |row| {
                             row.child(div().w(px(280.)).child(Input::new(&ws.shelf_search)))
                         }),
                 )
