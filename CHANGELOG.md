@@ -18,6 +18,12 @@ testing.
 - Desktop Settings moves model and voice setup under Agent → AI and shows which media
   generation options are available.
 
+### Fixed
+
+- Chats make at most one automatic title request after their first turn. A title chosen
+  by the user is kept.
+- ChatGPT sign-in records cache writes when the provider reports them.
+
 ## 0.74.2 - 2026-11-15
 
 ### Added

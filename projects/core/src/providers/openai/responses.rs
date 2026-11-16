@@ -502,6 +502,7 @@ struct WireUsage {
 #[derive(Deserialize)]
 struct InputDetails {
     cached_tokens: Option<u64>,
+    cache_write_tokens: Option<u64>,
 }
 
 #[derive(Deserialize)]
@@ -636,11 +637,12 @@ impl Parser {
         self.done = true;
         events.push(ModelEvent::Finished(reason));
         if let Some(usage) = response.and_then(|response| response.usage) {
+            let input = usage.input_tokens_details.as_ref();
             events.push(ModelEvent::Usage(Usage {
                 prompt_tokens: usage.input_tokens,
-                cached_prompt_tokens: usage
-                    .input_tokens_details
-                    .and_then(|details| details.cached_tokens)
+                cached_prompt_tokens: input.and_then(|details| details.cached_tokens).unwrap_or(0),
+                cache_write_tokens: input
+                    .and_then(|details| details.cache_write_tokens)
                     .unwrap_or(0),
                 completion_tokens: usage.output_tokens,
                 reasoning_tokens: usage
@@ -759,6 +761,31 @@ mod tests {
             ]
         );
         assert!(parser.done);
+    }
+
+    #[test]
+    fn a_stream_preserves_reported_cache_writes() {
+        let body = stream(&[json!({
+            "type": "response.completed",
+            "response": {"usage": {
+                "input_tokens": 12000,
+                "input_tokens_details": {"cached_tokens": 4000, "cache_write_tokens": 7000},
+                "output_tokens": 2
+            }}
+        })]);
+        assert_eq!(
+            Parser::default().feed(&body).unwrap(),
+            [
+                ModelEvent::Finished(FinishReason::Stop),
+                ModelEvent::Usage(Usage {
+                    prompt_tokens: 12000,
+                    cached_prompt_tokens: 4000,
+                    cache_write_tokens: 7000,
+                    completion_tokens: 2,
+                    ..Usage::default()
+                }),
+            ],
+        );
     }
 
     #[test]

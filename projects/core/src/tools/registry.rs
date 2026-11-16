@@ -280,8 +280,7 @@ mod tests {
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
         tools::{
-            AgentState, AskUser, DisplayImage, GoalTool, NameSession, PlanEdit, ReadHistory,
-            Remember, Tasks,
+            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Tasks,
         },
     };
 
@@ -335,7 +334,6 @@ mod tests {
         let mut tools: Vec<Box<dyn Tool>> = super::super::builtin::all(&dir);
         tools.push(Box::new(Tasks::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(GoalTool::new(Arc::clone(&state), "t".into())));
-        tools.push(Box::new(NameSession::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(PlanEdit::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(ReadHistory::new(Arc::clone(&state), "t".into())));
         tools.push(Box::new(Remember::user(dir.clone())));

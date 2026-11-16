@@ -222,13 +222,55 @@ impl State {
 
     pub async fn set_title(&self, id: &str, title: &str) -> Result<()> {
         ensure!(!title.trim().is_empty(), "title is empty");
-        sqlx::query("UPDATE threads SET title = ? WHERE id = ?")
+        sqlx::query("UPDATE threads SET title = ?, auto_title = 0 WHERE id = ?")
             .bind(title)
             .bind(id)
             .execute(&self.pool)
             .await
             .context("set thread title")?;
         Ok(())
+    }
+
+    /// A first message gets a stand-in only if the thread does not have a title yet.
+    pub async fn set_first_title(&self, id: &str, title: &str, pending: bool) -> Result<bool> {
+        ensure!(!title.trim().is_empty(), "title is empty");
+        let rows = sqlx::query(
+            "UPDATE threads SET title = ?, auto_title = ? WHERE id = ? AND title IS NULL",
+        )
+        .bind(title)
+        .bind(pending)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .context("set the first thread title")?
+        .rows_affected();
+        Ok(rows != 0)
+    }
+
+    /// Claims the only automatic title request, even if that request later fails.
+    pub async fn claim_pending_title(&self, id: &str) -> Result<bool> {
+        let rows = sqlx::query("UPDATE threads SET auto_title = 2 WHERE id = ? AND auto_title = 1")
+            .bind(id)
+            .execute(&self.pool)
+            .await
+            .context("claim the thread title attempt")?
+            .rows_affected();
+        Ok(rows != 0)
+    }
+
+    /// A title chosen while the model was answering takes precedence over its answer.
+    pub async fn finish_title_attempt(&self, id: &str, title: &str) -> Result<bool> {
+        ensure!(!title.trim().is_empty(), "title is empty");
+        let rows = sqlx::query(
+            "UPDATE threads SET title = ?, auto_title = 0 WHERE id = ? AND auto_title = 2",
+        )
+        .bind(title)
+        .bind(id)
+        .execute(&self.pool)
+        .await
+        .context("finish the thread title")?
+        .rows_affected();
+        Ok(rows != 0)
     }
 }
 
@@ -339,6 +381,31 @@ fn decode_thread(row: SqliteRow) -> Result<Thread> {
 #[cfg(test)]
 mod tests {
     use crate::testing::temp_state;
+
+    #[tokio::test]
+    async fn a_manual_title_takes_precedence_over_an_in_flight_generated_title() {
+        let state = crate::testing::temp_state("manual_title_during_generation").await;
+        state.create_thread("thread", "test").await.unwrap();
+        assert!(
+            state
+                .set_first_title("thread", "first question", true)
+                .await
+                .unwrap()
+        );
+        assert!(state.claim_pending_title("thread").await.unwrap());
+        assert!(!state.claim_pending_title("thread").await.unwrap());
+
+        // The user can even choose the same text as the stand-in.
+        state.set_title("thread", "first question").await.unwrap();
+        assert!(
+            !state
+                .finish_title_attempt("thread", "generated title")
+                .await
+                .unwrap()
+        );
+        let thread = state.load_thread("thread").await.unwrap().unwrap();
+        assert_eq!(thread.title.as_deref(), Some("first question"));
+    }
 
     #[tokio::test]
     async fn a_deleted_chat_takes_its_agents_and_records() {

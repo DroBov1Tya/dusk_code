@@ -6,7 +6,6 @@ mod display_audio;
 mod display_image;
 mod goal;
 mod load_skill;
-mod name_session;
 mod plan_edit;
 mod read_history;
 mod remember;
@@ -17,7 +16,6 @@ pub use display_audio::{DisplayAudio, is_sound, save_sound};
 pub use display_image::{DisplayImage, picture_card};
 pub use goal::GoalTool;
 pub use load_skill::LoadSkill;
-pub use name_session::NameSession;
 pub use plan_edit::{
     PLAN_NAME, PlanEdit, clear as clear_plan, read as read_plan, save as save_plan,
 };
