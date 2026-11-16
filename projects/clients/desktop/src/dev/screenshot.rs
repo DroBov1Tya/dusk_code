@@ -18,7 +18,7 @@
 //! - `fake=plugins`: about 200 made-up plugin parts of 60 plugins in the status (see
 //!   `dev::plugins`); `plugins=menu`: open the menu of them; `plugins=search:TEXT`: type
 //!   in its search; `plugins=open:PLUGIN/PART`: open a part with a made-up view, such as
-//!   `ios-simulator/device` (side dock, a phone), `notes/scratch` (bottom dock),
+//!   `ios-simulator/phone` (side dock, a phone), `notes/scratch` (bottom dock),
 //!   `translator/translate` (window), `telegram/account` (Settings), `plugin-07/part-1`;
 //!   `plugins=fold:right|bottom`: fold a dock away or back; `plugins=real:PLUGIN/PART`:
 //!   open a part of a real plugin through the core; `plugins=height:PX`: set the bottom

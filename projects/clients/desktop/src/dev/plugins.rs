@@ -2,7 +2,9 @@
 //! view can be photographed without a real plugin: a few parts that show every widget,
 //! and many more that prove the menu stays usable.
 
-use dusk_protocol::plugin::{ListItem, Opens, Part, Place, Size, Tone, Widget};
+use dusk_protocol::plugin::{
+    ButtonIcon, ListItem, Opens, Part, Place, RowLayout, Size, Tone, Widget,
+};
 use gpui_kit::*;
 
 use crate::{plugins::Key, workspace::Workspace};
@@ -27,8 +29,16 @@ pub fn parts() -> Vec<Part> {
     let mut parts = vec![
         part(
             "ios-simulator",
-            "device",
+            "phone",
             "iOS Simulator",
+            Some(PHONE_SVG),
+            Place::Header,
+            Opens::RightPanel,
+        ),
+        part(
+            "vphone",
+            "phone",
+            "vphone",
             Some(PHONE_SVG),
             Place::Header,
             Opens::RightPanel,
@@ -83,11 +93,13 @@ pub fn parts() -> Vec<Part> {
 /// A view for a part: the simulator's phone, or one of every other widget.
 pub fn view(key: &Key) -> Widget {
     let text = |text: &str, tone, size| Widget::Text {
+        dependency: false,
         text: text.into(),
         tone,
         size,
     };
     let button = |id: &str, label: &str, primary| Widget::Button {
+        icon: None,
         id: id.into(),
         label: label.into(),
         primary,
@@ -98,20 +110,40 @@ pub fn view(key: &Key) -> Widget {
         title: title.into(),
         detail: detail.into(),
     };
+    let icon = |id: &str, label: &str, glyph, disabled| Widget::Button {
+        icon: Some(glyph),
+        id: id.into(),
+        label: label.into(),
+        primary: false,
+        disabled,
+    };
+    let install_notice = |text: &str| Widget::Text {
+        dependency: true,
+        text: text.into(),
+        tone: Tone::Muted,
+        size: Size::Small,
+    };
     if key.plugin == "ios-simulator" {
         return Widget::Column {
             children: vec![
                 Widget::Row {
-                    children: vec![Widget::List {
-                        id: "device".into(),
-                        items: vec![
-                            item("17pro", "iPhone 17 Pro", "iOS 26.1"),
-                            item("air", "iPhone Air", "iOS 26.1"),
-                        ],
-                        selected: Some("17pro".into()),
-                        menu: true,
-                    }],
+                    layout: RowLayout::Toolbar,
+                    children: vec![
+                        Widget::List {
+                            id: "device".into(),
+                            items: vec![
+                                item("17pro", "iPhone 17 Pro", "iOS 26.1"),
+                                item("air", "iPhone Air", "iOS 26.1"),
+                            ],
+                            selected: Some("17pro".into()),
+                            menu: true,
+                        },
+                        icon("refresh", "Refresh", ButtonIcon::Refresh, false),
+                    ],
                 },
+                install_notice(
+                    "AXe lets you tap, swipe, and use the simulator’s hardware buttons. It installs with Homebrew.",
+                ),
                 Widget::Screen {
                     id: "screen".into(),
                     width: 402,
@@ -119,8 +151,29 @@ pub fn view(key: &Key) -> Widget {
                     phone: true,
                 },
                 Widget::Row {
-                    children: vec![button("home", "Home", false), button("lock", "Lock", false)],
+                    layout: RowLayout::Center,
+                    children: vec![
+                        icon("home", "Home", ButtonIcon::Home, true),
+                        icon("lock", "Lock", ButtonIcon::Lock, true),
+                        icon("stop", "Shut down", ButtonIcon::Power, false),
+                    ],
                 },
+            ],
+        };
+    }
+    if key.plugin == "vphone" {
+        return Widget::Column {
+            children: vec![
+                Widget::Row {
+                    layout: RowLayout::Toolbar,
+                    children: vec![
+                        text("vphone", Tone::Normal, Size::Title),
+                        icon("refresh", "Refresh", ButtonIcon::Refresh, false),
+                    ],
+                },
+                install_notice(
+                    "vphone Launchpad manages the virtual iPhone and its system bundle. Install Launchpad, then follow Host Setup in the app.",
+                ),
             ],
         };
     }
@@ -138,6 +191,7 @@ pub fn view(key: &Key) -> Widget {
                 value: String::new(),
             },
             Widget::Row {
+                layout: Default::default(),
                 children: vec![
                     button("keep", "Keep", true),
                     button("clear", "Clear", false),

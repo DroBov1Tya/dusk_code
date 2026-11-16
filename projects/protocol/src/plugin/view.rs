@@ -38,6 +38,26 @@ pub struct ListItem {
     pub detail: String,
 }
 
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RowLayout {
+    #[default]
+    Start,
+    Center,
+    Toolbar,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ButtonIcon {
+    Home,
+    Lock,
+    Power,
+    Refresh,
+    #[serde(other)]
+    Unknown,
+}
+
 /// A widget. Ids name the widget in the events it sends back.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -47,9 +67,13 @@ pub enum Widget {
     },
     Row {
         children: Vec<Widget>,
+        #[serde(default)]
+        layout: RowLayout,
     },
     Text {
         text: String,
+        #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+        dependency: bool,
         #[serde(default)]
         tone: Tone,
         #[serde(default)]
@@ -58,6 +82,8 @@ pub enum Widget {
     Button {
         id: String,
         label: String,
+        #[serde(default)]
+        icon: Option<ButtonIcon>,
         #[serde(default)]
         primary: bool,
         #[serde(default)]
@@ -126,7 +152,7 @@ fn walk(widget: &Widget, depth: usize, nodes: &mut usize) -> Result<(), String> 
     }
     let long = |text: &str| text.chars().count() > MAX_TEXT;
     match widget {
-        Widget::Column { children } | Widget::Row { children } => {
+        Widget::Column { children } | Widget::Row { children, .. } => {
             for child in children {
                 walk(child, depth + 1, nodes)?;
             }
@@ -156,6 +182,7 @@ mod tests {
     fn a_view_too_large_or_deep_is_refused() {
         let text = |text: &str| Widget::Text {
             text: text.into(),
+            dependency: false,
             tone: Tone::Normal,
             size: Size::Body,
         };

@@ -21,5 +21,7 @@ pub use compat::{Client, Os, allows, runs_here};
 pub use permission::{KeyUse, Permissions};
 pub use place::{Opens, Part, Place};
 pub use store::{Listing, StoreRequest};
-pub use view::{ListItem, MAX_NODES, MAX_TEXT, Size, Tone, UiEvent, Widget, check_view};
+pub use view::{
+    ButtonIcon, ListItem, MAX_NODES, MAX_TEXT, RowLayout, Size, Tone, UiEvent, Widget, check_view,
+};
 pub use wire::{FromPlugin, MAX_FRAME, MAX_LINE, ToPlugin};
