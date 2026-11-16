@@ -82,7 +82,7 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
             .into_any_element(),
         Part::Chats => item(
             "rail-chats",
-            IconName::Inbox,
+            Icon::default().path(crate::ui::icons::HOME),
             "Chats".into(),
             matches!(ws.center, Center::Chat | Center::Review | Center::File),
             cx,
