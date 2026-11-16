@@ -55,10 +55,23 @@ impl Side {
     }
 }
 
+/// The width occupied by the right dock in the workspace.
+pub fn right_width(ws: &Workspace) -> f32 {
+    let dock = &ws.plugins.right;
+    if dock.tabs.get(dock.active).is_none() {
+        0.
+    } else if dock.collapsed {
+        FOLDED
+    } else {
+        WIDTH
+    }
+}
+
 /// The dock at the right edge, while a part is open in it.
 pub fn right(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Option<Div> {
     let dock = &ws.plugins.right;
     let key = dock.tabs.get(dock.active)?.clone();
+    let width = right_width(ws);
     let theme = cx.theme();
     let (panel, border) = (theme.sidebar, theme.sidebar_border);
     let frame = div()
@@ -72,7 +85,7 @@ pub fn right(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Op
     if dock.collapsed {
         return Some(
             frame
-                .w(px(FOLDED))
+                .w(px(width))
                 .items_center()
                 .gap_1()
                 .py_2()
@@ -97,7 +110,7 @@ pub fn right(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Op
     let topbar = if ws.quiet { size::CONTROL } else { size::BAR };
     let height = window.viewport_size().height.as_f32() - topbar - size::BAR - 2. * PADDING;
     let room = Room {
-        width: WIDTH - 2. * PADDING,
+        width: width - 2. * PADDING,
         height: if dusk_core::app::PhoneDependency::for_panel(&key.plugin, &key.part).is_some() {
             // Keep the toolbar and actions visible, but still allow scrolling in short windows.
             let has_setup = ws
@@ -112,7 +125,7 @@ pub fn right(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Op
         },
     };
     Some(
-        frame.w(px(WIDTH)).child(head).child(
+        frame.w(px(width)).child(head).child(
             div()
                 .id("plugin-dock-right")
                 .flex_1()

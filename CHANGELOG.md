@@ -23,6 +23,7 @@ testing.
 
 ### Fixed
 
+- Desktop AI settings align the Voice cards and fit the category controls in narrow panes.
 - Desktop keeps assistant text in order with collapsed activity and leaves retry
   messages visible during a turn.
 - Chats make at most one automatic title request after their first turn. A title chosen
