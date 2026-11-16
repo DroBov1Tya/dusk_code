@@ -207,10 +207,7 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
                         .bg(cx.theme().primary),
                 )
             })
-            .on_click(cx.listener(|ws, _, _, cx| {
-                ws.center = Center::Settings;
-                ws.load_settings(cx);
-            }))
+            .on_click(cx.listener(|ws, _, _, cx| ws.open_settings(cx)))
             .into_any_element()
         }
         _ => return None,

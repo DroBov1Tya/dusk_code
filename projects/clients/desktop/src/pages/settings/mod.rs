@@ -134,8 +134,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     ws.token_box.settle(window, cx);
     let theme = cx.theme();
     let (border, muted) = (theme.border, theme.muted_foreground);
+    let narrow = window.viewport_size().width < px(1200.);
     let mut menu = div()
-        .w(px(232.))
+        .w(px(if narrow { 176. } else { 232. }))
         .h_full()
         .flex()
         .flex_col()
@@ -184,11 +185,17 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 }))
         }));
     }
+    if ws.settings_page == SettingsPage::Ai {
+        return div()
+            .size_full()
+            .flex()
+            .child(menu)
+            .child(ai::render(ws, window, cx));
+    }
     let title = pages()
         .find(|(page, ..)| *page == ws.settings_page)
         .map_or("", |(.., label)| *label);
     let body = match ws.settings_page {
-        SettingsPage::Ai => ai::render(ws, window, cx),
         SettingsPage::Appearance => appearance::render(ws, window, cx),
         SettingsPage::AboutMe => about_me::render(ws, window, cx),
         SettingsPage::Keyboard => shortcuts::page(cx),
@@ -220,11 +227,21 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     )
 }
 
+impl Workspace {
+    pub fn open_settings(&mut self, cx: &mut Context<Self>) {
+        self.center = crate::workspace::Center::Settings;
+        self.load_settings(cx);
+        if self.settings_page == SettingsPage::Ai {
+            self.load_ai_tab(cx);
+        }
+    }
+}
+
 /// What a page is for, in one line under its title.
 fn about(page: SettingsPage) -> &'static str {
     match page {
+        SettingsPage::Ai => "",
         SettingsPage::Appearance => "Theme and fonts, kept on this machine.",
-        SettingsPage::Ai => "Models and providers used by your agents.",
         SettingsPage::Chat => "How a new chat starts: its mode and what it may do.",
         SettingsPage::Safety => "What the agents may do without asking.",
         SettingsPage::AboutMe => "What the agents know about you, and snippets for @names.",

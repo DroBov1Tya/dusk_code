@@ -4,14 +4,14 @@ use crate::{
     pages::settings::providers::Check,
     ui::{
         Type,
-        widgets::{card, labeled},
+        widgets::{Focusable, card, labeled},
     },
     workspace::Workspace,
 };
 use dusk_protocol::config::{VoiceEndpoint, VoiceSettings};
 use gpui_kit::{
     component::{
-        ActiveTheme, Sizable,
+        ActiveTheme,
         button::{Button, ButtonVariants},
         input::Input,
         tooltip::Tooltip,
@@ -44,107 +44,87 @@ const SYNTHESIS: [(&str, &str); 3] = [
 ];
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let muted = cx.theme().muted_foreground;
     let form = &ws.voice_form;
-    let current = ws.voice.clone().unwrap_or_default();
-    let mut page = div().flex().flex_col().gap_4().max_w(px(760.));
-    page = page
-        .child(div().small().text_color(muted).child(
-            "Speech goes through any server that speaks the OpenAI audio API: a hosted account, \
-             or a model run on this machine. Keys are kept in the system keychain.",
-        ))
-        .child(super::models::render(ws, cx))
-        .child(heading(
-            "Or connect a server",
-            "A hosted account, or any server of yours that speaks the OpenAI audio API.",
+    let current = ws.voice.as_ref();
+    let panel = |title, endpoint, cx: &App| {
+        card(cx).flex_1().flex_basis(px(220.)).min_w_0().child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_0p5()
+                .child(div().body().font_weight(FontWeight::SEMIBOLD).child(title))
+                .child(status(endpoint, cx)),
+        )
+    };
+    let recognition = panel(
+        "Speech recognition",
+        current.and_then(|settings| settings.stt.as_ref()),
+        cx,
+    )
+    .child(labeled("Address", "", cx).child(Input::new(&form.stt_url)))
+    .child(labeled("Model", "", cx).child(Input::new(&form.stt_model)))
+    .child(labeled("API key", "Empty keeps the saved key", cx).child(Input::new(&form.stt_key)));
+    let synthesis = panel(
+        "Speech synthesis",
+        current.and_then(|settings| settings.tts.as_ref()),
+        cx,
+    )
+    .child(labeled("Address", "", cx).child(Input::new(&form.tts_url)))
+    .child(labeled("Model", "", cx).child(Input::new(&form.tts_model)))
+    .child(labeled("API key", "Empty keeps the saved key", cx).child(Input::new(&form.tts_key)))
+    .child(labeled("Voice", "Optional", cx).child(Input::new(&form.tts_voice)));
+    let endpoints = div()
+        .flex()
+        .flex_col()
+        .gap_3()
+        .child(super::super::section(
+            "Speech providers",
+            "Connect the microphone and read-aloud controls to an OpenAI-compatible audio server.",
             cx,
         ))
         .child(sources(cx))
         .child(
-            card(cx)
-                .child(heading(
-                    "Speech recognition",
-                    "the microphone: your voice becomes text",
-                    cx,
-                ))
-                .child(status(current.stt.as_ref(), cx))
-                .child(
-                    labeled("Address", "where the server is", cx)
-                        .child(Input::new(&form.stt_url).large()),
-                )
-                .child(
-                    labeled("Model", "such as whisper-1", cx)
-                        .child(Input::new(&form.stt_model).large()),
-                )
-                .child(
-                    labeled(
-                        "API key",
-                        "empty keeps the saved one, or for a local server",
-                        cx,
-                    )
-                    .child(Input::new(&form.stt_key).large()),
-                ),
+            div()
+                .flex()
+                .flex_wrap()
+                .gap_3()
+                .child(recognition)
+                .child(synthesis),
         )
         .child(
-            card(cx)
-                .child(heading(
-                    "Speech synthesis",
-                    "read aloud: text becomes sound",
-                    cx,
-                ))
-                .child(status(current.tts.as_ref(), cx))
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .flex_wrap()
+                .gap_2()
                 .child(
-                    labeled("Address", "where the server is", cx)
-                        .child(Input::new(&form.tts_url).large()),
+                    div()
+                        .small()
+                        .text_color(cx.theme().muted_foreground)
+                        .child("API keys are stored in the system keychain."),
                 )
                 .child(
-                    labeled("Model", "such as tts-1", cx)
-                        .child(Input::new(&form.tts_model).large()),
-                )
-                .child(
-                    labeled("Voice", "optional, such as alloy", cx)
-                        .child(Input::new(&form.tts_voice).large()),
-                )
-                .child(
-                    labeled(
-                        "API key",
-                        "empty keeps the saved one, or for a local server",
-                        cx,
-                    )
-                    .child(Input::new(&form.tts_key).large()),
+                    Button::new("voice-save")
+                        .primary()
+                        .label("Save voice settings")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.save_voice(cx))),
                 ),
-        )
-        .child(
-            div().flex().flex_row().child(
-                Button::new("voice-save")
-                    .primary()
-                    .label("Save")
-                    .on_click(cx.listener(|ws, _, _, cx| ws.save_voice(cx))),
-            ),
         );
-    page = page
-        .child(heading(
-            "Other models",
-            "Run one behind a server that speaks the OpenAI audio API, then point the boxes \
-             above at it. A token for gated models is set in Settings, Secrets.",
-            cx,
-        ))
-        .child(other_models(cx));
-    page
-}
-
-/// A card's title and what it is for.
-fn heading(title: &'static str, about: &'static str, cx: &App) -> Div {
     div()
         .flex()
         .flex_col()
-        .gap_0p5()
-        .child(div().body().font_weight(FontWeight::SEMIBOLD).child(title))
+        .gap_6()
+        .child(endpoints)
+        .child(super::models::render(ws, cx))
         .child(
-            div()
-                .small()
-                .text_color(cx.theme().muted_foreground)
-                .child(about),
+            div().flex().flex_col().gap_3()
+                .child(super::super::section(
+                    "Other models",
+                    "Run one behind a server that speaks the OpenAI audio API, then enter its address above. Set tokens for gated models in Settings, Secrets.",
+                    cx,
+                ))
+                .child(other_models(cx)),
         )
 }
 
@@ -156,7 +136,7 @@ fn status(endpoint: Option<&VoiceEndpoint>, cx: &App) -> Div {
         None => div()
             .small()
             .text_color(cx.theme().muted_foreground)
-            .child("Not set up"),
+            .child("Not connected"),
     }
 }
 
@@ -164,7 +144,7 @@ fn status(endpoint: Option<&VoiceEndpoint>, cx: &App) -> Div {
 fn sources(cx: &mut Context<Workspace>) -> Div {
     div()
         .flex()
-        .flex_row()
+        .flex_wrap()
         .gap_2()
         .child(preset(
             "voice-preset-openai",
@@ -189,7 +169,7 @@ fn other_models(cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let mut column = div().flex().flex_col().gap_3();
     for (title, items) in [("Recognition", RECOGNITION), ("Synthesis", SYNTHESIS)] {
-        let mut row = div().flex().flex_row().gap_2();
+        let mut row = div().flex().flex_wrap().gap_2();
         for (name, url) in items {
             row = row.child(
                 tile(SharedString::from(format!("voice-model-{name}")), cx)
@@ -210,6 +190,8 @@ fn tile(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
     div()
         .id(id)
         .flex_1()
+        .flex_basis(px(142.))
+        .min_w_0()
         .flex()
         .flex_col()
         .gap_0p5()
@@ -219,6 +201,8 @@ fn tile(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .border_1()
         .border_color(theme.border)
         .cursor_pointer()
+        .focusable_row(cx)
+        .border_color(theme.border)
         .hover(move |tile| tile.bg(theme.accent))
 }
 

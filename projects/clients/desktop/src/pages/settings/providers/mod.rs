@@ -26,7 +26,6 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_col()
         .gap_4()
-        .pt_4()
         .child(list::render(ws, cx))
         .child(connect::render(ws, cx))
 }
