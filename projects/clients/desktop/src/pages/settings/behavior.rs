@@ -219,32 +219,86 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
 }
 
 pub(super) fn llm(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let body = div().flex().flex_col().gap_6();
     let model = ws
         .status
         .model
         .clone()
-        .unwrap_or_else(|| "none chosen".to_owned());
-    body.child(list(
-        [
-            line("Model", &model, cx),
-            context_line(ws, cx),
-            line(
-                "Use a model by name",
-                "For servers that do not list their models: provider/model",
-                cx,
-            )
-            .child(div().w(px(240.)).child(Input::new(&ws.model_input)))
-            .child(
-                Button::new("model-use")
-                    .outline()
-                    .label("Use")
-                    .on_click(cx.listener(|ws, _, _, cx| ws.use_typed_model(cx))),
-            ),
-        ],
-        cx,
-    ))
-    .child(super::providers::render(ws, cx))
+        .unwrap_or_else(|| "No model selected".to_owned());
+    div()
+        .flex()
+        .flex_col()
+        .gap_5()
+        .child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_3()
+                .child(super::ai::section(
+                    "Language models",
+                    "Choose what your agents use for chat and tools.",
+                    cx,
+                ))
+                .child(list(
+                    [
+                        model_line(
+                            "Active model",
+                            "",
+                            div()
+                                .body()
+                                .font_weight(FontWeight::MEDIUM)
+                                .truncate()
+                                .child(model),
+                            cx,
+                        ),
+                        context_line(ws, cx),
+                        model_line(
+                            "Use a model by name",
+                            "For providers that don't list their models.",
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap_2()
+                                .child(div().flex_1().min_w_0().child(Input::new(&ws.model_input)))
+                                .child(
+                                    Button::new("model-use").outline().label("Use").on_click(
+                                        cx.listener(|ws, _, _, cx| ws.use_typed_model(cx)),
+                                    ),
+                                ),
+                            cx,
+                        ),
+                    ],
+                    cx,
+                )),
+        )
+        .child(super::providers::render(ws, cx))
+}
+
+fn model_line(label: &str, hint: &str, control: Div, cx: &App) -> Div {
+    let names = div()
+        .flex_1()
+        .flex_basis(px(140.))
+        .min_w_0()
+        .child(div().body().child(label.to_owned()));
+    let names = if hint.is_empty() {
+        names
+    } else {
+        names.child(
+            div()
+                .small()
+                .text_color(cx.theme().muted_foreground)
+                .child(hint.to_owned()),
+        )
+    };
+    div()
+        .flex()
+        .flex_wrap()
+        .items_center()
+        .gap_x_4()
+        .gap_y_2()
+        .px_4()
+        .py_3()
+        .child(names)
+        .child(control.w(px(260.)).max_w_full().min_w_0())
 }
 
 /// How much of the model's window a request may fill: the model's own, or a fixed size.
@@ -255,7 +309,7 @@ fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .into_iter()
             .map(|preset| (preset.name(), ContextPolicy::Fixed(preset))),
     );
-    let mut row = div().flex().flex_row().gap_1();
+    let mut row = div().flex().flex_wrap().gap_1();
     for (label, policy) in choices {
         let button = Button::new(SharedString::from(format!("context-{label}")))
             .compact()
@@ -263,16 +317,12 @@ fn context_line(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .on_click(cx.listener(move |ws, _, _, cx| ws.set_context_policy(policy, cx)));
         row = row.child(controls::choice(button, policy == current, cx));
     }
-    // The size in force stands in the hint: Auto alone does not say what the model has.
-    let hint = format!(
-        "The largest request, now {} tokens: the model's own window, or a fixed size",
-        match ws.status.input_limit {
-            // Whole thousands read as 128k, not 128.0k.
-            limit if limit % 1000 == 0 && limit < 1_000_000 => format!("{}k", limit / 1000),
-            limit => widgets::short(limit),
-        }
-    );
-    line("Context window", &hint, cx).child(row)
+    let limit = match ws.status.input_limit {
+        limit if limit % 1000 == 0 && limit < 1_000_000 => format!("{}k", limit / 1000),
+        limit => widgets::short(limit),
+    };
+    let hint = format!("{limit} tokens per request");
+    model_line("Context window", &hint, row, cx)
 }
 
 /// A size in characters as a few steps; one the config holds beside them shows as it is.

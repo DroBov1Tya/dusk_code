@@ -104,8 +104,7 @@ impl Workspace {
     }
 
     pub fn on_open_settings(&mut self, _: &OpenSettings, _: &mut Window, cx: &mut Context<Self>) {
-        self.center = Center::Settings;
-        self.load_settings(cx);
+        self.open_settings(cx);
     }
 
     pub fn on_toggle_sidebar(&mut self, _: &ToggleSidebar, _: &mut Window, cx: &mut Context<Self>) {

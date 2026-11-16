@@ -27,6 +27,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .flex()
             .flex_row()
             .items_center()
+            .flex_wrap()
             .gap_2()
             .child(
                 div()
@@ -56,7 +57,11 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             }),
     );
     if ws.providers.is_empty() {
-        column = column.child(widgets::muted("Asking the providers...", cx).px_0());
+        column = column.child(if ws.models_loading {
+            crate::ui::loading("Asking the providers...", cx)
+        } else {
+            widgets::muted("No providers connected. Connect one below.", cx).p_0()
+        });
     }
     for provider in &ws.providers {
         column = column.child(provider_card(ws, provider, &current, cx));
@@ -88,7 +93,7 @@ fn provider_card(
     // The switch stands apart from the buttons: it changes state, they act once.
     let buttons = div()
         .flex()
-        .flex_row()
+        .flex_wrap()
         .items_center()
         .gap_1()
         .child(

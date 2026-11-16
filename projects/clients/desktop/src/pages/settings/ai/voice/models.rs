@@ -25,26 +25,13 @@ const POLL: Duration = Duration::from_millis(1500);
 const UV_PAGE: &str = "https://docs.astral.sh/uv/getting-started/installation/";
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let muted = cx.theme().muted_foreground;
-    let mut column = div().flex().flex_col().gap_3();
-    column = column.child(
-        div()
-            .flex()
-            .flex_col()
-            .gap_0p5()
-            .child(
-                div()
-                    .body()
-                    .font_weight(FontWeight::SEMIBOLD)
-                    .child("Run on this machine"),
-            )
-            .child(div().small().text_color(muted).child(
-                "Installed by the app into its own folder and started with it. The model \
-                 and your voice stay on this machine.",
-            )),
-    );
+    let mut column = div().flex().flex_col().gap_3().child(super::super::section(
+        "Local speech models",
+        "Install and run a model on this machine to keep speech processing local.",
+        cx,
+    ));
     let Some(listed) = &ws.voice_models else {
-        return column.child(widgets::muted("Looking...", cx).px_0());
+        return column.child(crate::ui::loading("Looking for local speech models...", cx));
     };
     if !listed.uv_found {
         column = column.child(need_uv(cx));
@@ -58,27 +45,37 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 /// Says that `uv` is needed, and that everything after it is automatic.
 fn need_uv(cx: &mut Context<Workspace>) -> Div {
     let (warning, muted) = (cx.theme().warning, cx.theme().muted_foreground);
-    widgets::card(cx)
-        .border_color(warning.opacity(0.5))
-        .child(
-            div()
-                .body()
-                .font_weight(FontWeight::SEMIBOLD)
-                .child("uv is not installed"),
-        )
-        .child(div().small().text_color(muted).child(
-            "The models are set up with uv, a small tool that fetches Python and the packages. \
-             Install it once; after that each model installs by itself with one click: the \
-             environment, the packages and the weights.",
-        ))
-        .child(
-            div().flex().flex_row().child(
+    widgets::card(cx).border_color(warning.opacity(0.5)).child(
+        div()
+            .flex()
+            .items_center()
+            .flex_wrap()
+            .gap_2()
+            .child(
+                div()
+                    .flex_1()
+                    .flex_basis(px(220.))
+                    .min_w_0()
+                    .child(
+                        div()
+                            .body()
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .child("Install uv to use local models"),
+                    )
+                    .child(
+                        div()
+                            .small()
+                            .text_color(muted)
+                            .child("uv installs Python and the packages these models need."),
+                    ),
+            )
+            .child(
                 Button::new("voice-uv-page")
                     .outline()
                     .label("How to install uv")
                     .on_click(cx.listener(|_, _, _, cx| cx.open_url(UV_PAGE))),
             ),
-        )
+    )
 }
 
 fn model_card(model: &VoiceModel, uv_found: bool, cx: &mut Context<Workspace>) -> Div {
@@ -151,10 +148,13 @@ fn model_card(model: &VoiceModel, uv_found: bool, cx: &mut Context<Workspace>) -
                 .flex()
                 .flex_row()
                 .items_center()
+                .flex_wrap()
                 .gap_2()
                 .child(
                     div()
                         .flex_1()
+                        .min_w_0()
+                        .flex_wrap()
                         .flex()
                         .flex_row()
                         .items_baseline()
