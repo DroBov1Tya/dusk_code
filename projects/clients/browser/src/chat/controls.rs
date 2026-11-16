@@ -83,7 +83,7 @@ pub fn Model() -> impl IntoView {
     };
     view! {
         <button class="under" title=full
-            on:click=move |_| app.view.set(View::Settings(crate::pages::settings::Page::Model))>
+            on:click=move |_| app.show(View::Settings(crate::pages::settings::Page::Model))>
             {short}<Icon name=IconName::ChevronDown />
         </button>
     }

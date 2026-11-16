@@ -160,11 +160,20 @@ impl Workspace {
         if text.is_empty() {
             return;
         }
+        let (origin, retry) = (thread_id.clone(), text.clone());
         self.core.call(
             cx,
             move |client| async move { client.threads().send(&thread_id, text, now).await },
-            |ws, result, cx| {
+            move |ws, result, cx| {
                 if let Err(error) = result {
+                    ws.edit_draft(
+                        Some(origin),
+                        super::composer::Change::Restore(super::composer::Draft {
+                            text: retry,
+                            ..Default::default()
+                        }),
+                        cx,
+                    );
                     ws.fail(error, cx);
                 }
             },

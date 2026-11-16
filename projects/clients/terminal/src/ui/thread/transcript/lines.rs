@@ -1,6 +1,8 @@
 //! A thread's entries laid out as lines.
 
-use super::blocks::{fold_mark, folded, from_agent, indent, plain, tokens, tool, user};
+use super::blocks::{
+    answered, fold_mark, folded, from_agent, indent, job, plain, tokens, tool, user,
+};
 use super::spinner;
 use crate::app::{App, Entry, ImageSpot, Tone, Transcript};
 use crate::ui::thread::{
@@ -156,6 +158,7 @@ pub(super) fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
         Entry::Summary { .. } => "summary",
         Entry::FromAgent { .. } => "agent message",
         Entry::Notice { .. } => "notice",
+        Entry::Job { .. } => "job result",
     };
     let lines = text.lines().count().max(1);
     Line::from(vec![
@@ -183,7 +186,15 @@ pub(super) fn entry_lines(
     ends_turn: bool,
 ) -> Vec<Line<'static>> {
     match entry {
-        Entry::User { text, open } => user(text, *open, width),
+        Entry::User {
+            text,
+            open,
+            answered,
+        } if answered.is_empty() => user(text, *open, width),
+        Entry::User {
+            answered: answers, ..
+        } => answered(answers, width),
+        Entry::Job { result, open } => job(result, *open, width),
         Entry::Answer(text) if ends_turn => markdown::render(text.trim_end(), width)
             .into_iter()
             .map(|line| {

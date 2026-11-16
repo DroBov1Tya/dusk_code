@@ -16,7 +16,11 @@ use crate::ui::thread::{
     },
     wrap,
 };
-use dusk_protocol::{model::ToolCall, tools::ToolResult};
+use dusk_protocol::{
+    model::ToolCall,
+    thread::JobResult,
+    tools::{Answered, ToolResult},
+};
 use ratatui::{
     style::Style,
     text::{Line, Span},
@@ -88,7 +92,72 @@ pub(super) fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
         }
     }
     lines.push(Line::from(bar()));
-    // The card reaches the right edge: the bar, the text and the air after it.
+    card(lines, width)
+}
+
+/// The agent's questions as the user answered them, on the card of a sent message: each
+/// question, its options with the chosen ones marked, then the user's own words.
+pub(super) fn answered(answers: &[Answered], width: usize) -> Vec<Line<'static>> {
+    let bar = || Span::styled(format!(" {USER_BAR} "), fg(TEXT_MUTED));
+    // Text behind a mark; the lines it wraps to hang under its first.
+    let row = |mark: Span<'static>, text: &str, style: Style| -> Vec<Line<'static>> {
+        let hang = mark.content.width();
+        text.lines()
+            .flat_map(|line| {
+                let spans = vec![Span::styled(line.to_owned(), style)];
+                wrap::words(spans, width.saturating_sub(hang), 0)
+            })
+            .enumerate()
+            .map(|(at, spans)| {
+                let lead = match at {
+                    0 => mark.clone(),
+                    _ => Span::raw(" ".repeat(hang)),
+                };
+                Line::from([vec![bar(), lead], spans].concat())
+            })
+            .collect()
+    };
+    let mut lines = Vec::new();
+    for answer in answers {
+        lines.push(Line::from(bar()));
+        lines.extend(row(Span::raw(""), &answer.question, bold(TEXT)));
+        for (option, chosen) in &answer.options {
+            lines.extend(match chosen {
+                true => row(Span::styled("[x] ", fg(ACCENT)), option, fg(TEXT)),
+                false => row(Span::styled("[ ] ", dim()), option, dim()),
+            });
+        }
+        if answer.declined {
+            lines.extend(row(Span::raw(""), "declined", thought()));
+        }
+        if !answer.own.is_empty() {
+            lines.extend(row(Span::raw(""), &answer.own, fg(TEXT)));
+        }
+    }
+    lines.push(Line::from(bar()));
+    card(lines, width)
+}
+
+/// A finished background job in one line; opened, the start of what it printed.
+pub(super) fn job(result: &JobResult, open: bool, width: usize) -> Vec<Line<'static>> {
+    let (mark, color) = match result.failed() {
+        true => (FAILED, NEGATIVE),
+        false => (DONE, POSITIVE),
+    };
+    let header = Line::from(vec![
+        Span::styled(format!("   {} ", fold_mark(open)), fg(TEXT_MUTED)),
+        Span::styled(result.title(), fg(TEXT_SOFT)),
+        Span::styled(format!("  {mark}"), fg(color)),
+    ]);
+    folded(header, open, || {
+        let body = verbatim(result.output.trim_end(), width.saturating_sub(2), dim());
+        indent(body, &format!("   {GUTTER} "))
+    })
+}
+
+/// Lines on the soft card of a sent message, which reaches the right edge: the bar, the
+/// text and the air after it.
+fn card(lines: Vec<Line<'static>>, width: usize) -> Vec<Line<'static>> {
     let full = width + 3;
     lines
         .into_iter()

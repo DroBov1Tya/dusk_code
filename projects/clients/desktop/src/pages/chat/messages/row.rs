@@ -134,10 +134,15 @@ impl Workspace {
                                         .border_1()
                                         .border_color(accent.opacity(0.16))
                                         // Selectable like the answers; pastes and files show as labels.
-                                        .child(links::markdown(
-                                            SharedString::from(format!("user-{key}")),
-                                            user_text(text),
-                                        )),
+                                        .child(match chat.answered.get(&at) {
+                                            Some(answers) => super::answered(&key, answers, cx)
+                                                .into_any_element(),
+                                            None => links::markdown(
+                                                SharedString::from(format!("user-{key}")),
+                                                user_text(text),
+                                            )
+                                            .into_any_element(),
+                                        }),
                                 )
                             })
                             .children(sent_pictures(self, &shown, &key, text, cx))
@@ -152,6 +157,9 @@ impl Workspace {
                             }))
                             .child(tools)
                             .into_any_element()
+                    }
+                    Item::Job(result) => {
+                        super::job(self, &shown, at, result, cx).into_any_element()
                     }
                     Item::Command(run) => command_card(&key, run, cx),
                     Item::Agent { from, text } => {
@@ -377,7 +385,16 @@ impl Workspace {
                     .await
             },
             move |ws, result, cx| match result {
-                Ok(()) => ws.fill_composer = Some(text),
+                Ok(()) => ws.edit_draft(
+                    Some(id.clone()),
+                    crate::pages::chat::composer::Change::Restore(
+                        crate::pages::chat::composer::Draft {
+                            text,
+                            ..Default::default()
+                        },
+                    ),
+                    cx,
+                ),
                 Err(error) => {
                     if let Some(chat) = ws.chats.get_mut(&id) {
                         chat.rollback_at = None;

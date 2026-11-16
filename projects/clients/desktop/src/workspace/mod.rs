@@ -178,7 +178,9 @@ pub struct Workspace {
     pub temporary_next: bool,
     pub composer: Entity<TextareaState>,
     /// Text for the composer, put there on the next frame, which has the window.
-    pub fill_composer: Option<String>,
+    pub fill_composer: Vec<chat::composer::Edit>,
+    /// What is typed and attached in the chats that are not shown.
+    pub drafts: chat::composer::Drafts,
     /// The profile and snippets a message names with `@`, and their settings fields.
     pub me: crate::pages::settings::about_me::AboutMe,
     /// The last error, shown until it is dismissed.

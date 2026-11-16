@@ -99,7 +99,7 @@ pub fn Sidebar() -> impl IntoView {
                     }
                 })>"Sign out"</button>
                 {move || app.status.with(|s| s.as_ref().and_then(|s| s.available_update.clone())).map(|tag| view! {
-                    <button class="update" on:click=move |_| app.view.set(View::Settings(Page::Updates))>
+                    <button class="update" on:click=move |_| app.show(View::Settings(Page::Updates))>
                         {format!("Update {tag}")}
                     </button>
                 })}
@@ -180,9 +180,10 @@ fn ChatRow(thread: Thread) -> impl IntoView {
                     let doomed = id.clone();
                     run(async move { api::delete_thread(&doomed).await }, move |()| {
                         app.chats.update(|chats| { chats.remove(&id); });
+                        app.drop_draft(&id);
                         app.refresh();
                         if app.view.get_untracked() == View::Chat(Some(id.clone())) {
-                            app.view.set(View::Chat(None));
+                            app.show(View::Chat(None));
                         }
                     });
                 }
@@ -200,7 +201,7 @@ fn NavButton(label: &'static str, target: View) -> impl IntoView {
     };
     view! {
         <button class="nav-item" class:active=same.clone() aria-current=move || same().then_some("page")
-            on:click=move |_| app.view.set(target.clone())>
+            on:click=move |_| app.show(target.clone())>
             {label}
         </button>
     }

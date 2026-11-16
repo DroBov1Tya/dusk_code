@@ -21,9 +21,18 @@ pub struct History {
     back: Vec<Place>,
     forward: Vec<Place>,
     current: Option<Place>,
+    navigation: u64,
 }
 
 impl History {
+    pub fn navigation(&self) -> u64 {
+        self.navigation
+    }
+
+    pub fn moved(&mut self) {
+        self.navigation = self.navigation.wrapping_add(1);
+    }
+
     pub fn can_go_back(&self) -> bool {
         !self.back.is_empty()
     }
@@ -36,6 +45,7 @@ impl History {
     fn record(&mut self, place: Place) {
         match self.current.replace(place.clone()) {
             Some(previous) if previous != place => {
+                self.moved();
                 self.back.push(previous);
                 if self.back.len() > DEPTH {
                     self.back.remove(0);
@@ -53,6 +63,7 @@ impl History {
             (&mut self.forward, &mut self.back)
         };
         let place = from.pop()?;
+        self.navigation = self.navigation.wrapping_add(1);
         if let Some(current) = self.current.replace(place.clone()) {
             to.push(current);
         }
@@ -86,7 +97,10 @@ impl Workspace {
         if place.shown != self.shown {
             match &place.shown {
                 Some(thread_id) => self.open_chat(thread_id, cx),
-                None => self.shown = None,
+                None => {
+                    self.drafts.new_chat();
+                    self.shown = None;
+                }
             }
         }
         self.center = place.center;

@@ -25,6 +25,41 @@ fn unknown_fields_and_values_are_rejected() {
 }
 
 #[test]
+fn a_refused_file_says_what_and_where_without_its_values() {
+    let wrong = |yaml: &str| format!("{:#}", parse(yaml).unwrap_err());
+    let unknown = wrong(&format!("{PROVIDERS}tool: {{}}\n"));
+    assert!(unknown.contains("unknown field `tool`"), "{unknown}");
+    assert!(unknown.contains("line 6"), "{unknown}");
+    // A secret accidentally entered as a key is not a safe field name either.
+    for yaml in [
+        "sk-secret-key: value\n",
+        "thread:\n  sk-secret-key: value\n",
+        "'sk-secret-key\\nother': value\n",
+    ] {
+        let error = wrong(yaml);
+        assert!(
+            error.contains("unknown field") && error.contains("line"),
+            "{error}"
+        );
+        assert!(
+            !error.contains("sk-secret-key") && !error.contains("value"),
+            "{error}"
+        );
+    }
+    // A value of the wrong type may be a secret: it is never repeated.
+    let secret = wrong(
+        "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: [sk-secret]\n",
+    );
+    assert!(secret.contains("line 5"), "{secret}");
+    assert!(!secret.contains("sk-secret"), "{secret}");
+    let broken = wrong("providers: [sk-secret\n");
+    assert!(
+        broken.contains("line") && !broken.contains("sk-secret"),
+        "{broken}"
+    );
+}
+
+#[test]
 fn an_mcp_server_is_edited_as_its_own_yaml() {
     let (name, mut server) =
         parse_mcp_server("docs:\n  command: docs-server\n  args: [--stdio]\n").unwrap();

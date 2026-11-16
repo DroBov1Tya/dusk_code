@@ -2,7 +2,7 @@
 //! running turn. When the turn ends they go as one message; each can also go at once,
 //! interrupting the agent, be taken back into the box, or be dropped.
 
-use super::{Action, App, Entry};
+use super::{Action, App};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum QueueButton {
@@ -66,9 +66,6 @@ impl App {
 
     pub fn show_sent(&mut self, text: &str) {
         self.scroll = 0;
-        self.transcript.push(Entry::User {
-            text: text.to_owned(),
-            open: false,
-        });
+        self.transcript.add_user(text);
     }
 }

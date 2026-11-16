@@ -37,10 +37,7 @@ pub fn working_mark(id: SharedString, accent: Hsla, light: Hsla) -> impl IntoEle
 }
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
-    if let Some(text) = ws.fill_composer.take() {
-        ws.composer
-            .update(cx, |composer, cx| composer.set_value(text, window, cx));
-    }
+    composer::show_draft(ws, window, cx);
     let theme = cx.theme();
     let danger = theme.danger;
     let notice = ws.notice.clone().map(|text| {

@@ -16,7 +16,7 @@ mod turn;
 pub use context::{ContextItemDetail, ContextReport, ContextSection, ContextSource};
 pub use event::ThreadEvent;
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
-pub use job::JobInfo;
+pub use job::{JobInfo, JobResult, job_message};
 pub use message::{
     Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, plain,
     sound_tag, source_tag, split, wrap,

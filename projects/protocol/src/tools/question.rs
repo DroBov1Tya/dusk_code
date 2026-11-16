@@ -13,6 +13,9 @@ pub const MIN_OPTIONS: usize = 2;
 
 pub const MAX_OPTIONS: usize = 8;
 
+/// What stands for the answer when the user would not give one.
+pub const DECLINED: &str = "(declined)";
+
 /// A question as the client shows it. The client always adds a field for the user's
 /// own answer below the options.
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, JsonSchema, Serialize)]
@@ -44,7 +47,7 @@ impl Question {
 
     /// The message saying the user would not answer, ahead of what they wrote instead.
     pub fn declined(&self, message: &str) -> String {
-        let reply = self.reply("(declined)");
+        let reply = self.reply(DECLINED);
         match message.trim() {
             "" => reply,
             message => format!("{reply}\n\n{message}"),

@@ -3,11 +3,13 @@
 //! the box (`marks`), the `@` names (`mention`) and the way to the core (`send`).
 
 mod attach;
+mod drafts;
 mod marks;
 mod mention;
 mod send;
 
 pub use attach::paste_label;
+pub use drafts::{Change, Draft, Drafts, Edit};
 pub use marks::{AGENTS_BUTTON, SIDE_MARK, agents_button, mic_button};
 
 use crate::ui::Type;
@@ -41,6 +43,32 @@ fn side() -> Div {
         .items_center()
         .gap_2()
         .pb(px(SIDE_LIFT))
+}
+
+/// Puts the shown chat's draft in the composer when another chat's is there. Called as the
+/// chat page is drawn: every way to another chat ends here, and here is the window.
+pub fn show_draft(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
+    let mut current = Draft {
+        text: ws.composer.read(cx).value().to_string(),
+        attachments: std::mem::take(&mut ws.attachments),
+        pastes: std::mem::take(&mut ws.pastes),
+    };
+    let edited = !ws.fill_composer.is_empty();
+    for edit in std::mem::take(&mut ws.fill_composer) {
+        ws.drafts.edit(&mut current, edit);
+    }
+    let switched = ws
+        .drafts
+        .switch(ws.shown.as_deref(), || std::mem::take(&mut current));
+    let changed = edited || switched.is_some();
+    let draft = switched.unwrap_or(current);
+    ws.attachments = draft.attachments;
+    ws.pastes = draft.pastes;
+    if changed {
+        ws.composer.update(cx, |composer, cx| {
+            composer.set_value(draft.text, window, cx)
+        });
+    }
 }
 
 pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
@@ -224,4 +252,31 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                 }
             }
         }))
+}
+
+impl Workspace {
+    pub fn edit_draft(
+        &mut self,
+        thread_id: Option<String>,
+        change: Change,
+        cx: &mut Context<Self>,
+    ) {
+        let generation = self.drafts.generation();
+        self.edit_draft_at(thread_id, generation, change, cx);
+    }
+
+    pub fn edit_draft_at(
+        &mut self,
+        thread_id: Option<String>,
+        generation: u64,
+        change: Change,
+        cx: &mut Context<Self>,
+    ) {
+        self.fill_composer.push(Edit {
+            thread_id,
+            generation,
+            change,
+        });
+        cx.notify();
+    }
 }

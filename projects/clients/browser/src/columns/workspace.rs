@@ -273,7 +273,7 @@ fn RailButton(label: &'static str, icon: IconName, target: View) -> impl IntoVie
                 .view
                 .with_untracked(|view| matches!(view, View::Chat(_)));
         if !already_in_chat {
-            app.view.set(target.clone());
+            app.show(target.clone());
         }
     };
     view! {

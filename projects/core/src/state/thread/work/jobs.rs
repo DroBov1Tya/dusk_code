@@ -161,7 +161,7 @@ impl State {
                     AND json_extract(c.value, '$.check.kind') = 'command'
                     AND json_extract(c.value, '$.check.command') = background_jobs.command)")
                 .bind(&owner).bind(job_id).execute(&mut *transaction).await?;
-            let content = format!("[background job {job_id} finished: {status}]\n{output}");
+            let content = dusk_protocol::thread::job_message(job_id, status, output);
             sqlx::query(
                 "INSERT INTO pending_messages (thread_id, request_uid, content, created_at, from_job_id)
                  VALUES (?, ?, ?, ?, ?)",

@@ -280,5 +280,5 @@ fn EnvSection(id: String) -> impl IntoView {
 }
 
 pub fn open(id: String) {
-    state().view.set(View::Project(id));
+    state().show(View::Project(id));
 }
