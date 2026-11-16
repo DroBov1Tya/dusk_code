@@ -13,6 +13,12 @@ testing.
 - Phone panels keep the device picker and Refresh together and put Home, Lock and
   Shut down controls below the live screen.
 
+### Fixed
+
+- Chats make at most one automatic title request after their first turn. A title chosen
+  by the user is kept.
+- ChatGPT sign-in records cache writes when the provider reports them.
+
 ## 0.74.2 - 2026-11-15
 
 ### Added

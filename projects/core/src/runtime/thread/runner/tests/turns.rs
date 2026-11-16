@@ -3,6 +3,104 @@
 use super::*;
 
 #[tokio::test]
+async fn a_chat_is_automatically_named_only_on_its_first_turn() {
+    let state = thread_state("auto_title_once").await;
+    let config = live_config("auto_title_once_config");
+    let provider = provider(vec![
+        vec![Step::Text("first answer"), Step::Done],
+        vec![Step::Text("Generated title"), Step::Done],
+        vec![Step::Text("second answer"), Step::Done],
+    ]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let client = async move {
+        input.send("first question").await.unwrap();
+        assert_eq!(
+            next_turn_finished(&mut output).await.status,
+            TurnStatus::Completed
+        );
+        while output.next_event().await.expect("thread is open") != ThreadEvent::Idle {}
+        input.send("second question").await.unwrap();
+        assert_eq!(
+            next_turn_finished(&mut output).await.status,
+            TurnStatus::Completed
+        );
+    };
+    tokio::join!(runner.run(), client);
+
+    let thread = state.load_thread("thread").await.unwrap().unwrap();
+    assert_eq!(thread.title.as_deref(), Some("Generated title"));
+    assert_eq!(provider.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn undo_does_not_retry_a_failed_title_request() {
+    let state = thread_state("failed_title_undo").await;
+    let config = live_config("failed_title_undo_config");
+    let provider = provider(vec![
+        vec![Step::Text("first answer"), Step::Done],
+        vec![Step::Reject],
+        vec![Step::Text("replacement answer"), Step::Done],
+    ]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let read_state = Arc::clone(&state);
+    let client = async move {
+        input.send("first question").await.unwrap();
+        assert_eq!(
+            next_turn_finished(&mut output).await.status,
+            TurnStatus::Completed
+        );
+        while output.next_event().await.expect("thread is open") != ThreadEvent::Idle {}
+        let points = read_state.undo_points("thread").await.unwrap();
+        input
+            .send(&format!("/undo {}", points[0].sequence))
+            .await
+            .unwrap();
+        loop {
+            match output.next_event().await.expect("thread is open") {
+                ThreadEvent::Undone { text } => {
+                    assert_eq!(text, "first question");
+                    break;
+                }
+                ThreadEvent::Rejected { reason } => panic!("{reason}"),
+                _ => {}
+            }
+        }
+        input.send("replacement question").await.unwrap();
+        assert_eq!(
+            next_turn_finished(&mut output).await.status,
+            TurnStatus::Completed
+        );
+    };
+    tokio::join!(runner.run(), client);
+
+    assert_eq!(state.count_turns("thread").await.unwrap(), 1);
+    let thread = state.load_thread("thread").await.unwrap().unwrap();
+    assert_eq!(thread.title.as_deref(), Some("first question"));
+    assert_eq!(provider.requests.lock().unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn a_manually_named_chat_needs_no_title_request() {
+    let state = thread_state("manual_title").await;
+    state.set_title("thread", "first question").await.unwrap();
+    let config = live_config("manual_title_config");
+    let provider = provider(vec![vec![Step::Text("first answer"), Step::Done]]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let client = async move {
+        input.send("first question").await.unwrap();
+        assert_eq!(
+            next_turn_finished(&mut output).await.status,
+            TurnStatus::Completed
+        );
+    };
+    tokio::join!(runner.run(), client);
+
+    let thread = state.load_thread("thread").await.unwrap().unwrap();
+    assert_eq!(thread.title.as_deref(), Some("first question"));
+    assert_eq!(provider.requests.lock().unwrap().len(), 1);
+}
+
+#[tokio::test]
 async fn send_now_interrupts_and_answers_the_new_message_at_once() {
     let state = thread_state("send_now").await;
     let config = live_config("runner_config");

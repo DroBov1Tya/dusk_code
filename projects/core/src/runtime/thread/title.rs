@@ -31,7 +31,16 @@ impl Agent {
         if thread.context("thread is gone")?.title.is_some() {
             return Ok(());
         }
-        self.set_title(fallback_title(&message.content)).await
+        let title = fallback_title(&message.content);
+        if !title.is_empty()
+            && self
+                .state
+                .set_first_title(&self.thread_id, &title, self.depth == 0)
+                .await?
+        {
+            self.emit(ThreadEvent::TitleChanged { title });
+        }
+        Ok(())
     }
 
     /// After the thread's first turn, asks the model for a name. Failing to get one only
@@ -49,7 +58,10 @@ impl Agent {
 
     async fn ask_for_title(&self, inbox: &mut Inbox) -> Result<Result<(), Stop>> {
         // A subagent's thread keeps the start of its task as its name: nobody browses it.
-        if self.depth > 0 || self.state.count_turns(&self.thread_id).await? != 1 {
+        if self.depth > 0
+            || self.state.count_turns(&self.thread_id).await? != 1
+            || !self.state.claim_pending_title(&self.thread_id).await?
+        {
             return Ok(Ok(()));
         }
         let messages = self.state.messages_from(&self.thread_id, 1, 50).await?;
@@ -88,14 +100,14 @@ impl Agent {
         }
         generated?;
         let title = clean_title(&output.text).context("the model gave no title")?;
-        self.set_title(title).await?;
+        if self
+            .state
+            .finish_title_attempt(&self.thread_id, &title)
+            .await?
+        {
+            self.emit(ThreadEvent::TitleChanged { title });
+        }
         Ok(Ok(()))
-    }
-
-    async fn set_title(&self, title: String) -> Result<()> {
-        self.state.set_title(&self.thread_id, &title).await?;
-        self.emit(ThreadEvent::TitleChanged { title });
-        Ok(())
     }
 }
 

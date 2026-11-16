@@ -418,6 +418,27 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_existing_title_stays_final_when_the_database_is_upgraded() {
+        let path = temp_dir("legacy-thread-title").join("state.db");
+        let state = State::open(&path).await.unwrap();
+        state.create_thread("thread", "test").await.unwrap();
+        state.set_title("thread", "Existing title").await.unwrap();
+        sqlx::raw_sql(
+            "ALTER TABLE threads DROP COLUMN auto_title;
+             DELETE FROM _sqlx_migrations WHERE version = 28;",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        assert!(!state.claim_pending_title("thread").await.unwrap());
+        let thread = state.load_thread("thread").await.unwrap().unwrap();
+        assert_eq!(thread.title.as_deref(), Some("Existing title"));
+        state.close().await;
+    }
+
+    #[tokio::test]
     async fn messages_without_image_cards_get_the_column() {
         let path = temp_dir("legacy-messages").join("state.db");
         State::open(&path).await.unwrap().close().await;
@@ -430,6 +451,7 @@ mod tests {
              DROP TABLE background_jobs;
              DROP TABLE thread_projects;
              DROP TABLE sources;
+             ALTER TABLE threads DROP COLUMN auto_title;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
@@ -467,6 +489,7 @@ mod tests {
              DROP TABLE background_jobs;
              DROP TABLE thread_projects;
              DROP TABLE sources;
+             ALTER TABLE threads DROP COLUMN auto_title;
              DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
         )
@@ -563,7 +586,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')
