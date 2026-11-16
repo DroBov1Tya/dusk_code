@@ -6,6 +6,10 @@ use std::path::PathBuf;
 use crate::config::{ApprovalPolicy, ContextPolicy, McpStatus, PluginInfo};
 use crate::model::Effort;
 use crate::release::InstallProgress;
+
+/// Where a signed-in user can see and manage ChatGPT plan usage.
+pub const CHATGPT_USAGE_URL: &str = "https://chatgpt.com/settings/usage";
+
 /// The sign-in with a ChatGPT account, which connects OpenAI without an API key.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ChatGpt {
@@ -51,6 +55,9 @@ pub struct Status {
     /// How the sign-in with ChatGPT stands.
     #[serde(default)]
     pub chatgpt: ChatGpt,
+    /// The selected model uses a ChatGPT plan connection.
+    #[serde(default)]
+    pub chatgpt_model: bool,
     /// The parts switched-on plugins add to the window.
     #[serde(default)]
     pub plugin_parts: std::sync::Arc<Vec<crate::plugin::Part>>,

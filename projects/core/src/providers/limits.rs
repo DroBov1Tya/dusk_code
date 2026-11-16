@@ -21,6 +21,8 @@ const MAX_COUNT: u64 = 1_000_000_000_000;
 const MAX_RESET: Duration = Duration::from_secs(24 * 60 * 60);
 /// The longest usage window a plan has is about a month.
 const MAX_PLAN_WINDOW: Duration = Duration::from_secs(31 * 24 * 60 * 60);
+/// How long a report without a reset or window length stays visible.
+const UNKNOWN_PLAN_AGE: Duration = Duration::from_secs(10 * 60);
 /// Longer than any number, duration or timestamp a provider writes.
 const MAX_VALUE_BYTES: usize = 40;
 
@@ -58,7 +60,7 @@ pub struct PlanUse {
 struct Seen {
     requests: Option<Window>,
     tokens: Option<Window>,
-    plan: Vec<Share>,
+    plan: [Option<Share>; 2],
 }
 
 /// A plan's usage window as last seen.
@@ -66,6 +68,7 @@ struct Share {
     minutes: Option<u64>,
     used_percent: u8,
     reset: Option<Instant>,
+    observed: Instant,
 }
 
 struct Window {
@@ -76,8 +79,8 @@ struct Window {
 }
 
 impl Account {
-    /// For a ChatGPT sign-in the account is the one OpenAI names, since its record
-    /// changes with every renewed token while the limits stay the account's.
+    /// A ChatGPT registration is tied to a user and workspace. Its tokens rotate
+    /// while the registration and its limits stay the same.
     pub fn of(settings: &ProviderConfig) -> Self {
         let mut hash = Sha256::new();
         hash.update(settings.base_url.as_bytes());
@@ -86,28 +89,57 @@ impl Account {
             .then(|| super::openai::sign_in::Credential::read(&settings.api_key.0).ok())
             .flatten();
         match signed_in {
-            Some(credential) => hash.update(credential.subject.as_bytes()),
+            Some(credential) => {
+                hash.update(b"chatgpt\0");
+                hash.update(credential.client_id.as_bytes());
+                hash.update([0]);
+                hash.update(credential.subject.as_bytes());
+            }
             None => hash.update(settings.api_key.0.as_bytes()),
         }
         Self(hash.finalize().into())
     }
 
-    /// Remembers the plan's windows a stream reported; none changes nothing.
-    pub fn note_plan(&self, windows: &[PlanUse]) {
+    /// Updates the reported slots and leaves any omitted window alone.
+    pub fn note_plan(&self, windows: [Option<PlanUse>; 2]) {
         let now = Instant::now();
-        let plan: Vec<Share> = windows
-            .iter()
-            .filter_map(|window| {
-                share(
-                    window.used_percent,
-                    window.window_minutes,
-                    window.reset_at.and_then(until_unix),
-                    now,
-                )
-            })
-            .collect();
-        if !plan.is_empty() {
-            SEEN.lock().entry(self.0).or_default().plan = plan;
+        let plan = windows.map(|window| {
+            let window = window?;
+            share(
+                window.used_percent,
+                window.window_minutes,
+                window.reset_at.and_then(until_unix),
+                now,
+            )
+        });
+        self.merge_plan(plan);
+    }
+
+    fn merge_plan(&self, windows: [Option<Share>; 2]) {
+        if windows.iter().all(Option::is_none) {
+            return;
+        }
+        let now = Instant::now();
+        let mut accounts = SEEN.lock();
+        let plan = &mut accounts.entry(self.0).or_default().plan;
+        for (index, window) in windows.into_iter().enumerate() {
+            let Some(mut next) = window else { continue };
+            if let Some(previous) = &plan[index]
+                && (next.minutes.is_none() || next.minutes == previous.minutes)
+            {
+                next.minutes = next.minutes.or(previous.minutes);
+                next.reset = next.reset.or(previous.reset.filter(|reset| *reset > now));
+            }
+            // A plan can move its only window from secondary to primary.
+            let other = 1 - index;
+            if next.minutes.is_some()
+                && plan[other]
+                    .as_ref()
+                    .is_some_and(|old| old.minutes == next.minutes)
+            {
+                plan[other] = None;
+            }
+            plan[index] = Some(next);
         }
     }
 
@@ -115,13 +147,7 @@ impl Account {
     pub fn note(&self, headers: Headers, response: &HeaderMap) {
         let now = Instant::now();
         if matches!(headers, Headers::ChatGpt) {
-            let plan: Vec<Share> = ["primary", "secondary"]
-                .into_iter()
-                .filter_map(|which| plan_share(response, which, now))
-                .collect();
-            if !plan.is_empty() {
-                SEEN.lock().entry(self.0).or_default().plan = plan;
-            }
+            self.merge_plan(["primary", "secondary"].map(|which| plan_share(response, which, now)));
             return;
         }
         let (requests, tokens) = match headers {
@@ -155,29 +181,40 @@ impl Account {
         let now = Instant::now();
         let seen = SEEN.lock();
         let account = seen.get(&self.0)?;
-        Some(RateLimits {
-            requests: account.requests.as_ref().map(|window| window.at(now)),
-            tokens: account.tokens.as_ref().map(|window| window.at(now)),
-            plan: account.plan.iter().map(|share| share.at(now)).collect(),
+        let requests = account.requests.as_ref().map(|window| window.at(now));
+        let tokens = account.tokens.as_ref().map(|window| window.at(now));
+        let plan: Vec<_> = account
+            .plan
+            .iter()
+            .flatten()
+            .filter_map(|share| share.at(now))
+            .collect();
+        (requests.is_some() || tokens.is_some() || !plan.is_empty()).then_some(RateLimits {
+            requests,
+            tokens,
+            plan,
         })
     }
 }
 
 impl Share {
-    fn at(&self, now: Instant) -> PlanWindow {
-        let wait = self
-            .reset
-            .map(|reset| reset.saturating_duration_since(now))
-            .filter(|wait| !wait.is_zero());
-        PlanWindow {
-            minutes: self.minutes,
-            // Past its reset the window starts empty again.
-            used_percent: match (self.reset, wait) {
-                (Some(_), None) => 0,
-                _ => self.used_percent,
-            },
-            resets_in: wait.map(|wait| wait.as_secs().max(1)),
+    fn at(&self, now: Instant) -> Option<PlanWindow> {
+        let expires = self.reset.unwrap_or_else(|| {
+            let age = self.minutes.map_or(UNKNOWN_PLAN_AGE, |minutes| {
+                Duration::from_secs(minutes * 60)
+            });
+            self.observed + age
+        });
+        if expires <= now {
+            return None;
         }
+        Some(PlanWindow {
+            minutes: self.minutes,
+            used_percent: self.used_percent,
+            resets_in: self
+                .reset
+                .map(|reset| reset.duration_since(now).as_secs().max(1)),
+        })
     }
 }
 
@@ -242,6 +279,7 @@ fn share(used: f64, minutes: Option<u64>, wait: Option<Duration>, now: Instant) 
         minutes,
         used_percent: used.round().min(100.) as u8,
         reset: wait.map(|wait| now + wait),
+        observed: now,
     })
 }
 
@@ -433,6 +471,120 @@ mod tests {
             &headers(&[("x-codex-primary-used-percent", "50")]),
         );
         assert_eq!(account.limits().unwrap().plan[0].used_percent, 5);
+    }
+
+    #[test]
+    fn plan_reports_without_a_reset_expire_without_inventing_one() {
+        let observed = Instant::now();
+        for (minutes, lifetime) in [
+            (None, UNKNOWN_PLAN_AGE),
+            (Some(300), Duration::from_secs(5 * 3600)),
+        ] {
+            let window = share(25., minutes, None, observed).unwrap();
+            let last = window
+                .at(observed + lifetime - Duration::from_secs(1))
+                .unwrap();
+            assert_eq!((last.used_percent, last.resets_in), (25, None));
+            assert_eq!(window.at(observed + lifetime), None);
+        }
+    }
+
+    #[test]
+    fn a_partial_plan_keeps_other_reported_windows_and_discards_expired_data() {
+        let account = account("partial-chatgpt-plan");
+        account.note(
+            Headers::ChatGpt,
+            &headers(&[
+                ("x-codex-primary-used-percent", "15"),
+                ("x-codex-primary-window-minutes", "300"),
+                ("x-codex-primary-reset-at", "1"),
+                ("x-codex-secondary-used-percent", "71"),
+                ("x-codex-secondary-window-minutes", "10080"),
+            ]),
+        );
+        let limits = account.limits().unwrap();
+        assert_eq!(
+            limits
+                .plan
+                .iter()
+                .map(|p| p.used_percent)
+                .collect::<Vec<_>>(),
+            [71]
+        );
+
+        account.note_plan([
+            Some(PlanUse {
+                used_percent: 23.,
+                window_minutes: None,
+                reset_at: None,
+            }),
+            None,
+        ]);
+        let limits = account.limits().unwrap();
+        assert_eq!(
+            limits
+                .plan
+                .iter()
+                .map(|p| (p.minutes, p.used_percent))
+                .collect::<Vec<_>>(),
+            [(Some(300), 23), (Some(10_080), 71)]
+        );
+
+        // If a plan reports the week in its primary slot, the old duplicate goes away.
+        account.note_plan([
+            Some(PlanUse {
+                used_percent: 72.,
+                window_minutes: Some(10_080),
+                reset_at: None,
+            }),
+            None,
+        ]);
+        assert_eq!(
+            account.limits().unwrap().plan,
+            [PlanWindow {
+                minutes: Some(10_080),
+                used_percent: 72,
+                resets_in: None,
+            }]
+        );
+    }
+
+    #[test]
+    fn chatgpt_plan_limits_follow_the_registration_and_survive_token_rotation() {
+        let configured = |client: &str, subject: &str, token: &str| {
+            let record = serde_json::json!({
+                "client_id": client, "host_id": "fixture", "subject": subject, "email": null,
+                "access_token": token, "refresh_token": "", "expires_at": 1, "saved_at": 1,
+            });
+            let settings = serde_json::json!({
+                "kind": "chatgpt",
+                "base_url": super::super::openai::sign_in::RESOURCE,
+                "api_key": record.to_string(),
+            });
+            Account::of(&serde_json::from_value(settings).unwrap())
+        };
+        let first = configured("fixture-workspace-a", "user", "first-token");
+        first.note_plan([
+            Some(PlanUse {
+                used_percent: 22.,
+                window_minutes: Some(300),
+                reset_at: None,
+            }),
+            None,
+        ]);
+
+        let renewed = configured("fixture-workspace-a", "user", "different-token");
+        assert_eq!(renewed.limits().unwrap().plan[0].used_percent, 22);
+        assert!(
+            configured("fixture-workspace-b", "user", "another-token")
+                .limits()
+                .is_none()
+        );
+        assert!(
+            configured("fixture-workspace-a", "someone else", "another-token")
+                .limits()
+                .is_none()
+        );
     }
 
     #[test]

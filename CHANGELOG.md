@@ -12,6 +12,8 @@ testing.
   download the notarized vphone Launchpad. Both panels recheck their setup afterward.
 - Phone panels keep the device picker and Refresh together and put Home, Lock and
   Shut down controls below the live screen.
+- The Desktop composer shows ChatGPT plan usage for each reported window and links to
+  usage settings.
 
 ### Changed
 

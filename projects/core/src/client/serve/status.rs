@@ -12,8 +12,12 @@ use tokio::sync::{oneshot, watch};
 
 pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -> Status {
     let config = runtime.config().current();
+    let model = runtime.model();
+    let provider = model
+        .as_ref()
+        .and_then(|choice| config.providers().get(&choice.provider_name));
     Status {
-        model: runtime.model().map(|choice| choice.name()),
+        model: model.as_ref().map(|choice| choice.name()),
         discovering_model: runtime.discovering_model(),
         input_limit: runtime.input_limit(),
         context_policy: runtime.context_policy(),
@@ -33,10 +37,9 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         updated_builtin: runtime.updated_builtin().to_vec(),
         chatgpt: runtime.chatgpt(),
         plugin_parts: runtime.plugin_parts(),
-        limits: runtime.model().and_then(|choice| {
-            let settings = config.providers().get(&choice.provider_name)?;
-            crate::providers::Account::of(settings).limits()
-        }),
+        limits: provider.and_then(|settings| crate::providers::Account::of(settings).limits()),
+        chatgpt_model: provider
+            .is_some_and(|settings| settings.kind == crate::config::ProviderKind::ChatGpt),
         artifacts_dir: runtime.paths().artifacts_dir(),
         workspace_dir: runtime.paths().workspace_root().to_path_buf(),
     }
