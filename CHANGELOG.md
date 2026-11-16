@@ -17,9 +17,12 @@ testing.
 
 - Desktop Settings moves model and voice setup under Agent → AI and shows which media
   generation options are available.
+- The Desktop navigation rail uses a house icon for Chats.
 
 ### Fixed
 
+- Desktop keeps assistant text in order with collapsed activity and leaves retry
+  messages visible during a turn.
 - Chats make at most one automatic title request after their first turn. A title chosen
   by the user is kept.
 - ChatGPT sign-in records cache writes when the provider reports them.
