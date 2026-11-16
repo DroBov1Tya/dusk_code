@@ -231,7 +231,9 @@ impl Workspace {
     pub fn open_settings(&mut self, cx: &mut Context<Self>) {
         self.center = crate::workspace::Center::Settings;
         self.load_settings(cx);
-        self.load_page(self.settings_page, cx);
+        if self.settings_page == SettingsPage::Ai {
+            self.load_ai_tab(cx);
+        }
     }
 }
 

@@ -41,7 +41,6 @@
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
 //!   for that many minutes, for the header's sky;
-//! - `resize=WIDTHxHEIGHT`: set the viewport size in pixels;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
 
 use std::{path::PathBuf, time::Duration};
@@ -106,15 +105,6 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                             None => eprintln!("no such key {key}"),
                         }
                     }
-                }
-                "resize" => {
-                    let (width, height) = value.split_once('x').expect("size");
-                    let _ = cx.update_window(window, |_, window, _| {
-                        window.resize(size(
-                            px(width.parse().expect("width")),
-                            px(height.parse().expect("height")),
-                        ));
-                    });
                 }
                 "quit" => break,
                 other => {
