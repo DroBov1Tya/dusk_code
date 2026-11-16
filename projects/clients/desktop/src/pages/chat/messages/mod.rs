@@ -119,7 +119,7 @@ fn transcript_rows(chat: &Transcript) -> Vec<Row> {
             let visible = match item {
                 Item::Assistant { text, .. } => !text.trim().is_empty(),
                 Item::User { sequence, .. } => sequence.is_some(),
-                Item::Tool(_) | Item::Agent { .. } | Item::Notice(_) => false,
+                Item::Tool(_) | Item::Agent { .. } => false,
                 _ => true,
             };
             if visible {
@@ -241,9 +241,10 @@ mod tests {
     use dusk_protocol::{
         model::{ModelEvent, ToolCall},
         thread::{Message, MessageRole, ThreadEvent},
+        tools::ToolResult,
     };
 
-    use super::{Row, Transcript, find, transcript_rows};
+    use super::{Item, Row, Transcript, find, transcript_rows};
 
     fn call(id: &str) -> ToolCall {
         ToolCall {
@@ -279,6 +280,27 @@ mod tests {
         chat.apply(ThreadEvent::Model(ModelEvent::Text("final".into())));
         chat.apply(ThreadEvent::Idle);
         assert_eq!(layout(&chat), [(0, 2), (1, 1), (2, 3), (3, 3)]);
+    }
+
+    #[test]
+    fn a_retry_notice_stays_visible_after_a_tool_finishes() {
+        let mut chat = Transcript::default();
+        chat.working = true;
+        chat.apply(ThreadEvent::ToolStarted(call("a")));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "a".into(),
+            result: ToolResult::text("done".into()),
+        });
+        chat.apply(ThreadEvent::Retrying {
+            attempt: 2,
+            error: "timeout".into(),
+        });
+
+        assert_eq!(layout(&chat), [(0, 1), (1, 1)]);
+        assert!(matches!(&chat.items[1], Item::Notice(text) if text == "Retrying (2): timeout"));
+
+        chat.apply(ThreadEvent::ToolStarted(call("b")));
+        assert_eq!(layout(&chat), [(0, 1), (1, 1), (2, 3)]);
     }
 
     #[test]

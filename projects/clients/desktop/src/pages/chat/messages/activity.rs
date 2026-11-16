@@ -110,11 +110,6 @@ pub fn turn_activity(
                 Item::Agent { from, text } => {
                     detail.child(agent_report(ws, shown, index, from, text, cx))
                 }
-                Item::Notice(text) => detail.child(notice(
-                    &format!("{shown}-{index}"),
-                    div().px_2().small().text_color(step_muted(cx)),
-                    text,
-                )),
                 Item::User {
                     text,
                     sequence: None,
