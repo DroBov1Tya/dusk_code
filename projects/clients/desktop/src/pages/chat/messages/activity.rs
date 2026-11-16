@@ -1,4 +1,4 @@
-//! A turn's activity folded into one row, and the foldable texts inside it: thoughts,
+//! A group of activity folded into one row, and the foldable texts inside it: thoughts,
 //! agent reports, background results.
 
 use dusk_protocol::thread::ToolState;
@@ -10,7 +10,6 @@ use gpui_kit::{
 
 use super::{
     ACTIVITY,
-    picture::picture,
     step::{background_button, step},
 };
 use crate::{
@@ -97,40 +96,20 @@ pub fn turn_activity(
             let index = start + offset;
             detail = match item {
                 Item::Tool(tool) => detail.child(step(ws, shown, index, tool, cx)),
-                Item::Assistant { text, reasoning } => {
-                    let mut detail = detail;
-                    if !reasoning.trim().is_empty() {
-                        detail = detail.child(activity_text(
-                            ws,
-                            shown,
-                            index,
-                            ("Thinking", IconName::Asterisk),
-                            reasoning,
-                            || reasoning.clone().into_any_element(),
-                            cx,
-                        ));
-                    }
-                    // A running turn shows what it says in the chat, not here.
-                    let running = matches!(span, Some((_, None)) | None);
-                    if !text.trim().is_empty() && !running {
-                        detail = detail.child(div().px_2().small().child(
-                            crate::pages::chat::links::markdown(
-                                SharedString::from(format!("said-{shown}-{index}")),
-                                text.clone(),
-                            ),
-                        ));
-                    }
-                    detail
+                Item::Assistant { reasoning, .. } if !reasoning.trim().is_empty() => {
+                    detail.child(activity_text(
+                        ws,
+                        shown,
+                        index,
+                        ("Thinking", IconName::Asterisk),
+                        reasoning,
+                        || reasoning.clone().into_any_element(),
+                        cx,
+                    ))
                 }
                 Item::Agent { from, text } => {
                     detail.child(agent_report(ws, shown, index, from, text, cx))
                 }
-                Item::Image(image) => detail.child(picture(&ws.status.artifacts_dir, image, cx)),
-                Item::Notice(text) => detail.child(notice(
-                    &format!("{shown}-{index}"),
-                    div().px_2().small().text_color(step_muted(cx)),
-                    text,
-                )),
                 Item::User {
                     text,
                     sequence: None,

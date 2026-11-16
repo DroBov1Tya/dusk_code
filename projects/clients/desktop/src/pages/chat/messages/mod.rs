@@ -2,7 +2,7 @@
 //! heights cached, so a long chat scrolls without lag. Messages are markdown, reasoning
 //! folds, pictures are cards, and the agent's steps fold so only the latest shows. The
 //! list follows new output while it is scrolled to the end. `row` draws one row, `activity`
-//! a turn folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
+//! a group of steps folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
 //! cards and notes beside them; `sent_picture` the pictures a user's message carries.
 
 mod activity;
@@ -21,7 +21,7 @@ pub use step::{run, steps};
 
 use gpui_kit::*;
 
-use super::transcript::Item;
+use super::transcript::{Item, Transcript};
 use crate::{ui::widgets, workspace::Workspace};
 
 /// Keys of unfolded things share one set: answers by index, runs and steps apart.
@@ -49,95 +49,21 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     let Some(chat) = ws.chats.get(&shown) else {
         return widgets::muted("Opening...", cx).into_any_element();
     };
-    let mut rows = Vec::new();
-    let mut sent = Vec::new();
-    let mut start = 0;
-    for (turn, end) in chat
-        .activity_boundaries
+    let rows = transcript_rows(chat);
+    let sent = rows
         .iter()
-        .copied()
-        .chain(std::iter::once(chat.items.len()))
         .enumerate()
-    {
-        let items = &chat.items[start..end];
-        let open = end == chat.items.len() && chat.working;
-        // Only the answer stays in sight: the last thing said once the turn is over.
-        // Everything before it in the turn, steps, thoughts, remarks and pictures,
-        // folds into one row; the user's own words and errors stand apart.
-        let answer = (!open)
-            .then(|| {
-                items.iter().rposition(
-                    |item| matches!(item, Item::Assistant { text, .. } if !text.trim().is_empty()),
-                )
-            })
-            .flatten()
-            .map(|offset| start + offset);
-        // While the turn goes on, what the agent says stays in sight and only its steps
-        // fold; once it is over, all but the answer folds.
-        let folds = |index: usize, item: &Item| {
-            if open {
-                return matches!(
-                    item,
-                    Item::Tool(_) | Item::Agent { .. } | Item::User { sequence: None, .. }
-                ) || matches!(
-                    item,
-                    Item::Assistant { text, reasoning }
-                        if text.trim().is_empty() && !reasoning.trim().is_empty()
-                );
-            }
-            Some(index) != answer
-                && !matches!(
-                    item,
-                    Item::User {
-                        sequence: Some(_),
-                        ..
-                    } | Item::Error(_)
-                )
-                && !matches!(item, Item::Assistant { text, reasoning } if text.is_empty() && reasoning.trim().is_empty())
-        };
-        let activity = if items.iter().any(primary_activity) {
-            let first = (start..end).find(|&index| folds(index, &chat.items[index]));
-            let last = (start..end)
-                .rev()
-                .find(|&index| folds(index, &chat.items[index]));
-            first.zip(last)
-        } else {
-            None
-        };
-        for (offset, item) in items.iter().enumerate() {
-            let index = start + offset;
-            if let Some((first, last)) = activity
-                && index == last
-            {
-                rows.push(Row::Activity {
-                    start: first,
-                    end: last + 1,
-                    span: chat.span(turn),
-                    spent: chat.turn_spend(turn),
-                });
-            }
-            match item {
-                Item::Tool(_) => continue,
-                Item::Assistant { text, .. } if text.is_empty() => continue,
-                _ if activity.is_some_and(|(first, last)| {
-                    (first..=last).contains(&index) && folds(index, item)
-                }) =>
-                {
-                    continue;
-                }
+        .filter_map(|(row, entry)| match *entry {
+            Row::Item(index) => match &chat.items[index] {
                 Item::User {
                     text,
                     sequence: Some(_),
-                } => sent.push((rows.len(), text.clone())),
-                _ => {}
-            }
-            rows.push(Row::Item(index));
-        }
-        start = end;
-    }
-    if chat.working {
-        rows.push(Row::Working);
-    }
+                } => Some((row, text.clone())),
+                _ => None,
+            },
+            _ => None,
+        })
+        .collect();
     // A chat opened from a found message shows that message, not its end.
     let jump = ws
         .jump
@@ -153,8 +79,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
             };
             rows.iter().position(|row| match *row {
                 Row::Item(index) => says(&chat.items[index]),
-                Row::Activity { start, end, .. } => chat.items[start..end].iter().any(says),
-                Row::Working => false,
+                Row::Activity { .. } | Row::Working => false,
             })
         });
     sync(ws, &shown, &rows);
@@ -175,6 +100,70 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     )
     .size_full()
     .into_any_element()
+}
+
+fn transcript_rows(chat: &Transcript) -> Vec<Row> {
+    let mut rows = Vec::new();
+    let mut start = 0;
+    for (turn, end) in chat
+        .activity_boundaries
+        .iter()
+        .copied()
+        .chain(std::iter::once(chat.items.len()))
+        .enumerate()
+    {
+        let first_row = rows.len();
+        let mut group = start;
+        for index in start..end {
+            let item = &chat.items[index];
+            let visible = match item {
+                Item::Assistant { text, .. } => !text.trim().is_empty(),
+                Item::User { sequence, .. } => sequence.is_some(),
+                Item::Tool(_) | Item::Agent { .. } => false,
+                _ => true,
+            };
+            if visible {
+                // Reasoning was recorded together with the public text, but it belongs
+                // above it. Only the reasoning is drawn in the activity disclosure.
+                let through = index + usize::from(primary_activity(item));
+                add_activity(&mut rows, &chat.items, group, through);
+                rows.push(Row::Item(index));
+                group = index + 1;
+            }
+        }
+        add_activity(&mut rows, &chat.items, group, end);
+        // Elapsed time and spend describe the whole turn. Show them once.
+        if let Some(Row::Activity { span, spent, .. }) = rows[first_row..]
+            .iter_mut()
+            .rfind(|row| matches!(row, Row::Activity { .. }))
+        {
+            *span = chat.span(turn);
+            *spent = chat.turn_spend(turn);
+        }
+        start = end;
+    }
+    if chat.working {
+        rows.push(Row::Working);
+    }
+    rows
+}
+
+fn add_activity(rows: &mut Vec<Row>, items: &[Item], start: usize, end: usize) {
+    let group = &items[start..end];
+    if group.iter().any(primary_activity) {
+        rows.push(Row::Activity {
+            start,
+            end,
+            span: None,
+            spent: None,
+        });
+    } else {
+        for (offset, item) in group.iter().enumerate() {
+            if !matches!(item, Item::Assistant { .. }) {
+                rows.push(Row::Item(start + offset));
+            }
+        }
+    }
 }
 
 /// Tells the list what changed: a new chat is measured anew; rows that came or changed
@@ -204,8 +193,7 @@ fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
         ws.measure_again = false;
         ws.list.splice(0..rows.len(), rows.len());
     }
-    // A new thought moves the turn's fold below what was said, so the reader's row may
-    // now sit at another index: follow the row, not the index.
+    // As activity groups grow, keep the reader anchored to the same content.
     if let Some(top) = reading
         && let Some(was) = ws.rows.get(top.item_ix)
         && let Some(item_ix) = find(rows, was)
@@ -228,9 +216,10 @@ fn find(rows: &[Row], was: &Row) -> Option<usize> {
         Row::Item(index) | Row::Activity { start: index, .. } => index,
         Row::Working => return rows.iter().position(|row| *row == Row::Working),
     };
-    let exact = |row: &Row| match *row {
-        Row::Item(index) | Row::Activity { start: index, .. } => index == item,
-        Row::Working => false,
+    let exact = |row: &Row| match (*was, *row) {
+        (Row::Item(_), Row::Item(index)) => index == item,
+        (Row::Activity { .. }, Row::Activity { start, .. }) => start == item,
+        _ => false,
     };
     rows.iter().position(exact).or_else(|| {
         rows.iter().position(
@@ -244,5 +233,114 @@ fn primary_activity(item: &Item) -> bool {
         Item::Tool(_) => true,
         Item::Assistant { reasoning, .. } => !reasoning.trim().is_empty(),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dusk_protocol::{
+        model::{ModelEvent, ToolCall},
+        thread::{Message, MessageRole, ThreadEvent},
+        tools::ToolResult,
+    };
+
+    use super::{Item, Row, Transcript, find, transcript_rows};
+
+    fn call(id: &str) -> ToolCall {
+        ToolCall {
+            id: id.into(),
+            name: "read_file".into(),
+            arguments: serde_json::json!({ "path": id }),
+        }
+    }
+
+    fn layout(chat: &Transcript) -> Vec<(usize, usize)> {
+        transcript_rows(chat)
+            .iter()
+            .filter_map(|row| match *row {
+                Row::Activity { start, end, .. } => Some((start, end)),
+                Row::Item(index) => Some((index, index)),
+                Row::Working => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn public_text_stays_between_activity_groups_as_the_turn_streams() {
+        let mut chat = Transcript::default();
+        chat.working = true;
+        chat.apply(ThreadEvent::ToolStarted(call("a")));
+        chat.apply(ThreadEvent::Model(ModelEvent::Reasoning("think".into())));
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("intermediate".into())));
+        assert_eq!(layout(&chat), [(0, 2), (1, 1)]);
+
+        chat.apply(ThreadEvent::ToolStarted(call("b")));
+        assert_eq!(layout(&chat), [(0, 2), (1, 1), (2, 3)]);
+
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("final".into())));
+        chat.apply(ThreadEvent::Idle);
+        assert_eq!(layout(&chat), [(0, 2), (1, 1), (2, 3), (3, 3)]);
+    }
+
+    #[test]
+    fn a_retry_notice_stays_visible_after_a_tool_finishes() {
+        let mut chat = Transcript::default();
+        chat.working = true;
+        chat.apply(ThreadEvent::ToolStarted(call("a")));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "a".into(),
+            result: ToolResult::text("done".into()),
+        });
+        chat.apply(ThreadEvent::Retrying {
+            attempt: 2,
+            error: "timeout".into(),
+        });
+
+        assert_eq!(layout(&chat), [(0, 1), (1, 1)]);
+        assert!(matches!(&chat.items[1], Item::Notice(text) if text == "Retrying (2): timeout"));
+
+        chat.apply(ThreadEvent::ToolStarted(call("b")));
+        assert_eq!(layout(&chat), [(0, 1), (1, 1), (2, 3)]);
+    }
+
+    #[test]
+    fn reopened_turn_keeps_public_text_outside_disclosures() {
+        let message = |sequence: u64, content: &str, reasoning: Option<&str>, tool_calls| Message {
+            message_id: sequence.to_string(),
+            thread_id: "thread".into(),
+            sequence,
+            role: MessageRole::Assistant,
+            content: content.into(),
+            reasoning: reasoning.map(str::to_owned),
+            tool_calls,
+            tool_call_id: None,
+            artifacts: Vec::new(),
+            from_thread_id: None,
+            from_job_id: None,
+            content_tokens: 0,
+            tool_calls_tokens: 0,
+            reasoning_tokens: 0,
+            created_at: 0,
+        };
+        let chat = Transcript::from_history(&[
+            message(1_u64, "", None, vec![call("a")]),
+            message(2, "intermediate", Some("think"), vec![call("b")]),
+            message(3, "final", None, Vec::new()),
+        ]);
+        assert_eq!(layout(&chat), [(0, 2), (1, 1), (2, 3), (3, 3)]);
+    }
+
+    #[test]
+    fn scroll_anchor_prefers_public_text_to_its_reasoning() {
+        let rows = [
+            Row::Activity {
+                start: 0,
+                end: 1,
+                span: None,
+                spent: None,
+            },
+            Row::Item(0),
+        ];
+        assert_eq!(find(&rows, &Row::Item(0)), Some(1));
     }
 }
