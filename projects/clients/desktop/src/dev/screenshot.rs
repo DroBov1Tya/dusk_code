@@ -14,7 +14,7 @@
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
 //! - `fake=agents`: six subagents of different roles at different points of their work;
 //!   `fake=agentchat`: open the chat of one, with a run of steps;
-//! - `fake=limits`: rate limits in the status, as a provider reports them;
+//! - `fake=limits`: API rate limits; `fake=plan-limits|plan-unavailable`: ChatGPT plan usage;
 //! - `fake=plugins`: about 200 made-up plugin parts of 60 plugins in the status (see
 //!   `dev::plugins`); `plugins=menu`: open the menu of them; `plugins=search:TEXT`: type
 //!   in its search; `plugins=open:PLUGIN/PART`: open a part with a made-up view, such as
@@ -518,6 +518,8 @@ fn act(
         // The ChatGPT plan's windows, as its sign-in reports them.
         "fake" if value == "plan-limits" => {
             use dusk_protocol::model::{PlanWindow, RateLimits};
+            ws.status.chatgpt_model = true;
+            ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
             ws.status.limits = Some(RateLimits {
                 requests: None,
                 tokens: None,
@@ -534,6 +536,12 @@ fn act(
                     },
                 ],
             });
+            cx.notify();
+        }
+        "fake" if value == "plan-unavailable" => {
+            ws.status.chatgpt_model = true;
+            ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
+            ws.status.limits = None;
             cx.notify();
         }
         "fake" if value == "agents" => {

@@ -101,6 +101,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                     div()
                         .flex_1()
                         .min_w_0()
+                        .children(super::model_bar::quota(ws, cx))
                         .child(
                             // One card: what goes with the message on top, the text under it
                             // across the whole width, and a row of controls at the bottom.

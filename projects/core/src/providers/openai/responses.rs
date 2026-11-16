@@ -10,6 +10,7 @@ use std::{
 };
 
 use anyhow::{Result, anyhow, bail, ensure};
+use dusk_protocol::client::CHATGPT_USAGE_URL;
 use reqwest::{
     Client, Response, StatusCode, Url,
     header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE, HeaderValue},
@@ -34,8 +35,6 @@ use super::sign_in::Session;
 const MAX_BODY_BYTES: usize = 4 * 1024 * 1024;
 const CATALOGUE_TIMEOUT: Duration = Duration::from_secs(30);
 const ERROR_BODY_TIMEOUT: Duration = Duration::from_secs(5);
-/// Where the user sees and sets how much of the plan an app may use.
-const USAGE_PAGE: &str = "https://chatgpt.com/settings/usage";
 const SIGN_IN_AGAIN: &str =
     "ChatGPT did not accept the sign-in; sign in again in the provider settings";
 
@@ -266,14 +265,13 @@ async fn refusal(response: Response, what: &str) -> String {
 fn said(code: &str) -> Option<String> {
     Some(match code {
         "subscription_sharing_usage_limit_exceeded" => {
-            format!("the ChatGPT plan's limit for apps is used up; see {USAGE_PAGE}")
+            format!("the ChatGPT plan's limit for apps is used up; see {CHATGPT_USAGE_URL}")
         }
-        "usage_limit_reached" | "rate_limit_exceeded" | "insufficient_quota" => format!(
-            "the ChatGPT plan's usage limit is reached; the limits ring shows when it frees up, \
-             or see {USAGE_PAGE}"
-        ),
+        "usage_limit_reached" | "rate_limit_exceeded" | "insufficient_quota" => {
+            format!("the ChatGPT plan's usage limit is reached; see {CHATGPT_USAGE_URL}")
+        }
         "usage_not_included" => {
-            format!("this ChatGPT plan does not include use in apps; see {USAGE_PAGE}")
+            format!("this ChatGPT plan does not include use in apps; see {CHATGPT_USAGE_URL}")
         }
         "context_length_exceeded" => {
             "the chat is longer than the model takes; /compact makes it shorter".to_owned()
@@ -412,10 +410,9 @@ impl ResponseStream {
                 .map_err(|_| Transient("cannot read provider stream".into()))?;
             match chunk {
                 Some(bytes) => {
-                    self.pending.extend(self.parser.feed(&bytes)?);
-                    if let Some(plan) = self.parser.plan.take() {
-                        self.account.note_plan(&plan);
-                    }
+                    let parsed = self.parser.feed(&bytes);
+                    self.parser.note_plan(self.account);
+                    self.pending.extend(parsed?);
                     self.finished = self.parser.done;
                 }
                 None => bail!(Transient(
@@ -436,7 +433,7 @@ struct Parser {
     /// The tool calls counted; the map may not grow when a stream repeats a place.
     counted: u32,
     /// The plan's windows, when the stream reported them.
-    plan: Option<Vec<PlanUse>>,
+    plan: Vec<[Option<PlanUse>; 2]>,
 }
 
 #[derive(Deserialize)]
@@ -449,12 +446,13 @@ struct Event {
     response: Option<Finished>,
     code: Option<String>,
     error: Option<Reason>,
-    /// Read apart, so a shape the server changes costs the ring, not the answer.
+    /// Read apart, so a malformed window cannot interrupt the answer.
     rate_limits: Option<Value>,
+    metered_limit_name: Option<Value>,
+    limit_name: Option<Value>,
 }
 
-/// The windows of a `codex.rate_limits` event; the short one first, then the week. A
-/// window in another shape is left out.
+/// The provider's slots do not imply a fixed duration. A malformed window is ignored.
 #[derive(Deserialize)]
 struct PlanWindows {
     #[serde(default, deserialize_with = "lenient")]
@@ -511,6 +509,12 @@ struct OutputDetails {
 }
 
 impl Parser {
+    fn note_plan(&mut self, account: Account) {
+        for windows in self.plan.drain(..) {
+            account.note_plan(windows);
+        }
+    }
+
     fn feed(&mut self, bytes: &[u8]) -> Result<Vec<ModelEvent>> {
         let mut events = Vec::new();
         for data in self.decoder.feed(bytes)? {
@@ -594,12 +598,22 @@ impl Parser {
             }
             // ChatGPT says how much of the plan is used as an event of its own.
             "codex.rate_limits" => {
+                let bucket = event
+                    .metered_limit_name
+                    .as_ref()
+                    .or(event.limit_name.as_ref());
+                if bucket.is_some_and(|bucket| {
+                    !bucket
+                        .as_str()
+                        .is_some_and(|name| name.trim().eq_ignore_ascii_case("codex"))
+                }) {
+                    return Ok(());
+                }
                 let windows = event
                     .rate_limits
                     .and_then(|value| serde_json::from_value::<PlanWindows>(value).ok());
                 if let Some(windows) = windows {
-                    let plan = [windows.primary, windows.secondary];
-                    self.plan = Some(plan.into_iter().flatten().collect());
+                    self.plan.push([windows.primary, windows.secondary]);
                 }
             }
             "response.failed" | "error" => {
@@ -696,15 +710,99 @@ mod tests {
         let mut parser = Parser::default();
         let events = parser.feed(&body).unwrap();
         assert_eq!(events, [ModelEvent::Text("Hi".into())]);
-        let plan = parser.plan.take().unwrap();
-        assert_eq!(plan.len(), 2);
-        assert_eq!(plan[1].window_minutes, Some(10080));
+        let [[Some(primary), Some(secondary)]] = parser.plan.as_slice() else {
+            panic!("expected two windows");
+        };
+        assert_eq!(
+            (primary.window_minutes, primary.used_percent),
+            (Some(300), 12.5)
+        );
+        assert_eq!(
+            (secondary.window_minutes, secondary.used_percent),
+            (Some(10080), 40.0)
+        );
 
         let odd = stream(&[json!({"type":"codex.rate_limits","rate_limits":{
             "primary":{"used_percent":"lots"},"secondary":{"used_percent":3}}})]);
         let mut parser = Parser::default();
         assert!(parser.feed(&odd).unwrap().is_empty());
-        assert_eq!(parser.plan.unwrap().len(), 1);
+        assert!(matches!(parser.plan.as_slice(), [[None, Some(_)]]));
+    }
+
+    #[tokio::test]
+    async fn authorized_stream_keeps_partial_plan_windows_even_when_inference_fails() {
+        use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let fixture = tokio::spawn(async move {
+            let (socket, _) = listener.accept().await.unwrap();
+            let mut socket = BufReader::new(socket);
+            let mut request = String::new();
+            loop {
+                let mut line = String::new();
+                assert_ne!(socket.read_line(&mut line).await.unwrap(), 0);
+                if line == "\r\n" {
+                    break;
+                }
+                request.push_str(&line);
+            }
+            assert!(request.starts_with("POST /v1/responses "));
+            assert!(request.contains("authorization: Bearer fixture-quota-token\r\n"));
+            let body = stream(&[
+                json!({"type":"codex.rate_limits","rate_limits":{
+                    "secondary":{"used_percent":74,"window_minutes":10080}}}),
+                json!({"type":"codex.rate_limits","metered_limit_name":"code-review","rate_limits":{
+                    "primary":{"used_percent":99,"window_minutes":300}}}),
+                json!({"type":"codex.rate_limits","limit_name":"  CoDeX  ","rate_limits":{
+                    "primary":{"used_percent":21}}}),
+                json!({"type":"response.failed","response":{"error":{
+                    "code":"subscription_sharing_usage_limit_exceeded"}}}),
+            ]);
+            let headers = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nContent-Length: {}\r\n\
+                 x-codex-primary-used-percent: 18\r\nx-codex-primary-window-minutes: 300\r\n\r\n",
+                body.len()
+            );
+            socket
+                .get_mut()
+                .write_all(headers.as_bytes())
+                .await
+                .unwrap();
+            socket.get_mut().write_all(&body).await.unwrap();
+            socket.get_mut().shutdown().await.unwrap();
+        });
+        let record = json!({
+            "client_id":"fixture-authorized-quota-stream","host_id":"fixture","subject":"fixture",
+            "email":null,"access_token":"fixture-quota-token","refresh_token":"",
+            "expires_at":i64::MAX,"saved_at":1,
+        });
+        let config: ProviderConfig = serde_json::from_value(json!({
+            "base_url":super::super::sign_in::RESOURCE,
+            "kind":"chatgpt","api_key":record.to_string(),
+        }))
+        .unwrap();
+        let same_account = Account::of(&config);
+        assert!(same_account.limits().is_none());
+        let mut provider = ChatGpt::new(&config).unwrap();
+        provider.responses_url = format!("http://{addr}/v1/responses").parse().unwrap();
+        let request = ChatRequest {
+            model: "fixture",
+            messages: &[ChatMessage::User("fixture".into())],
+            tools: &[],
+            max_output_tokens: None,
+            effort: None,
+            cache_key: None,
+        };
+        let mut stream = provider.stream_chat(request).await.unwrap();
+        assert!(stream.next_event().await.is_err());
+        fixture.await.unwrap();
+        let plan = same_account.limits().unwrap().plan;
+        assert_eq!(
+            plan.iter()
+                .map(|p| (p.minutes, p.used_percent))
+                .collect::<Vec<_>>(),
+            [(Some(300), 21), (Some(10_080), 74)]
+        );
     }
 
     #[test]
@@ -800,7 +898,7 @@ mod tests {
             "code":"subscription_sharing_usage_limit_exceeded","message":"echo of the input"}}})]);
         let error = Parser::default().feed(&spent).unwrap_err().to_string();
         assert!(
-            error.contains(USAGE_PAGE) && !error.contains("echo"),
+            error.contains(CHATGPT_USAGE_URL) && !error.contains("echo"),
             "{error}"
         );
     }
