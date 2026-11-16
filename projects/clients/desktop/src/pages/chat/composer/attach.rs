@@ -228,13 +228,14 @@ impl Workspace {
             multiple: true,
             prompt: Some("Attach".into()),
         });
+        let thread_id = self.shown.clone();
+        let generation = self.drafts.generation();
         cx.spawn(async move |ws, cx| {
             let Ok(Ok(Some(paths))) = picked.await else {
                 return;
             };
             let _ = ws.update(cx, |ws, cx| {
-                ws.attachments.extend(paths);
-                cx.notify();
+                ws.edit_draft_at(thread_id, generation, super::Change::Attach(paths), cx);
             });
         })
         .detach();

@@ -39,7 +39,10 @@ impl Block {
 
 /// What a finished turn folds away: all but its answer, the user's words and errors.
 fn folds(item: &Item) -> bool {
-    !matches!(item, Item::User(_) | Item::Error(_))
+    !matches!(
+        item,
+        Item::User(_) | Item::Answered(_) | Item::Job(_) | Item::Error(_)
+    )
 }
 
 /// The chat as blocks: each turn's way to its answer in one, the rest one by one.
@@ -51,7 +54,9 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
         blocks.push(Block::One(asked.clone()));
         let end = chat.items[at + 1..]
             .iter()
-            .position(|entry| matches!(entry.item, Item::User(_)))
+            .position(|entry| {
+                matches!(entry.item, Item::User(_) | Item::Answered(_) | Item::Job(_))
+            })
             .map_or(chat.items.len(), |offset| at + 1 + offset);
         let turn = &chat.items[at + 1..end];
         let open = end == chat.items.len() && chat.working;
@@ -96,7 +101,8 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
             }
             entry
         });
-        let started = matches!(asked.item, Item::User(_)).then_some(asked.at);
+        let started = matches!(asked.item, Item::User(_) | Item::Answered(_) | Item::Job(_))
+            .then_some(asked.at);
         let took = answer
             .zip(started)
             .map(|(index, started)| turn[index].at - started);
@@ -137,7 +143,9 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
             c.items
                 .iter()
                 .rev()
-                .find(|entry| matches!(entry.item, Item::User(_)))
+                .find(|entry| {
+                    matches!(entry.item, Item::User(_) | Item::Answered(_) | Item::Job(_))
+                })
                 .map(|entry| entry.at)
         });
         match started {
@@ -208,6 +216,29 @@ fn item_view(item: Item) -> impl IntoView {
             <div class="msg user"><div class="bubble">{user_text(&text)}</div></div>
         }
         .into_any(),
+        Item::Answered(answers) => view! {
+            <div class="msg user"><div class="bubble">
+                {answers.into_iter().map(|answer| view! {
+                    <div><strong>{answer.question}</strong>
+                        {answer.options.into_iter().map(|(option, selected)| view! {
+                            <div>{if selected { "☑ " } else { "☐ " }}{option}</div>
+                        }).collect_view()}
+                        {answer.declined.then(|| view! { <div>"Declined"</div> })}
+                        {(!answer.own.is_empty()).then(|| view! { <div>{answer.own}</div> })}
+                    </div>
+                }).collect_view()}
+            </div></div>
+        }
+        .into_any(),
+        Item::Job(result) => {
+            let title = result.title();
+            let class = if result.failed() {
+                "steps error"
+            } else {
+                "steps"
+            };
+            view! { <details class=class><summary>{title}</summary><pre class="tool-out">{result.output}</pre></details> }.into_any()
+        }
         Item::Agent { from, text } => view! {
             <div class="msg agent">
                 <div class="muted">{format!("From {from}")}</div>

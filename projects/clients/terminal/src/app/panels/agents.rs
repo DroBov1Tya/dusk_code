@@ -208,7 +208,11 @@ impl AgentWindow {
 
 /// What the asking thread wrote, shown like a user's message.
 fn request(text: String) -> Entry {
-    Entry::User { text, open: false }
+    Entry::User {
+        text,
+        open: false,
+        answered: Vec::new(),
+    }
 }
 
 /// Recent output in tokens per second, at about four bytes a token.

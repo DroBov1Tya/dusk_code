@@ -193,18 +193,43 @@ fn ensure_private(metadata: &fs::Metadata) -> Result<()> {
     Ok(())
 }
 
+/// What the parser refused and where. YAML errors can quote input values, including
+/// secrets: only known field names, expected types and the position are taken from them.
+fn what_is_wrong(error: &serde_saphyr::Error) -> String {
+    use serde_saphyr::Error;
+    let reason = match error.without_snippet() {
+        Error::SerdeUnknownField { field, .. } if field == "tool" => {
+            "unknown field `tool`".to_owned()
+        }
+        Error::SerdeUnknownField { .. } => "unknown field".to_owned(),
+        Error::SerdeMissingField { field, .. } => format!("missing field `{field}`"),
+        Error::SerdeInvalidType { expected, .. } | Error::SerdeInvalidValue { expected, .. } => {
+            format!("expected {expected}")
+        }
+        Error::SerdeUnknownVariant { expected, .. } => {
+            format!("expected one of: {}", expected.join(", "))
+        }
+        Error::DuplicateMappingKey { .. } => "a key is written twice".to_owned(),
+        _ => "the text is not valid YAML here".to_owned(),
+    };
+    match error.location() {
+        Some(at) => format!("{reason} at line {}, column {}", at.line(), at.column()),
+        None => reason,
+    }
+}
+
 impl Config {
     /// Reads a private local file: neither the file nor its directory may be a symlink or
     /// readable by group or others.
     pub fn load_from(path: impl AsRef<Path>) -> Result<Self> {
-        let bytes = read_private_file(path.as_ref())?;
-        Self::parse(&bytes)
+        let path = path.as_ref();
+        let bytes = read_private_file(path)?;
+        Self::parse(&bytes).map_err(|error| anyhow!("{error:#} in {}", path.display()))
     }
 
     pub fn parse(bytes: &[u8]) -> Result<Self> {
-        // YAML errors can quote input values, including secrets. Drop their source.
-        let config: Self =
-            serde_saphyr::from_slice(bytes).map_err(|_| anyhow!("invalid configuration YAML"))?;
+        let config: Self = serde_saphyr::from_slice(bytes)
+            .map_err(|error| anyhow!("invalid configuration YAML: {}", what_is_wrong(&error)))?;
         config.validate()?;
         Ok(config)
     }

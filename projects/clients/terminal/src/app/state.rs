@@ -1,7 +1,7 @@
 //! The client state itself: its fields, how it opens a thread, and its timers.
 
 use std::{
-    collections::{HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     time::Instant,
 };
 
@@ -36,6 +36,8 @@ pub struct App {
     pub title: Option<String>,
     pub transcript: Transcript,
     pub input: Input,
+    /// What was typed and not sent in the threads that are not shown; `None` is a new one.
+    pub drafts: HashMap<Option<String>, Input>,
     pub focus: Focus,
     pub panel: Option<Panel>,
     pub activity: Activity,
@@ -189,6 +191,7 @@ impl App {
             title: None,
             transcript: Transcript::default(),
             input: Input::default(),
+            drafts: HashMap::new(),
             focus: Focus::Input,
             panel: None,
             activity: Activity::Idle,
@@ -282,7 +285,13 @@ impl App {
     /// Shows another thread: its history, or nothing for a new one.
     pub fn open(&mut self, thread_id: Option<String>, title: Option<String>, history: &[Message]) {
         if self.thread_id != thread_id {
-            self.input = Input::default();
+            // While an earlier message is recalled, the typed text waits in `recall_draft`.
+            let typed = self.recall_draft.take();
+            let typed = typed.unwrap_or_else(|| std::mem::take(&mut self.input));
+            if !typed.is_empty() {
+                self.drafts.insert(self.thread_id.take(), typed);
+            }
+            self.input = self.drafts.remove(&thread_id).unwrap_or_default();
         }
         self.temporary = false;
         (self.sent_ids, self.sent) = history

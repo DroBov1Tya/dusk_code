@@ -54,7 +54,7 @@ pub fn SettingsPage(page: Page) -> impl IntoView {
                 {PAGES.map(|(p, label, icon)| view! {
                     <button class="nav-item" class:active=move || p == page
                         aria-current=move || (p == page).then_some("page")
-                        on:click=move |_| app.view.set(View::Settings(p))>
+                        on:click=move |_| app.show(View::Settings(p))>
                         <Icon name=icon />{label}
                     </button>
                 })}

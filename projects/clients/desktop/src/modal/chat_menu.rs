@@ -365,7 +365,9 @@ impl Workspace {
             move |ws, result, cx| match result {
                 Ok(()) => {
                     ws.chats.remove(&id);
+                    ws.drafts.forget(&id);
                     if ws.shown.as_deref() == Some(id.as_str()) {
+                        ws.drafts.new_chat();
                         ws.shown = None;
                     }
                     theme::change(cx, |prefs| prefs.pinned.retain(|pinned| *pinned != id));

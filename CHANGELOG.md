@@ -23,12 +23,17 @@ testing.
 
 ### Fixed
 
+- The message box keeps what is typed and attached for each chat: another chat shows its
+  own unsent text or an empty box, in the Desktop, the web page and the terminal.
 - Desktop AI settings align the Voice cards and fit the category controls in narrow panes.
 - Desktop keeps assistant text in order with collapsed activity and leaves retry
   messages visible during a turn.
 - Chats make at most one automatic title request after their first turn. A title chosen
   by the user is kept.
 - ChatGPT sign-in records cache writes when the provider reports them.
+- Settings → About me says whether the profile and a snippet are saved: "Unsaved changes"
+  while the text differs from what the core holds, "Saved" once the core confirms, and
+  why when a save fails. Reopening the page keeps a profile that is not saved yet.
 
 ## 0.74.2 - 2026-11-15
 

@@ -80,3 +80,63 @@ fn a_subagents_events_go_to_its_own_chat() {
     assert_eq!(chat.agent_chats["sub"].items.len(), 1);
     assert!(matches!(chat.agents[0].state, AgentState::Writing));
 }
+
+fn message(role: MessageRole, content: &str) -> Message {
+    Message {
+        message_id: String::new(),
+        thread_id: String::new(),
+        sequence: 1,
+        role,
+        content: content.into(),
+        reasoning: None,
+        tool_calls: Vec::new(),
+        tool_call_id: None,
+        artifacts: Vec::new(),
+        from_thread_id: None,
+        from_job_id: None,
+        content_tokens: 0,
+        tool_calls_tokens: 0,
+        reasoning_tokens: 0,
+        created_at: 0,
+    }
+}
+
+#[test]
+fn answers_and_job_results_are_distinct_in_history_and_live_events() {
+    let question = Question {
+        question: "Choose".into(),
+        options: vec!["A".into(), "B".into()],
+        multiple: false,
+    };
+    let ask = ToolCall {
+        id: "ask".into(),
+        name: "ask_user".into(),
+        arguments: serde_json::to_value(&question).unwrap(),
+    };
+    let answer = question.answer(&[1], "");
+    let job = dusk_protocol::thread::job_message("id", "failed", "<script>out</script>");
+    let mut assistant = message(MessageRole::Assistant, "");
+    assistant.tool_calls.push(ask.clone());
+    let history = [
+        assistant,
+        message(MessageRole::User, &answer),
+        message(MessageRole::Job, &job),
+    ];
+    let mut live = ChatData::default();
+    live.apply(ThreadEvent::ToolStarted(ask));
+    live.apply(ThreadEvent::UserMessage(message(
+        MessageRole::User,
+        &answer,
+    )));
+    live.apply(ThreadEvent::FromJob(message(MessageRole::Job, &job)));
+    for chat in [ChatData::from_history(&history), live] {
+        assert!(matches!(&chat.items[1].item, Item::Answered(answers) if answers[0].options[1].1));
+        assert!(
+            matches!(&chat.items[2].item, Item::Job(result) if result.failed() && result.output == "<script>out</script>")
+        );
+    }
+    let fallback = ChatData::from_history(&[message(MessageRole::Job, "unrecognised")]);
+    assert!(
+        matches!(&fallback.items[0].item, Item::Job(result) if result.output == "unrecognised")
+    );
+}

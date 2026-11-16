@@ -6,10 +6,10 @@ use std::{collections::BTreeMap, time::Instant};
 use dusk_protocol::{
     model::ModelEvent,
     thread::{
-        AgentState, DETAIL_KEYS, Message, MessageRole, Note, Task, ThreadEvent, ThreadTokens, Tool,
-        ToolState, clip, note,
+        AgentState, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Task, ThreadEvent,
+        ThreadTokens, Tool, ToolState, clip, note,
     },
-    tools::{ApprovalRequest, Card, Question},
+    tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
 
 pub enum Item {
@@ -18,6 +18,7 @@ pub enum Item {
         text: String,
         sequence: Option<u64>,
     },
+    Job(JobResult),
     /// A shell block the user ran from an answer; `result` is empty while it runs.
     Command(CommandRun),
     /// What a subagent reported back: the agent's side of the chat, not the user's.
@@ -223,6 +224,10 @@ impl Agent {
 #[derive(Default)]
 pub struct Transcript {
     pub items: Vec<Item>,
+    /// The earliest existing item whose content needs measuring again.
+    pub changed_from: Option<usize>,
+    pub answered: BTreeMap<usize, Vec<Answered>>,
+    asked: Asked,
     pub activity_boundaries: Vec<usize>,
     /// When each boundary was drawn, in Unix milliseconds, beside `activity_boundaries`.
     pub boundary_times: Vec<i64>,
@@ -322,10 +327,18 @@ impl Transcript {
                     text: message.content.clone(),
                 })
             }
-            MessageRole::User | MessageRole::Job => self.items.push(Item::User {
-                text: message.content.clone(),
-                sequence: (message.role == MessageRole::User).then_some(message.sequence),
-            }),
+            MessageRole::User => {
+                if let Some(answers) = self.asked.answer(&message.content) {
+                    self.answered.insert(self.items.len(), answers);
+                }
+                self.items.push(Item::User {
+                    text: message.content.clone(),
+                    sequence: Some(message.sequence),
+                });
+            }
+            MessageRole::Job => self
+                .items
+                .push(Item::Job(JobResult::read(&message.content))),
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
                     self.items.push(Item::Assistant {
@@ -334,6 +347,7 @@ impl Transcript {
                     });
                 }
                 for call in &message.tool_calls {
+                    self.asked.call(call);
                     self.items.push(Item::Tool(tool(call, ToolState::Done)));
                 }
             }
@@ -368,6 +382,19 @@ impl Transcript {
     }
 
     pub fn apply(&mut self, event: ThreadEvent) {
+        let changed = match &event {
+            ThreadEvent::Model(ModelEvent::Text(_) | ModelEvent::Reasoning(_)) => {
+                self.items.len().checked_sub(1)
+            }
+            ThreadEvent::ToolFinished { call_id, .. } => self
+                .items
+                .iter()
+                .position(|item| matches!(item, Item::Tool(tool) if tool.call_id == *call_id)),
+            _ => None,
+        };
+        if let Some(index) = changed {
+            self.changed_from = Some(self.changed_from.map_or(index, |old| old.min(index)));
+        }
         if let Some(note) = note(&event) {
             match &event {
                 ThreadEvent::Failed(_) => self.working = false,
@@ -397,11 +424,7 @@ impl Transcript {
                 });
             }
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
-                let sequence = (message.role == MessageRole::User).then_some(message.sequence);
-                self.items.push(Item::User {
-                    text: message.content,
-                    sequence,
-                })
+                self.add_message(&message);
             }
             ThreadEvent::TurnStarted(_) => {
                 self.activity_boundary(dusk_protocol::system::now_ms());
@@ -418,6 +441,7 @@ impl Transcript {
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => {
+                self.asked.call(&call);
                 self.items.push(Item::Tool(tool(&call, ToolState::Running)));
             }
             ThreadEvent::ToolFinished { call_id, result } => {
@@ -508,6 +532,8 @@ impl Transcript {
                 // The core forgot the message and all after it; so does the view.
                 if let Some(at) = self.rollback_at.take() {
                     self.items.truncate(at);
+                    self.answered.retain(|index, _| *index < at);
+                    self.asked = Asked::default();
                     let kept = self
                         .activity_boundaries
                         .iter()
@@ -589,11 +615,12 @@ impl Transcript {
     }
 
     pub fn finish_run(&mut self, id: u64, result: Result<String, String>) {
-        for item in &mut self.items {
+        for (index, item) in self.items.iter_mut().enumerate() {
             if let Item::Command(run) = item
                 && run.id == id
             {
                 run.result = Some(result);
+                self.changed_from = Some(self.changed_from.map_or(index, |old| old.min(index)));
                 return;
             }
         }

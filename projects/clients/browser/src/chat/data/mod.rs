@@ -5,16 +5,18 @@ use dusk_protocol::{
     config::ApprovalPolicy,
     model::ModelEvent,
     thread::{
-        AgentState, Message, MessageRole, Note, Task, ThreadEvent, Tool, ToolState, agent_name,
-        clip, note,
+        AgentState, JobResult, Message, MessageRole, Note, Task, ThreadEvent, Tool, ToolState,
+        agent_name, clip, note,
     },
-    tools::{ApprovalRequest, Card, CardKind, Question},
+    tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
 use std::collections::BTreeMap;
 
 #[derive(Clone, PartialEq)]
 pub enum Item {
     User(String),
+    Answered(Vec<Answered>),
+    Job(JobResult),
     /// What a subagent reported back.
     Agent {
         from: String,
@@ -93,6 +95,7 @@ pub struct ChatData {
     pub pending: Vec<String>,
     /// The stream broke or the thread ended; sending opens it again.
     pub ended: bool,
+    asked: Asked,
     next_id: u64,
     /// The time new items take: a stored message's own, or now for a live event.
     clock: i64,
@@ -128,7 +131,8 @@ impl ChatData {
                     text: message.content.clone(),
                 });
             }
-            MessageRole::User | MessageRole::Job => self.push(Item::User(message.content.clone())),
+            MessageRole::User => self.add_user(message.content.clone()),
+            MessageRole::Job => self.push(Item::Job(JobResult::read(&message.content))),
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
                     self.push(Item::Assistant {
@@ -137,6 +141,7 @@ impl ChatData {
                     });
                 }
                 for call in &message.tool_calls {
+                    self.asked.call(call);
                     self.push(Item::Tool(Tool::new(call, ToolState::Done)));
                 }
             }
@@ -148,6 +153,14 @@ impl ChatData {
             }
         }
         self.add_cards(&message.artifacts);
+    }
+
+    fn add_user(&mut self, text: String) {
+        let item = match self.asked.answer(&text) {
+            Some(answers) => Item::Answered(answers),
+            None => Item::User(text),
+        };
+        self.push(item);
     }
 
     fn add_cards(&mut self, cards: &[Card]) {
@@ -187,11 +200,14 @@ impl ChatData {
                     text: message.content,
                 });
             }
-            ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
+            ThreadEvent::UserMessage(message) => {
                 if let Some(at) = self.pending.iter().position(|p| *p == message.content) {
                     self.pending.remove(at);
                 }
-                self.push(Item::User(message.content));
+                self.add_user(message.content);
+            }
+            ThreadEvent::FromJob(message) => {
+                self.push(Item::Job(JobResult::read(&message.content)));
             }
             ThreadEvent::TurnStarted(_) => self.working = true,
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => self.working = false,
@@ -199,6 +215,7 @@ impl ChatData {
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => {
+                self.asked.call(&call);
                 self.push(Item::Tool(Tool::new(&call, ToolState::Running)))
             }
             ThreadEvent::ToolFinished { call_id, result } => {

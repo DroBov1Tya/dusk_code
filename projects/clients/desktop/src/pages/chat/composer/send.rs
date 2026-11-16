@@ -8,10 +8,18 @@ impl Workspace {
     /// Sends the composer's text to the shown chat, or to a new chat of the selected
     /// project when none is shown.
     pub fn send(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shown.is_none() && self.drafts.starting() {
+            return;
+        }
         let mut text = self.composer.read(cx).value().trim().to_owned();
         if self.run_command(&text, window, cx) {
             return;
         }
+        let draft = super::Draft {
+            text: self.composer.read(cx).value().to_string(),
+            attachments: self.attachments.clone(),
+            pastes: self.pastes.clone(),
+        };
         for pasted in std::mem::take(&mut self.pastes) {
             if !text.is_empty() {
                 text.push('\n');
@@ -68,6 +76,12 @@ impl Workspace {
         self.composer
             .update(cx, |composer, cx| composer.set_value("", window, cx));
         let temporary = std::mem::take(&mut self.temporary_next);
+        let origin = shown.clone();
+        let generation = self.drafts.generation();
+        let navigation = self.history.navigation();
+        if origin.is_none() {
+            self.drafts.begin();
+        }
         self.core.call(
             cx,
             move |client| async move {
@@ -81,17 +95,32 @@ impl Workspace {
                 threads.send(&thread_id, text, false).await?;
                 anyhow::Ok((thread_id, new))
             },
-            |ws, result, cx| match result {
-                Ok((thread_id, new)) => {
-                    if new {
-                        ws.chats.insert(thread_id.clone(), Transcript::default());
-                        ws.show(thread_id, cx);
-                        ws.reload_threads(cx);
-                    }
-                    // What was attached is now among the chat's sources.
-                    ws.load_sources(cx);
+            move |ws, result, cx| {
+                if origin.is_none() {
+                    ws.drafts.finish(generation);
                 }
-                Err(error) => ws.fail(error, cx),
+                match result {
+                    Ok((thread_id, new)) => {
+                        if new {
+                            let current = ws.drafts.started(&thread_id, generation);
+                            ws.chats.insert(thread_id.clone(), Transcript::default());
+                            if current
+                                && ws.history.navigation() == navigation
+                                && ws.shown.is_none()
+                                && ws.center == crate::workspace::Center::Chat
+                            {
+                                ws.show(thread_id, cx);
+                            }
+                            ws.reload_threads(cx);
+                        }
+                        // What was attached is now among the chat's sources.
+                        ws.load_sources(cx);
+                    }
+                    Err(error) => {
+                        ws.edit_draft_at(origin, generation, super::Change::Restore(draft), cx);
+                        ws.fail(error, cx);
+                    }
+                }
             },
         );
     }

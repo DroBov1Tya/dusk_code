@@ -338,7 +338,11 @@ fn act(
         "terminal" => ws.toggle_terminal(window, cx),
         "run" => ws.type_in_terminal(format!("{value}\r").into_bytes(), cx),
         "type" => {
-            ws.fill_composer = Some(value.to_owned());
+            ws.edit_draft(
+                ws.shown.clone(),
+                crate::pages::chat::composer::Change::Replace(value.to_owned()),
+                cx,
+            );
             cx.notify();
         }
         "menu" => {

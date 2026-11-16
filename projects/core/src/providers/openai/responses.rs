@@ -369,6 +369,11 @@ fn wire_request(request: &ChatRequest<'_>) -> Value {
     if let Some(effort) = request.effort.filter(|effort| *effort != Effort::Off) {
         wire["reasoning"] = json!({ "effort": effort.wire_name(), "summary": "auto" });
     }
+    // Keeps a thread's steps on the machine that holds its cached prefix: threads share
+    // the start of their prompt, and without a key they push each other off it.
+    if let Some(key) = request.cache_key {
+        wire["prompt_cache_key"] = key.into();
+    }
     wire
 }
 
@@ -939,6 +944,7 @@ mod tests {
         assert_eq!(wire["store"], false);
         assert_eq!(wire["stream"], true);
         assert_eq!(wire["instructions"], "be brief");
+        assert_eq!(wire["prompt_cache_key"], "thread");
         // What the route refuses is never sent.
         for refused in [
             "max_output_tokens",

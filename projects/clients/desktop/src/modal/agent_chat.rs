@@ -102,6 +102,9 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 said.into_any_element()
             }
             Item::Tool(_) => div().into_any_element(),
+            Item::Job(result) => {
+                crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()
+            }
             Item::Command(run) => div()
                 .text_xs()
                 .text_color(muted)

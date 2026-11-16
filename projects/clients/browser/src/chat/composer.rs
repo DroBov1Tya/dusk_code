@@ -8,6 +8,10 @@ use crate::{
 };
 use dusk_protocol::client::COMMANDS;
 use leptos::{html, prelude::*, task::spawn_local};
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
 use wasm_bindgen::JsCast;
 
 #[derive(Clone, Copy, PartialEq)]
@@ -17,20 +21,87 @@ enum Dictation {
     Transcribing,
 }
 
+/// What is typed and attached in a chat but not sent, kept while another page is shown.
+#[derive(Default)]
+pub struct Draft {
+    pub text: String,
+    pub pictures: Vec<super::pictures::Picture>,
+}
+
 #[component]
 pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     let app = state();
-    let text = RwSignal::new(String::new());
+    let draft = app.take_draft(&id);
+    let text = RwSignal::new(draft.text);
     let area = NodeRef::<html::Textarea>::new();
     let dictation = RwSignal::new(Dictation::Idle);
     let recording = StoredValue::new_local(None::<voice::Recording>);
-    let pictures = RwSignal::new(Vec::<super::pictures::Picture>::new());
+    let recording_generation = StoredValue::new(0u64);
+    let pictures = RwSignal::new(draft.pictures);
+    // The box goes with its page; what it holds waits for this chat to be shown again.
+    on_cleanup({
+        let id = id.clone();
+        move || {
+            let draft = Draft {
+                text: text.get_untracked(),
+                pictures: pictures.get_untracked(),
+            };
+            app.keep_draft(id, draft);
+        }
+    });
+    let alive = Arc::new(AtomicBool::new(true));
+    on_cleanup({
+        let alive = alive.clone();
+        move || {
+            alive.store(false, Ordering::Relaxed);
+            if let Some(started) = recording.try_update_value(|r| r.take()).flatten() {
+                started.finish();
+            }
+        }
+    });
     let picker = NodeRef::<html::Input>::new();
 
+    Effect::new({
+        let id = id.clone();
+        move |_| {
+            if app.dictations.with(|pending| pending.contains_key(&id)) {
+                let heard = app
+                    .dictations
+                    .try_update(|pending| pending.remove(&id))
+                    .flatten()
+                    .unwrap_or_default();
+                text.update(|text| {
+                    for part in heard {
+                        if !text.is_empty() && !text.ends_with(' ') {
+                            text.push(' ');
+                        }
+                        text.push_str(part.trim());
+                    }
+                });
+            }
+        }
+    });
+
+    Effect::new({
+        let id = id.clone();
+        move |_| {
+            if app
+                .pending_pictures
+                .with(|pending| pending.contains_key(&id))
+            {
+                let added = app
+                    .pending_pictures
+                    .try_update(|pending| pending.remove(&id))
+                    .flatten()
+                    .unwrap_or_default();
+                pictures.update(|pictures| pictures.extend(added));
+            }
+        }
+    });
     // After /undo the core hands the message back to edit.
     Effect::new(move |_| {
         if let Some(offered) = chat.with(|c| c.offered.clone()) {
-            text.set(offered);
+            text.update(|draft| restore_offered(draft, offered));
             chat.update(|c: &mut ChatData| c.offered = None);
         }
     });
@@ -74,36 +145,61 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             }
         }
     });
-    let toggle_dictation = move |_| match dictation.get_untracked() {
-        Dictation::Idle => spawn_local(async move {
-            match voice::start_recording().await {
-                Ok(started) => {
-                    recording.set_value(Some(started));
-                    dictation.set(Dictation::Listening);
-                }
-                Err(error) => app.fail(error),
-            }
-        }),
-        Dictation::Listening => {
-            let Some(started) = recording.try_update_value(|r| r.take()).flatten() else {
-                return;
-            };
-            dictation.set(Dictation::Transcribing);
-            let audio = started.finish();
-            spawn_local(async move {
-                match api::transcribe(audio).await {
-                    Ok(heard) => text.update(|t| {
-                        if !t.is_empty() && !t.ends_with(' ') {
-                            t.push(' ');
+    let dictation_id = id.clone();
+    let toggle_dictation = move |_| {
+        let alive = alive.clone();
+        let dictation_id = dictation_id.clone();
+        let generation = app.draft_generation.get_untracked();
+        match dictation.get_untracked() {
+            Dictation::Idle => {
+                recording_generation.set_value(generation);
+                dictation.set(Dictation::Transcribing);
+                spawn_local(async move {
+                    match voice::start_recording().await {
+                        Ok(started) if !alive.load(Ordering::Relaxed) => {
+                            started.finish();
                         }
-                        t.push_str(heard.trim());
-                    }),
-                    Err(error) => app.fail(error),
-                }
-                dictation.set(Dictation::Idle);
-            });
+                        Ok(started) => {
+                            recording.set_value(Some(started));
+                            dictation.set(Dictation::Listening);
+                        }
+                        Err(error) => {
+                            if alive.load(Ordering::Relaxed) {
+                                dictation.set(Dictation::Idle);
+                            }
+                            app.fail(error);
+                        }
+                    }
+                });
+            }
+            Dictation::Listening => {
+                let generation = recording_generation.get_value();
+                let Some(started) = recording.try_update_value(|r| r.take()).flatten() else {
+                    return;
+                };
+                dictation.set(Dictation::Transcribing);
+                let audio = started.finish();
+                spawn_local(async move {
+                    match api::transcribe(audio).await {
+                        Ok(heard) => {
+                            if dictation_id.as_deref().map_or_else(
+                                || app.draft_generation.get_untracked() == generation,
+                                |id| app.chat(id).is_some(),
+                            ) {
+                                app.dictations.update(|pending| {
+                                    pending.entry(dictation_id).or_default().push(heard)
+                                });
+                            }
+                        }
+                        Err(error) => app.fail(error),
+                    }
+                    if alive.load(Ordering::Relaxed) {
+                        dictation.set(Dictation::Idle);
+                    }
+                });
+            }
+            Dictation::Transcribing => {}
         }
-        Dictation::Transcribing => {}
     };
 
     let suggestions = move || {
@@ -118,6 +214,9 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             .collect::<Vec<_>>()
     };
     let access_id = id.clone();
+    let paste_id = id.clone();
+    let drop_id = id.clone();
+    let pick_id = id.clone();
     view! {
         // The box between two sides of one width, the context ring on the right; the mode
         // and the model under it.
@@ -146,20 +245,20 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                             let files = super::pictures::pasted(&ev);
                             if !files.is_empty() {
                                 ev.prevent_default();
-                                super::pictures::add_files(files, pictures);
+                                super::pictures::add_files(files, paste_id.clone());
                             }
                         }
                         on:dragover=move |ev: leptos::ev::DragEvent| ev.prevent_default()
                         on:drop=move |ev: leptos::ev::DragEvent| {
                             ev.prevent_default();
-                            super::pictures::add_files(super::pictures::dropped(&ev), pictures);
+                            super::pictures::add_files(super::pictures::dropped(&ev), drop_id.clone());
                         }
                     ></textarea>
                     <div class="composer-actions">
                         <input type="file" accept="image/png,image/jpeg" multiple hidden node_ref=picker
                             on:change=move |ev| {
                                 if let Some(input) = super::pictures::input_of(&ev) {
-                                    super::pictures::pick(&input, pictures);
+                                    super::pictures::pick(&input, pick_id.clone());
                                 }
                             } />
                         <button class="icon round" title="Attach pictures" aria-label="Attach pictures" on:click=move |_| {
@@ -199,5 +298,29 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
             </div>
             <div class="composer-side"><super::controls::Context chat /></div>
         </div>
+    }
+}
+
+/// Restore the undone message before any text already in the draft.
+fn restore_offered(draft: &mut String, mut offered: String) {
+    if !offered.is_empty() && !draft.is_empty() {
+        offered.push_str("\n\n");
+    }
+    offered.push_str(draft);
+    *draft = offered;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::restore_offered;
+
+    #[test]
+    fn undone_text_keeps_an_existing_draft() {
+        let mut draft = "new text".to_owned();
+        restore_offered(&mut draft, "undone text".to_owned());
+        assert_eq!(draft, "undone text\n\nnew text");
+        let mut empty = String::new();
+        restore_offered(&mut empty, "undone text".to_owned());
+        assert_eq!(empty, "undone text");
     }
 }

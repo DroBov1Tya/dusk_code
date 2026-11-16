@@ -7,6 +7,7 @@ mod controls;
 mod markdown;
 mod pictures;
 mod voice;
+pub use composer::Draft;
 pub use pictures::Picture;
 pub mod data;
 pub mod inspector;

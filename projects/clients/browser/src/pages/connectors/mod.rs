@@ -39,7 +39,7 @@ pub fn Connectors(tab: Tab) -> impl IntoView {
             <div class="tabs">
                 {TABS.map(|(t, label)| view! {
                     <button class="tab" class:active=move || t == tab
-                        on:click=move |_| app.view.set(View::Connectors(t))>{label}</button>
+                        on:click=move |_| app.show(View::Connectors(t))>{label}</button>
                 })}
             </div>
             {match tab {

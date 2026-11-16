@@ -8,12 +8,14 @@
 mod activity;
 mod command;
 mod cost;
+mod feedback;
 mod picture;
 mod row;
 mod sent_picture;
 mod step;
 
 pub use activity::{activity_text, agent_report, notice};
+pub use feedback::{answered, job};
 pub use picture::picture_path;
 pub use row::label;
 pub use sent_picture::SentPicture;
@@ -82,7 +84,11 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                 Row::Activity { .. } | Row::Working => false,
             })
         });
-    sync(ws, &shown, &rows);
+    let changed_from = ws
+        .chats
+        .get_mut(&shown)
+        .and_then(|chat| chat.changed_from.take());
+    sync(ws, &shown, &rows, changed_from);
     if let Some(at) = jump {
         ws.jump = None;
         if let Some(item_ix) = at {
@@ -168,38 +174,76 @@ fn add_activity(rows: &mut Vec<Row>, items: &[Item], start: usize, end: usize) {
 
 /// Tells the list what changed: a new chat is measured anew; rows that came or changed
 /// at the end, where streaming text grows, are measured again.
-fn sync(ws: &mut Workspace, shown: &str, rows: &[Row]) {
+fn sync(ws: &mut Workspace, shown: &str, rows: &[Row], changed_from: Option<usize>) {
     if ws.list_chat.as_deref() != Some(shown) {
         ws.list_chat = Some(shown.to_owned());
         ws.list.reset(rows.len());
         ws.list.set_follow_mode(FollowMode::Tail);
         return;
     }
+    sync_list(
+        &ws.list,
+        &ws.rows,
+        rows,
+        changed_from,
+        &mut ws.measure_again,
+    );
+}
+
+fn sync_list(
+    list: &ListState,
+    previous: &[Row],
+    rows: &[Row],
+    changed_from: Option<usize>,
+    measure_again: &mut bool,
+) {
     // Measuring a row again sends a reader inside it back to its top, which a long last
     // answer shows as a chat that cannot be scrolled down: remember where they are.
-    let reading = (!ws.list.is_following_tail()).then(|| ws.list.logical_scroll_top());
-    let old = ws.list.item_count();
+    let reading = (!list.is_following_tail()).then(|| list.logical_scroll_top());
+    let old = list.item_count();
     let same = old.min(rows.len());
-    // The first row that differs from what the list holds, and the last one, which may
-    // still be growing.
-    let changed = ws.rows.iter().zip(rows).position(|(a, b)| a != b);
-    let first = changed.unwrap_or(same).min(same.saturating_sub(1));
-    if old != rows.len() || changed.is_some() || ws.measure_again {
-        ws.list.splice(first..old, rows.len() - first);
-    } else if let Some(last) = rows.len().checked_sub(1) {
-        ws.list.splice(last..last + 1, 1);
-    }
-    if ws.measure_again {
-        ws.measure_again = false;
-        ws.list.splice(0..rows.len(), rows.len());
+    let changed = previous.iter().zip(rows).position(|(a, b)| a != b);
+    let structural = previous
+        .iter()
+        .zip(rows)
+        .position(|(a, b)| match (*a, *b) {
+            (Row::Item(a), Row::Item(b)) => a != b,
+            (Row::Activity { start: a, .. }, Row::Activity { start: b, .. }) => a != b,
+            (Row::Working, Row::Working) => false,
+            _ => true,
+        })
+        .or_else(|| (old != rows.len()).then_some(same));
+    let content = changed_from.and_then(|index| {
+        rows.iter().position(|row| match *row {
+            Row::Item(at) => at >= index,
+            Row::Activity { end, .. } => end > index,
+            Row::Working => false,
+        })
+    });
+    let content = if std::mem::take(measure_again) {
+        Some(0)
+    } else {
+        changed.into_iter().chain(content).min()
+    };
+    let Some(first) = structural else {
+        // Keep measured height hints and the absolute anchor while a row grows.
+        // Timers and unrelated status updates leave every measurement intact.
+        if let Some(first) = content {
+            list.remeasure_items(first..rows.len());
+        }
+        return;
+    };
+    list.splice(first..old, rows.len() - first);
+    if let Some(content) = content.filter(|content| *content < first) {
+        list.remeasure_items(content..first);
     }
     // As activity groups grow, keep the reader anchored to the same content.
-    if let Some(top) = reading
-        && let Some(was) = ws.rows.get(top.item_ix)
+    if let Some(top) = reading.filter(|top| top.item_ix >= first)
+        && let Some(was) = previous.get(top.item_ix)
         && let Some(item_ix) = find(rows, was)
     {
         let same_kind = std::mem::discriminant(was) == std::mem::discriminant(&rows[item_ix]);
-        ws.list.scroll_to(ListOffset {
+        list.scroll_to(ListOffset {
             item_ix,
             offset_in_item: if same_kind {
                 top.offset_in_item
@@ -244,7 +288,8 @@ mod tests {
         tools::ToolResult,
     };
 
-    use super::{Item, Row, Transcript, find, transcript_rows};
+    use super::{Item, Row, Transcript, find, sync_list, transcript_rows};
+    use gpui_kit::{FollowMode, ListAlignment, ListOffset, ListState, px};
 
     fn call(id: &str) -> ToolCall {
         ToolCall {
@@ -342,5 +387,155 @@ mod tests {
             Row::Item(0),
         ];
         assert_eq!(find(&rows, &Row::Item(0)), Some(1));
+    }
+    #[test]
+    fn repeated_frames_and_streaming_preserve_the_readers_offset() {
+        let list = ListState::new(2, ListAlignment::Top, px(800.));
+        let rows = [Row::Item(0), Row::Item(1)];
+        list.set_follow_mode(FollowMode::Tail);
+        list.scroll_to(ListOffset {
+            item_ix: 1,
+            offset_in_item: px(350.),
+        });
+        for changed in [None, None, Some(1), None] {
+            sync_list(&list, &rows, &rows, changed, &mut false);
+            let top = list.logical_scroll_top();
+            assert_eq!(top.item_ix, 1);
+            assert_eq!(top.offset_in_item, px(350.));
+            assert!(!list.is_following_tail());
+        }
+        list.set_follow_mode(FollowMode::Tail);
+        sync_list(&list, &rows, &rows, Some(1), &mut false);
+        assert!(list.is_following_tail());
+    }
+
+    #[test]
+    fn job_results_are_visible_beside_activity() {
+        let mut chat = Transcript::default();
+        chat.apply(ThreadEvent::ToolStarted(call("a")));
+        let message = message(MessageRole::Job, "legacy output", Vec::new());
+        chat.apply(ThreadEvent::FromJob(message));
+        assert!(matches!(&chat.items[1], Item::Job(result) if result.output == "legacy output"));
+        assert_eq!(layout(&chat), [(0, 1), (1, 1)]);
+    }
+    fn message(role: MessageRole, content: &str, tool_calls: Vec<ToolCall>) -> Message {
+        Message {
+            message_id: "1".into(),
+            thread_id: "thread".into(),
+            sequence: 1,
+            role,
+            content: content.into(),
+            reasoning: None,
+            tool_calls,
+            tool_call_id: None,
+            artifacts: Vec::new(),
+            from_thread_id: None,
+            from_job_id: None,
+            content_tokens: 0,
+            tool_calls_tokens: 0,
+            reasoning_tokens: 0,
+            created_at: 0,
+        }
+    }
+
+    #[test]
+    fn answers_use_the_same_question_data_live_and_after_reopening() {
+        let question = dusk_protocol::tools::Question {
+            question: "Which?".into(),
+            options: vec!["First".into(), "Second".into()],
+            multiple: false,
+        };
+        let call = ToolCall {
+            id: "q".into(),
+            name: "ask_user".into(),
+            arguments: serde_json::to_value(&question).unwrap(),
+        };
+        let answer = message(
+            MessageRole::User,
+            &question.answer(&[1], "my note"),
+            Vec::new(),
+        );
+        let history = Transcript::from_history(&[
+            message(MessageRole::Assistant, "", vec![call.clone()]),
+            answer.clone(),
+        ]);
+        let mut live = Transcript::default();
+        live.apply(ThreadEvent::ToolStarted(call));
+        live.apply(ThreadEvent::UserMessage(answer));
+        assert_eq!(live.answered, history.answered);
+        let answers = live.answered.get(&1).unwrap();
+        assert_eq!(
+            answers[0].options,
+            [("First".into(), false), ("Second".into(), true)]
+        );
+        assert_eq!(answers[0].own, "my note");
+        let plain = Transcript::from_history(&[message(
+            MessageRole::User,
+            "QUESTION: Which?\nANSWER: Second",
+            Vec::new(),
+        )]);
+        assert!(plain.answered.is_empty());
+    }
+    #[cfg(feature = "screenshot")]
+    #[gpui_pre::test]
+    fn measured_rows_keep_scroll_position_and_resume_tail(cx: &mut gpui_pre::TestAppContext) {
+        use gpui::{
+            AppContext, Context, IntoElement, Render, Styled, Window, div, list, point, size,
+        };
+        let cx = cx.add_empty_window();
+        let list_state = ListState::new(2, ListAlignment::Top, px(0.));
+        struct View {
+            list: ListState,
+            height: f32,
+        }
+        impl Render for View {
+            fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                let height = self.height;
+                list(self.list.clone(), move |_, _, _| {
+                    div().h(px(height)).w_full().into_any_element()
+                })
+                .size_full()
+            }
+        }
+        let view = cx.update(|_, cx| {
+            cx.new(|_| View {
+                list: list_state.clone(),
+                height: 1600.,
+            })
+        });
+        let draw = |cx: &mut gpui::VisualTestContext| {
+            cx.draw(point(px(0.), px(0.)), size(px(300.), px(400.)), |_, _| {
+                view.clone().into_any_element()
+            });
+        };
+        let rows = [Row::Item(0), Row::Item(1)];
+        list_state.set_follow_mode(FollowMode::Tail);
+        draw(cx);
+        list_state.scroll_to(ListOffset {
+            item_ix: 1,
+            offset_in_item: px(350.),
+        });
+        draw(cx);
+        for _ in 0..5 {
+            sync_list(&list_state, &rows, &rows, None, &mut false);
+            draw(cx);
+            assert_eq!(list_state.logical_scroll_top().offset_in_item, px(350.));
+        }
+        cx.update(|_, cx| {
+            view.update(cx, |view, cx| {
+                view.height = 1900.;
+                cx.notify();
+            })
+        });
+        sync_list(&list_state, &rows, &rows, Some(1), &mut false);
+        draw(cx);
+        assert_eq!(list_state.logical_scroll_top().item_ix, 1);
+        assert_eq!(list_state.logical_scroll_top().offset_in_item, px(350.));
+        assert!(!list_state.is_following_tail());
+        list_state.set_follow_mode(FollowMode::Tail);
+        draw(cx);
+        assert!(list_state.is_following_tail());
+        assert_eq!(list_state.logical_scroll_top().item_ix, 1);
+        assert_eq!(list_state.logical_scroll_top().offset_in_item, px(1500.));
     }
 }

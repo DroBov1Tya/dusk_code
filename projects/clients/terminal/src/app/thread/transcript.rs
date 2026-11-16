@@ -14,14 +14,21 @@ use super::paste;
 use dusk_protocol::{
     catalog::{SkillSave, SkillSaveAction},
     model::ToolCall,
-    thread::{Message, MessageRole},
-    tools::{Card, ToolResult},
+    thread::{JobResult, Message, MessageRole},
+    tools::{Answered, Asked, Card, ToolResult},
 };
 
 pub enum Entry {
     /// A sent message; `open` shows its pasted blocks in full.
     User {
         text: String,
+        open: bool,
+        /// The agent's questions this message answers, drawn in place of its text.
+        answered: Vec<Answered>,
+    },
+    /// What a background job left when it ended; `open` shows its output.
+    Job {
+        result: JobResult,
         open: bool,
     },
     Answer(String),
@@ -97,6 +104,8 @@ pub struct Transcript {
     live: Option<String>,
     /// Only the root transcript is connected to the local image store.
     pub images: super::images::Images,
+    /// What the agent asked and the user has not answered yet.
+    asked: Asked,
     /// Changes when anything but the text of the last entry changes, so the lines of the
     /// earlier entries can be kept between frames. Unique across transcripts.
     revision: u64,
@@ -141,7 +150,7 @@ fn next_revision() -> u64 {
     REVISIONS.fetch_add(1, Ordering::Relaxed)
 }
 
-/// What a job result shows on screen: this many lines, and no more than this many characters.
+/// What an opened job result shows on screen: this many lines, and no more than this many characters.
 const JOB_LINES: usize = 12;
 const JOB_CHARS: usize = 1200;
 
@@ -231,13 +240,12 @@ impl Transcript {
         for message in messages {
             transcript.stamp = Some(message.created_at);
             match message.role {
-                MessageRole::User => transcript.push(match &message.from_thread_id {
-                    Some(from) => Entry::from_agent(from.clone(), message.content.clone()),
-                    None => Entry::User {
-                        text: message.content.clone(),
-                        open: false,
-                    },
-                }),
+                MessageRole::User => match &message.from_thread_id {
+                    Some(from) => {
+                        transcript.push(Entry::from_agent(from.clone(), message.content.clone()))
+                    }
+                    None => transcript.add_user(&message.content),
+                },
                 MessageRole::Job => transcript.job_result(&message.content),
                 MessageRole::Assistant => {
                     if let Some(reasoning) = &message.reasoning {
@@ -291,10 +299,23 @@ impl Transcript {
         self.changed();
     }
 
-    /// A background job's result: the header and the first lines of its output. The
-    /// model gets all of it; a chatty job must not push the conversation off the screen.
+    /// The user's own message; one that answers the agent's question keeps the
+    /// question beside it.
+    pub fn add_user(&mut self, text: &str) {
+        let answered = self.asked.answer(text).unwrap_or_default();
+        self.push(Entry::User {
+            text: text.to_owned(),
+            open: false,
+            answered,
+        });
+    }
+
+    /// A background job's result, folded to one line. Opened, it shows the first lines
+    /// of its output: the model gets all of it; a chatty job must not push the
+    /// conversation off the screen.
     pub fn job_result(&mut self, content: &str) {
-        let mut lines = content.lines();
+        let mut result = JobResult::read(content);
+        let mut lines = result.output.lines();
         let mut text = lines
             .by_ref()
             .take(JOB_LINES)
@@ -308,7 +329,11 @@ impl Transcript {
             0 => {}
             more => text.push_str(&format!("\n[{more} more lines]")),
         }
-        self.notice(text, Tone::Info);
+        result.output = text;
+        self.push(Entry::Job {
+            result,
+            open: false,
+        });
     }
 
     pub fn notice(&mut self, text: impl Into<String>, tone: Tone) {
@@ -358,6 +383,7 @@ impl Transcript {
     }
 
     pub fn start_tool(&mut self, call: ToolCall) {
+        self.asked.call(&call);
         self.push(Entry::Tool {
             call,
             result: None,
@@ -416,6 +442,7 @@ impl Transcript {
             Entry::Activity { .. } => String::new(),
             Entry::Reasoning { text, .. } | Entry::Summary { text, .. } => text.clone(),
             Entry::Notice { text, .. } | Entry::FromAgent { text, .. } => text.clone(),
+            Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
             Entry::Tool { call, result, .. } => match result {
                 Some(result) => result.content.clone(),
                 None => call.arguments.to_string(),
@@ -450,6 +477,7 @@ impl Transcript {
                         | Entry::Tool { .. }
                         | Entry::Summary { .. }
                         | Entry::FromAgent { .. }
+                        | Entry::Job { .. }
                 )
             ),
         }
@@ -466,7 +494,8 @@ impl Transcript {
             | Entry::Reasoning { open, .. }
             | Entry::Tool { open, .. }
             | Entry::Summary { open, .. }
-            | Entry::FromAgent { open, .. },
+            | Entry::FromAgent { open, .. }
+            | Entry::Job { open, .. },
         ) = self.entries.get_mut(index)
         {
             *open = !*open;
