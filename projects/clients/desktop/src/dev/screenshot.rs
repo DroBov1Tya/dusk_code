@@ -5,7 +5,7 @@
 //! - `wait=MS`: let the core answer and the window draw;
 //! - `project=N`, `thread=N`: choose the Nth project or chat of the lists;
 //! - `center=chat|review|settings|connectors|artifacts|schedules`; `review`: open the review page;
-//! - `settings=PAGE` (appearance, model, chat, safety, me, notifications, vcs, memory,
+//! - `settings=PAGE` (appearance, llm, voice, image, video, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
 //! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all`: open a window; unfold the right column;
@@ -187,8 +187,17 @@ fn act(
             }
         }
         "settings" => {
+            use crate::pages::settings::ai::Tab;
+
+            let ai_tab = match value {
+                "ai" | "llm" | "model" => Some(Tab::Llm),
+                "voice" => Some(Tab::Voice),
+                "image" => Some(Tab::Image),
+                "video" => Some(Tab::Video),
+                _ => None,
+            };
             ws.settings_page = match value {
-                "model" => SettingsPage::Model,
+                _ if ai_tab.is_some() => SettingsPage::Ai,
                 "chat" => SettingsPage::Chat,
                 "safety" => SettingsPage::Safety,
                 "me" => SettingsPage::AboutMe,
@@ -204,17 +213,17 @@ fn act(
             };
             ws.center = Center::Settings;
             ws.load_settings(cx);
-            ws.load_page(ws.settings_page, cx);
+            if let Some(tab) = ai_tab {
+                ws.select_ai_tab(tab, cx);
+            } else {
+                ws.load_page(ws.settings_page, cx);
+            }
         }
         "shelf" => {
             ws.shelf = match value {
                 "skills" => Shelf::Skills,
                 "plugins" => Shelf::Plugins,
                 "tools" => Shelf::Tools,
-                "voice" => {
-                    ws.load_voice_models(cx);
-                    Shelf::Voice
-                }
                 "agents" => Shelf::Agents,
                 _ => Shelf::Connectors,
             };
@@ -355,7 +364,7 @@ fn act(
                 }
                 "voice" => {
                     ws.modal = Some(Modal::VoiceMissing {
-                        speech: crate::pages::connectors::voice::Speech::Recognition,
+                        speech: crate::pages::settings::ai::voice::Speech::Recognition,
                     })
                 }
                 "rollback" => {

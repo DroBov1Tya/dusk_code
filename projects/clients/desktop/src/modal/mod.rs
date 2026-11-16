@@ -82,7 +82,7 @@ pub enum Modal {
     },
     /// A speech button was pressed with no server connected for it.
     VoiceMissing {
-        speech: crate::pages::connectors::voice::Speech,
+        speech: crate::pages::settings::ai::voice::Speech,
     },
     /// Making or changing a scheduled task.
     Schedule(crate::pages::schedules::editor::Editor),
@@ -190,7 +190,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::VoiceMissing { speech } => (
             "Voice".to_owned(),
             480.,
-            crate::pages::connectors::voice::missing(*speech, cx),
+            crate::pages::settings::ai::voice::missing(*speech, cx),
         ),
         Modal::Workshop(confirm) => {
             let confirm = confirm.clone();

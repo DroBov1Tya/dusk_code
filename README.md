@@ -45,7 +45,7 @@ open the browser client. [Connect a model](#connect-a-model) to start a chat.
 
 ## Connect a model
 
-`/connect` in the terminal, or Settings, Model in the desktop window.
+`/connect` in the terminal, or Settings → AI → LLM in the desktop window.
 
 | How | What it needs |
 | --- | --- |

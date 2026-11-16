@@ -1,5 +1,5 @@
 //! Speech: the servers that turn speech into text and text into speech, set up on the
-//! connectors shelf. `page` draws the shelf, `form` holds its boxes, `models` lists the
+//! Voice tab. `page` draws it, `form` holds its boxes, `models` lists the
 //! models that run on this machine, and `setup` saves the servers and asks for one when a
 //! button needs it.
 

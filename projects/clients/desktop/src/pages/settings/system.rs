@@ -221,7 +221,7 @@ impl Workspace {
                 },
             ),
             SettingsPage::AboutMe => self.load_about_me(cx),
-            SettingsPage::Model => self.load_models(cx),
+            SettingsPage::Ai => self.load_ai_tab(cx),
             SettingsPage::Secrets => self.load_secrets(cx),
             _ => {}
         }

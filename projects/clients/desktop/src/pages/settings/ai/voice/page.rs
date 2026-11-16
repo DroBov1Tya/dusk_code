@@ -1,4 +1,4 @@
-//! The speech shelf: the two server cards, where to start, and the models to try.
+//! The Voice tab: the two server cards, where to start, and the models to try.
 
 use crate::{
     pages::settings::providers::Check,

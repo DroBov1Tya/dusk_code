@@ -13,6 +13,11 @@ testing.
 - Phone panels keep the device picker and Refresh together and put Home, Lock and
   Shut down controls below the live screen.
 
+### Changed
+
+- Desktop Settings moves model and voice setup under Agent → AI and shows which media
+  generation options are available.
+
 ## 0.74.2 - 2026-11-15
 
 ### Added

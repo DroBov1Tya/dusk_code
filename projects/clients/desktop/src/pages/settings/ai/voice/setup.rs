@@ -77,7 +77,6 @@ impl Workspace {
                         Speech::Recognition => voice.stt.is_some(),
                         Speech::Synthesis => voice.tts.is_some(),
                     };
-                    ws.voice = Some(voice);
                     if connected {
                         ready(ws, cx);
                     } else {
@@ -90,14 +89,20 @@ impl Workspace {
         );
     }
 
-    /// Opens Connectors on the Voice shelf.
+    /// Takes an unconfigured microphone or reader to the Voice settings.
     fn open_voice_setup(&mut self, cx: &mut Context<Self>) {
+        use crate::{
+            pages::settings::{SettingsPage, ai::Tab},
+            workspace::Center,
+        };
+
         self.modal = None;
-        self.center = crate::workspace::Center::Connectors;
-        self.shelf = crate::pages::connectors::Shelf::Voice;
-        self.load_settings(cx);
+        self.center = Center::Settings;
+        self.settings_page = SettingsPage::Ai;
+        self.ai_tab = Tab::Voice;
         self.load_voice(cx);
         self.load_voice_models(cx);
+        self.load_settings(cx);
     }
 
     pub fn load_voice(&mut self, cx: &mut Context<Self>) {
