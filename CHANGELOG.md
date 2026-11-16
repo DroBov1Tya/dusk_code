@@ -6,6 +6,13 @@ testing.
 
 ## Unreleased
 
+## 0.74.4 - 2026-11-16
+
+### Fixed
+
+- The core compiles on Linux again: the macOS overlay helper stays on macOS, and
+  plugin executable lookup has an explicit path type on Linux.
+
 ## 0.74.3 - 2026-11-16
 
 ### Added

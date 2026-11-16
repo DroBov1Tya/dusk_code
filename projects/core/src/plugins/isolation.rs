@@ -199,7 +199,7 @@ fn locate(program: &str) -> Vec<PathBuf> {
             .map(|folder| folder.join(program))
             .find(|file| file.is_file())
     };
-    let extras = match program {
+    let extras: Vec<PathBuf> = match program {
         #[cfg(target_os = "macos")]
         "axe" => super::ui::phone::AXE_PATHS.map(PathBuf::from).to_vec(),
         #[cfg(target_os = "macos")]
