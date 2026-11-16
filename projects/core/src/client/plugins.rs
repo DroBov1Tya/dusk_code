@@ -20,6 +20,14 @@ impl Plugins<'_> {
         self.0.done(Request::Plugin(request)).await
     }
 
+    pub async fn redetect(&self, plugin: &str, part: &str) -> Result<()> {
+        let request = PluginRequest::Redetect {
+            plugin: plugin.to_owned(),
+            part: part.to_owned(),
+        };
+        self.0.done(Request::Plugin(request)).await
+    }
+
     pub async fn close(&self, plugin: &str, part: &str) -> Result<()> {
         let request = PluginRequest::Close {
             plugin: plugin.to_owned(),

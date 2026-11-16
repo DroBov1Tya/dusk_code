@@ -20,6 +20,12 @@ impl Runtime {
         std::sync::Arc::clone(self.plugins.ui())
     }
 
+    pub async fn scan_plugins(&self) -> Result<()> {
+        let plugins = Arc::clone(&self.plugins);
+        tokio::task::spawn_blocking(move || plugins.scan()).await?;
+        Ok(())
+    }
+
     /// Lists, installs or removes plugins of the store. An installed plugin is switched
     /// on, allowing what its listing showed, which its manifest was checked to match.
     pub async fn store(

@@ -484,6 +484,7 @@ fn info(
     PluginInfo {
         name: manifest.name.clone(),
         version: manifest.version.clone(),
+        duskcode_version: manifest.duskcode_version.clone(),
         description: manifest.description.clone(),
         enabled,
         parts,
@@ -518,6 +519,7 @@ fn broken(name: String, enabled: bool, error: &anyhow::Error) -> PluginInfo {
     PluginInfo {
         name,
         version: String::new(),
+        duskcode_version: None,
         description: String::new(),
         enabled,
         parts: Vec::new(),
@@ -540,6 +542,28 @@ mod tests {
              keys: [{name: token, origins: [https://api.example.com]}]\n",
         )
         .unwrap()
+    }
+
+    #[test]
+    fn plugin_info_keeps_the_optional_duskcode_version() {
+        for (yaml, expected) in [
+            ("name: bot\nversion: 1.0.0\n", None),
+            (
+                "name: bot\nversion: 1.0.0\nduskcode_version: '0.74.2'\n",
+                Some("0.74.2"),
+            ),
+        ] {
+            let manifest = serde_saphyr::from_str(yaml).unwrap();
+            let plugin = info(&manifest, Path::new("bot"), false, vec![], vec![]);
+            let wire = serde_json::to_value(&plugin).unwrap();
+            assert_eq!(
+                wire.get("duskcode_version").and_then(|v| v.as_str()),
+                expected
+            );
+            let parsed: PluginInfo = serde_json::from_value(wire).unwrap();
+            assert_eq!(parsed.version, "1.0.0");
+            assert_eq!(parsed.duskcode_version.as_deref(), expected);
+        }
     }
 
     #[test]

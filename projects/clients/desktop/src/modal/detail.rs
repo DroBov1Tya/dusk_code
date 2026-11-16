@@ -128,6 +128,14 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                     "plugin-description",
                     plugin.description.clone(),
                 ));
+            if let Some(version) = &plugin.duskcode_version {
+                page = page.child(
+                    div()
+                        .text_xs()
+                        .text_color(muted)
+                        .child(format!("Written for Dusk Code {version}")),
+                );
+            }
             if !plugin.missing_settings.is_empty() {
                 page = page.child(div().text_sm().text_color(warning).child(format!(
                     "Needs settings: {}",

@@ -1,6 +1,7 @@
 //! What opening, closing and using a part asks the core, and the views, pictures and
 //! notes it sends back for the parts this window opened.
 
+use dusk_core::app::PhoneDependency;
 use dusk_protocol::plugin::{Opens, Place, UiEvent, Widget, check_view};
 use gpui_kit::*;
 
@@ -97,6 +98,67 @@ impl Workspace {
         plugins.forget(key);
     }
 
+    pub(super) fn install_phone_dependency(&mut self, key: Key, cx: &mut Context<Self>) {
+        let Some(dependency) = PhoneDependency::for_panel(&key.plugin, &key.part) else {
+            return;
+        };
+        if !self.plugins.is_open(&key, self.modal.as_ref())
+            || !self.plugins.dependency_installs.insert(key.clone())
+        {
+            return;
+        }
+        self.plugins.dependency_errors.remove(&key);
+        cx.notify();
+        self.core.call(
+            cx,
+            move |_| dependency.install(),
+            move |ws, result, cx| {
+                if !ws.plugins.is_open(&key, ws.modal.as_ref()) {
+                    ws.finish_dependency_install(key, result, cx);
+                    return;
+                }
+                let reopen = key.clone();
+                ws.core.call(
+                    cx,
+                    move |client| async move {
+                        client
+                            .plugins()
+                            .redetect(&reopen.plugin, &reopen.part)
+                            .await
+                    },
+                    move |ws, redetected, cx| {
+                        let result = match (result, redetected) {
+                            (Err(install), Err(refresh)) => Err(anyhow::anyhow!(
+                                "{install:#}\nCould not refresh the phone panel: {refresh:#}"
+                            )),
+                            (install, refresh) => install.and(refresh),
+                        };
+                        ws.finish_dependency_install(key, result, cx);
+                    },
+                );
+            },
+        );
+    }
+
+    fn finish_dependency_install(
+        &mut self,
+        key: Key,
+        result: anyhow::Result<()>,
+        cx: &mut Context<Self>,
+    ) {
+        self.plugins.dependency_installs.remove(&key);
+        if let Err(error) = result {
+            if self.plugins.is_open(&key, self.modal.as_ref()) {
+                self.plugins
+                    .dependency_errors
+                    .insert(key, format!("{error:#}"));
+            } else {
+                self.fail(error, cx);
+            }
+        }
+        cx.notify();
+    }
+
     /// A widget of an open part was used.
     pub fn plugin_event(
         &mut self,
@@ -105,11 +167,21 @@ impl Workspace {
         event: UiEvent,
         cx: &mut Context<Self>,
     ) {
+        let refreshes_phone = widget == "refresh"
+            && event == UiEvent::Click
+            && PhoneDependency::for_panel(&key.plugin, &key.part).is_some();
+        if refreshes_phone {
+            self.plugins.dependency_errors.remove(key);
+            cx.notify();
+        }
         let (key, widget) = (key.clone(), widget.to_owned());
         self.core.call(
             cx,
             move |client| async move {
                 let plugins = client.plugins();
+                if refreshes_phone {
+                    return plugins.redetect(&key.plugin, &key.part).await;
+                }
                 plugins.event(&key.plugin, &key.part, &widget, event).await
             },
             |ws, result, cx| {

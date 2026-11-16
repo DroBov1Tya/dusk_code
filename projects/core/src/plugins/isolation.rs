@@ -199,14 +199,36 @@ fn locate(program: &str) -> Vec<PathBuf> {
             .map(|folder| folder.join(program))
             .find(|file| file.is_file())
     };
-    let Some(file) = candidate else {
-        return Vec::new();
+    let extras = match program {
+        #[cfg(target_os = "macos")]
+        "axe" => super::ui::phone::AXE_PATHS.map(PathBuf::from).to_vec(),
+        #[cfg(target_os = "macos")]
+        "vphone-launchpad-cli" => {
+            use super::ui::phone::{APP_NAME, CLI_SUBPATH, user_app};
+            let system_app = PathBuf::from("/Applications").join(APP_NAME);
+            user_app()
+                .into_iter()
+                .chain([system_app])
+                .map(|app| app.join(CLI_SUBPATH))
+                .collect()
+        }
+        _ => Vec::new(),
     };
-    let mut found = vec![file.clone()];
-    if let Ok(resolved) = file.canonicalize()
-        && resolved != file
+    let mut found = Vec::new();
+    for file in candidate
+        .into_iter()
+        .chain(extras.into_iter().filter(|file| file.is_file()))
     {
-        found.push(resolved);
+        if found.contains(&file) {
+            continue;
+        }
+        let resolved = file.canonicalize();
+        found.push(file);
+        if let Ok(resolved) = resolved
+            && !found.contains(&resolved)
+        {
+            found.push(resolved);
+        }
     }
     found
 }

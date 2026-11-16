@@ -56,7 +56,7 @@ impl Side {
 }
 
 /// The dock at the right edge, while a part is open in it.
-pub fn right(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+pub fn right(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Option<Div> {
     let dock = &ws.plugins.right;
     let key = dock.tabs.get(dock.active)?.clone();
     let theme = cx.theme();
@@ -94,9 +94,22 @@ pub fn right(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .child(div().flex_1().min_w_0().child(strip(ws, Side::Right, cx)))
         .child(fold_button(Side::Right, false, cx))
         .child(div().w_2());
+    let topbar = if ws.quiet { size::CONTROL } else { size::BAR };
+    let height = window.viewport_size().height.as_f32() - topbar - size::BAR - 2. * PADDING;
     let room = Room {
         width: WIDTH - 2. * PADDING,
-        height: f32::INFINITY,
+        height: if dusk_core::app::PhoneDependency::for_panel(&key.plugin, &key.part).is_some() {
+            // Keep the toolbar and actions visible, but still allow scrolling in short windows.
+            let has_setup = ws
+                .plugins
+                .views
+                .get(&key)
+                .is_some_and(view::has_dependency_setup);
+            (height - 2. * size::CONTROL - 3. * PADDING - if has_setup { 84. } else { 0. })
+                .max(160.)
+        } else {
+            f32::INFINITY
+        },
     };
     Some(
         frame.w(px(WIDTH)).child(head).child(

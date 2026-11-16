@@ -1,7 +1,8 @@
 //! A part's view drawn with the app's own widgets and type scale. Text is text, never
 //! markup; each widget that can be used sends its event back under its id.
 
-use dusk_protocol::plugin::{ListItem, Size, Tone, UiEvent, Widget};
+use dusk_core::app::PhoneDependency;
+use dusk_protocol::plugin::{ButtonIcon, ListItem, RowLayout, Size, Tone, UiEvent, Widget};
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Icon,
@@ -15,7 +16,7 @@ use gpui_kit::{
 use super::{Key, Slot};
 use crate::{
     ui::{
-        Type,
+        Type, icons,
         phone::{self, Gesture},
         size, widgets,
     },
@@ -37,7 +38,20 @@ pub struct Room {
 /// The part's view, or a wait until the plugin sends one.
 pub fn render(ws: &Workspace, key: &Key, room: Room, cx: &mut Context<Workspace>) -> AnyElement {
     match ws.plugins.views.get(key) {
-        Some(root) => widget(ws, key, root, room, cx),
+        Some(root) => {
+            let content = widget(ws, key, root, room, cx);
+            let Some(error) = ws.plugins.dependency_errors.get(key) else {
+                return content;
+            };
+            div()
+                .w_full()
+                .flex()
+                .flex_col()
+                .gap_2()
+                .child(text(error, Tone::Danger, Size::Small, cx))
+                .child(content)
+                .into_any_element()
+        }
         None => crate::ui::loading("Opening", cx).into_any_element(),
     }
 }
@@ -45,11 +59,25 @@ pub fn render(ws: &Workspace, key: &Key, room: Room, cx: &mut Context<Workspace>
 /// Every widget of a view, depth first.
 pub fn each(widget: &Widget, visit: &mut impl FnMut(&Widget)) {
     visit(widget);
-    if let Widget::Column { children } | Widget::Row { children } = widget {
+    if let Widget::Column { children } | Widget::Row { children, .. } = widget {
         for child in children {
             each(child, visit);
         }
     }
+}
+
+pub(super) fn has_dependency_setup(root: &Widget) -> bool {
+    let mut found = false;
+    each(root, &mut |widget| {
+        found |= matches!(
+            widget,
+            Widget::Text {
+                dependency: true,
+                ..
+            }
+        );
+    });
+    found
 }
 
 /// An element id unique to the widget `id` of `key`.
@@ -76,33 +104,80 @@ fn widget(
                     .map(|child| self::widget(ws, key, child, room, cx)),
             )
             .into_any_element(),
-        Widget::Row { children } => div()
+        Widget::Row { children, layout } => div()
             .w_full()
             .flex()
             .flex_row()
-            .flex_wrap()
+            .when(*layout != RowLayout::Toolbar, |row| row.flex_wrap())
+            .when(*layout == RowLayout::Center, |row| row.justify_center())
             .items_center()
             .gap_2()
-            .children(
-                children
-                    .iter()
-                    .map(|child| self::widget(ws, key, child, room, cx)),
-            )
+            .children(children.iter().map(|child| {
+                let element = self::widget(ws, key, child, room, cx);
+                if *layout == RowLayout::Toolbar {
+                    return div()
+                        .when(
+                            matches!(child, Widget::List { menu: true, .. } | Widget::Text { .. }),
+                            |item| item.flex_1().min_w_0(),
+                        )
+                        .when(matches!(child, Widget::Button { .. }), |item| {
+                            item.flex_none()
+                        })
+                        .child(element)
+                        .into_any_element();
+                }
+                element
+            }))
             .into_any_element(),
-        Widget::Text { text, tone, size } => self::text(text, *tone, *size, cx),
+        Widget::Text {
+            text,
+            tone,
+            size,
+            dependency,
+        } => {
+            let message = self::text(text, *tone, *size, cx);
+            match (
+                dependency,
+                PhoneDependency::for_panel(&key.plugin, &key.part),
+            ) {
+                (true, Some(dependency)) => div()
+                    .flex()
+                    .flex_col()
+                    .gap_2()
+                    .child(message)
+                    .child(dependency_action(ws, key, dependency, cx))
+                    .into_any_element(),
+                _ => message,
+            }
+        }
         Widget::Button {
             id,
             label,
+            icon,
             primary,
             disabled,
         } => {
             let (key, id) = (key.clone(), id.clone());
+            let glyph = match icon {
+                Some(ButtonIcon::Home) => Some(icons::HOME),
+                Some(ButtonIcon::Lock) => Some(icons::LOCK),
+                Some(ButtonIcon::Power) => Some(icons::POWER),
+                Some(ButtonIcon::Refresh) => Some(icons::REFRESH),
+                _ => None,
+            };
+            let button = Button::new(eid(&key, "button", &id));
+            let button = match glyph {
+                Some(glyph) => button
+                    .icon(Icon::default().path(glyph))
+                    .tooltip(label.clone())
+                    .accessibility_label(label.clone()),
+                None => button.label(label.clone()),
+            };
             // A button keeps its own width; a column would stretch it across the panel.
             div()
                 .flex()
                 .child(
-                    Button::new(eid(&key, "button", &id))
-                        .label(label.clone())
+                    button
                         .when(*primary, |button| button.primary())
                         .disabled(*disabled)
                         .on_click(cx.listener(move |ws, _, _, cx| {
@@ -155,6 +230,32 @@ fn widget(
             .bg(cx.theme().border)
             .into_any_element(),
     }
+}
+
+fn dependency_action(
+    ws: &Workspace,
+    key: &Key,
+    dependency: PhoneDependency,
+    cx: &mut Context<Workspace>,
+) -> AnyElement {
+    if ws.plugins.dependency_installs.contains(key) {
+        return crate::ui::loading(dependency.progress(), cx).into_any_element();
+    }
+    let key = key.clone();
+    div()
+        .flex()
+        .flex_col()
+        .items_start()
+        .gap_2()
+        .child(
+            Button::new(eid(&key, "dependency", "install"))
+                .primary()
+                .label(dependency.label())
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.install_phone_dependency(key.clone(), cx);
+                })),
+        )
+        .into_any_element()
 }
 
 fn text(text: &str, tone: Tone, size: Size, cx: &App) -> AnyElement {

@@ -53,7 +53,7 @@ impl Render for Workspace {
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
         };
         let terminal = crate::columns::terminal::render(self, window, cx);
-        let right_dock = crate::plugins::right_dock(self, cx);
+        let right_dock = crate::plugins::right_dock(self, window, cx);
         let bottom_dock = crate::plugins::bottom_dock(self, window, cx);
         let plugins_menu = crate::plugins::menu(self, cx);
         let dragging = self.terminal.dragging() || self.plugins.bottom_drag.is_some();

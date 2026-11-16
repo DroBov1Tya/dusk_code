@@ -9,6 +9,7 @@ use anyhow::Result;
 use dusk_protocol::client::Hello;
 
 #[cfg(target_os = "macos")]
+pub use crate::plugins::ui::PhoneDependency;
 pub use crate::tools::run_overlay_if_asked;
 pub use crate::{
     backup::{

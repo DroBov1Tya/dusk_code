@@ -145,6 +145,7 @@ pub async fn run(
                 .map(|plugin| crate::app::PluginRow {
                     name: plugin.name,
                     version: plugin.version,
+                    duskcode_version: plugin.duskcode_version,
                     description: plugin.description,
                     enabled: plugin.enabled,
                     parts: plugin.parts,

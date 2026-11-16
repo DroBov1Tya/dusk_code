@@ -86,6 +86,8 @@ pub struct Plugins {
     pub bottom_drag: Option<(Pixels, f32)>,
     /// The part shown on the Settings page of plugins.
     pub settings: Option<Key>,
+    dependency_installs: HashSet<Key>,
+    dependency_errors: HashMap<Key, String>,
     /// The latest view of each open part.
     views: HashMap<Key, Widget>,
     /// The newest picture of each screen widget; replaced ones wait in `retired` for the
@@ -121,6 +123,8 @@ impl Plugins {
             bottom_height: dock::HEIGHT,
             bottom_drag: None,
             settings: None,
+            dependency_installs: HashSet::new(),
+            dependency_errors: HashMap::new(),
             views: HashMap::new(),
             frames: HashMap::new(),
             retired: Vec::new(),
@@ -147,6 +151,7 @@ impl Plugins {
     /// Forgets what the window kept for a part that closed.
     fn forget(&mut self, key: &Key) {
         self.views.remove(key);
+        self.dependency_errors.remove(key);
         let retired: Vec<Slot> = self
             .frames
             .keys()

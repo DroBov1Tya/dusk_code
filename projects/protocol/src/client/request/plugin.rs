@@ -14,6 +14,11 @@ pub enum PluginRequest {
         plugin: String,
         part: String,
     },
+    /// Recheck an installed phone dependency and reopen the panel in the new sandbox.
+    Redetect {
+        plugin: String,
+        part: String,
+    },
     Close {
         plugin: String,
         part: String,

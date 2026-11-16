@@ -6,6 +6,13 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- On macOS, the iOS Simulator and vphone panels can install AXe through Homebrew or
+  download the notarized vphone Launchpad. Both panels recheck their setup afterward.
+- Phone panels keep the device picker and Refresh together and put Home, Lock and
+  Shut down controls below the live screen.
+
 ## 0.74.2 - 2026-11-15
 
 ### Added

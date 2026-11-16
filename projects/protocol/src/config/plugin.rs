@@ -7,6 +7,9 @@ use serde::{Deserialize, Serialize};
 pub struct PluginInfo {
     pub name: String,
     pub version: String,
+    /// The Dusk Code version it was written for.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duskcode_version: Option<String>,
     pub description: String,
     pub enabled: bool,
     /// What it brings, such as `mcp` or `hooks`.

@@ -192,7 +192,7 @@ impl Server {
             Request::Voice(request) => self.voice(request).await,
             Request::Terminal(request) => self.terminal(request).await,
             Request::SystemReport => Ok(Response::System(self.runtime.system_report().await?)),
-            Request::Plugin(request) => self.plugin(request),
+            Request::Plugin(request) => self.plugin(request).await,
             Request::InstallUpdate { .. } | Request::Store(_) | Request::Shutdown => {
                 Err(anyhow!("this request is answered by the loop"))
             }

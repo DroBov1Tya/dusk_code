@@ -78,17 +78,48 @@ impl UiHost {
             .map(|spec| (spec.plugin.clone(), Arc::new(spec)))
             .collect();
         let mut running = self.running.lock();
+        let mut restart = Vec::new();
         running.retain(|plugin, run| {
-            let keep = specs
-                .get(plugin)
-                .is_some_and(|spec| spec.fingerprint() == run.fingerprint);
-            if !keep {
-                info!("interface of plugin {plugin} stops");
-                run.task.abort();
-                process::tell_all(plugin, &run.owners.lock(), "its interface stopped");
+            let spec = specs.get(plugin);
+            if spec.is_some_and(|spec| spec.fingerprint() == run.fingerprint) {
+                return true;
             }
-            keep
+            info!("interface of plugin {plugin} stops");
+            run.task.abort();
+            let mut owners = run.owners.lock();
+            if let Some(spec) = spec
+                && let Some((part, _)) = spec.parts.iter().find(|(part, offered)| {
+                    *offered && super::PhoneDependency::for_panel(plugin, &part.id).is_some()
+                })
+                && let Some(clients) = owners.remove(&part.id)
+            {
+                restart.push((spec, part.id.clone(), clients));
+            }
+            process::tell_all(plugin, &owners, "its interface stopped");
+            false
         });
+        for (spec, part, clients) in restart {
+            if clients.is_empty() {
+                continue;
+            }
+            match self.start(spec) {
+                Ok(run) => {
+                    run.owners.lock().insert(part.clone(), clients);
+                    if run.input.send(ToPlugin::Open { part }).is_err() {
+                        process::tell_all(
+                            &spec.plugin,
+                            &run.owners.lock(),
+                            "its interface stopped",
+                        );
+                    }
+                    running.insert(spec.plugin.clone(), run);
+                }
+                Err(error) => {
+                    let owners = Owners::from([(part, clients)]);
+                    process::tell_all(&spec.plugin, &owners, &format!("{error:#}"));
+                }
+            }
+        }
         let offered: Vec<Part> = specs
             .values()
             .flat_map(|spec| spec.parts.iter())
@@ -112,19 +143,7 @@ impl UiHost {
         let spec = self.offered(plugin, part)?;
         let mut running = self.running.lock();
         if !running.contains_key(plugin) {
-            let id = self.next.fetch_add(1, Ordering::Relaxed);
-            let started = process::start(id, &spec, Arc::clone(&self.running))?;
-            info!("interface of plugin {plugin} starts");
-            running.insert(
-                plugin.to_owned(),
-                Running {
-                    id,
-                    fingerprint: spec.fingerprint(),
-                    input: started.input,
-                    owners: started.owners,
-                    task: started.task,
-                },
-            );
+            running.insert(plugin.to_owned(), self.start(&spec)?);
         }
         let run = running.get(plugin).context("the interface is gone")?;
         {
@@ -139,6 +158,53 @@ impl UiHost {
                 part: part.to_owned(),
             })
             .map_err(|_| anyhow::anyhow!("the interface of {plugin} stopped"))
+    }
+
+    fn start(&self, spec: &Arc<UiSpec>) -> Result<Running> {
+        let id = self.next.fetch_add(1, Ordering::Relaxed);
+        let started = process::start(id, spec, Arc::clone(&self.running))?;
+        info!("interface of plugin {} starts", spec.plugin);
+        Ok(Running {
+            id,
+            fingerprint: spec.fingerprint(),
+            input: started.input,
+            owners: started.owners,
+            task: started.task,
+        })
+    }
+
+    pub fn generation(&self, plugin: &str) -> Option<u64> {
+        self.running.lock().get(plugin).map(|run| run.id)
+    }
+
+    /// Refreshes an open part, or opens it once if a rescan stopped its process.
+    pub fn redetect(
+        &self,
+        client: ClientId,
+        queue: mpsc::UnboundedSender<Event>,
+        plugin: &str,
+        part: &str,
+        previous: Option<u64>,
+    ) -> Result<()> {
+        if self.resumed(client, plugin, part, previous)
+            || self
+                .event(client, plugin, part, "refresh", UiEvent::Click)
+                .is_ok()
+        {
+            return Ok(());
+        }
+        self.open(client, queue, plugin, part)
+    }
+
+    fn resumed(&self, client: ClientId, plugin: &str, part: &str, previous: Option<u64>) -> bool {
+        self.running.lock().get(plugin).is_some_and(|run| {
+            Some(run.id) != previous
+                && run
+                    .owners
+                    .lock()
+                    .get(part)
+                    .is_some_and(|clients| clients.iter().any(|(owner, _)| *owner == client))
+        })
     }
 
     /// Closes `part` for `client`; the plugin hears of it when nobody has it open.

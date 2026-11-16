@@ -24,6 +24,8 @@ pub struct Manifest {
     pub name: String,
     #[serde(default)]
     pub version: String,
+    /// The Dusk Code version it was written for.
+    pub duskcode_version: Option<String>,
     #[serde(default)]
     pub description: String,
     /// The systems its programs are built for; all when empty.
