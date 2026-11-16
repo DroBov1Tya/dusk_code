@@ -6,6 +6,8 @@ testing.
 
 ## Unreleased
 
+## 0.74.3 - 2026-11-16
+
 ### Added
 
 - On macOS, the iOS Simulator and vphone panels can install AXe through Homebrew or
@@ -14,26 +16,33 @@ testing.
   Shut down controls below the live screen.
 - The Desktop composer shows ChatGPT plan usage for each reported window and links to
   usage settings.
+- Answered questions show the question and selected options in the chat, and background
+  job results have their own compact row. Unclear answers stay as text.
 
 ### Changed
 
-- Desktop Settings moves model and voice setup under Agent → AI and shows which media
-  generation options are available.
+- Desktop Settings moves model and voice setup under Agent → AI. Image and video
+  generation tabs are placeholders and do not yet generate media.
 - The Desktop navigation rail uses a house icon for Chats.
 
 ### Fixed
 
 - The message box keeps what is typed and attached for each chat: another chat shows its
   own unsent text or an empty box, in the Desktop, the web page and the terminal.
+- A Desktop chat keeps its scroll position as a long message grows, and follows the end
+  again when the reader returns there.
 - Desktop AI settings align the Voice cards and fit the category controls in narrow panes.
 - Desktop keeps assistant text in order with collapsed activity and leaves retry
   messages visible during a turn.
 - Chats make at most one automatic title request after their first turn. A title chosen
   by the user is kept.
-- ChatGPT sign-in records cache writes when the provider reports them.
-- Settings → About me says whether the profile and a snippet are saved: "Unsaved changes"
-  while the text differs from what the core holds, "Saved" once the core confirms, and
-  why when a save fails. Reopening the page keeps a profile that is not saved yet.
+- ChatGPT sign-in records cache writes when the provider reports them. OpenAI Responses
+  requests also carry a stable prompt cache key for the thread.
+- Invalid configuration YAML reports the location and a safe diagnostic without echoing
+  arbitrary unknown keys or values.
+- Desktop Settings → About me reports whether the profile and snippets are saved, and
+  keeps an unsaved profile when the page is reopened. The web page confirms when the
+  profile has been saved and reports save errors.
 
 ## 0.74.2 - 2026-11-15
 
