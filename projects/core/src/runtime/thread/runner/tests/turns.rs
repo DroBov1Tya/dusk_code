@@ -397,6 +397,61 @@ async fn runs_tools_until_the_model_answers() {
     );
 }
 
+/// A block lives in the stored call: a client that reopens the thread reads the same
+/// block the live events gave, and `read_history` gives its plain text.
+#[tokio::test]
+async fn a_shown_block_is_read_back_from_the_stored_messages() {
+    use crate::tools::{ReadHistory, Show};
+    use dusk_protocol::thread::Block;
+
+    let state = thread_state("shown_block").await;
+    let config = live_config("shown_block_config");
+    let arguments = json!({ "choices": { "labels": ["Yes, fix it", "Not now"] } });
+    let provider = provider(vec![
+        vec![Step::Tool("show".into(), arguments), Step::Done],
+        vec![Step::Text("Shall I?"), Step::Done],
+    ]);
+    let (runner, input, mut output) =
+        runner_with(&state, &provider, &config, model(None), Box::new(Show));
+    input.send("fix it?").await.unwrap();
+    drop(input);
+
+    runner.run().await;
+
+    let (mut started, mut live) = (None, None);
+    while let Some(event) = output.next_event().await {
+        match event {
+            ThreadEvent::ToolStarted(call) => started = Some(call),
+            ThreadEvent::ToolFinished { result, .. } => {
+                assert!(!result.is_error, "{}", result.content);
+                live = Block::shown(started.as_ref().unwrap(), &result.content);
+            }
+            _ => {}
+        }
+    }
+    let text = "Choices:\n1. Yes, fix it\n2. Not now";
+    assert_eq!(live.as_ref().map(Block::text).as_deref(), Some(text));
+
+    let messages = state.list_messages("thread").await.unwrap();
+    let call = messages
+        .iter()
+        .flat_map(|message| &message.tool_calls)
+        .next()
+        .expect("the call is stored with the assistant message");
+    let answer = messages
+        .iter()
+        .find(|message| message.tool_call_id.as_deref() == Some(call.id.as_str()))
+        .expect("the call has its tool message");
+    assert_eq!(Block::shown(call, &answer.content), live);
+
+    let root = temp_dir("shown_block_scope");
+    std::fs::create_dir_all(&root).unwrap();
+    let context = crate::testing::tool_context(&ToolScope::new(&root, &root).unwrap());
+    let history = ReadHistory::new(Arc::clone(&state), "thread".into());
+    let read = history.call(json!({}), context).await.unwrap();
+    assert!(read.contains(text), "{read}");
+}
+
 /// The first step plans and a step after a failure works it out at the effort set;
 /// steps that carry out the plan think lightly.
 #[tokio::test]

@@ -1,0 +1,2 @@
+Added
+The `show` tool lets the model put a structured block in the chat instead of drawing it in text: a flow of layers joined by arrows, a list of checks with their states, or two to four reply buttons under an answer. In its own text the model can write a coloured label as `{{success: Passed}}`, from a fixed set of tones each client maps to its theme. Blocks are stored with the call that made them and read back as plain text by `read_history`; clients show them as plain tool steps until they draw each kind (see `docs/blocks.md`).

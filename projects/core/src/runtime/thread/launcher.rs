@@ -24,8 +24,8 @@ use crate::{
     state::{Identity, State},
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
-        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Tasks, ToolRegistry,
-        ToolScope,
+        McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, Tasks,
+        ToolRegistry, ToolScope,
     },
 };
 
@@ -161,6 +161,7 @@ impl Launcher {
         // Only a chat has the user to ask.
         if depth == 0 {
             tools.add(Box::new(AskUser));
+            tools.add(Box::new(Show));
             tools.add(Box::new(GoalTool::new(
                 Arc::clone(&self.state),
                 thread_id.to_owned(),

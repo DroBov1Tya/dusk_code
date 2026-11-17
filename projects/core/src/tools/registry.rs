@@ -318,7 +318,8 @@ mod tests {
         state::artifacts::ArtifactStore,
         testing::{temp_dir, temp_state},
         tools::{
-            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Tasks,
+            AgentState, AskUser, DisplayImage, GoalTool, PlanEdit, ReadHistory, Remember, Show,
+            Tasks,
         },
     };
 
@@ -428,6 +429,7 @@ mod tests {
         tools.push(Box::new(Remember::user(dir.clone())));
         tools.push(Box::new(DisplayImage::new(ArtifactStore::new(dir.clone()))));
         tools.push(Box::new(AskUser));
+        tools.push(Box::new(Show));
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
