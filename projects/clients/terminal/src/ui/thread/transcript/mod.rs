@@ -399,7 +399,9 @@ impl TranscriptView<'_> {
             Activity::Tool(name) => Some(name.clone()),
             Activity::Compacting => Some("compacting".into()),
             Activity::Forking => Some("forking".into()),
-            Activity::Retrying(attempt) => Some(format!("retrying, attempt {attempt}")),
+            // The attempt and the countdown live in the footer: a changing step would lay the
+            // transcript out again.
+            Activity::Retrying(..) => Some("retrying".into()),
         }
     }
 

@@ -141,3 +141,37 @@ fn answers_and_job_results_are_distinct_in_history_and_live_events() {
         matches!(&fallback.items[0].item, Item::Job(result) if result.output == "unrecognised")
     );
 }
+
+#[test]
+fn one_retry_row_is_replaced_counts_down_and_goes_when_the_call_answers() {
+    let retrying = |attempt| ThreadEvent::Retrying {
+        attempt,
+        error: "timeout".into(),
+        kind: dusk_protocol::model::ProviderErrorKind::Overloaded,
+        wait_ms: 8000,
+        max_attempts: Some(3),
+    };
+    let mut chat = ChatData::default();
+    chat.apply(retrying(1));
+    chat.apply(retrying(2));
+    // No notice per attempt; the row holds the newest.
+    assert!(chat.items.is_empty());
+    let line = chat.retry_line(0).expect("a row");
+    assert!(
+        line.ends_with("attempt 3 of 3 \u{00B7} next in 8 s"),
+        "{line}"
+    );
+    assert!(
+        chat.retry_line(7_500)
+            .expect("a row")
+            .ends_with("next in 1 s")
+    );
+    assert!(
+        chat.retry_line(8_000)
+            .expect("a row")
+            .ends_with("trying now")
+    );
+
+    chat.apply(ThreadEvent::Model(ModelEvent::Text("hi".into())));
+    assert_eq!(chat.retry_line(0), None);
+}

@@ -55,15 +55,25 @@ impl Workspace {
                     accent,
                     theme.foreground,
                 ))
-                .child(match chat.span(chat.activity_boundaries.len()) {
-                    Some((began, None)) => format!(
-                        "Working \u{00B7} {}",
-                        crate::pages::chat::timing::duration(
-                            dusk_protocol::system::now_ms() - began
+                .child(
+                    match (&chat.retry, chat.span(chat.activity_boundaries.len())) {
+                        (Some((retry, arrived)), _) => div()
+                            .min_w_0()
+                            .truncate()
+                            .child(retry.line(
+                                u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX),
+                            ))
+                            .into_any_element(),
+                        (None, Some((began, None))) => format!(
+                            "Working \u{00B7} {}",
+                            crate::pages::chat::timing::duration(
+                                dusk_protocol::system::now_ms() - began
+                            )
                         )
-                    ),
-                    _ => "Working".to_owned(),
-                })
+                        .into_any_element(),
+                        _ => "Working".into_any_element(),
+                    },
+                )
                 .into_any_element(),
             Row::Activity {
                 start,

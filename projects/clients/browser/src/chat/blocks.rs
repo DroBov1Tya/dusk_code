@@ -139,6 +139,9 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
     );
     let working_for = move || {
         tick.track();
+        if let Some(line) = chat.with(|c| c.retry_line(super::data::now_ms())) {
+            return line;
+        }
         let started = chat.with(|c| {
             c.items
                 .iter()

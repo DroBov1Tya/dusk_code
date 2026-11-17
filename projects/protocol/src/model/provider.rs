@@ -61,6 +61,21 @@ pub enum CallHealth {
     },
 }
 
+impl CallHealth {
+    /// "answering", or how it fails and for how long: "Provider unreachable, since 3m 0s
+    /// ago". `now` is in the unit of `since`.
+    pub fn text(&self, now: i64) -> String {
+        match self {
+            Self::Answering { .. } => "answering".to_owned(),
+            Self::Failing { kind, since, .. } => format!(
+                "{}, since {} ago",
+                kind.label(),
+                crate::thread::duration_words(now.saturating_sub(*since))
+            ),
+        }
+    }
+}
+
 /// Money left on a provider account, as the provider wrote it.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Balance {
@@ -208,6 +223,21 @@ pub struct Model {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn health_reads_as_answering_or_how_it_fails() {
+        let answering = CallHealth::Answering { since: 0 };
+        assert_eq!(answering.text(500_000), "answering");
+        let failing = CallHealth::Failing {
+            kind: ProviderErrorKind::Overloaded,
+            since: 1_000,
+            last_answered: None,
+        };
+        assert_eq!(
+            failing.text(181_000),
+            "Provider overloaded, since 3m 0s ago"
+        );
+    }
 
     #[test]
     fn limits_read_as_one_line() {

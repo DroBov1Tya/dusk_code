@@ -1,5 +1,6 @@
 //! /model: the models of every provider.
 
+use dusk_protocol::model::{CallHealth, ProviderHealth};
 use ratatui::text::{Line, Span};
 
 use super::frame::selectable;
@@ -12,9 +13,25 @@ use crate::ui::windows::{
     wrap,
 };
 
+/// How a provider's calls went since the core started; nothing when it has not been asked.
+fn calls(health: Option<&ProviderHealth>) -> Span<'static> {
+    let Some(entry) = health else {
+        return Span::raw("");
+    };
+    let text = format!("  {}", entry.calls.text(dusk_protocol::system::now_ms()));
+    match entry.calls {
+        CallHealth::Answering { .. } => Span::styled(text, dim()),
+        CallHealth::Failing { .. } => Span::styled(text, fg(NEGATIVE)),
+    }
+}
+
 /// Providers with a light for whether they answered, each followed by its models. The
 /// lines, and the line of the selected model.
-pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
+pub fn models(
+    list: &ModelList,
+    health: &[ProviderHealth],
+    width: usize,
+) -> (Vec<Line<'static>>, usize) {
     let Some(providers) = &list.providers else {
         let checking = format!(" checking the providers {ELLIPSIS}");
         return (vec![Line::from(Span::styled(checking, thought()))], 0);
@@ -48,6 +65,7 @@ pub fn models(list: &ModelList, width: usize) -> (Vec<Line<'static>>, usize) {
                     provider.name.clone(),
                     if provider.enabled { bold(TEXT) } else { dim() },
                 ),
+                calls(health.iter().find(|entry| entry.name == provider.name)),
             ],
             if removing {
                 Span::styled("press d again to remove it".to_owned(), fg(NEGATIVE))

@@ -89,9 +89,10 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
                 Activity::Tool(name) => (TEXT_SOFT, format!("running {name}")),
                 Activity::Compacting => (DUSK, "compacting the context".to_owned()),
                 Activity::Forking => (DUSK, "describing the thread for a fork".to_owned()),
-                Activity::Retrying(attempt) => {
-                    (NEGATIVE, format!("retrying after attempt {attempt}"))
-                }
+                Activity::Retrying(retry, arrived) => (
+                    NEGATIVE,
+                    retry.line(u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX)),
+                ),
                 Activity::Idle => (TEXT_MUTED, String::new()),
             };
             // How long the turn has run, beside what it does now.

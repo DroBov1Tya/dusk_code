@@ -230,7 +230,8 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             )
         }
         Panel::Models(list) => {
-            let (lines, row) = models(list, screen.width.saturating_sub(8).min(72) as usize);
+            let width = screen.width.saturating_sub(8).min(72) as usize;
+            let (lines, row) = models(list, &app.status.provider_health, width);
             (
                 "model",
                 "enter choose  c connect  t on/off  d remove  r check  esc close",

@@ -6,8 +6,8 @@ use std::{collections::BTreeMap, time::Instant};
 use dusk_protocol::{
     model::ModelEvent,
     thread::{
-        AgentState, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Task, ThreadEvent,
-        ThreadTokens, Tool, ToolState, clip, note,
+        AgentState, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task,
+        ThreadEvent, ThreadTokens, Tool, ToolState, clip, note, retry_row,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
@@ -239,6 +239,8 @@ pub struct Transcript {
     /// When the last turn seen live ended, for the header's star.
     pub finished_at: Option<Instant>,
     pub working: bool,
+    /// The model call being tried again and when its event came, for the countdown.
+    pub retry: Option<(Retry, Instant)>,
     pub tokens: Option<(u64, u64)>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
@@ -394,6 +396,15 @@ impl Transcript {
         };
         if let Some(index) = changed {
             self.changed_from = Some(self.changed_from.map_or(index, |old| old.min(index)));
+        }
+        match retry_row(&event) {
+            Some(RetryRow::Show(retry)) => self.retry = Some((retry, Instant::now())),
+            Some(RetryRow::Clear) => self.retry = None,
+            None => {}
+        }
+        // The row above is the whole of a retry: it leaves no notice.
+        if matches!(event, ThreadEvent::Retrying { .. }) {
+            return;
         }
         if let Some(note) = note(&event) {
             match &event {

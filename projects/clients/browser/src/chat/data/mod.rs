@@ -5,8 +5,8 @@ use dusk_protocol::{
     config::ApprovalPolicy,
     model::ModelEvent,
     thread::{
-        AgentState, JobResult, Message, MessageRole, Note, Task, ThreadEvent, Tool, ToolState,
-        agent_name, clip, note,
+        AgentState, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task, ThreadEvent,
+        Tool, ToolState, agent_name, clip, note, retry_row,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
@@ -74,6 +74,8 @@ pub struct Agent {
 pub struct ChatData {
     pub items: Vec<Entry>,
     pub working: bool,
+    /// The model call being tried again and when its event came, in Unix milliseconds.
+    pub retry: Option<(Retry, i64)>,
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
     pub cost: Option<String>,
@@ -179,6 +181,15 @@ impl ChatData {
 
     pub fn apply(&mut self, event: ThreadEvent) {
         self.clock = now_ms();
+        match retry_row(&event) {
+            Some(RetryRow::Show(retry)) => self.retry = Some((retry, self.clock)),
+            Some(RetryRow::Clear) => self.retry = None,
+            None => {}
+        }
+        // The row is the whole of a retry: it leaves no notice.
+        if matches!(event, ThreadEvent::Retrying { .. }) {
+            return;
+        }
         if let Some(note) = note(&event) {
             if matches!(event, ThreadEvent::Failed(_)) {
                 self.working = false;
@@ -302,6 +313,15 @@ impl ChatData {
             }) => (text, reasoning),
             _ => unreachable!("an answer was just pushed"),
         }
+    }
+}
+
+impl ChatData {
+    /// The retry row's words at `now` in Unix milliseconds; none when no call is tried
+    /// again.
+    pub fn retry_line(&self, now: i64) -> Option<String> {
+        let (retry, arrived) = self.retry.as_ref()?;
+        Some(retry.line(u64::try_from(now.saturating_sub(*arrived)).unwrap_or(0)))
     }
 }
 
