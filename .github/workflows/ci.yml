@@ -1,14 +1,14 @@
-# The gate for main and the release branches. A pull request must pass `ci-ok` to enter the
-# merge queue, and the queue runs the same checks again on the merged result (merge_group),
-# so main never holds a commit that was not built and tested.
+# The gate for main, beta and stable. A pull request must pass `ci-ok` on an
+# up-to-date branch (a user-owned repository has no merge queue; merge_group is kept for
+# when it moves to an organization), and a push runs the checks again on the merged result.
 name: ci
 
 on:
   pull_request:
-    branches: [main, "release/**"]
+    branches: [main, beta, stable]
   merge_group:
   push:
-    branches: [main]
+    branches: [main, beta, stable]
 
 permissions:
   contents: read

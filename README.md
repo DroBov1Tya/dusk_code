@@ -180,8 +180,8 @@ the code's layout: public on purpose, and may be rough.
 
 ## Limitations
 
-- Pre-1.0: commands, configuration and the database schema may change. Full releases come
-  from `release/X.Y` branches; nightly pre-releases are tagged on `main`.
+- Pre-1.0: commands, configuration and the database schema may change. Full releases are
+  tagged on `stable`, beta pre-releases on `beta`, nightlies on `main`.
 - Release builds are for macOS arm64 and Linux; there is no Windows build.
 - The macOS app is signed with the project's own certificate, not an Apple Developer
   ID, so the first start needs your confirmation.
