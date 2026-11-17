@@ -3,7 +3,7 @@
 //! is copied in, for the provider, and the rules are the ones in this repository.
 
 use std::{
-    collections::{BTreeSet, HashMap, HashSet},
+    collections::{BTreeSet, HashSet},
     fs,
     path::Path,
     sync::LazyLock,
@@ -34,10 +34,6 @@ use crate::{
 const SOURCE: &str = "evals";
 /// How long a timed-out run may take to stop its turn and report what it spent.
 const SETTLE: Duration = Duration::from_secs(20);
-/// Identical calls with identical results in a row before the core adds its repeat
-/// note to the result; the same number as in core `runtime/agent/repeats.rs`, which the
-/// core does not export.
-const NOTICE_AT: u32 = 3;
 static DELETES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b(rm|rmtree|unlink|rmdir)\b").expect("a valid pattern"));
 
@@ -132,27 +128,12 @@ struct Watch {
     tool_calls: u64,
     tool_errors: u64,
     retries: u64,
-    repeat_notices: u64,
     reruns: u64,
-    /// Each agent's calls, by thread; the chat's under "".
-    calls: HashMap<String, Calls>,
+    /// Every call so far, as the agent's thread ("" for the chat) and name and arguments.
+    calls: HashSet<(String, String)>,
     subagents: u64,
     questions: u64,
     problem: Option<String>,
-}
-
-/// One agent's tool calls, to count re-runs and repeat notes.
-#[derive(Default)]
-struct Calls {
-    /// Every call so far, as name and arguments.
-    seen: HashSet<String>,
-    /// Calls started and not finished, by id.
-    open: HashMap<String, String>,
-    /// The latest finished call with its result, and how many came in a row, within a
-    /// turn as the core counts. The core also compares the notes of after-tool hooks,
-    /// which these events do not carry.
-    last: Option<(String, String)>,
-    streak: u32,
 }
 
 impl Watch {
@@ -165,10 +146,12 @@ impl Watch {
             }
             ThreadEvent::ToolStarted(call) => {
                 self.tool_calls += 1;
-                let calls = self.calls.entry(agent(thread)).or_default();
                 let key = format!("{} {}", call.name, call.arguments);
-                self.reruns += u64::from(!calls.seen.insert(key.clone()));
-                calls.open.insert(call.id.clone(), key);
+                self.reruns += u64::from(
+                    !self
+                        .calls
+                        .insert((thread.unwrap_or_default().to_owned(), key)),
+                );
                 // Agents run on the real machine: what they delete is worth a record.
                 let command = call
                     .arguments
@@ -178,19 +161,8 @@ impl Watch {
                     eprintln!("deletes: {}", command.chars().take(200).collect::<String>());
                 }
             }
-            ThreadEvent::ToolFinished { call_id, result } => {
+            ThreadEvent::ToolFinished { result, .. } => {
                 self.tool_errors += u64::from(result.is_error);
-                let calls = self.calls.entry(agent(thread)).or_default();
-                if let Some(key) = calls.open.remove(&call_id) {
-                    let finished = Some((key, result.content));
-                    if calls.last == finished {
-                        calls.streak += 1;
-                    } else {
-                        calls.last = finished;
-                        calls.streak = 1;
-                    }
-                    self.repeat_notices += u64::from(calls.streak >= NOTICE_AT);
-                }
             }
             ThreadEvent::Retrying { .. } => self.retries += 1,
             ThreadEvent::Question(_) => self.questions += 1,
@@ -202,19 +174,15 @@ impl Watch {
             ThreadEvent::Model(ModelEvent::Text(text)) if thread.is_none() => {
                 self.answer.push_str(&text);
             }
-            ThreadEvent::TurnStarted(_) => {
-                let calls = self.calls.entry(agent(thread)).or_default();
-                (calls.last, calls.streak) = (None, 0);
-                match thread {
-                    Some(thread) => {
-                        self.agents_at_work.insert(thread.to_owned());
-                    }
-                    None => {
-                        self.idle = false;
-                        self.answer.clear();
-                    }
+            ThreadEvent::TurnStarted(_) => match thread {
+                Some(thread) => {
+                    self.agents_at_work.insert(thread.to_owned());
                 }
-            }
+                None => {
+                    self.idle = false;
+                    self.answer.clear();
+                }
+            },
             ThreadEvent::TurnFinished(_) if thread.is_none() => self.turns += 1,
             ThreadEvent::Idle => match thread {
                 Some(thread) => {
@@ -233,11 +201,6 @@ impl Watch {
     fn done(&self) -> bool {
         self.problem.is_some() || self.turns > 0 && self.idle && self.agents_at_work.is_empty()
     }
-}
-
-/// The key of an agent's calls: its thread, or "" for the chat.
-fn agent(thread: Option<&str>) -> String {
-    thread.unwrap_or_default().to_owned()
 }
 
 /// Feeds the thread's events to `watch` until `enough` holds or the thread ends.
@@ -335,7 +298,6 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         tool_calls: watch.tool_calls,
         tool_errors: watch.tool_errors,
         retries: watch.retries,
-        repeat_notices: watch.repeat_notices,
         reruns: watch.reruns,
         subagents: watch.subagents,
         questions: watch.questions,

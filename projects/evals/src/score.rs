@@ -39,10 +39,6 @@ pub struct Outcome {
     /// Model calls tried again after a failure that may pass.
     #[serde(default)]
     pub retries: u64,
-    /// Results the core gave its note that the same call keeps giving the same result,
-    /// told from the events by the core's rule.
-    #[serde(default)]
-    pub repeat_notices: u64,
     /// Tool calls with the name and arguments of an earlier call of the same agent.
     #[serde(default)]
     pub reruns: u64,
@@ -83,7 +79,6 @@ struct Totals {
     seconds: f64,
     errors: f64,
     retries: f64,
-    repeats: f64,
     reruns: f64,
 }
 
@@ -120,7 +115,6 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
         seconds: mean(|outcome| outcome.seconds),
         errors: mean(|outcome| outcome.tool_errors),
         retries: mean(|outcome| outcome.retries),
-        repeats: mean(|outcome| outcome.repeat_notices),
         reruns: mean(|outcome| outcome.reruns),
     }
 }
@@ -150,7 +144,7 @@ impl Totals {
         format!(
             "means over {} runs{left_out}: {:.1} calls, {:.0} tokens (prompt {:.0} cached, \
              {:.0} uncached, {:.0} written to cache; {:.0} out of which {:.0} reasoning), \
-             {:.1} tool errors, {:.1} retries, {:.1} repeat notices, {:.1} re-runs, {:.0} s",
+             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.0} s",
             self.runs - self.timed_out,
             self.calls,
             self.tokens,
@@ -161,7 +155,6 @@ impl Totals {
             self.reasoning,
             self.errors,
             self.retries,
-            self.repeats,
             self.reruns,
             self.seconds
         )

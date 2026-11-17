@@ -43,9 +43,8 @@ decides from the working folder, with the agent's last message in the file `$EVA
 Each run records its verdict, time, model calls and a token ledger taken from the core's
 own count, subagents included: prompt tokens served from the provider's cache, not
 served from it, and written to it; completion tokens and the reasoning among them. Beside
-those: tool calls and errors, provider retries, repeat notices (results the core marked
-as the same call giving the same result a third time in a row), and re-runs (tool calls
-with the name and arguments of an earlier call of the same agent).
+those: tool calls and errors, provider retries, and re-runs (tool calls with the name and
+arguments of an earlier call of the same agent).
 
 The headline is the pass rate and tokens per solved task: every token of every run,
 failed and timed-out ones included, over the runs that passed; `n/a` when none did. A run
