@@ -54,6 +54,7 @@ fn an_approval_shows_until_it_is_closed() {
             command: "rm x".into(),
         },
         session: None,
+        steps: Vec::new(),
     };
     chat.apply(ThreadEvent::Approval(request));
     assert_eq!(chat.approvals.len(), 1);

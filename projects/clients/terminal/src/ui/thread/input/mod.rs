@@ -49,7 +49,7 @@ pub struct InputView<'a> {
 /// Rows the box needs: the queued messages, the rule, the padding and the wrapped text.
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
-    approval_rows(app)
+    approval_rows(app, width)
         + poll_rows(app, width)
         + goal_rows(app)
         + queue_rows(app)
@@ -72,7 +72,7 @@ impl InputView<'_> {
             height: area.height.saturating_sub(1),
             ..area
         };
-        let approval = approval_rows(self.app).min(area.height);
+        let approval = approval_rows(self.app, area.width).min(area.height);
         self.draw_approval(
             frame,
             Rect {

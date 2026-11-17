@@ -1,0 +1,33 @@
+name: Feature request
+description: Suggest something duskcode should do.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: Describe the work you could not do, not the solution.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What would you like to happen?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: What have you tried instead?
+  - type: dropdown
+    id: client
+    attributes:
+      label: Client
+      options:
+        - Terminal
+        - Desktop
+        - Browser
+        - All of them
+        - Core, no client
+    validations:
+      required: true

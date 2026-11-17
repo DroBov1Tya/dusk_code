@@ -8,7 +8,7 @@ mod question;
 mod result;
 
 pub use answered::{Answered, Asked};
-pub use approval::{ApprovalRequest, Decision, Request};
+pub use approval::{ApprovalRequest, ApprovalStep, Decision, Request};
 pub use card::{Card, CardKind};
 pub use phrase::{is_agent_tool, phrase};
 pub use question::{

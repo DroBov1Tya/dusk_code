@@ -15,6 +15,37 @@ cargo +1.99.1 test --workspace
 The GUI needs a newer Rust than 1.95, hence the pinned toolchain. Say in the pull request
 what you ran and what it showed, and what you did not check.
 
+## Your first change
+
+1. Fork the repository and make a branch named for the topic.
+2. Build and check with the commands above: `cargo +1.99.1 build --workspace`, then
+   `fmt`, `clippy` and `test`.
+3. Add `changes/<topic>.md`: the first line is `Added`, `Changed`, `Fixed`, `Removed` or
+   `Security`, the rest is the entry. Run `python3 scripts/changelog.py check`.
+4. Open a pull request to `main` and fill in the template.
+5. The `ci-ok` check must pass before the change can merge.
+
+By taking part you agree to the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+## Writing a skill
+
+A skill is one folder with a `SKILL.md` under `resources/skills/<name>/` (or
+`~/.config/duskcode/rules/skills/<name>/` for your own). The file starts with front matter,
+then plain Markdown that tells the agent when and how to do the work:
+
+```markdown
+---
+name: spike
+description: One sentence on what it does. Use when ... (this is how the agent decides to load it).
+source: "dusk_code"
+author: "Your Name"
+license: MIT
+---
+```
+
+`name` is the folder name. Keep the body short and in the imperative.
+[resources/skills/spike/SKILL.md](resources/skills/spike/SKILL.md) is a small example.
+
 ## How the code is laid out
 
 One core (`projects/core`) holds all logic and state; the terminal and the window

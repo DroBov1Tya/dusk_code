@@ -29,6 +29,8 @@ mod source;
 mod tests;
 mod unpack;
 #[cfg(test)]
+mod workshop_dist_tests;
+#[cfg(test)]
 mod workshop_tests;
 
 use std::{fs, path::Path, sync::LazyLock};

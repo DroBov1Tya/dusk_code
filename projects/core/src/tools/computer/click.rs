@@ -10,12 +10,12 @@ use serde_json::Value;
 
 #[cfg(test)]
 use super::Desktop;
-use super::{blocking, screen::Screen};
+use super::{screen::Screen, step::Step};
 use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        WindowAccess, schema,
+        Request, ToolResult, WindowAccess, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -65,6 +65,59 @@ struct ClickArguments {
     mode: PointerMode,
 }
 
+impl ClickArguments {
+    /// Bounded before anything is asked or done.
+    fn parse(arguments: Value) -> Result<Self> {
+        let arguments: Self = parse_arguments(arguments)?;
+        arguments
+            .mode
+            .validate_click(arguments.right, arguments.count())?;
+        Ok(arguments)
+    }
+
+    fn count(&self) -> i64 {
+        if self.double { 2 } else { 1 }
+    }
+}
+
+impl Click {
+    /// Checked before anything is asked or done, so a batch can check every step first.
+    pub(super) fn step(screen: &Arc<Screen>, arguments: Value) -> Result<Step> {
+        let arguments = ClickArguments::parse(arguments)?;
+        let (x, y, mode) = (arguments.x, arguments.y, arguments.mode);
+        let action = match mode {
+            PointerMode::Independent => {
+                format!("activate the control at {x}, {y} without moving the pointer")
+            }
+            PointerMode::System => format!("move the user's pointer and click at {x}, {y}"),
+        };
+        let scope = screen.scope();
+        let request = match (&scope, mode) {
+            (Some((id, label)), PointerMode::Independent) => Request::Window {
+                grant: Some(WindowAccess::Activate(id.clone())),
+                action: format!("{action} in {label}; the target app may come to the foreground"),
+            },
+            (Some(_), PointerMode::System) => {
+                anyhow::bail!("system pointer is disabled in a window session")
+            }
+            (None, PointerMode::Independent) => Request::Screen { action },
+            (None, PointerMode::System) => Request::SystemPointer { action },
+        };
+        let screen = Arc::clone(screen);
+        Ok(Step::new(request, move || {
+            let count = arguments.count();
+            let expected = scope.as_ref().map(|(id, _)| id.as_str());
+            screen.click(x, y, arguments.right, count, mode, expected)?;
+            Ok(ToolResult::text(match mode {
+                PointerMode::Independent => format!(
+                    "pressed the control at {x}, {y}; the keyboard focus may not have moved"
+                ),
+                PointerMode::System => format!("clicked at {x}, {y} with the pointer"),
+            }))
+        }))
+    }
+}
+
 impl Tool for Click {
     computer_tool!("click");
 
@@ -93,59 +146,8 @@ impl Tool for Click {
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
-            let arguments: ClickArguments = parse_arguments(arguments)?;
-            let count = if arguments.double { 2 } else { 1 };
-            arguments.mode.validate_click(arguments.right, count)?;
-            let action = match arguments.mode {
-                PointerMode::Independent => format!(
-                    "activate the control at {}, {} without moving the pointer",
-                    arguments.x, arguments.y
-                ),
-                PointerMode::System => format!(
-                    "move the user's pointer and click at {}, {}",
-                    arguments.x, arguments.y
-                ),
-            };
-            let scope = self.0.scope();
-            match (&scope, arguments.mode) {
-                (Some((id, label)), PointerMode::Independent) => {
-                    context
-                        .approve_window(
-                            Some(WindowAccess::Activate(id.clone())),
-                            &format!(
-                                "{action} in {label}; the target app may come to the foreground"
-                            ),
-                        )
-                        .await?
-                }
-                (Some(_), PointerMode::System) => {
-                    anyhow::bail!("system pointer is disabled in a window session")
-                }
-                (None, PointerMode::Independent) => context.approve_screen(&action, false).await?,
-                (None, PointerMode::System) => context.approve_system_pointer(&action).await?,
-            }
-            let screen = Arc::clone(&self.0);
-            blocking(move || {
-                screen.click(
-                    arguments.x,
-                    arguments.y,
-                    arguments.right,
-                    count,
-                    arguments.mode,
-                    scope.as_ref().map(|(id, _)| id.as_str()),
-                )
-            })
-            .await?;
-            match arguments.mode {
-                PointerMode::Independent => Ok(format!(
-                    "pressed the control at {}, {}; the keyboard focus may not have moved",
-                    arguments.x, arguments.y
-                )),
-                PointerMode::System => Ok(format!(
-                    "clicked at {}, {} with the pointer",
-                    arguments.x, arguments.y
-                )),
-            }
+            let step = Self::step(&self.0, arguments)?;
+            Ok(step.ask_and_run(&context).await?.content)
         })
     }
 }

@@ -10,13 +10,13 @@ use std::{
 
 use parking_lot::Mutex;
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 use tokio::sync::{mpsc, oneshot};
 
 use super::tool::Progress;
 use crate::{config::ApprovalPolicy, runtime::ThreadEvent};
 
-pub use dusk_protocol::tools::{ApprovalRequest, Request, WindowAccess};
+pub use dusk_protocol::tools::{ApprovalRequest, ApprovalStep, Request, WindowAccess};
 
 pub use dusk_protocol::tools::Decision;
 
@@ -70,11 +70,92 @@ impl Approvals {
         if policy == ApprovalPolicy::Arbiter {
             return self.arbitrate(request, progress).await;
         }
+        let session = session_grant(&request);
+        self.prompt(request, session, Vec::new(), progress).await
+    }
+
+    /// Screen actions asked as one: never less than asking each alone. A request the
+    /// session grants already is not asked again but still listed, with its number in
+    /// the batch, so the user sees every step. Steps of one kind may be allowed for the
+    /// session as that kind; mixed kinds are asked as the strictest of them for this
+    /// time only, since one session yes must not stand for another kind's. The arbiter
+    /// judges each step on its own.
+    pub async fn ask_all(
+        &self,
+        requests: Vec<Request>,
+        progress: Option<Progress>,
+        policy: ApprovalPolicy,
+    ) -> Result<()> {
+        if policy == ApprovalPolicy::FullAccess {
+            return Ok(());
+        }
+        if requests.len() < 2 || requests.iter().any(|r| strictness(r).is_none()) {
+            // A single request looks as it always has; only screen kinds merge.
+            for request in requests {
+                self.ask(request, progress.clone(), policy).await?;
+            }
+            return Ok(());
+        }
+        let steps: Vec<ApprovalStep> = {
+            let grants = self.grants.lock();
+            requests
+                .into_iter()
+                .enumerate()
+                .map(|(index, request)| ApprovalStep {
+                    number: index + 1,
+                    allowed: grants.covers(&request),
+                    request,
+                })
+                .collect()
+        };
+        let open: Vec<&ApprovalStep> = steps.iter().filter(|step| !step.allowed).collect();
+        let Some(first) = open.first().map(|step| &step.request) else {
+            return Ok(());
+        };
+        if policy == ApprovalPolicy::Arbiter {
+            for step in &open {
+                let judged = self.arbitrate(step.request.clone(), progress.clone());
+                judged
+                    .await
+                    .with_context(|| format!("step {} of the batch", step.number))?;
+            }
+            return Ok(());
+        }
+        let same = open.iter().all(|step| same_kind(&step.request, first));
+        let strictest = open
+            .iter()
+            .map(|step| &step.request)
+            .max_by_key(|r| strictness(r))
+            .unwrap_or(first);
+        // The steps go in the text too, so whatever shows only the request, such as a
+        // message on a chat platform, still shows each step it allows.
+        let lines: Vec<String> = steps.iter().map(ApprovalStep::line).collect();
+        let action = format!("{} computer actions:\n{}", steps.len(), lines.join("\n"));
+        let request = with_action(strictest, action);
+        let session = if same { session_grant(&request) } else { None };
+        self.prompt(request, session, steps, progress).await
+    }
+
+    /// Shows the request to the user and waits. A yes for the session
+    /// adds a grant only when `session` offered one.
+    async fn prompt(
+        &self,
+        request: Request,
+        session: Option<String>,
+        steps: Vec<ApprovalStep>,
+        progress: Option<Progress>,
+    ) -> Result<()> {
         let Some(progress) = progress else {
-            bail!(
-                "{} needs the user's approval, and no one can answer here",
-                request.what()
-            );
+            let what = match steps.is_empty() {
+                true => request.what(),
+                false => steps
+                    .iter()
+                    .filter(|step| !step.allowed)
+                    .map(ApprovalStep::line)
+                    .collect::<Vec<_>>()
+                    .join("; "),
+            };
+            bail!("{what} needs the user's approval, and no one can answer here");
         };
         let id = self.next.fetch_add(1, Ordering::Relaxed) + 1;
         let (sender, answer) = oneshot::channel();
@@ -85,16 +166,19 @@ impl Approvals {
             id,
             events: progress.events.clone(),
         };
-        let session = session_grant(&request);
+        let offered = session.is_some();
         progress.emit(ThreadEvent::Approval(ApprovalRequest {
             id,
             request: request.clone(),
             session,
+            steps,
         }));
         match answer.await {
             Ok(Decision::Once) => Ok(()),
             Ok(Decision::Session) => {
-                self.grants.lock().add(&request);
+                if offered {
+                    self.grants.lock().add(&request);
+                }
                 Ok(())
             }
             Ok(Decision::Deny) | Err(_) => bail!(
@@ -199,6 +283,40 @@ impl Grants {
             Request::Keyboard { .. } => {}
             Request::Window { grant, .. } => self.windows.extend(grant.clone()),
         }
+    }
+}
+
+/// How much a screen request can do, for a merged request to take the strictest kind.
+/// `None` for requests that are not about the screen.
+fn strictness(request: &Request) -> Option<u8> {
+    match request {
+        Request::Screen { .. } => Some(0),
+        Request::Window { .. } => Some(1),
+        Request::SystemPointer { .. } => Some(2),
+        Request::Keyboard { .. } => Some(3),
+        Request::Path { .. } | Request::Command { .. } => None,
+    }
+}
+
+/// Whether one session grant would cover both.
+fn same_kind(a: &Request, b: &Request) -> bool {
+    match (a, b) {
+        (Request::Window { grant: a, .. }, Request::Window { grant: b, .. }) => a == b,
+        _ => std::mem::discriminant(a) == std::mem::discriminant(b),
+    }
+}
+
+/// `kind` asking for `action` instead.
+fn with_action(kind: &Request, action: String) -> Request {
+    match kind {
+        Request::Screen { .. } => Request::Screen { action },
+        Request::SystemPointer { .. } => Request::SystemPointer { action },
+        Request::Keyboard { .. } => Request::Keyboard { action },
+        Request::Window { grant, .. } => Request::Window {
+            grant: grant.clone(),
+            action,
+        },
+        Request::Path { .. } | Request::Command { .. } => kind.clone(),
     }
 }
 

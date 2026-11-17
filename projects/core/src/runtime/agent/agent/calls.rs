@@ -116,9 +116,12 @@ impl Agent {
                     .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
             let denied = match stop {
                 None if !self.hooks.is_empty() => {
-                    let details = json!({ "tool": call.name, "arguments": call.arguments });
-                    let checked = self.run_hooks(HookEvent::BeforeTool, Some(&call.name), details);
-                    checked.await.denied
+                    let within = self.tools.calls_within(&call.name, &call.arguments);
+                    let base = json!({ "thread": self.thread_id, "depth": self.depth });
+                    let checked =
+                        self.hooks
+                            .before_tool(&call.name, &call.arguments, &within, &base);
+                    checked.await
                 }
                 _ => None,
             };

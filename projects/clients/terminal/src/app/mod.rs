@@ -32,6 +32,8 @@ pub use panels::{
 pub use panels::{Choice, Confirm, PackPage, Row, Step, Workshop, choices, order_word};
 pub use state::{App, compact_number};
 pub use tabs::{Tab, TabHit, TabMove};
+#[cfg(test)]
+pub(crate) use thread::approval::tests::batch as approval_batch;
 pub use thread::approval::{ApprovalHit, Asked};
 pub use thread::goal::{GoalButton, GoalHit, buttons as goal_buttons};
 pub use thread::poll::{Poll, PollHit, PollTarget};
