@@ -29,7 +29,7 @@ pub use panels::{
     McpRow, ModelList, Panel, PluginRow, Preset, Preview, SecretEntry, SettingCategory,
     SettingsHit, SettingsView, SubagentView, SwitchKind, ThreadList,
 };
-pub use panels::{Choice, Confirm, Step, Workshop, choices};
+pub use panels::{Choice, Confirm, PackPage, Row, Step, Workshop, choices, order_word};
 pub use state::{App, compact_number};
 pub use tabs::{Tab, TabHit, TabMove};
 #[cfg(test)]

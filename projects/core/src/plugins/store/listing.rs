@@ -5,7 +5,7 @@
 use std::cmp::Reverse;
 
 use chrono::{DateTime, FixedOffset};
-use dusk_protocol::plugin::{Kind, LOCAL_SOURCE, Listing, Order, Tier};
+use dusk_protocol::plugin::{Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, Tier};
 
 use super::{index::Entry, record::Record, source::Fetched};
 use crate::{
@@ -120,6 +120,29 @@ pub fn sort(listings: &mut [Listing], order: Order) {
         Order::Newest => listings.sort_by_key(|item| (Reverse(date(&item.created)), trust(item))),
         Order::Updated => listings.sort_by_key(|item| (Reverse(date(&item.updated)), trust(item))),
         Order::Stars => listings.sort_by_key(|item| (Reverse(item.stars), trust(item))),
+    }
+}
+
+/// The shelves of `listings`: the first few by date and by stars, each an index into
+/// `listings`, so a client shows them without sorting anything itself.
+pub fn picks(listings: &[Listing]) -> Picks {
+    let top = |order: Order, has: fn(&Listing) -> bool| -> Vec<usize> {
+        let mut sorted: Vec<Listing> = listings.iter().filter(|item| has(item)).cloned().collect();
+        sort(&mut sorted, order);
+        sorted
+            .iter()
+            .take(PICKS)
+            .filter_map(|item| {
+                listings
+                    .iter()
+                    .position(|other| other.source == item.source && other.name == item.name)
+            })
+            .collect()
+    };
+    Picks {
+        newest: top(Order::Newest, |item| date(&item.created).is_some()),
+        updated: top(Order::Updated, |item| date(&item.updated).is_some()),
+        stars: top(Order::Stars, |item| item.stars > 0),
     }
 }
 

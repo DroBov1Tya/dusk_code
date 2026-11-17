@@ -31,6 +31,8 @@ pub const DUSK: Color = Color::Rgb(128, 108, 204);
 /// Done and failed, toned to sit with the ink.
 pub const POSITIVE: Color = Color::Rgb(76, 195, 138);
 pub const NEGATIVE: Color = Color::Rgb(229, 72, 77);
+/// The Workshop's Verified tier, a sky blue beside the amber of Official.
+pub const INFO: Color = Color::Rgb(110, 168, 236);
 
 // Glyphs, written as escapes to keep the sources ASCII.
 pub const SUN_GLYPH: &str = "\u{25D2}";

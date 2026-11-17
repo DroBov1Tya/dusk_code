@@ -30,7 +30,11 @@ pub enum Shelf {
     Agents,
 }
 
-pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> Stateful<Div> {
+pub fn render(
+    ws: &mut Workspace,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
     let Some(settings) = ws.settings.clone() else {
         return div()
             .id("connectors")
@@ -90,7 +94,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
     let body = match ws.shelf {
         Shelf::Connectors => mcp::render(&settings, &ws.mcp_restarting, &query, cx),
         Shelf::Skills => skills::render(&settings, &query, cx),
-        Shelf::Plugins => plugins::render(ws, &query, cx),
+        Shelf::Plugins => plugins::render(ws, &query, window, cx),
         Shelf::Tools => tools::render(&settings, &query, cx),
         Shelf::Agents => graph::render(ws, &settings.agents, cx),
     };
@@ -98,6 +102,7 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
         .id("connectors")
         .size_full()
         .overflow_y_scroll()
+        .track_scroll(&ws.shelf_scroll)
         .child(
             div()
                 .px_8()
@@ -121,6 +126,10 @@ pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -
                         .child(div().flex_1())
                         .when(ws.shelf != Shelf::Agents, |row| {
                             row.child(div().w(px(280.)).child(Input::new(&ws.shelf_search)))
+                        })
+                        // The Workshop's filters sit beside the search they narrow with.
+                        .when(ws.shelf == Shelf::Plugins && ws.workshop.open, |row| {
+                            row.child(plugins::workshop::filters::button(ws, cx))
                         }),
                 )
                 .child(body),

@@ -137,7 +137,22 @@ pub struct StoreList {
     pub listings: Vec<Listing>,
     /// The sources that could not be read; the others are listed all the same.
     pub failed: Vec<SourceFailure>,
+    /// The listings a client shows on its shelves, sorted by the core.
+    #[serde(default)]
+    pub picks: Picks,
 }
+
+/// Indices into `StoreList::listings`, at most `PICKS` each, best first; a listing
+/// without the date or the stars sorted on is left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Picks {
+    pub newest: Vec<usize>,
+    pub updated: Vec<usize>,
+    pub stars: Vec<usize>,
+}
+
+/// How many listings a shelf of `Picks` holds.
+pub const PICKS: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceFailure {
