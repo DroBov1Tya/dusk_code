@@ -59,6 +59,10 @@ impl Tool for ReadFile {
         schema::of::<ReadArguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ReadArguments = parse_arguments(arguments)?;

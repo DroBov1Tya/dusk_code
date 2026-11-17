@@ -39,6 +39,10 @@ impl Tool for Show {
         schema::of::<Arguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let block: Block = parse_arguments(arguments)?;

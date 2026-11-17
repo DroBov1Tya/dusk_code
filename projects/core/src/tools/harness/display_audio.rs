@@ -101,6 +101,10 @@ impl Tool for DisplayAudio {
         schema::of::<Arguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, _arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async { anyhow::bail!("audio tools require typed result transport") })
     }

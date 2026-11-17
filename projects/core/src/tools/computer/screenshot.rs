@@ -103,6 +103,10 @@ impl Tool for Screenshot {
         schema::of::<ScreenshotArguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, _: Value, _: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async { anyhow::bail!("screenshot returns a picture") })
     }
