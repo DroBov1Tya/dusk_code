@@ -435,7 +435,27 @@ fn AudioCard(shown: Shown) -> impl IntoView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusk_protocol::{model::ModelEvent, thread::ThreadEvent};
+    use dusk_protocol::{
+        model::{ModelEvent, ToolCall},
+        thread::{ThreadEvent, Turn, TurnStatus},
+    };
+
+    fn entry(id: u64, item: Item, at: i64) -> Entry {
+        Entry { id, item, at }
+    }
+
+    fn running_turn() -> Turn {
+        Turn {
+            turn_id: "turn".into(),
+            thread_id: "thread".into(),
+            last_sequence: 1,
+            response_message_id: None,
+            status: TurnStatus::Running,
+            started_at: 0,
+            finished_at: None,
+            error_message: None,
+        }
+    }
 
     /// A turn of thinking and an answer, with no tool: the fold holds only the answer's
     /// thinking. Two blocks under one key made the list draw the fold twice and never
@@ -455,5 +475,43 @@ mod tests {
         assert!(matches!(&blocks[2], Block::One(entry)
             if matches!(&entry.item, Item::Assistant { text, .. } if text == "done")));
         assert_ne!(blocks[1].key(), blocks[2].key());
+    }
+
+    /// A client that joins a turn in flight must keep its earlier remarks in sight: it
+    /// missed the turn's start, but the fold of a finished turn would hide them.
+    #[test]
+    fn a_turn_joined_midway_keeps_its_earlier_remark_in_sight() {
+        let call = ToolCall {
+            id: "call".into(),
+            name: "bash".into(),
+            arguments: serde_json::json!({ "command": "ls" }),
+        };
+        let mut chat = ChatData::default();
+        chat.items = vec![
+            entry(1, Item::User("go".into()), 1),
+            entry(
+                2,
+                Item::Assistant {
+                    text: "first".into(),
+                    reasoning: String::new(),
+                },
+                2,
+            ),
+            entry(3, Item::Tool(Tool::new(&call, ToolState::Done)), 3),
+        ];
+        chat.apply(ThreadEvent::TurnRunning(running_turn()));
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("second".into())));
+        let blocks = blocks(&chat);
+        let texts: Vec<&str> = blocks
+            .iter()
+            .filter_map(|block| match block {
+                Block::One(entry) => match &entry.item {
+                    Item::Assistant { text, .. } => Some(text.as_str()),
+                    _ => None,
+                },
+                Block::Turn { .. } => None,
+            })
+            .collect();
+        assert_eq!(texts, ["first", "second"]);
     }
 }

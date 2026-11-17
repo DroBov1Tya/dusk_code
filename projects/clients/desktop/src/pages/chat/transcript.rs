@@ -430,6 +430,9 @@ impl Transcript {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 self.working = true;
             }
+            // The turn began before this client listened: it works, but its items are
+            // already in the history and must not open a second fold boundary.
+            ThreadEvent::TurnRunning(_) => self.working = true,
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 if self.working {

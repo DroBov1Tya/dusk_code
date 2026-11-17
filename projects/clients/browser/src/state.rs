@@ -315,7 +315,7 @@ impl AppState {
         }
     }
 
-    /// Opens a listed chat: its history, then the thread itself.
+    /// Opens a listed chat: its history first, then the thread itself.
     pub fn open_chat(self, thread_id: String) {
         self.navigation.update(|n| *n = n.wrapping_add(1));
         let navigation = self.navigation.get_untracked();
@@ -325,22 +325,33 @@ impl AppState {
         }
         spawn_local(async move {
             let cwd = self.cwd_of(&thread_id);
-            let history = api::messages(&thread_id).await;
-            let opened = api::resume(&thread_id, cwd).await;
-            let (history, thread_id) = match (history, opened) {
-                (Ok(history), Ok(id)) => (history, id),
-                (Err(error), _) | (_, Err(error)) => return self.fail(error),
+            let history = match api::messages(&thread_id).await {
+                Ok(history) => history,
+                Err(error) => return self.fail(error),
             };
-            let mut data = ChatData::from_history(&history);
-            data.tasks = api::tasks(&thread_id).await.unwrap_or_default();
-            data.access = api::get_approvals(&thread_id).await.unwrap_or_default();
+            // The chat is in place before the thread opens, so the answer to that and
+            // the turn another client already runs are applied, not dropped.
             self.chats.update(|chats| {
                 chats
                     .entry(thread_id.clone())
-                    .or_insert_with(|| RwSignal::new(data));
+                    .or_insert_with(|| RwSignal::new(ChatData::from_history(&history)));
             });
+            if let Err(error) = api::resume(&thread_id, cwd).await {
+                self.chats.update(|chats| {
+                    chats.remove(&thread_id);
+                });
+                return self.fail(error);
+            }
             if self.navigation.get_untracked() == navigation {
-                self.show(View::Chat(Some(thread_id)));
+                self.show(View::Chat(Some(thread_id.clone())));
+            }
+            let tasks = api::tasks(&thread_id).await.unwrap_or_default();
+            let access = api::get_approvals(&thread_id).await.unwrap_or_default();
+            if let Some(chat) = self.chat(&thread_id) {
+                chat.update(|data| {
+                    data.tasks = tasks;
+                    data.access = access;
+                });
             }
         });
     }

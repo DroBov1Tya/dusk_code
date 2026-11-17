@@ -33,6 +33,10 @@ testing.
 
 - Pictures in the desktop chat keep their proportions and are never enlarged, and all of them
   have lightly rounded corners.
+- The interim remarks of a running turn no longer fold away after the next step when the
+  desktop or web client opens a chat whose turn was already running; a chat is now in
+  place before its thread opens, and a client that joins mid-turn is told the turn is
+  still going.
 
 ## 0.74.4 - 2026-11-16
 
