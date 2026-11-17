@@ -11,12 +11,19 @@ pub const CHECK_DETAIL_CHARS: usize = 120;
 // Plain comments on the types here: a doc comment would go into the schema of `show`
 // and so into every request.
 
-// Checks such as test runs and CI jobs, each with the state it is in.
+// Checks such as test runs and CI jobs, each with the state it is in. Built and read
+// only through `new`, so a list that exists is within its caps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "ChecksFields")]
 pub struct Checks {
+    items: Vec<Check>,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct ChecksFields {
     #[schemars(length(min = 1, max = MAX_CHECKS))]
-    pub items: Vec<Check>,
+    items: Vec<Check>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -53,31 +60,60 @@ impl CheckState {
     }
 }
 
-// How many cases of a check passed and failed, of `total`.
+// How many cases of a check passed and failed, of `total`; never more than the total.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
-#[serde(deny_unknown_fields)]
+#[serde(try_from = "CountsFields")]
 pub struct Counts {
-    pub passed: u32,
-    pub failed: u32,
-    pub total: u32,
+    passed: u32,
+    failed: u32,
+    total: u32,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+struct CountsFields {
+    passed: u32,
+    failed: u32,
+    total: u32,
+}
+
+impl Counts {
+    pub fn new(passed: u32, failed: u32, total: u32) -> anyhow::Result<Self> {
+        ensure!(
+            u64::from(passed) + u64::from(failed) <= u64::from(total),
+            "counts of {passed} passed and {failed} failed are more than the total {total}"
+        );
+        Ok(Self {
+            passed,
+            failed,
+            total,
+        })
+    }
+
+    pub fn passed(self) -> u32 {
+        self.passed
+    }
+
+    pub fn failed(self) -> u32 {
+        self.failed
+    }
+
+    pub fn total(self) -> u32 {
+        self.total
+    }
 }
 
 impl Checks {
-    pub(super) fn check(&self) -> anyhow::Result<()> {
+    pub fn new(items: Vec<Check>) -> anyhow::Result<Self> {
         ensure!(
-            (1..=MAX_CHECKS).contains(&self.items.len()),
+            (1..=MAX_CHECKS).contains(&items.len()),
             "give 1 to {MAX_CHECKS} checks"
         );
-        for check in &self.items {
-            if let Some(counts) = check.counts {
-                ensure!(
-                    u64::from(counts.passed) + u64::from(counts.failed) <= u64::from(counts.total),
-                    "the counts of {:?} add up to more than its total",
-                    check.name.as_str()
-                );
-            }
-        }
-        Ok(())
+        Ok(Self { items })
+    }
+
+    pub fn items(&self) -> &[Check] {
+        &self.items
     }
 
     pub(super) fn write(&self, text: &mut String) {
@@ -94,5 +130,21 @@ impl Checks {
             }
             text.push('\n');
         }
+    }
+}
+
+impl TryFrom<ChecksFields> for Checks {
+    type Error = anyhow::Error;
+
+    fn try_from(fields: ChecksFields) -> anyhow::Result<Self> {
+        Self::new(fields.items)
+    }
+}
+
+impl TryFrom<CountsFields> for Counts {
+    type Error = anyhow::Error;
+
+    fn try_from(fields: CountsFields) -> anyhow::Result<Self> {
+        Self::new(fields.passed, fields.failed, fields.total)
     }
 }

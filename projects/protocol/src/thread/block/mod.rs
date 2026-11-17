@@ -28,8 +28,8 @@ use crate::model::ToolCall;
 /// The tool whose calls are blocks.
 pub const SHOW_TOOL: &str = "show";
 
-/// One block. It is deserialized only through `Show`, so one read from a call or from
-/// history is within its caps.
+/// One block. Each kind is built only through its checked `new`, in code and from JSON
+/// alike, so a block that exists is within its caps.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case", try_from = "Show")]
 pub enum Block {
@@ -52,18 +52,12 @@ impl TryFrom<Show> for Block {
     type Error = anyhow::Error;
 
     fn try_from(show: Show) -> anyhow::Result<Self> {
-        let block = match (show.flow, show.checks, show.choices) {
+        Ok(match (show.flow, show.checks, show.choices) {
             (Some(flow), None, None) => Self::Flow(flow),
             (None, Some(checks), None) => Self::Checks(checks),
             (None, None, Some(choices)) => Self::Choices(choices),
             _ => bail!("give exactly one of flow, checks and choices"),
-        };
-        match &block {
-            Self::Flow(flow) => flow.check()?,
-            Self::Checks(checks) => checks.check()?,
-            Self::Choices(choices) => choices.check()?,
-        }
-        Ok(block)
+        })
     }
 }
 

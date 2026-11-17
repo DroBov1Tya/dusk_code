@@ -107,6 +107,60 @@ fn texts_are_accepted_up_to_their_caps_and_refused_past_them() {
     }
 }
 
+/// The caps hold for code too, not only for what is read from JSON.
+#[test]
+fn a_kind_cannot_be_built_past_its_caps_in_code() {
+    fn line<const MAX: usize>(text: &str) -> Line<MAX> {
+        Line::new(text).unwrap()
+    }
+    let layer = |title: &str, emphasis| Layer::new(line(title), None, Vec::new(), emphasis);
+    let layers = |count: usize| (0..count).map(|_| layer("a", false).unwrap()).collect();
+    assert!(Flow::new(layers(MIN_LAYERS - 1)).is_err());
+    assert!(Flow::new(layers(MAX_LAYERS + 1)).is_err());
+    assert_eq!(
+        Flow::new(layers(MAX_LAYERS)).unwrap().layers().len(),
+        MAX_LAYERS
+    );
+    assert!(Flow::new(vec![layer("a", true).unwrap(), layer("b", true).unwrap()]).is_err());
+    let card = FlowCard {
+        title: line("c"),
+        line: None,
+    };
+    assert!(Layer::new(line("a"), None, vec![card.clone(); MAX_CARDS + 1], false).is_err());
+    let full = Layer::new(line("a"), None, vec![card; MAX_CARDS], false).unwrap();
+    assert_eq!(full.cards().len(), MAX_CARDS);
+    let check = Check {
+        name: line("t"),
+        state: CheckState::Passed,
+        counts: None,
+        detail: None,
+    };
+    assert!(Checks::new(Vec::new()).is_err());
+    assert!(Checks::new(vec![check.clone(); MAX_CHECKS + 1]).is_err());
+    assert_eq!(Checks::new(vec![check]).unwrap().items().len(), 1);
+    assert!(Counts::new(3, 3, 5).is_err());
+    assert_eq!(Counts::new(3, 2, 5).unwrap().total(), 5);
+    assert!(Choices::new(vec![line("a")]).is_err());
+    assert!(Choices::new(vec![line("a"), line("a")]).is_err());
+    let labels = (0..=MAX_CHOICES)
+        .map(|index| line(&index.to_string()))
+        .collect();
+    assert!(Choices::new(labels).is_err());
+    assert_eq!(
+        Choices::new(vec![line("a"), line("b")])
+            .unwrap()
+            .labels()
+            .len(),
+        2
+    );
+    // Each kind read on its own is checked as well, not only inside a block.
+    assert!(serde_json::from_value::<Choices>(json!({ "labels": ["a"] })).is_err());
+    assert!(
+        serde_json::from_value::<Counts>(counted(3, 3, 5)["checks"]["items"][0]["counts"].clone())
+            .is_err()
+    );
+}
+
 #[test]
 fn a_line_is_trimmed_plain_and_never_empty() {
     assert_eq!(Line::<5>::new("  abc \n").unwrap().as_str(), "abc");
