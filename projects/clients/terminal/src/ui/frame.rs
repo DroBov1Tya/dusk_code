@@ -29,7 +29,7 @@ const TITLE_IDLE: &str = "\u{2733}";
 
 /// The terminal tab's title: a mark that turns while work goes on, then the thread.
 pub fn tab_title(app: &App) -> String {
-    let mark = if app.is_busy() || app.agents_at_work() {
+    let mark = if app.is_busy() || app.agents_at_work() || app.tabs_working() {
         TITLE_SPINNER[(app.frame / 2) % TITLE_SPINNER.len()]
     } else {
         TITLE_IDLE

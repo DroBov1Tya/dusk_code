@@ -2,15 +2,17 @@
 
 use std::time::{Duration, Instant};
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum Focus {
+    #[default]
     Input,
     /// Walking the foldable entries; the index is the selected one.
     Browse(usize),
 }
 
-#[derive(Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq, Default)]
 pub enum Activity {
+    #[default]
     Idle,
     Thinking,
     Writing,
@@ -48,6 +50,8 @@ pub enum Button {
     Copy,
     /// Puts a sent message back into the box.
     Edit,
+    /// Sends the running command to the background; the agent goes on.
+    Background,
 }
 
 /// A paste chip in the message box on the last drawn frame.

@@ -6,6 +6,17 @@ testing.
 
 ## Unreleased
 
+### Added
+
+- The terminal client keeps threads in tabs: Alt+T opens one, Alt+W closes the shown one,
+  Alt+Left/Right and Alt+1..9 move between them, and `/tab` does the same. Once there are
+  two, the tabs stand in the header where the title was; a tab in the background keeps
+  taking its thread's events and marks work, a question or an end not yet seen. Closing a
+  tab stops nothing: a thread still at work is closed once its work ends, and its tab comes
+  back if the agent asks something meanwhile.
+- A running command in the terminal transcript offers a background button beside hide and
+  copy; it sends the command to the background as Ctrl+B does, and the agent goes on.
+
 ## 0.74.4 - 2026-11-16
 
 ### Fixed
