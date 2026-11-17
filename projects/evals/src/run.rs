@@ -3,7 +3,7 @@
 //! is copied in, for the provider, and the rules are the ones in this repository.
 
 use std::{
-    collections::BTreeSet,
+    collections::{BTreeSet, HashMap, HashSet},
     fs,
     path::Path,
     sync::LazyLock,
@@ -17,19 +17,27 @@ use dusk_core::{
 };
 use dusk_protocol::{
     client::{Event, Hello, PROTOCOL_VERSION},
-    model::ModelEvent,
+    model::{ModelEvent, Usage},
     thread::ThreadEvent,
 };
 use regex::Regex;
+use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
     args::Options,
+    overrides,
     sandbox::{self, TempHome},
-    score::{self, Outcome, Report},
+    score::{self, Outcome, Report, TIMED_OUT},
     task::{self, Task},
 };
 
 const SOURCE: &str = "evals";
+/// How long a timed-out run may take to stop its turn and report what it spent.
+const SETTLE: Duration = Duration::from_secs(20);
+/// Identical calls with identical results in a row before the core adds its repeat
+/// note to the result; the same number as in core `runtime/agent/repeats.rs`, which the
+/// core does not export.
+const NOTICE_AT: u32 = 3;
 static DELETES: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\b(rm|rmtree|unlink|rmdir)\b").expect("a valid pattern"));
 
@@ -39,8 +47,13 @@ pub async fn all(options: &Options) -> Result<()> {
     let paths = Paths::new(home.0.join("config"), home.0.join("workspace"));
     fs::create_dir(paths.config_root())?;
     sandbox::private(paths.config_root(), 0o700)?;
-    fs::copy(&options.config, paths.config_file())
+    let config = fs::read(&options.config)
         .with_context(|| format!("cannot read {}", options.config.display()))?;
+    let config = match options.settings.as_slice() {
+        [] => config,
+        settings => overrides::apply(&config, settings)?.into_bytes(),
+    };
+    fs::write(paths.config_file(), config)?;
     sandbox::private(&paths.config_file(), 0o600)?;
     let mut prompt = "shipped".to_owned();
     if let Some(file) = &options.main_prompt {
@@ -52,7 +65,14 @@ pub async fn all(options: &Options) -> Result<()> {
         protocol: PROTOCOL_VERSION,
         client: SOURCE.to_owned(),
     };
-    let mut client = app::start(paths, None, hello).await?;
+    // The core refuses a key it does not know, so a misspelt --set ends the run here.
+    let mut client = app::start(paths, None, hello).await.with_context(|| {
+        if options.settings.is_empty() {
+            "cannot start the core"
+        } else {
+            "cannot start the core with the --set keys"
+        }
+    })?;
     if let Some(mode) = &options.mode {
         client.settings().mode(mode).await?;
         prompt = format!("{prompt}, mode {mode}");
@@ -77,18 +97,8 @@ pub async fn all(options: &Options) -> Result<()> {
             let outcome = one(&mut client, task, &home.0, timeout).await;
             outcomes.push(outcome.unwrap_or_else(|error| Outcome {
                 task: task.name.clone(),
-                passed: false,
                 problem: Some(format!("{error:#}")),
-                why: String::new(),
-                seconds: 0,
-                model_calls: 0,
-                tokens: 0,
-                output_tokens: 0,
-                reasoning_tokens: 0,
-                tool_calls: 0,
-                tool_errors: 0,
-                subagents: 0,
-                questions: 0,
+                ..Outcome::default()
             }));
         }
     }
@@ -96,6 +106,7 @@ pub async fn all(options: &Options) -> Result<()> {
     let report = Report {
         model,
         prompt,
+        settings: overrides::recorded(&options.settings),
         outcomes,
     };
     score::print(&report);
@@ -114,15 +125,34 @@ struct Watch {
     idle: bool,
     agents_at_work: BTreeSet<String>,
     /// The chat's latest counts; they take in those of its subagents.
-    spent: u64,
-    output: u64,
-    reasoning: u64,
+    spent: Usage,
     model_calls: u64,
+    /// Token counts the chat sent; one comes after each of its turns.
+    reports: u64,
     tool_calls: u64,
     tool_errors: u64,
+    retries: u64,
+    repeat_notices: u64,
+    reruns: u64,
+    /// Each agent's calls, by thread; the chat's under "".
+    calls: HashMap<String, Calls>,
     subagents: u64,
     questions: u64,
     problem: Option<String>,
+}
+
+/// One agent's tool calls, to count re-runs and repeat notes.
+#[derive(Default)]
+struct Calls {
+    /// Every call so far, as name and arguments.
+    seen: HashSet<String>,
+    /// Calls started and not finished, by id.
+    open: HashMap<String, String>,
+    /// The latest finished call with its result, and how many came in a row, within a
+    /// turn as the core counts. The core also compares the notes of after-tool hooks,
+    /// which these events do not carry.
+    last: Option<(String, String)>,
+    streak: u32,
 }
 
 impl Watch {
@@ -135,6 +165,10 @@ impl Watch {
             }
             ThreadEvent::ToolStarted(call) => {
                 self.tool_calls += 1;
+                let calls = self.calls.entry(agent(thread)).or_default();
+                let key = format!("{} {}", call.name, call.arguments);
+                self.reruns += u64::from(!calls.seen.insert(key.clone()));
+                calls.open.insert(call.id.clone(), key);
                 // Agents run on the real machine: what they delete is worth a record.
                 let command = call
                     .arguments
@@ -144,28 +178,43 @@ impl Watch {
                     eprintln!("deletes: {}", command.chars().take(200).collect::<String>());
                 }
             }
-            ThreadEvent::ToolFinished { result, .. } => {
+            ThreadEvent::ToolFinished { call_id, result } => {
                 self.tool_errors += u64::from(result.is_error);
+                let calls = self.calls.entry(agent(thread)).or_default();
+                if let Some(key) = calls.open.remove(&call_id) {
+                    let finished = Some((key, result.content));
+                    if calls.last == finished {
+                        calls.streak += 1;
+                    } else {
+                        calls.last = finished;
+                        calls.streak = 1;
+                    }
+                    self.repeat_notices += u64::from(calls.streak >= NOTICE_AT);
+                }
             }
+            ThreadEvent::Retrying { .. } => self.retries += 1,
             ThreadEvent::Question(_) => self.questions += 1,
             ThreadEvent::Tokens { tokens, .. } if thread.is_none() => {
-                self.spent = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
-                self.output = tokens.spent.completion_tokens;
-                self.reasoning = tokens.spent.reasoning_tokens;
+                self.spent = tokens.spent;
                 self.model_calls = tokens.model_calls;
+                self.reports += 1;
             }
             ThreadEvent::Model(ModelEvent::Text(text)) if thread.is_none() => {
                 self.answer.push_str(&text);
             }
-            ThreadEvent::TurnStarted(_) => match thread {
-                Some(thread) => {
-                    self.agents_at_work.insert(thread.to_owned());
+            ThreadEvent::TurnStarted(_) => {
+                let calls = self.calls.entry(agent(thread)).or_default();
+                (calls.last, calls.streak) = (None, 0);
+                match thread {
+                    Some(thread) => {
+                        self.agents_at_work.insert(thread.to_owned());
+                    }
+                    None => {
+                        self.idle = false;
+                        self.answer.clear();
+                    }
                 }
-                None => {
-                    self.idle = false;
-                    self.answer.clear();
-                }
-            },
+            }
             ThreadEvent::TurnFinished(_) if thread.is_none() => self.turns += 1,
             ThreadEvent::Idle => match thread {
                 Some(thread) => {
@@ -186,6 +235,50 @@ impl Watch {
     }
 }
 
+/// The key of an agent's calls: its thread, or "" for the chat.
+fn agent(thread: Option<&str>) -> String {
+    thread.unwrap_or_default().to_owned()
+}
+
+/// Feeds the thread's events to `watch` until `enough` holds or the thread ends.
+async fn follow(
+    events: &mut UnboundedReceiver<Event>,
+    thread_id: &str,
+    watch: &mut Watch,
+    enough: impl Fn(&Watch) -> bool,
+) {
+    while !enough(watch) {
+        match events.recv().await {
+            Some(Event::Thread {
+                thread_id: id,
+                event,
+            }) if id == thread_id => watch.see(*event, None),
+            Some(Event::Ended { thread_id: id }) if id == thread_id => break,
+            Some(_) => {}
+            None => break,
+        }
+    }
+}
+
+/// A timed-out run would count as free: its turn is stopped, and the count the chat sends
+/// when a turn ends is awaited a while. Calls still running then are not in it.
+async fn settle(client: &mut Client, thread_id: &str, watch: &mut Watch) {
+    let counted = watch.reports;
+    if let Err(error) = client.threads().cancel(thread_id).await {
+        eprintln!("cannot stop the timed-out turn: {error:#}");
+        return;
+    }
+    let reported = |watch: &Watch| watch.reports > counted;
+    let waited = tokio::time::timeout(
+        SETTLE,
+        follow(&mut client.events, thread_id, watch, reported),
+    )
+    .await;
+    if waited.is_err() || watch.reports == counted {
+        eprintln!("no token count after the timeout; the run keeps the last one");
+    }
+}
+
 async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -> Result<Outcome> {
     let project = home.join(format!("project-{}", uuid::Uuid::now_v7()));
     sandbox::prepare(task, &project)?;
@@ -196,25 +289,22 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         .send(&thread_id, task.prompt.clone(), false)
         .await?;
     let mut watch = Watch::default();
-    let events = &mut client.events;
-    let waited = tokio::time::timeout(timeout, async {
-        while !watch.done() {
-            match events.recv().await {
-                Some(Event::Thread {
-                    thread_id: id,
-                    event,
-                }) if id == thread_id => watch.see(*event, None),
-                Some(Event::Ended { thread_id: id }) if id == thread_id => break,
-                Some(_) => {}
-                None => break,
-            }
-        }
-    })
-    .await;
+    let followed = follow(&mut client.events, &thread_id, &mut watch, Watch::done);
+    let waited = tokio::time::timeout(timeout, followed).await;
     let seconds = started.elapsed().as_secs();
+    // The state the run stopped in, before stopping the turn changes it.
+    let state = format!(
+        "turns {}, idle {}, agents at work {}",
+        watch.turns,
+        watch.idle,
+        watch.agents_at_work.len()
+    );
     let problem = match waited {
         Ok(()) => watch.problem.take(),
-        Err(_) => Some("timed out".to_owned()),
+        Err(_) => {
+            settle(client, &thread_id, &mut watch).await;
+            Some(TIMED_OUT.to_owned())
+        }
     };
     client.threads().close(&thread_id).await?;
     // Timed-out work is judged as it stands: it counts as a failure whatever it holds.
@@ -223,15 +313,10 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         // Late work fails the task; the check tells stuck agents from a stuck count.
         Some(_) => {
             let (late, _) = sandbox::check(task, &project, &watch.answer, home)?;
-            let state = format!(
-                "work passes: {late}; turns {}, idle {}, agents at work {}",
-                watch.turns,
-                watch.idle,
-                watch.agents_at_work.len()
-            );
-            (false, state)
+            (false, format!("work passes: {late}; {state}"))
         }
     };
+    let spent = watch.spent;
     Ok(Outcome {
         task: task.name.clone(),
         passed,
@@ -239,11 +324,19 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         why,
         seconds,
         model_calls: watch.model_calls,
-        tokens: watch.spent,
-        output_tokens: watch.output,
-        reasoning_tokens: watch.reasoning,
+        tokens: spent.prompt_tokens.saturating_add(spent.completion_tokens),
+        cached_prompt_tokens: spent.cached_prompt_tokens,
+        uncached_prompt_tokens: spent
+            .prompt_tokens
+            .saturating_sub(spent.cached_prompt_tokens),
+        cache_write_tokens: spent.cache_write_tokens,
+        output_tokens: spent.completion_tokens,
+        reasoning_tokens: spent.reasoning_tokens,
         tool_calls: watch.tool_calls,
         tool_errors: watch.tool_errors,
+        retries: watch.retries,
+        repeat_notices: watch.repeat_notices,
+        reruns: watch.reruns,
         subagents: watch.subagents,
         questions: watch.questions,
     })

@@ -228,5 +228,5 @@ When a file grows past what one reason to change holds, split it the way the exi
 
 ### evals
 
-Flat: `args`, `run`, `task`, `sandbox`, `score` beside `main.rs`; the tasks are in
+Flat: `args`, `overrides`, `run`, `task`, `sandbox`, `score` beside `main.rs`; the tasks are in
 `projects/evals/tasks/`.
