@@ -21,9 +21,9 @@ use gpui_kit::{
 use super::{card, grid, matches};
 use crate::{ui::controls::choice, workspace::Workspace};
 
-pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
     let body = if ws.workshop.open {
-        workshop::render(ws, query, cx)
+        workshop::render(ws, query, window, cx)
     } else {
         installed(ws, query, cx)
     };
@@ -41,7 +41,7 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
 fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let open = ws.workshop.open;
     let view = |id: &'static str, label: &'static str, chosen: bool, workshop: bool| {
-        choice(Button::new(id).small().label(label), chosen, cx).on_click(cx.listener(
+        choice(Button::new(id).label(label), chosen, cx).on_click(cx.listener(
             move |ws, _, _, cx| {
                 ws.workshop.open = workshop;
                 if workshop && ws.workshop.listings.is_none() {
@@ -56,7 +56,6 @@ fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex_row()
         .items_center()
         .gap_1()
-        .max_w(px(1120.))
         .child(view("plugins-installed", "Installed", !open, false))
         .child(view("plugins-workshop", "Workshop", open, true))
         .when(open, |row| {
@@ -64,7 +63,6 @@ fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(
                     Button::new("workshop-update-all")
                         .outline()
-                        .small()
                         .label("Update all")
                         .loading(ws.workshop.updating)
                         .tooltip("Update everything whose update asks for nothing more")
@@ -73,7 +71,6 @@ fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(
                     Button::new("workshop-refresh")
                         .ghost()
-                        .small()
                         .icon(Icon::default().path(crate::ui::icons::REFRESH))
                         .loading(ws.workshop.loading)
                         .tooltip("Read the store again")

@@ -95,6 +95,13 @@ const TIER_LOCAL_SVG: &[u8] = lucide!(
     r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />"#
 );
 
+/// A funnel: the Workshop's filters, the same shape as the browser's.
+pub const FILTER: &str = "icons/dusk/filter.svg";
+
+const FILTER_SVG: &[u8] = lucide!(
+    r#"<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />"#
+);
+
 pub const HOME: &str = "icons/dusk/home.svg";
 pub const LOCK: &str = "icons/dusk/lock.svg";
 pub const POWER: &str = "icons/dusk/power.svg";
@@ -131,6 +138,7 @@ impl AssetSource for Assets {
             TIER_VERIFIED => return Ok(Some(Cow::Borrowed(TIER_VERIFIED_SVG))),
             TIER_COMMUNITY => return Ok(Some(Cow::Borrowed(TIER_COMMUNITY_SVG))),
             TIER_LOCAL => return Ok(Some(Cow::Borrowed(TIER_LOCAL_SVG))),
+            FILTER => return Ok(Some(Cow::Borrowed(FILTER_SVG))),
             _ => {}
         }
         gpui_kit::assets::Assets.load(path)

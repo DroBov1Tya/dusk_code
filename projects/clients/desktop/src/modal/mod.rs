@@ -27,6 +27,8 @@ use gpui_kit::{
 use crate::workspace::Workspace;
 
 pub use chat_menu::{FADE, render as chat_menu};
+
+use crate::pages::connectors::plugins::workshop::detail as listing;
 pub use viewer::ViewerContent;
 
 pub enum Modal {
@@ -92,6 +94,11 @@ pub enum Modal {
     RemoveProviders,
     /// Installing or removing a plugin of the store, after a yes.
     Workshop(crate::pages::connectors::plugins::Confirm),
+    /// A listing of the Workshop as a store page, by its source and name.
+    Listing {
+        source: String,
+        name: String,
+    },
     /// A plugin's part that opens as a window.
     Plugin(crate::plugins::Key),
     /// Going back to a message of the chat erases it and all after it; asks first.
@@ -200,6 +207,16 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 crate::pages::connectors::plugins::confirm(&confirm, cx),
             )
         }
+        Modal::Listing { source, name } => {
+            let (source, name) = (source.clone(), name.clone());
+            let width = (window.viewport_size().width.as_f32() - 32.).clamp(320., listing::WIDTH);
+            // The window's own column names it; the title says where it is from.
+            (
+                "Workshop".to_owned(),
+                width,
+                listing::render(ws, &source, &name, width, cx),
+            )
+        }
         Modal::Rollback { .. } => ("Go back".to_owned(), 480., rollback(cx)),
         Modal::Arbiter { thread_id } => {
             let thread_id = thread_id.clone();
@@ -274,15 +291,26 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         });
     let agent_focus = matches!(
         ws.modal,
-        Some(Modal::Agents { .. } | Modal::AgentChat { .. })
+        Some(Modal::Agents { .. } | Modal::AgentChat { .. } | Modal::Listing { .. })
     )
-    .then(|| ws.agents_modal_focus.clone());
+    .then(|| ws.modal_focus.clone());
+    // A listing's gallery steps with Left and Right.
+    let gallery = matches!(ws.modal, Some(Modal::Listing { .. }));
     let theme = cx.theme();
     let panel = div()
         .id("modal-panel")
         // The window itself takes the keys, not its close button: a focused button
         // is drawn as if the pointer were on it.
         .when_some(agent_focus, |panel, focus| panel.track_focus(&focus))
+        .when(gallery, |panel| {
+            panel.on_key_down(cx.listener(|ws, event: &KeyDownEvent, _, cx| {
+                match event.keystroke.key.as_str() {
+                    "left" => ws.gallery_step(-1, cx),
+                    "right" => ws.gallery_step(1, cx),
+                    _ => {}
+                }
+            }))
+        })
         .w(px(width))
         .max_h(relative(0.86))
         .flex()

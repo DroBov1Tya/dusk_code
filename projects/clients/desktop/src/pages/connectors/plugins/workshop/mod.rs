@@ -1,27 +1,32 @@
 //! The Workshop: what the store's sources offer, read through the core, as a storefront.
-//! A carousel of official picks, then a section per tier, each listing with its mark,
-//! cover and the one button that installs or updates it after a yes; a pack opens a page
-//! of its skills and their switches. The core checks, sorts and filters by category; this
-//! page only shows what it read, groups it by tier and asks.
+//! A featured carousel of official picks, then shelves of capsules (a tier each, the
+//! newest, the latest updated, the most starred, the local packs); a capsule opens the
+//! listing's window, a pack also has a page of its skills and their switches. The core
+//! checks, sorts, filters by category and picks the shelves; this page only shows what
+//! it read, narrows by tier and kind, and asks before anything changes.
 
-mod card;
+mod actions;
+mod capsule;
 pub mod covers;
-mod discover;
-mod filters;
+pub mod detail;
+pub mod filters;
+mod gallery;
+mod grid;
+mod hero;
 mod pack;
-mod sections;
+mod shelves;
 pub mod tier;
 
-use std::collections::HashMap;
+use std::{collections::HashMap, time::Instant};
 
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
-    plugin::{Kind, Listing, Order, SourceFailure, Tier, UpdateReport},
+    plugin::{Kind, Listing, Order, Picks, SourceFailure, Tier, UpdateReport},
 };
 use gpui_kit::{
     component::{
-        ActiveTheme, Icon, IconName, Sizable,
+        ActiveTheme, Icon, IconName,
         button::{Button, ButtonVariants},
     },
     *,
@@ -30,9 +35,12 @@ use gpui_kit::{
 use super::Confirm;
 use crate::{
     modal::Modal,
-    ui::{Type, widgets},
+    ui::{Type, size, widgets},
     workspace::Workspace,
 };
+
+pub use grid::Grid;
+pub use shelves::Shelf;
 
 #[derive(Default)]
 pub struct Workshop {
@@ -40,6 +48,8 @@ pub struct Workshop {
     pub open: bool,
     /// The store's listings, once read; kept while it is read again.
     pub listings: Option<Vec<Listing>>,
+    /// The core's picks for the New, Recently updated and Top rated shelves.
+    pub picks: Picks,
     /// The sources the last read could not reach; the others are listed all the same.
     pub failed_sources: Vec<SourceFailure>,
     pub loading: bool,
@@ -53,27 +63,36 @@ pub struct Workshop {
     pub order: Order,
     /// The one category the core lists, when one is chosen.
     pub category: Option<String>,
-    /// The categories of the last list read without one, for the chips.
+    /// The categories of the last list read without one, for the filter menu.
     pub categories: Vec<String>,
-    /// Which chips the filter row shows.
-    pub facet: filters::Facet,
-    pub tier: Option<Tier>,
-    pub kind: Option<Kind>,
-    /// The category chips beyond the first few are shown.
-    pub more_chips: bool,
-    /// The pick of the carousel in view.
-    pub discover: usize,
+    /// The tiers and kinds shown; all of them when empty.
+    pub tiers: Vec<Tier>,
+    pub kinds: Vec<Kind>,
+    /// The filter menu is open; when it last closed, so the click that closed it does
+    /// not open it again.
+    pub filters: bool,
+    pub filters_closed: Option<Instant>,
+    /// The featured pick in view.
+    pub hero: usize,
+    /// The shelf shown whole after "See all".
+    pub shelf: Option<Shelf>,
+    /// The first capsule each shelf shows, after its arrows.
+    pub scrolled: HashMap<Shelf, usize>,
     /// The skill packs here, with their switches.
     pub packs: Option<Vec<SkillPack>>,
     /// The pack whose page is open, by name.
     pub pack: Option<String>,
     pub covers: covers::Covers,
+    pub shots: covers::Shots,
+    /// The gallery of the open listing's window: the picture in view and its strip.
+    pub gallery: usize,
+    pub strip: ScrollHandle,
     /// What the last "Update all" did, until it is closed.
     pub report: Option<UpdateReport>,
     pub updating: bool,
 }
 
-pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
     let shop = &ws.workshop;
     let Some(listings) = &shop.listings else {
         return match &shop.error {
@@ -81,43 +100,71 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
             _ => crate::ui::loading("Reading the store...", cx),
         };
     };
+    let grid = Grid::of(ws, window);
     if let Some(name) = &shop.pack {
-        return pack::render(ws, name, cx);
+        return pack::render(ws, name, grid, cx);
     }
-    let mut page = div().flex().flex_col().gap_5().max_w(px(1120.));
-    page = page.child(filters::render(ws, cx));
+    let mut page = div()
+        .flex()
+        .flex_col()
+        .gap(px(size::GAP_XXL))
+        .w(px(grid.width));
+    let mut notes = div().flex().flex_col().gap(px(size::GAP_M));
+    if let Some(chips) = filters::chips(ws, cx) {
+        notes = notes.child(chips);
+    }
     if let Some(error) = shop.error.as_ref().filter(|_| !shop.loading) {
-        page = page.child(widgets::muted(
+        notes = notes.child(widgets::muted(
             format!("The store could not be read again: {error}"),
             cx,
         ));
     }
     if let Some(report) = &shop.report {
-        page = page.child(update_report(report, cx));
+        notes = notes.child(update_report(report, cx));
     }
     if !shop.failed_sources.is_empty() {
-        page = page.child(failed_sources(&shop.failed_sources, cx));
+        notes = notes.child(failed_sources(&shop.failed_sources, cx));
     }
+    page = page.child(notes);
     let shown = visible(shop, listings, query);
-    let browsing = query.is_empty() && shop.category.is_none() && shop.tier.is_none();
-    let featured = discover::featured(&shown);
-    if browsing && shop.order == Order::Trust && !featured.is_empty() {
-        page = page.child(discover::render(ws, &featured, cx));
+    if browsing(shop, query) && shop.shelf.is_none() {
+        let featured = hero::featured(&shown);
+        if !featured.is_empty() {
+            page = page.child(hero::render(ws, &featured, grid, cx));
+        }
     }
-    page.child(sections::render(ws, &shown, query, cx))
+    page.child(shelves::render(ws, &shown, query, grid, cx))
 }
 
-/// The listings left after the search, the tier and the kind chosen, in the core's order.
+/// Nothing narrows the list and it is in trust order: the storefront, not results.
+fn browsing(shop: &Workshop, query: &str) -> bool {
+    query.is_empty()
+        && shop.category.is_none()
+        && shop.tiers.is_empty()
+        && shop.kinds.is_empty()
+        && shop.order == Order::Trust
+}
+
+/// The listings left after the search, the tiers and the kinds chosen, in the core's order.
 fn visible<'a>(shop: &Workshop, listings: &'a [Listing], query: &str) -> Vec<&'a Listing> {
     listings
         .iter()
-        .filter(|listing| shop.tier.is_none_or(|tier| listing.tier == tier))
-        .filter(|listing| shop.kind.is_none_or(|kind| listing.kind == kind))
+        .filter(|listing| shop.tiers.is_empty() || shop.tiers.contains(&listing.tier))
+        .filter(|listing| shop.kinds.is_empty() || shop.kinds.contains(&listing.kind))
         .filter(|listing| {
             let tags = listing.tags.join(" ");
             super::super::matches(query, &[&listing.name, &listing.description, &tags])
         })
         .collect()
+}
+
+/// The listing a window or a page is about, by its source and name.
+pub fn find<'a>(ws: &'a Workspace, source: &str, name: &str) -> Option<&'a Listing> {
+    ws.workshop
+        .listings
+        .iter()
+        .flatten()
+        .find(|listing| listing.source == source && listing.name == name)
 }
 
 /// A calm line for each source that could not be read.
@@ -196,7 +243,6 @@ fn update_report(report: &UpdateReport, cx: &mut Context<Workspace>) -> Div {
         .child(
             Button::new("workshop-report-close")
                 .ghost()
-                .small()
                 .icon(Icon::new(IconName::Close))
                 .tooltip("Close")
                 .on_click(cx.listener(|ws, _, _, cx| {
@@ -221,7 +267,6 @@ fn unreachable_store(error: &str, cx: &mut Context<Workspace>) -> Div {
         ))
         .child(
             Button::new("workshop-retry")
-                .small()
                 .outline()
                 .label("Retry")
                 .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx))),
@@ -249,6 +294,7 @@ impl Workspace {
                             shop.categories = categories(&list.listings);
                         }
                         shop.listings = Some(list.listings);
+                        shop.picks = list.picks;
                         shop.failed_sources = list.failed;
                         shop.error = None;
                         ws.load_covers(cx);
@@ -312,6 +358,20 @@ impl Workspace {
                 cx.notify();
             },
         );
+        cx.notify();
+    }
+
+    /// Opens a listing's window at its cover, with the keys for its gallery.
+    pub fn open_listing(&mut self, listing: &Listing, window: &mut Window, cx: &mut Context<Self>) {
+        self.workshop.gallery = 0;
+        self.workshop.filters = false;
+        self.workshop.strip = ScrollHandle::new();
+        self.load_screenshots(listing, cx);
+        self.modal = Some(Modal::Listing {
+            source: listing.source.clone(),
+            name: listing.name.clone(),
+        });
+        self.modal_focus.focus(window, cx);
         cx.notify();
     }
 

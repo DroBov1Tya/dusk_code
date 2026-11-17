@@ -7,7 +7,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::ui::{Type, icons};
+use crate::ui::{Type, icons, size};
 
 pub const ALL: [Tier; 4] = [Tier::Official, Tier::Verified, Tier::Community, Tier::Local];
 
@@ -60,9 +60,9 @@ pub fn mark(tier: Tier, cx: &App) -> Div {
         .flex()
         .flex_row()
         .items_center()
-        .gap_1()
+        .gap(px(size::GAP_XS))
         .text_color(color(tier, cx))
-        .child(icon(tier, 13., cx))
+        .child(icon(tier, size::ICON, cx))
         .child(
             div()
                 .meta()

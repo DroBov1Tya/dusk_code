@@ -91,7 +91,12 @@ impl Plugins<'_> {
     }
 
     /// The `index`th screenshot of `name` from `source`, checked like a cover.
-    pub async fn screenshot(&self, source: &str, name: &str, index: u32) -> Result<(String, String)> {
+    pub async fn screenshot(
+        &self,
+        source: &str,
+        name: &str,
+        index: u32,
+    ) -> Result<(String, String)> {
         let request = StoreRequest::Screenshot {
             source: source.to_owned(),
             name: name.to_owned(),

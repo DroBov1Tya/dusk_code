@@ -1,27 +1,26 @@
-//! The filter row: a segmented switch between category, tier and kind chips, and the
-//! order of the list. A category and an order are the core's to apply, so choosing one
-//! reads the store again; tier and kind only narrow what is shown.
+//! The filters: one button beside the search, with a count while any is on, opening a
+//! menu of Category, Tier and Kind to check and the order to pick; what is on shows as
+//! chips under the search, each removed with its cross. A category and an order are the
+//! core's to apply, so changing one reads the store again; tiers and kinds only narrow
+//! what is shown here, as the core has no such filter.
 
-use dusk_protocol::plugin::{Kind, Order, Tier};
+use std::time::{Duration, Instant};
+
+use dusk_protocol::plugin::{Kind, Order};
 use gpui_kit::{
-    component::{ActiveTheme, Sizable, button::Button},
+    component::{
+        ActiveTheme, Icon, IconName,
+        button::{Button, ButtonVariants},
+    },
     prelude::FluentBuilder,
     *,
 };
 
 use super::tier;
-use crate::{ui::controls::choice, workspace::Workspace};
-
-#[derive(Clone, Copy, Default, PartialEq, Eq)]
-pub enum Facet {
-    #[default]
-    Category,
-    Tier,
-    Kind,
-}
-
-/// Category chips shown before "+N".
-const CHIPS: usize = 5;
+use crate::{
+    ui::{Type, controls::choice, icons, size, widgets},
+    workspace::Workspace,
+};
 
 const ORDERS: [(Order, &str); 4] = [
     (Order::Trust, "Official first"),
@@ -32,6 +31,11 @@ const ORDERS: [(Order, &str); 4] = [
 
 const KINDS: [Kind; 4] = [Kind::Plugin, Kind::Skill, Kind::Pack, Kind::Agent];
 
+const MENU_WIDTH: f32 = 264.;
+const MENU_HEIGHT: f32 = 520.;
+/// A click on the button this soon after a click outside closed the menu is that click.
+const REOPEN: Duration = Duration::from_millis(250);
+
 pub fn order_word(order: Order) -> &'static str {
     ORDERS
         .iter()
@@ -39,221 +43,323 @@ pub fn order_word(order: Order) -> &'static str {
         .map_or("", |(_, word)| word)
 }
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+impl Workspace {
+    fn toggle_filters(&mut self, cx: &mut Context<Self>) {
+        let shop = &mut self.workshop;
+        let just_closed = shop
+            .filters_closed
+            .is_some_and(|closed| closed.elapsed() < REOPEN);
+        shop.filters = !shop.filters && !just_closed;
+        cx.notify();
+    }
+
+    fn set_category(&mut self, category: Option<String>, cx: &mut Context<Self>) {
+        if self.workshop.category != category {
+            self.workshop.category = category;
+            self.workshop.shelf = None;
+            self.load_store(cx);
+        }
+    }
+
+    fn set_order(&mut self, order: Order, cx: &mut Context<Self>) {
+        if self.workshop.order != order {
+            self.workshop.order = order;
+            self.load_store(cx);
+        }
+    }
+}
+
+/// Puts `item` in or out of `set`.
+fn flip<T: PartialEq>(set: &mut Vec<T>, item: T) {
+    match set.iter().position(|each| *each == item) {
+        Some(index) => {
+            set.remove(index);
+        }
+        None => set.push(item),
+    }
+}
+
+/// How many filters are on, the order counted when it is not the default.
+fn active(ws: &Workspace) -> usize {
     let shop = &ws.workshop;
-    let chips = match shop.facet {
-        Facet::Category => category_chips(ws, cx),
-        Facet::Tier => tier_chips(ws, cx),
-        Facet::Kind => kind_chips(ws, cx),
-    };
-    let mut orders = div().flex().flex_row().items_center().gap_0p5();
+    usize::from(shop.category.is_some())
+        + shop.tiers.len()
+        + shop.kinds.len()
+        + usize::from(shop.order != Order::Trust)
+}
+
+/// The Filters button with its count, and its menu under it while open.
+pub fn button(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let on = active(ws);
+    let theme = cx.theme();
+    let (accent, on_accent) = (theme.primary, theme.primary_foreground);
+    let button = choice(
+        Button::new("workshop-filters"),
+        ws.workshop.filters || on > 0,
+        cx,
+    )
+    .icon(Icon::default().path(icons::FILTER))
+    .tooltip("Filters and order")
+    .on_click(cx.listener(|ws, _, _, cx| ws.toggle_filters(cx)));
+    div()
+        .relative()
+        .flex_none()
+        .child(button)
+        .when(on > 0, |wrap| {
+            wrap.child(
+                div()
+                    .absolute()
+                    .top(px(-size::GAP_XS))
+                    .right(px(-size::GAP_XS))
+                    .min_w(px(size::ICON))
+                    .h(px(size::ICON))
+                    .px(px(size::GAP_XS))
+                    .rounded_full()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .bg(accent)
+                    .text_color(on_accent)
+                    .meta()
+                    .font_weight(FontWeight::SEMIBOLD)
+                    .child(on.to_string()),
+            )
+        })
+        .when(ws.workshop.filters, |wrap| wrap.child(menu(ws, cx)))
+}
+
+fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
+    let shop = &ws.workshop;
+    let theme = cx.theme();
+    let (border, surface) = (theme.border, theme.popover);
+    let mut list = div()
+        .id("workshop-filters-menu")
+        .flex()
+        .flex_col()
+        .p(px(size::GAP_XS))
+        .max_h(px(MENU_HEIGHT))
+        .overflow_y_scroll();
+    list = list.child(section("Sort", cx));
     for (order, label) in ORDERS {
-        orders = orders.child(
-            choice(
-                Button::new(SharedString::from(format!("workshop-order-{label}"))).small(),
-                shop.order == order,
+        list = list.child(
+            row(
+                format!("sort-{label}"),
+                mark(Mark::Radio, shop.order == order, cx),
                 cx,
             )
-            .label(label)
+            .child(label)
+            .on_click(cx.listener(move |ws, _, _, cx| ws.set_order(order, cx))),
+        );
+    }
+    if !shop.categories.is_empty() {
+        list = list.child(section("Category", cx));
+        for category in &shop.categories {
+            let chosen = shop.category.as_deref() == Some(category);
+            let picked = category.clone();
+            list = list.child(
+                row(format!("cat-{category}"), mark(Mark::Check, chosen, cx), cx)
+                    .child(widgets::capitalize(category))
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        let next = (!chosen).then(|| picked.clone());
+                        ws.set_category(next, cx)
+                    })),
+            );
+        }
+    }
+    list = list.child(section("Tier", cx));
+    for each in tier::ALL {
+        list = list.child(
+            row(
+                format!("tier-{}", tier::word(each)),
+                mark(Mark::Check, shop.tiers.contains(&each), cx),
+                cx,
+            )
+            .child(tier::mark(each, cx))
             .on_click(cx.listener(move |ws, _, _, cx| {
-                if ws.workshop.order != order {
-                    ws.workshop.order = order;
-                    ws.load_store(cx);
-                }
+                flip(&mut ws.workshop.tiers, each);
+                ws.workshop.shelf = None;
+                cx.notify();
             })),
         );
     }
-    div()
+    list = list.child(section("Kind", cx));
+    for each in KINDS {
+        list = list.child(
+            row(
+                format!("kind-{}", super::kind_word(each)),
+                mark(Mark::Check, shop.kinds.contains(&each), cx),
+                cx,
+            )
+            .child(format!("{}s", super::kind_word(each)))
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                flip(&mut ws.workshop.kinds, each);
+                ws.workshop.shelf = None;
+                cx.notify();
+            })),
+        );
+    }
+    let panel = div()
+        .id("workshop-filters-panel")
+        .absolute()
+        .top(px(size::CONTROL + size::GAP_XS))
+        .right_0()
+        .w(px(MENU_WIDTH))
         .flex()
         .flex_col()
-        .gap_3()
+        .rounded_lg()
+        .border_1()
+        .border_color(border)
+        .bg(surface)
+        .shadow_lg()
+        .occlude()
+        .on_mouse_down_out(cx.listener(|ws, _, _, cx| {
+            ws.workshop.filters = false;
+            ws.workshop.filters_closed = Some(Instant::now());
+            cx.notify();
+        }))
+        .child(list)
         .child(
             div()
                 .flex()
                 .flex_row()
-                .flex_wrap()
-                .items_center()
-                .gap_3()
-                .child(segments(shop.facet, cx))
-                .child(chips),
-        )
-        .child(orders)
+                .justify_end()
+                .p(px(size::GAP_S))
+                .border_t_1()
+                .border_color(border)
+                .child(
+                    Button::new("workshop-filters-clear")
+                        .ghost()
+                        .label("Clear all")
+                        .on_click(cx.listener(|ws, _, _, cx| clear(ws, cx))),
+                ),
+        );
+    widgets::on_top(widgets::appear("workshop-filters-open", panel))
 }
 
-/// "Category | Tier | Kind", one always chosen.
-fn segments(facet: Facet, cx: &mut Context<Workspace>) -> Div {
+fn clear(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    ws.workshop.tiers.clear();
+    ws.workshop.kinds.clear();
+    let reload = ws.workshop.category.take().is_some() || ws.workshop.order != Order::Trust;
+    ws.workshop.order = Order::Trust;
+    if reload {
+        ws.load_store(cx);
+    }
+    cx.notify();
+}
+
+fn section(title: &'static str, cx: &App) -> Div {
+    div()
+        .flex_none()
+        .px(px(size::GAP_M))
+        .pt(px(size::GAP_M))
+        .pb(px(size::GAP_XS))
+        .group_name()
+        .text_color(cx.theme().muted_foreground)
+        .child(title)
+}
+
+/// A menu row: its mark in a fixed column, then what it names.
+fn row(id: String, mark: Div, cx: &App) -> Stateful<Div> {
+    // A row keeps its height in the scrolled list instead of shrinking to fit it.
+    widgets::menu_item(SharedString::from(format!("workshop-filter-{id}")), cx)
+        .flex_none()
+        .gap(px(size::GAP_S))
+        .small()
+        .child(mark)
+}
+
+enum Mark {
+    Check,
+    Radio,
+}
+
+/// A box with a check, or a ring with a dot, an icon's size.
+fn mark(kind: Mark, on: bool, cx: &App) -> Div {
     let theme = cx.theme();
-    let (foreground, muted, raised, surface) = (
-        theme.foreground,
-        theme.muted_foreground,
-        theme.background,
-        theme.muted,
-    );
+    let (accent, on_accent, border) = (theme.primary, theme.primary_foreground, theme.input);
+    let frame = div()
+        .size(px(size::ICON))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .border_1();
+    match (kind, on) {
+        (Mark::Check, true) => frame.rounded_sm().border_color(accent).bg(accent).child(
+            Icon::new(IconName::Check)
+                .size(px(size::ICON - size::GAP_XS))
+                .text_color(on_accent),
+        ),
+        (Mark::Check, false) => frame.rounded_sm().border_color(border),
+        (Mark::Radio, true) => frame
+            .rounded_full()
+            .border_color(accent)
+            .child(div().size(px(size::GAP_S)).rounded_full().bg(accent)),
+        (Mark::Radio, false) => frame.rounded_full().border_color(border),
+    }
+}
+
+/// The filters that are on, as chips under the search; none while none is.
+pub fn chips(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    if active(ws) == 0 {
+        return None;
+    }
+    let shop = &ws.workshop;
     let mut row = div()
         .flex()
         .flex_row()
-        .gap_0p5()
-        .p_0p5()
-        .rounded_lg()
-        .bg(surface);
-    for (each, label) in [
-        (Facet::Category, "Category"),
-        (Facet::Tier, "Tier"),
-        (Facet::Kind, "Kind"),
-    ] {
-        let active = facet == each;
+        .flex_wrap()
+        .items_center()
+        .gap(px(size::GAP_S));
+    if shop.order != Order::Trust {
         row = row.child(
-            div()
-                .id(SharedString::from(format!("workshop-facet-{label}")))
-                .px_3()
-                .py_0p5()
-                .rounded_md()
-                .cursor_pointer()
-                .text_sm()
-                .font_weight(FontWeight::MEDIUM)
-                .when(active, |tab| tab.bg(raised))
-                .text_color(if active { foreground } else { muted })
-                .child(label)
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    ws.workshop.facet = each;
-                    cx.notify();
-                })),
+            chip("order", order_word(shop.order).to_owned(), cx)
+                .on_click(cx.listener(|ws, _, _, cx| ws.set_order(Order::Trust, cx))),
         );
     }
-    row
-}
-
-fn chip(id: String, label: String, chosen: bool, cx: &App) -> Button {
-    choice(Button::new(SharedString::from(id)).small(), chosen, cx).label(label)
-}
-
-fn chip_row() -> Div {
-    div().flex().flex_row().flex_wrap().items_center().gap_1()
-}
-
-fn category_chips(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let shop = &ws.workshop;
-    let mut row = chip_row().child(
-        chip(
-            "workshop-cat-all".into(),
-            "All".into(),
-            shop.category.is_none(),
-            cx,
-        )
-        .on_click(cx.listener(|ws, _, _, cx| {
-            if ws.workshop.category.take().is_some() {
-                ws.load_store(cx);
-            }
-        })),
-    );
-    let shown = if shop.more_chips {
-        shop.categories.len()
-    } else {
-        CHIPS
-    };
-    for category in shop.categories.iter().take(shown) {
-        let chosen = shop.category.as_deref() == Some(category);
-        let picked = category.clone();
+    if let Some(category) = &shop.category {
         row = row.child(
-            chip(
-                format!("workshop-cat-{category}"),
-                crate::ui::widgets::capitalize(category),
-                chosen,
-                cx,
-            )
-            .on_click(cx.listener(move |ws, _, _, cx| {
-                if ws.workshop.category.as_ref() != Some(&picked) {
-                    ws.workshop.category = Some(picked.clone());
-                    ws.load_store(cx);
-                }
-            })),
+            chip("category", widgets::capitalize(category), cx)
+                .on_click(cx.listener(|ws, _, _, cx| ws.set_category(None, cx))),
         );
     }
-    let hidden = shop.categories.len().saturating_sub(CHIPS);
-    if hidden > 0 {
-        let label = if shop.more_chips {
-            "Fewer".to_owned()
-        } else {
-            format!("+{hidden}")
-        };
+    for each in shop.tiers.clone() {
         row = row.child(
-            chip("workshop-cat-more".into(), label, false, cx).on_click(cx.listener(
-                |ws, _, _, cx| {
-                    ws.workshop.more_chips = !ws.workshop.more_chips;
+            chip(tier::word(each), tier::word(each).to_owned(), cx).on_click(cx.listener(
+                move |ws, _, _, cx| {
+                    flip(&mut ws.workshop.tiers, each);
                     cx.notify();
                 },
             )),
         );
     }
-    row
-}
-
-fn tier_chips(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let current = ws.workshop.tier;
-    let mut row = chip_row().child(
-        chip(
-            "workshop-tier-all".into(),
-            "All".into(),
-            current.is_none(),
-            cx,
-        )
-        .on_click(cx.listener(|ws, _, _, cx| {
-            ws.workshop.tier = None;
-            cx.notify();
-        })),
-    );
-    for each in tier::ALL {
-        row = row.child(tier_chip(each, current == Some(each), cx));
+    for each in shop.kinds.clone() {
+        let word = super::kind_word(each);
+        row = row.child(chip(word, format!("{word}s"), cx).on_click(cx.listener(
+            move |ws, _, _, cx| {
+                flip(&mut ws.workshop.kinds, each);
+                cx.notify();
+            },
+        )));
     }
-    row
+    Some(
+        row.child(
+            Button::new("workshop-chips-clear")
+                .ghost()
+                .label("Clear all")
+                .on_click(cx.listener(|ws, _, _, cx| clear(ws, cx))),
+        ),
+    )
 }
 
-/// A tier's chip carries its mark, so the filter and the sections read the same.
-fn tier_chip(each: Tier, chosen: bool, cx: &mut Context<Workspace>) -> Button {
+/// A filter that is on: its word and a cross that takes it off.
+fn chip(id: &str, label: String, cx: &App) -> Button {
     choice(
-        Button::new(SharedString::from(format!(
-            "workshop-tier-{}",
-            tier::word(each)
-        )))
-        .small(),
-        chosen,
+        Button::new(SharedString::from(format!("workshop-chip-{id}"))),
+        true,
         cx,
     )
-    .child(tier::mark(each, cx))
-    .on_click(cx.listener(move |ws, _, _, cx| {
-        ws.workshop.tier = Some(each);
-        cx.notify();
-    }))
-}
-
-fn kind_chips(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let current = ws.workshop.kind;
-    let mut row = chip_row().child(
-        chip(
-            "workshop-kind-all".into(),
-            "All".into(),
-            current.is_none(),
-            cx,
-        )
-        .on_click(cx.listener(|ws, _, _, cx| {
-            ws.workshop.kind = None;
-            cx.notify();
-        })),
-    );
-    for each in KINDS {
-        let word = super::kind_word(each);
-        row = row.child(
-            chip(
-                format!("workshop-kind-{word}"),
-                format!("{word}s"),
-                current == Some(each),
-                cx,
-            )
-            .on_click(cx.listener(move |ws, _, _, cx| {
-                ws.workshop.kind = Some(each);
-                cx.notify();
-            })),
-        );
-    }
-    row
+    .label(label)
+    .child(Icon::new(IconName::Close).size(px(size::ICON)))
+    .tooltip("Remove this filter")
 }

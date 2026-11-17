@@ -1,5 +1,6 @@
-//! Store covers: each asked of the core once, by its SHA-256, and kept for the session.
-//! The core fetches a cover and checks it against the signed list; this only decodes it.
+//! Store covers and screenshots: a cover asked of the core once, by its SHA-256, a
+//! listing's screenshots once its window opens; both kept for the session. The core
+//! fetches each and checks it against the signed list; this only decodes it.
 
 use std::{collections::HashMap, sync::Arc};
 
@@ -31,6 +32,22 @@ impl Covers {
     }
 }
 
+/// A listing's screenshots in its list's order, drawn after its cover in its window's
+/// gallery, by `key`.
+#[derive(Default)]
+pub struct Shots(pub HashMap<String, Vec<Cover>>);
+
+impl Shots {
+    pub fn get(&self, listing: &Listing) -> &[Cover] {
+        self.0.get(&key(listing)).map_or(&[], Vec::as_slice)
+    }
+}
+
+/// A version's screenshots may differ from another's, so the key carries it.
+pub fn key(listing: &Listing) -> String {
+    format!("{}/{}@{}", listing.source, listing.name, listing.version)
+}
+
 /// Only the two types a list may name are drawn.
 fn decode(base64: &str, mime: &str) -> Result<Arc<Image>> {
     let format = match mime {
@@ -43,6 +60,49 @@ fn decode(base64: &str, mime: &str) -> Result<Arc<Image>> {
 }
 
 impl Workspace {
+    /// Asks for the listing's screenshots, once per version this session.
+    pub(super) fn load_screenshots(&mut self, listing: &Listing, cx: &mut Context<Self>) {
+        let count = listing.screenshots.len();
+        let key = key(listing);
+        if count == 0 || self.workshop.shots.0.contains_key(&key) {
+            return;
+        }
+        let shots = (0..count).map(|_| Cover::Loading).collect();
+        self.workshop.shots.0.insert(key.clone(), shots);
+        for index in 0..count {
+            let (source, name, key) = (listing.source.clone(), listing.name.clone(), key.clone());
+            self.core.call(
+                cx,
+                move |client| async move {
+                    let (base64, mime) = client
+                        .plugins()
+                        .screenshot(&source, &name, index as u32)
+                        .await?;
+                    decode(&base64, &mime)
+                },
+                move |ws, result, cx| {
+                    let shot = match result {
+                        Ok(image) => Cover::Ready(image),
+                        Err(error) => {
+                            tracing::debug!("store screenshot not shown: {error:#}");
+                            Cover::Failed
+                        }
+                    };
+                    if let Some(slot) = ws
+                        .workshop
+                        .shots
+                        .0
+                        .get_mut(&key)
+                        .and_then(|shots| shots.get_mut(index))
+                    {
+                        *slot = shot;
+                    }
+                    cx.notify();
+                },
+            );
+        }
+    }
+
     /// Asks for every cover of the list not asked for yet this session.
     pub(super) fn load_covers(&mut self, cx: &mut Context<Self>) {
         let mut wanted = Vec::new();

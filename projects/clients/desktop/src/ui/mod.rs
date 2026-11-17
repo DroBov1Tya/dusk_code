@@ -41,6 +41,13 @@ pub mod size {
     pub const BAR: f32 = 52.;
     pub const ICON: f32 = 16.;
     pub const ICON_LARGE: f32 = 20.;
+    /// The space scale above by name, for places that compute with it: 4, 8, 12, 16, 24, 32.
+    pub const GAP_XS: f32 = 4.;
+    pub const GAP_S: f32 = 8.;
+    pub const GAP_M: f32 = 12.;
+    pub const GAP_L: f32 = 16.;
+    pub const GAP_XL: f32 = 24.;
+    pub const GAP_XXL: f32 = 32.;
 }
 
 /// Row heights.
@@ -64,6 +71,12 @@ pub trait Type: Styled + Sized {
     /// A page's or a window's title.
     fn title(self) -> Self {
         self.text_size(rems(1.3)).font_weight(FontWeight::SEMIBOLD)
+    }
+    /// The one large name of a store page or a featured pick.
+    fn display(self) -> Self {
+        self.text_size(rems(1.8))
+            .line_height(rems(2.2))
+            .font_weight(FontWeight::BOLD)
     }
     /// The name of a group of rows.
     fn group_name(self) -> Self {
