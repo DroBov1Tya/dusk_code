@@ -195,3 +195,26 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
         assert!(parse(bad).is_err(), "{bad:?}");
     }
 }
+
+#[test]
+fn the_failure_ladder_is_off_and_its_rungs_rise() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(!plain.failure_ladder);
+    let rungs = (
+        plain.failure_note_at,
+        plain.failure_replan_at,
+        plain.failure_stop_at,
+    );
+    assert_eq!(rungs, (3, 5, 8));
+    let set = parse("limits:\n  failure_ladder: true\n  failure_stop_at: 12\n").unwrap();
+    assert!(set.limits().failure_ladder);
+    assert_eq!(set.limits().failure_stop_at, 12);
+    for bad in [
+        "limits:\n  failure_note_at: 1\n",
+        "limits:\n  failure_replan_at: 3\n",
+        "limits:\n  failure_stop_at: 5\n",
+        "limits:\n  failure_stop_at: 51\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}

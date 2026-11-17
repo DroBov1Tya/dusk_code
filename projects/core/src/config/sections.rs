@@ -42,6 +42,20 @@ pub struct Limits {
     /// failures keep to `max_attempts`.
     #[serde(default = "default_retry_unreachable_seconds")]
     pub retry_unreachable_seconds: u32,
+    /// The ladder for the same error coming back within a turn through calls that
+    /// differ: a note, then a re-plan, then a stop. Off until the evals show it does not
+    /// lower the pass rate.
+    #[serde(default)]
+    pub failure_ladder: bool,
+    /// Times the same error comes back before the model is told to stop varying the call.
+    #[serde(default = "default_failure_note_at")]
+    pub failure_note_at: u32,
+    /// Times before the model is asked for a different plan.
+    #[serde(default = "default_failure_replan_at")]
+    pub failure_replan_at: u32,
+    /// Times before the turn ends as failed.
+    #[serde(default = "default_failure_stop_at")]
+    pub failure_stop_at: u32,
 }
 
 impl Default for Limits {
@@ -54,6 +68,10 @@ impl Default for Limits {
             model_timeout_seconds: default_model_timeout_seconds(),
             max_attempts: default_max_attempts(),
             retry_unreachable_seconds: default_retry_unreachable_seconds(),
+            failure_ladder: false,
+            failure_note_at: default_failure_note_at(),
+            failure_replan_at: default_failure_replan_at(),
+            failure_stop_at: default_failure_stop_at(),
         }
     }
 }
@@ -89,6 +107,23 @@ fn default_max_attempts() -> u32 {
 
 fn default_retry_unreachable_seconds() -> u32 {
     DEFAULT_RETRY_UNREACHABLE_SECONDS
+}
+
+/// Two of the same error is normal; the ladder starts later, and stops before a turn
+/// burns itself out.
+pub const MIN_FAILURE_RUNG: u32 = 2;
+pub const MAX_FAILURE_RUNG: u32 = 50;
+
+fn default_failure_note_at() -> u32 {
+    3
+}
+
+fn default_failure_replan_at() -> u32 {
+    5
+}
+
+fn default_failure_stop_at() -> u32 {
+    8
 }
 
 /// What the core records about its work. Off, nothing is written or sent at all.

@@ -151,8 +151,9 @@ impl Agent {
     }
 
     /// Calls run one by one, and each result is stored as soon as it is known. After a
-    /// stop the rest are not run, but each still gets a result, because the model expects
-    /// one per call. An error means a result could not be stored.
+    /// stop, by the user or by the same error coming back too often, the rest are not run,
+    /// but each still gets a result, because the model expects one per call. An error
+    /// means a result could not be stored.
     pub(super) async fn call_tools(
         &self,
         turn: &Turn,
@@ -173,8 +174,9 @@ impl Agent {
                     .goal(&self.thread_id)
                     .await?
                     .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
-            let denied = match stop {
-                None if !self.hooks.is_empty() => {
+            let halted = stop.is_some() || self.repeats.lock().stopping(&turn.turn_id);
+            let denied = match halted {
+                false if !self.hooks.is_empty() => {
                     let within = self.tools.calls_within(&call.name, &call.arguments);
                     let base = json!({ "thread": self.thread_id, "depth": self.depth });
                     let checked =
@@ -184,17 +186,17 @@ impl Agent {
                 }
                 _ => None,
             };
-            let mut content = match stop {
-                Some(_) => "not run: the user interrupted the turn".to_owned(),
-                None if draft && call.name != "goal" => {
+            let mut content = match halted {
+                true => "not run: the user interrupted the turn".to_owned(),
+                false if draft && call.name != "goal" => {
                     outcome = "failed";
                     "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned()
                 }
-                None if let Some(denied) = &denied => {
+                false if let Some(denied) = &denied => {
                     outcome = "failed";
                     format!("error: {denied}")
                 }
-                None => {
+                false => {
                     self.emit(ThreadEvent::ToolStarted(call.clone()));
                     let progress = Progress {
                         call_id: call.id.clone(),
@@ -249,13 +251,13 @@ impl Agent {
                     warn!("cannot count the MCP tool use: {error:#}");
                 }
             }
-            if finished.is_some()
-                && let Some(note) =
-                    self.repeats
-                        .lock()
-                        .note(&turn.turn_id, &call.name, &call.arguments, &content)
-            {
-                content.push_str(&format!("\n\n{note}"));
+            let notice = finished.as_ref().and_then(|result| {
+                let limits = config.limits();
+                let mut repeats = self.repeats.lock();
+                repeats.note(&turn.turn_id, call, result, &content, &limits)
+            });
+            if let Some(notice) = &notice {
+                content.push_str(&format!("\n\n{}", notice.note));
             }
             surprised |= outcome != "succeeded";
             let stored = self.state.record_tool_result_with_outcome(
@@ -279,6 +281,14 @@ impl Agent {
                 self.emit(ThreadEvent::ToolFinished {
                     call_id: call.id.clone(),
                     result,
+                });
+            }
+            // A re-plan needs no pace of its own: its call failed, so the next step
+            // already runs at the effort set (`Pace::Rethink`).
+            if let Some(notice) = notice {
+                self.emit(ThreadEvent::RepeatNotice {
+                    rung: notice.rung,
+                    count: notice.count,
                 });
             }
         }

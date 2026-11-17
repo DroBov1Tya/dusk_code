@@ -42,6 +42,14 @@ pub struct Outcome {
     /// Tool calls with the name and arguments of an earlier call of the same agent.
     #[serde(default)]
     pub reruns: u64,
+    /// Times the core told a model, of the chat or an agent, that it repeats itself and
+    /// let it go on.
+    #[serde(default)]
+    pub repeat_notices: u64,
+    /// Turns the core ended because the same error kept coming back: the number that
+    /// judges `limits.failure_ladder`.
+    #[serde(default)]
+    pub repeat_stops: u64,
     pub subagents: u64,
     pub questions: u64,
 }
@@ -80,6 +88,8 @@ struct Totals {
     errors: f64,
     retries: f64,
     reruns: f64,
+    repeat_notices: f64,
+    repeat_stops: f64,
 }
 
 /// Saturates: a report is a file anyone may have edited.
@@ -116,6 +126,8 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
         errors: mean(|outcome| outcome.tool_errors),
         retries: mean(|outcome| outcome.retries),
         reruns: mean(|outcome| outcome.reruns),
+        repeat_notices: mean(|outcome| outcome.repeat_notices),
+        repeat_stops: mean(|outcome| outcome.repeat_stops),
     }
 }
 
@@ -144,7 +156,7 @@ impl Totals {
         format!(
             "means over {} runs{left_out}: {:.1} calls, {:.0} tokens (prompt {:.0} cached, \
              {:.0} uncached, {:.0} written to cache; {:.0} out of which {:.0} reasoning), \
-             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.0} s",
+             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} repeat notices, {:.2} repeat stops, {:.0} s",
             self.runs - self.timed_out,
             self.calls,
             self.tokens,
@@ -156,6 +168,8 @@ impl Totals {
             self.errors,
             self.retries,
             self.reruns,
+            self.repeat_notices,
+            self.repeat_stops,
             self.seconds
         )
     }
@@ -368,6 +382,10 @@ mod tests {
         assert!(text.contains("0/1 n/a"));
         assert!(text.contains("after   passed 0/1 (0%), n/a tokens per solved task"));
         assert!(text.contains("after   means over 0 runs, 1 timed out and left out"));
+        assert!(
+            text.contains("0.0 repeat notices, 0.00 repeat stops"),
+            "{text}"
+        );
         assert!(summary(&after).contains("timeout"));
     }
 
@@ -379,5 +397,7 @@ mod tests {
         let report: Report = serde_json::from_str(old).expect("an old report");
         assert!(report.settings.is_empty());
         assert_eq!(report.outcomes[0].reruns, 0);
+        assert_eq!(report.outcomes[0].repeat_notices, 0);
+        assert_eq!(report.outcomes[0].repeat_stops, 0);
     }
 }
