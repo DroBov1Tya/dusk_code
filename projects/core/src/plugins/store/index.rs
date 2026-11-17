@@ -1,6 +1,7 @@
 //! A source's list, `index.json`, and its signature. A list is trusted only when its
 //! Ed25519 signature checks against the key of its source; it carries the SHA-256 of
-//! every package and cover, so one signature vouches for all the files it names.
+//! every package, cover and screenshot, so one signature vouches for all the files it
+//! names.
 //!
 //! Format 1 lists plugins. Format 2 adds what each entry is (`kind`), how it is filed
 //! and shown, and, in the official list only, the mirrors it vouches for.
@@ -25,9 +26,15 @@ pub const MAX_SIGNATURE_BYTES: u64 = 1024;
 pub const MAX_PACKAGE_BYTES: u64 = 64 * 1024 * 1024;
 /// The largest cover: a picture for a card, not a gallery.
 pub const MAX_COVER_BYTES: u64 = 512 * 1024;
+/// The largest screenshot: a 1600x1000 shot of an interface is 100-600 KiB as WebP or
+/// PNG, so 1 MiB leaves room and keeps eight of them under 8 MiB per item.
+pub const MAX_SCREENSHOT_BYTES: u64 = 1024 * 1024;
+pub const MAX_SCREENSHOTS: usize = 8;
+/// In characters; a line under a picture, not a description.
+pub const MAX_CAPTION: usize = 120;
 const MAX_TAGS: usize = 8;
 const MAX_WORD: usize = 32;
-const MAX_COVER_PATH: usize = 200;
+const MAX_PICTURE_PATH: usize = 200;
 const MAX_PACK_SKILLS: usize = 256;
 /// The system and processor of a package of plain files, which runs nowhere.
 pub const ANY: &str = "any";
@@ -83,6 +90,9 @@ pub struct Entry {
     #[serde(default)]
     pub tags: Vec<String>,
     pub cover: Option<Cover>,
+    /// Pictures of it at work, in the order shown.
+    #[serde(default)]
+    pub screenshots: Vec<Screenshot>,
     /// Counted by the publisher when signing; duskcode never asks GitHub.
     #[serde(default)]
     pub stars: u32,
@@ -117,6 +127,27 @@ pub struct Cover {
     pub path: String,
     pub sha256: String,
     pub size: u64,
+}
+
+/// A picture of the item at work, beside the list like a cover, with a line under it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Screenshot {
+    pub path: String,
+    pub sha256: String,
+    pub size: u64,
+    pub caption: Option<String>,
+}
+
+impl Screenshot {
+    /// The file it names, checked and fetched like a cover.
+    pub fn picture(&self) -> Cover {
+        Cover {
+            path: self.path.clone(),
+            sha256: self.sha256.clone(),
+            size: self.size,
+        }
+    }
 }
 
 /// The list in `json`, once `signature` (base64 of 64 bytes) is checked against `key`.
@@ -250,6 +281,13 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
     if let Some(cover) = &entry.cover {
         check_cover(cover)?;
     }
+    ensure!(
+        entry.screenshots.len() <= MAX_SCREENSHOTS,
+        "up to {MAX_SCREENSHOTS} screenshots are allowed"
+    );
+    for screenshot in &entry.screenshots {
+        check_screenshot(screenshot)?;
+    }
     for date in [&entry.created, &entry.updated].into_iter().flatten() {
         DateTime::parse_from_rfc3339(date).context("a date is not RFC 3339")?;
     }
@@ -270,10 +308,27 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
 
 /// A relative path to a `.png` or `.webp` under the list's folder, of a checked size.
 pub fn check_cover(cover: &Cover) -> Result<()> {
-    let path = &cover.path;
+    check_picture(cover, MAX_COVER_BYTES).context("the cover")
+}
+
+/// A picture like a cover, up to `MAX_SCREENSHOT_BYTES`, and a caption a client can
+/// show as one plain line.
+pub fn check_screenshot(screenshot: &Screenshot) -> Result<()> {
+    check_picture(&screenshot.picture(), MAX_SCREENSHOT_BYTES).context("a screenshot")?;
+    if let Some(caption) = &screenshot.caption {
+        ensure!(
+            is_caption(caption),
+            "a screenshot's caption is not one plain line of up to {MAX_CAPTION} characters"
+        );
+    }
+    Ok(())
+}
+
+fn check_picture(picture: &Cover, max: u64) -> Result<()> {
+    let path = &picture.path;
     ensure!(
         !path.is_empty()
-            && path.len() <= MAX_COVER_PATH
+            && path.len() <= MAX_PICTURE_PATH
             && path.split('/').all(|part| {
                 !part.is_empty()
                     && part != "."
@@ -282,24 +337,32 @@ pub fn check_cover(cover: &Cover) -> Result<()> {
                         .bytes()
                         .all(|byte| byte.is_ascii_alphanumeric() || b"._-".contains(&byte))
             }),
-        "the cover's path is not a plain relative path"
+        "the path is not a plain relative path"
+    );
+    ensure!(cover_mime(path).is_some(), "it is not a .png or .webp");
+    ensure!(
+        is_sha256(&picture.sha256),
+        "the sha256 is not 64 hex digits"
     );
     ensure!(
-        cover_mime(path).is_some(),
-        "the cover is not a .png or .webp"
-    );
-    ensure!(
-        is_sha256(&cover.sha256),
-        "the cover's sha256 is not 64 hex digits"
-    );
-    ensure!(
-        (1..=MAX_COVER_BYTES).contains(&cover.size),
-        "the cover is over {MAX_COVER_BYTES} bytes"
+        (1..=max).contains(&picture.size),
+        "the size is not 1 to {max} bytes"
     );
     Ok(())
 }
 
-/// The type of a cover, by its extension.
+/// Not empty, not padded, at most `MAX_CAPTION` characters, and none that is a control
+/// or one that turns the text around (bidi overrides and isolates), which could make a
+/// caption read as something else.
+fn is_caption(text: &str) -> bool {
+    let bidi = |c: char| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
+    !text.trim().is_empty()
+        && text.trim() == text
+        && text.chars().count() <= MAX_CAPTION
+        && !text.chars().any(|c| c.is_control() || bidi(c))
+}
+
+/// The type of a cover or screenshot, by its extension.
 pub fn cover_mime(path: &str) -> Option<&'static str> {
     if path.ends_with(".png") {
         Some("image/png")
@@ -373,6 +436,7 @@ impl Entry {
             && self.category.is_empty()
             && self.tags.is_empty()
             && self.cover.is_none()
+            && self.screenshots.is_empty()
             && self.stars == 0
             && self.created.is_none()
             && self.updated.is_none()

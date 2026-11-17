@@ -18,11 +18,24 @@ pub async fn store(order: Order, category: Option<String>) -> Res<StoreList> {
 
 /// A cover as a `data:` address, only for the two types a list may name.
 pub async fn cover(source: String, name: String) -> Res<String> {
-    let call = Request::Store(StoreRequest::Cover { source, name });
-    let (base64, mime) = ask!(call, Response::Cover { base64, mime } => (base64, mime))?;
+    media(Request::Store(StoreRequest::Cover { source, name })).await
+}
+
+/// The `index`th screenshot, as a cover.
+pub async fn screenshot(source: String, name: String, index: u32) -> Res<String> {
+    media(Request::Store(StoreRequest::Screenshot {
+        source,
+        name,
+        index,
+    }))
+    .await
+}
+
+async fn media(call: Request) -> Res<String> {
+    let (base64, mime) = ask!(call, Response::Media { base64, mime } => (base64, mime))?;
     match mime.as_str() {
         "image/png" | "image/webp" => Ok(format!("data:{mime};base64,{base64}")),
-        other => Err(format!("a cover of type {other} is not shown")),
+        other => Err(format!("a picture of type {other} is not shown")),
     }
 }
 

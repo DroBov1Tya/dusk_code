@@ -45,6 +45,10 @@ pub struct Listing {
     /// A picture of it, fetched with `StoreRequest::Cover`.
     #[serde(default)]
     pub cover: Option<Cover>,
+    /// Pictures of it at work, in order; each fetched with `StoreRequest::Screenshot`
+    /// by its place here.
+    #[serde(default)]
+    pub screenshots: Vec<ScreenshotRef>,
     /// As the publisher counted them when signing the list.
     #[serde(default)]
     pub stars: u32,
@@ -102,6 +106,14 @@ pub struct Cover {
     /// Hex, lower case.
     pub sha256: String,
     pub size: u64,
+}
+
+/// One screenshot of a listing; its bytes come with `StoreRequest::Screenshot`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenshotRef {
+    /// Plain text of at most 120 characters, without control characters.
+    #[serde(default)]
+    pub caption: Option<String>,
 }
 
 /// The order of the list; the core sorts, so every client shows the same.
@@ -186,6 +198,13 @@ pub enum StoreRequest {
     /// `Response::StoreUpdates`.
     UpdateAll,
     /// The cover of `name` from `source`, as the last list read showed it; answered with
-    /// `Response::Cover`.
+    /// `Response::Media`.
     Cover { source: String, name: String },
+    /// The screenshot at `index` of `name`'s `screenshots`, as the last list read showed
+    /// them; answered with `Response::Media`.
+    Screenshot {
+        source: String,
+        name: String,
+        index: u32,
+    },
 }

@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 
 use super::{
     fetch::{Via, fetch},
-    index::{self, Cover, Index},
+    index::{self, Cover, Index, Screenshot},
     record::Record,
 };
 use crate::{config::Mirror, init::paths::Paths};
@@ -33,7 +33,7 @@ const INDEX_ENV: &str = "DUSKCODE_STORE_URL";
 #[derive(Debug)]
 pub struct Fetched {
     pub name: String,
-    /// The address its list came from; covers are beside it.
+    /// The address its list came from; its pictures are beside it.
     pub url: String,
     /// Base64 of the key that checked the list.
     pub key: String,
@@ -41,17 +41,19 @@ pub struct Fetched {
     pub index: Index,
 }
 
-/// A cover as the last list read named it, with where that list came from.
+/// The pictures of an entry as the last list read named them, with where that list
+/// came from.
 #[derive(Debug, Clone)]
 pub struct Seen {
     pub url: String,
     pub key: String,
-    pub cover: Cover,
+    pub cover: Option<Cover>,
+    pub screenshots: Vec<Screenshot>,
 }
 
-/// The covers of the lists read last, by (source, name), so a client asking for one
+/// The pictures of the lists read last, by (source, name), so a client asking for one
 /// gets only what a signed list named.
-static COVERS: LazyLock<Mutex<BTreeMap<(String, String), Seen>>> = LazyLock::new(Mutex::default);
+static PICTURES: LazyLock<Mutex<BTreeMap<(String, String), Seen>>> = LazyLock::new(Mutex::default);
 
 /// Reads the official list and every mirror. Each list must be no older than one
 /// accepted here before.
@@ -87,7 +89,7 @@ pub async fn read(paths: &Paths, mirrors: &[Mirror]) -> (Vec<Fetched>, Vec<Sourc
             Vec::new()
         }
     };
-    remember_covers(&kept);
+    remember_pictures(&kept);
     (kept, failed)
 }
 
@@ -138,14 +140,14 @@ pub fn settle(
     (fetched, failed)
 }
 
-/// The cover `name` of `source` showed in the last list read, while that source is
+/// The pictures `name` of `source` showed in the last list read, while that source is
 /// still the one configured: a mirror whose address or key changed since is not.
-pub fn cover(mirrors: &[Mirror], source: &str, name: &str) -> Result<Seen> {
-    let seen = COVERS
+pub fn seen(mirrors: &[Mirror], source: &str, name: &str) -> Result<Seen> {
+    let seen = PICTURES
         .lock()
         .get(&(source.to_owned(), name.to_owned()))
         .cloned()
-        .ok_or_else(|| anyhow!("{source} showed no cover for {name}; list the store again"))?;
+        .ok_or_else(|| anyhow!("{source} showed no pictures for {name}; list the store again"))?;
     let current = match source {
         OFFICIAL_SOURCE => seen.key == index::PUBLIC_KEY,
         _ => mirrors
@@ -218,19 +220,28 @@ fn accept(paths: &Paths, fetched: &Fetched) -> Result<()> {
     })
 }
 
-fn remember_covers(fetched: &[Fetched]) {
-    let mut covers = COVERS.lock();
+/// The screenshot at `index`, when the list named that many.
+pub fn screenshot(seen: &Seen, index: u32) -> Option<&Screenshot> {
+    usize::try_from(index)
+        .ok()
+        .and_then(|index| seen.screenshots.get(index))
+}
+
+pub fn remember_pictures(fetched: &[Fetched]) {
+    let mut pictures = PICTURES.lock();
     for source in fetched {
-        covers.retain(|(name, _), _| *name != source.name);
+        pictures.retain(|(name, _), _| *name != source.name);
         for entry in &source.index.plugins {
-            if let Some(cover) = &entry.cover {
-                let seen = Seen {
-                    url: source.url.clone(),
-                    key: source.key.clone(),
-                    cover: cover.clone(),
-                };
-                covers.insert((source.name.clone(), entry.name.clone()), seen);
+            if entry.cover.is_none() && entry.screenshots.is_empty() {
+                continue;
             }
+            let seen = Seen {
+                url: source.url.clone(),
+                key: source.key.clone(),
+                cover: entry.cover.clone(),
+                screenshots: entry.screenshots.clone(),
+            };
+            pictures.insert((source.name.clone(), entry.name.clone()), seen);
         }
     }
 }
