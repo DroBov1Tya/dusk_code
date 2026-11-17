@@ -34,6 +34,10 @@ pub struct SettingsView {
     pub model_error: Option<String>,
     pub max_agents_at_work: usize,
     pub max_goal_rounds: u32,
+    /// Seconds a model call may stay silent before it is given up on.
+    pub model_timeout_seconds: u32,
+    /// Tries of one model call that wrote nothing, the first included.
+    pub max_attempts: u32,
     /// 0 never starts the idle screen.
     pub idle_screen_minutes: u32,
     pub memory: Memory,
@@ -68,7 +72,7 @@ pub struct SettingsView {
 }
 
 /// The agent limit takes the first row of the agents list.
-pub(super) const LIMIT_ROWS: usize = 2;
+pub(super) const LIMIT_ROWS: usize = 4;
 
 /// The memory's size moves in steps this large, within these bounds.
 pub(super) const MEMORY_STEP: usize = 500;
@@ -98,6 +102,8 @@ impl SettingsView {
             model_error: None,
             max_agents_at_work: settings.max_agents_at_work,
             max_goal_rounds: settings.max_goal_rounds,
+            model_timeout_seconds: settings.model_timeout_seconds,
+            max_attempts: settings.max_attempts,
             idle_screen_minutes: settings.idle_screen_minutes,
             mode: settings.mode,
             memory: settings.memory,
@@ -245,13 +251,15 @@ impl SettingsView {
 
     /// What moving the limit on the selected row asks of the core.
     pub(super) fn limit_action(&self, more: bool) -> Action {
-        let counted = |value: u64| match more {
-            true => value.saturating_add(1),
-            false => value.saturating_sub(1).max(1),
+        let step = |value: u32, floor: u32, ceil: u32| match more {
+            true => (value + 1).min(ceil),
+            false => value.saturating_sub(1).max(floor),
         };
         match self.selected {
-            0 => Action::SetAgentLimit(counted(self.max_agents_at_work as u64) as usize),
-            _ => Action::SetGoalRounds(counted(u64::from(self.max_goal_rounds)) as u32),
+            0 => Action::SetAgentLimit(step(self.max_agents_at_work as u32, 1, u32::MAX) as usize),
+            1 => Action::SetGoalRounds(step(self.max_goal_rounds, 1, 200)),
+            2 => Action::SetModelTimeout(step(self.model_timeout_seconds, 5, 3600)),
+            _ => Action::SetMaxAttempts(step(self.max_attempts, 1, 20)),
         }
     }
 

@@ -82,7 +82,10 @@ impl Agent {
         };
         // Not shown to the client: the title arrives as one event.
         let mut output = ModelOutput::default();
-        let generated = generation::generate(&*choice.provider, request, &mut output, |_| {});
+        let idle = std::time::Duration::from_secs(
+            self.config.current().limits().model_timeout_seconds.into(),
+        );
+        let generated = generation::generate(&*choice.provider, request, &mut output, idle, |_| {});
         let generated = match inbox.race(generated).await {
             Ok(generated) => generated,
             Err(stop) => return Ok(Err(stop)),

@@ -30,6 +30,13 @@ pub struct Limits {
     /// Turns a goal may start by itself before it is paused for the user.
     #[serde(default = "default_max_goal_rounds")]
     pub max_goal_rounds: u32,
+    /// Seconds a model call may stay silent before it is given up on. A reasoning model
+    /// can think for a while, so the quiet counts, not the whole call.
+    #[serde(default = "default_model_timeout_seconds")]
+    pub model_timeout_seconds: u32,
+    /// Tries of one model call that wrote nothing to the thread, the first included.
+    #[serde(default = "default_max_attempts")]
+    pub max_attempts: u32,
 }
 
 impl Default for Limits {
@@ -39,6 +46,8 @@ impl Default for Limits {
             max_output_tokens: None,
             max_agents_at_work: default_max_agents_at_work(),
             max_goal_rounds: default_max_goal_rounds(),
+            model_timeout_seconds: default_model_timeout_seconds(),
+            max_attempts: default_max_attempts(),
         }
     }
 }
@@ -49,6 +58,23 @@ fn default_max_agents_at_work() -> usize {
 
 fn default_max_goal_rounds() -> u32 {
     10
+}
+
+/// Long enough for a reasoning model's pauses, short enough not to hang a turn.
+pub const DEFAULT_MODEL_TIMEOUT_SECONDS: u32 = 120;
+/// The floor and the ceiling a model call's quiet can be set to.
+pub const MIN_MODEL_TIMEOUT_SECONDS: u32 = 5;
+pub const MAX_MODEL_TIMEOUT_SECONDS: u32 = 3600;
+/// One try is a valid choice: the user asked for no retries.
+pub const MIN_ATTEMPTS: u32 = 1;
+pub const MAX_ATTEMPTS: u32 = 20;
+
+fn default_model_timeout_seconds() -> u32 {
+    DEFAULT_MODEL_TIMEOUT_SECONDS
+}
+
+fn default_max_attempts() -> u32 {
+    6
 }
 
 /// What the core records about its work. Off, nothing is written or sent at all.

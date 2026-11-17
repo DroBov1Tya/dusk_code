@@ -19,6 +19,9 @@ testing.
 
 ### Changed
 
+- A model call that stays silent can be given up on sooner or later: Advanced settings now
+  hold the seconds of silence before a call is dropped and the tries of one call, in every
+  client. The defaults are the old 120 seconds and 6 tries.
 - Icons: the changes, the branch and Version control use git icons instead of the GitHub mark, and Connectors uses a blocks icon, in the desktop and browser clients.
 - Phone panels are calmer: a toolbar's device menu is the device's name over its
   system, icon buttons are small with their names as tooltips, a centered row of icons

@@ -144,6 +144,22 @@ impl Runtime {
         Ok(())
     }
 
+    /// Seconds a model call may stay silent before it is given up on.
+    pub fn set_model_timeout(&self, seconds: u32) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_model_timeout_seconds(seconds))?;
+        Ok(())
+    }
+
+    /// Tries of one model call that wrote nothing, the first included.
+    pub fn set_max_attempts(&self, attempts: u32) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_max_attempts(attempts))?;
+        Ok(())
+    }
+
     /// The tools a chat gets, by name.
     /// Every tool with its kind, by kind and then by name.
     /// Every switchable tool with its kind and what it tells the model.

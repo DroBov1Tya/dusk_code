@@ -319,6 +319,16 @@ impl SettingsWindow<'_> {
                 self.view.max_goal_rounds.to_string(),
                 "    turns a goal starts by itself before it pauses",
             ),
+            row(
+                "model timeout, s",
+                self.view.model_timeout_seconds.to_string(),
+                "    silence a model call waits out before it is given up",
+            ),
+            row(
+                "tries per call",
+                self.view.max_attempts.to_string(),
+                "    attempts of one call that wrote nothing, the first included",
+            ),
         ]
     }
 
