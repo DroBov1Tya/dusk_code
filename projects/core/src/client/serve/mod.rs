@@ -21,6 +21,7 @@ use crate::{
 };
 use anyhow::{Result, anyhow};
 use dusk_protocol::client::{Event, Request, Response, Status};
+use dusk_protocol::thread::Turn;
 use parking_lot::Mutex;
 use std::{
     collections::{HashMap, HashSet},
@@ -82,6 +83,9 @@ struct OpenThread {
     unattended: bool,
     /// Set by the forwarding task once the thread has worked and is idle again.
     done: Arc<std::sync::atomic::AtomicBool>,
+    /// The turn running now, as the forwarding task sees it; a client that joins
+    /// mid-turn is told so before any later event.
+    running: Arc<Mutex<Option<Turn>>>,
 }
 
 pub struct Server {

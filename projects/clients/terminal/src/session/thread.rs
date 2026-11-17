@@ -51,7 +51,7 @@ impl OpenThread {
     /// and a finish for the same turn, including while notifications are muted.
     pub fn apply(&mut self, app: &mut App, event: ThreadEvent) {
         let notice = match &event {
-            ThreadEvent::TurnStarted(turn) => {
+            ThreadEvent::TurnStarted(turn) | ThreadEvent::TurnRunning(turn) => {
                 self.active_turn = Some(turn.turn_id.clone());
                 self.alerted = false;
                 None

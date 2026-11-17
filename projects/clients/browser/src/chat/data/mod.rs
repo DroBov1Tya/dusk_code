@@ -209,7 +209,7 @@ impl ChatData {
             ThreadEvent::FromJob(message) => {
                 self.push(Item::Job(JobResult::read(&message.content)));
             }
-            ThreadEvent::TurnStarted(_) => self.working = true,
+            ThreadEvent::TurnStarted(_) | ThreadEvent::TurnRunning(_) => self.working = true,
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => self.working = false,
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
