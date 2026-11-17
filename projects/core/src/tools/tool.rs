@@ -74,40 +74,28 @@ impl ToolContext {
         Ok(resolved)
     }
 
-    /// The screen needs the user's yes once a session, the keyboard every time, unless
-    /// full access gives it.
-    pub async fn approve_screen(&self, action: &str, keyboard: bool) -> Result<()> {
+    /// Screen actions, asked as one request: see [`Approvals::ask_all`]. The screen needs
+    /// the user's yes once a session, the keyboard every time, unless full access gives
+    /// it. A screen grant never permits the system pointer or a window, and without an
+    /// approval service only the explicitly selected full-access policy allows those.
+    pub async fn approve_computer(&self, requests: Vec<Request>) -> Result<()> {
         let Some(approvals) = &self.approvals else {
-            return Ok(());
-        };
-        let action = action.to_owned();
-        let request = match keyboard {
-            true => Request::Keyboard { action },
-            false => Request::Screen { action },
-        };
-        let policy = self.approvals_policy().await;
-        approvals.ask(request, self.progress.clone(), policy).await
-    }
-
-    /// A screen grant never permits physical pointer takeover. Without an approval
-    /// service only the explicitly selected full-access policy allows it.
-    pub async fn approve_system_pointer(&self, action: &str) -> Result<()> {
-        let Some(approvals) = &self.approvals else {
+            let guarded = requests.iter().any(|request| {
+                matches!(
+                    request,
+                    Request::SystemPointer { .. } | Request::Window { .. }
+                )
+            });
             anyhow::ensure!(
-                self.approvals_policy().await == ApprovalPolicy::FullAccess,
-                "system pointer control needs a separate approval service or explicit full access"
+                !guarded || self.approvals_policy().await == ApprovalPolicy::FullAccess,
+                "system pointer control and window use need an approval service or explicit \
+                 full access"
             );
             return Ok(());
         };
         let policy = self.approvals_policy().await;
         approvals
-            .ask(
-                Request::SystemPointer {
-                    action: action.to_owned(),
-                },
-                self.progress.clone(),
-                policy,
-            )
+            .ask_all(requests, self.progress.clone(), policy)
             .await
     }
 
@@ -194,6 +182,12 @@ pub trait Tool: Send + Sync {
     /// A tool with nothing to offer right now is not shown to the model.
     fn available(&self, _context: &ToolContext) -> bool {
         true
+    }
+
+    /// The tools this call runs inside it, each with its own arguments, so switches and
+    /// plugin hooks judge every one as if it were called alone. An error rejects the call.
+    fn calls_within(&self, _arguments: &Value) -> Result<Vec<(String, Value)>> {
+        Ok(Vec::new())
     }
 
     /// An error is shown to the model as the result, so it can correct itself.

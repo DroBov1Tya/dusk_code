@@ -108,6 +108,42 @@ impl Hooks {
     }
 }
 
+impl Hooks {
+    /// The checks before a call, then before each call it runs inside, with that tool's
+    /// name and its own arguments, as if it were called alone. `base` is what every hook
+    /// is told about the thread. A deny from any of them refuses the whole call.
+    pub async fn before_tool(
+        &self,
+        tool: &str,
+        arguments: &Value,
+        within: &[(String, Value)],
+        base: &Value,
+    ) -> Option<String> {
+        let mut details = base.clone();
+        details["tool"] = json!(tool);
+        details["arguments"] = arguments.clone();
+        if let Some(denied) = self
+            .run(HookEvent::BeforeTool, Some(tool), details)
+            .await
+            .denied
+        {
+            return Some(denied);
+        }
+        for (index, (name, inner)) in within.iter().enumerate() {
+            let number = index + 1;
+            let mut details = base.clone();
+            details["tool"] = json!(name);
+            details["arguments"] = inner.clone();
+            details["within"] = json!({ "tool": tool, "step": number });
+            let outcome = self.run(HookEvent::BeforeTool, Some(name), details).await;
+            if let Some(denied) = outcome.denied {
+                return Some(format!("step {number} ({name}): {denied}; no step ran"));
+            }
+        }
+        None
+    }
+}
+
 fn applies(hook: &Hook, event: HookEvent, tool: Option<&str>) -> bool {
     hook.config.event == event
         && (hook.config.tools.is_empty()
@@ -204,6 +240,37 @@ mod tests {
         hooks
             .run(HookEvent::BeforeTool, Some(tool), json!({ "tool": tool }))
             .await
+    }
+
+    #[tokio::test]
+    async fn every_call_inside_a_batch_meets_its_own_checks() {
+        let mut scoped = hook(
+            HookEvent::BeforeTool,
+            r#"if grep -q '"step":2'; then echo '{"decision":"deny","reason":"no typing"}'; fi"#,
+        );
+        scoped.config.tools = vec!["type_text".into()];
+        let hooks = Hooks::default();
+        hooks.set(vec![scoped]);
+        let within = [
+            ("click".to_owned(), json!({"x": 1, "y": 2})),
+            ("type_text".to_owned(), json!({"text": "hi"})),
+        ];
+        let base = json!({ "thread": "t" });
+        let denied = hooks
+            .before_tool("computer_actions", &json!({}), &within, &base)
+            .await;
+        assert_eq!(
+            denied.as_deref(),
+            Some("step 2 (type_text): plugin test refused: no typing; no step ran")
+        );
+        // The same step alone in a batch of one is checked as step 1, and allowed here.
+        let alone = [("type_text".to_owned(), json!({"text": "hi"}))];
+        assert!(
+            hooks
+                .before_tool("computer_actions", &json!({}), &alone, &base)
+                .await
+                .is_none()
+        );
     }
 
     #[tokio::test]

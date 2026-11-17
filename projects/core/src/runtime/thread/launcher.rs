@@ -137,13 +137,16 @@ impl Launcher {
         }
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
+            use crate::tools::{
+                Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText,
+            };
             let screen = Arc::new(Screen::new(ArtifactStore::new(self.paths.artifacts_dir())));
             tools.add(Box::new(Screenshot(Arc::clone(&screen))));
             tools.add(Box::new(Click(Arc::clone(&screen))));
             tools.add(Box::new(Scroll(Arc::clone(&screen))));
             tools.add(Box::new(TypeText(Arc::clone(&screen))));
             tools.add(Box::new(PressKeys(Arc::clone(&screen))));
+            tools.add(Box::new(ComputerActions(Arc::clone(&screen))));
             #[cfg(target_os = "macos")]
             tools.add(Box::new(crate::tools::WindowSession(screen)));
         }

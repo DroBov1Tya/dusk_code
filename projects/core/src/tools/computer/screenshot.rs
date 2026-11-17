@@ -2,19 +2,20 @@
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::{
-    blocking,
     screen::{Region, Screen, Target},
+    step::Step,
 };
 use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        ToolResult, WindowAccess, schema,
+        Request, ToolResult, WindowAccess, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -40,6 +41,49 @@ struct RegionArguments {
     y: f64,
     width: f64,
     height: f64,
+}
+
+impl ScreenshotArguments {
+    /// What to capture, checked before anything is asked or done.
+    fn target(arguments: Value) -> Result<Target> {
+        let arguments: Self = parse_arguments(arguments)?;
+        Ok(match (arguments.region, arguments.window) {
+            (Some(_), Some(_)) => anyhow::bail!("give a region or a window, not both"),
+            (Some(region), None) => Target::Region(Region {
+                x: region.x,
+                y: region.y,
+                width: region.width,
+                height: region.height,
+            }),
+            (None, Some(window)) => Target::Window(window),
+            (None, None) => Target::Display,
+        })
+    }
+}
+
+impl Screenshot {
+    /// Checked before anything is asked or done, so a batch can check every step first.
+    pub(super) fn step(screen: &Arc<Screen>, arguments: Value) -> Result<Step> {
+        let target = ScreenshotArguments::target(arguments)?;
+        let scope = screen.scope();
+        let request = match &scope {
+            Some((id, label)) => Request::Window {
+                grant: Some(WindowAccess::Capture(id.clone())),
+                action: format!("capture only {label}"),
+            },
+            None => Request::Screen {
+                action: "take a screenshot".into(),
+            },
+        };
+        let screen = Arc::clone(screen);
+        Ok(Step::new(request, move || {
+            let expected = scope.as_ref().map(|(id, _)| id.as_str());
+            let (artifact, text) = screen.capture(target, expected)?;
+            let mut result = ToolResult::text(text);
+            result.artifacts.push(artifact);
+            Ok(result)
+        }))
+    }
 }
 
 impl Tool for Screenshot {
@@ -68,38 +112,6 @@ impl Tool for Screenshot {
         arguments: Value,
         context: ToolContext,
     ) -> BoxFuture<'a, ToolResult> {
-        Box::pin(async move {
-            let arguments: ScreenshotArguments = parse_arguments(arguments)?;
-            let scope = self.0.scope();
-            match &scope {
-                Some((id, label)) => {
-                    context
-                        .approve_window(
-                            Some(WindowAccess::Capture(id.clone())),
-                            &format!("capture only {label}"),
-                        )
-                        .await?
-                }
-                None => context.approve_screen("take a screenshot", false).await?,
-            }
-            let target = match (arguments.region, arguments.window) {
-                (Some(_), Some(_)) => anyhow::bail!("give a region or a window, not both"),
-                (Some(region), None) => Target::Region(Region {
-                    x: region.x,
-                    y: region.y,
-                    width: region.width,
-                    height: region.height,
-                }),
-                (None, Some(window)) => Target::Window(window),
-                (None, None) => Target::Display,
-            };
-            let screen = Arc::clone(&self.0);
-            let (artifact, text) =
-                blocking(move || screen.capture(target, scope.as_ref().map(|(id, _)| id.as_str())))
-                    .await?;
-            let mut result = ToolResult::text(text);
-            result.artifacts.push(artifact);
-            Ok(result)
-        })
+        Box::pin(async move { Self::step(&self.0, arguments)?.ask_and_run(&context).await })
     }
 }

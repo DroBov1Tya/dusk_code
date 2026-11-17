@@ -2,17 +2,17 @@
 
 use std::sync::Arc;
 
-use anyhow::ensure;
+use anyhow::{Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Desktop, blocking, screen::Screen};
+use super::{Desktop, screen::Screen, step::Step};
 use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        schema,
+        Request, ToolResult, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -36,6 +36,45 @@ struct ScrollArguments {
     right: i32,
 }
 
+impl ScrollArguments {
+    /// Bounded before anything is asked or done.
+    fn parse(arguments: Value) -> Result<Self> {
+        let mut arguments: Self = parse_arguments(arguments)?;
+        let bounded = |pixels: i32| pixels.clamp(-MAX_SCROLL_PIXELS, MAX_SCROLL_PIXELS);
+        arguments.down = bounded(arguments.down);
+        arguments.right = bounded(arguments.right);
+        ensure!(
+            arguments.down != 0 || arguments.right != 0,
+            "say how far to scroll"
+        );
+        Ok(arguments)
+    }
+}
+
+impl Scroll {
+    /// Checked before anything is asked or done, so a batch can check every step first.
+    pub(super) fn step(screen: &Arc<Screen>, arguments: Value) -> Result<Step> {
+        screen.require_unscoped()?;
+        let ScrollArguments { x, y, down, right } = ScrollArguments::parse(arguments)?;
+        let request = Request::SystemPointer {
+            action: format!(
+                "move the user's pointer to {x}, {y} and scroll {down} down, {right} right"
+            ),
+        };
+        let screen = Arc::clone(screen);
+        Ok(Step::new(request, move || {
+            screen.unscoped(|| {
+                let at = screen.point(x, y)?;
+                screen.mark(at);
+                Desktop.scroll(at, down, right)
+            })?;
+            Ok(ToolResult::text(format!(
+                "scrolled {down} down and {right} right"
+            )))
+        }))
+    }
+}
+
 impl Tool for Scroll {
     computer_tool!("scroll");
 
@@ -52,24 +91,8 @@ impl Tool for Scroll {
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
-            self.0.require_unscoped()?;
-            let arguments: ScrollArguments = parse_arguments(arguments)?;
-            let bounded = |pixels: i32| pixels.clamp(-MAX_SCROLL_PIXELS, MAX_SCROLL_PIXELS);
-            let (down, right) = (bounded(arguments.down), bounded(arguments.right));
-            ensure!(down != 0 || right != 0, "say how far to scroll");
-            context
-                .approve_system_pointer("move the user's pointer and scroll")
-                .await?;
-            let screen = Arc::clone(&self.0);
-            blocking(move || {
-                screen.unscoped(|| {
-                    let at = screen.point(arguments.x, arguments.y)?;
-                    screen.mark(at);
-                    Desktop.scroll(at, down, right)
-                })
-            })
-            .await?;
-            Ok(format!("scrolled {down} down and {right} right"))
+            let step = Self::step(&self.0, arguments)?;
+            Ok(step.ask_and_run(&context).await?.content)
         })
     }
 }

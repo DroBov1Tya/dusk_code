@@ -66,6 +66,54 @@ pub struct ApprovalRequest {
     /// What a yes for the session covers, as the core decides it: the folder of the
     /// path, or the program of a plain command. `None` when it cannot be offered.
     pub session: Option<String>,
+    /// Every step of a batch of screen actions, in order; empty for a single request.
+    /// The user answers for all of them, so a client shows each one, never a summary.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<ApprovalStep>,
+}
+
+/// One step of a batch as the user sees it before saying yes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ApprovalStep {
+    /// Its place in the batch, from 1.
+    pub number: usize,
+    /// What the step would ask alone: its kind and what it does.
+    pub request: Request,
+    /// A session grant covers it already; it is listed so the user sees the whole batch.
+    pub allowed: bool,
+}
+
+impl ApprovalStep {
+    /// The step in a line, such as `2. using the keyboard: press enter`.
+    pub fn line(&self) -> String {
+        let allowed = if self.allowed {
+            " (already allowed)"
+        } else {
+            ""
+        };
+        format!("{}. {}{allowed}", self.number, self.request.what())
+    }
+}
+
+impl ApprovalRequest {
+    /// What `who` asks for, in a line: for a batch a neutral heading over its steps,
+    /// since no one kind says what all of them do.
+    pub fn title(&self, who: &str) -> String {
+        match self.steps.len() {
+            0 => self.request.describe(who),
+            count => format!("{who} wants to run {count} computer actions"),
+        }
+    }
+
+    /// The title and every step, a line each, for a surface that shows plain text only.
+    pub fn text(&self, who: &str) -> String {
+        let mut text = self.title(who);
+        for step in &self.steps {
+            text.push('\n');
+            text.push_str(&step.line());
+        }
+        text
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
