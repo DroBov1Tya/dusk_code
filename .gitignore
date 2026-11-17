@@ -65,3 +65,6 @@ Thumbs.db
 .cursor/
 .aider*
 /projects/clients/browser/dist/
+
+# Playwright MCP scratch
+.playwright-mcp/

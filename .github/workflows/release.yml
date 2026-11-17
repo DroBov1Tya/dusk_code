@@ -2,7 +2,7 @@
 # a tag on a commit of a release/* branch is a full release, any other tag (nightlies, tagged
 # on main) is a pre-release;
 # the desktop client also ships: as Duskcode.app in a disk image on macOS, and as an AppImage
-# on Linux amd64 and arm64.
+# on Linux amd64 and arm64. Every release carries a CycloneDX SBOM of each shipped program.
 # Started by hand, it only builds, to check the build before a tag.
 name: release
 
@@ -13,6 +13,9 @@ on:
 
 permissions:
   contents: read
+
+env:
+  TOOLCHAIN: "1.99.1" # the same as ci.yml, so a release is built by the compiler CI tested
 
 jobs:
   create:
@@ -69,9 +72,8 @@ jobs:
           persist-credentials: false
       - name: Toolchain
         run: |
-          rustup update stable
-          rustup default stable
-          rustup target add ${{ matrix.target }}
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --target ${{ matrix.target }}
+          rustup default "$TOOLCHAIN"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: ${{ matrix.target }}
@@ -193,8 +195,8 @@ jobs:
           persist-credentials: false
       - name: Toolchain
         run: |
-          rustup update stable
-          rustup default stable
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           key: appimage-${{ matrix.arch }}
@@ -227,3 +229,47 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" dist/*.AppImage --repo "$GITHUB_REPOSITORY"
+
+  # A CycloneDX SBOM of every crate in each shipped program: the terminal client (which
+  # embeds the web client), the web client and the desktop client. Dependencies of every
+  # target are listed, so one file covers all release platforms.
+  sbom:
+    needs: create
+    if: always() && (needs.create.result == 'success' || needs.create.result == 'skipped')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write # uploads the SBOM to the release
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install "$TOOLCHAIN" --profile minimal
+          rustup default "$TOOLCHAIN"
+      - name: cargo-cyclonedx
+        env:
+          VERSION: "0.5.9"
+          SHA256: fb8dbee9f182173e062a64a387b21a0badc6fab8b2abf9294973f012972bf6d8
+        run: |
+          name=cargo-cyclonedx-x86_64-unknown-linux-gnu
+          curl -fsSL --proto '=https' --tlsv1.2 -o "$RUNNER_TEMP/cyclonedx.tar.xz" \
+            "https://github.com/CycloneDX/cyclonedx-rust-cargo/releases/download/cargo-cyclonedx-$VERSION/$name.tar.xz"
+          echo "$SHA256  $RUNNER_TEMP/cyclonedx.tar.xz" | sha256sum -c -
+          tar -xJf "$RUNNER_TEMP/cyclonedx.tar.xz" -C "$RUNNER_TEMP" --strip-components=1 "$name/cargo-cyclonedx"
+      - name: SBOM
+        shell: bash
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(next(p["version"] for p in json.load(sys.stdin)["packages"] if p["name"] == "dusk_core"))')
+          # The commit time, so the same commit gives the same file.
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) \
+            "$RUNNER_TEMP/cargo-cyclonedx" cyclonedx --format json --spec-version 1.5 --target all
+          mkdir -p dist
+          cp projects/clients/terminal/dusk_terminal.cdx.json "dist/duskcode-$version.cdx.json"
+          cp projects/clients/browser/dusk_browser.cdx.json "dist/duskcode-web-$version.cdx.json"
+          cp projects/clients/desktop/dusk_desktop.cdx.json "dist/duskcode-desktop-$version.cdx.json"
+      - name: Upload
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.cdx.json --repo "$GITHUB_REPOSITORY"
