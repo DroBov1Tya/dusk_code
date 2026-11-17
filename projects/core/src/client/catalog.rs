@@ -4,7 +4,7 @@ use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::config::{Profile, Snippet};
 use dusk_protocol::{
-    catalog::NodeText,
+    catalog::{NodeText, SkillPack},
     client::{CatalogRequest, Request, Response},
     config::McpInfo,
 };
@@ -21,6 +21,14 @@ impl Catalog<'_> {
     pub async fn save_skill(&self, name: &str, text: &str) -> Result<NodeText> {
         let (name, text) = (name.to_owned(), text.to_owned());
         self.node(CatalogRequest::SaveSkill { name, text }).await
+    }
+
+    /// The skill packs with their skills; a pack is switched with `Switch::SkillPack`.
+    pub async fn skill_packs(&self) -> Result<Vec<SkillPack>> {
+        match self.call(CatalogRequest::SkillPacks).await? {
+            Response::SkillPacks(packs) => Ok(packs),
+            other => Err(unexpected(other)),
+        }
     }
 
     pub async fn agent(&self, name: &str) -> Result<NodeText> {

@@ -12,12 +12,17 @@
 //! - `fetch` — files over https to public addresses, capped and checked;
 //! - `cover` — the pictures of the cards;
 //! - `record` — what the store did here;
-//! - `unpack` — a package into a folder.
+//! - `unpack` — a package into a folder;
+//! - `content`, `pack` — skills, packs and agents, which are plain files.
 
+mod content;
+#[cfg(test)]
+mod content_tests;
 mod cover;
 mod fetch;
 pub mod index;
 mod listing;
+mod pack;
 mod record;
 mod source;
 #[cfg(test)]
@@ -29,7 +34,7 @@ mod workshop_tests;
 use std::{fs, path::Path, sync::LazyLock};
 
 use anyhow::{Context, Result, anyhow, ensure};
-use dusk_protocol::plugin::{Order, StoreList, Tier, UpdateReport};
+use dusk_protocol::plugin::{Kind, Order, StoreList, Tier, UpdateReport};
 use tokio::sync::Mutex;
 
 use super::{catalog, manifest::Manifest};
@@ -40,6 +45,7 @@ use record::{Installed, Record};
 use source::Fetched;
 
 pub use cover::get as cover;
+pub use pack::{FILE as PACK_FILE, Pack};
 
 /// Where the store keeps a package while it is checked, under the plugins folder; the
 /// leading dot keeps it out of the plugins found.
@@ -85,9 +91,11 @@ pub struct Agreed<'a> {
     pub permissions: &'a [String],
 }
 
-/// Installs or updates a plugin in the plugins folder, when its listing is still the one
+/// Installs or updates a plugin in the plugins folder, or a skill, pack or agent in the
+/// rules folder, when its listing is still the one
 /// the user agreed to: the same source and tier, version and permissions.
-pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> Result<()> {
+/// Answers with what it installed.
+pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> Result<Kind> {
     let _busy = BUSY.lock().await;
     // Every source, since a mirror's tier depends on the official list.
     let (fetched, failed) = source::read(paths, mirrors).await;
@@ -95,7 +103,7 @@ pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> 
         return Err(anyhow!("{}: {}", failure.source, failure.error));
     }
     let (source, entry) = pick(&fetched, agreed)?;
-    put(paths, source, entry).await
+    put(paths, source, entry).await.map(|()| entry.kind)
 }
 
 /// The source and entry the user agreed to, refused when anything they were shown has
@@ -118,7 +126,7 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
         .plugins
         .iter()
         .find(|entry| entry.name == name)
-        .with_context(|| format!("{} has no plugin {name}", source.name))?;
+        .with_context(|| format!("{} offers no {name}", source.name))?;
     ensure!(
         entry.version == agreed.version && entry.consent() == agreed.permissions,
         "the listing of {name} changed since you saw it; look at the list again"
@@ -158,7 +166,12 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
             continue;
         }
         let folder = catalog::folder(paths).join(&name);
-        let outcome = match asks_more(&folder, entry) {
+        // Skills, packs and agents ask for nothing; a list saying they do is refused.
+        let more = match entry.kind {
+            Kind::Plugin => asks_more(&folder, entry),
+            _ => Ok(false),
+        };
+        let outcome = match more {
             Ok(false) => put(paths, source, entry).await,
             Ok(true) => Err(anyhow!(
                 "{} asks for more than the version here; update it by hand",
@@ -174,25 +187,33 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
     Ok(report)
 }
 
-/// Whether the store may remove `name`: it installed it and its folder is there. Asked
-/// before anything changes.
-pub fn check_removable(paths: &Paths, name: &str) -> Result<()> {
+/// What the store installed as `name`, when it may remove it: it installed it and its
+/// folder is there. Asked before anything changes.
+pub fn check_removable(paths: &Paths, name: &str) -> Result<Kind> {
     ensure!(
         crate::init::paths::is_plain_folder_name(name),
-        "invalid plugin name"
+        "invalid name"
     );
-    ensure!(
-        Record::load(paths)?.present(paths, name).is_some(),
-        "{name} was not installed from the store; remove its folder yourself"
-    );
-    Ok(())
+    Record::load(paths)?
+        .present(paths, name)
+        .map(|installed| installed.kind)
+        .with_context(|| {
+            format!("{name} was not installed from the store; remove its folder yourself")
+        })
 }
 
+/// Removes a plugin's folder whole; of a skill, pack or agent only the files the store
+/// wrote and the user did not edit since.
 pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
     let _busy = BUSY.lock().await;
-    check_removable(paths, name)?;
-    let folder = catalog::folder(paths).join(name);
-    fs::remove_dir_all(&folder).with_context(|| format!("cannot remove {}", folder.display()))?;
+    match check_removable(paths, name)? {
+        Kind::Plugin => {
+            let folder = catalog::folder(paths).join(name);
+            fs::remove_dir_all(&folder)
+                .with_context(|| format!("cannot remove {}", folder.display()))?;
+        }
+        _ => content::remove(paths, name)?,
+    }
     Record::update(paths, |record| {
         record.installed.remove(name);
         Ok(())
@@ -205,6 +226,12 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
     let download = entry.download_here().map_err(anyhow::Error::msg)?;
     let owner = Record::load(paths)?.installed.get(name).cloned();
     if let Some(owner) = &owner {
+        ensure!(
+            owner.kind == entry.kind,
+            "{name} is installed here as a {:?}, the list offers a {:?}",
+            owner.kind,
+            entry.kind
+        );
         ensure!(
             owner.source == source.name,
             "{name} was installed from {}; remove it before installing it from {}",
@@ -222,14 +249,32 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
         fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
             .await
             .with_context(|| format!("the package of {name}"))?;
-    let root = catalog::folder(paths);
-    let owned = owner.is_some();
     let placed = entry.clone();
-    tokio::task::spawn_blocking(move || place(&root, &placed, &package, owned))
-        .await
-        .context("the install stopped")?
-        .with_context(|| format!("cannot install {name}"))?;
-    let installed = Installed::new(source, &entry.version, &download.sha256);
+    let folder = match entry.kind {
+        Kind::Plugin => {
+            let root = catalog::folder(paths);
+            let owned = owner.is_some();
+            tokio::task::spawn_blocking(move || place(&root, &placed, &package, owned))
+                .await
+                .context("the install stopped")?
+                .with_context(|| format!("cannot install {name}"))?;
+            String::new()
+        }
+        _ => {
+            let paths = paths.clone();
+            let owned = owner.map(|owner| owner.folder);
+            tokio::task::spawn_blocking(move || {
+                crate::init::create_private_dir(&catalog::folder(&paths))?;
+                content::place(&paths, &placed, &package, owned.as_deref())
+            })
+            .await
+            .context("the install stopped")?
+            .with_context(|| format!("cannot install {name}"))?
+        }
+    };
+    let mut installed = Installed::new(source, &entry.version, &download.sha256);
+    installed.kind = entry.kind;
+    installed.folder = folder;
     Record::update(paths, |record| {
         record.installed.insert(name.clone(), installed);
         Ok(())

@@ -381,7 +381,9 @@ Format 2 (format 1, the same without the new fields and `verified`, is still rea
 ```
 
 - `kind` is `plugin`, `skill`, `pack` (with `skills: [names]`) or `agent`. An entry of a
-  kind this duskcode does not know is left out alone; only plugins install for now.
+  kind this duskcode does not know is left out alone.
+- A skill, pack or agent is plain files, so it has one package with `"os": "any",
+  "arch": "any"`; a plugin runs programs, so a plugin package for `any` is refused.
 - `category` and `tags` (up to 8) are `a-z`, `0-9` and `-`.
 - `cover` is a `.png` or `.webp` of at most 512 KiB, by a path under the list's folder;
   the core fetches it, checks its size, SHA-256 and first bytes, and keeps the last 64.
@@ -392,6 +394,46 @@ Format 2 (format 1, the same without the new fields and `verified`, is still rea
 An unknown field anywhere refuses the list. `index.json.sig` beside it holds the base64
 of the signature of the file's exact bytes. `DUSKCODE_STORE_URL` points duskcode at
 another official list, such as a fork's; it is still checked against the built-in key.
+
+### Skills, packs and agents
+
+Their packages unpack under the same rules as a plugin's and land where the core reads
+its own skills and agents:
+
+| Kind | Package | Installed to |
+| --- | --- | --- |
+| `skill` | `<skill>/SKILL.md` and its other files | `skills/<skill>/` |
+| `pack` | `pack.yml` and `<skill>/...` for each skill | `skills/<pack>/<skill>/` |
+| `agent` | `<agent>/AGENT.md`, or `pack.yml` and `<agent>/...` | `agents/<agent>/` or `agents/<pack>/<agent>/` |
+
+```yaml
+# pack.yml; an unknown field refuses the pack
+name: duskcode-engineering   # a-z, 0-9 and -; the same as the listing's
+title: Engineering
+description: Ways of working on code.
+vendor: duskcode
+kind: skills                 # skills | agents
+items: [spike, systematic-debugging]   # one folder each, a-z, 0-9 and -
+license: MIT
+upstream: https://github.com/...       # optional
+```
+
+A package that holds anything else, names other items than the listing or asks for
+permissions is refused, and so is one whose folder is already there and not from the
+store. A skill in a pack is named by its path, such as `duskcode-engineering/spike`, so
+links and `skills:` of agents in a pack use those names. The store records what it wrote
+by hash: an update or a removal never replaces or deletes a file you edited since.
+
+Skills are switched on and off by pack too. The built-in skills form the pack
+`duskcode`, and every folder under `skills/` that holds skills is a pack. A pack switched
+off hides all its skills; in a pack that is on, a skill switched off hides just it:
+
+```yaml
+skill_packs:
+  openai: false
+skills:
+  duskcode-engineering/spike: false
+```
 
 ## Plugins in any language
 

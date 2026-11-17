@@ -10,7 +10,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 
 use base64::Engine;
-use dusk_protocol::plugin::{OFFICIAL_SOURCE, Tier};
+use dusk_protocol::plugin::{Kind, OFFICIAL_SOURCE, Tier};
 use sha2::{Digest, Sha256};
 
 use super::{fetch::hex, index::PUBLIC_KEY, source::Fetched};
@@ -46,6 +46,17 @@ pub struct Installed {
     /// The fingerprint of the key that signed the list it came from.
     #[serde(default = "official_key")]
     pub key: String,
+    /// Records written before skills and packs installed are plugins.
+    #[serde(default, skip_serializing_if = "is_plugin")]
+    pub kind: Kind,
+    /// Where a skill, pack or agent went, under the rules folder, such as
+    /// `skills/review`; empty for a plugin, whose folder is in the plugins folder.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub folder: String,
+}
+
+fn is_plugin(kind: &Kind) -> bool {
+    *kind == Kind::Plugin
 }
 
 fn official() -> String {
@@ -76,6 +87,16 @@ impl Installed {
                 _ => source.url.clone(),
             },
             key: fingerprint(&source.key),
+            kind: Kind::Plugin,
+            folder: String::new(),
+        }
+    }
+
+    /// Its folder: in the plugins folder for a plugin, else where it was put.
+    pub fn path(&self, paths: &Paths, name: &str) -> PathBuf {
+        match self.kind {
+            Kind::Plugin => super::super::catalog::folder(paths).join(name),
+            _ => paths.rules_root().join(&self.folder),
         }
     }
 
@@ -112,8 +133,9 @@ impl Record {
 
     /// What the store installed as `name`, when its folder is still there.
     pub fn present(&self, paths: &Paths, name: &str) -> Option<&Installed> {
-        let folder = super::super::catalog::folder(paths).join(name);
-        self.installed.get(name).filter(|_| folder.is_dir())
+        self.installed
+            .get(name)
+            .filter(|item| item.path(paths, name).is_dir())
     }
 
     /// What `source` installed as `name`, when its folder is still there.

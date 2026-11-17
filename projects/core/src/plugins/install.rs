@@ -1,7 +1,7 @@
 //! A plugin's skills and agents, put where the core reads its own: `skills/<plugin>/`
 //! and `agents/<plugin>/`. A record of what was written, by hash, tells a file the
 //! plugin put there from one the user edited since: an edited file is never replaced or
-//! removed.
+//! removed. The store places skill and agent packs the same way, under its own record.
 
 use std::{
     collections::BTreeMap,
@@ -22,7 +22,6 @@ const PARTS: [&str; 2] = ["skills", "agents"];
 /// `folder` `None` the plugin is off and its untouched files go.
 pub fn sync(paths: &Paths, plugin: &str, folder: Option<&Path>) -> Result<()> {
     let record_file = record_file(paths, plugin);
-    let mut record = read_record(&record_file);
     let mut wanted = BTreeMap::new();
     if let Some(folder) = folder {
         for part in PARTS {
@@ -37,8 +36,20 @@ pub fn sync(paths: &Paths, plugin: &str, folder: Option<&Path>) -> Result<()> {
             }
         }
     }
+    write_wanted(paths, &record_file, &wanted)
+}
+
+/// Brings the files under the rules folder to `wanted`, by path there, with `record_file`
+/// telling what was written before: a file the user edited since is kept, written or not,
+/// and the folders that removal empties go.
+pub fn write_wanted(
+    paths: &Paths,
+    record_file: &Path,
+    wanted: &BTreeMap<PathBuf, Vec<u8>>,
+) -> Result<()> {
+    let mut record = read_record(record_file);
     let root = paths.rules_root();
-    for (relative, bytes) in &wanted {
+    for (relative, bytes) in wanted {
         let target = root.join(relative);
         let on_disk = fs::read(&target).ok().map(|disk| hash(&disk));
         let ours = record.get(relative);
@@ -56,12 +67,27 @@ pub fn sync(paths: &Paths, plugin: &str, folder: Option<&Path>) -> Result<()> {
         .collect();
     for relative in gone {
         let target = root.join(&relative);
-        if fs::read(&target).ok().map(|disk| hash(&disk)).as_ref() == record.get(&relative) {
-            let _ = fs::remove_file(&target);
+        if fs::read(&target).ok().map(|disk| hash(&disk)).as_ref() == record.get(&relative)
+            && fs::remove_file(&target).is_ok()
+        {
+            remove_empty_parents(&root, &target);
         }
         record.remove(&relative);
     }
-    write_record(&record_file, &record)
+    write_record(record_file, &record)
+}
+
+/// Folders left empty under `skills/` or `agents/`; one that holds anything stays.
+fn remove_empty_parents(root: &Path, file: &Path) {
+    let mut folder = file.parent();
+    while let Some(parent) = folder {
+        let part = parent.strip_prefix(root).ok();
+        if part.is_none_or(|part| part.components().count() < 2) || fs::remove_dir(parent).is_err()
+        {
+            break;
+        }
+        folder = parent.parent();
+    }
 }
 
 /// Beside the plugins, so it goes when the user removes the folder of plugins whole.

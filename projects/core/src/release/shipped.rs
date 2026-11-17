@@ -1,7 +1,9 @@
 //! The files dusk ships into the rules folder: the prompts of the modes, COMPACT.md,
 //! FORK.md, built-in skills and specialist agents. They are the repository's: at every
 //! start each one whose hash differs from this build's is replaced with it, a local edit
-//! included. Files the user added beside them are never touched.
+//! included. Files the user added beside them are never touched, and neither are the
+//! skills and agents earlier builds shipped that moved to Workshop packs: the user may
+//! still use them, so they stay as the user's own. Only `DROPPED` files go.
 
 use std::{
     fs::{self, OpenOptions},
@@ -458,6 +460,32 @@ mod tests {
         let creator =
             fs::read_to_string(paths.skills_dir().join("skill-creator/SKILL.md")).unwrap();
         assert!(creator.contains("source: \"dusk_code\""));
+    }
+
+    /// A skill or agent that moved to a Workshop pack is not in `DROPPED`: the copy an
+    /// earlier build wrote stays and keeps working.
+    #[test]
+    fn a_retired_builtin_on_disk_survives_an_update() {
+        let paths = temp_paths("retired");
+        let spike = paths.skills_dir().join("spike/SKILL.md");
+        let agent = paths.rules_root().join("agents/backend-engineer/AGENT.md");
+        for file in [&spike, &agent] {
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(
+                file,
+                "---\ndescription: as an earlier build shipped it\n---\nWork.",
+            )
+            .unwrap();
+        }
+        let synced = Synced::sync(&paths).unwrap();
+        assert!(spike.is_file() && agent.is_file());
+        assert!(synced.removed.is_empty(), "{:?}", synced.removed);
+        let listed = skills::list(&paths.skills_dir(), &Config::parse(b"{}").unwrap());
+        assert!(
+            listed
+                .iter()
+                .any(|skill| skill.name == "spike" && skill.problem.is_none())
+        );
     }
 
     #[test]

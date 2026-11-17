@@ -29,6 +29,9 @@ const MAX_TAGS: usize = 8;
 const MAX_WORD: usize = 32;
 const MAX_COVER_PATH: usize = 200;
 const MAX_PACK_SKILLS: usize = 256;
+/// The system and processor of a package of plain files, which runs nowhere.
+pub const ANY: &str = "any";
+const SYSTEMS: [&str; 4] = [ANY, "macos", "linux", "windows"];
 
 /// The list as written; entries are read one by one, so an entry of a kind this
 /// duskcode does not know is left out instead of failing the whole list.
@@ -96,9 +99,10 @@ pub struct Entry {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Download {
-    /// Any system when left out.
-    pub os: Option<Os>,
-    /// `aarch64` or `x86_64`; any processor when left out.
+    /// A system's name, or `any` for the one package of a skill, pack or agent; any
+    /// system when left out.
+    pub os: Option<String>,
+    /// `aarch64`, `x86_64` or `any`; any processor when left out.
     pub arch: Option<String>,
     pub url: String,
     /// Hex, lower case.
@@ -216,6 +220,13 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
     }
     for download in &entry.downloads {
         ensure!(
+            download
+                .os
+                .as_deref()
+                .is_none_or(|os| SYSTEMS.contains(&os)),
+            "a package names an unknown system"
+        );
+        ensure!(
             download.url.starts_with("https://"),
             "a package is not on https"
         );
@@ -317,9 +328,23 @@ impl Entry {
     }
 
     /// The package for this machine, or why there is none.
+    /// A skill, pack or agent is plain files, so its one package is for `any` system
+    /// and processor; a plugin runs programs, so a package of it for `any` is refused.
     pub fn download_here(&self) -> Result<&Download, String> {
+        let any = |download: &Download| {
+            download.os.as_deref() == Some(ANY) && download.arch.as_deref() == Some(ANY)
+        };
         if self.kind != Kind::Plugin {
-            return Err("installs in a later duskcode".into());
+            return self
+                .downloads
+                .iter()
+                .find(|download| any(download))
+                .ok_or_else(|| "no package for any system".into());
+        }
+        if self.downloads.iter().any(|download| {
+            download.os.as_deref() == Some(ANY) || download.arch.as_deref() == Some(ANY)
+        }) {
+            return Err("a plugin runs programs, so it cannot be for any system".into());
         }
         let os = Os::current();
         let arch = std::env::consts::ARCH;
@@ -330,7 +355,10 @@ impl Entry {
         self.downloads
             .iter()
             .find(|download| {
-                download.os.is_none_or(|wanted| Some(wanted) == os)
+                download
+                    .os
+                    .as_deref()
+                    .is_none_or(|wanted| Some(wanted) == os.map(Os::name))
                     && download.arch.as_deref().is_none_or(|wanted| wanted == arch)
             })
             .ok_or_else(|| {

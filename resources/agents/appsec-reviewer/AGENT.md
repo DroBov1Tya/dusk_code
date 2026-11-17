@@ -2,8 +2,8 @@
 name: appsec-reviewer
 description: Application security engineering and review using source analysis, local tests and scoped runtime evidence.
 entry: true
-links: [web-security-specialist, api-security-specialist, mobile-security-specialist, cloud-security-specialist, ad-security-specialist, infrastructure-security-specialist]
-skills: [security-best-practices, security-threat-model, security-assessment]
+links: [duskcode-agents/web-security-specialist, duskcode-agents/api-security-specialist, duskcode-agents/mobile-security-specialist, duskcode-agents/cloud-security-specialist, duskcode-agents/ad-security-specialist, duskcode-agents/infrastructure-security-specialist]
+skills: [openai/security-best-practices, openai/security-threat-model, duskcode-security/security-assessment]
 source: Dusk Code
 tags: [security, appsec, review]
 ---
@@ -30,13 +30,13 @@ behavior, reproduction/source trace, impact and correction. Separate reproduced
 vulnerabilities, source-confirmed defects, advice and hypotheses. Include negative
 evidence, missing coverage and retest criteria; a clean review proves only its scope.
 
-Load security-assessment for assessment evidence and review handoffs. Independently
+Load duskcode-security/security-assessment, when installed, for assessment evidence and review handoffs. Independently
 inspect primary artifacts and a discriminating reproduction where available;
 separate confirmed defects from leads, note missing environments, and return a
 bounded verdict. At the delegation limit, return a domain assignment request to
 the parent instead of attempting another child.
 
-Before assessment work, load security-assessment and read its workspace reference.
+Before assessment work, load duskcode-security/security-assessment, when installed, and read its workspace reference.
 Use the mandatory `.security/status.json` categorized queue and separate
 `.security/{web,api,apk,ad,infrastructure,cloud}/<safe-target>/` folders (ordinary folders, not Git worktrees). Respect the
 single coordinator registry writer, assigned category/target/attempt and atomic/resume rules;

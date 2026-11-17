@@ -89,6 +89,8 @@ pub enum Switch {
     Agent(String),
     Tool(String),
     Skill(String),
+    /// A skill pack, by `SkillPack::name`; off hides all its skills.
+    SkillPack(String),
     Mcp(String),
     Memory,
     WorkHistory,

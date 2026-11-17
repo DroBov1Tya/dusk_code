@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::catalog::NodeText;
+use crate::catalog::{NodeText, SkillPack};
 use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
@@ -32,6 +32,7 @@ pub enum Response {
     Node(NodeText),
     Mcp(Vec<McpInfo>),
     Snippets(Vec<Snippet>),
+    SkillPacks(Vec<SkillPack>),
     /// Names, sorted: a project's environment variables.
     Names(Vec<String>),
     /// The pinned plan, or none before one was written.

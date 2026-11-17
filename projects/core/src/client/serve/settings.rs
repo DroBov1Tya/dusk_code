@@ -89,6 +89,7 @@ impl Server {
             Switch::Agent(name) => runtime.set_agent_enabled(&name, on),
             Switch::Tool(name) => runtime.set_tool_enabled(&name, on),
             Switch::Skill(name) => runtime.set_skill_enabled(&name, on),
+            Switch::SkillPack(name) => runtime.set_pack_enabled(&name, on),
             Switch::Mcp(name) => runtime.set_mcp_enabled(&name, on),
             Switch::Memory => runtime.set_memory_enabled(on),
             Switch::WorkHistory => runtime.set_work_history_enabled(on),

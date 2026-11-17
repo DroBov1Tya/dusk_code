@@ -13,6 +13,9 @@ pub enum CatalogRequest {
         name: String,
         text: String,
     },
+    /// The skill packs with their skills and switches; answered with
+    /// `Response::SkillPacks`.
+    SkillPacks,
     Agent {
         name: String,
     },

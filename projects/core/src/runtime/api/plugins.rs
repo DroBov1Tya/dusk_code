@@ -34,7 +34,10 @@ impl Runtime {
         request: dusk_protocol::plugin::StoreRequest,
     ) -> Result<dusk_protocol::client::Response> {
         use crate::plugins::store;
-        use dusk_protocol::{client::Response, plugin::StoreRequest};
+        use dusk_protocol::{
+            client::Response,
+            plugin::{Kind, StoreRequest},
+        };
         let mirrors = self.config().current().workshop().sources.clone();
         match request {
             StoreRequest::List { order, category } => {
@@ -55,15 +58,19 @@ impl Runtime {
                     version: &version,
                     permissions: &agreed,
                 };
-                store::install(self.paths(), &mirrors, &agreed).await?;
-                tracing::info!("plugin {name} {version} installed from {source}");
-                self.set_plugin_enabled(&name, true)?;
+                let kind = store::install(self.paths(), &mirrors, &agreed).await?;
+                tracing::info!("{kind:?} {name} {version} installed from {source}");
+                if kind == Kind::Plugin {
+                    self.set_plugin_enabled(&name, true)?;
+                }
             }
             StoreRequest::Remove { name } => {
-                store::check_removable(self.paths(), &name)?;
-                self.set_plugin_enabled(&name, false)?;
+                let kind = store::check_removable(self.paths(), &name)?;
+                if kind == Kind::Plugin {
+                    self.set_plugin_enabled(&name, false)?;
+                }
                 store::remove(self.paths(), &name).await?;
-                tracing::info!("plugin {name} removed");
+                tracing::info!("{kind:?} {name} removed");
                 let plugins = Arc::clone(&self.plugins);
                 tokio::task::spawn_blocking(move || plugins.scan());
             }
