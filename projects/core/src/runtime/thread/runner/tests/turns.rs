@@ -405,7 +405,10 @@ async fn a_shown_block_is_read_back_from_the_stored_messages() {
     use dusk_protocol::thread::Block;
 
     let state = thread_state("shown_block").await;
-    let config = live_config("shown_block_config");
+    let config = Arc::new(temp_live_config_with(
+        "shown_block_config",
+        "tools:\n  show: true\n",
+    ));
     let arguments = json!({ "choices": { "labels": ["Yes, fix it", "Not now"] } });
     let provider = provider(vec![
         vec![Step::Tool("show".into(), arguments), Step::Done],

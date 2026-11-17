@@ -61,12 +61,68 @@ mod tests {
         tools::{Progress, ToolRegistry, ToolScope},
     };
 
+    /// The config of a user who switched `show` on.
+    fn switched_on() -> crate::config::Config {
+        let dir = temp_dir("show_config");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = ToolScope::new(&dir, &dir).unwrap();
+        let mut config = (*tool_context(&scope).config).clone();
+        config.set_tool_enabled(SHOW_TOOL, true);
+        config
+    }
+
+    /// Until the clients draw blocks the tool is off: the model is not offered it, a call
+    /// is refused, and no mode turns it on by its own defaults. So no request carries its
+    /// description, the only place the label syntax is taught.
+    #[tokio::test]
+    async fn it_is_off_until_the_config_switches_it_on() {
+        use crate::catalog::modes::{ORCHESTRATOR, PLAN};
+        let dir = temp_dir("show_switch");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = Arc::new(ToolScope::new(&dir, &dir).unwrap());
+        let mut registry = ToolRegistry::default();
+        registry.set_depth(0);
+        registry.chat = true;
+        registry.add(Box::new(Show));
+        let offered = |config: &crate::config::Config| {
+            let specs = registry.specs(&scope, &Arc::new(config.clone()));
+            specs.iter().any(|spec| spec.name == SHOW_TOOL)
+        };
+        let mut off = (*tool_context(&scope).config).clone();
+        let mut on = switched_on();
+        for mode in ["MAIN", PLAN, ORCHESTRATOR] {
+            off.set_mode(mode.into());
+            on.set_mode(mode.into());
+            assert!(!offered(&off), "{mode}");
+            assert!(offered(&on), "{mode}");
+        }
+        // A mode's own switch is not enough without the one in `tools:`.
+        off.set_mode_tool_enabled(PLAN, SHOW_TOOL, true);
+        off.set_mode(PLAN.into());
+        assert!(!offered(&off));
+
+        let call = ToolCall {
+            id: "c".into(),
+            name: SHOW_TOOL.into(),
+            arguments: json!({ "choices": { "labels": ["a", "b"] } }),
+        };
+        let (events, _kept) = tokio::sync::mpsc::unbounded_channel();
+        let progress = Progress {
+            call_id: "c".into(),
+            events,
+        };
+        let config = tool_context(&scope).config;
+        let result = registry.call(&call, &scope, &config, progress).await;
+        assert_eq!(result.content, "error: tool show is switched off");
+        assert_eq!(Block::shown(&call, &result.content), None);
+    }
+
     /// A call as the thread makes it: through the registry, schema check first.
     async fn show(arguments: Value) -> (ToolCall, crate::tools::ToolResult) {
         let dir = temp_dir("show");
         std::fs::create_dir_all(&dir).unwrap();
         let scope = Arc::new(ToolScope::new(&dir, &dir).unwrap());
-        let config = tool_context(&scope).config;
+        let config = Arc::new(switched_on());
         let mut registry = ToolRegistry::default();
         registry.set_depth(0);
         registry.add(Box::new(Show));

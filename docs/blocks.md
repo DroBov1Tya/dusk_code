@@ -5,6 +5,21 @@ the `show` tool; a coloured label inside its text needs no tool. Types and helpe
 `projects/protocol/src/thread/block/` and `projects/protocol/src/thread/transcript/mark.rs`,
 the tool in `projects/core/src/tools/harness/show.rs`.
 
+## Switching it on
+
+`show` is off until the clients draw blocks. While it is off the model is not offered the
+tool and no prompt mentions the label syntax, which is taught only in the tool's
+description. To switch it on, name it in the config (`~/.config/duskcode/config.yml`):
+
+```yaml
+tools:
+  show: true
+```
+
+That one switch covers every mode; a mode's own switch cannot turn it on alone. The eval
+runner takes `--set tools.show=true`. The list of such tools is `OFF_UNTIL_SWITCHED_ON` in
+`projects/core/src/config/file/switches.rs`; take `show` out of it when the clients are ready.
+
 ## Kinds
 
 `show` takes exactly one of `flow`, `checks`, `choices`. Unknown fields are refused at
@@ -50,6 +65,9 @@ There is no event and no table for blocks, so the protocol version did not chang
 
 ## Drawing one
 
+Read a kind through its accessors: `Flow::layers()`, `Layer::cards()`, `Checks::items()`,
+`Counts::passed()/failed()/total()`, `Choices::labels()`. The other fields are public.
+
 - Live: on `ThreadEvent::ToolStarted(call)` keep `Block::asked(&call)`; on `ToolFinished`
   draw it if `block.shown_by(&result.content)`.
 - History: the same with a call in `Message::tool_calls` and the `content` of the tool
@@ -63,8 +81,9 @@ the plain text on purpose.
 
 ## Adding a kind
 
-1. A file in `thread/block/` with the type: `Line<N>` for every text, `deny_unknown_fields`,
-   a `check` for what types do not hold, a `write` for the plain text.
+1. A file in `thread/block/` with the type: `Line<N>` for every text, capped collections
+   private behind a checked `new` that `Deserialize` goes through (`try_from` a private
+   fields struct with `deny_unknown_fields`), a `write` for the plain text.
 2. A variant in `Block`, a field in `Show`, an arm in `TryFrom<Show>`, `heading` and `text`.
    A heading never changes once released: stored results are recognised by it.
 3. Tests at every cap, for unknown fields, the text and the round trip (`block/tests.rs`).
