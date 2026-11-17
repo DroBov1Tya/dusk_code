@@ -2,6 +2,7 @@
 //! core without a client. See evals/README.md.
 
 mod args;
+mod overrides;
 mod run;
 mod sandbox;
 mod score;
