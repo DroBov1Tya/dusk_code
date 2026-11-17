@@ -7,8 +7,10 @@ use anyhow::{Context, Result};
 use serde_json::Value;
 use tokio::sync::mpsc;
 
+#[cfg(target_os = "macos")]
+use super::approvals::WindowAccess;
 use super::{
-    approvals::{Approvals, Request, WindowAccess},
+    approvals::{Approvals, Request},
     scope::{Place, ToolScope},
 };
 use crate::{
@@ -100,7 +102,9 @@ impl ToolContext {
     }
 
     /// Capture and activation are separate approvals on one retained window.
-    /// Ending confinement does not inherit either session grant.
+    /// Ending confinement does not inherit either session grant. Only `window_session`
+    /// asks this way, and only macOS has it.
+    #[cfg(target_os = "macos")]
     pub async fn approve_window(&self, grant: Option<WindowAccess>, action: &str) -> Result<()> {
         let Some(approvals) = &self.approvals else {
             anyhow::ensure!(
