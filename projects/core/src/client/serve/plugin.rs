@@ -43,8 +43,8 @@ impl Server {
         self.subscribers
             .lock()
             .iter()
-            .find(|(client, _)| *client == self.caller)
-            .map(|(_, queue)| queue.clone())
+            .find(|subscriber| subscriber.client == self.caller)
+            .map(|subscriber| subscriber.queue.clone())
             .context("the client is gone")
     }
 }

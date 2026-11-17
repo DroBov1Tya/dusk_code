@@ -3,7 +3,7 @@
 //! saved project; and only pictures leave, so a text file is never served as data.
 
 use super::cards::sniff;
-use dusk_core::client::Hub;
+use dusk_core::client::{Hub, Scope};
 use dusk_protocol::client::{Hello, PROTOCOL_VERSION};
 use std::{
     path::{Path, PathBuf},
@@ -34,7 +34,7 @@ async fn allowed(hub: &Arc<Hub>, path: &Path) -> bool {
         protocol: PROTOCOL_VERSION,
         client: "web".to_owned(),
     };
-    if let Ok(client) = hub.attach(hello)
+    if let Ok(client) = hub.attach(hello, Scope::web())
         && let Ok(projects) = client.projects().list().await
     {
         roots.extend(projects.into_iter().map(|project| project.dir));

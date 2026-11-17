@@ -1,0 +1,2 @@
+Security
+Every client attached to the core now carries a scope, and the core checks each request against it before anything runs. The terminal and the desktop app have the full scope. A browser has the same reach as before, but the core enforces it now instead of the web bridge: no stopping the core, no terminal, no plugin parts, no Workshop installs, no switching a plugin on, no file writes and no config text of a saved MCP server. A scope can also be bound to chosen chats, which then are the only ones a client can read, drive, list or hear from; nothing uses that yet.

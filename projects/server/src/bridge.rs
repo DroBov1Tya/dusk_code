@@ -3,12 +3,11 @@
 
 use anyhow::{Context, Result};
 use axum::extract::ws::{CloseFrame, Message, WebSocket};
-use dusk_core::client::{Client, Hub};
+use dusk_core::client::{Client, Hub, Scope};
 use dusk_protocol::client::{
-    CatalogRequest, Hello, PROTOCOL_VERSION, ProjectRequest, Request, RequestFrame, Response,
-    ServerFrame, SettingsRequest, VoiceRequest, WorkRequest,
+    Hello, PROTOCOL_VERSION, Request, RequestFrame, Response, ServerFrame, VoiceRequest,
+    WorkRequest,
 };
-use dusk_protocol::plugin::StoreRequest;
 use std::{sync::Arc, time::Duration};
 use tokio::sync::{Semaphore, mpsc, watch};
 use tracing::{debug, warn};
@@ -50,10 +49,14 @@ fn attach(
     Arc<Client>,
     mpsc::UnboundedReceiver<dusk_protocol::client::Event>,
 )> {
-    let mut client = hub.attach(Hello {
-        protocol: PROTOCOL_VERSION,
-        client: "web".to_owned(),
-    })?;
+    // What a browser may ask is the core's to check: it is attached with the web scope.
+    let mut client = hub.attach(
+        Hello {
+            protocol: PROTOCOL_VERSION,
+            client: "web".to_owned(),
+        },
+        Scope::web(),
+    )?;
     let events = std::mem::replace(&mut client.events, mpsc::unbounded_channel().1);
     Ok((Arc::new(client), events))
 }
@@ -117,8 +120,8 @@ fn dispatch(
     replies: &mpsc::UnboundedSender<ServerFrame>,
 ) {
     let RequestFrame { id, request } = frame;
-    if let Some(refusal) = refused(&request, size) {
-        let response = Response::Error(refusal.to_owned());
+    if too_large(&request, size) {
+        let response = Response::Error("the request is too large".to_owned());
         let _ = replies.send(ServerFrame::Response { id, response });
         return;
     }
@@ -138,38 +141,15 @@ fn dispatch(
 /// The size of an ordinary request; only a recording to transcribe may be larger.
 const MAX_REQUEST: usize = 1024 * 1024;
 
-/// What a browser may not ask, though the protocol has it: stopping the core is for the
-/// process that started the server, an MCP server's config text holds its keys and tokens,
-/// installing a plugin runs its programs here, a shell and the files of a project are the desktop app's to open and change, and a
-/// request over the ordinary size is only for a recording.
-fn refused(request: &Request, size: usize) -> Option<&'static str> {
-    match request {
-        Request::Shutdown => Some("a browser cannot stop the core"),
-        Request::Catalog(CatalogRequest::McpServerText { .. }) => {
-            Some("the config of an MCP server holds its secrets; edit it in the desktop app")
-        }
-        Request::Catalog(CatalogRequest::SaveMcpServer { old: Some(_), .. }) => {
-            Some("an existing MCP server is edited in the desktop app")
-        }
-        Request::Terminal(_) => Some("a terminal opens in the desktop app only"),
-        Request::Plugin(_) => Some("plugin parts open in the desktop app only"),
-        // A plugin runs programs on this machine, and a skill or agent pack becomes
-        // instructions every thread reads; only a client on it may install either.
-        Request::Store(
-            StoreRequest::Install { .. } | StoreRequest::Remove { .. } | StoreRequest::UpdateAll,
-        ) => Some("the Workshop installs in the desktop app or the terminal"),
-        Request::Settings(SettingsRequest::PluginEnabled { enabled: true, .. }) => {
-            Some("plugins are switched on in the desktop app or the terminal")
-        }
-        Request::Project(ProjectRequest::WriteFile { .. }) => {
-            Some("a file is edited in the desktop app only")
-        }
-        // Sound and pictures are bytes; the core caps a picture, the frame cap the rest.
+/// Whether the frame is over the ordinary size. Sound and pictures are bytes: the core
+/// caps a picture, the frame cap the rest.
+fn too_large(request: &Request, size: usize) -> bool {
+    let bytes = matches!(
+        request,
         Request::Voice(VoiceRequest::Transcribe { .. })
-        | Request::Work(WorkRequest::UploadPicture { .. }) => None,
-        _ if size > MAX_REQUEST => Some("the request is too large"),
-        _ => None,
-    }
+            | Request::Work(WorkRequest::UploadPicture { .. })
+    );
+    !bytes && size > MAX_REQUEST
 }
 
 /// How long a browser may take to accept one frame before it is let go: a stalled one
@@ -196,12 +176,17 @@ async fn refuse(socket: &mut WebSocket, code: u16, reason: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dusk_protocol::client::{TerminalRequest, ThreadRequest};
+    use dusk_protocol::client::{CatalogRequest, ProjectRequest, TerminalRequest, ThreadRequest};
+
+    /// Whether the core refuses the request of a browser.
+    fn refused(request: &Request) -> bool {
+        !Scope::web().permits(request)
+    }
 
     #[test]
     fn a_browser_cannot_stop_the_core() {
-        assert!(refused(&Request::Shutdown, 10).is_some());
-        assert!(refused(&Request::Thread(ThreadRequest::List), 10).is_none());
+        assert!(refused(&Request::Shutdown));
+        assert!(!refused(&Request::Thread(ThreadRequest::List)));
     }
 
     #[test]
@@ -224,37 +209,39 @@ mod tests {
             },
             TerminalRequest::Close { id: id() },
         ] {
-            assert!(refused(&Request::Terminal(request), 10).is_some());
+            assert!(refused(&Request::Terminal(request)));
         }
         let write = Request::Project(ProjectRequest::WriteFile {
             path: "/tmp/x".into(),
             text: String::new(),
             seen: None,
         });
-        assert!(refused(&write, 10).is_some());
+        assert!(refused(&write));
         let read = Request::Project(ProjectRequest::ReadFile {
             path: "/tmp/x".into(),
         });
-        assert!(refused(&read, 10).is_none());
+        assert!(!refused(&read));
     }
 
     #[test]
     fn mcp_secrets_stay_in_the_core_and_only_a_recording_may_be_large() {
         let read = Request::Catalog(CatalogRequest::McpServerText { name: "x".into() });
-        assert!(refused(&read, 10).is_some());
+        assert!(refused(&read));
         let edit = Request::Catalog(CatalogRequest::SaveMcpServer {
             old: Some("x".into()),
             text: String::new(),
         });
-        assert!(refused(&edit, 10).is_some());
+        assert!(refused(&edit));
         let add = Request::Catalog(CatalogRequest::SaveMcpServer {
             old: None,
             text: String::new(),
         });
-        assert!(refused(&add, 10).is_none());
+        assert!(!refused(&add));
         let list = Request::Thread(ThreadRequest::List);
-        assert!(refused(&list, MAX_REQUEST + 1).is_some());
+        assert!(too_large(&list, MAX_REQUEST + 1));
+        assert!(!too_large(&list, MAX_REQUEST));
         let audio = Request::Voice(VoiceRequest::Transcribe { audio: vec![] });
-        assert!(refused(&audio, MAX_REQUEST + 1).is_none());
+        assert!(!too_large(&audio, MAX_REQUEST + 1));
+        assert!(!refused(&audio));
     }
 }

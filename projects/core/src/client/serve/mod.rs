@@ -1,9 +1,11 @@
 //! The core's side of the protocol: one task that owns the runtime, answers requests in
 //! the order they come, forwards the events of open threads and keeps the status fresh.
 
+mod admit;
 mod catalog;
 mod plugin;
 mod projects;
+mod publish;
 mod schedules;
 mod settings;
 mod status;
@@ -12,9 +14,11 @@ mod thread;
 mod voice;
 mod work;
 
+pub use status::blank_status;
 use status::read_status;
 
 use crate::{
+    client::Scope,
     message::commands,
     runtime::{Runtime, ThreadInput},
     terminal::Terminals,
@@ -49,14 +53,22 @@ const SCHEDULE_PERIOD: Duration = Duration::from_secs(30);
 /// Who is attached to the core; ids are never reused within a run.
 pub type ClientId = u64;
 
-/// Where the events of open threads go: one queue for each attached client.
-pub type Subscribers = Arc<Mutex<Vec<(ClientId, mpsc::UnboundedSender<Event>)>>>;
+/// Where the events of open threads go: one queue for each attached client, and the scope
+/// that says which threads' events it gets.
+pub type Subscribers = Arc<Mutex<Vec<Subscriber>>>;
+
+pub struct Subscriber {
+    pub client: ClientId,
+    pub scope: Scope,
+    pub queue: mpsc::UnboundedSender<Event>,
+}
 
 pub enum Message {
-    /// A client joined; `source` is the name its threads carry.
+    /// A client joined; `source` is the name its threads carry, `scope` what it may ask.
     Attach {
         client: ClientId,
         source: String,
+        scope: Scope,
     },
     Call(Call),
     /// A client went away: it leaves every thread it had open.
@@ -88,10 +100,16 @@ struct OpenThread {
     running: Arc<Mutex<Option<Turn>>>,
 }
 
+/// An attached client as the core knows it.
+struct Attached {
+    /// The source of the threads it creates.
+    source: String,
+    scope: Scope,
+}
+
 pub struct Server {
     runtime: Arc<Runtime>,
-    /// The name of each attached client, the source of the threads it creates.
-    sources: HashMap<ClientId, String>,
+    clients: HashMap<ClientId, Attached>,
     /// The client whose request is being answered.
     caller: ClientId,
     subscribers: Subscribers,
@@ -106,7 +124,7 @@ impl Server {
         let (sender, receiver) = watch::channel(status);
         let server = Self {
             runtime: Arc::new(runtime),
-            sources: HashMap::new(),
+            clients: HashMap::new(),
             caller: 0,
             subscribers,
             status: Arc::new(sender),
@@ -118,9 +136,9 @@ impl Server {
 
     /// The name of the client being answered.
     pub(super) fn source(&self) -> &str {
-        self.sources
+        self.clients
             .get(&self.caller)
-            .map_or("client", String::as_str)
+            .map_or("client", |attached| attached.source.as_str())
     }
 
     /// Answers calls until the client asks to shut down or goes away, then closes every
@@ -135,28 +153,37 @@ impl Server {
             tokio::select! {
                 call = calls.recv() => match call {
                     None => break None,
-                    Some(Message::Attach { client, source }) => {
-                        self.sources.insert(client, source);
+                    Some(Message::Attach { client, source, scope }) => {
+                        self.clients.insert(client, Attached { source, scope });
                     }
                     Some(Message::Detach(client)) => self.detach(client).await,
-                    Some(Message::Call(Call { request: Request::Shutdown, reply, .. })) => {
-                        break Some(reply);
-                    }
-                    Some(Message::Call(Call { request: Request::InstallUpdate { tag }, reply, .. })) => {
-                        self.install_update(tag, reply);
-                    }
-                    Some(Message::Call(Call { request: Request::Store(request), reply, .. })) => {
-                        self.store(request, reply);
-                    }
                     Some(Message::Call(Call { client, request, reply })) => {
-                        self.caller = client;
-                        let response = match self.handle(request).await {
-                            Ok(response) => response,
-                            Err(error) => Response::Error(format!("{error:#}")),
+                        // Every request passes here first, whichever part answers it.
+                        let listed = match self.admit(client, &request).await {
+                            Ok(listed) => listed,
+                            Err(refusal) => {
+                                let _ = reply.send(Response::Error(refusal.to_owned()));
+                                continue;
+                            }
                         };
-                        // The client reads the status once it has the answer.
-                        self.refresh_status();
-                        let _ = reply.send(response);
+                        match request {
+                            Request::Shutdown => break Some(reply),
+                            Request::InstallUpdate { tag } => self.install_update(tag, reply),
+                            Request::Store(request) => self.store(request, reply),
+                            request => {
+                                self.caller = client;
+                                let mut response = match self.handle(request).await {
+                                    Ok(response) => response,
+                                    Err(error) => Response::Error(format!("{error:#}")),
+                                };
+                                if let Some(ids) = listed {
+                                    response = self.cut(&ids, response).await;
+                                }
+                                // The client reads the status once it has the answer.
+                                self.refresh_status();
+                                let _ = reply.send(response);
+                            }
+                        }
                     }
                 },
                 _ = clock.tick() => {

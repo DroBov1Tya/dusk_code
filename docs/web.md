@@ -26,10 +26,33 @@ serves it over a core of its own, and debug builds read `clients/browser/dist` f
 ## One core, several clients
 
 `dusk_core::client::Hub` owns the runtime. Each `Hub::attach` gives a `Client` that receives
-the events of every open thread; a thread's output has one reader inside the core, which hands
-each event to every attached client. A thread stays open while any client keeps it open
-(`Resume` joins an open thread instead of restarting it; `Close` and going away leave it).
-The status is one `watch` every client reads. The web server attaches one client per browser.
+the events of every open thread its scope covers; a thread's output has one reader inside the
+core, which hands each event to those clients. A thread stays open while any client keeps it
+open (`Resume` joins an open thread instead of restarting it; `Close` and going away leave it).
+The status is one `watch` every client with the settings in its scope reads. The web server
+attaches one client per browser.
+
+## Client scope
+
+Every client is attached with a `Scope` (`core/src/client/scope`). The code that attaches it
+chooses the scope; nothing a client sends can change it, and it holds until the client is
+dropped. Deny by default, in one place:
+
+- Each request belongs to one area (`Area`: thread reading, thread writing, settings, files,
+  terminal and so on; `classify` names every request, so a new one does not compile until it
+  has an area). `serve::admit` checks the area before any handler runs.
+- `Scope::full()` takes everything: the terminal, the desktop app, the evals runner.
+  `Scope::web()` is a list of areas: every thread, and all but the areas named under
+  "Security model".
+- `Scope::threads(ids, areas)` is bound to those chats and the agent threads below them, so a
+  shared chat shows what its subagents do. It takes only requests about its threads, whatever
+  its areas: no settings, files, projects, plugins, MCP, terminal, new chats or shutdown, and
+  no answer to an approval (an approval does not name its thread yet). Another thread is
+  refused as "no such thread", the same as one that does not exist; lists and search hold its
+  chats only; it gets the events of its chats only, and a blank status that never changes.
+  Nothing attaches a client this way yet.
+- A refusal is one fixed sentence to the client and one warning in the log with the client's
+  name and the area, never the request's contents.
 
 ## Security model
 
@@ -51,9 +74,13 @@ The status is one `watch` every client reads. The web server attaches one client
   loader, `wasm-unsafe-eval`, `frame-ancestors 'none'`), `nosniff`, `no-referrer`, no store.
 - A frame over 32 MiB or one that is not a request closes the stream; 32 requests at once per
   browser, 16 browsers.
-- The bridge refuses `Shutdown`: stopping the core is for the process that started the server.
-  Nothing else is held back: a signed-in browser can do what the desktop app can, including
-  running commands, adding MCP servers and saving projects (parity, not a boundary).
+- A browser is attached with `Scope::web()`, and the core refuses what is outside it; the
+  bridge itself holds back only a frame over 1 MiB that is not a recording or a picture.
+  Refused: `Shutdown` (stopping the core is for the process that started the server), a
+  terminal, plugin parts, installing, updating or removing from the Workshop, switching a
+  plugin on, writing a file, and reading or editing the config text of a saved MCP server.
+  Everything else a signed-in browser can do as the desktop app can, including running
+  commands, adding MCP servers and saving projects (parity there, not a boundary).
 - Provider keys, plugin secrets and project variables never reach the page: the page only sends
   new values (password inputs) and shows whether one is set. Known gap: the text of an MCP
   server's config, opened for editing, includes its `env` and `headers` values.

@@ -74,7 +74,7 @@ async fn main() -> Result<()> {
         client: session::THREAD_SOURCE.to_owned(),
     };
     let hub = dusk_core::app::start_hub(paths, state_db).await?;
-    let mut client = hub.attach(hello)?;
+    let mut client = hub.attach(hello, dusk_core::client::Scope::full())?;
     let web = match web {
         Some(options) => {
             let server = cli::web::start(Arc::clone(&hub), options).await?;
