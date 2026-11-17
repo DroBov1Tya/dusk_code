@@ -65,7 +65,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .cursor_pointer()
             // Every header starts with its icon, on the grid of the rows below.
             .child(
-                Icon::new(module_icon(module))
+                module_icon(module)
                     .size(px(crate::ui::size::ICON_LARGE))
                     .text_color(muted),
             )
@@ -150,18 +150,18 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .child(footer(ws, cx))
 }
 
-fn module_icon(module: Right) -> IconName {
+fn module_icon(module: Right) -> Icon {
     match module {
-        Right::Arbiter => IconName::Eye,
-        Right::Statistics => IconName::ChartPie,
-        Right::Screenshots => IconName::Frame,
-        Right::Git => IconName::Github,
-        Right::Files => IconName::Folder,
-        Right::Touched => IconName::FileText,
-        Right::Plan => IconName::Map,
-        Right::Todo => IconName::CircleCheck,
-        Right::Jobs => IconName::SquareTerminal,
-        Right::Sources => IconName::File,
+        Right::Arbiter => IconName::Eye.into(),
+        Right::Statistics => IconName::ChartPie.into(),
+        Right::Screenshots => IconName::Frame.into(),
+        Right::Git => Icon::default().path(crate::ui::icons::GIT_BRANCH),
+        Right::Files => IconName::Folder.into(),
+        Right::Touched => IconName::FileText.into(),
+        Right::Plan => IconName::Map.into(),
+        Right::Todo => IconName::CircleCheck.into(),
+        Right::Jobs => IconName::SquareTerminal.into(),
+        Right::Sources => IconName::File.into(),
     }
 }
 

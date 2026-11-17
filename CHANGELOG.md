@@ -6,6 +6,10 @@ testing.
 
 ## Unreleased
 
+### Changed
+
+- Icons: the changes, the branch and Version control use git icons instead of the GitHub mark, and Connectors uses a blocks icon, in the desktop and browser clients.
+
 ### Fixed
 
 - Pictures in the desktop chat keep their proportions and are never enlarged, and all of them

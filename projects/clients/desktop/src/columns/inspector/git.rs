@@ -4,13 +4,16 @@
 use dusk_protocol::project::ChangeKind;
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, Icon, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     *,
 };
 
-use crate::{ui::widgets, workspace::Workspace};
+use crate::{
+    ui::{icons, widgets},
+    workspace::Workspace,
+};
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let Some(git) = &ws.git else {
@@ -37,7 +40,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .gap_2()
             .px_3()
             .pt_3()
-            .child(widgets::icon(IconName::Github, theme.primary))
+            .child(widgets::icon(
+                Icon::default().path(icons::GIT_BRANCH),
+                theme.primary,
+            ))
             .child(
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
@@ -104,7 +110,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         let target = name.clone();
         column = column.child(
             widgets::row(("branch", index), current, cx)
-                .child(widgets::icon(IconName::Github, muted))
+                .child(widgets::icon(
+                    Icon::default().path(icons::GIT_BRANCH),
+                    muted,
+                ))
                 .child(div().truncate().child(name.clone()))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     if !current {

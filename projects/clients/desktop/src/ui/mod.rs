@@ -128,7 +128,7 @@ pub fn loading(text: &str, cx: &App) -> Div {
 }
 
 /// An empty place says what goes here and what to do, in two short lines.
-pub fn empty(icon: IconName, title: &str, hint: &str, cx: &App) -> Div {
+pub fn empty(icon: impl Into<Icon>, title: &str, hint: &str, cx: &App) -> Div {
     let muted = cx.theme().muted_foreground;
     div()
         .flex()
@@ -138,7 +138,7 @@ pub fn empty(icon: IconName, title: &str, hint: &str, cx: &App) -> Div {
         .px_6()
         .py_8()
         .text_center()
-        .child(Icon::new(icon).text_color(muted.opacity(0.7)))
+        .child(icon.into().text_color(muted.opacity(0.7)))
         .child(
             div()
                 .body()

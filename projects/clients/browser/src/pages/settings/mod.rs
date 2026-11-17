@@ -35,7 +35,7 @@ const PAGES: [(Page, &str, IconName); 12] = [
     (Page::Secrets, "Secrets", IconName::Eye),
     (Page::AboutMe, "About me", IconName::User),
     (Page::Notifications, "Notifications", IconName::Bell),
-    (Page::VersionControl, "Version control", IconName::Github),
+    (Page::VersionControl, "Version control", IconName::GitBranch),
     (Page::Memory, "Memory and context", IconName::MemoryStick),
     (Page::Advanced, "Advanced", IconName::Settings2),
     (Page::Updates, "Updates", IconName::RefreshCw),

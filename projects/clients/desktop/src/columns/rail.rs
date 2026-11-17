@@ -127,7 +127,7 @@ fn place(ws: &Workspace, part: Part, cx: &mut Context<Workspace>) -> Option<AnyE
         .into_any_element(),
         Part::Connectors => item(
             "rail-connectors",
-            IconName::Network,
+            Icon::default().path(crate::ui::icons::BLOCKS),
             "Connectors".into(),
             ws.center == Center::Connectors,
             cx,
