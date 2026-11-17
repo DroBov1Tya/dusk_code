@@ -34,6 +34,9 @@ pub enum ThreadEvent {
     /// its chat to working. Unlike a replayed `TurnStarted` it opens no fold boundary:
     /// what the client read from history belongs to the same turn.
     TurnRunning(Turn),
+    /// The running turn waits, as `turn.waiting` says, for the user or for the provider;
+    /// it is still the running turn. The next `TurnRunning` of it ends the wait.
+    TurnWaiting(Turn),
     /// A model call failed in a way that may pass; the next attempt follows after a pause.
     /// A client keeps one row for it that each of these replaces; the first `Model` event
     /// of the call is the sign it answered (see `transcript::retry_row`).

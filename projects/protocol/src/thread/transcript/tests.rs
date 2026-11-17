@@ -137,3 +137,26 @@ fn a_failed_turn_leaves_one_error_that_names_its_kind_and_attempts() {
         Some(Note::Error("could not reach api.example.com".into()))
     );
 }
+
+/// A turn that starts waiting takes the retry row away and leaves one line in its place.
+#[test]
+fn a_waiting_turn_leaves_one_line_and_no_retry_row() {
+    use crate::model::ProviderErrorKind;
+    use crate::thread::{Turn, TurnStatus, TurnWait};
+    let waiting = ThreadEvent::TurnWaiting(Turn {
+        turn_id: "turn".into(),
+        thread_id: "thread".into(),
+        last_sequence: 1,
+        response_message_id: None,
+        status: TurnStatus::Running,
+        started_at: 0,
+        finished_at: None,
+        error_message: None,
+        waiting: TurnWait::provider(ProviderErrorKind::Quota, 0, 60_000),
+    });
+    assert_eq!(retry_row(&waiting), Some(RetryRow::Clear));
+    assert_eq!(
+        note(&waiting),
+        Some(Note::Notice("Quota used up; continues by itself".into()))
+    );
+}

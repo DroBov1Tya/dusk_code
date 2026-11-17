@@ -14,6 +14,7 @@ pub enum Note {
 pub fn note(event: &ThreadEvent) -> Option<Note> {
     use Note::{Error, Notice};
     Some(match event {
+        ThreadEvent::TurnWaiting(turn) => Notice(turn.waiting?.text(None)),
         ThreadEvent::TurnFailed(failure) => Error(failure.text()),
         ThreadEvent::Failed(error) => Error(error.clone()),
         ThreadEvent::Rejected { reason } => Error(reason.clone()),

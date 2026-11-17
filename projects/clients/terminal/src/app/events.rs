@@ -106,6 +106,11 @@ impl App {
                 }
                 self.activity = Activity::Retrying(attempt);
             }
+            ThreadEvent::TurnWaiting(_) => {
+                if let Some(Note::Notice(text)) = note(&event) {
+                    self.transcript.notice(text, Tone::Info);
+                }
+            }
             ThreadEvent::TurnFailed(failure) => self.error(failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::OutputLimitReached => {

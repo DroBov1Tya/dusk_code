@@ -6,6 +6,7 @@ mod jobs;
 mod tasks;
 mod tokens;
 mod turns;
+mod waits;
 
 pub use failure::{ProviderFailure, TurnFailure};
 pub use jobs::{BackgroundJob, JobSummary};

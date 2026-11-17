@@ -9,7 +9,7 @@ mod usage;
 
 pub use call::ToolCall;
 pub use effort::Effort;
-pub use error::{ProviderErrorKind, ProviderFailure};
+pub use error::{ProviderErrorKind, ProviderFailure, ProviderWaitKind};
 pub use provider::{
     Balance, CallHealth, Model, PlanWindow, ProviderHealth, ProviderStatus, RateLimit, RateLimits,
 };

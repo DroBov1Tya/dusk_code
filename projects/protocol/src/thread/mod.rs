@@ -37,4 +37,4 @@ pub use transcript::{
     AgentState, DETAIL_KEYS, MAX_MARK_CHARS, Note, Retry, RetryRow, SHOWN_CHARS, Span, Tone, Tool,
     ToolState, clip, marks, note, retry_row, tool_detail, unmarked,
 };
-pub use turn::{Turn, TurnFailure, TurnStatus, duration_words};
+pub use turn::{Turn, TurnFailure, TurnStatus, TurnWait, duration_words};
