@@ -103,7 +103,7 @@ const GROUPS: &[(&str, &[Page])] = &[
             (SettingsPage::Secrets, Glyph::Kit(IconName::Eye), "Secrets"),
             (
                 SettingsPage::VersionControl,
-                Glyph::Kit(IconName::Github),
+                Glyph::Own(icons::GIT_BRANCH),
                 "Version control",
             ),
         ],

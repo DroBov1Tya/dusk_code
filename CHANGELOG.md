@@ -6,6 +6,10 @@ testing.
 
 ## Unreleased
 
+### Changed
+
+- Icons: the changes, the branch and Version control use git icons instead of the GitHub mark, and Connectors uses a blocks icon, in the desktop and browser clients.
+
 ## 0.74.4 - 2026-11-16
 
 ### Fixed

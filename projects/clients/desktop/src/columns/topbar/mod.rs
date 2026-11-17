@@ -94,9 +94,13 @@ fn tool_of(
     cx: &mut Context<Workspace>,
 ) -> Option<AnyElement> {
     Some(match part {
-        Part::Review if chat => tool("top-review", IconName::Github, "Review the changes")
-            .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx)))
-            .into_any_element(),
+        Part::Review if chat => tool(
+            "top-review",
+            Icon::default().path(crate::ui::icons::GIT_COMPARE),
+            "Review the changes",
+        )
+        .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx)))
+        .into_any_element(),
         Part::Search => tool("top-search", IconName::Search, "Search the chats")
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.modal = Some(Modal::Search);

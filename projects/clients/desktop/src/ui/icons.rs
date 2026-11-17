@@ -50,6 +50,23 @@ const PIN_SVG: &[u8] = lucide!(
     r#"<path d="M12 17v5" /><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />"#
 );
 
+/// Git: a branch and a compare of two, for the branch and for the changes against the
+/// last commit; the GitHub mark stays for GitHub itself. Blocks: what the app can be
+/// extended with (agents, skills, MCP servers, plugins).
+pub const GIT_BRANCH: &str = "icons/dusk/git-branch.svg";
+pub const GIT_COMPARE: &str = "icons/dusk/git-compare.svg";
+pub const BLOCKS: &str = "icons/dusk/blocks.svg";
+
+const GIT_BRANCH_SVG: &[u8] = lucide!(
+    r#"<path d="M15 6a9 9 0 0 0-9 9V3" /><circle cx="18" cy="6" r="3" /><circle cx="6" cy="18" r="3" />"#
+);
+const GIT_COMPARE_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><path d="M11 18H8a2 2 0 0 1-2-2V9" />"#
+);
+const BLOCKS_SVG: &[u8] = lucide!(
+    r#"<path d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2" /><rect x="14" y="2" width="8" height="8" rx="1" />"#
+);
+
 pub const IMAGE: &str = "icons/dusk/image.svg";
 pub const VIDEO: &str = "icons/dusk/video.svg";
 
@@ -87,6 +104,9 @@ impl AssetSource for Assets {
             LOCK => return Ok(Some(Cow::Borrowed(LOCK_SVG))),
             POWER => return Ok(Some(Cow::Borrowed(POWER_SVG))),
             PUZZLE => return Ok(Some(Cow::Borrowed(PUZZLE_SVG))),
+            GIT_BRANCH => return Ok(Some(Cow::Borrowed(GIT_BRANCH_SVG))),
+            GIT_COMPARE => return Ok(Some(Cow::Borrowed(GIT_COMPARE_SVG))),
+            BLOCKS => return Ok(Some(Cow::Borrowed(BLOCKS_SVG))),
             PIN => return Ok(Some(Cow::Borrowed(PIN_SVG))),
             _ => {}
         }

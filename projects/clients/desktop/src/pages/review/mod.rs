@@ -11,7 +11,7 @@ use files::{files, stat};
 use dusk_protocol::project::{DiffLine, FileDiff};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, Icon, IconName, Sizable,
         button::{Button, ButtonVariants},
     },
     *,
@@ -131,7 +131,7 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
             widgets::muted("Reading the changes...", cx)
         } else {
             crate::ui::empty(
-                IconName::Github,
+                Icon::default().path(crate::ui::icons::GIT_COMPARE),
                 "Nothing to review",
                 "The work tree matches the last commit.",
                 cx,

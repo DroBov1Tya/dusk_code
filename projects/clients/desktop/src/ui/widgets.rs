@@ -57,8 +57,8 @@ pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .focusable_row(cx)
 }
 
-pub fn icon(name: IconName, color: Hsla) -> Icon {
-    Icon::new(name)
+pub fn icon(name: impl Into<Icon>, color: Hsla) -> Icon {
+    name.into()
         .size(px(crate::ui::size::ICON))
         .text_color(color)
 }
