@@ -138,6 +138,7 @@ fn square(
         .cursor_pointer()
         .when(shown, |square| square.bg(selected))
         .hover(move |square| square.bg(hover))
+        .active(move |square| square.bg(selected))
         .focusable_row(cx)
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         .child(icon(part, glyph, color))

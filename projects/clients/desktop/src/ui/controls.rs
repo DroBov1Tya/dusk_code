@@ -10,7 +10,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::ui::Type;
+use crate::ui::{Type, clipboard};
 
 /// The height of a control on a settings row.
 pub const CONTROL: f32 = crate::ui::size::CONTROL;
@@ -86,6 +86,7 @@ pub fn stepper(
 pub fn copy_field(id: &'static str, value: SharedString, cx: &App) -> Div {
     let theme = cx.theme();
     let copied = value.clone();
+    let key = SharedString::from(id);
     div()
         .flex()
         .flex_row()
@@ -114,12 +115,10 @@ pub fn copy_field(id: &'static str, value: SharedString, cx: &App) -> Div {
             Button::new(id)
                 .ghost()
                 .small()
-                .icon(IconName::Copy)
+                .icon(clipboard::icon(&key, cx))
                 .label("Copy")
                 .tooltip("Copy the whole address")
-                .on_click(move |_, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copied.to_string()));
-                }),
+                .on_click(move |_, _, cx| clipboard::copy(&key, copied.to_string(), cx)),
         )
 }
 

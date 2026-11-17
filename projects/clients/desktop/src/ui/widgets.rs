@@ -2,7 +2,7 @@
 
 use crate::ui::Type;
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName},
+    component::{ActiveTheme, Icon},
     prelude::FluentBuilder,
     *,
 };
@@ -34,6 +34,7 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .cursor_pointer()
         .when(active, |row| row.bg(selected))
         .hover(move |row| row.bg(hover))
+        .active(move |row| row.bg(selected))
         .focusable_row(cx)
 }
 
@@ -54,6 +55,7 @@ pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
+        .active(move |row| row.bg(hover.opacity(0.7)))
         .focusable_row(cx)
 }
 
@@ -193,7 +195,7 @@ pub fn labeled(label: &'static str, hint: &'static str, cx: &App) -> Div {
 
 /// A small button that copies `text`; it comes up while the pointer is over `group`.
 /// Every kind of message has one, the folded ones under their heading too.
-pub fn copy(id: impl Into<ElementId>, group: &SharedString, text: &str) -> Div {
+pub fn copy(id: SharedString, group: &SharedString, text: &str, cx: &App) -> Div {
     use gpui_kit::component::{
         Sizable,
         button::{Button, ButtonVariants},
@@ -204,14 +206,14 @@ pub fn copy(id: impl Into<ElementId>, group: &SharedString, text: &str) -> Div {
         .opacity(0.)
         .group_hover(group.clone(), |button| button.opacity(1.))
         .child(
-            Button::new(id)
+            Button::new(id.clone())
                 .ghost()
                 .xsmall()
-                .icon(IconName::Copy)
+                .icon(crate::ui::clipboard::icon(&id, cx))
                 .tooltip("Copy")
                 .on_click(move |_, _, cx| {
                     cx.stop_propagation();
-                    cx.write_to_clipboard(ClipboardItem::new_string(text.clone()));
+                    crate::ui::clipboard::copy(&id, text.clone(), cx);
                 }),
         )
 }

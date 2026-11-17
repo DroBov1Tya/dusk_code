@@ -34,6 +34,7 @@ pub async fn run_in_thread(command: Command, agent: &Agent, inbox: &mut Inbox) {
         | Command::New
         | Command::Temporary
         | Command::Model { .. }
+        | Command::Provider { .. }
         | Command::Settings
         | Command::Context { .. }
         | Command::Effort { .. }
@@ -84,6 +85,14 @@ pub async fn answer(command: Command, runtime: &Runtime) -> Result<Answer> {
         Command::Model { name: None } => Ok(Answer::Providers {
             current: runtime.model().map(|choice| choice.name()),
             providers: model::check(runtime).await?,
+        }),
+        Command::Provider { name: None } => Ok(Answer::Providers {
+            current: runtime.model().map(|choice| choice.name()),
+            providers: model::unasked(runtime)?,
+        }),
+        Command::Provider { name: Some(name) } => Ok(Answer::Providers {
+            current: runtime.model().map(|choice| choice.name()),
+            providers: vec![model::check_one(runtime, &name).await?],
         }),
         Command::Model { name: Some(name) } => Ok(Answer::ModelSwitched {
             name: model::switch(runtime, &name).await?.name(),

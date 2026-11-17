@@ -8,6 +8,7 @@ use crate::{
 };
 use dusk_protocol::thread::{Part, split};
 use dusk_protocol::thread::{Tool, ToolState};
+use dusk_protocol::tools::Reply;
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
 
@@ -212,6 +213,9 @@ fn BlockView(all: Memo<Vec<Block>>, key: BlockKey) -> impl IntoView {
 
 fn item_view(item: Item) -> impl IntoView {
     match item {
+        Item::User(text) if Reply::parse_all(&text).is_some() => {
+            answered_view(Reply::parse_all(&text).unwrap_or_default()).into_any()
+        }
         Item::User(text) => view! {
             <div class="msg user"><div class="bubble">{user_text(&text)}</div></div>
         }
@@ -268,10 +272,35 @@ fn user_text(text: &str) -> String {
         .collect()
 }
 
+/// The user's answers to the agent's questions as one card, not a chat message.
+fn answered_view(replies: Vec<Reply>) -> impl IntoView {
+    view! {
+        <div class="msg user">
+            <div class="answered">
+                {replies.into_iter().map(|reply| view! {
+                    <div class="answered-row">
+                        <div>{reply.question}</div>
+                        <div class="answered-text">{reply.answer}</div>
+                    </div>
+                }).collect_view()}
+            </div>
+        </div>
+    }
+}
+
 fn assistant_view(text: String, reasoning: String) -> impl IntoView {
     let has_reasoning = !reasoning.is_empty();
     let speak_text = text.clone();
     let copy_text = text.clone();
+    let copied = RwSignal::new(false);
+    let copy_answer = move |_| {
+        copy(&copy_text);
+        copied.set(true);
+        leptos::task::spawn_local(async move {
+            crate::ui::sleep(1500).await;
+            copied.set(false);
+        });
+    };
     view! {
         <div class="msg assistant">
             {has_reasoning.then(|| view! {
@@ -282,8 +311,12 @@ fn assistant_view(text: String, reasoning: String) -> impl IntoView {
             })}
             <Markdown text=text />
             <div class="msg-actions">
-                <button class="icon" title="Copy the answer" aria-label="Copy the answer" on:click=move |_| copy(&copy_text)>
-                    <Icon name=IconName::Copy />
+                <button class="icon" class:copied=move || copied.get() title="Copy the answer" aria-label="Copy the answer" on:click=copy_answer>
+                    {move || if copied.get() {
+                        view! { <Icon name=IconName::Check /> }.into_any()
+                    } else {
+                        view! { <Icon name=IconName::Copy /> }.into_any()
+                    }}
                 </button>
                 <button class="icon" title="Read aloud" on:click=move |_| voice::speak(speak_text.clone())>
                     <Icon name=IconName::Play />"Listen"

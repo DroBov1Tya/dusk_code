@@ -18,7 +18,7 @@ use gpui_kit::{
 };
 
 use crate::{
-    ui::widgets,
+    ui::{clipboard, widgets},
     workspace::{Center, Workspace},
 };
 
@@ -102,6 +102,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let (border, muted) = (theme.border, theme.muted_foreground);
     let path = ws.file.path.clone();
     let copied = ws.file.path.display().to_string();
+    let copy_id = SharedString::from("file-copy");
     let header = div()
         .flex()
         .flex_row()
@@ -157,11 +158,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             Button::new("file-copy")
                 .ghost()
                 .small()
-                .icon(IconName::Copy)
+                .icon(clipboard::icon(&copy_id, cx))
                 .tooltip("Copy the path")
-                .on_click(cx.listener(move |_, _, _, cx| {
-                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-                })),
+                .on_click(move |_, _, cx| clipboard::copy(&copy_id, copied.clone(), cx)),
         )
         .child(
             Button::new("file-system")

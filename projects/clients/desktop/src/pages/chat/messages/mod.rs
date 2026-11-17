@@ -6,6 +6,7 @@
 //! cards and notes beside them; `sent_picture` the pictures a user's message carries.
 
 mod activity;
+mod answered;
 mod command;
 mod cost;
 mod feedback;
