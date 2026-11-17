@@ -30,6 +30,8 @@ pub enum Area {
     /// it changed.
     ThreadRead,
     /// Opening a thread, sending to it, stopping it, renaming it, changing its sources.
+    /// A sent message may be a command of its chat: `/compact`, `/fork`, `/goal`,
+    /// `/undo <n>`.
     ThreadWrite,
     /// Starting a new chat in a folder the client names.
     ThreadCreate,
@@ -120,6 +122,11 @@ impl Scope {
 
     /// Only these chats, and of the requests about them only those in `areas`. An area
     /// that is not about a thread gives nothing here.
+    ///
+    /// Open before a remote client may be attached this way: a handler's error text can
+    /// hold paths; refusals are not rate-limited; `Approve { id }` names no thread; the
+    /// name given in `Hello.client` goes to the audit log as it is; the HTTP routes
+    /// `/api/card` and `/api/output` are for the web scope and check no scope.
     pub fn threads(ids: impl IntoIterator<Item = String>, areas: &'static [Area]) -> Self {
         Self(Kind::Threads {
             ids: Arc::new(ids.into_iter().collect()),

@@ -48,9 +48,23 @@ dropped. Deny by default, in one place:
   shared chat shows what its subagents do. It takes only requests about its threads, whatever
   its areas: no settings, files, projects, plugins, MCP, terminal, new chats or shutdown, and
   no answer to an approval (an approval does not name its thread yet). Another thread is
-  refused as "no such thread", the same as one that does not exist; lists and search hold its
-  chats only; it gets the events of its chats only, and a blank status that never changes.
-  Nothing attaches a client this way yet.
+  refused as "no such thread", the same as one that does not exist; lists hold its chats only
+  and search looks only in them; it gets the events of its chats only, and a blank status
+  that never changes. Nothing attaches a client this way yet.
+- Thread writing includes the commands sent as a message, which act on that chat alone:
+  `/compact`, `/fork`, `/goal` and `/undo <n>`. The scope limits what the client asks the core;
+  it never limits the agent's own tools in the chat.
+- What answers with more than one chat is not a thread request: the context report (skills,
+  MCP tools, usage of every thread) is in the Command area and a chat's diff, which is its
+  whole project's, in the Project area, so a bound scope gets neither. A bound scope resumes
+  a chat in the folder stored for it, never in one it names.
+- Naming a file of this machine is the Command area: `/sources add`, and a path, `~/`,
+  `file://`, `@me` or `@snippet` in a sent message. Without the area the message is kept as
+  the words it is.
+- Still open before a remote client bound to chats may exist: a handler's error text can hold
+  paths; refusals are not rate-limited; `Approve { id }` names no thread; the name a client
+  gives in `Hello.client` goes to the audit log as it is; the HTTP routes `/api/card` and
+  `/api/output` are for the web scope only and check no scope.
 - A refusal is one fixed sentence to the client and one warning in the log with the client's
   name and the area, never the request's contents.
 
