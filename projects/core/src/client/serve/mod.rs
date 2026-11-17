@@ -141,6 +141,13 @@ impl Server {
             .map_or("client", |attached| attached.source.as_str())
     }
 
+    /// The chats the client being answered is bound to, or none when it sees them all.
+    /// A caller that is not attached was refused before any handler.
+    pub(super) fn bound(&self) -> Option<Arc<HashSet<String>>> {
+        let attached = self.clients.get(&self.caller)?;
+        attached.scope.bound().cloned()
+    }
+
     /// Whether a message of the client being answered may name files of this machine.
     pub(super) fn host_files(&self) -> HostFiles {
         self.clients

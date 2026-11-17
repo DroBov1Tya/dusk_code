@@ -1,5 +1,7 @@
 //! Thread messages in order: what the system prompt, the user, the model and the tools said.
 
+use std::collections::HashSet;
+
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 use uuid::Uuid;
@@ -147,10 +149,14 @@ impl State {
     /// What the user and the agent said in any chat that contains `text`, best matches
     /// first. Tool calls and subagents' threads are left out: the search is for what a
     /// person remembers reading.
+    /// `within` keeps the search to these chats. They are chosen before the limit: cut
+    /// from the answer afterwards, a match that went missing would tell of the matches
+    /// in other chats that took its place.
     pub async fn search_chats(
         &self,
         text: &str,
         limit: u32,
+        within: Option<&HashSet<String>>,
     ) -> Result<Vec<dusk_protocol::thread::Found>> {
         let text = text.trim();
         ensure!(
@@ -159,16 +165,23 @@ impl State {
         );
         // A quoted phrase in the text column: never read as query syntax.
         let phrase = format!("content : \"{}\"", text.replace('"', "\"\""));
+        // The ids go as one bound value, a JSON list, never into the query's text.
+        let within = within
+            .map(serde_json::to_string)
+            .transpose()
+            .context("list the chats to search")?;
         let rows = sqlx::query(
             "SELECT messages.thread_id, messages.sequence, messages.content, threads.title
              FROM messages_search
              JOIN messages ON messages.rowid = messages_search.rowid
              JOIN threads ON threads.id = messages.thread_id
-             WHERE messages_search MATCH ? AND threads.parent_thread_id IS NULL
+             WHERE messages_search MATCH ?1 AND threads.parent_thread_id IS NULL
                AND messages.role IN ('user', 'assistant')
-             ORDER BY messages_search.rank LIMIT ?",
+               AND (?2 IS NULL OR threads.id IN (SELECT value FROM json_each(?2)))
+             ORDER BY messages_search.rank LIMIT ?3",
         )
         .bind(phrase)
+        .bind(within)
         .bind(limit)
         .fetch_all(&self.pool)
         .await

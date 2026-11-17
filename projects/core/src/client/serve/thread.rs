@@ -70,7 +70,10 @@ impl Server {
                 self.open(handle)
             }
             ThreadRequest::List => Response::Threads(runtime.list_threads().await?),
-            ThreadRequest::Search { text } => Response::Found(runtime.search_chats(&text).await?),
+            ThreadRequest::Search { text } => {
+                let within = self.bound();
+                Response::Found(runtime.search_chats(&text, within.as_deref()).await?)
+            }
             ThreadRequest::Messages { thread_id } => {
                 Response::Messages(runtime.thread_messages(&thread_id).await?)
             }
