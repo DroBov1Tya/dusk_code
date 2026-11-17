@@ -95,6 +95,16 @@ impl Agent {
                     break;
                 }
             };
+            // The same error came back too often: another step would only spend the turn.
+            // A stop by the user wins, so only a step that went on to the next is checked.
+            let repeated = match end {
+                StepEnd::CalledTools => self.repeats.lock().take_stop(&turn.turn_id),
+                _ => None,
+            };
+            if let Some(why) = repeated {
+                outcome = TurnOutcome::Failed(why);
+                break;
+            }
             match end {
                 // Tool results are what fills the context, so it is checked after each.
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {

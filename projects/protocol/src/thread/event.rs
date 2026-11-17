@@ -47,6 +47,13 @@ pub enum ThreadEvent {
         call_id: String,
         result: ToolResult,
     },
+    /// The model repeated itself and the core stepped in: the result of the call just
+    /// finished carries a note, and at `RepeatRung::Stop` the turn ends. `count` is how
+    /// many times the same call, or the same error, came back in this turn.
+    RepeatNotice {
+        rung: RepeatRung,
+        count: u32,
+    },
     TurnFinished(Turn),
     /// The thread got a name: the start of its first message at once, then one the model
     /// gives after the first turn.
@@ -157,6 +164,21 @@ pub enum ThreadEvent {
     Idle,
     /// The thread stopped on an error it could not handle, such as a database failure.
     Failed(String),
+}
+
+/// How far the core went when the model repeated itself within a turn.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RepeatRung {
+    /// The same call with the same result again: the model is told to change course.
+    SameCall,
+    /// The same error again, through calls that differ: the model is told to stop
+    /// varying the call and check its assumption.
+    SameError,
+    /// The same error yet again: the next step runs at the effort set and the model is
+    /// asked for a different plan.
+    Replan,
+    /// The turn ends as failed, with the error and the attempts.
+    Stop,
 }
 
 #[cfg(test)]

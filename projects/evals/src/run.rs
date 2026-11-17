@@ -129,6 +129,7 @@ struct Watch {
     tool_errors: u64,
     retries: u64,
     reruns: u64,
+    repeat_notices: u64,
     /// Every call so far, as the agent's thread ("" for the chat) and name and arguments.
     calls: HashSet<(String, String)>,
     subagents: u64,
@@ -165,6 +166,7 @@ impl Watch {
                 self.tool_errors += u64::from(result.is_error);
             }
             ThreadEvent::Retrying { .. } => self.retries += 1,
+            ThreadEvent::RepeatNotice { .. } => self.repeat_notices += 1,
             ThreadEvent::Question(_) => self.questions += 1,
             ThreadEvent::Tokens { tokens, .. } if thread.is_none() => {
                 self.spent = tokens.spent;
@@ -299,7 +301,31 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         tool_errors: watch.tool_errors,
         retries: watch.retries,
         reruns: watch.reruns,
+        repeat_notices: watch.repeat_notices,
         subagents: watch.subagents,
         questions: watch.questions,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use dusk_protocol::thread::RepeatRung;
+
+    use super::*;
+
+    #[test]
+    fn repeat_notices_are_counted_for_the_chat_and_its_agents() {
+        let mut watch = Watch::default();
+        let notice = ThreadEvent::RepeatNotice {
+            rung: RepeatRung::SameCall,
+            count: 3,
+        };
+        watch.see(notice.clone(), None);
+        let from_agent = ThreadEvent::Subagent {
+            thread_id: "child".into(),
+            event: Box::new(notice),
+        };
+        watch.see(from_agent, None);
+        assert_eq!(watch.repeat_notices, 2);
+    }
 }

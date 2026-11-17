@@ -42,6 +42,8 @@ enum Step {
     /// Calls the `echo` tool with this text.
     Call(&'static str),
     Tool(String, Value),
+    /// Calls `echo` with these arguments under this call id, for turns of many calls.
+    Echo(String, Value),
     PartialCall(&'static str),
     Hang,
     Done,
@@ -125,6 +127,17 @@ impl ChatStream for FakeStream {
                         index: 0,
                         id: "goal_call".into(),
                         name,
+                    })
+                }
+                Some(Step::Echo(id, arguments)) => {
+                    self.pending.push_back(ModelEvent::ToolArguments {
+                        index: 0,
+                        fragment: arguments.to_string(),
+                    });
+                    Some(ModelEvent::ToolCall {
+                        index: 0,
+                        id,
+                        name: "echo".into(),
                     })
                 }
                 Some(Step::PartialCall(arguments)) => {
@@ -273,4 +286,5 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
 }
 
 mod goals;
+mod repeats;
 mod turns;

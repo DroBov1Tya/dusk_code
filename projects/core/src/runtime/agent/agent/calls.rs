@@ -203,13 +203,13 @@ impl Agent {
                     warn!("cannot count the MCP tool use: {error:#}");
                 }
             }
-            if finished.is_some()
-                && let Some(note) =
-                    self.repeats
-                        .lock()
-                        .note(&turn.turn_id, &call.name, &call.arguments, &content)
-            {
-                content.push_str(&format!("\n\n{note}"));
+            let notice = finished.as_ref().and_then(|result| {
+                let limits = config.limits();
+                let mut repeats = self.repeats.lock();
+                repeats.note(&turn.turn_id, call, result, &content, &limits)
+            });
+            if let Some(notice) = &notice {
+                content.push_str(&format!("\n\n{}", notice.note));
             }
             surprised |= outcome != "succeeded";
             let stored = self.state.record_tool_result_with_outcome(
@@ -233,6 +233,14 @@ impl Agent {
                 self.emit(ThreadEvent::ToolFinished {
                     call_id: call.id.clone(),
                     result,
+                });
+            }
+            // A re-plan needs no pace of its own: its call failed, so the next step
+            // already runs at the effort set (`Pace::Rethink`).
+            if let Some(notice) = notice {
+                self.emit(ThreadEvent::RepeatNotice {
+                    rung: notice.rung,
+                    count: notice.count,
                 });
             }
         }

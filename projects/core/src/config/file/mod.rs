@@ -8,7 +8,7 @@ mod switches;
 #[cfg(test)]
 mod tests;
 
-use super::sections::{is_zero, yes};
+use super::sections::{MAX_FAILURE_RUNG, MIN_FAILURE_RUNG, is_zero, yes};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
     MAX_MODEL_TIMEOUT_SECONDS, MIN_ATTEMPTS, MIN_MODEL_TIMEOUT_SECONDS, McpServerConfig, Memory,
@@ -287,6 +287,15 @@ impl Config {
         ensure!(
             (MIN_ATTEMPTS..=MAX_ATTEMPTS).contains(&self.limits.max_attempts),
             "limits.max_attempts must be between {MIN_ATTEMPTS} and {MAX_ATTEMPTS}"
+        );
+        let limits = &self.limits;
+        ensure!(
+            MIN_FAILURE_RUNG <= limits.failure_note_at
+                && limits.failure_note_at < limits.failure_replan_at
+                && limits.failure_replan_at < limits.failure_stop_at
+                && limits.failure_stop_at <= MAX_FAILURE_RUNG,
+            "limits.failure_note_at, failure_replan_at and failure_stop_at must rise in this \
+             order, from {MIN_FAILURE_RUNG} to {MAX_FAILURE_RUNG}"
         );
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,

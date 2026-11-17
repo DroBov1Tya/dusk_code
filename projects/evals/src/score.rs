@@ -42,6 +42,9 @@ pub struct Outcome {
     /// Tool calls with the name and arguments of an earlier call of the same agent.
     #[serde(default)]
     pub reruns: u64,
+    /// Times the core told a model, of the chat or an agent, that it repeats itself.
+    #[serde(default)]
+    pub repeat_notices: u64,
     pub subagents: u64,
     pub questions: u64,
 }
@@ -80,6 +83,7 @@ struct Totals {
     errors: f64,
     retries: f64,
     reruns: f64,
+    repeat_notices: f64,
 }
 
 /// Saturates: a report is a file anyone may have edited.
@@ -116,6 +120,7 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
         errors: mean(|outcome| outcome.tool_errors),
         retries: mean(|outcome| outcome.retries),
         reruns: mean(|outcome| outcome.reruns),
+        repeat_notices: mean(|outcome| outcome.repeat_notices),
     }
 }
 
@@ -144,7 +149,7 @@ impl Totals {
         format!(
             "means over {} runs{left_out}: {:.1} calls, {:.0} tokens (prompt {:.0} cached, \
              {:.0} uncached, {:.0} written to cache; {:.0} out of which {:.0} reasoning), \
-             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.0} s",
+             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} repeat notices, {:.0} s",
             self.runs - self.timed_out,
             self.calls,
             self.tokens,
@@ -156,6 +161,7 @@ impl Totals {
             self.errors,
             self.retries,
             self.reruns,
+            self.repeat_notices,
             self.seconds
         )
     }
@@ -379,5 +385,6 @@ mod tests {
         let report: Report = serde_json::from_str(old).expect("an old report");
         assert!(report.settings.is_empty());
         assert_eq!(report.outcomes[0].reruns, 0);
+        assert_eq!(report.outcomes[0].repeat_notices, 0);
     }
 }
