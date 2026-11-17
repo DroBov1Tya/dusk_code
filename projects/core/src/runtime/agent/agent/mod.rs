@@ -46,9 +46,6 @@ impl Pace {
     }
 }
 
-/// A model call that fails before writing anything is tried this many times in all.
-const MAX_ATTEMPTS: u32 = 6;
-
 /// Doubles before each further attempt, up to `MAX_RETRY_DELAY`.
 const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
 

@@ -96,7 +96,9 @@ impl Arbiter {
             cache_key: None,
         };
         let mut output = ModelOutput::default();
-        generation::generate(choice.provider.as_ref(), request, &mut output, |_| {}).await?;
+        let idle =
+            std::time::Duration::from_secs(crate::config::DEFAULT_MODEL_TIMEOUT_SECONDS.into());
+        generation::generate(choice.provider.as_ref(), request, &mut output, idle, |_| {}).await?;
         verdict(&output.text)
     }
 }

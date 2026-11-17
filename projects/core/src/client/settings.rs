@@ -30,6 +30,16 @@ impl Settings<'_> {
         self.done(SettingsRequest::MaxGoalRounds(rounds)).await
     }
 
+    /// Seconds a model call may stay silent before it is given up on.
+    pub async fn model_timeout(&self, seconds: u32) -> Result<()> {
+        self.done(SettingsRequest::ModelTimeout(seconds)).await
+    }
+
+    /// Tries of one model call that wrote nothing, the first included.
+    pub async fn max_attempts(&self, attempts: u32) -> Result<()> {
+        self.done(SettingsRequest::MaxAttempts(attempts)).await
+    }
+
     pub async fn memory_chars(&self, chars: usize) -> Result<()> {
         self.done(SettingsRequest::MemoryChars(chars)).await
     }
