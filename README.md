@@ -175,8 +175,8 @@ scripts/build-web.sh                  # the web page, embedded by the next build
 
 [docs/structure.md](docs/structure.md), [docs/agent-engine.md](docs/agent-engine.md),
 [docs/web.md](docs/web.md) and [docs/plugins.md](docs/plugins.md) describe the program.
-`docs/todo.md`, `docs/gui-todo.md` and [docs/structure-audit.md](docs/structure-audit.md)
-are the maintainers' working notes. They are public on purpose, and may be rough.
+[docs/structure-audit.md](docs/structure-audit.md) is the maintainers' working note on
+the code's layout: public on purpose, and may be rough.
 
 ## Limitations
 
