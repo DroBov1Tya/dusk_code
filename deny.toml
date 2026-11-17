@@ -1,0 +1,68 @@
+# cargo-deny: what may enter the dependency tree. CI runs `cargo deny check` on every pull
+# request; run it locally with `cargo deny check` before changing Cargo.toml or Cargo.lock.
+
+[graph]
+all-features = false
+
+[advisories]
+version = 2
+# Vulnerabilities and yanked crates always fail. Unmaintained crates fail only when a
+# workspace crate depends on them directly: there we can choose another crate, while a
+# transitive one waits for its parent to move (gpui, sqlx, rodio, ...).
+unmaintained = "workspace"
+yanked = "deny"
+# Every entry says why it is safe for now and what removes it; review them on each release.
+ignore = [
+    # SQLite < 3.54.0 can return stale page-cache bytes when opening a database whose -wal
+    # file was crafted by someone else. The bundled copy comes from sqlx-sqlite 0.9.0, the
+    # newest sqlx, which pins libsqlite3-sys 0.37; the fix (0.39) needs a sqlx release.
+    # Our databases live under ~/.config/duskcode and are written only by duskcode, so the
+    # precondition (a less trusted party writes the files) does not hold. Remove with the
+    # sqlx upgrade.
+    { id = "RUSTSEC-2026-0459", reason = "fix needs a sqlx release; databases are written only by duskcode" },
+    # rmcp < 3.9.0 buffers HTTP response bodies without a limit: a hostile MCP server can
+    # exhaust memory. Fixed by `cargo update -p rmcp` to >= 3.9.0 (semver-compatible), which
+    # lands as its own change with a full build and test. Remove then.
+    { id = "RUSTSEC-2026-0462", reason = "fix is cargo update -p rmcp >= 3.9.0, landing as its own change" },
+    # chrono is a direct dependency and is now marked unmaintained. Replacing it touches the
+    # core and the clients; until then it stays, with no known vulnerability.
+    { id = "RUSTSEC-2026-0543", reason = "direct dependency; replacement tracked separately, no known vulnerability" },
+]
+
+[licenses]
+version = 2
+# Permissive licenses only, plus MPL-2.0 (file-level copyleft: symphonia, dwrote, cbindgen,
+# option-ext; their source stays MPL and our code stays MIT). GPL and LGPL appear in the tree
+# only as one choice of an OR (self_cell, r-efi), so the permissive choice is taken.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "BSL-1.0",
+    "CC0-1.0",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MIT-0",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Unlicense",
+    "Zlib",
+]
+confidence-threshold = 0.9
+
+[bans]
+# Duplicate versions are common in a tree this size; show them, do not fail on them.
+multiple-versions = "warn"
+wildcards = "deny"
+# Workspace crates reference each other by path without a version; they are never published.
+allow-wildcard-paths = true
+
+[sources]
+# crates.io only. A git source or another registry must be added here by name, on purpose.
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

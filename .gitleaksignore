@@ -1,0 +1,6 @@
+# Known false positives, by fingerprint (commit:file:rule:line).
+# The plugin index public key (index.rs PUBLIC_KEY), quoted in a test: public, not a secret.
+8b365d8bca33ef6098cba7fcd8e1113f842b1e0f:projects/core/src/plugins/store/workshop_tests.rs:generic-api-key:56
+8b365d8bca33ef6098cba7fcd8e1113f842b1e0f:projects/core/src/plugins/store/workshop_tests.rs:generic-api-key:83
+# The sample Sec-WebSocket-Key nonce from RFC 6455, section 1.3.
+d59429f25943a070cd6bb300f50a07ad144d85f9:projects/web/tests/browser.rs:generic-api-key:81
