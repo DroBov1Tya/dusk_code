@@ -171,6 +171,10 @@ impl Tool for Remember {
         schema::of::<RememberArguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let (enabled, max_chars) = self.settings(&context);

@@ -40,6 +40,10 @@ impl Tool for AskUser {
         schema::of::<Question>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let question: Question = parse_arguments(arguments)?;

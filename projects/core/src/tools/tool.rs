@@ -194,6 +194,13 @@ pub trait Tool: Send + Sync {
         Ok(Vec::new())
     }
 
+    /// Running the call again after its result was lost changes nothing the first run
+    /// did not: it only reads, or sets the same state again.
+    #[cfg_attr(not(test), expect(dead_code, reason = "crash recovery will call it"))]
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     /// An error is shown to the model as the result, so it can correct itself.
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String>;
 
