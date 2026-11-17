@@ -3,6 +3,8 @@
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
+use crate::model::ProviderErrorKind;
+
 /// A configured provider as a check found it: its models, or why it did not answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderStatus {
@@ -34,6 +36,29 @@ impl ProviderStatus {
 
 fn yes() -> bool {
     true
+}
+
+/// How a configured provider's calls went, as the turns that used it since the core
+/// started found. Every field holds until the provider turns healthy or failing or fails
+/// for another reason, so the status is not sent again on every call.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderHealth {
+    pub name: String,
+    pub calls: CallHealth,
+}
+
+/// Whether a provider's calls are answered. Times are Unix milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CallHealth {
+    /// Its newest call was answered, and every one since `since`.
+    Answering { since: i64 },
+    /// Its calls fail with `kind`, the first of them at `since`; `last_answered` is when
+    /// one was answered before, if any was since the core started.
+    Failing {
+        kind: ProviderErrorKind,
+        since: i64,
+        last_answered: Option<i64>,
+    },
 }
 
 /// Money left on a provider account, as the provider wrote it.

@@ -63,6 +63,16 @@ impl Runtime {
         self.launcher.state.search_chats(text, 40, within).await
     }
 
+    /// Why the thread's newest turn failed, for a client that joins it to show the row the
+    /// others showed; none when it did not fail.
+    pub async fn last_failure(
+        &self,
+        thread_id: &str,
+    ) -> Result<Option<dusk_protocol::thread::TurnFailure>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.last_failure(thread_id).await
+    }
+
     /// Local messages waiting for an explicit resend. They are not model history.
     pub async fn local_unsent(&self, thread_id: &str) -> Result<Vec<LocalUnsent>> {
         let launcher = self.of(thread_id).await;

@@ -133,6 +133,7 @@ impl Runtime {
         let launcher = Launcher {
             threads: Arc::default(),
             hooks: Arc::clone(&hooks),
+            health: Arc::default(),
             state,
             model: Arc::new(choice.map_or_else(ModelChoice::offline, ModelChoice::new)),
             config: Arc::clone(&config),

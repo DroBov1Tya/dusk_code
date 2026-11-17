@@ -176,14 +176,21 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
     let plain = parse(PROVIDERS).unwrap();
     assert_eq!(plain.limits().model_timeout_seconds, 120);
     assert_eq!(plain.limits().max_attempts, 6);
-    let set = parse("limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n").unwrap();
+    assert_eq!(plain.limits().retry_unreachable_seconds, 300);
+    let set = parse(
+        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n",
+    )
+    .unwrap();
     assert_eq!(set.limits().model_timeout_seconds, 300);
     assert_eq!(set.limits().max_attempts, 3);
+    assert_eq!(set.limits().retry_unreachable_seconds, 60);
     for bad in [
         "limits:\n  model_timeout_seconds: 4\n",
         "limits:\n  model_timeout_seconds: 3601\n",
         "limits:\n  max_attempts: 0\n",
         "limits:\n  max_attempts: 21\n",
+        "limits:\n  retry_unreachable_seconds: 9\n",
+        "limits:\n  retry_unreachable_seconds: 3601\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }

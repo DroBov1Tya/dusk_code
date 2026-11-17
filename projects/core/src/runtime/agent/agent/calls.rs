@@ -1,6 +1,7 @@
 //! The model call with its retries, the tool calls and the hooks around them.
 
-use super::{Agent, Pace, retry_delay};
+use super::retry::{Bound, retry_delay};
+use super::{Agent, Pace};
 use crate::plugins::{HookEvent, hooks::Outcome};
 use crate::runtime::agent::{Inbox, Stop, generation};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
@@ -13,22 +14,31 @@ use crate::{
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Instant};
-use tracing::warn;
+use tracing::{info, warn};
+
+/// What a model call came to after its attempts.
+pub struct Called {
+    pub output: ModelOutput,
+    /// The outer `Err` means the user stopped it while it streamed.
+    pub generated: Result<Result<Vec<ToolCall>>, Stop>,
+    /// How many times the request was sent, the first included.
+    pub attempts: u32,
+}
 
 impl Agent {
     /// Streams the model's response, trying again when the call fails in a way that may
-    /// pass and nothing reached the user yet. The outer `Err` means the user stopped it
-    /// during a pause between attempts.
+    /// pass and nothing reached the user yet. The `Err` means the user stopped it during
+    /// a pause between attempts.
     pub async fn call_model(
         &self,
         choice: &Choice,
         request: ChatRequest<'_>,
         requested_config: &Config,
         inbox: &mut Inbox,
-    ) -> Result<(ModelOutput, Result<Result<Vec<ToolCall>>, Stop>), Stop> {
+    ) -> Result<Called, Stop> {
         let limits = self.config.current().limits();
         let idle = std::time::Duration::from_secs(limits.model_timeout_seconds.into());
-        let max_attempts = limits.max_attempts;
+        let started = tokio::time::Instant::now();
         let mut attempt = 1;
         loop {
             let mut output = ModelOutput::default();
@@ -51,6 +61,7 @@ impl Agent {
                     window_ms: crate::runtime::agent::rate::WINDOW.as_millis() as u64,
                 });
             }
+            self.note_health(&choice.provider_name, &output, &generated);
             if request.effort == Some(Effort::Off)
                 && let Ok(Err(error)) = &mut generated
                 && is_unsupported_effort(error)
@@ -73,18 +84,25 @@ impl Agent {
                 *error = rejected.context(detail);
             }
             let retry = match &generated {
-                Ok(Err(error)) if attempt < max_attempts && !output.answered() => {
-                    provider_error(error)
-                        .filter(|failure| failure.kind.is_retryable())
-                        .map(|failure| (format!("{error:#}"), failure))
-                }
+                Ok(Err(error)) if !output.answered() => provider_error(error)
+                    .filter(|failure| failure.kind.is_retryable())
+                    .and_then(|failure| {
+                        let pause = failure.retry_after.unwrap_or_else(|| retry_delay(attempt));
+                        let bound = Bound::of(failure.kind, &limits);
+                        bound
+                            .allows(attempt, started.elapsed(), pause)
+                            .then(|| (format!("{error:#}"), failure, pause, bound))
+                    }),
                 _ => None,
             };
-            let Some((error, failure)) = retry else {
-                return Ok((output, generated));
+            let Some((error, failure, pause, bound)) = retry else {
+                return Ok(Called {
+                    output,
+                    generated,
+                    attempts: attempt,
+                });
             };
             let kind = failure.kind;
-            let pause = failure.retry_after.unwrap_or_else(|| retry_delay(attempt));
             warn!(
                 kind = ?kind,
                 status = failure.status,
@@ -97,10 +115,38 @@ impl Agent {
                 error,
                 kind,
                 wait_ms: u64::try_from(pause.as_millis()).unwrap_or(u64::MAX),
-                max_attempts,
+                max_attempts: bound.max_attempts(),
             });
             inbox.race(tokio::time::sleep(pause)).await?;
             attempt += 1;
+        }
+    }
+
+    /// What a call says of its provider's health: a failure that is the provider's, or
+    /// an answer. A stop says nothing.
+    fn note_health(
+        &self,
+        provider: &str,
+        output: &ModelOutput,
+        generated: &Result<Result<Vec<ToolCall>>, Stop>,
+    ) {
+        let now = dusk_protocol::system::now_ms();
+        let failure = match generated {
+            Ok(Err(error)) => provider_error(error).map(|failure| failure.kind),
+            Ok(Ok(_)) | Err(_) => None,
+        };
+        // A refused request was still answered; so was a call that wrote something.
+        let answered = matches!(generated, Ok(Ok(_))) || failure.is_some() || output.answered();
+        let fault = failure.filter(|kind| kind.is_providers_fault());
+        let changed = match fault {
+            Some(kind) => self.health.failed(provider, kind, now),
+            None if answered => self.health.answered(provider, now),
+            None => false,
+        };
+        match fault {
+            Some(kind) if changed => info!("provider {provider} fails: {kind:?}"),
+            None if changed => info!("provider {provider} answers"),
+            _ => {}
         }
     }
 

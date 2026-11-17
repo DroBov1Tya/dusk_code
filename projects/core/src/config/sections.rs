@@ -37,6 +37,11 @@ pub struct Limits {
     /// Tries of one model call that wrote nothing to the thread, the first included.
     #[serde(default = "default_max_attempts")]
     pub max_attempts: u32,
+    /// Seconds a model call that cannot reach its provider, or gets no answer in time, is
+    /// tried again for, from its first attempt. A short network drop costs no turn; other
+    /// failures keep to `max_attempts`.
+    #[serde(default = "default_retry_unreachable_seconds")]
+    pub retry_unreachable_seconds: u32,
 }
 
 impl Default for Limits {
@@ -48,6 +53,7 @@ impl Default for Limits {
             max_goal_rounds: default_max_goal_rounds(),
             model_timeout_seconds: default_model_timeout_seconds(),
             max_attempts: default_max_attempts(),
+            retry_unreachable_seconds: default_retry_unreachable_seconds(),
         }
     }
 }
@@ -68,6 +74,10 @@ pub const MAX_MODEL_TIMEOUT_SECONDS: u32 = 3600;
 /// One try is a valid choice: the user asked for no retries.
 pub const MIN_ATTEMPTS: u32 = 1;
 pub const MAX_ATTEMPTS: u32 = 20;
+/// Long enough for a router or Wi-Fi to come back; one hour at most, so a turn ends.
+pub const DEFAULT_RETRY_UNREACHABLE_SECONDS: u32 = 300;
+pub const MIN_RETRY_UNREACHABLE_SECONDS: u32 = 10;
+pub const MAX_RETRY_UNREACHABLE_SECONDS: u32 = 3600;
 
 fn default_model_timeout_seconds() -> u32 {
     DEFAULT_MODEL_TIMEOUT_SECONDS
@@ -75,6 +85,10 @@ fn default_model_timeout_seconds() -> u32 {
 
 fn default_max_attempts() -> u32 {
     6
+}
+
+fn default_retry_unreachable_seconds() -> u32 {
+    DEFAULT_RETRY_UNREACHABLE_SECONDS
 }
 
 /// What the core records about its work. Off, nothing is written or sent at all.

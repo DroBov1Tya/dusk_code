@@ -190,8 +190,8 @@ impl Watch {
                 }
                 None => self.idle = true,
             },
-            ThreadEvent::ProviderUnavailable if thread.is_none() => {
-                self.problem = Some("the provider is unavailable".into());
+            ThreadEvent::NoModel if thread.is_none() => {
+                self.problem = Some("no model is chosen".into());
             }
             ThreadEvent::Rejected { reason } if thread.is_none() => self.problem = Some(reason),
             _ => {}

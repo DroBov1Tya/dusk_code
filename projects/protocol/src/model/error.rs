@@ -39,6 +39,34 @@ impl ProviderErrorKind {
             Self::Auth | Self::Quota | Self::Refused | Self::TooLong => false,
         }
     }
+
+    /// What every client calls it, in a few words.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Unreachable => "Provider unreachable",
+            Self::TimedOut => "Provider timed out",
+            Self::RateLimited => "Rate limited",
+            Self::Overloaded => "Provider overloaded",
+            Self::Auth => "Key or sign-in not accepted",
+            Self::Quota => "Quota used up",
+            Self::Refused => "Request refused",
+            Self::TooLong => "Context too long",
+            Self::Interrupted => "Answer interrupted",
+        }
+    }
+
+    /// Whether it says the provider cannot serve now, not that this request was wrong.
+    pub fn is_providers_fault(self) -> bool {
+        !matches!(self, Self::Refused | Self::TooLong)
+    }
+}
+
+/// A model call that failed for good: why, and how many times it was sent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ProviderFailure {
+    pub kind: ProviderErrorKind,
+    /// The first attempt included.
+    pub attempts: u32,
 }
 
 #[cfg(test)]

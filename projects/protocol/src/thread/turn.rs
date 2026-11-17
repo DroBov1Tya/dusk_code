@@ -2,6 +2,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::model::ProviderFailure;
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Turn {
     pub turn_id: String,
@@ -32,6 +34,29 @@ impl TurnStatus {
             Self::Completed => "completed",
             Self::Interrupted => "interrupted",
             Self::Failed => "failed",
+        }
+    }
+}
+
+/// Why a turn failed: what the one row at its end shows.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TurnFailure {
+    /// Safe to show: never a key, a header, a request body or a URL path.
+    pub error: String,
+    /// Set when the turn failed on a model call.
+    pub provider: Option<ProviderFailure>,
+}
+
+impl TurnFailure {
+    /// The row as every client says it: "Provider unreachable after 9 attempts: could not
+    /// reach api.example.com: connection refused".
+    pub fn text(&self) -> String {
+        match self.provider {
+            Some(ProviderFailure { kind, attempts }) if attempts > 1 => {
+                format!("{} after {attempts} attempts: {}", kind.label(), self.error)
+            }
+            Some(ProviderFailure { kind, .. }) => format!("{}: {}", kind.label(), self.error),
+            None => self.error.clone(),
         }
     }
 }

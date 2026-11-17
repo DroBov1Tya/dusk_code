@@ -72,7 +72,7 @@ impl ThreadInput {
             let message = self.state.add_local_unsent(&self.thread_id, &text).await?;
             if let Some(events) = self.events.upgrade() {
                 let _ = events.send(ThreadEvent::LocalUnsent(message));
-                let _ = events.send(ThreadEvent::ProviderUnavailable);
+                let _ = events.send(ThreadEvent::NoModel);
             }
             return Ok(());
         }

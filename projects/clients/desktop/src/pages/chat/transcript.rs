@@ -206,7 +206,7 @@ impl Agent {
                 AgentState::Writing
             }
             ThreadEvent::Idle => AgentState::Done,
-            ThreadEvent::Failed(_) => AgentState::Failed,
+            ThreadEvent::Failed(_) | ThreadEvent::TurnFailed(_) => AgentState::Failed,
             _ => return,
         };
         if matches!(state, AgentState::Done | AgentState::Failed) {

@@ -179,7 +179,7 @@ impl Agent {
             };
             let (output, generated) = match self.call_model(&choice, request, &config, inbox).await
             {
-                Ok(done) => done,
+                Ok(called) => (called.output, called.generated),
                 Err(stop) => return Ok(Err(stop)),
             };
             if let Some(usage) = output.usage {

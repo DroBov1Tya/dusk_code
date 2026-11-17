@@ -34,7 +34,7 @@ pub use summary::{Found, Thread};
 pub use task::{Task, TaskItem};
 pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts};
 pub use transcript::{
-    AgentState, DETAIL_KEYS, MAX_MARK_CHARS, Note, SHOWN_CHARS, Span, Tone, Tool, ToolState, clip,
-    marks, note, tool_detail, unmarked,
+    AgentState, DETAIL_KEYS, MAX_MARK_CHARS, Note, Retry, RetryRow, SHOWN_CHARS, Span, Tone, Tool,
+    ToolState, clip, marks, note, retry_row, tool_detail, unmarked,
 };
-pub use turn::{Turn, TurnStatus, duration_words};
+pub use turn::{Turn, TurnFailure, TurnStatus, duration_words};

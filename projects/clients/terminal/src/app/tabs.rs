@@ -317,6 +317,7 @@ mod tests {
             chatgpt_model: false,
             plugin_parts: Default::default(),
             limits: None,
+            provider_health: Vec::new(),
             artifacts_dir: Default::default(),
             workspace_dir: Default::default(),
         })

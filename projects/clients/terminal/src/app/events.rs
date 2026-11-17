@@ -2,7 +2,7 @@
 
 use dusk_protocol::{
     model::ModelEvent,
-    thread::{ThreadEvent, TurnStatus},
+    thread::{Note, ThreadEvent, TurnStatus, note},
 };
 
 use super::{Activity, App, Entry, Focus, Poll, Tone, compact_number};
@@ -36,7 +36,7 @@ impl App {
                 }
                 self.show_local_unsent(message);
             }
-            ThreadEvent::ProviderUnavailable => {
+            ThreadEvent::NoModel => {
                 self.provider_available = false;
                 self.transcript.notice(
                     "Provider unavailable. You can continue reading this chat; use /connect or /model to choose a provider.",
@@ -88,10 +88,8 @@ impl App {
                 self.transcript.stop_running_tools();
                 match turn.status {
                     TurnStatus::Interrupted => self.transcript.notice("stopped", Tone::Info),
-                    TurnStatus::Failed => {
-                        let error = turn.error_message.unwrap_or_else(|| "turn failed".into());
-                        self.error(error);
-                    }
+                    // `TurnFailed` came just before and said why.
+                    TurnStatus::Failed => {}
                     _ => {
                         if let Some(ms) = self.last_turn_duration_ms {
                             let took = dusk_protocol::thread::duration_words(ms as i64);
@@ -101,11 +99,14 @@ impl App {
                     }
                 }
             }
-            ThreadEvent::Retrying { attempt, error, .. } => {
+            // The footer shows the attempt in place; the transcript keeps one line.
+            ThreadEvent::Retrying { attempt, .. } => {
+                if let Some(Note::Notice(text)) = note(&event) {
+                    self.transcript.notice(text, Tone::Info);
+                }
                 self.activity = Activity::Retrying(attempt);
-                let text = format!("attempt {attempt} failed, trying again: {error}");
-                self.transcript.notice(text, Tone::Info);
             }
+            ThreadEvent::TurnFailed(failure) => self.error(failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::OutputLimitReached => {
                 let text = "the answer reached the model's output limit".to_owned();

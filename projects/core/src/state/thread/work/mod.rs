@@ -1,11 +1,13 @@
 //! What the agent does in a thread: its turns with their tool calls, the tokens each
 //! model call used, the task board and the background jobs.
 
+mod failure;
 mod jobs;
 mod tasks;
 mod tokens;
 mod turns;
 
+pub use failure::{ProviderFailure, TurnFailure};
 pub use jobs::{BackgroundJob, JobSummary};
 pub use tasks::Task;
 pub use tokens::{CallPurpose, LastPrompt, ModelCall};
