@@ -106,9 +106,9 @@ fn permissions(listing: &Listing, cx: &App) -> Div {
             .gap_1()
             .meta()
             .text_color(muted)
-            .child(format!("From {source} ("))
-            .child(super::workshop::tier::mark(listing.tier, cx))
-            .child(")"),
+            // The row's gap spaces its parts, so no brackets around the mark.
+            .child(format!("From {source} ·"))
+            .child(super::workshop::tier::mark(listing.tier, cx)),
     );
     if listing.clash {
         body = body.child(div().small().text_color(warning).child(
