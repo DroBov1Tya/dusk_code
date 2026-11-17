@@ -66,6 +66,10 @@ pub struct Config {
     /// Skills switched on or off by name; a skill not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     skills: BTreeMap<String, bool>,
+    /// Skill packs switched on or off by name; a pack not listed is on. Off hides every
+    /// skill in it, whatever the skill's own switch.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    skill_packs: BTreeMap<String, bool>,
     /// Agents switched on or off by name; an agent not listed is on.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     agents: BTreeMap<String, bool>,
@@ -133,6 +137,7 @@ impl fmt::Debug for Config {
             .field("limits", &self.limits)
             .field("tools", &self.tools)
             .field("skills", &self.skills)
+            .field("skill_packs", &self.skill_packs)
             .field("agents", &self.agents)
             .field("model", &self.model)
             .field("mcp", &self.mcp.keys().collect::<Vec<_>>())

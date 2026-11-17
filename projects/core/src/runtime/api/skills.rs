@@ -3,6 +3,7 @@
 use crate::runtime::Runtime;
 use crate::{
     catalog::graph::{NodeText, SKILL_FILE, read_node_text, save_node_text},
+    catalog::packs::{self, SkillPack},
     catalog::skills::{self, SkillInfo},
 };
 use anyhow::Result;
@@ -13,6 +14,21 @@ impl Runtime {
             .config
             .update(|config| config.set_skill_enabled(name, enabled))?;
         Ok(())
+    }
+
+    /// Switches a skill pack: off hides all its skills, each keeping its own switch.
+    pub fn set_pack_enabled(&self, pack: &str, enabled: bool) -> Result<()> {
+        self.launcher
+            .config
+            .update(|config| config.set_pack_enabled(pack, enabled))?;
+        Ok(())
+    }
+
+    pub fn skill_packs(&self) -> Vec<SkillPack> {
+        packs::list(
+            &self.launcher.paths.skills_dir(),
+            &self.launcher.config.current(),
+        )
     }
 
     pub fn skills(&self) -> Vec<SkillInfo> {

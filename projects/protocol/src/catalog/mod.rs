@@ -8,4 +8,6 @@ mod skill;
 pub use agent::{AgentNode, AgentTree};
 pub use node::NodeText;
 pub use problem::Problem;
-pub use skill::{SAVE_MARKER, SkillInfo, SkillKind, SkillSave, SkillSaveAction};
+pub use skill::{
+    PackSkill, SAVE_MARKER, SkillInfo, SkillKind, SkillPack, SkillSave, SkillSaveAction,
+};

@@ -12,6 +12,7 @@ impl Server {
             CatalogRequest::SaveSkill { name, text } => {
                 Response::Node(runtime.save_skill(&name, &text)?)
             }
+            CatalogRequest::SkillPacks => Response::SkillPacks(runtime.skill_packs()),
             CatalogRequest::Agent { name } => Response::Node(runtime.agent(&name)?),
             CatalogRequest::SaveAgent { name, text } => {
                 Response::Node(runtime.save_agent(&name, &text).await?)

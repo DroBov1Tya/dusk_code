@@ -51,8 +51,28 @@ pub fn list(directory: &Path, config: &Config) -> Vec<SkillInfo> {
     skills
 }
 
+/// The pack the built-in skills form; a store pack cannot take its name, since
+/// `skills/duskcode` is a built-in skill's folder.
+pub const BUILTIN_PACK: &str = "duskcode";
+
+/// The pack a skill is in: the first folder of a nested one, `duskcode` for a built-in
+/// one; none for a skill at the top that is not built in.
+pub fn pack_of(name: &str) -> Option<String> {
+    if let Some((pack, _)) = name.split_once('/') {
+        return Some(pack.to_owned());
+    }
+    let builtin = crate::release::resources::root()
+        .ok()
+        .map(|root| root.join("skills"));
+    is_builtin(name, builtin.as_deref()).then(|| BUILTIN_PACK.to_owned())
+}
+
+fn is_builtin(name: &str, builtin: Option<&Path>) -> bool {
+    builtin.is_some_and(|root| root.join(name).join(SKILL_FILE).is_file())
+}
+
 fn kind(name: &str, has_source: bool, builtin: Option<&Path>) -> SkillKind {
-    if builtin.is_some_and(|root| root.join(name).join("SKILL.md").is_file()) {
+    if is_builtin(name, builtin) {
         SkillKind::Builtin
     } else if has_source {
         SkillKind::Other

@@ -2,7 +2,10 @@
 
 use super::Config;
 use crate::{
-    catalog::modes::{self, Modes},
+    catalog::{
+        modes::{self, Modes},
+        skills,
+    },
     tools::ToolKind,
 };
 
@@ -59,8 +62,22 @@ impl Config {
         self.agents.insert(name.to_owned(), enabled);
     }
 
+    /// Whether a skill may be loaded: its own switch and its pack's are on.
     pub fn skill_enabled(&self, name: &str) -> bool {
+        self.skill_switch(name) && skills::pack_of(name).is_none_or(|pack| self.pack_enabled(&pack))
+    }
+
+    /// The skill's own switch, whatever its pack's.
+    pub fn skill_switch(&self, name: &str) -> bool {
         self.skills.get(name).copied().unwrap_or(true)
+    }
+
+    pub fn pack_enabled(&self, pack: &str) -> bool {
+        self.skill_packs.get(pack).copied().unwrap_or(true)
+    }
+
+    pub fn set_pack_enabled(&mut self, pack: &str, enabled: bool) {
+        self.skill_packs.insert(pack.to_owned(), enabled);
     }
 
     pub fn set_skill_enabled(&mut self, name: &str, enabled: bool) {

@@ -325,7 +325,9 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
-    use crate::{catalog::graph::SKILL_FILE, catalog::skills::SkillKind, tools::ToolRegistry};
+    use crate::{
+        catalog::skills::SkillKind, init::paths::is_plain_folder_name, tools::ToolRegistry,
+    };
 
     fn identity(links: &[&str], tools: Option<&[&str]>) -> Identity {
         Identity {
@@ -381,13 +383,13 @@ mod tests {
         assert!(limited.contains("You work alone") && !limited.contains("load_skill"));
     }
 
-    /// Every shipped agent reads, names real tools and loads at least some skills. A link
-    /// or skill not written yet is skipped at run time, so it is no failure here.
+    /// Every shipped agent reads, names real tools and names skills that read as names.
+    /// Its skills and links are in Workshop packs, skipped at run time when not
+    /// installed, so a missing one is no failure here.
     #[test]
     fn the_shipped_agents_read_and_name_real_tools() {
         let root = resources::root().unwrap();
         let agents = Graph::load(&root.join("agents"), AGENT_FILE);
-        let skills = Graph::load(&root.join("skills"), SKILL_FILE);
         assert!(agents.problems().is_empty(), "{:?}", agents.problems());
         let mut known: BTreeSet<String> = ToolRegistry::builtin(&root.join("skills"))
             .names()
@@ -400,10 +402,15 @@ mod tests {
                 assert!(known.contains(tool), "{}: tool {tool}", agent.name);
             }
             let text = read_text(agent.file()).unwrap();
-            named += front_skills(&text)
-                .iter()
-                .filter(|skill| skills.get(skill).is_some())
-                .count();
+            let skills = front_skills(&text);
+            assert!(
+                skills
+                    .iter()
+                    .all(|skill| skill.split('/').all(is_plain_folder_name)),
+                "{}: skills {skills:?}",
+                agent.name
+            );
+            named += skills.len();
         }
         assert!(named > 0, "the skills were not read");
     }
