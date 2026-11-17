@@ -1,19 +1,50 @@
 # Changelog
 
 What changed in each release. A release's section here is also its notes on GitHub.
-Patch versions are pre-releases; minor versions are full releases, made after end-to-end
-testing.
+Nightly versions are pre-releases tagged on main; full releases are tagged on `release/X.Y`
+branches after end-to-end testing. Entries of unreleased changes live in `changes/`.
 
 ## Unreleased
 
+### Added
+
+- The Workshop reads store format 2 (kind, category, tags, cover, stars, dates) and
+  mirrors added under `workshop.sources` in `config.yml`, each pinned to its own key;
+  listings carry a tier (Official, Verified, Community, Local), sort in the core, offer
+  semver updates, and "update all" skips updates that ask for more.
+- The terminal client keeps threads in tabs: Alt+T opens one, Alt+W closes the shown one,
+  Alt+Left/Right and Alt+1..9 move between them, and `/tab` does the same. Once there are
+  two, the tabs stand in the header where the title was; a tab in the background keeps
+  taking its thread's events and marks work, a question or an end not yet seen. Closing a
+  tab stops nothing: a thread still at work is closed once its work ends, and its tab comes
+  back if the agent asks something meanwhile.
+- A running command in the terminal transcript offers a background button beside hide and
+  copy; it sends the command to the background as Ctrl+B does, and the agent goes on.
+
 ### Changed
 
+- An answer to the agent's questions is one rounded card in the desktop, browser and
+  terminal clients: a row for each question, the chosen options and your own words muted
+  under it, "Declined" for a refusal. It is read back from the real `ask_user` calls, so
+  text that only looks like an answer stays a plain message.
+- A model call that stays silent can be given up on sooner or later: Advanced settings now
+  hold the seconds of silence before a call is dropped and the tries of one call, in every
+  client. The defaults are the old 120 seconds and 6 tries.
 - Icons: the changes, the branch and Version control use git icons instead of the GitHub mark, and Connectors uses a blocks icon, in the desktop and browser clients.
+- Phone panels are calmer: a toolbar's device menu is the device's name over its
+  system, icon buttons are small with their names as tooltips, a centered row of icons
+  is one small bar under the screen, and Shut down stands apart behind a rule and warns
+  under the pointer. The phone grows to fill the panel, with a thin bezel, a light rim
+  and the screen centered in it.
 
 ### Fixed
 
 - Pictures in the desktop chat keep their proportions and are never enlarged, and all of them
   have lightly rounded corners.
+- The interim remarks of a running turn no longer fold away after the next step when the
+  desktop or web client opens a chat whose turn was already running; a chat is now in
+  place before its thread opens, and a client that joins mid-turn is told the turn is
+  still going.
 
 ## 0.74.4 - 2026-11-16
 

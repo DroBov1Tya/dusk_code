@@ -196,24 +196,42 @@ impl Workspace {
             .project
             .clone()
             .map_or_else(|| self.home.clone(), PathBuf::from);
-        let thread_id = thread_id.to_owned();
+        let id = thread_id.to_owned();
+        let asked = id.clone();
         self.core.call(
             cx,
-            move |client| async move {
-                let threads = client.threads();
-                let history = threads.messages(&thread_id).await?;
-                let thread_id = threads.resume(&thread_id, cwd).await?;
-                let tasks = threads.tasks(&thread_id).await?;
-                let access = threads.approvals(&thread_id).await?;
-                anyhow::Ok((thread_id, history, tasks, access))
-            },
-            |ws, result, cx| match result {
-                Ok((thread_id, history, tasks, access)) => {
-                    let mut chat = Transcript::from_history(&history);
-                    chat.tasks = tasks;
-                    chat.access = access;
-                    ws.chats.insert(thread_id.clone(), chat);
-                    ws.show(thread_id, cx);
+            move |client| async move { client.threads().messages(&asked).await },
+            move |ws, result, cx| match result {
+                Ok(history) => {
+                    // The chat is in place before the thread is resumed, so every
+                    // event from then on lands in it: the answer that opens the
+                    // thread and the turn another client already runs.
+                    ws.chats
+                        .insert(id.clone(), Transcript::from_history(&history));
+                    let open = id.clone();
+                    ws.core.call(
+                        cx,
+                        move |client| async move {
+                            let threads = client.threads();
+                            let thread_id = threads.resume(&open, cwd).await?;
+                            let tasks = threads.tasks(&thread_id).await?;
+                            let access = threads.approvals(&thread_id).await?;
+                            anyhow::Ok((thread_id, tasks, access))
+                        },
+                        move |ws, result, cx| match result {
+                            Ok((thread_id, tasks, access)) => {
+                                if let Some(chat) = ws.chats.get_mut(&thread_id) {
+                                    chat.tasks = tasks;
+                                    chat.access = access;
+                                }
+                                ws.show(thread_id, cx);
+                            }
+                            Err(error) => {
+                                ws.chats.remove(&id);
+                                ws.fail(error, cx);
+                            }
+                        },
+                    );
                 }
                 Err(error) => ws.fail(error, cx),
             },

@@ -111,6 +111,7 @@ pub fn detail(
                         SharedString::from(format!("job-copy-{name}")),
                         &group,
                         text,
+                        cx,
                     )),
             )
             .child(

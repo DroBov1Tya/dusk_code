@@ -11,7 +11,8 @@
 //! - `place`: which parts are offered and pinned, and their icons in each place;
 //! - `menu`: the menu of all parts: search, a fold per plugin, a pin per part;
 //! - `dock`: the right and bottom docks, a tab per open part;
-//! - `view`: a part's widget tree drawn; `fields` keeps its text boxes;
+//! - `view`: a part's widget tree drawn; `lists` its lists and menus; `fields` keeps its
+//!   text boxes;
 //! - `frames`: the pictures of screen widgets, decoded off the window's thread;
 //! - `link`: what opening, closing and using a part asks the core, and what it sends;
 //! - `settings`: the Settings page of the parts placed there.
@@ -20,6 +21,7 @@ mod dock;
 mod fields;
 mod frames;
 mod link;
+mod lists;
 mod menu;
 pub mod place;
 mod settings;

@@ -18,9 +18,10 @@ use super::{
     picture::picture,
     sent_picture::{is_picture_name, sent_pictures},
 };
+
 use crate::{
     pages::chat::{links, transcript::Item, working},
-    ui::Type,
+    ui::{Type, clipboard},
     workspace::Workspace,
 };
 
@@ -89,15 +90,16 @@ impl Workspace {
                             .invisible()
                             .group_hover(group.clone(), |tools| tools.visible());
                         let copied = text.clone();
+                        let copy_id = SharedString::from(format!("copy-{key}"));
                         tools = tools.child(
-                            Button::new(SharedString::from(format!("copy-{key}")))
+                            Button::new(copy_id.clone())
                                 .ghost()
                                 .small()
-                                .icon(IconName::Copy)
+                                .icon(clipboard::icon(&copy_id, cx))
                                 .tooltip("Copy the message")
-                                .on_click(cx.listener(move |_, _, _, cx| {
-                                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-                                })),
+                                .on_click(move |_, _, cx| {
+                                    clipboard::copy(&copy_id, copied.clone(), cx)
+                                }),
                         );
                         // The core refuses to go back inside a turn, so the button waits.
                         if let (Some(sequence), false) = (*sequence, chat.working) {
@@ -122,29 +124,31 @@ impl Workspace {
                             .flex_col()
                             .items_end()
                             .gap_1()
-                            .when(!user_text(text).trim().is_empty(), |row| {
-                                row.child(
-                                    // The user's words carry a breath of the accent, so the
-                                    // two sides of the chat part at a glance without glare.
-                                    div()
-                                        .px_4()
-                                        .py_2()
-                                        .rounded_xl()
-                                        .bg(accent.opacity(0.09))
-                                        .border_1()
-                                        .border_color(accent.opacity(0.16))
-                                        // Selectable like the answers; pastes and files show as labels.
-                                        .child(match chat.answered.get(&at) {
-                                            Some(answers) => super::answered(&key, answers, cx)
-                                                .into_any_element(),
-                                            None => links::markdown(
+                            .when_some(chat.answered.get(&at), |row, answers| {
+                                row.child(super::answered(&key, answers, cx))
+                            })
+                            .when(
+                                !chat.answered.contains_key(&at)
+                                    && !user_text(text).trim().is_empty(),
+                                |row| {
+                                    row.child(
+                                        // The user's words carry a breath of the accent, so the
+                                        // two sides of the chat part at a glance without glare.
+                                        div()
+                                            .px_4()
+                                            .py_2()
+                                            .rounded_xl()
+                                            .bg(accent.opacity(0.09))
+                                            .border_1()
+                                            .border_color(accent.opacity(0.16))
+                                            // Selectable like the answers; pastes and files show as labels.
+                                            .child(links::markdown(
                                                 SharedString::from(format!("user-{key}")),
                                                 user_text(text),
-                                            )
-                                            .into_any_element(),
-                                        }),
-                                )
-                            })
+                                            )),
+                                    )
+                                },
+                            )
                             .children(sent_pictures(self, &shown, &key, text, cx))
                             // Sounds the user sent play under the words.
                             .children(sent_sounds(text).iter().enumerate().map(|(n, clip)| {
@@ -185,6 +189,7 @@ impl Workspace {
                                 (key.clone(), self.audio.listening.is_some() && !listening);
                             // The answer reads as plain text; its tools come up under the
                             // pointer, or while it is read aloud.
+                            let copy_id = SharedString::from(format!("copy-{key}"));
                             answer = answer.child(
                                 div()
                                     .flex()
@@ -195,16 +200,14 @@ impl Workspace {
                                             .group_hover(group.clone(), |row| row.opacity(1.))
                                     })
                                     .child(
-                                        Button::new(SharedString::from(format!("copy-{key}")))
+                                        Button::new(copy_id.clone())
                                             .ghost()
                                             .small()
-                                            .icon(IconName::Copy)
+                                            .icon(clipboard::icon(&copy_id, cx))
                                             .tooltip("Copy the answer")
-                                            .on_click(cx.listener(move |_, _, _, cx| {
-                                                cx.write_to_clipboard(ClipboardItem::new_string(
-                                                    copied.clone(),
-                                                ))
-                                            })),
+                                            .on_click(move |_, _, cx| {
+                                                clipboard::copy(&copy_id, copied.clone(), cx)
+                                            }),
                                     )
                                     .child(
                                         Button::new(SharedString::from(format!("listen-{key}")))
@@ -237,7 +240,7 @@ impl Workspace {
                     Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
                     Item::Audio(clip) => crate::pages::chat::audio::card(self, &key, clip, cx),
                     Item::Notice(text) => {
-                        notice(&key, div().meta().text_color(muted), text).into_any_element()
+                        notice(&key, div().meta().text_color(muted), text, cx).into_any_element()
                     }
                     Item::Error(text) => div()
                         .px_3()

@@ -5,7 +5,7 @@
 use crate::ui::Type;
 use dusk_protocol::{
     client::{Answer, CHATGPT_USAGE_URL, Command},
-    model::Effort,
+    model::{Effort, ProviderStatus},
 };
 use gpui_kit::{
     component::{
@@ -351,6 +351,8 @@ impl Workspace {
         cx.notify();
     }
 
+    /// Lists the providers at once, then asks each for its models on its own, so one that
+    /// answers shows while a slow one is still pending.
     pub fn load_models(&mut self, cx: &mut Context<Self>) {
         if self.models_loading {
             return;
@@ -359,17 +361,87 @@ impl Workspace {
         cx.notify();
         self.core.call(
             cx,
-            |client| async move { client.command(Command::Model { name: None }).await },
-            |ws, result, cx| {
-                ws.models_loading = false;
-                match result {
-                    Ok(Answer::Providers { providers, .. }) => ws.providers = providers,
-                    Ok(_) => ws.fail(anyhow::anyhow!("the core gave no models"), cx),
-                    Err(error) => ws.fail(error, cx),
+            |client| async move { client.command(Command::Provider { name: None }).await },
+            |ws, result, cx| match result {
+                Ok(Answer::Providers { providers, .. }) => {
+                    ws.ask_providers(providers.into_iter().map(|p| p.name).collect(), cx)
                 }
-                cx.notify();
+                other => {
+                    ws.models_loading = false;
+                    match other {
+                        Ok(_) => ws.fail(anyhow::anyhow!("the core gave no providers"), cx),
+                        Err(error) => ws.fail(error, cx),
+                    }
+                    cx.notify();
+                }
             },
         );
+    }
+
+    fn ask_providers(&mut self, names: Vec<String>, cx: &mut Context<Self>) {
+        // What an earlier check found stays on screen until the new answer replaces it.
+        let mut known: std::collections::HashMap<_, _> = std::mem::take(&mut self.providers)
+            .into_iter()
+            .map(|status| (status.name.clone(), status))
+            .collect();
+        self.providers = names
+            .iter()
+            .map(|name| {
+                known.remove(name).unwrap_or_else(|| ProviderStatus {
+                    name: name.clone(),
+                    models: Ok(Vec::new()),
+                    balance: None,
+                    limits: None,
+                    enabled: true,
+                })
+            })
+            .collect();
+        self.models_pending = names.iter().cloned().collect();
+        self.models_loading = !names.is_empty();
+        for name in names {
+            let asked = name.clone();
+            self.core.call(
+                cx,
+                move |client| async move {
+                    client
+                        .command(Command::Provider { name: Some(asked) })
+                        .await
+                },
+                move |ws, result, cx| {
+                    ws.models_pending.remove(&name);
+                    ws.models_loading = !ws.models_pending.is_empty();
+                    let status = match result {
+                        Ok(Answer::Providers { providers, .. }) => {
+                            match providers.into_iter().next() {
+                                Some(status) => status,
+                                None => {
+                                    return ws.provider_failed(
+                                        &name,
+                                        "the core gave no answer",
+                                        cx,
+                                    );
+                                }
+                            }
+                        }
+                        // A provider that fails shows its own error; the others go on.
+                        Ok(_) => return ws.provider_failed(&name, "the core gave no answer", cx),
+                        Err(error) => return ws.provider_failed(&name, &format!("{error:#}"), cx),
+                    };
+                    if let Some(slot) = ws.providers.iter_mut().find(|p| p.name == status.name) {
+                        *slot = status;
+                    }
+                    cx.notify();
+                },
+            );
+        }
+        cx.notify();
+    }
+
+    fn provider_failed(&mut self, name: &str, error: &str, cx: &mut Context<Self>) {
+        if let Some(slot) = self.providers.iter_mut().find(|p| p.name == name) {
+            slot.models = Err(error.to_owned());
+        }
+        cx.notify();
     }
 
     pub fn choose_model(&mut self, name: String, cx: &mut Context<Self>) {

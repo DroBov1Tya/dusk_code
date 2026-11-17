@@ -9,6 +9,10 @@ use crate::release::Channel;
 pub struct Settings {
     pub max_agents_at_work: usize,
     pub max_goal_rounds: u32,
+    /// Seconds a model call may stay silent before it is given up on.
+    pub model_timeout_seconds: u32,
+    /// Tries of one model call that wrote nothing, the first included.
+    pub max_attempts: u32,
     pub idle_screen_minutes: u32,
     pub memory: Memory,
     pub work_history: WorkHistory,

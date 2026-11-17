@@ -6,7 +6,7 @@ use std::time::Instant;
 use crossterm::event::{MouseButton, MouseEvent, MouseEventKind};
 use ratatui::{buffer::CellWidth, layout::Rect, style::Style, text::Span};
 
-use super::{Action, App, Button, Entry, Focus, Pressed, Selection, TEXT_COLUMN};
+use super::{Action, App, Button, Entry, Focus, Pressed, Selection, TEXT_COLUMN, TabMove};
 
 impl App {
     pub fn mouse(&mut self, mouse: MouseEvent) -> Action {
@@ -17,6 +17,13 @@ impl App {
             MouseEventKind::Moved => self.hover = self.entry_at(x, y),
             MouseEventKind::Down(MouseButton::Left) => {
                 self.flash = None;
+                let tab = self
+                    .tab_hits
+                    .iter()
+                    .find(|hit| y == hit.row && x >= hit.left && x < hit.right);
+                if let Some(place) = tab.map(|hit| hit.place) {
+                    return Action::Tab(TabMove::Go(place));
+                }
                 if let Some(action) = self.press_button(x, y) {
                     return action;
                 }
@@ -155,6 +162,13 @@ impl App {
                 self.focus = Focus::Input;
                 Some(Action::None)
             }
+            Button::Background => match self.transcript.running_command_at(index) {
+                Some(call_id) => Some(Action::Background(call_id)),
+                None => {
+                    self.flash = Some("the command has ended".into());
+                    Some(Action::None)
+                }
+            },
         }
     }
 

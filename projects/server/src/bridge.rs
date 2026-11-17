@@ -154,9 +154,9 @@ fn refused(request: &Request, size: usize) -> Option<&'static str> {
         Request::Terminal(_) => Some("a terminal opens in the desktop app only"),
         Request::Plugin(_) => Some("plugin parts open in the desktop app only"),
         // A plugin runs programs on this machine; only a client on it may install one.
-        Request::Store(StoreRequest::Install { .. } | StoreRequest::Remove { .. }) => {
-            Some("plugins are installed in the desktop app or the terminal")
-        }
+        Request::Store(
+            StoreRequest::Install { .. } | StoreRequest::Remove { .. } | StoreRequest::UpdateAll,
+        ) => Some("plugins are installed in the desktop app or the terminal"),
         Request::Settings(SettingsRequest::PluginEnabled { enabled: true, .. }) => {
             Some("plugins are switched on in the desktop app or the terminal")
         }

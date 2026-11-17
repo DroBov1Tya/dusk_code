@@ -20,7 +20,7 @@ use crate::{
     platform::icon,
     ui::layout::Part,
     ui::{Type, widgets},
-    workspace::{Center, Workspace},
+    workspace::{Center, Right, Workspace},
 };
 
 pub const HEIGHT: f32 = crate::ui::size::BAR;
@@ -94,7 +94,8 @@ fn tool_of(
     cx: &mut Context<Workspace>,
 ) -> Option<AnyElement> {
     Some(match part {
-        Part::Review if chat => tool(
+        // Shown under the same condition as the Changes module of the right panel.
+        Part::Review if chat && ws.has_content(Right::Git) => tool(
             "top-review",
             Icon::default().path(crate::ui::icons::GIT_COMPARE),
             "Review the changes",

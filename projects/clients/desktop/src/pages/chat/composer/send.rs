@@ -82,44 +82,67 @@ impl Workspace {
         if origin.is_none() {
             self.drafts.begin();
         }
+        // A chat already on the page catches its turn's events as they come.
+        if let Some(thread_id) = shown {
+            self.deliver(thread_id, text, origin, generation, draft, cx);
+            return;
+        }
         self.core.call(
             cx,
             move |client| async move {
                 let threads = client.threads();
-                let (thread_id, new) = match (shown, dir) {
-                    (Some(thread_id), _) => (thread_id, false),
-                    (None, Some(dir)) if temporary => (threads.start_temporary(dir).await?, true),
-                    (None, Some(dir)) => (threads.start(dir).await?, true),
-                    (None, None) => anyhow::bail!("no project"),
-                };
-                threads.send(&thread_id, text, false).await?;
-                anyhow::Ok((thread_id, new))
+                match dir {
+                    Some(dir) if temporary => threads.start_temporary(dir).await,
+                    Some(dir) => threads.start(dir).await,
+                    None => anyhow::bail!("no project"),
+                }
             },
             move |ws, result, cx| {
-                if origin.is_none() {
-                    ws.drafts.finish(generation);
-                }
+                ws.drafts.finish(generation);
                 match result {
-                    Ok((thread_id, new)) => {
-                        if new {
-                            let current = ws.drafts.started(&thread_id, generation);
-                            ws.chats.insert(thread_id.clone(), Transcript::default());
-                            if current
-                                && ws.history.navigation() == navigation
-                                && ws.shown.is_none()
-                                && ws.center == crate::workspace::Center::Chat
-                            {
-                                ws.show(thread_id, cx);
-                            }
-                            ws.reload_threads(cx);
+                    Ok(thread_id) => {
+                        // The chat is on the page before the message is queued, so the
+                        // turn it starts is seen from its first event.
+                        let current = ws.drafts.started(&thread_id, generation);
+                        ws.chats.insert(thread_id.clone(), Transcript::default());
+                        if current
+                            && ws.history.navigation() == navigation
+                            && ws.shown.is_none()
+                            && ws.center == crate::workspace::Center::Chat
+                        {
+                            ws.show(thread_id.clone(), cx);
                         }
-                        // What was attached is now among the chat's sources.
-                        ws.load_sources(cx);
+                        ws.reload_threads(cx);
+                        ws.deliver(thread_id, text, None, generation, draft, cx);
                     }
                     Err(error) => {
-                        ws.edit_draft_at(origin, generation, super::Change::Restore(draft), cx);
+                        ws.edit_draft_at(None, generation, super::Change::Restore(draft), cx);
                         ws.fail(error, cx);
                     }
+                }
+            },
+        );
+    }
+
+    /// Gives the text to a thread that is already on the page; a failed send puts the
+    /// draft back where it was written.
+    fn deliver(
+        &mut self,
+        thread_id: String,
+        text: String,
+        origin: Option<String>,
+        generation: u64,
+        draft: super::Draft,
+        cx: &mut Context<Self>,
+    ) {
+        self.core.call(
+            cx,
+            move |client| async move { client.threads().send(&thread_id, text, false).await },
+            move |ws, result, cx| match result {
+                Ok(()) => ws.load_sources(cx),
+                Err(error) => {
+                    ws.edit_draft_at(origin, generation, super::Change::Restore(draft), cx);
+                    ws.fail(error, cx);
                 }
             },
         );

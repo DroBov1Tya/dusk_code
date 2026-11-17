@@ -36,6 +36,7 @@ pub fn command_card(key: &str, run: &CommandRun, cx: &mut Context<Workspace>) ->
                 SharedString::from(format!("command-copy-{key}")),
                 &group,
                 &copied,
+                cx,
             )),
     );
     match &run.result {

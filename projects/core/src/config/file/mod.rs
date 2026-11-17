@@ -10,8 +10,9 @@ mod tests;
 
 use super::sections::{is_zero, yes};
 use super::{
-    Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, McpServerConfig, Memory,
-    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory,
+    Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
+    MAX_MODEL_TIMEOUT_SECONDS, MIN_ATTEMPTS, MIN_MODEL_TIMEOUT_SECONDS, McpServerConfig, Memory,
+    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory, Workshop,
 };
 use crate::release::update::Channel;
 use anyhow::{Context, Result, anyhow, ensure};
@@ -114,6 +115,9 @@ pub struct Config {
     /// Plugins by name: whether each is on, and its settings.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     plugins: BTreeMap<String, PluginConfig>,
+    /// Mirrors of the store the user added.
+    #[serde(default, skip_serializing_if = "Workshop::is_default")]
+    workshop: Workshop,
     /// What the plugins that are on add; never saved.
     #[serde(skip)]
     plugged: Plugged,
@@ -240,6 +244,7 @@ impl Config {
     }
 
     pub(super) fn validate(&self) -> Result<()> {
+        self.workshop.validate()?;
         for endpoint in [&self.voice.stt, &self.voice.tts].into_iter().flatten() {
             crate::voice::check_endpoint(endpoint)?;
         }
@@ -267,6 +272,16 @@ impl Config {
         ensure!(
             self.limits.max_goal_rounds > 0,
             "max_goal_rounds must be above zero"
+        );
+        ensure!(
+            (MIN_MODEL_TIMEOUT_SECONDS..=MAX_MODEL_TIMEOUT_SECONDS)
+                .contains(&self.limits.model_timeout_seconds),
+            "limits.model_timeout_seconds must be between {MIN_MODEL_TIMEOUT_SECONDS} and \
+             {MAX_MODEL_TIMEOUT_SECONDS}"
+        );
+        ensure!(
+            (MIN_ATTEMPTS..=MAX_ATTEMPTS).contains(&self.limits.max_attempts),
+            "limits.max_attempts must be between {MIN_ATTEMPTS} and {MAX_ATTEMPTS}"
         );
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,

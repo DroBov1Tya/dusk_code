@@ -154,20 +154,7 @@ impl App {
                 KeyCode::Left | KeyCode::Right | KeyCode::Char('-' | '+'),
             ) if view.selected < LIMIT_ROWS => {
                 let more = matches!(key.code, KeyCode::Right | KeyCode::Char('+'));
-                if view.selected == 1 {
-                    let rounds = if more {
-                        view.max_goal_rounds.saturating_add(1)
-                    } else {
-                        view.max_goal_rounds.saturating_sub(1).max(1)
-                    };
-                    return Action::SetGoalRounds(rounds);
-                }
-                let limit = if more {
-                    view.max_agents_at_work.saturating_add(1)
-                } else {
-                    view.max_agents_at_work.saturating_sub(1).max(1)
-                };
-                return Action::SetAgentLimit(limit);
+                return view.limit_action(more);
             }
             (
                 Some(SettingCategory::Appearance),

@@ -21,6 +21,7 @@ pub fn listings() -> Vec<Listing> {
         homepage: Some(format!("https://example.com/{name}")),
         installed: None,
         unfit: None,
+        ..Listing::default()
     };
     let mut all = vec![
         Listing {
@@ -146,7 +147,7 @@ pub fn step(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         .cloned();
     match (what, listing) {
         ("", _) => {}
-        ("install", Some(listing)) => ws.confirm_store(Confirm::Install(listing), cx),
+        ("install", Some(listing)) => ws.confirm_store(Confirm::Install(Box::new(listing)), cx),
         ("remove", Some(_)) => ws.confirm_store(Confirm::Remove(name.into()), cx),
         ("busy", Some(_)) => {
             ws.workshop.busy.insert(name.into(), "Installing...");

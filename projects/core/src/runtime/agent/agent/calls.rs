@@ -1,6 +1,6 @@
 //! The model call with its retries, the tool calls and the hooks around them.
 
-use super::{Agent, MAX_ATTEMPTS, Pace, retry_delay};
+use super::{Agent, Pace, retry_delay};
 use crate::plugins::{HookEvent, hooks::Outcome};
 use crate::runtime::agent::{Inbox, Stop, generation};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
@@ -26,20 +26,24 @@ impl Agent {
         requested_config: &Config,
         inbox: &mut Inbox,
     ) -> Result<(ModelOutput, Result<Result<Vec<ToolCall>>, Stop>), Stop> {
+        let limits = self.config.current().limits();
+        let idle = std::time::Duration::from_secs(limits.model_timeout_seconds.into());
+        let max_attempts = limits.max_attempts;
         let mut attempt = 1;
         loop {
             let mut output = ModelOutput::default();
             let events = self.events.clone();
             let mut meter = crate::runtime::agent::rate::RateMeter::default();
-            let streamed = generation::generate(&*choice.provider, request, &mut output, |event| {
-                if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
-                    self.emit(ThreadEvent::OutputRate {
-                        tokens_per_sec,
-                        window_ms: crate::runtime::agent::rate::WINDOW.as_millis() as u64,
-                    });
-                }
-                let _ = events.send(ThreadEvent::Model(event.clone()));
-            });
+            let streamed =
+                generation::generate(&*choice.provider, request, &mut output, idle, |event| {
+                    if let Some(tokens_per_sec) = meter.observe(event, Instant::now()) {
+                        self.emit(ThreadEvent::OutputRate {
+                            tokens_per_sec,
+                            window_ms: crate::runtime::agent::rate::WINDOW.as_millis() as u64,
+                        });
+                    }
+                    let _ = events.send(ThreadEvent::Model(event.clone()));
+                });
             let mut generated = inbox.race(streamed).await;
             if let Some(tokens_per_sec) = meter.current(Instant::now()) {
                 self.emit(ThreadEvent::OutputRate {
@@ -70,7 +74,7 @@ impl Agent {
             }
             let (error, asked_wait) = match &generated {
                 Ok(Err(error))
-                    if attempt < MAX_ATTEMPTS && !output.answered() && is_transient(error) =>
+                    if attempt < max_attempts && !output.answered() && is_transient(error) =>
                 {
                     (format!("{error:#}"), crate::providers::retry_after(error))
                 }

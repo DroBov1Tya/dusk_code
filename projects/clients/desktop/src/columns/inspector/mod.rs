@@ -266,7 +266,7 @@ fn statistics(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
 
 impl Workspace {
     /// A module shows only once it has something to show.
-    fn has_content(&self, module: Right) -> bool {
+    pub fn has_content(&self, module: Right) -> bool {
         let chat = self.shown_chat();
         match module {
             Right::Arbiter => {

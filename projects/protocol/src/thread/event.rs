@@ -27,6 +27,10 @@ pub enum ThreadEvent {
         reason: String,
     },
     TurnStarted(Turn),
+    /// The thread is in the middle of `turn`; a client that joined after it began sets
+    /// its chat to working. Unlike a replayed `TurnStarted` it opens no fold boundary:
+    /// what the client read from history belongs to the same turn.
+    TurnRunning(Turn),
     /// A model call failed in a way that may pass; the next attempt follows after a pause.
     Retrying {
         attempt: u32,

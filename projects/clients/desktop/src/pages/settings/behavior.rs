@@ -156,13 +156,16 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
             None => body,
         },
         SettingsPage::Advanced => {
-            let body = match ws.settings.clone() {
-                Some(settings) => {
-                    let agents = settings.max_agents_at_work as u64;
-                    let rounds = u64::from(settings.max_goal_rounds);
-                    let mut web = vec![web_line(ws, cx), web_global_line(ws, cx)];
-                    web.extend(web_address(ws, cx));
-                    body.child(list(
+            let body =
+                match ws.settings.clone() {
+                    Some(settings) => {
+                        let agents = settings.max_agents_at_work as u64;
+                        let rounds = u64::from(settings.max_goal_rounds);
+                        let timeout = u64::from(settings.model_timeout_seconds);
+                        let attempts = u64::from(settings.max_attempts);
+                        let mut web = vec![web_line(ws, cx), web_global_line(ws, cx)];
+                        web.extend(web_address(ws, cx));
+                        body.child(list(
                         [switch_line(
                             "Log files",
                             "Written on this machine only",
@@ -199,12 +202,24 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                                 Limit::Rounds,
                                 cx,
                             )),
+                            line(
+                                "Model timeout, seconds",
+                                "How long a silent model call waits before it is given up on",
+                                cx,
+                            )
+                            .child(stepper("timeout", timeout, (5, 3600), Limit::Timeout, cx)),
+                            line(
+                                "Tries per call",
+                                "Tries of one model call that wrote nothing, the first included",
+                                cx,
+                            )
+                            .child(stepper("attempts", attempts, (1, 20), Limit::Attempts, cx)),
                         ],
                         cx,
                     ))
-                }
-                None => body,
-            };
+                    }
+                    None => body,
+                };
             body.child(super::uninstall::section(cx))
         }
         SettingsPage::Ai
@@ -357,6 +372,8 @@ fn size_line(
 enum Limit {
     Agents,
     Rounds,
+    Timeout,
+    Attempts,
 }
 
 /// A limit's number with a minus and a plus, kept inside its bounds.
@@ -599,6 +616,8 @@ impl Workspace {
                 match limit {
                     Limit::Agents => client.settings().max_agents_at_work(value as usize).await,
                     Limit::Rounds => client.settings().max_goal_rounds(value as u32).await,
+                    Limit::Timeout => client.settings().model_timeout(value as u32).await,
+                    Limit::Attempts => client.settings().max_attempts(value as u32).await,
                 }
             },
             |ws, result, cx| match result {

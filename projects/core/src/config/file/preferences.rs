@@ -112,4 +112,12 @@ impl Config {
     pub fn set_max_goal_rounds(&mut self, rounds: u32) {
         self.limits.max_goal_rounds = rounds;
     }
+
+    pub fn set_model_timeout_seconds(&mut self, seconds: u32) {
+        self.limits.model_timeout_seconds = seconds;
+    }
+
+    pub fn set_max_attempts(&mut self, attempts: u32) {
+        self.limits.max_attempts = attempts;
+    }
 }

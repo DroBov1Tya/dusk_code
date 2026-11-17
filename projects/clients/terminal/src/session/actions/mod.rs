@@ -88,6 +88,8 @@ pub async fn apply(
         Action::SetBranchPrefix(prefix) => settings::set_branch_prefix(client, app, prefix).await,
         Action::SetIdleMinutes(minutes) => settings::set_idle_minutes(client, app, minutes).await,
         Action::SetGoalRounds(rounds) => settings::set_goal_rounds(client, app, rounds).await,
+        Action::SetModelTimeout(seconds) => settings::set_model_timeout(client, app, seconds).await,
+        Action::SetMaxAttempts(attempts) => settings::set_max_attempts(client, app, attempts).await,
         Action::SetMemoryChars(chars) => settings::set_memory_chars(client, app, chars).await,
         Action::SetWorkHistoryChars(chars) => {
             settings::set_work_history_chars(client, app, chars).await
@@ -118,6 +120,8 @@ pub async fn apply(
         Action::RemoveSource(id) => work::remove_source(client, app, open, id).await,
         Action::Command(Command::Jobs { .. }) => work::jobs(client, app, open).await,
         Action::Background(call_id) => work::background(client, app, call_id).await,
+        // The loop hands tab moves to `tabs::take` before this.
+        Action::Tab(_) => {}
         Action::StopJob(job_id) => work::stop_job(client, app, job_id).await,
         Action::Command(Command::Resume { .. }) => thread::resume(client, app, open).await,
         Action::Command(Command::Context { .. }) => thread::context(client, app, open).await,

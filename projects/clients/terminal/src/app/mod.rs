@@ -1,6 +1,7 @@
 //! The client state: the open thread as entries, what is being typed, what the agent is
 //! doing and which panel is open. Events from the core and keys from the user change it;
-//! anything that needs the core goes back to the session as an `Action`.
+//! anything that needs the core goes back to the session as an `Action`. Other open
+//! threads wait in tabs (`tabs`).
 
 mod action;
 mod composer;
@@ -12,6 +13,7 @@ mod panels;
 pub mod schedule;
 mod state;
 mod submit;
+mod tabs;
 mod thread;
 
 pub use action::{Action, commands};
@@ -29,6 +31,7 @@ pub use panels::{
 };
 pub use panels::{Choice, Confirm, Step, Workshop, choices};
 pub use state::{App, compact_number};
+pub use tabs::{Tab, TabHit, TabMove};
 pub use thread::approval::{ApprovalHit, Asked};
 pub use thread::goal::{GoalButton, GoalHit, buttons as goal_buttons};
 pub use thread::poll::{Poll, PollHit, PollTarget};

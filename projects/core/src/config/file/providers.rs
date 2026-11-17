@@ -49,6 +49,10 @@ impl Config {
         &self.plugins
     }
 
+    pub fn workshop(&self) -> &super::super::Workshop {
+        &self.workshop
+    }
+
     pub fn plugin(&self, name: &str) -> PluginConfig {
         self.plugins.get(name).cloned().unwrap_or_default()
     }

@@ -132,13 +132,14 @@ pub fn view(key: &Key) -> Widget {
                         Widget::List {
                             id: "device".into(),
                             items: vec![
-                                item("17pro", "iPhone 17 Pro", "iOS 26.1"),
+                                item("17pro", "iPhone 17 Pro", "iOS 26.1 · on"),
                                 item("air", "iPhone Air", "iOS 26.1"),
                             ],
                             selected: Some("17pro".into()),
                             menu: true,
                         },
                         icon("refresh", "Refresh", ButtonIcon::Refresh, false),
+                        icon("stop", "Shut down", ButtonIcon::Power, false),
                     ],
                 },
                 install_notice(
@@ -155,7 +156,6 @@ pub fn view(key: &Key) -> Widget {
                     children: vec![
                         icon("home", "Home", ButtonIcon::Home, true),
                         icon("lock", "Lock", ButtonIcon::Lock, true),
-                        icon("stop", "Shut down", ButtonIcon::Power, false),
                     ],
                 },
             ],

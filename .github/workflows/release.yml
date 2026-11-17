@@ -1,4 +1,6 @@
 # A tag v* builds duskcode for macOS arm64 and Linux amd64/arm64 and publishes a release;
+# a tag on a commit of a release/* branch is a full release, any other tag (nightlies, tagged
+# on main) is a pre-release;
 # the desktop client also ships: as Duskcode.app in a disk image on macOS, and as an AppImage
 # on Linux amd64 and arm64.
 # Started by hand, it only builds, to check the build before a tag.
@@ -20,15 +22,19 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the release branches that hold the tagged commit decide the kind
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        # A minor version (patch zero) is a full release, made after end-to-end testing;
-        # a patch version ships as a pre-release, which "latest" skips. The notes are the
-        # version's section of CHANGELOG.md, or generated when it has none.
+        # A tag on a commit a release/X.Y branch holds is a full release: stable ships from
+        # those branches after end-to-end testing. A tag anywhere else, a nightly on main,
+        # ships as a pre-release, which "latest" skips. The notes are the version's section
+        # of CHANGELOG.md, or generated when it has none.
         run: |
+          git fetch --no-tags origin '+refs/heads/release/*:refs/remotes/origin/release/*'
           flag=--prerelease
-          if [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.0$ ]]; then
+          if [[ -n "$(git branch -r --contains "$GITHUB_SHA" --list 'origin/release/*')" ]]; then
             flag=--latest
           fi
           version="${GITHUB_REF_NAME#v}"

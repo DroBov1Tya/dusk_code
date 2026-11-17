@@ -13,6 +13,10 @@ pub enum SettingsRequest {
     /// Answers with the minutes saved, after the config's bounds.
     IdleScreenMinutes(u32),
     MaxGoalRounds(u32),
+    /// Answers with the seconds saved, after the config's bounds.
+    ModelTimeout(u32),
+    /// Answers with the tries saved, after the config's bounds.
+    MaxAttempts(u32),
     MemoryChars(usize),
     /// Answers with the characters saved, after the config's bounds.
     WorkHistoryChars(usize),

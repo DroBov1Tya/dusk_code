@@ -43,6 +43,8 @@ pub enum Action {
     },
     SetAgentLimit(usize),
     SetGoalRounds(u32),
+    SetModelTimeout(u32),
+    SetMaxAttempts(u32),
     SetIdleMinutes(u32),
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
@@ -78,6 +80,8 @@ pub enum Action {
     StopJob(String),
     /// Send the agent's running command, by its tool call, to the background.
     Background(String),
+    /// Open, close or switch a tab.
+    Tab(super::TabMove),
     SetContextPolicy(ContextPolicy),
     /// Turn an agent, a tool, a skill or an MCP server on or off.
     Switch {
@@ -142,6 +146,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         (
             "/plugins",
             "the plugins found, to switch on or off; /plugins store installs more",
+        ),
+        (
+            "/tab",
+            "a new tab; /tab 2 shows tab 2, /tab next, /tab prev, /tab close",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
         ("/files", "the files this chat's commands changed"),

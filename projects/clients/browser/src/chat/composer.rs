@@ -218,56 +218,52 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
     let drop_id = id.clone();
     let pick_id = id.clone();
     view! {
-        // The box between two sides of one width, the context ring on the right; the mode
-        // and the model under it.
         <div class="composer-wrap">
-            <div class="composer-side"></div>
-            <div class="composer-column">
-                <div class="composer">
-                    <Show when=move || !suggestions().is_empty()>
-                        <ul class="suggest">
-                            <For each=suggestions key=|(name, _)| *name let:entry>
-                                <li on:click=move |_| text.set(format!("{} ", entry.0))>
-                                    <b>{entry.0}</b>" "<span class="muted">{entry.1}</span>
-                                </li>
-                            </For>
-                        </ul>
-                    </Show>
-                    <super::pictures::Strip pictures />
-                    <textarea
-                        node_ref=area
-                        rows="1"
-                        placeholder="Ask anything. Enter sends, Shift+Enter starts a new line."
-                        prop:value=move || text.get()
-                        on:input=move |ev| text.set(event_target_value(&ev))
-                        on:keydown=on_key
-                        on:paste=move |ev: leptos::ev::ClipboardEvent| {
-                            let files = super::pictures::pasted(&ev);
-                            if !files.is_empty() {
-                                ev.prevent_default();
-                                super::pictures::add_files(files, paste_id.clone());
-                            }
-                        }
-                        on:dragover=move |ev: leptos::ev::DragEvent| ev.prevent_default()
-                        on:drop=move |ev: leptos::ev::DragEvent| {
+            <div class="composer">
+                <Show when=move || !suggestions().is_empty()>
+                    <ul class="suggest">
+                        <For each=suggestions key=|(name, _)| *name let:entry>
+                            <li on:click=move |_| text.set(format!("{} ", entry.0))>
+                                <b>{entry.0}</b>" "<span class="muted">{entry.1}</span>
+                            </li>
+                        </For>
+                    </ul>
+                </Show>
+                <super::pictures::Strip pictures />
+                <textarea
+                    node_ref=area
+                    rows="1"
+                    placeholder="Ask anything. Enter sends, Shift+Enter starts a new line."
+                    prop:value=move || text.get()
+                    on:input=move |ev| text.set(event_target_value(&ev))
+                    on:keydown=on_key
+                    on:paste=move |ev: leptos::ev::ClipboardEvent| {
+                        let files = super::pictures::pasted(&ev);
+                        if !files.is_empty() {
                             ev.prevent_default();
-                            super::pictures::add_files(super::pictures::dropped(&ev), drop_id.clone());
+                            super::pictures::add_files(files, paste_id.clone());
                         }
-                    ></textarea>
-                    <div class="composer-actions">
-                        <input type="file" accept="image/png,image/jpeg" multiple hidden node_ref=picker
-                            on:change=move |ev| {
-                                if let Some(input) = super::pictures::input_of(&ev) {
-                                    super::pictures::pick(&input, pick_id.clone());
-                                }
-                            } />
-                        <button class="icon round" title="Attach pictures" aria-label="Attach pictures" on:click=move |_| {
-                            if let Some(input) = picker.get() {
-                                input.click();
+                    }
+                    on:dragover=move |ev: leptos::ev::DragEvent| ev.prevent_default()
+                    on:drop=move |ev: leptos::ev::DragEvent| {
+                        ev.prevent_default();
+                        super::pictures::add_files(super::pictures::dropped(&ev), drop_id.clone());
+                    }
+                ></textarea>
+                <div class="composer-actions">
+                    <input type="file" accept="image/png,image/jpeg" multiple hidden node_ref=picker
+                        on:change=move |ev| {
+                            if let Some(input) = super::pictures::input_of(&ev) {
+                                super::pictures::pick(&input, pick_id.clone());
                             }
-                        }><Icon name=IconName::Plus /></button>
-                        <super::controls::Access id=access_id chat />
-                        <span class="grow"></span>
+                        } />
+                    <button class="icon round" title="Attach pictures" aria-label="Attach pictures" on:click=move |_| {
+                        if let Some(input) = picker.get() {
+                            input.click();
+                        }
+                    }><Icon name=IconName::Plus /></button>
+                    <super::controls::Access id=access_id chat />
+                    <div class="composer-submit">
                         <Show when=working>
                             <button class="ghost" on:click=move |_| stop.run(()) title="Stop the turn">
                                 <Icon name=IconName::Square />"Stop"
@@ -290,13 +286,13 @@ pub fn Composer(id: Option<String>, chat: Chat) -> impl IntoView {
                         </button>
                     </div>
                 </div>
-                <div class="composer-under">
-                    <super::controls::Mode />
-                    <Show when=move || voice::speaking()><span class="muted">"speaking\u{2026}"</span></Show>
-                    <super::controls::Model />
-                </div>
             </div>
-            <div class="composer-side"><super::controls::Context chat /></div>
+            <div class="composer-under">
+                <super::controls::Mode />
+                <Show when=move || voice::speaking()><span class="muted">"speaking\u{2026}"</span></Show>
+                <super::controls::Model />
+            </div>
+            <super::controls::Context chat />
         </div>
     }
 }

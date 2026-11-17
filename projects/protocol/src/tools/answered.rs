@@ -16,6 +16,26 @@ pub struct Answered {
     pub declined: bool,
 }
 
+impl Answered {
+    /// What a card shows under the question: the chosen options joined by ", " (or
+    /// "Declined"), then the user's own words. Empty when nothing was said.
+    pub fn lines(&self) -> Vec<String> {
+        let chosen: Vec<&str> = self
+            .options
+            .iter()
+            .filter(|(_, chosen)| *chosen)
+            .map(|(option, _)| option.as_str())
+            .collect();
+        let first = match (self.declined, chosen.is_empty()) {
+            (true, _) => Some("Declined".to_owned()),
+            (false, false) => Some(chosen.join(", ")),
+            (false, true) => None,
+        };
+        let own = (!self.own.is_empty()).then(|| self.own.clone());
+        first.into_iter().chain(own).collect()
+    }
+}
+
 /// The questions a thread asked that nobody answered yet, as a client reads them from
 /// the `ask_user` calls of the history or of the running turn.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]

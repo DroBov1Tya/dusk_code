@@ -205,6 +205,30 @@ pub async fn set_goal_rounds(client: &Client, app: &mut App, rounds: u32) {
     }
 }
 
+pub async fn set_model_timeout(client: &Client, app: &mut App, seconds: u32) {
+    match client.settings().model_timeout(seconds).await {
+        Ok(()) => {
+            if let Some(Panel::Settings(list)) = &mut app.panel {
+                list.model_timeout_seconds = seconds;
+            }
+            app.flash = Some(format!("Model timeout: {seconds} seconds of silence"));
+        }
+        Err(error) => app.error(format!("cannot save the model timeout: {error:#}")),
+    }
+}
+
+pub async fn set_max_attempts(client: &Client, app: &mut App, attempts: u32) {
+    match client.settings().max_attempts(attempts).await {
+        Ok(()) => {
+            if let Some(Panel::Settings(list)) = &mut app.panel {
+                list.max_attempts = attempts;
+            }
+            app.flash = Some(format!("Tries per call: {attempts}"));
+        }
+        Err(error) => app.error(format!("cannot save the tries per call: {error:#}")),
+    }
+}
+
 pub async fn set_memory_chars(client: &Client, app: &mut App, chars: usize) {
     match client.settings().memory_chars(chars).await {
         Ok(()) => {

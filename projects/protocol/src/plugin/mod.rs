@@ -20,7 +20,10 @@ mod wire;
 pub use compat::{Client, Os, allows, runs_here};
 pub use permission::{KeyUse, Permissions};
 pub use place::{Opens, Part, Place};
-pub use store::{Listing, StoreRequest};
+pub use store::{
+    Cover, Kind, LOCAL_SOURCE, Listing, OFFICIAL_SOURCE, Order, SourceFailure, StoreList,
+    StoreRequest, Tier, UpdateReport,
+};
 pub use view::{
     ButtonIcon, ListItem, MAX_NODES, MAX_TEXT, RowLayout, Size, Tone, UiEvent, Widget, check_view,
 };

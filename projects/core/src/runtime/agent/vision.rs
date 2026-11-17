@@ -43,7 +43,8 @@ impl Choice {
             cache_key: None,
         };
         let mut output = ModelOutput::default();
-        let asked = generate(self.provider.as_ref(), request, &mut output, |_| {});
+        let idle = Duration::from_secs(crate::config::DEFAULT_MODEL_TIMEOUT_SECONDS.into());
+        let asked = generate(self.provider.as_ref(), request, &mut output, idle, |_| {});
         match tokio::time::timeout(ASK_TIMEOUT, asked).await.ok()? {
             Ok(_) => {
                 let answer = output.text.to_ascii_lowercase();

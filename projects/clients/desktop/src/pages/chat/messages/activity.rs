@@ -143,7 +143,7 @@ pub fn turn_activity(
     block
 }
 
-pub fn notice(key: &str, body: Div, text: &str) -> Div {
+pub fn notice(key: &str, body: Div, text: &str, cx: &App) -> Div {
     let group = SharedString::from(format!("notice-row-{key}"));
     div()
         .group(group.clone())
@@ -155,6 +155,7 @@ pub fn notice(key: &str, body: Div, text: &str) -> Div {
             SharedString::from(format!("notice-copy-{key}")),
             &group,
             text,
+            cx,
         ))
 }
 
@@ -231,6 +232,7 @@ pub fn activity_text(
                     SharedString::from(format!("activity-text-copy-{shown}-{index}")),
                     &group,
                     text,
+                    cx,
                 )),
         )
         .when(open, |block| {

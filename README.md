@@ -172,8 +172,8 @@ scripts/build-web.sh                  # the web page, embedded by the next build
 
 ## Limitations
 
-- Pre-1.0: commands, configuration and the database schema may change. Patch versions
-  are pre-releases.
+- Pre-1.0: commands, configuration and the database schema may change. Full releases come
+  from `release/X.Y` branches; nightly pre-releases are tagged on `main`.
 - Release builds are for macOS arm64 and Linux; there is no Windows build.
 - The macOS app is signed with the project's own certificate, not an Apple Developer
   ID, so the first start needs your confirmation.

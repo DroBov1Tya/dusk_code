@@ -111,6 +111,8 @@ pub fn sent_pictures(
             Some(SentPicture::Ready(image)) => {
                 let large = image.clone();
                 tile.cursor_pointer()
+                    .hover(|tile| tile.opacity(0.9))
+                    .active(|tile| tile.opacity(0.8))
                     .child(img(image.clone()).size_full().object_fit(ObjectFit::Cover))
                     .on_click(cx.listener(move |ws, _, _, cx| {
                         ws.modal = Some(Modal::Picture {

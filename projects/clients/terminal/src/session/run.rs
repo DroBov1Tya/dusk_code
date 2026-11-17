@@ -13,13 +13,13 @@ use std::{
 use anyhow::Result;
 use crossterm::event::{Event, EventStream, MouseEventKind};
 use dusk_core::{app::ArtifactStore, client::Client};
-use dusk_protocol::client::Event as CoreEvent;
 use futures::StreamExt;
 use ratatui::DefaultTerminal;
 
 use super::{
     actions::{Flow, apply, set_update_note},
     answers::{jobs_wanted, refresh_jobs, refresh_system, system_open},
+    tabs::{self, Held},
     thread::{OpenThread, close, send},
 };
 use crate::{
@@ -54,6 +54,7 @@ pub async fn run(
     app.transcript
         .set_artifact_store(ArtifactStore::new(status.artifacts_dir.clone()));
     let mut open = None;
+    let mut held = Held::new();
     if let Some(thread_id) = thread {
         open = Some(OpenThread::resume(client, &mut app, &thread_id).await?);
     }
@@ -203,9 +204,11 @@ pub async fn run(
         {
             send(client, &mut app, &mut open, text, false).await;
         }
-        terminal_status.update(app.is_busy() || app.agents_at_work());
+        tabs::tend(client, &mut app, &mut held).await;
+        let working = app.is_busy() || app.agents_at_work() || app.tabs_working();
+        terminal_status.update(working);
         // Work is activity too: the idle screen waits for both to stop.
-        if app.is_busy() || app.agents_at_work() || update.is_some() {
+        if working || update.is_some() {
             idle_since = Instant::now();
         }
         app.refresh_paths();
@@ -276,7 +279,7 @@ pub async fn run(
                     let Some(next) = event else {
                         break;
                     };
-                    show(&mut app, &mut open, next);
+                    tabs::route(&mut app, &mut open, &mut held, next);
                     event = client.events.try_recv().ok();
                 }
                 Action::None
@@ -302,6 +305,7 @@ pub async fn run(
             }
             _ = clock.tick(), if app.is_busy()
                 || app.agents_at_work()
+                || app.tabs_working()
                 || app.task_timers_run()
                 || app.status.discovering_model
                 || update.is_some()
@@ -310,6 +314,7 @@ pub async fn run(
                 Action::None
             }
         };
+        let action = tabs::take(client, &mut app, &mut open, &mut held, action).await;
         match apply(
             client,
             &mut app,
@@ -324,26 +329,8 @@ pub async fn run(
             Flow::Quit => break,
         }
     }
-    close(client, open.take()).await;
+    tabs::close_all(client, open.take(), &mut held).await;
     Ok(())
-}
-
-/// Shows an event of the open thread; those of a thread closed meanwhile are dropped.
-fn show(app: &mut App, open: &mut Option<OpenThread>, event: CoreEvent) {
-    let Some(thread) = open else {
-        return;
-    };
-    match event {
-        CoreEvent::Thread { thread_id, event } if thread_id == thread.thread_id => {
-            thread.apply(app, *event);
-        }
-        CoreEvent::Ended { thread_id } if thread_id == thread.thread_id => {
-            thread.ended = true;
-            app.error("the thread stopped; the next message opens it again");
-            app.stop_work();
-        }
-        _ => {}
-    }
 }
 
 /// A key, a click, a scroll or a paste counts as the user being back; a moving pointer

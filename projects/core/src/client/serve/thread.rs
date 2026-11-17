@@ -6,6 +6,7 @@ use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
 use dusk_protocol::thread::ThreadEvent;
+use parking_lot::Mutex;
 use std::{
     collections::HashSet,
     sync::{
@@ -34,6 +35,19 @@ impl Server {
                 {
                     open.clients.insert(self.caller);
                     open.orphaned = None;
+                    // This client missed the turn's start; it learns the turn runs
+                    // without a fold boundary. The lock keeps it before the end.
+                    let running = open.running.lock();
+                    if let Some(turn) = running.clone() {
+                        send_to(
+                            &self.subscribers,
+                            self.caller,
+                            Event::Thread {
+                                thread_id: thread_id.clone(),
+                                event: Box::new(ThreadEvent::TurnRunning(turn)),
+                            },
+                        );
+                    }
                     return Ok(Response::Opened { thread_id });
                 }
                 // Whoever kept the ended thread open keeps it after it starts again.
@@ -162,6 +176,8 @@ impl Server {
         let id = thread_id.clone();
         let done = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&done);
+        let running = Arc::new(Mutex::new(None));
+        let current = Arc::clone(&running);
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
             let mut worked = false;
@@ -172,13 +188,35 @@ impl Server {
                     worked = true;
                     flag.store(false, Ordering::Relaxed);
                 }
+                // The start and the end of a turn are kept and sent under the lock a
+                // joining client takes, so it hears of a running turn before its end.
+                let turn = match &event {
+                    ThreadEvent::TurnStarted(turn) => Some(Some(turn.clone())),
+                    ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) | ThreadEvent::Idle => {
+                        Some(None)
+                    }
+                    _ => None,
+                };
                 let event = Event::Thread {
                     thread_id: id.clone(),
                     event: Box::new(event),
                 };
-                publish(&subscribers, event);
+                match turn {
+                    Some(turn) => {
+                        let mut running = current.lock();
+                        *running = turn;
+                        publish(&subscribers, event);
+                    }
+                    None => publish(&subscribers, event),
+                }
             }
-            publish(&subscribers, Event::Ended { thread_id: id });
+            // The thread is over: a client that joins while the task is finishing must
+            // hear of no turn after the end.
+            {
+                let mut running = current.lock();
+                *running = None;
+                publish(&subscribers, Event::Ended { thread_id: id });
+            }
         });
         let clients = HashSet::from([self.caller]);
         self.threads.insert(
@@ -190,6 +228,7 @@ impl Server {
                 orphaned: None,
                 unattended: false,
                 done,
+                running,
             },
         );
         Response::Opened { thread_id }
@@ -295,6 +334,13 @@ fn publish(subscribers: &Subscribers, event: Event) {
         .retain(|(_, queue)| queue.send(event.clone()).is_ok());
 }
 
+/// Gives the event to one client, dropping its queue if it is gone.
+fn send_to(subscribers: &Subscribers, client: ClientId, event: Event) {
+    subscribers
+        .lock()
+        .retain(|(id, queue)| *id != client || queue.send(event.clone()).is_ok());
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -336,5 +382,34 @@ mod tests {
 
         assert_eq!(subscribers.lock().len(), 1);
         assert_eq!(stays_events.try_recv().unwrap(), ended("a"));
+    }
+
+    #[test]
+    fn only_the_client_that_joined_hears_what_it_missed() {
+        let subscribers = Subscribers::default();
+        let (joined, mut joined_events) = mpsc::unbounded_channel();
+        let (other, mut other_events) = mpsc::unbounded_channel();
+        subscribers.lock().push((1, joined));
+        subscribers.lock().push((2, other));
+
+        send_to(&subscribers, 1, ended("a"));
+
+        assert_eq!(joined_events.try_recv().unwrap(), ended("a"));
+        assert!(other_events.try_recv().is_err());
+    }
+
+    #[test]
+    fn a_gone_client_targeted_by_itself_is_dropped() {
+        let subscribers = Subscribers::default();
+        let (gone, gone_events) = mpsc::unbounded_channel();
+        let (stays, mut stays_events) = mpsc::unbounded_channel();
+        subscribers.lock().push((1, gone));
+        subscribers.lock().push((2, stays));
+        drop(gone_events);
+
+        send_to(&subscribers, 1, ended("a"));
+
+        assert_eq!(subscribers.lock().len(), 1);
+        assert!(stays_events.try_recv().is_err());
     }
 }

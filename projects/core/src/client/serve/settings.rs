@@ -22,6 +22,16 @@ impl Server {
                 return Ok(Response::Number(saved.into()));
             }
             SettingsRequest::MaxGoalRounds(rounds) => runtime.set_max_goal_rounds(rounds)?,
+            SettingsRequest::ModelTimeout(seconds) => {
+                runtime.set_model_timeout(seconds)?;
+                let saved = runtime.config().current().limits().model_timeout_seconds;
+                return Ok(Response::Number(saved.into()));
+            }
+            SettingsRequest::MaxAttempts(attempts) => {
+                runtime.set_max_attempts(attempts)?;
+                let saved = runtime.config().current().limits().max_attempts;
+                return Ok(Response::Number(saved.into()));
+            }
             SettingsRequest::MemoryChars(chars) => runtime.set_memory_chars(chars)?,
             SettingsRequest::WorkHistoryChars(chars) => {
                 runtime.set_work_history_chars(chars)?;

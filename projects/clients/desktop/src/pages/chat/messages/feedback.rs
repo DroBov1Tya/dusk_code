@@ -1,9 +1,6 @@
 //! Completed questions and background commands keep their own shape in the transcript.
 
-use crate::{
-    ui::{Type, widgets},
-    workspace::Workspace,
-};
+use crate::{ui::Type, workspace::Workspace};
 use dusk_protocol::{thread::JobResult, tools::Answered};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
@@ -11,62 +8,43 @@ use gpui_kit::{
     *,
 };
 
+/// The answers to the agent's questions as one card: a row for each question, its answer
+/// muted under it.
 pub fn answered(key: &str, answers: &[Answered], cx: &App) -> Div {
     let theme = cx.theme();
-    let mut body = div().flex().flex_col().gap_3();
+    let mut card = div()
+        .self_end()
+        .w_full()
+        .max_w(px(600.))
+        .flex()
+        .flex_col()
+        .rounded_xl()
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.secondary)
+        .overflow_hidden();
     for (index, answer) in answers.iter().enumerate() {
-        let mut question = div()
-            .flex()
-            .flex_col()
-            .gap_1()
-            .child(super::super::links::markdown(
-                SharedString::from(format!("question-{key}-{index}")),
-                answer.question.clone(),
-            ));
-        for (option, chosen) in &answer.options {
-            question = question.child(
-                div()
-                    .flex()
-                    .items_start()
-                    .gap_2()
-                    .small()
-                    .text_color(if *chosen {
-                        theme.foreground
-                    } else {
-                        theme.muted_foreground
-                    })
-                    .child(widgets::icon(
-                        if *chosen {
-                            IconName::Check
-                        } else {
-                            IconName::Minus
-                        },
-                        if *chosen {
-                            theme.primary
-                        } else {
-                            theme.muted_foreground
-                        },
-                    ))
-                    .child(div().flex_1().min_w_0().child(option.clone())),
-            );
-        }
-        question = question.when(answer.declined, |row| {
-            row.child(
-                div()
-                    .meta()
-                    .text_color(theme.muted_foreground)
-                    .child("Declined"),
-            )
-        });
-        if !answer.own.is_empty() {
-            question = question.child(super::super::links::markdown(
-                SharedString::from(format!("answer-{key}-{index}")),
-                answer.own.clone(),
-            ));
-        }
-        body = body.child(question);
+        card = card.child(
+            div()
+                .flex()
+                .flex_col()
+                .gap_1()
+                .px_4()
+                .py_2()
+                .when(index > 0, |row| row.border_t_1().border_color(theme.border))
+                .child(super::super::links::markdown(
+                    SharedString::from(format!("question-{key}-{index}")),
+                    answer.question.clone(),
+                ))
+                .children(
+                    answer
+                        .lines()
+                        .into_iter()
+                        .map(|line| div().small().text_color(theme.muted_foreground).child(line)),
+                ),
+        );
     }
-    body
+    card
 }
 
 pub fn job(
