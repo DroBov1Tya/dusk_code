@@ -10,7 +10,7 @@ testing.
 
 - The Workshop reads store format 2 (kind, category, tags, cover, stars, dates) and
   mirrors added under `workshop.sources` in `config.yml`, each pinned to its own key;
-  listings carry a tier (Official, Verified, Community, BuiltIn), sort in the core, offer
+  listings carry a tier (Official, Verified, Community, Local), sort in the core, offer
   semver updates, and "update all" skips updates that ask for more.
 - The terminal client keeps threads in tabs: Alt+T opens one, Alt+W closes the shown one,
   Alt+Left/Right and Alt+1..9 move between them, and `/tab` does the same. Once there are
@@ -23,6 +23,10 @@ testing.
 
 ### Changed
 
+- An answer to the agent's questions is one rounded card in the desktop, browser and
+  terminal clients: a row for each question, the chosen options and your own words muted
+  under it, "Declined" for a refusal. It is read back from the real `ask_user` calls, so
+  text that only looks like an answer stays a plain message.
 - A model call that stays silent can be given up on sooner or later: Advanced settings now
   hold the seconds of silence before a call is dropped and the tries of one call, in every
   client. The defaults are the old 120 seconds and 6 tries.
