@@ -31,8 +31,26 @@ in `resources/`.
 - Comments say why, not what, in English.
 - Only critical tests: security boundaries, parsing of untrusted input, crash durability and
   the thread loop. A test is never weakened to make it pass.
-- One branch per feature, named for its topic; commit subjects read `area: imperative
-  summary`, and the body says why. Add the change to "Unreleased" in `CHANGELOG.md`.
+- Commit subjects read `area: imperative summary`, and the body says why. Add the change as
+  a fragment in `changes/` (see below), never as an edit of `CHANGELOG.md`.
+
+## Branches and releases
+
+- `main` is the one trunk. It is guarded by the `ci` workflow and a GitHub merge queue: a
+  change enters through a pull request that passes the `ci-ok` check, and the queue tests
+  the merged result again.
+- A change lives on a short branch named for its topic, merged soon. Agents work in their
+  own git worktrees. Unfinished work lands in `main` behind a switch that is off, not on a
+  long-lived branch.
+- Each change adds a fragment `changes/<topic>.md`: the first line is the section (`Added`,
+  `Changed`, `Fixed`, `Removed`, `Security`), the rest is the entry. Parallel branches then
+  never conflict in `CHANGELOG.md`; `scripts/changelog.py release X.Y.Z` folds them in.
+- Nightly pre-releases are tags `vX.Y.Z` on `main`.
+- A stable release is cut from a branch `release/X.Y`. A fix lands in `main` first and is
+  then taken over with `git cherry-pick -x <commit>`, so the branch records where it came
+  from.
+- The release workflow decides the kind from the tagged commit: contained in a remote
+  `release/*` branch, it is a full release (`latest`); any other tag is a pre-release.
 
 ## Benchmarks
 

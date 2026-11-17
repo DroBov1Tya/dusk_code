@@ -1,0 +1,101 @@
+# The gate for main and the release branches. A pull request must pass `ci-ok` to enter the
+# merge queue, and the queue runs the same checks again on the merged result (merge_group),
+# so main never holds a commit that was not built and tested.
+name: ci
+
+on:
+  pull_request:
+    branches: [main, "release/**"]
+  merge_group:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  # A newer push to a pull request makes the older run useless; runs on main and in the
+  # queue are never cancelled.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  TOOLCHAIN: "1.99.1" # the desktop client needs a newer Rust than 1.95; see CONTRIBUTING.md
+
+jobs:
+  fmt:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --component rustfmt
+          rustup default "$TOOLCHAIN"
+      - run: cargo fmt --all -- --check
+
+  changes:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Changelog fragments
+        run: python3 scripts/changelog.py check
+
+  # clippy and test share one matrix: each target is built once per job, and the two
+  # runners are the ones releases are built on.
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-15
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-24.04
+    name: check (${{ matrix.target }})
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          rustup toolchain install "$TOOLCHAIN" --profile minimal --component clippy
+          rustup default "$TOOLCHAIN"
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          key: ci-${{ matrix.target }}
+          # Only main writes the cache; pull requests and the queue read it.
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Libraries of the window
+        if: runner.os == 'Linux'
+        # The desktop crate links the system's window libraries. A mirror that does not
+        # answer fails a run; try again a few times.
+        run: |
+          for attempt in 1 2 3; do
+            sudo apt-get update && sudo apt-get install -y -o Acquire::Retries=5 --no-install-recommends \
+              clang cmake pkg-config curl imagemagick \
+              libasound2-dev libfontconfig-dev libwayland-dev libxkbcommon-dev libxkbcommon-x11-dev \
+              libx11-xcb-dev libxcb1-dev libvulkan-dev libssl-dev libzstd-dev && exit 0
+            sleep $((attempt * 20))
+          done
+          exit 1
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+
+  # One name for branch protection and the merge queue to require.
+  ci-ok:
+    if: always()
+    needs: [fmt, changes, check]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: All jobs passed
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          for result in $RESULTS; do
+            [[ "$result" == success ]] || { echo "a job ended as: $result" >&2; exit 1; }
+          done
