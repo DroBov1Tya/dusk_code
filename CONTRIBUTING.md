@@ -67,9 +67,11 @@ in `resources/`.
 
 ## Branches and releases
 
-- `main` is the one trunk. It is guarded by the `ci` workflow and a GitHub merge queue: a
-  change enters through a pull request that passes the `ci-ok` check, and the queue tests
-  the merged result again.
+- The model is rust-lang/rust's: `main` is the trunk, `beta` and `stable` are promoted
+  from it. All three are protected and take changes only through a pull request that passes
+  the `ci` workflow's `ci-ok` check on an up-to-date branch. rust-lang uses bors, a merge
+  queue; GitHub's queue is not available for a user-owned repository, so required `ci-ok`
+  with "require branches to be up to date" stands in for it.
 - A change lives on a short branch named for its topic, merged soon. Agents work in their
   own git worktrees. Unfinished work lands in `main` behind a switch that is off, not on a
   long-lived branch.
@@ -77,11 +79,18 @@ in `resources/`.
   `Changed`, `Fixed`, `Removed`, `Security`), the rest is the entry. Parallel branches then
   never conflict in `CHANGELOG.md`; `scripts/changelog.py release X.Y.Z` folds them in.
 - Nightly pre-releases are tags `vX.Y.Z` on `main`.
-- A stable release is cut from a branch `release/X.Y`. A fix lands in `main` first and is
-  then taken over with `git cherry-pick -x <commit>`, so the branch records where it came
-  from.
-- The release workflow decides the kind from the tagged commit: contained in a remote
-  `release/*` branch, it is a full release (`latest`); any other tag is a pre-release.
+- Each cycle `main` is promoted to `beta`, and `beta` to `stable`. rust-lang resets the
+  branch by force; ours refuse force-push, so promotion is a merge commit, made on a
+  branch and merged by a pull request:
+  `git switch -c promote-beta origin/beta && git merge --no-ff origin/main`, then
+  `git switch -c promote-stable origin/stable && git merge --no-ff origin/beta`.
+- A fix lands in `main` first. To ship it earlier it is backported to `beta` (and a point
+  release to `stable`) by a pull request with `git cherry-pick -x <commit>`, so the branch
+  records where it came from.
+- The release workflow decides the kind from the tagged commit: contained in `origin/stable`,
+  a full release (`latest`); else contained in `origin/beta`, a pre-release titled
+  "vX.Y.Z (beta)"; else a nightly pre-release. The tag is always `vX.Y.Z`, equal to the Cargo
+  version.
 
 ## Benchmarks
 
