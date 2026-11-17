@@ -20,7 +20,8 @@ pub use plugins::{Plugged, PluginConfig};
 pub use providers::{ApiKey, BalanceApi, Price, ProviderConfig, ProviderKind};
 pub use sections::{
     Appearance, ApprovalPolicy, DEFAULT_MODEL_TIMEOUT_SECONDS, Limits, Logging, MAX_ATTEMPTS,
-    MAX_MODEL_TIMEOUT_SECONDS, MIN_ATTEMPTS, MIN_MODEL_TIMEOUT_SECONDS, Memory, ThreadConfig,
-    Traces, WorkHistory,
+    MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
+    MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, Memory, ThreadConfig, Traces,
+    WorkHistory,
 };
 pub use workshop::{Mirror, Workshop, is_word};

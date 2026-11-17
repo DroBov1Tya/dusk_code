@@ -38,6 +38,7 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
         chatgpt: runtime.chatgpt(),
         plugin_parts: runtime.plugin_parts(),
         limits: provider.and_then(|settings| crate::providers::Account::of(settings).limits()),
+        provider_health: runtime.provider_health(),
         chatgpt_model: provider
             .is_some_and(|settings| settings.kind == crate::config::ProviderKind::ChatGpt),
         artifacts_dir: runtime.paths().artifacts_dir(),
@@ -70,6 +71,7 @@ pub fn blank_status() -> Status {
         chatgpt_model: false,
         plugin_parts: Arc::default(),
         limits: None,
+        provider_health: Vec::new(),
         artifacts_dir: PathBuf::new(),
         workspace_dir: PathBuf::new(),
     }

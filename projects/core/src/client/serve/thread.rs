@@ -35,21 +35,34 @@ impl Server {
             }
             ThreadRequest::Resume { thread_id, cwd } => {
                 // A thread another client keeps open runs on; this one just joins it.
-                if let Some(open) = self.threads.get_mut(&thread_id)
-                    && !open.forward.is_finished()
+                if self
+                    .threads
+                    .get(&thread_id)
+                    .is_some_and(|open| !open.forward.is_finished())
                 {
+                    // Read before the lock, which no wait may hold.
+                    let failure = runtime.last_failure(&thread_id).await?;
+                    let Some(open) = self.threads.get_mut(&thread_id) else {
+                        anyhow::bail!("thread has ended");
+                    };
                     open.clients.insert(self.caller);
                     open.orphaned = None;
                     // This client missed the turn's start; it learns the turn runs
-                    // without a fold boundary. The lock keeps it before the end.
+                    // without a fold boundary. The lock keeps it before the end. With no
+                    // turn running, it sees why the newest one failed, as the others did.
                     let running = open.running.lock();
-                    if let Some(turn) = running.clone() {
+                    let event = match (running.clone(), failure) {
+                        (Some(turn), _) => Some(ThreadEvent::TurnRunning(turn)),
+                        (None, Some(failure)) => Some(ThreadEvent::TurnFailed(failure)),
+                        (None, None) => None,
+                    };
+                    if let Some(event) = event {
                         send_to(
                             &self.subscribers,
                             self.caller,
                             Event::Thread {
                                 thread_id: thread_id.clone(),
-                                event: Box::new(ThreadEvent::TurnRunning(turn)),
+                                event: Box::new(event),
                             },
                         );
                     }

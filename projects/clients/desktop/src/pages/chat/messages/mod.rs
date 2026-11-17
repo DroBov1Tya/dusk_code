@@ -337,15 +337,16 @@ mod tests {
             result: ToolResult::text("done".into()),
         });
         chat.apply(ThreadEvent::Retrying {
-            attempt: 2,
+            attempt: 1,
             error: "timeout".into(),
-            kind: dusk_protocol::model::ProviderErrorKind::TimedOut,
+            kind: dusk_protocol::model::ProviderErrorKind::Overloaded,
             wait_ms: 1000,
-            max_attempts: 3,
+            max_attempts: Some(3),
         });
 
         assert_eq!(layout(&chat), [(0, 1), (1, 1)]);
-        assert!(matches!(&chat.items[1], Item::Notice(text) if text == "Retrying (2): timeout"));
+        assert!(matches!(&chat.items[1], Item::Notice(text)
+            if text == "Provider overloaded: timeout; trying again, attempt 2 of 3"));
 
         chat.apply(ThreadEvent::ToolStarted(call("b")));
         assert_eq!(layout(&chat), [(0, 1), (1, 1), (2, 3)]);

@@ -11,8 +11,9 @@ mod tests;
 use super::sections::{is_zero, yes};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
-    MAX_MODEL_TIMEOUT_SECONDS, MIN_ATTEMPTS, MIN_MODEL_TIMEOUT_SECONDS, McpServerConfig, Memory,
-    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory, Workshop,
+    MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
+    MIN_MODEL_TIMEOUT_SECONDS, MIN_RETRY_UNREACHABLE_SECONDS, McpServerConfig, Memory, Plugged,
+    PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory, Workshop,
 };
 use crate::release::update::Channel;
 use anyhow::{Context, Result, anyhow, ensure};
@@ -287,6 +288,12 @@ impl Config {
         ensure!(
             (MIN_ATTEMPTS..=MAX_ATTEMPTS).contains(&self.limits.max_attempts),
             "limits.max_attempts must be between {MIN_ATTEMPTS} and {MAX_ATTEMPTS}"
+        );
+        ensure!(
+            (MIN_RETRY_UNREACHABLE_SECONDS..=MAX_RETRY_UNREACHABLE_SECONDS)
+                .contains(&self.limits.retry_unreachable_seconds),
+            "limits.retry_unreachable_seconds must be between {MIN_RETRY_UNREACHABLE_SECONDS} \
+             and {MAX_RETRY_UNREACHABLE_SECONDS}"
         );
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,

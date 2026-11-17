@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use super::{
     Message, State,
+    failure::{TurnFailure, columns},
     messages::{NewMessage, insert_message},
     timestamp_ms,
 };
@@ -24,7 +25,17 @@ pub use dusk_protocol::thread::{Turn, TurnStatus};
 pub enum TurnOutcome {
     Completed(TurnAnswer),
     Interrupted(Option<TurnAnswer>),
-    Failed(String),
+    Failed(TurnFailure),
+}
+
+impl TurnOutcome {
+    /// A turn that failed on something other than a model call.
+    pub fn failed(error: impl Into<String>) -> Self {
+        Self::Failed(TurnFailure {
+            error: error.into(),
+            provider: None,
+        })
+    }
 }
 
 /// What the agent wrote, stored as an assistant message.
@@ -243,10 +254,14 @@ impl State {
 
     /// Records how a running turn ended, together with its answer message.
     pub async fn finish_turn(&self, turn_id: &str, outcome: TurnOutcome) -> Result<Turn> {
-        let (status, answer, error) = match outcome {
+        let (status, answer, failure) = match outcome {
             TurnOutcome::Completed(answer) => (TurnStatus::Completed, Some(answer), None),
             TurnOutcome::Interrupted(answer) => (TurnStatus::Interrupted, answer, None),
-            TurnOutcome::Failed(error) => (TurnStatus::Failed, None, Some(error)),
+            TurnOutcome::Failed(failure) => (TurnStatus::Failed, None, Some(failure)),
+        };
+        let (kind, attempts) = match &failure {
+            Some(failure) => columns(failure)?,
+            None => (None, None),
         };
         let timestamp = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin turn finish")?;
@@ -265,12 +280,14 @@ impl State {
         };
         let row = sqlx::query(
             "UPDATE turns SET status = ?, response_message_id = ?, error_message = ?,
-                finished_at = MAX(started_at, ?)
+                error_kind = ?, attempts = ?, finished_at = MAX(started_at, ?)
              WHERE turn_id = ? RETURNING *",
         )
         .bind(status.as_str())
         .bind(message.as_ref().map(|message| &message.message_id))
-        .bind(error)
+        .bind(failure.map(|failure| failure.error))
+        .bind(kind)
+        .bind(attempts)
         .bind(timestamp)
         .bind(turn_id)
         .fetch_one(&mut *transaction)

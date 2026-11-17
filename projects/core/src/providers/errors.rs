@@ -135,6 +135,7 @@ fn stream_error_kind(kind: &str) -> ProviderErrorKind {
 }
 
 /// Whether `error` or anything it wraps is a failure that may pass when sent again.
+#[cfg(test)]
 pub fn is_transient(error: &anyhow::Error) -> bool {
     provider_error(error).is_some_and(|failure| failure.kind.is_retryable())
 }

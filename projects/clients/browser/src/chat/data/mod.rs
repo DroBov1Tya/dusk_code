@@ -313,7 +313,7 @@ impl Agent {
             ThreadEvent::Model(ModelEvent::Text(_)) => AgentState::Writing,
             ThreadEvent::ToolStarted(call) => AgentState::Tool(call.name.clone()),
             ThreadEvent::Idle => AgentState::Done,
-            ThreadEvent::Failed(_) => AgentState::Failed,
+            ThreadEvent::Failed(_) | ThreadEvent::TurnFailed(_) => AgentState::Failed,
             _ => return,
         };
     }

@@ -9,7 +9,9 @@ mod usage;
 
 pub use call::ToolCall;
 pub use effort::Effort;
-pub use error::ProviderErrorKind;
-pub use provider::{Balance, Model, PlanWindow, ProviderStatus, RateLimit, RateLimits};
+pub use error::{ProviderErrorKind, ProviderFailure};
+pub use provider::{
+    Balance, CallHealth, Model, PlanWindow, ProviderHealth, ProviderStatus, RateLimit, RateLimits,
+};
 pub use stream::{FinishReason, ModelEvent};
 pub use usage::{Cost, CostSource, Usage};

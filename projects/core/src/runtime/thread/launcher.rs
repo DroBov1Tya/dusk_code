@@ -50,6 +50,8 @@ pub struct Launcher {
     pub threads: Arc<parking_lot::Mutex<tokio::task::JoinSet<()>>>,
     /// What plugins run when something happens in a thread.
     pub hooks: Arc<crate::plugins::Hooks>,
+    /// How each provider's calls go, learned by every thread's calls.
+    pub health: Arc<crate::providers::Health>,
     /// Its chats leave nothing behind: the database is in memory, their files are in the
     /// system's temporary folder, and they write no memory.
     pub temporary: bool,
@@ -93,6 +95,7 @@ impl Launcher {
             ends_when_idle: false,
             lock: ThreadLock::take(workspace)?,
             hooks: Arc::clone(&self.hooks),
+            health: Arc::clone(&self.health),
         })
     }
 

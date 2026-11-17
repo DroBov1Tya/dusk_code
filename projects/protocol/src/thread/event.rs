@@ -4,7 +4,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::agent::AgentPhase;
 use crate::model::{Effort, ModelEvent, ProviderErrorKind, ToolCall};
-use crate::thread::{Compaction, Goal, LocalUnsent, Message, Task, ThreadTokens, Turn};
+use crate::thread::{
+    Compaction, Goal, LocalUnsent, Message, Task, ThreadTokens, Turn, TurnFailure,
+};
 use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ThreadEvent {
@@ -16,8 +18,9 @@ pub enum ThreadEvent {
     },
     /// Saved locally, outside the model queue, until the client explicitly resends it.
     LocalUnsent(LocalUnsent),
-    /// The selected provider could not answer, or no model is selected.
-    ProviderUnavailable,
+    /// No model is chosen, so a message waits as local unsent until one is. A provider
+    /// that fails a turn says so in `TurnFailed`.
+    NoModel,
     Queued {
         message_id: String,
     },
@@ -32,13 +35,19 @@ pub enum ThreadEvent {
     /// what the client read from history belongs to the same turn.
     TurnRunning(Turn),
     /// A model call failed in a way that may pass; the next attempt follows after a pause.
+    /// A client keeps one row for it that each of these replaces; the first `Model` event
+    /// of the call is the sign it answered (see `transcript::retry_row`).
     Retrying {
+        /// The attempt that failed, from 1.
         attempt: u32,
+        /// Safe to show, like `TurnFailure::error`.
         error: String,
         kind: ProviderErrorKind,
         /// The pause before the next attempt.
         wait_ms: u64,
-        max_attempts: u32,
+        /// None when the call is tried until a time budget runs out instead, as for a
+        /// provider that cannot be reached or does not answer in time.
+        max_attempts: Option<u32>,
     },
     /// Everything the model streams: reasoning, text, tool calls, usage.
     Model(ModelEvent),
@@ -47,6 +56,9 @@ pub enum ThreadEvent {
         call_id: String,
         result: ToolResult,
     },
+    /// The turn ended on an error: the one row that says why. It comes right before that
+    /// turn's `TurnFinished`, and again when a chat whose newest turn failed is opened.
+    TurnFailed(TurnFailure),
     TurnFinished(Turn),
     /// The thread got a name: the start of its first message at once, then one the model
     /// gives after the first turn.
@@ -156,6 +168,7 @@ pub enum ThreadEvent {
     /// Nothing is running and nothing will start until the next message.
     Idle,
     /// The thread stopped on an error it could not handle, such as a database failure.
+    /// A turn that fails says so in `TurnFailed` instead.
     Failed(String),
 }
 

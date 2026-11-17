@@ -452,6 +452,8 @@ mod tests {
              DROP TABLE thread_projects;
              DROP TABLE sources;
              ALTER TABLE threads DROP COLUMN auto_title;
+             ALTER TABLE turns DROP COLUMN error_kind;
+             ALTER TABLE turns DROP COLUMN attempts;
              DELETE FROM _sqlx_migrations WHERE version >= 12;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version = 2;
              INSERT INTO _sqlx_migrations (version, description, success, checksum,
@@ -490,6 +492,8 @@ mod tests {
              DROP TABLE thread_projects;
              DROP TABLE sources;
              ALTER TABLE threads DROP COLUMN auto_title;
+             ALTER TABLE turns DROP COLUMN error_kind;
+             ALTER TABLE turns DROP COLUMN attempts;
              DELETE FROM _sqlx_migrations WHERE version >= 13;
              UPDATE _sqlx_migrations SET checksum = X'00' WHERE version IN (2, 7);",
         )
@@ -586,7 +590,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

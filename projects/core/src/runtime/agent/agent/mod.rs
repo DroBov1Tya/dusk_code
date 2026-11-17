@@ -5,6 +5,7 @@
 mod calls;
 mod pictures;
 mod report;
+mod retry;
 mod step;
 #[cfg(test)]
 mod tests;
@@ -22,7 +23,7 @@ use crate::{
     tools::{ToolRegistry, ToolScope},
 };
 use parking_lot::Mutex;
-use std::{path::PathBuf, sync::Arc, time::Duration};
+use std::{path::PathBuf, sync::Arc};
 use tokio::sync::mpsc;
 
 /// The rhythm of a turn: think once, then act. The first step plans and a step after
@@ -45,11 +46,6 @@ impl Pace {
         }
     }
 }
-
-/// Doubles before each further attempt, up to `MAX_RETRY_DELAY`.
-const FIRST_RETRY_DELAY: Duration = Duration::from_secs(1);
-
-const MAX_RETRY_DELAY: Duration = Duration::from_secs(30);
 
 pub struct Agent {
     pub state: Arc<State>,
@@ -81,6 +77,8 @@ pub struct Agent {
     pub events: mpsc::UnboundedSender<ThreadEvent>,
     /// What plugins run when something happens here.
     pub hooks: Arc<Hooks>,
+    /// How each provider's calls go, shared by every thread.
+    pub health: Arc<crate::providers::Health>,
 }
 
 /// How one step ended.
@@ -138,15 +136,4 @@ fn missing_tools(messages: &[ChatMessage], tools: &[ToolSpec]) -> Option<String>
          have, or ask an agent that has them.",
         missing.join(", ")
     ))
-}
-
-/// Exponential backoff with up to a quarter of jitter, so agents that failed together do
-/// not all come back at the same moment.
-fn retry_delay(attempt: u32) -> Duration {
-    let base = FIRST_RETRY_DELAY
-        .saturating_mul(2u32.saturating_pow(attempt - 1))
-        .min(MAX_RETRY_DELAY);
-    // Without randomness the wait is only exact, which is still a wait.
-    let noise = getrandom::u32().unwrap_or(0);
-    base + base.mul_f64(f64::from(noise % 1000) / 4000.0)
 }

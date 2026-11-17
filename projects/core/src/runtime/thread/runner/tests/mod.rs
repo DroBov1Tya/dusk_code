@@ -48,6 +48,8 @@ enum Step {
     Length,
     /// The call fails before any output, in a way worth retrying.
     Fail,
+    /// The call cannot reach the provider at all.
+    Unreachable,
     /// The call fails before any output, in a way not worth retrying.
     Reject,
     /// The connection drops where this step stands.
@@ -84,6 +86,10 @@ impl ModelProvider for FakeProvider {
         if let Some(Step::Fail) = script.first() {
             let busy = ProviderError::new(ProviderErrorKind::Overloaded, "server busy");
             return Box::pin(async move { Err(busy.into()) });
+        }
+        if let Some(Step::Unreachable) = script.first() {
+            let lost = ProviderError::new(ProviderErrorKind::Unreachable, "could not reach host");
+            return Box::pin(async move { Err(lost.into()) });
         }
         if let Some(Step::Reject) = script.first() {
             return Box::pin(async { Err(anyhow::anyhow!("bad request")) });
@@ -145,7 +151,7 @@ impl ChatStream for FakeStream {
                     let kind = ProviderErrorKind::Interrupted;
                     return Err(ProviderError::new(kind, "connection reset").into());
                 }
-                Some(Step::Fail | Step::Reject) | None => None,
+                Some(Step::Fail | Step::Unreachable | Step::Reject) | None => None,
             })
         })
     }
@@ -251,6 +257,7 @@ fn runner_with(
         ends_when_idle: false,
         lock: ThreadLock::take(&root).unwrap(),
         hooks: Arc::default(),
+        health: Arc::default(),
     })
 }
 
@@ -273,4 +280,5 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
 }
 
 mod goals;
+mod retries;
 mod turns;

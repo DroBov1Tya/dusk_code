@@ -91,7 +91,7 @@ impl Agent {
             let end = match self.step(turn, inbox, &mut received).await {
                 Ok(end) => end,
                 Err(error) => {
-                    outcome = TurnOutcome::Failed(format!("{error:#}"));
+                    outcome = TurnOutcome::failed(format!("{error:#}"));
                     break;
                 }
             };
@@ -100,7 +100,7 @@ impl Agent {
                 StepEnd::CalledTools => match self.compact_if_needed(Some(turn), inbox).await {
                     None => {
                         if let Err(error) = self.take_agent_messages().await {
-                            outcome = TurnOutcome::Failed(format!("{error:#}"));
+                            outcome = TurnOutcome::failed(format!("{error:#}"));
                             break;
                         }
                         continue;
@@ -126,6 +126,10 @@ impl Agent {
                 self.thread_id
             );
         }
+        let failure = match &outcome {
+            TurnOutcome::Failed(failure) => Some(failure.clone()),
+            _ => None,
+        };
         let turn = self.state.finish_turn(&turn.turn_id, outcome).await?;
         let took = turn.finished_at.unwrap_or(turn.started_at) - turn.started_at;
         match &turn.error_message {
@@ -153,11 +157,10 @@ impl Agent {
         }
         let details = json!({ "status": format!("{status:?}").to_lowercase() });
         // A turn whose step failed ends normally for the runner; without this the clients
-        // would show it as done with no word of why there is no answer.
-        if status == TurnStatus::Failed
-            && let Some(error) = &turn.error_message
-        {
-            self.emit(ThreadEvent::Failed(error.clone()));
+        // would show it as done with no word of why there is no answer. It is the one
+        // event of the failure: `Failed` stays for a thread that stops.
+        if let Some(failure) = failure {
+            self.emit(ThreadEvent::TurnFailed(failure));
         }
         self.emit(ThreadEvent::TurnFinished(turn));
         self.report_tokens().await;

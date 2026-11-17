@@ -58,6 +58,7 @@ pub struct ThreadSetup {
     pub ends_when_idle: bool,
     pub lock: ThreadLock,
     pub hooks: Arc<crate::plugins::Hooks>,
+    pub health: Arc<crate::providers::Health>,
 }
 
 impl ThreadRunner {
@@ -91,6 +92,7 @@ impl ThreadRunner {
             depth: setup.depth,
             events,
             hooks: setup.hooks,
+            health: setup.health,
         };
         let runner = Self {
             agent,
@@ -144,6 +146,13 @@ impl ThreadRunner {
                 note,
                 started: None,
             });
+        }
+        // A chat whose newest turn failed shows the same row as when it ended. An agent's
+        // old failure is not told again: its chat would take it for a new one.
+        if self.agent.depth == 0
+            && let Some(failure) = self.agent.state.last_failure(&self.agent.thread_id).await?
+        {
+            self.agent.emit(ThreadEvent::TurnFailed(failure));
         }
         loop {
             if self.ends_when_idle && self.mailboxes.is_closed() {

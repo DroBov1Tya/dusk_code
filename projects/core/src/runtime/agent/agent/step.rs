@@ -1,18 +1,18 @@
 //! One step of a turn: a model call and the tools it asks for.
 
+use super::calls::Called;
 use super::{Agent, StepEnd, insert_project, interrupted, missing_tools, recorded_reasoning};
 use crate::runtime::agent::Inbox;
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
     message::sources::{SourceBlock, ThreadSources},
     providers::{
-        ChatMessage, ChatRequest, ToolSpec, is_output_limit, is_transient, is_unsupported_pictures,
-        text_calls,
+        ChatMessage, ChatRequest, ToolSpec, is_output_limit, is_unsupported_pictures, text_calls,
     },
     runtime::goal::action as goal,
     state::{
-        CallPurpose, GoalStatus, MessageRole, ModelCall, Turn, TurnAnswer, TurnOutcome,
-        estimate_tokens,
+        CallPurpose, GoalStatus, MessageRole, ModelCall, ProviderFailure, Turn, TurnAnswer,
+        TurnFailure, TurnOutcome, estimate_tokens,
     },
 };
 use anyhow::{Context, Result};
@@ -77,7 +77,7 @@ impl Agent {
         let attached = project + sources.as_ref().map_or(0, SourceBlock::tokens);
         // Tool results grow the context within a turn, so every step checks it.
         if let Some(error) = self.context_too_large(&conversation, &tools, attached) {
-            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+            return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
         }
         let mut messages = conversation.chat_messages();
         if with_pictures {
@@ -110,7 +110,11 @@ impl Agent {
             cache_key: Some(&self.thread_id),
         };
         let mut called = self.call_model(&choice, request, &config, inbox).await;
-        if matches!(&called, Ok((_, Ok(Err(error)))) if is_unsupported_pictures(error)) {
+        let pictures_refused = matches!(
+            &called,
+            Ok(Called { generated: Ok(Err(error)), .. }) if is_unsupported_pictures(error)
+        );
+        if pictures_refused {
             self.refuse_pictures(&choice.model.id, &mut messages);
             let request = ChatRequest {
                 model: &choice.model.id,
@@ -122,7 +126,11 @@ impl Agent {
             };
             called = self.call_model(&choice, request, &config, inbox).await;
         }
-        let (output, generated) = match called {
+        let Called {
+            output,
+            generated,
+            attempts,
+        } = match called {
             Ok(called) => called,
             Err(stop) => return Ok(StepEnd::Stopped(stop, TurnOutcome::Interrupted(None))),
         };
@@ -158,7 +166,7 @@ impl Agent {
             };
             if let Err(error) = self.state.record_usage(&call, usage).await {
                 let error = format!("cannot store the model usage: {error:#}");
-                return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+                return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
             }
         }
         let reasoning = recorded_reasoning(&config, &output);
@@ -206,19 +214,25 @@ impl Agent {
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }
             Ok(Err(error)) => {
-                if let Some(failure) = crate::providers::provider_error(&error) {
+                let provider = crate::providers::provider_error(&error).map(|failure| {
                     tracing::warn!(
                         kind = ?failure.kind,
                         status = failure.status,
                         cause = failure.cause.as_deref(),
+                        attempts,
                         "model call failed: {}",
                         failure.message
                     );
-                }
-                if is_transient(&error) {
-                    self.emit(ThreadEvent::ProviderUnavailable);
-                }
-                return Ok(StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))));
+                    ProviderFailure {
+                        kind: failure.kind,
+                        attempts,
+                    }
+                });
+                let error = format!("{error:#}");
+                return Ok(StepEnd::Answered(TurnOutcome::Failed(TurnFailure {
+                    error,
+                    provider,
+                })));
             }
             Ok(Ok(calls)) if calls.is_empty() => {
                 return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
@@ -232,10 +246,10 @@ impl Agent {
             .record_tool_calls(&turn.turn_id, answer, calls.clone());
         if let Err(error) = recorded.await {
             let error = format!("cannot store the tool calls: {error:#}");
-            return Ok(StepEnd::Answered(TurnOutcome::Failed(error)));
+            return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
         }
         Ok(match self.call_tools(turn, &calls, &config, inbox).await {
-            Err(error) => StepEnd::Answered(TurnOutcome::Failed(format!("{error:#}"))),
+            Err(error) => StepEnd::Answered(TurnOutcome::failed(format!("{error:#}"))),
             Ok(Some(stop)) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
             Ok(None) => StepEnd::CalledTools,
         })
