@@ -14,16 +14,6 @@ use serde_json::json;
 use tracing::{info, warn};
 
 impl Agent {
-    /// Marks turns left running by a stopped process as interrupted, and an agent that
-    /// was at work then as paused.
-    pub async fn recover(&self) -> Result<()> {
-        self.state.interrupt_running_turns(&self.thread_id).await?;
-        if self.phase().await.is_some_and(AgentPhase::is_open) {
-            self.runtime_phase(AgentPhase::Paused).await;
-        }
-        self.state.recover_goal_verification(&self.thread_id).await
-    }
-
     /// Starts a turn when something is queued and the context fits the input limit.
     pub async fn start_turn(&self) -> Result<Option<Turn>> {
         if self.model.current().is_none() {
@@ -72,15 +62,25 @@ impl Agent {
 
     /// Runs the turn to its end and records it. Returns why it stopped early, if it did,
     /// and how it ended.
+    pub async fn run_turn(
+        &self,
+        turn: &Turn,
+        inbox: &mut Inbox,
+    ) -> Result<(Option<Stop>, TurnStatus)> {
+        self.run_turn_from(turn, inbox, None).await
+    }
+
+    /// The same, for a turn whose step already ended as `first` says.
     #[tracing::instrument(
         name = "turn",
         skip_all,
         fields(thread = %turn.thread_id, turn = %turn.turn_id, depth = self.depth)
     )]
-    pub async fn run_turn(
+    pub(super) async fn run_turn_from(
         &self,
         turn: &Turn,
         inbox: &mut Inbox,
+        mut first: Option<StepEnd>,
     ) -> Result<(Option<Stop>, TurnStatus)> {
         // The user's stop and the context's compaction end a long run, not a step count.
         let outcome;
@@ -88,7 +88,11 @@ impl Agent {
         let mut received = Vec::new();
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
-            let end = match self.step(turn, inbox, &mut received).await {
+            let step = match first.take() {
+                Some(end) => Ok(end),
+                None => self.step(turn, inbox, &mut received).await,
+            };
+            let end = match step {
                 Ok(end) => end,
                 Err(error) => {
                     outcome = TurnOutcome::failed(format!("{error:#}"));

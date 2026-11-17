@@ -248,10 +248,6 @@ impl Agent {
             let error = format!("cannot store the tool calls: {error:#}");
             return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
         }
-        Ok(match self.call_tools(turn, &calls, &config, inbox).await {
-            Err(error) => StepEnd::Answered(TurnOutcome::failed(format!("{error:#}"))),
-            Ok(Some(stop)) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
-            Ok(None) => StepEnd::CalledTools,
-        })
+        Ok(self.run_calls(turn, &calls, &config, inbox).await)
     }
 }

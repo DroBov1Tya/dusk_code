@@ -143,8 +143,8 @@ impl Runtime {
     }
 
     /// Picks a stored thread up again, with its tools working in `cwd`. What it left
-    /// unfinished is closed first: a running turn ends as interrupted, and messages sent
-    /// before a crash are taken in.
+    /// unfinished is settled first: a running turn goes on or waits for the user, and
+    /// messages sent before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
         let launcher = self.of(thread_id).await;
         launcher.resume_thread(thread_id, cwd).await

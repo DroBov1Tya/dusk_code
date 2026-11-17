@@ -5,11 +5,14 @@
 mod calls;
 mod pictures;
 mod report;
+mod resume;
 mod retry;
 mod step;
 #[cfg(test)]
 mod tests;
 mod turn;
+
+pub use resume::{Decision, Recovered};
 
 use super::Stop;
 use crate::plugins::Hooks;

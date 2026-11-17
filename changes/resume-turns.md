@@ -1,0 +1,2 @@
+Added
+A turn cut off by a restart now goes on where it stopped instead of ending as interrupted: a call that may simply run again is run, and one that may already have taken effect is never repeated without asking (Continue, Check first or Stop); an agent in that case stops and its chat is told. A turn left more than `limits.resume_within_seconds` (an hour by default) asks before it spends tokens, and an interrupted goal review runs again while attempts remain. Calls skipped because the same error kept coming back now say so instead of blaming the user.

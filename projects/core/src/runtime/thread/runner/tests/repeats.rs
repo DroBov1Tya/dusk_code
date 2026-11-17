@@ -214,7 +214,7 @@ async fn the_same_call_notice_is_an_event_with_the_switch_off() {
 }
 
 /// Once the same error came back too often, the rest of the step's calls are not run:
-/// each gets the result a stop by the user gives them.
+/// each gets a result that says why.
 #[tokio::test]
 async fn the_calls_after_the_stop_are_not_run() {
     let mut scripts: Vec<_> = (1..=7).map(missing).collect();
@@ -236,7 +236,10 @@ async fn the_calls_after_the_stop_are_not_run() {
     assert_eq!(results.len(), 10);
     assert!(results[7].contains("the turn stops here"), "{}", results[7]);
     for skipped in &results[8..] {
-        assert_eq!(skipped, "not run: the user interrupted the turn");
+        assert_eq!(
+            skipped,
+            "not run: the turn stopped because the same error kept coming back"
+        );
     }
 }
 

@@ -8,7 +8,7 @@ use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
     message::commands,
-    state::{PendingMessage, State, TurnStatus},
+    state::{PendingMessage, State, Turn, TurnStatus},
     tools::{ToolRegistry, ToolScope},
 };
 use anyhow::Result;
@@ -16,6 +16,7 @@ use parking_lot::Mutex;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
 
+use super::resume::Restart;
 use super::{ThreadInput, ThreadOutput};
 
 /// Foreign runtimes cannot signal this inbox. Poll only while their jobs could
@@ -25,7 +26,7 @@ const FOREIGN_JOB_POLL: Duration = Duration::from_secs(2);
 /// Runs one thread; `Runtime` gives each active thread its own task with one of these.
 pub struct ThreadRunner {
     pub agent: Agent,
-    inbox: Inbox,
+    pub(super) inbox: Inbox,
     pub mailboxes: Arc<Mailboxes>,
     ends_when_idle: bool,
     /// The next automatic round waits for dependency completion, not a timer.
@@ -134,7 +135,7 @@ impl ThreadRunner {
     }
 
     async fn serve(&mut self) -> Result<()> {
-        self.agent.recover().await?;
+        let recovered = self.agent.recover().await?;
         // The client sees the context size and the goal before the first turn, too.
         self.agent.report_tokens().await;
         if self.agent.depth == 0
@@ -154,6 +155,13 @@ impl ThreadRunner {
         {
             self.agent.emit(ThreadEvent::TurnFailed(failure));
         }
+        // A turn a restart cut off goes on before anything sent meanwhile is taken in,
+        // which would come between its step's calls and their results.
+        match self.take_up(recovered).await? {
+            Restart::GoOn(turn) => self.run_queued(Some(turn)).await?,
+            Restart::Idle => {}
+            Restart::Closed => return Ok(()),
+        }
         loop {
             if self.ends_when_idle && self.mailboxes.is_closed() {
                 return Ok(());
@@ -171,7 +179,7 @@ impl ThreadRunner {
                 continue;
             }
             self.take_in().await?;
-            self.run_queued().await?;
+            self.run_queued(None).await?;
             if self.has_pending().await? {
                 continue;
             }
@@ -249,38 +257,48 @@ impl ThreadRunner {
     /// The context is compacted first when it has grown too large. What was sent
     /// meanwhile is taken in after each turn, so the next one answers it.
     /// An active goal starts the next turn itself once nothing else is queued and
-    /// its dependencies have delivered their results.
-    async fn run_queued(&mut self) -> Result<()> {
+    /// its dependencies have delivered their results. A `resumed` turn runs first.
+    async fn run_queued(&mut self, mut resumed: Option<Turn>) -> Result<()> {
         let mut ran = false;
         let mut failed = false;
         loop {
-            let stop = match self.agent.compact_if_needed(None, &mut self.inbox).await {
-                Some(stop) => Some(stop),
-                None => match self.agent.start_turn().await? {
-                    Some(turn) => {
-                        ran = true;
-                        let (stop, status) = self.agent.run_turn(&turn, &mut self.inbox).await?;
-                        failed = status == TurnStatus::Failed;
-                        match stop {
-                            Some(stop) => Some(stop),
-                            None => self.agent.name_thread(&mut self.inbox).await,
-                        }
-                    }
-                    // Only a turn that ran goes on to the next round: a context too
-                    // large to start one would start none forever.
-                    // A failing turn would fail again: the goal waits for the user.
-                    None if ran && failed => {
-                        self.pause_goal("the last turn failed").await?;
-                        return Ok(());
-                    }
-                    None if (ran || self.goal_waiting || self.verification_pending().await?)
-                        && self.next_goal_round().await? =>
-                    {
-                        ran = false;
-                        continue;
-                    }
-                    None => return Ok(()),
+            let turn = match resumed.take() {
+                // It goes on as it stood: a compaction would cut its step in two.
+                Some(turn) => Ok(Some((turn, true))),
+                None => match self.agent.compact_if_needed(None, &mut self.inbox).await {
+                    Some(stop) => Err(stop),
+                    None => Ok(self.agent.start_turn().await?.map(|turn| (turn, false))),
                 },
+            };
+            let stop = match turn {
+                Err(stop) => Some(stop),
+                Ok(Some((turn, resumes))) => {
+                    ran = true;
+                    let (stop, status) = match resumes {
+                        true => self.agent.resume_turn(&turn, &mut self.inbox).await?,
+                        false => self.agent.run_turn(&turn, &mut self.inbox).await?,
+                    };
+                    failed = status == TurnStatus::Failed;
+                    match stop {
+                        Some(stop) => Some(stop),
+                        None => self.agent.name_thread(&mut self.inbox).await,
+                    }
+                }
+                // Only a turn that ran goes on to the next round: a context too
+                // large to start one would start none forever.
+                // A failing turn would fail again: the goal waits for the user.
+                Ok(None) if ran && failed => {
+                    self.pause_goal("the last turn failed").await?;
+                    return Ok(());
+                }
+                Ok(None)
+                    if (ran || self.goal_waiting || self.verification_pending().await?)
+                        && self.next_goal_round().await? =>
+                {
+                    ran = false;
+                    continue;
+                }
+                Ok(None) => return Ok(()),
             };
             self.take_in().await?;
             if stop == Some(Stop::Cancelled) {
@@ -358,7 +376,7 @@ impl ThreadRunner {
     }
 
     /// A cancel also pauses an idle goal waiting for dependency completion.
-    async fn cancel_work(&mut self) -> Result<()> {
+    pub(super) async fn cancel_work(&mut self) -> Result<()> {
         self.goal_waiting = false;
         self.pause_goal("stopped by the user").await?;
         self.cancel_agents().await

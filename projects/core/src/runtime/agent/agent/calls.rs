@@ -1,20 +1,26 @@
 //! The model call with its retries, the tool calls and the hooks around them.
 
 use super::retry::{Bound, retry_delay};
-use super::{Agent, Pace};
+use super::{Agent, Pace, StepEnd};
 use crate::plugins::{HookEvent, hooks::Outcome};
 use crate::runtime::agent::{Inbox, Stop, generation};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
 use crate::{
     config::{Config, Effort},
     providers::{ChatRequest, ModelOutput, ToolCall, is_unsupported_effort, provider_error},
-    state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, Turn},
+    state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, Turn, TurnOutcome},
     tools::{Progress, ToolKind},
 };
 use anyhow::{Context, Result, anyhow};
 use serde_json::{Value, json};
 use std::{sync::Arc, time::Instant};
 use tracing::{info, warn};
+
+/// What the calls after a stop by the user get.
+const USER_STOPPED: &str = "not run: the user interrupted the turn";
+
+/// What the calls after a stop by the failure ladder get.
+const LADDER_STOPPED: &str = "not run: the turn stopped because the same error kept coming back";
 
 /// What a model call came to after its attempts.
 pub struct Called {
@@ -150,6 +156,21 @@ impl Agent {
         }
     }
 
+    /// Runs the calls of a step and says how the step ended.
+    pub(super) async fn run_calls(
+        &self,
+        turn: &Turn,
+        calls: &[ToolCall],
+        config: &Arc<Config>,
+        inbox: &mut Inbox,
+    ) -> StepEnd {
+        match self.call_tools(turn, calls, config, inbox).await {
+            Err(error) => StepEnd::Answered(TurnOutcome::failed(format!("{error:#}"))),
+            Ok(Some(stop)) => StepEnd::Stopped(stop, TurnOutcome::Interrupted(None)),
+            Ok(None) => StepEnd::CalledTools,
+        }
+    }
+
     /// Calls run one by one, and each result is stored as soon as it is known. After a
     /// stop, by the user or by the same error coming back too often, the rest are not run,
     /// but each still gets a result, because the model expects one per call. An error
@@ -174,9 +195,14 @@ impl Agent {
                     .goal(&self.thread_id)
                     .await?
                     .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
-            let halted = stop.is_some() || self.repeats.lock().stopping(&turn.turn_id);
+            // Each call gets a result, so the model learns why the rest did not run.
+            let halted = match stop {
+                Some(_) => Some(USER_STOPPED),
+                None if self.repeats.lock().stopping(&turn.turn_id) => Some(LADDER_STOPPED),
+                None => None,
+            };
             let denied = match halted {
-                false if !self.hooks.is_empty() => {
+                None if !self.hooks.is_empty() => {
                     let within = self.tools.calls_within(&call.name, &call.arguments);
                     let base = json!({ "thread": self.thread_id, "depth": self.depth });
                     let checked =
@@ -187,16 +213,16 @@ impl Agent {
                 _ => None,
             };
             let mut content = match halted {
-                true => "not run: the user interrupted the turn".to_owned(),
-                false if draft && call.name != "goal" => {
+                Some(why) => why.to_owned(),
+                None if draft && call.name != "goal" => {
                     outcome = "failed";
                     "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned()
                 }
-                false if let Some(denied) = &denied => {
+                None if let Some(denied) = &denied => {
                     outcome = "failed";
                     format!("error: {denied}")
                 }
-                false => {
+                None => {
                     self.emit(ThreadEvent::ToolStarted(call.clone()));
                     let progress = Progress {
                         call_id: call.id.clone(),

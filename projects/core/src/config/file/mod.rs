@@ -8,7 +8,10 @@ mod switches;
 #[cfg(test)]
 mod tests;
 
-use super::sections::{MAX_FAILURE_RUNG, MIN_FAILURE_RUNG, is_zero, yes};
+use super::sections::{
+    MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS,
+    is_zero, yes,
+};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
     MAX_MODEL_TIMEOUT_SECONDS, MAX_RETRY_UNREACHABLE_SECONDS, MIN_ATTEMPTS,
@@ -303,6 +306,12 @@ impl Config {
                 .contains(&self.limits.retry_unreachable_seconds),
             "limits.retry_unreachable_seconds must be between {MIN_RETRY_UNREACHABLE_SECONDS} \
              and {MAX_RETRY_UNREACHABLE_SECONDS}"
+        );
+        ensure!(
+            (MIN_RESUME_WITHIN_SECONDS..=MAX_RESUME_WITHIN_SECONDS)
+                .contains(&self.limits.resume_within_seconds),
+            "limits.resume_within_seconds must be between {MIN_RESUME_WITHIN_SECONDS} and \
+             {MAX_RESUME_WITHIN_SECONDS}"
         );
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,

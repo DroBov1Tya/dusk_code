@@ -17,8 +17,8 @@ pub use conversation::{
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use threads::Thread;
 pub use work::{
-    BackgroundJob, CallPurpose, JobSummary, LastPrompt, ModelCall, ProviderFailure, Task, Turn,
-    TurnAnswer, TurnFailure, TurnOutcome, TurnStatus,
+    BackgroundJob, CallPurpose, JobSummary, LastPrompt, ModelCall, ProviderFailure, Settle, Task,
+    Turn, TurnAnswer, TurnFailure, TurnOutcome, TurnStatus, Unfinished,
 };
 
 use super::{State, timestamp_ms};

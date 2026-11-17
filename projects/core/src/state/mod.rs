@@ -17,8 +17,8 @@ pub use db::State;
 pub use thread::{
     BackgroundJob, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion, GoalEvidence,
     GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
-    PendingMessage, ProviderFailure, Source, Task, Thread, Turn, TurnAnswer, TurnFailure,
-    TurnOutcome, TurnStatus, UndoPoint, estimate_tokens,
+    PendingMessage, ProviderFailure, Settle, Source, Task, Thread, Turn, TurnAnswer, TurnFailure,
+    TurnOutcome, TurnStatus, UndoPoint, Unfinished, estimate_tokens,
 };
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 

@@ -146,7 +146,9 @@ impl Launcher {
         })
     }
 
-    /// Wakes every agent thread that has stored messages and no runner.
+    /// Wakes every agent thread that has stored messages and no runner, and every agent a
+    /// stopped process left at work under a chat that is open again: it may have found
+    /// no free slot when its chat woke it.
     fn wake_waiting<'a>(&'a self, cwd: &'a Path) -> Pin<Box<dyn Future<Output = ()> + Send + 'a>> {
         Box::pin(async move {
             let waiting = match self.state.threads_with_pending().await {
@@ -162,7 +164,30 @@ impl Launcher {
                     warn!("cannot start agent thread {thread_id}: {error:#}");
                 }
             }
+            if let Err(error) = self.wake_unfinished(None, cwd).await {
+                warn!("cannot start agents left at work: {error:#}");
+            }
         })
+    }
+
+    /// Wakes the agents a stopped process left at work: below `root`, or below any open
+    /// chat. Each settles its own turn under its own lock as it starts.
+    pub async fn wake_unfinished(&self, root: Option<&str>, cwd: &Path) -> Result<()> {
+        for thread_id in self.state.unfinished_agents().await? {
+            let chat = self.state.root_thread(&thread_id).await?;
+            let open = match root {
+                Some(root) => chat == root,
+                None => self.mailboxes.get(&chat).await.is_some(),
+            };
+            let thread = match self.state.load_thread(&thread_id).await? {
+                Some(thread) if open => thread,
+                _ => continue,
+            };
+            if let Err(error) = self.wake(&thread, cwd).await {
+                warn!("cannot start agent thread {thread_id}: {error:#}");
+            }
+        }
+        Ok(())
     }
 
     async fn agent_runner(

@@ -6,7 +6,7 @@ use crate::runtime::jobs::{JobManager, JobOwner};
 use std::{path::Path, sync::Arc};
 
 use anyhow::{Context, Result, ensure};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::init::create_private_dir;
 use crate::platform::Platform;
@@ -218,8 +218,8 @@ impl Launcher {
     }
 
     /// Picks a stored thread up again, with its tools working in `cwd`. What it left
-    /// unfinished is closed first: a running turn ends as interrupted, and messages sent
-    /// before a crash are taken in.
+    /// unfinished is settled first: a running turn goes on or waits for the user (see
+    /// `Agent::recover`), and messages sent before a crash are taken in.
     pub async fn resume_thread(&self, thread_id: &str, cwd: &Path) -> Result<ThreadHandle> {
         let thread = self
             .state
@@ -237,7 +237,14 @@ impl Launcher {
             .adopt_thread(thread_id, &project_dir(cwd))
             .await?;
         info!("thread {thread_id} resumed in {}", workspace.display());
-        self.run_thread(thread_id.to_owned(), &workspace, cwd).await
+        let handle = self
+            .run_thread(thread_id.to_owned(), &workspace, cwd)
+            .await?;
+        // Its agents a stopped process left at work go on, or tell it they stopped.
+        if let Err(error) = self.wake_unfinished(Some(thread_id), cwd).await {
+            warn!("thread {thread_id}: cannot start its agents left at work: {error:#}");
+        }
+        Ok(handle)
     }
 
     /// One task per thread: two would answer the same messages twice.
