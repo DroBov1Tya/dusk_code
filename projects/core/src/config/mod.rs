@@ -8,6 +8,7 @@ mod mcp;
 mod plugins;
 mod providers;
 mod sections;
+mod workshop;
 
 pub use dusk_protocol::config::{ContextPolicy, UNKNOWN_WINDOW, VersionControl};
 pub use dusk_protocol::model::Effort;
@@ -22,3 +23,4 @@ pub use sections::{
     MAX_MODEL_TIMEOUT_SECONDS, MIN_ATTEMPTS, MIN_MODEL_TIMEOUT_SECONDS, Memory, ThreadConfig,
     Traces, WorkHistory,
 };
+pub use workshop::{Mirror, Workshop, is_word};

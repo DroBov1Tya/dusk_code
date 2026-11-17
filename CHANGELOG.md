@@ -8,6 +8,10 @@ testing.
 
 ### Added
 
+- The Workshop reads store format 2 (kind, category, tags, cover, stars, dates) and
+  mirrors added under `workshop.sources` in `config.yml`, each pinned to its own key;
+  listings carry a tier (Official, Verified, Community, BuiltIn), sort in the core, offer
+  semver updates, and "update all" skips updates that ask for more.
 - The terminal client keeps threads in tabs: Alt+T opens one, Alt+W closes the shown one,
   Alt+Left/Right and Alt+1..9 move between them, and `/tab` does the same. Once there are
   two, the tabs stand in the header where the title was; a tab in the background keeps

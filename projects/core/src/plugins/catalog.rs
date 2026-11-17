@@ -323,7 +323,7 @@ impl Plugins {
     }
 }
 
-fn plugin_folders(root: &Path) -> Vec<PathBuf> {
+pub(super) fn plugin_folders(root: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
     };
@@ -390,7 +390,7 @@ fn resolve_mcp(server: &McpServerConfig, folder: &Path, isolation: &Isolation) -
 }
 
 /// Whether what the user allowed covers all that `wanted` asks for.
-fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
+pub(super) fn covers(allowed: &Permissions, wanted: &Permissions) -> bool {
     let within = |have: &[String], want: &[String]| want.iter().all(|item| have.contains(item));
     within(&allowed.network, &wanted.network)
         && within(&allowed.exec, &wanted.exec)

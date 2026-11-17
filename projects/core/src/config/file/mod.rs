@@ -12,7 +12,7 @@ use super::sections::{is_zero, yes};
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
     MAX_MODEL_TIMEOUT_SECONDS, MIN_ATTEMPTS, MIN_MODEL_TIMEOUT_SECONDS, McpServerConfig, Memory,
-    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory,
+    Plugged, PluginConfig, ProviderConfig, ThreadConfig, VersionControl, WorkHistory, Workshop,
 };
 use crate::release::update::Channel;
 use anyhow::{Context, Result, anyhow, ensure};
@@ -115,6 +115,9 @@ pub struct Config {
     /// Plugins by name: whether each is on, and its settings.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     plugins: BTreeMap<String, PluginConfig>,
+    /// Mirrors of the store the user added.
+    #[serde(default, skip_serializing_if = "Workshop::is_default")]
+    workshop: Workshop,
     /// What the plugins that are on add; never saved.
     #[serde(skip)]
     plugged: Plugged,
@@ -241,6 +244,7 @@ impl Config {
     }
 
     pub(super) fn validate(&self) -> Result<()> {
+        self.workshop.validate()?;
         for endpoint in [&self.voice.stt, &self.voice.tts].into_iter().flatten() {
             crate::voice::check_endpoint(endpoint)?;
         }

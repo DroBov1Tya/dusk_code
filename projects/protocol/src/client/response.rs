@@ -62,7 +62,13 @@ pub enum Response {
     Stamp(FileStamp),
     System(SystemReport),
     Answer(Box<Answer>),
-    Store(Vec<crate::plugin::Listing>),
+    Store(crate::plugin::StoreList),
+    StoreUpdates(crate::plugin::UpdateReport),
+    /// A store cover, checked against its list: its bytes in base64, and their type.
+    Cover {
+        base64: String,
+        mime: String,
+    },
     /// The request failed; the text says why in full.
     Error(String),
 }

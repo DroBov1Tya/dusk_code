@@ -8,7 +8,7 @@ use super::{index, unpack::unpack, *};
 
 const B64: base64::engine::GeneralPurpose = base64::engine::general_purpose::STANDARD;
 
-fn signed(json: &str) -> (String, Vec<u8>) {
+pub(super) fn signed(json: &str) -> (String, Vec<u8>) {
     let key = Ed25519KeyPair::generate().unwrap();
     let signature = B64.encode(key.sign(json.as_bytes()).as_ref());
     (
@@ -17,7 +17,7 @@ fn signed(json: &str) -> (String, Vec<u8>) {
     )
 }
 
-const SHA: &str = "0000000000000000000000000000000000000000000000000000000000000000";
+pub(super) const SHA: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 fn list(entry: &str) -> String {
     format!(
@@ -62,7 +62,7 @@ fn a_signed_list_is_still_checked() {
         list(&entry("").replace("\"size\": 10", "\"size\": 0")),
         list(&entry("").replace("\"hello\"", "\"../x\"")),
         list(&entry(r#", "secret": 1"#)),
-        list(&entry("")).replace("\"format\": 1", "\"format\": 2"),
+        list(&entry("")).replace("\"format\": 1", "\"format\": 3"),
         list(&entry("")).replace("2030-01-01", "2026-01-01"),
         list(&entry("")).replace("2030-01-01T00:00:00Z", "soon"),
         list(&format!("{}, {}", entry(""), entry(""))),
@@ -74,7 +74,7 @@ fn a_signed_list_is_still_checked() {
 }
 
 /// A tar.gz with entries written byte by byte, so it can hold what a builder refuses.
-fn package(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
+pub(super) fn package(entries: &[(&str, tar::EntryType, &[u8])]) -> Vec<u8> {
     let mut tar = Vec::new();
     for (name, kind, body) in entries {
         let mut header = tar::Header::new_old();
@@ -166,23 +166,34 @@ fn a_package_asking_more_than_its_listing_is_refused() {
 #[tokio::test]
 #[ignore = "reaches the network"]
 async fn the_live_store_installs_a_plugin() {
+    use dusk_protocol::plugin::OFFICIAL_SOURCE as OFFICIAL;
     let paths = crate::testing::temp_paths("store-live");
     crate::init::create_private_dir(&super::super::catalog::folder(&paths)).unwrap();
-    let listed = super::list(&paths).await.unwrap();
-    let telegram = listed.iter().find(|item| item.name == "telegram").unwrap();
-    install(&paths, "telegram", &telegram.version, &telegram.permissions)
-        .await
+    let listed = super::list(&paths, &[], Order::Trust, None).await.unwrap();
+    let telegram = listed
+        .listings
+        .iter()
+        .find(|item| item.name == "telegram")
         .unwrap();
+    let mut agreed = Agreed {
+        source: OFFICIAL,
+        tier: Tier::Official,
+        name: "telegram",
+        version: &telegram.version,
+        permissions: &telegram.permissions,
+    };
+    install(&paths, &[], &agreed).await.unwrap();
     let changed = ["connect to https://evil.example.com".to_owned()];
-    assert!(
-        install(&paths, "telegram", &telegram.version, &changed)
-            .await
-            .is_err()
-    );
+    agreed.permissions = &changed;
+    assert!(install(&paths, &[], &agreed).await.is_err());
     let folder = super::super::catalog::folder(&paths).join("telegram");
     assert!(folder.join("bin/telegram").is_file());
-    let listed = super::list(&paths).await.unwrap();
-    let again = listed.iter().find(|item| item.name == "telegram").unwrap();
+    let listed = super::list(&paths, &[], Order::Trust, None).await.unwrap();
+    let again = listed
+        .listings
+        .iter()
+        .find(|item| item.name == "telegram")
+        .unwrap();
     assert_eq!(again.installed.as_deref(), Some(telegram.version.as_str()));
     remove(&paths, "telegram").await.unwrap();
     assert!(!folder.exists());

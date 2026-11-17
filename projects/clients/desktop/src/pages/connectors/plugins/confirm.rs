@@ -15,7 +15,7 @@ use crate::{ui::Type, workspace::Workspace};
 #[derive(Clone)]
 pub enum Confirm {
     /// The listing as the user saw it; its version is the one installed.
-    Install(Listing),
+    Install(Box<Listing>),
     Remove(String),
 }
 
@@ -87,6 +87,16 @@ fn permissions(listing: &Listing, muted: Hsla) -> Div {
     for line in &listing.permissions {
         body = body.child(div().small().pl_3().child(format!("• {line}")));
     }
+    // Until the Workshop shows tier badges, say where it comes from before the yes.
+    let clash = if listing.clash {
+        "; another source offers the same name"
+    } else {
+        ""
+    };
+    body = body.child(div().meta().text_color(muted).child(format!(
+        "From {} ({:?}){clash}.",
+        listing.source, listing.tier
+    )));
     if !listing.clients.is_empty() && !listing.clients.contains(&Client::Gui) {
         body = body.child(
             div()

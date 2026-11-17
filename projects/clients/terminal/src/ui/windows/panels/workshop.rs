@@ -219,6 +219,7 @@ mod tests {
             homepage: None,
             installed: None,
             unfit: None,
+            ..Listing::default()
         }
     }
 

@@ -1,107 +1,177 @@
-//! The plugin store: a signed list on GitHub Pages and the packages it names. Installing
-//! checks the list's signature, serial and expiry, the package's size and SHA-256,
-//! unpacks it under the rules of `unpack` and refuses a package whose manifest differs
-//! from the listing the user agreed to. Only a plugin the store installed, by its record
-//! in the config folder, is updated or removed by it; a folder the user made is never
-//! touched.
+//! The plugin store, the Workshop: signed lists on GitHub Pages, the official one and the
+//! mirrors the user added, and the packages they name. Installing checks the list's
+//! signature, serial and expiry, the package's size and SHA-256, unpacks it under the
+//! rules of `unpack` and refuses a package whose manifest differs from the listing the
+//! user agreed to. Only a plugin the store installed, by its record in the config folder,
+//! is updated or removed by it, and only from the source that installed it; a folder the
+//! user made is never touched.
 //!
-//! - `index` — the list and its signature;
+//! - `source` — the lists, read at once, and the tier each one earns;
+//! - `index` — one list and its signature;
+//! - `listing` — what a client is shown, and in which order;
+//! - `fetch` — files over https to public addresses, capped and checked;
+//! - `cover` — the pictures of the cards;
 //! - `record` — what the store did here;
 //! - `unpack` — a package into a folder.
 
+mod cover;
+mod fetch;
 pub mod index;
+mod listing;
 mod record;
+mod source;
 #[cfg(test)]
 mod tests;
 mod unpack;
+#[cfg(test)]
+mod workshop_tests;
 
-use std::{fs, path::Path, sync::LazyLock, time::Duration};
+use std::{fs, path::Path, sync::LazyLock};
 
-use anyhow::{Context, Result, bail, ensure};
-use dusk_protocol::plugin::Listing;
-use sha2::{Digest, Sha256};
+use anyhow::{Context, Result, anyhow, ensure};
+use dusk_protocol::plugin::{Order, StoreList, Tier, UpdateReport};
 use tokio::sync::Mutex;
 
-use super::manifest::Manifest;
-use crate::{init::paths::Paths, release::update::VERSION};
-use index::{Entry, Index};
+use super::{catalog, manifest::Manifest};
+use crate::{config::Mirror, init::paths::Paths};
+use fetch::Via;
+use index::Entry;
 use record::{Installed, Record};
+use source::Fetched;
 
-const INDEX_URL: &str = "https://drobov1tya.github.io/duskcode-plugins/index.json";
-/// Another list, such as a fork's, for trying a store; it is still checked against the
-/// key built in, so it cannot bring an unsigned plugin.
-const INDEX_ENV: &str = "DUSKCODE_STORE_URL";
+pub use cover::get as cover;
+
 /// Where the store keeps a package while it is checked, under the plugins folder; the
 /// leading dot keeps it out of the plugins found.
 const STAGING: &str = ".staging";
-const TIMEOUT: Duration = Duration::from_secs(120);
 
-/// One install or removal at a time: two of the same plugin would share its folder, and
-/// the record is read and written whole.
+/// One install or removal at a time: two of the same plugin would share its folder.
 static BUSY: LazyLock<Mutex<()>> = LazyLock::new(Mutex::default);
 
-/// The store's plugins, with what is installed here.
-pub async fn list(paths: &Paths) -> Result<Vec<Listing>> {
-    let index = fetch_index(paths).await?;
+/// What the sources offer, with what is installed here, in `order`; only `category`'s
+/// when it is given. A source that cannot be read is reported beside the rest.
+pub async fn list(
+    paths: &Paths,
+    mirrors: &[Mirror],
+    order: Order,
+    category: Option<&str>,
+) -> Result<StoreList> {
+    let (fetched, failed) = source::read(paths, mirrors).await;
     let record = Record::load(paths)?;
-    Ok(index
-        .plugins
+    let mut listings: Vec<_> = fetched
         .iter()
-        .map(|entry| Listing {
-            name: entry.name.clone(),
-            version: entry.version.clone(),
-            description: entry.description.clone(),
-            platforms: entry.platforms.clone(),
-            clients: entry.clients.clone(),
-            permissions: entry.consent(),
-            homepage: entry.homepage.clone(),
-            installed: record.version_of(paths, &entry.name),
-            unfit: entry.download_here().err(),
+        .flat_map(|source| {
+            let record = &record;
+            source
+                .index
+                .plugins
+                .iter()
+                .map(move |entry| listing::listing(paths, record, source, entry))
         })
-        .collect())
+        .chain(listing::local(paths, &record))
+        .collect();
+    listing::mark_clashes(&mut listings);
+    listings.retain(|listing| category.is_none_or(|category| listing.category == category));
+    listing::sort(&mut listings, order);
+    Ok(StoreList { listings, failed })
 }
 
-/// Installs or updates `name` at `version` in the plugins folder, when its listing still
-/// asks for exactly `agreed`, the lines the user was shown.
-pub async fn install(paths: &Paths, name: &str, version: &str, agreed: &[String]) -> Result<()> {
+/// What the user agreed to install, as they were shown it.
+pub struct Agreed<'a> {
+    pub source: &'a str,
+    pub tier: Tier,
+    pub name: &'a str,
+    pub version: &'a str,
+    pub permissions: &'a [String],
+}
+
+/// Installs or updates a plugin in the plugins folder, when its listing is still the one
+/// the user agreed to: the same source and tier, version and permissions.
+pub async fn install(paths: &Paths, mirrors: &[Mirror], agreed: &Agreed<'_>) -> Result<()> {
     let _busy = BUSY.lock().await;
-    let index = fetch_index(paths).await?;
-    let entry = index
+    // Every source, since a mirror's tier depends on the official list.
+    let (fetched, failed) = source::read(paths, mirrors).await;
+    if let Some(failure) = failed.iter().find(|item| item.source == agreed.source) {
+        return Err(anyhow!("{}: {}", failure.source, failure.error));
+    }
+    let (source, entry) = pick(&fetched, agreed)?;
+    put(paths, source, entry).await
+}
+
+/// The source and entry the user agreed to, refused when anything they were shown has
+/// changed since.
+pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetched, &'a Entry)> {
+    let name = agreed.name;
+    let source = fetched
+        .iter()
+        .find(|item| item.name == agreed.source)
+        .with_context(|| format!("there is no source named {}", agreed.source))?;
+    ensure!(
+        source.tier == agreed.tier,
+        "{} is {:?} now, not {:?} as you saw it; look at the list again",
+        source.name,
+        source.tier,
+        agreed.tier
+    );
+    let entry = source
+        .index
         .plugins
         .iter()
         .find(|entry| entry.name == name)
-        .with_context(|| format!("the store has no plugin {name}"))?;
+        .with_context(|| format!("{} has no plugin {name}", source.name))?;
     ensure!(
-        entry.version == version && entry.consent() == agreed,
-        "the store's listing of {name} changed since you saw it; look at the list again"
+        entry.version == agreed.version && entry.consent() == agreed.permissions,
+        "the listing of {name} changed since you saw it; look at the list again"
     );
-    let download = entry.download_here().map_err(anyhow::Error::msg)?;
-    let package = fetch(&download.url, download.size).await?;
-    ensure!(
-        package.len() as u64 == download.size,
-        "the package of {name} has {} bytes, the list says {}",
-        package.len(),
-        download.size
-    );
-    let sha256 = hex(&Sha256::digest(&package));
-    ensure!(
-        sha256 == download.sha256,
-        "the package of {name} is not the one the list names"
-    );
-    let mut record = Record::load(paths)?;
-    let root = super::catalog::folder(paths);
-    let owned = record.installed.contains_key(name);
-    let entry = entry.clone();
-    tokio::task::spawn_blocking(move || place(&root, &entry, &package, owned))
-        .await
-        .context("the install stopped")?
-        .with_context(|| format!("cannot install {name}"))?;
-    let installed = Installed {
-        version: version.to_owned(),
-        sha256,
-    };
-    record.installed.insert(name.to_owned(), installed);
-    record.save(paths)
+    Ok((source, entry))
+}
+
+/// Updates every plugin a source installed to that source's newer version, unless the
+/// update asks for more than the version here, or the source is no longer the one that
+/// installed it: the user decides those by hand. Other installs may run between two
+/// updates.
+pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateReport> {
+    let (fetched, failed) = source::read(paths, mirrors).await;
+    let names: Vec<String> = Record::load(paths)?.installed.into_keys().collect();
+    let mut report = UpdateReport::default();
+    for name in names {
+        let _busy = BUSY.lock().await;
+        let record = Record::load(paths)?;
+        let Some(installed) = record.present(paths, &name) else {
+            continue;
+        };
+        let Some(source) = fetched.iter().find(|item| item.name == installed.source) else {
+            if let Some(failure) = failed.iter().find(|item| item.source == installed.source) {
+                report.skipped.push((name.clone(), failure.error.clone()));
+            }
+            continue;
+        };
+        if !installed.is_from(source) {
+            let why = format!("the mirror {} changed; reinstall it", source.name);
+            report.skipped.push((name.clone(), why));
+            continue;
+        }
+        let Some(entry) = source.index.plugins.iter().find(|item| item.name == name) else {
+            continue;
+        };
+        if listing::newer(&entry.version, &installed.version).is_none() {
+            continue;
+        }
+        let folder = catalog::folder(paths).join(&name);
+        let outcome = match asks_more(&folder, entry) {
+            Ok(false) => put(paths, source, entry).await,
+            Ok(true) => Err(anyhow!(
+                "{} asks for more than the version here; update it by hand",
+                entry.version
+            )),
+            Err(error) => Err(error),
+        };
+        match outcome {
+            Ok(()) => report.updated.push(format!("{name} {}", entry.version)),
+            Err(error) => report.skipped.push((name.clone(), format!("{error:#}"))),
+        }
+    }
+    Ok(report)
 }
 
 /// Whether the store may remove `name`: it installed it and its folder is there. Asked
@@ -112,7 +182,7 @@ pub fn check_removable(paths: &Paths, name: &str) -> Result<()> {
         "invalid plugin name"
     );
     ensure!(
-        Record::load(paths)?.version_of(paths, name).is_some(),
+        Record::load(paths)?.present(paths, name).is_some(),
         "{name} was not installed from the store; remove its folder yourself"
     );
     Ok(())
@@ -121,11 +191,65 @@ pub fn check_removable(paths: &Paths, name: &str) -> Result<()> {
 pub async fn remove(paths: &Paths, name: &str) -> Result<()> {
     let _busy = BUSY.lock().await;
     check_removable(paths, name)?;
-    let folder = super::catalog::folder(paths).join(name);
+    let folder = catalog::folder(paths).join(name);
     fs::remove_dir_all(&folder).with_context(|| format!("cannot remove {}", folder.display()))?;
-    let mut record = Record::load(paths)?;
-    record.installed.remove(name);
-    record.save(paths)
+    Record::update(paths, |record| {
+        record.installed.remove(name);
+        Ok(())
+    })
+}
+
+/// Downloads, checks and places `entry` from `source`; called under `BUSY`.
+async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
+    let name = &entry.name;
+    let download = entry.download_here().map_err(anyhow::Error::msg)?;
+    let owner = Record::load(paths)?.installed.get(name).cloned();
+    if let Some(owner) = &owner {
+        ensure!(
+            owner.source == source.name,
+            "{name} was installed from {}; remove it before installing it from {}",
+            owner.source,
+            source.name
+        );
+        ensure!(
+            owner.is_from(source),
+            "the mirror {} changed its address or key since it installed {name}; \
+             remove {name} and install it again",
+            source.name
+        );
+    }
+    let package =
+        fetch::fetch_checked(&download.url, download.size, &download.sha256, Via::Package)
+            .await
+            .with_context(|| format!("the package of {name}"))?;
+    let root = catalog::folder(paths);
+    let owned = owner.is_some();
+    let placed = entry.clone();
+    tokio::task::spawn_blocking(move || place(&root, &placed, &package, owned))
+        .await
+        .context("the install stopped")?
+        .with_context(|| format!("cannot install {name}"))?;
+    let installed = Installed::new(source, &entry.version, &download.sha256);
+    Record::update(paths, |record| {
+        record.installed.insert(name.clone(), installed);
+        Ok(())
+    })
+}
+
+/// Whether `entry` asks for a permission or a model provider the plugin in `folder` does
+/// not have.
+fn asks_more(folder: &Path, entry: &Entry) -> Result<bool> {
+    let manifest = Manifest::load(folder)?;
+    let had: Vec<&str> = manifest
+        .providers
+        .values()
+        .map(|provider| provider.base_url.as_str())
+        .collect();
+    Ok(!catalog::covers(&manifest.permissions, &entry.permissions)
+        || entry
+            .providers
+            .iter()
+            .any(|url| !had.contains(&url.as_str())))
 }
 
 /// Unpacks the checked package beside the plugins, checks its manifest against the list
@@ -192,53 +316,4 @@ fn check_manifest(folder: &Path, entry: &Entry) -> Result<()> {
         "the package brings other model providers than the list shows"
     );
     Ok(())
-}
-
-/// The newest signed list, refused when it is older than one accepted here or expired.
-async fn fetch_index(paths: &Paths) -> Result<Index> {
-    let url = std::env::var(INDEX_ENV).unwrap_or_else(|_| INDEX_URL.to_owned());
-    let json = fetch(&url, index::MAX_INDEX_BYTES).await?;
-    let signature = fetch(&format!("{url}.sig"), index::MAX_SIGNATURE_BYTES).await?;
-    let index = index::verify_builtin(&json, &signature, chrono::Utc::now())?;
-    let mut record = Record::load(paths)?;
-    ensure!(
-        index.serial >= record.serial,
-        "the store sent an older list ({}) than one seen here ({}); try again later",
-        index.serial,
-        record.serial
-    );
-    if index.serial > record.serial {
-        record.serial = index.serial;
-        record.save(paths)?;
-    }
-    Ok(index)
-}
-
-/// The body at `url`, over https only, refused past `max` bytes.
-async fn fetch(url: &str, max: u64) -> Result<Vec<u8>> {
-    let client = reqwest::Client::builder()
-        .https_only(true)
-        .timeout(TIMEOUT)
-        .user_agent(format!("duskcode/{VERSION}"))
-        .build()?;
-    let mut response = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("cannot reach {url}"))?
-        .error_for_status()
-        .with_context(|| format!("the store refused {url}"))?;
-    if response.content_length().is_some_and(|length| length > max) {
-        bail!("{url} is over {max} bytes");
-    }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await? {
-        body.extend_from_slice(&chunk);
-        ensure!(body.len() as u64 <= max, "{url} is over {max} bytes");
-    }
-    Ok(body)
-}
-
-fn hex(bytes: &[u8]) -> String {
-    bytes.iter().map(|byte| format!("{byte:02x}")).collect()
 }
