@@ -18,7 +18,7 @@ use dusk_core::{
 use dusk_protocol::{
     client::{Event, Hello, PROTOCOL_VERSION},
     model::{ModelEvent, Usage},
-    thread::ThreadEvent,
+    thread::{RepeatRung, ThreadEvent},
 };
 use regex::Regex;
 use tokio::sync::mpsc::UnboundedReceiver;
@@ -130,6 +130,7 @@ struct Watch {
     retries: u64,
     reruns: u64,
     repeat_notices: u64,
+    repeat_stops: u64,
     /// Every call so far, as the agent's thread ("" for the chat) and name and arguments.
     calls: HashSet<(String, String)>,
     subagents: u64,
@@ -166,6 +167,10 @@ impl Watch {
                 self.tool_errors += u64::from(result.is_error);
             }
             ThreadEvent::Retrying { .. } => self.retries += 1,
+            ThreadEvent::RepeatNotice {
+                rung: RepeatRung::Stop,
+                ..
+            } => self.repeat_stops += 1,
             ThreadEvent::RepeatNotice { .. } => self.repeat_notices += 1,
             ThreadEvent::Question(_) => self.questions += 1,
             ThreadEvent::Tokens { tokens, .. } if thread.is_none() => {
@@ -302,6 +307,7 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         retries: watch.retries,
         reruns: watch.reruns,
         repeat_notices: watch.repeat_notices,
+        repeat_stops: watch.repeat_stops,
         subagents: watch.subagents,
         questions: watch.questions,
     })
@@ -309,23 +315,19 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
 
 #[cfg(test)]
 mod tests {
-    use dusk_protocol::thread::RepeatRung;
-
     use super::*;
 
     #[test]
-    fn repeat_notices_are_counted_for_the_chat_and_its_agents() {
+    fn repeat_notices_and_stops_are_counted_for_the_chat_and_its_agents() {
         let mut watch = Watch::default();
-        let notice = ThreadEvent::RepeatNotice {
-            rung: RepeatRung::SameCall,
-            count: 3,
-        };
-        watch.see(notice.clone(), None);
-        let from_agent = ThreadEvent::Subagent {
+        let notice = |rung| ThreadEvent::RepeatNotice { rung, count: 3 };
+        watch.see(notice(RepeatRung::SameCall), None);
+        let from_agent = |event| ThreadEvent::Subagent {
             thread_id: "child".into(),
-            event: Box::new(notice),
+            event: Box::new(event),
         };
-        watch.see(from_agent, None);
-        assert_eq!(watch.repeat_notices, 2);
+        watch.see(from_agent(notice(RepeatRung::Replan)), None);
+        watch.see(from_agent(notice(RepeatRung::Stop)), None);
+        assert_eq!((watch.repeat_notices, watch.repeat_stops), (2, 1));
     }
 }
