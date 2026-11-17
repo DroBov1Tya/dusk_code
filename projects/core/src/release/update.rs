@@ -1,5 +1,5 @@
 //! Updating the binary from the GitHub releases. The stable channel follows the full
-//! releases, the round versions; the dev channel follows every tag, pre-releases too.
+//! releases, tagged on main; the dev channel follows every tag, the pre-releases of dev too.
 //! An update downloads the archive built for this target, checks it against the
 //! SHA-256 digest GitHub keeps for every release asset, and moves the new binary over the running one, which goes on
 //! until it is started again. Prompts and skills that ship with dusk are brought up to
