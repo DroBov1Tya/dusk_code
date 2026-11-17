@@ -1,6 +1,10 @@
 //! The providers that are connected: what each answered, and what can be done with it.
 
-use dusk_protocol::{client::ProviderTarget, model::ProviderStatus};
+use dusk_protocol::{
+    client::ProviderTarget,
+    model::{CallHealth, ProviderStatus},
+    thread::duration_words,
+};
 use gpui_kit::{
     component::{
         Disableable, Sizable,
@@ -165,6 +169,9 @@ fn provider_card(
                 .px_0()
                 .opacity(0.5)
         });
+    if let Some(health) = ws.status.provider_health.iter().find(|h| h.name == name) {
+        card = card.child(widgets::muted(health_line(&health.calls), cx).p_0());
+    }
     if let Some(limits) = provider.limits.as_ref().filter(|_| enabled) {
         card = card.child(widgets::muted(format!("Limits: {}", limits.text()), cx).p_0());
     }
@@ -194,6 +201,22 @@ fn provider_card(
             );
     }
     card
+}
+
+/// How the provider's calls went since the core started: a failing one says how and for
+/// how long.
+fn health_line(calls: &CallHealth) -> String {
+    let now = dusk_protocol::system::now_ms();
+    match calls {
+        CallHealth::Answering { .. } => "answering".to_owned(),
+        CallHealth::Failing { kind, since, .. } => {
+            format!(
+                "{}, since {} ago",
+                kind.label(),
+                duration_words(now - since)
+            )
+        }
+    }
 }
 
 impl Workspace {

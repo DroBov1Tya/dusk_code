@@ -2,13 +2,26 @@
 
 use dusk_protocol::{
     model::ModelEvent,
-    thread::{Note, ThreadEvent, TurnStatus, note},
+    thread::{RetryRow, ThreadEvent, TurnStatus, retry_row},
 };
+
+use std::time::Instant;
 
 use super::{Activity, App, Entry, Focus, Poll, Tone, compact_number};
 
 impl App {
     pub fn apply(&mut self, event: ThreadEvent) {
+        // The retry row is the footer's activity: one state, replaced in place. Events
+        // that end it hand over to the arms below, which name the next activity.
+        match retry_row(&event) {
+            Some(RetryRow::Show(retry)) => {
+                self.activity = Activity::Retrying(retry, Instant::now())
+            }
+            Some(RetryRow::Clear) if matches!(self.activity, Activity::Retrying(..)) => {
+                self.activity = Activity::Thinking;
+            }
+            _ => {}
+        }
         match event {
             // Crash recovery may admit a pending request already in the snapshot.
             ThreadEvent::UserMessage(message)
@@ -99,13 +112,8 @@ impl App {
                     }
                 }
             }
-            // The footer shows the attempt in place; the transcript keeps one line.
-            ThreadEvent::Retrying { attempt, .. } => {
-                if let Some(Note::Notice(text)) = note(&event) {
-                    self.transcript.notice(text, Tone::Info);
-                }
-                self.activity = Activity::Retrying(attempt);
-            }
+            // The footer shows the retry in place; the transcript keeps no line of it.
+            ThreadEvent::Retrying { .. } => {}
             ThreadEvent::TurnFailed(failure) => self.error(failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::OutputLimitReached => {

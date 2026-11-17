@@ -10,6 +10,7 @@ mod command;
 mod cost;
 mod feedback;
 mod picture;
+mod retry;
 mod row;
 mod sent_picture;
 mod step;
@@ -328,7 +329,14 @@ mod tests {
     }
 
     #[test]
-    fn a_retry_notice_stays_visible_after_a_tool_finishes() {
+    fn one_retry_row_is_replaced_and_goes_when_the_call_answers() {
+        let retrying = |attempt| ThreadEvent::Retrying {
+            attempt,
+            error: "timeout".into(),
+            kind: dusk_protocol::model::ProviderErrorKind::Overloaded,
+            wait_ms: 1000,
+            max_attempts: Some(3),
+        };
         let mut chat = Transcript::default();
         chat.working = true;
         chat.apply(ThreadEvent::ToolStarted(call("a")));
@@ -336,20 +344,16 @@ mod tests {
             call_id: "a".into(),
             result: ToolResult::text("done".into()),
         });
-        chat.apply(ThreadEvent::Retrying {
-            attempt: 1,
-            error: "timeout".into(),
-            kind: dusk_protocol::model::ProviderErrorKind::Overloaded,
-            wait_ms: 1000,
-            max_attempts: Some(3),
-        });
+        chat.apply(retrying(1));
+        chat.apply(retrying(2));
 
-        assert_eq!(layout(&chat), [(0, 1), (1, 1)]);
-        assert!(matches!(&chat.items[1], Item::Notice(text)
-            if text == "Provider overloaded: timeout; trying again, attempt 2 of 3"));
+        // No notice per attempt; the one row holds the newest.
+        assert_eq!(layout(&chat), [(0, 1)]);
+        assert!(matches!(&chat.retry, Some((retry, _))
+            if retry.text() == "Provider overloaded: timeout; trying again, attempt 3 of 3"));
 
-        chat.apply(ThreadEvent::ToolStarted(call("b")));
-        assert_eq!(layout(&chat), [(0, 1), (1, 1), (2, 3)]);
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("hi".into())));
+        assert!(chat.retry.is_none());
     }
 
     #[test]

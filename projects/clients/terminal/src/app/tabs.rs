@@ -386,4 +386,24 @@ mod tests {
         assert_eq!(app.tab_of("a"), None);
         assert_eq!(app.thread_id.as_deref(), Some("b"));
     }
+
+    #[test]
+    fn a_retry_is_one_footer_state_that_leaves_no_line_and_goes_with_the_answer() {
+        let retrying = |attempt| ThreadEvent::Retrying {
+            attempt,
+            error: "timeout".into(),
+            kind: dusk_protocol::model::ProviderErrorKind::Overloaded,
+            wait_ms: 1000,
+            max_attempts: Some(3),
+        };
+        let mut app = app();
+        let lines = app.transcript.entries.len();
+        app.apply(retrying(1));
+        app.apply(retrying(2));
+        assert!(matches!(&app.activity, Activity::Retrying(retry, _) if retry.attempt == 2));
+        assert_eq!(app.transcript.entries.len(), lines);
+
+        app.apply(text("hi"));
+        assert!(app.activity == Activity::Writing);
+    }
 }
