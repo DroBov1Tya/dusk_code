@@ -26,7 +26,8 @@ pub use classify::{Access, Subject, classify};
 /// and dangerous calls is split, so a scope never has to take both.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Area {
-    /// Listing and searching chats, reading a thread's messages, jobs, plan and changes.
+    /// Listing and searching chats, reading a thread's messages, jobs, plan and the files
+    /// it changed.
     ThreadRead,
     /// Opening a thread, sending to it, stopping it, renaming it, changing its sources.
     ThreadWrite,
@@ -45,10 +46,12 @@ pub enum Area {
     Catalog,
     /// The text of a saved MCP server's config, which holds its keys and tokens.
     McpConfig,
-    /// Projects, their git state, files to read, variables and schedules.
+    /// Projects, their git state, files to read, variables and schedules; and the diff
+    /// of a chat's folder, which is its whole project's.
     Project,
     FileWrite,
-    /// Slash commands outside a thread: model, provider, settings, effort, migrate; and
+    /// Slash commands outside a thread: model, provider, settings, effort, migrate and
+    /// the context report; and
     /// naming a file of this machine for a thread's sources, by `/sources add` or by a
     /// path or an `@` mention in a sent message.
     Command,

@@ -141,10 +141,6 @@ fn about(thread_id: &str, folder: &Path) -> Vec<Request> {
                 thread_id: id(),
                 text: "plan".to_owned(),
             },
-            WorkRequest::Diff {
-                thread_id: id(),
-                path: None,
-            },
             WorkRequest::ChangedFiles { thread_id: id() },
             WorkRequest::UploadPicture {
                 thread_id: id(),
@@ -157,9 +153,6 @@ fn about(thread_id: &str, folder: &Path) -> Vec<Request> {
     );
     requests.extend(
         [
-            Command::Context {
-                thread_id: Some(id()),
-            },
             Command::Undo {
                 thread_id: Some(id()),
                 sequence: None,
@@ -167,10 +160,6 @@ fn about(thread_id: &str, folder: &Path) -> Vec<Request> {
             Command::Sources {
                 thread_id: Some(id()),
                 add: None,
-            },
-            Command::Sources {
-                thread_id: Some(id()),
-                add: Some("/etc/hosts".to_owned()),
             },
             Command::Jobs {
                 thread_id: Some(id()),
@@ -385,7 +374,18 @@ async fn a_client_bound_to_a_chat_reaches_nothing_else_in_the_core() {
     let mine = owner.threads().start(core.folder.clone()).await.unwrap();
     let phone = bound(&core, "phone", &mine);
 
-    for request in apart(&core.folder) {
+    // What answers with more than the chat it names is about no thread either: the
+    // context report, and the diff of the chat's whole project.
+    let beyond = [
+        Request::Command(Command::Context {
+            thread_id: Some(mine.clone()),
+        }),
+        Request::Work(WorkRequest::Diff {
+            thread_id: mine.clone(),
+            path: None,
+        }),
+    ];
+    for request in beyond.into_iter().chain(apart(&core.folder)) {
         let shown = format!("{request:?}");
         let refused = phone.request(request).await;
         assert_eq!(refused, Response::Error(REFUSED.to_owned()), "{shown}");
@@ -406,6 +406,14 @@ async fn a_client_bound_to_a_chat_reaches_nothing_else_in_the_core() {
         .send(&mine, "hello".to_owned(), false)
         .await;
     assert_eq!(send.unwrap_err().to_string(), REFUSED);
+    let add = Request::Command(Command::Sources {
+        thread_id: Some(mine.clone()),
+        add: Some("/etc/hosts".to_owned()),
+    });
+    assert_eq!(
+        reader.request(add).await,
+        Response::Error(REFUSED.to_owned())
+    );
     let delete = reader.threads().delete(&mine).await;
     assert_eq!(delete.unwrap_err().to_string(), REFUSED);
     assert_eq!(owner.threads().list().await.unwrap().len(), 1);

@@ -165,7 +165,6 @@ fn a_scope_bound_to_threads_reaches_nothing_but_threads() {
 fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
     let scope = Scope::threads([THREAD.to_owned()], &[Area::ThreadRead, Area::ThreadWrite]);
     let expected = [
-        "command.context.thread",
         "command.jobs.thread",
         "command.resume",
         "command.sources.thread",
@@ -185,7 +184,6 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.stop_agent",
         "thread.tasks",
         "work.changed_files",
-        "work.diff",
         "work.job_output",
         "work.jobs",
         "work.pin_source",

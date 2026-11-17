@@ -121,8 +121,10 @@ fn work(request: &Work) -> Access<'_> {
         | Work::JobOutput { thread_id, .. }
         | Work::SourcePicture { thread_id, .. }
         | Work::Plan { thread_id }
-        | Work::Diff { thread_id, .. }
         | Work::ChangedFiles { thread_id } => of(Area::ThreadRead, thread_id),
+        // The diff is of the whole project folder, whoever changed it, so it is about
+        // the project and no one thread: a scope bound to threads does not get it.
+        Work::Diff { .. } => apart(Area::Project),
         Work::StopJob { thread_id, .. }
         | Work::PinSource { thread_id, .. }
         | Work::RemoveSource { thread_id, .. }
@@ -134,10 +136,7 @@ fn work(request: &Work) -> Access<'_> {
 fn command_access(command: &Command) -> Access<'_> {
     match command {
         Command::Resume { .. } => all(Area::ThreadRead),
-        Command::Context {
-            thread_id: Some(thread_id),
-        }
-        | Command::Jobs {
+        Command::Jobs {
             thread_id: Some(thread_id),
         }
         | Command::Undo {
@@ -153,7 +152,9 @@ fn command_access(command: &Command) -> Access<'_> {
             thread_id: Some(thread_id),
             add: Some(_),
         } => of(Area::Command, thread_id),
-        Command::Context { thread_id: None }
+        // The report names the skills and MCP tools of this machine and counts every
+        // thread's use, with a thread or without: it is about no one thread.
+        Command::Context { .. }
         | Command::Jobs { thread_id: None }
         | Command::Undo { .. }
         | Command::Sources {
