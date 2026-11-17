@@ -1,13 +1,16 @@
 //! The model call with its retries, the tool calls and the hooks around them.
 
-use super::retry::{Bound, retry_delay};
+use super::retry::{Bound, MAX_RETRY_DELAY, retry_delay};
+use super::wait::waits_out;
 use super::{Agent, Pace, StepEnd};
 use crate::plugins::{HookEvent, hooks::Outcome};
 use crate::runtime::agent::{Inbox, Stop, generation};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
 use crate::{
-    config::{Config, Effort},
-    providers::{ChatRequest, ModelOutput, ToolCall, is_unsupported_effort, provider_error},
+    config::{Config, Effort, Limits},
+    providers::{
+        ChatRequest, ModelOutput, ProviderError, ToolCall, is_unsupported_effort, provider_error,
+    },
     state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, Turn, TurnOutcome},
     tools::{Progress, ToolKind},
 };
@@ -34,7 +37,7 @@ pub struct Called {
 impl Agent {
     /// Streams the model's response, trying again when the call fails in a way that may
     /// pass and nothing reached the user yet. The `Err` means the user stopped it during
-    /// a pause between attempts.
+    /// a pause between attempts. The last failure comes back as it was.
     pub async fn call_model(
         &self,
         choice: &Choice,
@@ -92,6 +95,7 @@ impl Agent {
             let retry = match &generated {
                 Ok(Err(error)) if !output.answered() => provider_error(error)
                     .filter(|failure| failure.kind.is_retryable())
+                    .filter(|failure| !self.stores_pause(failure, &limits))
                     .and_then(|failure| {
                         let pause = failure.retry_after.unwrap_or_else(|| retry_delay(attempt));
                         let bound = Bound::of(failure.kind, &limits);
@@ -126,6 +130,16 @@ impl Agent {
             inbox.race(tokio::time::sleep(pause)).await?;
             attempt += 1;
         }
+    }
+
+    /// A turn that may wait for its provider stores a pause longer than the loop sleeps,
+    /// so a restart does not cut it short: the call ends here and the turn waits.
+    fn stores_pause(&self, failure: &ProviderError, limits: &Limits) -> bool {
+        limits.wait_for_provider
+            && waits_out(failure.kind)
+            && failure
+                .retry_after
+                .is_some_and(|after| after > MAX_RETRY_DELAY)
     }
 
     /// What a call says of its provider's health: a failure that is the provider's, or

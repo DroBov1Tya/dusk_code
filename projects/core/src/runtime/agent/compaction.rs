@@ -12,7 +12,7 @@ use super::{Agent, Inbox, Stop};
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
     catalog::modes::Modes,
-    providers::{ChatMessage, ChatRequest},
+    providers::{ChatMessage, ChatRequest, ProviderErrorKind, provider_error},
     runtime::thread::start::{NO_PROMPT, read_prompt},
     state::{CallPurpose, Compaction, ModelCall, Turn},
 };
@@ -38,6 +38,11 @@ fn sources_note(attached: &[crate::state::Source]) -> String {
          <source>NAME</source> or as a file in the thread's sources folder, was removed by \
          the user. Leave removed sources and their contents out of the summary."
     )
+}
+
+/// Whether the provider said the request was too large for the model.
+fn is_too_long(error: &anyhow::Error) -> bool {
+    provider_error(error).is_some_and(|failure| failure.kind == ProviderErrorKind::TooLong)
 }
 
 impl Agent {
@@ -94,7 +99,15 @@ impl Agent {
     ) -> Result<Result<Compaction, Stop>> {
         let prompt =
             self.instructions(&self.compact_prompt, "internal/COMPACT.md", instructions)?;
-        let (summary, through) = match self.write_summary(prompt, turn, inbox).await? {
+        let written = match self.write_summary(prompt.clone(), false, turn, inbox).await {
+            // The summary's own request is too large: the older half alone may fit.
+            Err(error) if is_too_long(&error) && self.config.current().limits().shrink_context => {
+                warn!("thread {}: summarizing the older half", self.thread_id);
+                self.write_summary(prompt, true, turn, inbox).await?
+            }
+            written => written?,
+        };
+        let (summary, through) = match written {
             Ok(written) => written,
             Err(stop) => return Ok(Err(stop)),
         };
@@ -119,7 +132,7 @@ impl Agent {
     pub async fn fork(&self, instructions: Option<&str>, inbox: &mut Inbox) -> Option<Stop> {
         let written = async {
             let prompt = self.instructions(&self.fork_prompt, "internal/FORK.md", instructions)?;
-            self.write_summary(prompt, None, inbox).await
+            self.write_summary(prompt, false, None, inbox).await
         };
         match written.await {
             Ok(Ok((summary, _))) => {
@@ -135,16 +148,21 @@ impl Agent {
         }
     }
 
-    /// Asks the model to summarize everything that is not queued with `prompt`. Returns
-    /// the summary and the newest message it covers.
+    /// Asks the model to summarize everything that is not queued with `prompt`, or only
+    /// the older `half` of it. Returns the summary and the newest message it covers.
     async fn write_summary(
         &self,
         prompt: String,
+        half: bool,
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Result<Result<(String, u64), Stop>> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
-        let Some(through) = conversation.compactable_through() else {
+        let through = match half {
+            true => conversation.compactable_half(),
+            false => conversation.compactable_through(),
+        };
+        let Some(through) = through else {
             bail!("nothing to summarize since the last summary");
         };
         let mut messages = conversation.chat_messages_through(through);

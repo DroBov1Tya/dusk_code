@@ -4,11 +4,14 @@
 //! chat asks the user and an agent, with no one to ask, stops. A turn left long ago asks
 //! too, so opening an old chat spends no tokens unasked.
 
-use super::Agent;
+use super::{Agent, StepEnd};
 use crate::providers::ToolCall;
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Inbox, Stop};
-use crate::state::{AgentPhase, PendingMessage, Settle, Turn, TurnStatus, Unfinished};
+use crate::state::{
+    AgentPhase, CHECK_NOTE, CUT_OFF, PendingMessage, Settle, Turn, TurnOutcome, TurnStatus,
+    Unfinished,
+};
 use anyhow::{Result, ensure};
 use dusk_protocol::thread::{TurnWait, duration_words};
 use dusk_protocol::tools::Question;
@@ -37,9 +40,6 @@ const CONTINUE: &str = "Continue";
 const CHECK_FIRST: &str = "Check first";
 const STOP: &str = "Stop";
 
-/// What the model reads before it goes on after "Check first".
-const CHECK_NOTE: &str = "Before repeating the cut-off call, check whether it took effect.";
-
 /// How much of the cut-off call's arguments the question shows.
 const SHOWN_ARGUMENTS: usize = 80;
 
@@ -64,10 +64,7 @@ impl Decision {
 pub fn cut_off_question(call: &ToolCall) -> Question {
     let arguments = one_line(&call.arguments.to_string(), SHOWN_ARGUMENTS);
     Question {
-        question: format!(
-            "A restart cut off `{}`: {arguments}. It may or may not have taken effect.",
-            call.name
-        ),
+        question: format!("A restart cut off `{}`: {arguments}. {CUT_OFF}", call.name),
         options: [CONTINUE, CHECK_FIRST, STOP].map(String::from).to_vec(),
         multiple: false,
     }
@@ -109,7 +106,12 @@ impl Agent {
         };
         let cut_off = self.cut_off(&unfinished).cloned();
         let limit = i64::from(self.config.current().limits().resume_within_seconds) * 1000;
-        let stale = dusk_protocol::system::now_ms() - unfinished.active_at > limit;
+        // A turn that waits for its provider is at work until the wait ends.
+        let active_at = match unfinished.turn.waiting {
+            Some(TurnWait::Provider { wake_at, .. }) => unfinished.active_at.max(wake_at),
+            _ => unfinished.active_at,
+        };
+        let stale = dusk_protocol::system::now_ms() - active_at > limit;
         let deciding = matches!(unfinished.turn.waiting, Some(TurnWait::Decision { .. }));
         // An agent has no one to ask: its asker learns it was stopped and decides.
         if self.depth > 0 {
@@ -177,16 +179,29 @@ impl Agent {
         Ok(Some(turn))
     }
 
-    /// Goes on with a turn a restart found: the open calls of its last step run first,
-    /// then the turn goes on as any other. A call that may have taken effect and may not
-    /// run again never gets here: it was settled or the turn stopped.
+    /// Goes on with a turn a restart found: the rest of a wait for its provider is slept
+    /// out, the open calls of its last step run, then the turn goes on as any other. A
+    /// call that may have taken effect and may not run again never gets here: it was
+    /// settled or the turn stopped.
     pub async fn resume_turn(
         &self,
         turn: &Turn,
         inbox: &mut Inbox,
     ) -> Result<(Option<Stop>, TurnStatus)> {
         info!("thread {} turn {} resumes", self.thread_id, turn.turn_id);
-        self.emit(ThreadEvent::TurnRunning(turn.clone()));
+        let slept = match turn.waiting {
+            Some(TurnWait::Provider { wake_at, .. }) => {
+                self.sleep_out(turn, wake_at, inbox).await?
+            }
+            _ => {
+                self.emit(ThreadEvent::TurnRunning(turn.clone()));
+                Ok(())
+            }
+        };
+        if let Err(stop) = slept {
+            let first = StepEnd::Stopped(stop, TurnOutcome::Interrupted(None));
+            return self.run_turn_from(turn, inbox, Some(first)).await;
+        }
         let unfinished = self.state.unfinished_turn(&self.thread_id).await?;
         let open = unfinished.as_ref().map_or(&[][..], |u| &u.open[..]);
         ensure!(
@@ -205,8 +220,8 @@ impl Agent {
     }
 
     /// Stops the running turn as a restart always did: an open call gets the result that
-    /// says it may or may not have taken effect. `answer` is the user's "Stop", dropped
-    /// with it. The end is told, so an agent's asker learns it was stopped.
+    /// says it may have taken effect and may still be running. `answer` is the user's
+    /// "Stop", dropped with it. The end is told, so an agent's asker learns it was stopped.
     pub async fn stop_unfinished(&self, answer: Option<i64>) -> Result<()> {
         let turn = match answer {
             Some(answer) => self.state.stop_decided(&self.thread_id, answer).await?,
@@ -252,7 +267,7 @@ mod tests {
         assert_eq!(
             question.question,
             "A restart cut off `run_command`: {\"command\":\"rm -rf\\nbuild\"}. \
-             It may or may not have taken effect."
+             It may have taken effect and may still be running."
         );
         let answer = |option: &str| question.reply(option);
         assert_eq!(

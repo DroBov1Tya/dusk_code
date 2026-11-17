@@ -11,6 +11,7 @@ mod step;
 #[cfg(test)]
 mod tests;
 mod turn;
+mod wait;
 
 pub use resume::{Decision, Recovered};
 
@@ -21,8 +22,8 @@ use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
     config::{Config, Effort},
-    providers::{ChatMessage, ModelOutput, ToolSpec},
-    state::{State, TurnAnswer, TurnOutcome},
+    providers::{ChatMessage, ModelOutput, ProviderError, ToolSpec},
+    state::{State, TurnAnswer, TurnFailure, TurnOutcome},
     tools::{ToolRegistry, ToolScope},
 };
 use parking_lot::Mutex;
@@ -89,6 +90,12 @@ enum StepEnd {
     Answered(TurnOutcome),
     CalledTools,
     Stopped(Stop, TurnOutcome),
+    /// The provider cannot serve the step now and nothing of it was written: the turn
+    /// waits and takes the step again, or fails as the failure says.
+    Wait(ProviderError, TurnFailure),
+    /// The context does not fit the model: the turn compacts it and takes the step
+    /// again, or fails as the failure says.
+    TooLarge(TurnFailure),
 }
 
 /// What a stopped step keeps: the text written so far, if any.

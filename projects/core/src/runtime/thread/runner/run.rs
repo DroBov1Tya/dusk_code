@@ -7,11 +7,11 @@ use crate::runtime::{ThreadLock, model_choice::ModelChoice};
 use crate::state::artifacts::ArtifactStore;
 use crate::{
     config::live::LiveConfig,
-    message::commands,
-    state::{PendingMessage, State, Turn, TurnStatus},
+    state::{State, Turn, TurnStatus},
     tools::{ToolRegistry, ToolScope},
 };
 use anyhow::Result;
+use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
@@ -33,6 +33,8 @@ pub struct ThreadRunner {
     pub goal_waiting: bool,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
+    /// The question a restart asked while the runner waits for its answer.
+    pub(super) deciding: Arc<Mutex<Option<Question>>>,
     /// Keeps other processes off the thread while this runner has it.
     _lock: ThreadLock,
 }
@@ -66,6 +68,7 @@ impl ThreadRunner {
     pub fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
         let (input_sender, inputs) = mpsc::unbounded_channel();
         let (events, event_receiver) = mpsc::unbounded_channel();
+        let deciding = Arc::default();
         let input = ThreadInput {
             state: Arc::clone(&setup.state),
             config: Arc::clone(&setup.config),
@@ -73,6 +76,7 @@ impl ThreadRunner {
             events: events.downgrade(),
             thread_id: setup.thread_id.clone(),
             inputs: input_sender,
+            deciding: Arc::clone(&deciding),
         };
         let agent = Agent {
             state: setup.state,
@@ -102,6 +106,7 @@ impl ThreadRunner {
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
             left: false,
+            deciding,
             _lock: setup.lock,
         };
         let output = ThreadOutput {
@@ -305,74 +310,6 @@ impl ThreadRunner {
                 return self.cancel_work().await;
             }
         }
-    }
-
-    /// Takes in what clients sent, oldest first: messages join the thread, commands run.
-    /// A command can take a while, so whatever arrived meanwhile is taken in as well.
-    pub async fn take_in(&mut self) -> Result<()> {
-        loop {
-            let pending = self
-                .agent
-                .state
-                .pending_messages(&self.agent.thread_id)
-                .await?;
-            if pending.is_empty() {
-                return Ok(());
-            }
-            for message in pending {
-                self.take(message).await?;
-            }
-        }
-    }
-
-    async fn take(&mut self, pending: PendingMessage) -> Result<()> {
-        let state = Arc::clone(&self.agent.state);
-        // Another agent's message is never a command, whatever it starts with.
-        let command = if pending.from_thread_id.is_some() || pending.from_job_id.is_some() {
-            None
-        } else {
-            commands::parse(&pending.content)
-        };
-        let Some(command) = command else {
-            let message = state.admit_pending(&self.agent.thread_id, &pending).await?;
-            if message.from_thread_id.is_some() {
-                sqlx::query("UPDATE goals SET work_epoch = work_epoch + 1 WHERE thread_id = ? AND approved_at IS NOT NULL")
-                    .bind(&self.agent.thread_id).execute(&state.pool).await?;
-            } else if message.from_job_id.is_none() {
-                sqlx::query("UPDATE goals SET awaiting_user = 0 WHERE thread_id = ?")
-                    .bind(&self.agent.thread_id)
-                    .execute(&state.pool)
-                    .await?;
-            }
-            if message.from_job_id.is_none() {
-                self.agent.title_from_first_message(&message).await?;
-            }
-            if message.from_thread_id.is_none() && message.from_job_id.is_none() {
-                let details = serde_json::json!({ "text": message.content });
-                self.agent
-                    .hook_notes(crate::plugins::HookEvent::UserMessage, details)
-                    .await?;
-            }
-            self.agent.emit(ThreadEvent::Queued {
-                message_id: message.message_id.clone(),
-            });
-            if message.from_job_id.is_some() {
-                self.agent.emit(ThreadEvent::FromJob(message));
-            } else if message.from_thread_id.is_some() {
-                self.agent.emit(ThreadEvent::FromAgent(message));
-            } else {
-                self.agent.emit(ThreadEvent::UserMessage(message));
-            }
-            return Ok(());
-        };
-        match command {
-            Err(error) => self.agent.emit(ThreadEvent::Rejected {
-                reason: format!("{error:#}"),
-            }),
-            Ok(command) => commands::run_in_thread(command, &self.agent, &mut self.inbox).await,
-        }
-        // Removed only once done: a command cut short by a crash runs again on restart.
-        state.remove_pending(pending.pending_id).await
     }
 
     /// A cancel also pauses an idle goal waiting for dependency completion.

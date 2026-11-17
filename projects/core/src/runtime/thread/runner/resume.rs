@@ -2,12 +2,13 @@
 //! goes on with it, or asks the user and waits for the answer.
 
 use anyhow::Result;
+use dusk_protocol::thread::TurnWait;
 use dusk_protocol::tools::Question;
 
 use super::ThreadRunner;
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Decision, Input, Recovered};
-use crate::state::Turn;
+use crate::state::{PendingMessage, Turn};
 
 /// How a thread goes on after what a restart found.
 pub(super) enum Restart {
@@ -32,14 +33,28 @@ impl ThreadRunner {
     /// messages are read meanwhile: another agent's would come between the step's calls
     /// and their results, so they wait stored. So does what the user sent before the
     /// question, which this turn would not have answered either; an answer stored before
-    /// a restart still counts.
+    /// a restart still counts. The question is shared with the clients' input meanwhile,
+    /// so its answer arrives even when no model is chosen.
     async fn ask(&mut self, turn: Turn, question: Question) -> Result<Restart> {
+        *self.deciding.lock() = Some(question.clone());
+        let asked = self.wait_for_answer(turn, question).await;
+        *self.deciding.lock() = None;
+        asked
+    }
+
+    async fn wait_for_answer(&mut self, turn: Turn, question: Question) -> Result<Restart> {
         self.agent.emit(ThreadEvent::TurnWaiting(turn.clone()));
         self.agent.emit(ThreadEvent::Question(question.clone()));
         let state = std::sync::Arc::clone(&self.agent.state);
         let thread_id = self.agent.thread_id.clone();
         let earlier = state.pending_messages(&thread_id).await?;
         let asked_after = earlier.iter().map(|message| message.pending_id).max();
+        // An answer older than the wait answered an earlier question worded the same, such
+        // as a second tap on another client; it never decides this one.
+        let since = match turn.waiting {
+            Some(TurnWait::Decision { since }) => since,
+            _ => i64::MIN,
+        };
         loop {
             let pending = state.pending_messages(&thread_id).await?;
             let said = pending.into_iter().find_map(|message| {
@@ -47,13 +62,14 @@ impl ThreadRunner {
                     return None;
                 }
                 match Decision::of(&question, &message.content) {
-                    Some(decision) => Some((message, Some(decision))),
-                    None if Some(message.pending_id) > asked_after => Some((message, None)),
+                    Some(_) if message.created_at < since => Some(Said::Stale(message)),
+                    Some(decision) => Some(Said::Decided(message, decision)),
+                    None if Some(message.pending_id) > asked_after => Some(Said::Other),
                     None => None,
                 }
             });
             match said {
-                Some((message, Some(decision))) => {
+                Some(Said::Decided(message, decision)) => {
                     return match self.agent.decide(&turn, &message, decision).await? {
                         Some(turn) => Ok(Restart::GoOn(turn)),
                         None => {
@@ -62,9 +78,13 @@ impl ThreadRunner {
                         }
                     };
                 }
+                Some(Said::Stale(message)) => {
+                    state.remove_pending(message.pending_id).await?;
+                    continue;
+                }
                 // Anything else the user says stops the turn, and is then taken in as
                 // any message is.
-                Some((_, None)) => {
+                Some(Said::Other) => {
                     self.agent.stop_unfinished(None).await?;
                     return Ok(Restart::Idle);
                 }
@@ -81,4 +101,14 @@ impl ThreadRunner {
             }
         }
     }
+}
+
+/// What the user's stored messages say to the question.
+enum Said {
+    /// The answer, with the option chosen.
+    Decided(PendingMessage, Decision),
+    /// An answer to an earlier question worded the same.
+    Stale(PendingMessage),
+    /// Something else the user said since the question.
+    Other,
 }

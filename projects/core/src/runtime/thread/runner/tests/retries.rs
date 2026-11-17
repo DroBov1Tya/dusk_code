@@ -25,14 +25,15 @@ fn failures(events: &[ThreadEvent]) -> Vec<&TurnFailure> {
         .collect()
 }
 
-/// Every attempt failed: the turn ends with one event that says why and after how many
-/// attempts, and nothing else in the chat says it again. A chat opened again shows it.
+/// Every attempt failed and the turn does not wait for the provider: it ends with one
+/// event that says why and after how many attempts, and nothing else in the chat says it
+/// again. A chat opened again shows it.
 #[tokio::test]
 async fn a_failed_call_ends_the_turn_with_one_event_that_a_reopened_chat_shows_again() {
     let state = thread_state("one_failure").await;
     let config = Arc::new(temp_live_config_with(
         "one_failure_config",
-        "limits:\n  max_attempts: 3\n",
+        "limits:\n  max_attempts: 3\n  wait_for_provider: false\n",
     ));
     let provider = provider(vec![vec![Step::Fail]; 3]);
     let (first, input, output) = runner(&state, &provider, &config, model(None));
@@ -93,7 +94,10 @@ async fn an_unreachable_host_is_tried_past_the_attempts_until_the_time_budget() 
     let budget: u64 = 60;
     let config = Arc::new(temp_live_config_with(
         "unreachable_config",
-        &format!("limits:\n  max_attempts: 2\n  retry_unreachable_seconds: {budget}\n"),
+        &format!(
+            "limits:\n  max_attempts: 2\n  retry_unreachable_seconds: {budget}\n  \
+             wait_for_provider: false\n"
+        ),
     ));
     let provider = provider(vec![vec![Step::Unreachable]; 40]);
     let (runner, input, output) = runner(&state, &provider, &config, model(None));
@@ -173,7 +177,7 @@ async fn a_provider_is_shown_failing_then_answering() {
     let state = thread_state("health").await;
     let config = Arc::new(temp_live_config_with(
         "health_config",
-        "limits:\n  max_attempts: 2\n",
+        "limits:\n  max_attempts: 2\n  wait_for_provider: false\n",
     ));
     let provider = provider(vec![
         vec![Step::Fail],

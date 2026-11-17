@@ -9,14 +9,16 @@ use crate::{config::Limits, providers::ProviderErrorKind};
 /// so a five-minute budget is run through in their time; the database they write to does
 /// not suit tokio's paused clock.
 #[cfg(not(test))]
-const UNIT: Duration = Duration::from_secs(1);
+pub(super) const UNIT: Duration = Duration::from_secs(1);
 #[cfg(test)]
-const UNIT: Duration = Duration::from_millis(1);
+pub(super) const UNIT: Duration = Duration::from_millis(1);
 
 /// Doubles before each further attempt, up to `MAX_RETRY_DELAY`.
 const FIRST_RETRY_DELAY: Duration = UNIT;
 
-const MAX_RETRY_DELAY: Duration = UNIT.saturating_mul(30);
+/// Also the longest pause slept inside the loop: a turn that may wait for its provider
+/// stores a longer one instead, so it outlasts a restart.
+pub(super) const MAX_RETRY_DELAY: Duration = UNIT.saturating_mul(30);
 
 /// What ends the attempts of a model call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

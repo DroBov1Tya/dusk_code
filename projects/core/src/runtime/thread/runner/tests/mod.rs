@@ -27,10 +27,11 @@ use crate::{
 use std::{sync::Arc, time::Duration};
 
 /// Each model call takes the next script; `Hang` never finishes, like a slow model.
-/// The messages of every request are kept.
+/// The messages of every request are kept, and when it was sent, in Unix ms.
 struct FakeProvider {
     scripts: Mutex<VecDeque<Vec<Step>>>,
     requests: Mutex<Vec<Vec<ChatMessage>>>,
+    sent_at: Mutex<Vec<i64>>,
     efforts: Mutex<Vec<Option<crate::config::Effort>>>,
     output_limits: Mutex<Vec<Option<u64>>>,
 }
@@ -55,6 +56,9 @@ enum Step {
     Unreachable,
     /// The call fails before any output, in a way not worth retrying.
     Reject,
+    /// The call fails before any output as this kind, the provider asking to wait this
+    /// long if it says.
+    Error(ProviderErrorKind, Option<Duration>),
     /// The connection drops where this step stands.
     Break,
 }
@@ -77,6 +81,8 @@ impl ModelProvider for FakeProvider {
             .lock()
             .unwrap()
             .push(request.messages.to_vec());
+        let now = dusk_protocol::system::now_ms();
+        self.sent_at.lock().unwrap().push(now);
         // Agent steps only: titles and summaries go without tools.
         if !request.tools.is_empty() {
             self.efforts.lock().unwrap().push(request.effort);
@@ -93,6 +99,11 @@ impl ModelProvider for FakeProvider {
         if let Some(Step::Unreachable) = script.first() {
             let lost = ProviderError::new(ProviderErrorKind::Unreachable, "could not reach host");
             return Box::pin(async move { Err(lost.into()) });
+        }
+        if let Some(&Step::Error(kind, retry_after)) = script.first() {
+            let mut failed = ProviderError::new(kind, format!("{kind:?}"));
+            failed.retry_after = retry_after;
+            return Box::pin(async move { Err(failed.into()) });
         }
         if let Some(Step::Reject) = script.first() {
             return Box::pin(async { Err(anyhow::anyhow!("bad request")) });
@@ -165,7 +176,9 @@ impl ChatStream for FakeStream {
                     let kind = ProviderErrorKind::Interrupted;
                     return Err(ProviderError::new(kind, "connection reset").into());
                 }
-                Some(Step::Fail | Step::Unreachable | Step::Reject) | None => None,
+                Some(Step::Fail | Step::Unreachable | Step::Reject | Step::Error(..)) | None => {
+                    None
+                }
             })
         })
     }
@@ -190,8 +203,9 @@ impl Tool for Echo {
 }
 
 /// Counts its runs by their `text`, so a restart shows which calls ran again. `repeatable`
-/// is what it says of a lost result; `hang` keeps a run going once counted, as a call a
-/// kill cut off after its effect.
+/// is what it says of a lost result, unless the call's own `repeatable` argument says
+/// otherwise; `hang` keeps a run going once counted, as a call a kill cut off after its
+/// effect.
 #[derive(Clone, Default)]
 struct Counter {
     runs: Arc<Mutex<Vec<String>>>,
@@ -218,8 +232,8 @@ impl Tool for Counter {
         json!({ "type": "object" })
     }
 
-    fn repeatable(&self, _arguments: &Value) -> bool {
-        self.repeatable
+    fn repeatable(&self, arguments: &Value) -> bool {
+        arguments["repeatable"].as_bool().unwrap_or(self.repeatable)
     }
 
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
@@ -238,6 +252,7 @@ fn provider(scripts: Vec<Vec<Step>>) -> Arc<FakeProvider> {
     Arc::new(FakeProvider {
         scripts: Mutex::new(scripts.into()),
         requests: Mutex::new(Vec::new()),
+        sent_at: Mutex::new(Vec::new()),
         efforts: Mutex::new(Vec::new()),
         output_limits: Mutex::new(Vec::new()),
     })
@@ -351,4 +366,6 @@ mod goals;
 mod repeats;
 mod resume;
 mod retries;
+mod shrink;
 mod turns;
+mod waits;

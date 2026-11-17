@@ -6,9 +6,35 @@ use dusk_protocol::thread::TurnWait;
 
 use super::{
     State, messages, timestamp_ms,
-    turns::{LOST, Turn, close_call, decode_turn, interrupt, open_calls, read_running_turn},
+    turns::{Turn, close_call, decode_turn, interrupt, open_calls, read_running_turn},
 };
 use crate::providers::ToolCall;
+
+/// What a restart says of a call it cut off, in one place for the question, the call's
+/// result and the note after "Check first". A foreground command runs in its own process
+/// group, so a kill of duskcode can leave it running.
+macro_rules! may_still_run {
+    () => {
+        "may have taken effect and may still be running"
+    };
+}
+
+/// The end of the question about a call a restart cut off.
+pub const CUT_OFF: &str = concat!("It ", may_still_run!(), ".");
+
+/// What a call that was running when the process stopped gets for a result.
+pub(super) const LOST: &str = concat!(
+    "no result: the process stopped while this call ran, so it ",
+    may_still_run!()
+);
+
+/// What the model reads before it goes on after "Check first".
+pub const CHECK_NOTE: &str = concat!(
+    "The cut-off call ",
+    may_still_run!(),
+    ". Before repeating it, check whether it took effect; before repeating a command, \
+     check whether a process it started is still running."
+);
 
 /// What the calls after a cut-off one get: they never started.
 const NOT_RUN: &str = "not run: an earlier call of this step was cut off by a restart";

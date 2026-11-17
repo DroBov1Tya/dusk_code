@@ -25,7 +25,7 @@ use tokio::sync::mpsc::UnboundedReceiver;
 
 use crate::{
     args::Options,
-    overrides,
+    overrides::{self, Setting},
     sandbox::{self, TempHome},
     score::{self, Outcome, Report, TIMED_OUT},
     task::{self, Task},
@@ -45,10 +45,7 @@ pub async fn all(options: &Options) -> Result<()> {
     sandbox::private(paths.config_root(), 0o700)?;
     let config = fs::read(&options.config)
         .with_context(|| format!("cannot read {}", options.config.display()))?;
-    let config = match options.settings.as_slice() {
-        [] => config,
-        settings => overrides::apply(&config, settings)?.into_bytes(),
-    };
+    let config = overrides::apply(&config, &forced(&options.settings)?)?.into_bytes();
     fs::write(paths.config_file(), config)?;
     sandbox::private(&paths.config_file(), 0o600)?;
     let mut prompt = "shipped".to_owned();
@@ -111,6 +108,18 @@ pub async fn all(options: &Options) -> Result<()> {
     }
     fs::write(&options.out, serde_json::to_string_pretty(&report)?)?;
     Ok(())
+}
+
+/// A run's own settings: `settings` and, unless they set it, a turn that fails when its
+/// provider cannot serve it, as before turns waited. A rate limit would otherwise hold a
+/// task for hours, and a run measures the harness, not the provider's patience.
+fn forced(settings: &[Setting]) -> Result<Vec<Setting>> {
+    let fail = Setting::parse("limits.wait_for_provider=false").map_err(anyhow::Error::msg)?;
+    let mut all = settings.to_vec();
+    if !settings.iter().any(|setting| setting.name == fail.name) {
+        all.push(fail);
+    }
+    Ok(all)
 }
 
 /// What is known of a task while it runs.
@@ -329,5 +338,16 @@ mod tests {
         watch.see(from_agent(notice(RepeatRung::Replan)), None);
         watch.see(from_agent(notice(RepeatRung::Stop)), None);
         assert_eq!((watch.repeat_notices, watch.repeat_stops), (2, 1));
+    }
+
+    /// A run never waits hours for a provider, unless `--set` asks it to.
+    #[test]
+    fn a_run_fails_on_a_provider_that_cannot_serve_it() {
+        let config = b"model: a/b\n";
+        let written = overrides::apply(config, &forced(&[]).unwrap()).unwrap();
+        assert!(written.contains("wait_for_provider: false"), "{written}");
+        let asked = [Setting::parse("limits.wait_for_provider=true").unwrap()];
+        let written = overrides::apply(config, &forced(&asked).unwrap()).unwrap();
+        assert!(written.contains("wait_for_provider: true"), "{written}");
     }
 }

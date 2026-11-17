@@ -47,6 +47,15 @@ pub struct Limits {
     /// unasked.
     #[serde(default = "default_resume_within_seconds")]
     pub resume_within_seconds: u32,
+    /// Whether a turn whose provider cannot serve it now (rate limited, out of quota, out
+    /// of reach, overloaded) waits and goes on by itself, for up to a day, instead of
+    /// failing once the call's attempts are spent. The wait outlasts a restart.
+    #[serde(default = "yes")]
+    pub wait_for_provider: bool,
+    /// Whether a compaction whose own request is too large for the model summarizes the
+    /// older half of the context instead. Off until the evals show it helps.
+    #[serde(default)]
+    pub shrink_context: bool,
     /// The ladder for the same error coming back within a turn through calls that
     /// differ: a note, then a re-plan, then a stop. Off until the evals show it does not
     /// lower the pass rate.
@@ -74,6 +83,8 @@ impl Default for Limits {
             max_attempts: default_max_attempts(),
             retry_unreachable_seconds: default_retry_unreachable_seconds(),
             resume_within_seconds: default_resume_within_seconds(),
+            wait_for_provider: true,
+            shrink_context: false,
             failure_ladder: false,
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),

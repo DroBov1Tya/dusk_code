@@ -14,6 +14,7 @@ use super::{
     Message, State,
     failure::{TurnFailure, columns},
     messages::{NewMessage, insert_message},
+    resume::LOST,
     timestamp_ms,
     waits::decode_wait,
 };
@@ -301,8 +302,8 @@ impl State {
     }
 
     /// A process that stopped mid-turn leaves it running; mark such a turn interrupted and
-    /// return it. A tool that was running then may or may not have taken effect, and its
-    /// result says so.
+    /// return it. A tool that was running then may have taken effect and may still run,
+    /// and its result says so.
     pub async fn interrupt_running_turns(&self, thread_id: &str) -> Result<Option<Turn>> {
         let mut transaction = self.pool.begin().await.context("begin recovery")?;
         let turn = interrupt(&mut transaction, thread_id).await?;
@@ -310,10 +311,6 @@ impl State {
         Ok(turn)
     }
 }
-
-/// What a call that was running when the process stopped gets for a result.
-pub(super) const LOST: &str =
-    "no result: the process stopped while this call ran, so it may or may not have taken effect";
 
 /// Interrupts the thread's running turn, if any, inside the caller's transaction.
 pub(super) async fn interrupt(
@@ -529,7 +526,7 @@ mod tests {
         let result = messages.last().unwrap();
         assert_eq!(result.tool_call_id.as_deref(), Some("call_1"));
         assert!(
-            result.content.contains("may or may not"),
+            result.content.contains("may still be running"),
             "{}",
             result.content
         );

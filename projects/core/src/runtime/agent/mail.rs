@@ -216,7 +216,17 @@ impl Launcher {
         root: String,
         cwd: PathBuf,
     ) {
+        // A runner's first act is to settle what a restart left: a turn it stops then was
+        // never announced as at work. Only that stop wakes the asker, which may be an
+        // agent no longer at work; a stop the user made must not start work again.
+        let mut announced = false;
         while let Some(event) = output.next_event().await {
+            announced |= matches!(
+                event,
+                ThreadEvent::TurnStarted(_)
+                    | ThreadEvent::TurnRunning(_)
+                    | ThreadEvent::TurnWaiting(_)
+            );
             let report = match &event {
                 ThreadEvent::TurnFinished(turn) => match turn.status {
                     TurnStatus::Completed => {
@@ -235,10 +245,15 @@ impl Launcher {
                             None => "(no answer yet)".into(),
                         };
                         let stopped = format!("was stopped before it finished; so far:\n{answer}");
-                        if let Err(error) = self.tell_stopped(&parent, &thread.id, &stopped).await {
-                            warn!("cannot report agent thread {}: {error:#}", thread.id);
+                        if !announced {
+                            Some(stopped)
+                        } else {
+                            let told = self.tell_stopped(&parent, &thread.id, &stopped).await;
+                            if let Err(error) = told {
+                                warn!("cannot report agent thread {}: {error:#}", thread.id);
+                            }
+                            None
                         }
-                        None
                     }
                     TurnStatus::Running => None,
                 },

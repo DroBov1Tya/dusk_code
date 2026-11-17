@@ -144,6 +144,36 @@ impl Conversation {
             .max()
     }
 
+    /// The newest message a compaction of the older half could cover: at or below half
+    /// of the tokens a compaction would summarize now, and never between a step's calls
+    /// and their results, which stay together. `None` when no such message is there.
+    pub fn compactable_half(&self) -> Option<u64> {
+        let through = self.compactable_through()?;
+        let summarized: Vec<&Message> = self
+            .messages
+            .iter()
+            .filter(|message| message.role != MessageRole::System && message.sequence <= through)
+            .filter(|message| chat_message(message, &self.senders).is_some())
+            .collect();
+        let total: u64 = summarized
+            .iter()
+            .map(|message| message.context_tokens())
+            .sum();
+        let mut tokens = 0;
+        let mut half = None;
+        for (index, message) in summarized.iter().enumerate() {
+            tokens += message.context_tokens();
+            if tokens * 2 > total {
+                break;
+            }
+            let next = summarized.get(index + 1);
+            if next.is_none_or(|next| next.role != MessageRole::Tool) {
+                half = Some(message.sequence);
+            }
+        }
+        half
+    }
+
     /// Size of a request with these messages and tools. The provider's count of the last
     /// request is exact, so only what came after it is estimated; estimates alone tend
     /// to miss the chat template markup.
