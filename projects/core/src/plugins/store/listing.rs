@@ -43,6 +43,13 @@ pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) 
                 sha256: cover.sha256.clone(),
                 size: cover.size,
             }),
+        screenshots: entry
+            .screenshots
+            .iter()
+            .map(|screenshot| dusk_protocol::plugin::ScreenshotRef {
+                caption: screenshot.caption.clone(),
+            })
+            .collect(),
         stars: entry.stars,
         created: entry.created.clone(),
         updated: entry.updated.clone(),
