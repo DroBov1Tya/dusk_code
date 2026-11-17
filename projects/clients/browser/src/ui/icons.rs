@@ -44,6 +44,12 @@ pub enum IconName {
     TierVerified,
     TierCommunity,
     TierLocal,
+    Filter,
+    ChevronLeft,
+    ChevronRight,
+    Star,
+    TriangleAlert,
+    ExternalLink,
 }
 
 impl IconName {
@@ -89,6 +95,12 @@ impl IconName {
             Self::TierVerified => "#dusk-icon-tier-verified",
             Self::TierCommunity => "#dusk-icon-tier-community",
             Self::TierLocal => "#dusk-icon-tier-local",
+            Self::Filter => "#dusk-icon-filter",
+            Self::ChevronLeft => "#dusk-icon-chevron-left",
+            Self::ChevronRight => "#dusk-icon-chevron-right",
+            Self::Star => "#dusk-icon-star",
+            Self::TriangleAlert => "#dusk-icon-triangle-alert",
+            Self::ExternalLink => "#dusk-icon-external-link",
         }
     }
 }

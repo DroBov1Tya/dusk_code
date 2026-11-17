@@ -1,9 +1,15 @@
-//! The Workshop in the browser: the same storefront as the desktop app, drawn simpler.
-//! Official picks in a carousel, a section per tier, packs with their switches. A
-//! browser may look and switch, never install: the server refuses it, so no install
-//! button is drawn. The core sorts and filters by category; this only groups by tier.
+//! The Workshop in the browser: the same storefront as the desktop app. A featured hero
+//! of official picks, shelves of capsules (a tier each, the core's picks of the newest,
+//! the latest updated and the most starred, the local packs), one Filters menu, a
+//! listing's window with its gallery, and a pack's page with its switches. A browser may
+//! look and switch, never install: the server refuses it, so no install button is drawn.
+//! The core sorts, filters by category and picks the shelves; tiers and kinds only
+//! narrow what is shown here.
 
 mod card;
+mod detail;
+mod filters;
+mod hero;
 mod pack;
 
 use std::collections::{BTreeSet, HashMap};
@@ -22,10 +28,34 @@ use crate::{
 pub const TIERS: [Tier; 4] = [Tier::Official, Tier::Verified, Tier::Community, Tier::Local];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Facet {
-    Category,
-    Tier,
-    Kind,
+enum Shelf {
+    Tier(Tier),
+    Newest,
+    Updated,
+    Stars,
+    Local,
+}
+
+const SHELVES: [Shelf; 7] = [
+    Shelf::Tier(Tier::Official),
+    Shelf::Tier(Tier::Verified),
+    Shelf::Tier(Tier::Community),
+    Shelf::Newest,
+    Shelf::Updated,
+    Shelf::Stars,
+    Shelf::Local,
+];
+
+impl Shelf {
+    fn title(self) -> &'static str {
+        match self {
+            Self::Tier(tier) => card::word(tier),
+            Self::Newest => "New",
+            Self::Updated => "Recently updated",
+            Self::Stars => "Top rated",
+            Self::Local => "Built-in and local",
+        }
+    }
 }
 
 /// The page's state; every field is a signal, so the struct is copied into handlers.
@@ -36,15 +66,22 @@ pub struct Shop {
     order: RwSignal<Order>,
     category: RwSignal<Option<String>>,
     categories: RwSignal<Vec<String>>,
-    facet: RwSignal<Facet>,
-    tier: RwSignal<Option<Tier>>,
-    kind: RwSignal<Option<Kind>>,
+    tiers: RwSignal<Vec<Tier>>,
+    kinds: RwSignal<Vec<Kind>>,
     query: RwSignal<String>,
-    pick: RwSignal<usize>,
+    menu: RwSignal<bool>,
+    hero: RwSignal<usize>,
+    /// The shelf shown whole after "See all".
+    shelf: RwSignal<Option<Shelf>>,
     /// The pack whose page is open.
     open: RwSignal<Option<String>>,
+    /// The listing whose window is open, by source and name, and its picture in view.
+    window: RwSignal<Option<(String, String)>>,
+    gallery: RwSignal<usize>,
     /// Covers as `data:` addresses by SHA-256; empty while asked for or when not shown.
     covers: RwSignal<HashMap<String, String>>,
+    /// Screenshots by `source/name@version`, each empty while asked for or when not shown.
+    shots: RwSignal<HashMap<String, Vec<String>>>,
 }
 
 impl Shop {
@@ -65,7 +102,7 @@ impl Shop {
         run(api::skill_packs(), move |packs| self.packs.set(packs));
     }
 
-    /// Asks once per cover; one that fails keeps the card's letter, with no toast.
+    /// Asks once per cover; one that fails keeps the capsule's letter, with no toast.
     fn load_covers(self, listings: &[Listing]) {
         for listing in listings {
             let Some(cover) = &listing.cover else {
@@ -92,11 +129,66 @@ impl Shop {
         }
     }
 
+    /// Asks once per version for a listing's screenshots, when its window opens.
+    fn load_shots(self, listing: &Listing) {
+        let key = shots_key(listing);
+        let count = listing.screenshots.len();
+        if count == 0 || self.shots.with_untracked(|shots| shots.contains_key(&key)) {
+            return;
+        }
+        self.shots.update(|shots| {
+            shots.insert(key.clone(), vec![String::new(); count]);
+        });
+        for index in 0..count {
+            let (source, name, key) = (listing.source.clone(), listing.name.clone(), key.clone());
+            leptos::task::spawn_local(async move {
+                if let Ok(url) = api::screenshot(source, name, index as u32).await {
+                    self.shots.update(|shots| {
+                        if let Some(slot) = shots.get_mut(&key).and_then(|all| all.get_mut(index)) {
+                            *slot = url;
+                        }
+                    });
+                }
+            });
+        }
+    }
+
     pub fn cover(self, listing: &Listing) -> Option<String> {
         let sha = &listing.cover.as_ref()?.sha256;
         self.covers
             .with(|covers| covers.get(sha).filter(|url| !url.is_empty()).cloned())
     }
+
+    fn open_listing(self, listing: &Listing) {
+        self.menu.set(false);
+        self.gallery.set(0);
+        self.load_shots(listing);
+        self.window
+            .set(Some((listing.source.clone(), listing.name.clone())));
+    }
+
+    fn find(self, source: &str, name: &str) -> Option<Listing> {
+        self.list.with(|list| {
+            list.as_ref()?
+                .listings
+                .iter()
+                .find(|listing| listing.source == source && listing.name == name)
+                .cloned()
+        })
+    }
+
+    /// Nothing narrows the list and it is in trust order: the storefront, not results.
+    fn browsing(self) -> bool {
+        self.query.with(|query| query.trim().is_empty())
+            && self.category.with(Option::is_none)
+            && self.tiers.with(Vec::is_empty)
+            && self.kinds.with(Vec::is_empty)
+            && self.order.get() == Order::Trust
+    }
+}
+
+fn shots_key(listing: &Listing) -> String {
+    format!("{}/{}@{}", listing.source, listing.name, listing.version)
 }
 
 #[component]
@@ -107,30 +199,37 @@ pub fn Workshop() -> impl IntoView {
         order: RwSignal::new(Order::Trust),
         category: RwSignal::new(None),
         categories: RwSignal::new(Vec::new()),
-        facet: RwSignal::new(Facet::Category),
-        tier: RwSignal::new(None),
-        kind: RwSignal::new(None),
+        tiers: RwSignal::new(Vec::new()),
+        kinds: RwSignal::new(Vec::new()),
         query: RwSignal::new(String::new()),
-        pick: RwSignal::new(0),
+        menu: RwSignal::new(false),
+        hero: RwSignal::new(0),
+        shelf: RwSignal::new(None),
         open: RwSignal::new(None),
+        window: RwSignal::new(None),
+        gallery: RwSignal::new(0),
         covers: RwSignal::new(HashMap::new()),
+        shots: RwSignal::new(HashMap::new()),
     };
     shop.load();
     view! {
         <div class="workshop">
             <p class="note">"Look and switch packs here. Installing and updating happen in the \
                 desktop app or the terminal: a plugin runs programs on this machine."</p>
-            <div class="filters">
+            <div class="store-bar">
                 <input type="search" placeholder="Search the Workshop" aria-label="Search the Workshop"
                     prop:value=move || shop.query.get()
                     on:input=move |ev| shop.query.set(event_target_value(&ev)) />
-                <button class="ghost" aria-label="Read the store again" on:click=move |_| shop.load()>
-                    <Icon name=IconName::RefreshCw />"Refresh"</button>
+                {filters::button(shop)}
+                <button class="icon" title="Read the store again" aria-label="Read the store again"
+                    on:click=move |_| shop.load()><Icon name=IconName::RefreshCw /></button>
             </div>
+            {move || filters::chips(shop)}
             {move || match shop.open.get() {
                 Some(name) => pack::page(shop, name).into_any(),
                 None => storefront(shop).into_any(),
             }}
+            {move || shop.window.get().map(|(source, name)| detail::window(shop, source, name))}
         </div>
     }
 }
@@ -140,17 +239,6 @@ fn storefront(shop: Shop) -> impl IntoView {
         return view! { <p class="muted">"Reading the store..."</p> }.into_any();
     };
     let shown = visible(shop, &list.listings);
-    let browsing = shop.query.with(String::is_empty)
-        && shop.category.with(Option::is_none)
-        && shop.tier.with(Option::is_none);
-    let featured: Vec<Listing> = shown
-        .iter()
-        .filter(|listing| listing.tier == Tier::Official)
-        .take(5)
-        .cloned()
-        .collect();
-    let discover = (browsing && shop.order.get() == Order::Trust && !featured.is_empty())
-        .then(|| discover(shop, featured));
     let failed = list
         .failed
         .iter()
@@ -158,26 +246,156 @@ fn storefront(shop: Shop) -> impl IntoView {
             view! { <p class="note">{format!("{} could not be read: {}", failure.source, failure.error)}</p> }
         })
         .collect_view();
+    let body = if !shop.browsing() {
+        let mut items: Vec<Item> = shown
+            .into_iter()
+            .map(|listing| Item::Listing(Box::new(listing)))
+            .collect();
+        items.extend(
+            local_packs(shop, &list.listings)
+                .into_iter()
+                .map(Item::Pack),
+        );
+        results(shop, items)
+    } else if let Some(shelf) = shop.shelf.get() {
+        let items = items(shop, shelf, &list, &shown);
+        view! {
+            <section class="shelf">
+                <div><button class="ghost" on:click=move |_| shop.shelf.set(None)>
+                    <Icon name=IconName::ChevronLeft />"All shelves"</button></div>
+                {heading(Some(shelf), shelf.title(), items.len(), None)}
+                <div class="capsules">{capsules(shop, items)}</div>
+            </section>
+        }
+        .into_any()
+    } else {
+        let picks: Vec<Listing> = shown
+            .iter()
+            .filter(|listing| listing.tier == Tier::Official)
+            .take(5)
+            .cloned()
+            .collect();
+        let shelves = SHELVES
+            .into_iter()
+            .filter_map(|shelf| {
+                let items = items(shop, shelf, &list, &shown);
+                (!items.is_empty()).then(|| shelf_row(shop, shelf, items))
+            })
+            .collect_view();
+        view! {
+            {(!picks.is_empty()).then(|| hero::hero(shop, picks))}
+            {shelves}
+        }
+        .into_any()
+    };
+    view! { {failed} {body} }.into_any()
+}
+
+/// What a shelf holds.
+#[derive(Clone)]
+enum Item {
+    Listing(Box<Listing>),
+    Pack(SkillPack),
+}
+
+fn items(shop: Shop, shelf: Shelf, list: &StoreList, shown: &[Listing]) -> Vec<Item> {
+    let picked = |indices: &[usize]| -> Vec<Item> {
+        indices
+            .iter()
+            .filter_map(|&index| list.listings.get(index))
+            .cloned()
+            .map(|listing| Item::Listing(Box::new(listing)))
+            .collect()
+    };
+    match shelf {
+        Shelf::Tier(tier) => shown
+            .iter()
+            .filter(|listing| listing.tier == tier)
+            .cloned()
+            .map(|listing| Item::Listing(Box::new(listing)))
+            .collect(),
+        Shelf::Newest => picked(&list.picks.newest),
+        Shelf::Updated => picked(&list.picks.updated),
+        Shelf::Stars => picked(&list.picks.stars),
+        Shelf::Local => shown
+            .iter()
+            .filter(|listing| listing.tier == Tier::Local)
+            .cloned()
+            .map(|listing| Item::Listing(Box::new(listing)))
+            .chain(
+                local_packs(shop, &list.listings)
+                    .into_iter()
+                    .map(Item::Pack),
+            )
+            .collect(),
+    }
+}
+
+fn capsules(shop: Shop, items: Vec<Item>) -> impl IntoView {
+    items
+        .into_iter()
+        .map(|item| match item {
+            Item::Listing(listing) => card::capsule(shop, *listing),
+            Item::Pack(pack) => card::pack(shop, pack).into_any(),
+        })
+        .collect_view()
+}
+
+/// One shelf: its heading with "See all", and its capsules in a row that scrolls sideways.
+fn shelf_row(shop: Shop, shelf: Shelf, items: Vec<Item>) -> AnyView {
+    let all = view! {
+        <button class="ghost quiet" on:click=move |_| shop.shelf.set(Some(shelf))>"See all"</button>
+    };
     view! {
-        {filters(shop)}
-        {failed}
-        {discover}
-        {sections(shop, &list.listings, shown)}
+        <section class="shelf">
+            {heading(Some(shelf), shelf.title(), items.len(), Some(all.into_any()))}
+            <div class="shelf-row">{capsules(shop, items)}</div>
+        </section>
     }
     .into_any()
 }
 
-/// Listings left after the search, tier and kind, in the core's order.
+fn results(shop: Shop, items: Vec<Item>) -> AnyView {
+    if items.is_empty() {
+        return view! { <p class="muted">"Nothing matches. Try another word or filter."</p> }
+            .into_any();
+    }
+    view! {
+        <section class="shelf">
+            {heading(None, "Results", items.len(), None)}
+            <div class="capsules">{capsules(shop, items)}</div>
+        </section>
+    }
+    .into_any()
+}
+
+fn heading(shelf: Option<Shelf>, title: &str, count: usize, end: Option<AnyView>) -> impl IntoView {
+    let icon = shelf.map(|shelf| match shelf {
+        Shelf::Tier(tier) => view! { <span class=format!("tier {}", card::class(tier))><Icon name=card::icon(tier) /></span> }.into_any(),
+        Shelf::Local => view! { <span class="tier tier-local"><Icon name=IconName::TierLocal /></span> }.into_any(),
+        Shelf::Stars => view! { <Icon name=IconName::Star /> }.into_any(),
+        Shelf::Newest => view! { <Icon name=IconName::Calendar /> }.into_any(),
+        Shelf::Updated => view! { <Icon name=IconName::RefreshCw /> }.into_any(),
+    });
+    view! {
+        <div class="shelf-head">
+            {icon}<h3>{title.to_owned()}</h3><span class="muted">{count}</span>
+            <span class="grow"></span>{end}
+        </div>
+    }
+}
+
+/// Listings left after the search, tiers and kinds, in the core's order.
 fn visible(shop: Shop, listings: &[Listing]) -> Vec<Listing> {
     let query = shop.query.get().trim().to_lowercase();
-    let (tier, kind) = (shop.tier.get(), shop.kind.get());
+    let (tiers, kinds) = (shop.tiers.get(), shop.kinds.get());
     listings
         .iter()
-        .filter(|listing| tier.is_none_or(|tier| listing.tier == tier))
-        .filter(|listing| kind.is_none_or(|kind| listing.kind == kind))
+        .filter(|listing| tiers.is_empty() || tiers.contains(&listing.tier))
+        .filter(|listing| kinds.is_empty() || kinds.contains(&listing.kind))
         .filter(|listing| {
             query.is_empty()
-                || [&listing.name, &listing.description]
+                || [&listing.name, &listing.description, &listing.tags.join(" ")]
                     .iter()
                     .any(|text| text.to_lowercase().contains(&query))
         })
@@ -185,200 +403,27 @@ fn visible(shop: Shop, listings: &[Listing]) -> Vec<Listing> {
         .collect()
 }
 
-fn filters(shop: Shop) -> impl IntoView {
-    let segment = move |facet: Facet, label: &'static str| {
-        view! {
-            <button class:active=move || shop.facet.get() == facet
-                on:click=move |_| shop.facet.set(facet)>{label}</button>
-        }
-    };
-    let chips = match shop.facet.get() {
-        Facet::Category => {
-            let current = shop.category.get();
-            let mut chips = vec![chip("All".into(), current.is_none(), move || {
-                shop.category.set(None);
-                shop.load();
-            })];
-            for category in shop.categories.get() {
-                let chosen = current.as_deref() == Some(&category);
-                let picked = category.clone();
-                chips.push(chip(category, chosen, move || {
-                    shop.category.set(Some(picked.clone()));
-                    shop.load();
-                }));
-            }
-            chips.collect_view().into_any()
-        }
-        Facet::Tier => {
-            let current = shop.tier.get();
-            let mut chips = vec![chip("All".into(), current.is_none(), move || {
-                shop.tier.set(None)
-            })];
-            for each in TIERS {
-                chips.push(
-                    view! {
-                        <button class="chip" class:active=current == Some(each)
-                            on:click=move |_| shop.tier.set(Some(each))>{card::mark(each)}</button>
-                    }
-                    .into_any(),
-                );
-            }
-            chips.collect_view().into_any()
-        }
-        Facet::Kind => {
-            let current = shop.kind.get();
-            let mut chips = vec![chip("All".into(), current.is_none(), move || {
-                shop.kind.set(None)
-            })];
-            for each in [Kind::Plugin, Kind::Skill, Kind::Pack, Kind::Agent] {
-                chips.push(chip(
-                    format!("{}s", card::kind_word(each)),
-                    current == Some(each),
-                    move || shop.kind.set(Some(each)),
-                ));
-            }
-            chips.collect_view().into_any()
-        }
-    };
-    let orders = [
-        (Order::Trust, "Official first"),
-        (Order::Newest, "Newest"),
-        (Order::Updated, "Recently updated"),
-        (Order::Stars, "Most stars"),
-    ]
-    .map(|(order, label)| {
-        chip(label.into(), shop.order.get() == order, move || {
-            shop.order.set(order);
-            shop.load();
-        })
-    });
-    view! {
-        <div class="filters">
-            <div class="segmented" role="group" aria-label="Filter by">
-                {segment(Facet::Category, "Category")}
-                {segment(Facet::Tier, "Tier")}
-                {segment(Facet::Kind, "Kind")}
-            </div>
-            {chips}
-        </div>
-        <div class="filters" role="group" aria-label="Order">{orders.into_iter().collect_view()}</div>
-    }
-}
-
-fn chip(label: String, chosen: bool, pick: impl Fn() + 'static) -> AnyView {
-    view! { <button class="chip" class:active=chosen on:click=move |_| pick()>{label}</button> }
-        .into_any()
-}
-
-fn discover(shop: Shop, picks: Vec<Listing>) -> impl IntoView {
-    let count = picks.len();
-    let index = shop.pick.get() % count;
-    let listing = picks[index].clone();
-    let cover = shop.cover(&listing);
-    let source = match listing.source.as_str() {
-        "" => "duskcode".to_owned(),
-        source => source.to_owned(),
-    };
-    let dots = (0..count)
-        .map(|dot| {
-            view! {
-                <button class:active=dot == index aria-label=format!("Pick {}", dot + 1)
-                    on:click=move |_| shop.pick.set(dot)></button>
-            }
-        })
-        .collect_view();
-    view! {
-        <section class="discover" aria-label="Discover">
-            <div class="nav">
-                <b>"Discover"</b>
-                <span>
-                    <button class="icon" aria-label="Previous" on:click=move |_| shop.pick.set((index + count - 1) % count)>"\u{2039}"</button>
-                    <button class="icon" aria-label="Next" on:click=move |_| shop.pick.set((index + 1) % count)>"\u{203A}"</button>
-                </span>
-            </div>
-            <div class="pick">
-                <div class="text">
-                    <span class="vendor">{format!("From {source}")}</span>
-                    <h3>{listing.name.clone()}</h3>
-                    <p class="muted">{listing.description.clone()}</p>
-                    <div class="facts">
-                        {card::facts(&listing)}
-                        <span class="version">{format!("v{}", listing.version)}</span>
-                    </div>
-                </div>
-                {match cover {
-                    Some(url) => view! { <img class="cover" src=url alt="" /> }.into_any(),
-                    None => view! { <div class="cover" aria-hidden="true"></div> }.into_any(),
-                }}
-            </div>
-            <div class="dots">{dots}</div>
-        </section>
-    }
-}
-
-fn sections(shop: Shop, all: &[Listing], shown: Vec<Listing>) -> impl IntoView {
-    let mut parts = Vec::new();
-    if shop.order.get() == Order::Trust {
-        for each in TIERS {
-            let listings: Vec<Listing> = shown.iter().filter(|l| l.tier == each).cloned().collect();
-            if !listings.is_empty() {
-                parts.push(section(shop, Some(each), card::word(each), listings));
-            }
-        }
-    } else if !shown.is_empty() {
-        let title = match shop.order.get() {
-            Order::Newest => "Newest",
-            Order::Updated => "Recently updated",
-            _ => "Most stars",
-        };
-        parts.push(section(shop, None, title, shown));
-    }
-    let listed: BTreeSet<&str> = all
+/// Packs here that no listing names, unless a filter leaves them out.
+fn local_packs(shop: Shop, listings: &[Listing]) -> Vec<SkillPack> {
+    let listed: BTreeSet<&str> = listings
         .iter()
         .filter(|listing| listing.kind == Kind::Pack)
         .map(|listing| listing.name.as_str())
         .collect();
     let query = shop.query.get().trim().to_lowercase();
-    let local: Vec<SkillPack> = shop
-        .packs
+    let (tiers, kinds) = (shop.tiers.get(), shop.kinds.get());
+    let shown = (tiers.is_empty() || tiers.contains(&Tier::Local))
+        && (kinds.is_empty() || kinds.contains(&Kind::Pack))
+        && shop.category.get().is_none();
+    if !shown {
+        return Vec::new();
+    }
+    shop.packs
         .get()
         .into_iter()
         .filter(|pack| !listed.contains(pack.name.as_str()))
         .filter(|pack| query.is_empty() || pack.name.to_lowercase().contains(&query))
-        .collect();
-    let local_shown = shop.tier.get().is_none_or(|tier| tier == Tier::Local)
-        && shop.kind.get().is_none_or(|kind| kind == Kind::Pack)
-        && shop.category.get().is_none();
-    if local_shown && !local.is_empty() {
-        parts.push(
-            view! {
-                <section>
-                    <h3 class="shelf-head"><span class="tier tier-local"><Icon name=IconName::TierLocal /></span>
-                        "Built-in and local packs"</h3>
-                    <div class="cards">{local.into_iter().map(|pack| card::pack(shop, pack)).collect_view()}</div>
-                </section>
-            }
-            .into_any(),
-        );
-    }
-    if parts.is_empty() {
-        return view! { <p class="muted">"Nothing matches."</p> }.into_any();
-    }
-    parts.collect_view().into_any()
-}
-
-fn section(shop: Shop, tier: Option<Tier>, title: &str, listings: Vec<Listing>) -> AnyView {
-    let count = listings.len();
-    let icon = tier.map(|tier| {
-        view! { <span class=format!("tier {}", card::class(tier))><Icon name=card::icon(tier) /></span> }
-    });
-    view! {
-        <section>
-            <h3 class="shelf-head">{icon}{title.to_owned()}<span class="muted">{count}</span></h3>
-            <div class="cards">{listings.into_iter().map(|listing| card::listing(shop, listing)).collect_view()}</div>
-        </section>
-    }
-    .into_any()
+        .collect()
 }
 
 fn categories(listings: &[Listing]) -> Vec<String> {
