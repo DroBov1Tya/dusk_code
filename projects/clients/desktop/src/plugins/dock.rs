@@ -32,6 +32,9 @@ const MIN_HEIGHT: f32 = 160.;
 const MAX_SHARE: f32 = 0.7;
 const TABS: f32 = 36.;
 const PADDING: f32 = 16.;
+/// A phone panel's header (a device's name over its system) and its bar of tools under
+/// the screen, which the phone leaves room for.
+const PHONE_CHROME: f32 = 44. + 36.;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Side {
@@ -118,8 +121,7 @@ pub fn right(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Op
                 .views
                 .get(&key)
                 .is_some_and(view::has_dependency_setup);
-            (height - 2. * size::CONTROL - 3. * PADDING - if has_setup { 84. } else { 0. })
-                .max(160.)
+            (height - PHONE_CHROME - 2. * PADDING - if has_setup { 96. } else { 0. }).max(160.)
         } else {
             f32::INFINITY
         },

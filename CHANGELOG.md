@@ -6,6 +6,14 @@ testing.
 
 ## Unreleased
 
+### Changed
+
+- Phone panels are calmer: a toolbar's device menu is the device's name over its
+  system, icon buttons are small with their names as tooltips, a centered row of icons
+  is one small bar under the screen, and Shut down stands apart behind a rule and warns
+  under the pointer. The phone grows to fill the panel, with a thin bezel, a light rim
+  and the screen centered in it.
+
 ## 0.74.4 - 2026-11-16
 
 ### Fixed

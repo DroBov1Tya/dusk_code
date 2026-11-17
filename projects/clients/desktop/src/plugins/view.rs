@@ -2,30 +2,29 @@
 //! markup; each widget that can be used sends its event back under its id.
 
 use dusk_core::app::PhoneDependency;
-use dusk_protocol::plugin::{ButtonIcon, ListItem, RowLayout, Size, Tone, UiEvent, Widget};
+use dusk_protocol::plugin::{ButtonIcon, RowLayout, Size, Tone, UiEvent, Widget};
 use gpui_kit::{
     component::{
-        ActiveTheme, Disableable, Icon,
-        button::{Button, ButtonVariants},
+        ActiveTheme, Disableable, Icon, Sizable,
+        button::{Button, ButtonCustomVariant, ButtonVariants},
         input::Input,
     },
     prelude::FluentBuilder,
     *,
 };
 
-use super::{Key, Slot};
+use super::{Key, Slot, lists};
 use crate::{
     ui::{
         Type, icons,
         phone::{self, Gesture},
-        size, widgets,
+        size,
     },
     workspace::Workspace,
 };
 
-/// The widest a phone is drawn.
-const PHONE: f32 = 300.;
-const CHEVRON: &str = "icons/chevron-down.svg";
+/// The widest a phone is drawn: a panel wider than this leaves margins around it.
+const PHONE: f32 = 440.;
 
 /// The room a view has: its width, and its height where it does not scroll (infinite
 /// where it does).
@@ -81,7 +80,7 @@ pub(super) fn has_dependency_setup(root: &Widget) -> bool {
 }
 
 /// An element id unique to the widget `id` of `key`.
-fn eid(key: &Key, kind: &str, id: &str) -> ElementId {
+pub(super) fn eid(key: &Key, kind: &str, id: &str) -> ElementId {
     ElementId::Name(format!("plugin:{}:{}:{kind}:{id}", key.plugin, key.part).into())
 }
 
@@ -104,31 +103,7 @@ fn widget(
                     .map(|child| self::widget(ws, key, child, room, cx)),
             )
             .into_any_element(),
-        Widget::Row { children, layout } => div()
-            .w_full()
-            .flex()
-            .flex_row()
-            .when(*layout != RowLayout::Toolbar, |row| row.flex_wrap())
-            .when(*layout == RowLayout::Center, |row| row.justify_center())
-            .items_center()
-            .gap_2()
-            .children(children.iter().map(|child| {
-                let element = self::widget(ws, key, child, room, cx);
-                if *layout == RowLayout::Toolbar {
-                    return div()
-                        .when(
-                            matches!(child, Widget::List { menu: true, .. } | Widget::Text { .. }),
-                            |item| item.flex_1().min_w_0(),
-                        )
-                        .when(matches!(child, Widget::Button { .. }), |item| {
-                            item.flex_none()
-                        })
-                        .child(element)
-                        .into_any_element();
-                }
-                element
-            }))
-            .into_any_element(),
+        Widget::Row { children, layout } => row(ws, key, children, *layout, room, cx),
         Widget::Text {
             text,
             tone,
@@ -158,19 +133,19 @@ fn widget(
             disabled,
         } => {
             let (key, id) = (key.clone(), id.clone());
-            let glyph = match icon {
-                Some(ButtonIcon::Home) => Some(icons::HOME),
-                Some(ButtonIcon::Lock) => Some(icons::LOCK),
-                Some(ButtonIcon::Power) => Some(icons::POWER),
-                Some(ButtonIcon::Refresh) => Some(icons::REFRESH),
-                _ => None,
-            };
             let button = Button::new(eid(&key, "button", &id));
-            let button = match glyph {
+            let button = match icon.and_then(glyph) {
+                // An icon is a quiet tool with its label as a tooltip; the one that switches
+                // a device off warns under the pointer.
                 Some(glyph) => button
+                    .small()
                     .icon(Icon::default().path(glyph))
                     .tooltip(label.clone())
-                    .accessibility_label(label.clone()),
+                    .accessibility_label(label.clone())
+                    .map(|button| match icon {
+                        Some(ButtonIcon::Power) => button.custom(warning_tool(cx)),
+                        _ => button.ghost(),
+                    }),
                 None => button.label(label.clone()),
             };
             // A button keeps its own width; a column would stretch it across the panel.
@@ -199,13 +174,13 @@ fn widget(
             items,
             selected,
             menu: false,
-        } => list(key, id, items, selected.as_deref(), cx),
+        } => lists::list(key, id, items, selected.as_deref(), cx),
         Widget::List {
             id,
             items,
             selected,
             menu: true,
-        } => dropdown(ws, key, id, items, selected.as_deref(), cx),
+        } => lists::dropdown(ws, key, id, items, selected.as_deref(), false, cx),
         Widget::Screen {
             id,
             width,
@@ -230,6 +205,127 @@ fn widget(
             .bg(cx.theme().border)
             .into_any_element(),
     }
+}
+
+/// A row. A toolbar gives its menu or text the room left, drawn compact, and its buttons
+/// their own width; a centered row of icons alone is one small bar of tools. A power
+/// button stands apart from the buttons before it, so it is not pressed for its neighbor.
+fn row(
+    ws: &Workspace,
+    key: &Key,
+    children: &[Widget],
+    layout: RowLayout,
+    room: Room,
+    cx: &mut Context<Workspace>,
+) -> AnyElement {
+    let theme = cx.theme();
+    let (border, bar) = (theme.border, theme.secondary);
+    let tools = layout == RowLayout::Center && !children.is_empty() && children.iter().all(is_tool);
+    let mut cells = Vec::with_capacity(children.len() + 1);
+    for (index, child) in children.iter().enumerate() {
+        if index > 0
+            && matches!(
+                child,
+                Widget::Button {
+                    icon: Some(ButtonIcon::Power),
+                    ..
+                }
+            )
+        {
+            cells.push(rule(border));
+        }
+        let cell = match (layout, child) {
+            (
+                RowLayout::Toolbar,
+                Widget::List {
+                    id,
+                    items,
+                    selected,
+                    menu: true,
+                },
+            ) => lists::dropdown(ws, key, id, items, selected.as_deref(), true, cx),
+            _ => self::widget(ws, key, child, room, cx),
+        };
+        let cell = match layout {
+            RowLayout::Toolbar => div()
+                .when(
+                    matches!(child, Widget::List { menu: true, .. } | Widget::Text { .. }),
+                    |cell| cell.flex_1().min_w_0(),
+                )
+                .when(matches!(child, Widget::Button { .. }), |cell| {
+                    cell.flex_none()
+                })
+                .child(cell)
+                .into_any_element(),
+            _ => cell,
+        };
+        cells.push(cell);
+    }
+    if tools {
+        return div()
+            .w_full()
+            .flex()
+            .justify_center()
+            .child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_0p5()
+                    .p_0p5()
+                    .rounded_lg()
+                    .border_1()
+                    .border_color(border)
+                    .bg(bar)
+                    .children(cells),
+            )
+            .into_any_element();
+    }
+    div()
+        .w_full()
+        .flex()
+        .flex_row()
+        .when(layout != RowLayout::Toolbar, |row| row.flex_wrap())
+        .when(layout == RowLayout::Center, |row| row.justify_center())
+        .items_center()
+        .gap_1()
+        .children(cells)
+        .into_any_element()
+}
+
+/// The app's picture for an icon a plugin names; none for one this app does not know.
+fn glyph(icon: ButtonIcon) -> Option<&'static str> {
+    match icon {
+        ButtonIcon::Home => Some(icons::HOME),
+        ButtonIcon::Lock => Some(icons::LOCK),
+        ButtonIcon::Power => Some(icons::POWER),
+        ButtonIcon::Refresh => Some(icons::REFRESH),
+        ButtonIcon::Unknown => None,
+    }
+}
+
+/// A button drawn as an icon alone.
+fn is_tool(widget: &Widget) -> bool {
+    matches!(widget, Widget::Button { icon: Some(icon), .. } if glyph(*icon).is_some())
+}
+
+/// A quiet icon button whose ground turns to the danger color under the pointer.
+fn warning_tool(cx: &App) -> ButtonCustomVariant {
+    let danger = cx.theme().danger;
+    ButtonCustomVariant::new(cx)
+        .hover(danger.opacity(0.18))
+        .active(danger.opacity(0.28))
+}
+
+/// A short upright line between buttons.
+fn rule(color: Hsla) -> AnyElement {
+    div()
+        .flex_none()
+        .w(px(1.))
+        .h(px(16.))
+        .mx_1()
+        .bg(color)
+        .into_any_element()
 }
 
 fn dependency_action(
@@ -275,160 +371,6 @@ fn text(text: &str, tone: Tone, size: Size, cx: &App) -> AnyElement {
     .into_any_element()
 }
 
-/// Rows to choose from, the chosen one marked.
-fn list(
-    key: &Key,
-    id: &str,
-    items: &[ListItem],
-    selected: Option<&str>,
-    cx: &mut Context<Workspace>,
-) -> AnyElement {
-    let muted = cx.theme().muted_foreground;
-    let mut rows = div()
-        .id(eid(key, "list", id))
-        .w_full()
-        .max_h(px(320.))
-        .overflow_y_scroll()
-        .flex()
-        .flex_col();
-    for (index, item) in items.iter().enumerate() {
-        let chosen = selected == Some(item.id.as_str());
-        let (key, id, picked) = (key.clone(), id.to_owned(), item.id.clone());
-        rows = rows.child(
-            widgets::row(eid(&key, "row", &format!("{id}:{index}")), chosen, cx)
-                .child(
-                    div()
-                        .flex_1()
-                        .min_w_0()
-                        .truncate()
-                        .body()
-                        .child(item.title.clone()),
-                )
-                .when(!item.detail.is_empty(), |row| {
-                    row.child(
-                        div()
-                            .flex_none()
-                            .max_w(px(160.))
-                            .truncate()
-                            .meta()
-                            .text_color(muted)
-                            .child(item.detail.clone()),
-                    )
-                })
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    let item = picked.clone();
-                    ws.plugin_event(&key, &id, UiEvent::Select { item }, cx);
-                })),
-        );
-    }
-    rows.into_any_element()
-}
-
-/// The chosen item on a button; a click opens the others under it.
-fn dropdown(
-    ws: &Workspace,
-    key: &Key,
-    id: &str,
-    items: &[ListItem],
-    selected: Option<&str>,
-    cx: &mut Context<Workspace>,
-) -> AnyElement {
-    let theme = cx.theme();
-    let (border, muted, hover, surface) = (
-        theme.border,
-        theme.muted_foreground,
-        theme.accent,
-        theme.popover,
-    );
-    let slot: Slot = (key.clone(), id.to_owned());
-    let open = ws.plugins.open_list.as_ref() == Some(&slot);
-    let chosen = selected
-        .and_then(|selected| items.iter().find(|item| item.id == selected))
-        .map_or("Choose", |item| item.title.as_str());
-    let toggled = slot.clone();
-    let button = div()
-        .id(eid(key, "menu", id))
-        .w_full()
-        .h(px(size::CONTROL))
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .px_3()
-        .rounded_lg()
-        .border_1()
-        .border_color(border)
-        .cursor_pointer()
-        .hover(move |button| button.bg(hover))
-        .child(
-            div()
-                .flex_1()
-                .min_w_0()
-                .truncate()
-                .body()
-                .child(chosen.to_owned()),
-        )
-        .child(Icon::default().path(CHEVRON).size_4().text_color(muted))
-        .on_click(cx.listener(move |ws, _, _, cx| {
-            let open = ws.plugins.open_list.as_ref() == Some(&toggled);
-            ws.plugins.open_list = (!open).then(|| toggled.clone());
-            cx.notify();
-        }));
-    let menu = open.then(|| {
-        let mut menu = div()
-            .id(eid(key, "menu-items", id))
-            .absolute()
-            .top(px(size::CONTROL + 4.))
-            .left_0()
-            .right_0()
-            .max_h(px(280.))
-            .overflow_y_scroll()
-            .p_1()
-            .rounded_lg()
-            .border_1()
-            .border_color(border)
-            .bg(surface)
-            .shadow_lg()
-            .flex()
-            .flex_col()
-            .on_mouse_down_out(cx.listener(|ws, _, _, cx| {
-                ws.plugins.open_list = None;
-                cx.notify();
-            }));
-        for (index, item) in items.iter().enumerate() {
-            let is_chosen = selected == Some(item.id.as_str());
-            let (key, id, picked) = (key.clone(), id.to_owned(), item.id.clone());
-            menu = menu.child(
-                widgets::menu_item(eid(&key, "menu-item", &format!("{id}:{index}")), cx)
-                    .when(is_chosen, |row| row.font_weight(FontWeight::SEMIBOLD))
-                    .child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .truncate()
-                            .body()
-                            .child(item.title.clone()),
-                    )
-                    .when(!item.detail.is_empty(), |row| {
-                        row.child(div().small().text_color(muted).child(item.detail.clone()))
-                    })
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.plugins.open_list = None;
-                        let item = picked.clone();
-                        ws.plugin_event(&key, &id, UiEvent::Select { item }, cx);
-                    })),
-            );
-        }
-        widgets::on_top(menu)
-    });
-    div()
-        .relative()
-        .w_full()
-        .child(button)
-        .children(menu)
-        .into_any_element()
-}
-
 /// A live picture in the widget's own units, in a phone when it asks; a click is a tap
 /// and a drag a swipe.
 fn screen(
@@ -447,7 +389,11 @@ fn screen(
     };
     let body = phone::fit(room.width, room.height, units, PHONE);
     // A picture is not clipped by its frame's corners: it is rounded as the frame is.
-    let corner = if in_phone { px(body * 0.13) } else { px(8.) };
+    let corner = if in_phone {
+        px(body * phone::CORNER)
+    } else {
+        px(8.)
+    };
     let content = match ws.plugins.frames.get(&slot) {
         Some(picture) => img(ImageSource::Render(picture.clone()))
             .size_full()

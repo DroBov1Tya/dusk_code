@@ -1,5 +1,5 @@
-//! A phone drawn around a live screen: a dark body with a metal rim and side buttons, the
-//! island over the screen. A click on the screen comes back as a tap, a drag as a swipe,
+//! A phone drawn around a live screen: a thin black bezel in a light metal rim, side
+//! buttons of the same metal, the island over the screen. A click on the screen comes back as a tap, a drag as a swipe,
 //! in the screen's own units. Plugin screens with `phone` draw with it.
 
 use std::{cell::Cell, rc::Rc};
@@ -7,7 +7,14 @@ use std::{cell::Cell, rc::Rc};
 use gpui_kit::*;
 
 /// The bezel at a body 300 px wide; it scales with the body.
-const BEZEL: f32 = 11. / 300.;
+const BEZEL: f32 = 10. / 300.;
+/// The screen's corner per pixel of the body's width; the body's adds the bezel, so the
+/// two curves run side by side.
+pub const CORNER: f32 = 0.13;
+/// The rim's width in pixels (`border_2`), inside the body's width.
+const RIM: f32 = 2.;
+/// The rim and the side buttons: a light metal that reads on dark and light themes.
+const METAL: u32 = 0x8e8e93;
 /// Below this many units a press that moved is still a tap.
 const SLOP: f32 = 8.;
 
@@ -27,7 +34,7 @@ pub fn bezel(body: f32) -> f32 {
 
 /// The width of the screen inside a body this wide.
 pub fn inner(body: f32) -> f32 {
-    body - 2. * bezel(body)
+    body - 2. * (bezel(body) + RIM)
 }
 
 /// The screen of a body `body` wide, `units` wide and tall, showing `content`. The caller
@@ -41,7 +48,7 @@ pub fn screen(
 ) -> Stateful<Div> {
     let inner = inner(body);
     let height = inner * units.1 / units.0;
-    let corner = px(body * 0.13);
+    let corner = px(body * CORNER);
     div()
         .id(id)
         .relative()
@@ -66,24 +73,27 @@ pub fn measure(drawn: &Drawn) -> impl IntoElement {
 /// The widest body, up to `widest`, whose phone fits `width` by `height` for a screen of
 /// `units`.
 pub fn fit(width: f32, height: f32, units: (f32, f32), widest: f32) -> f32 {
-    // A body's height per pixel of its width: the screen's shape plus the bezel.
-    let tall = (1. - 2. * BEZEL) * units.1 / units.0 + 2. * BEZEL;
-    width.min(widest).min(height / tall).max(1.)
+    // A body's height is `tall` per pixel of its width plus the rims, which do not
+    // scale: the screen's shape between them, the bezel and the rim around it.
+    let shape = units.1 / units.0;
+    let tall = (1. - 2. * BEZEL) * shape + 2. * BEZEL;
+    let rims = 2. * RIM * (1. - shape);
+    width.min(widest).min((height - rims) / tall).max(1.)
 }
 
 /// The body around a screen made by `screen` with the same `body` and `units`.
 pub fn body(body: f32, units: (f32, f32), screen: impl IntoElement) -> Div {
     let bezel = bezel(body);
-    let height = inner(body) * units.1 / units.0 + 2. * bezel;
+    let height = inner(body) * units.1 / units.0 + 2. * (bezel + RIM);
     div()
         .relative()
         .flex_none()
         .w(px(body))
         .p(px(bezel))
-        .rounded(px(body * 0.17))
-        .bg(rgb(0x0b0b0d))
+        .rounded(px(body * (CORNER + BEZEL)))
+        .bg(rgb(0x050506))
         .border_2()
-        .border_color(rgb(0x4a4a50))
+        .border_color(rgb(METAL))
         .shadow_lg()
         .child(screen)
         .children(side_buttons(height))
@@ -119,14 +129,14 @@ fn side_buttons(height: f32) -> Vec<Div> {
         let key = div()
             .absolute()
             .top(px(height * top))
-            .w(px(3.))
+            .w(px(2.))
             .h(px(height * length))
             .rounded_sm()
-            .bg(rgb(0x4a4a50));
+            .bg(rgb(METAL));
         if left {
-            key.left(px(-5.))
+            key.left(px(-4.))
         } else {
-            key.right(px(-5.))
+            key.right(px(-4.))
         }
     };
     vec![
