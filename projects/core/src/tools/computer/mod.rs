@@ -10,14 +10,16 @@
 //! the desktop has.
 //!
 //! The tools are the flat files here (`click`, `press_keys`, `screenshot`, `scroll`,
-//! `type_text`, `window_session`) over `screen`, the screen as the model sees it, and
-//! `offer`, how they are offered. `backend` is the desktop they drive; `overlay` is
+//! `type_text`, `window_session`, and `batch`, several of them in one call) over
+//! `screen`, the screen as the model sees it, `step`, one checked action and what it
+//! asks, and `offer`, how they are offered. `backend` is the desktop they drive; `overlay` is
 //! dusk's own cursor on macOS.
 
 #[macro_use]
 mod offer;
 
 mod backend;
+mod batch;
 mod click;
 #[cfg(target_os = "macos")]
 mod overlay;
@@ -25,6 +27,7 @@ mod press_keys;
 mod screen;
 mod screenshot;
 mod scroll;
+mod step;
 mod type_text;
 #[cfg(target_os = "macos")]
 mod window_session;
@@ -32,6 +35,7 @@ mod window_session;
 use anyhow::{Context, Result};
 use backend::Desktop;
 
+pub use batch::ComputerActions;
 pub use click::Click;
 #[cfg(target_os = "macos")]
 pub use overlay::run_overlay_if_asked;

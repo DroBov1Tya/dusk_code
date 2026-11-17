@@ -43,6 +43,45 @@ the session does not allow it.
 ```
 
 `type_text` and `press_keys` go to whatever has the keyboard focus and ask every time.
+Keys are a key name with modifiers joined by `+`; only plain spaces may pad them, and
+the request shows them by their normal names, such as `cmd+shift+t`.
+
+## Several actions in one call
+
+`computer_actions` runs up to 20 steps of `click`, `type_text`, `press_keys`, `scroll`
+and `screenshot` in order, each with the arguments it takes alone, at most four
+screenshots among them:
+
+```json
+{"steps": [
+  {"tool": "click", "arguments": {"x": 320, "y": 180}},
+  {"tool": "type_text", "arguments": {"text": "hello"}},
+  {"tool": "press_keys", "arguments": {"keys": "enter"}},
+  {"tool": "screenshot", "arguments": {}}
+]}
+```
+
+Every step is checked before anything is asked or done; a wrong one names its number
+and nothing runs. A step whose tool is switched off in the mode, or that a plugin's
+`before_tool` hook denies, refuses the whole batch the same way.
+
+The batch is approved before any step runs, in one request that lists every step with
+its number, those a session grant covers marked "already allowed". So typing and keys
+in a batch are approved before the user sees where the focus lands: approve one only
+when the steps before it say where that is, or ask for the steps one by one. Steps of
+one kind can be allowed for the session as that kind; mixed kinds are asked for this
+time only, under a neutral heading. In arbiter mode each step is judged on its own,
+and one no refuses the batch. So a batch is never asked for less than its steps one
+by one. The terminal grows the request to show up to twelve rows of steps and pages
+the rest; a yes there pages on until every step has been shown, and counts only a
+moment after the last ones appear. The desktop scrolls a long list inside the request;
+a chat platform such as Telegram gets every step in its message, and a request too
+long for one message (over 3500 characters) is not offered for a yes there: it can
+only be denied there, and is allowed in the app.
+
+Every x, y is in the picture taken before the batch, even after a screenshot inside
+it; after the batch the newest picture counts. The batch stops at the first failing
+step and says which ran.
 
 ## Linux
 

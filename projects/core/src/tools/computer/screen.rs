@@ -20,7 +20,7 @@ const JPEG_QUALITY: u8 = 80;
 
 /// How a picture's pixel maps to the display: `origin + pixel * scale` in points.
 #[derive(Debug, Clone, Copy)]
-struct View {
+pub(super) struct View {
     origin: Point,
     scale_x: f64,
     scale_y: f64,
@@ -349,6 +349,17 @@ impl Screen {
         Ok((at, view.window))
     }
 
+    /// The picture clicks and regions are read in now, if any.
+    pub(super) fn coordinates(&self) -> Option<View> {
+        *self.view.lock()
+    }
+
+    /// A batch reads every step in the picture the model saw before it, not in one it
+    /// took meanwhile and the model has not seen.
+    pub(super) fn set_coordinates(&self, view: Option<View>) {
+        *self.view.lock() = view;
+    }
+
     fn view(&self) -> Result<View> {
         (*self.view.lock()).context("take a screenshot first: coordinates come from it")
     }
@@ -431,6 +442,21 @@ impl View {
     }
 }
 
+#[cfg(test)]
+impl View {
+    /// A picture of the whole display at `scale` points a pixel.
+    pub(super) fn scaled(scale: f64) -> Self {
+        Self {
+            origin: Point { x: 0.0, y: 0.0 },
+            scale_x: scale,
+            scale_y: scale,
+            width: 1000.0,
+            height: 1000.0,
+            window: None,
+        }
+    }
+}
+
 /// The largest window of the app named `name`, else the largest whose app or title holds
 /// it, so a toolbar strip never wins over the window itself; a miss names the windows
 /// there are.
@@ -502,7 +528,9 @@ pub const KEY_NAMES: [&str; 27] = [
 ];
 
 /// `cmd+shift+t`, `enter` or `f5` as a key with its modifiers. The key comes out by its
-/// one name: a lowercase letter, a digit or one of [`KEY_NAMES`].
+/// one name: a lowercase letter, a digit or one of [`KEY_NAMES`]. Only plain spaces
+/// may pad a part: a line break or control character would let the text the user
+/// approves look unlike the keys pressed.
 pub fn keys(combo: &str) -> Result<Keys> {
     let mut keys = Keys {
         key: String::new(),
@@ -513,7 +541,7 @@ pub fn keys(combo: &str) -> Result<Keys> {
     };
     for part in combo
         .split('+')
-        .map(|part| part.trim().to_ascii_lowercase())
+        .map(|part| part.trim_matches(' ').to_ascii_lowercase())
     {
         match part.as_str() {
             "cmd" | "command" | "meta" | "super" | "win" => keys.cmd = true,
@@ -534,6 +562,25 @@ pub fn keys(combo: &str) -> Result<Keys> {
         "name a key, not only modifiers: {combo}"
     );
     Ok(keys)
+}
+
+impl Keys {
+    /// The combo by its normal names, such as `cmd+shift+t`, for the user to approve.
+    pub fn shown(&self) -> String {
+        let modifiers = [
+            (self.cmd, "cmd"),
+            (self.ctrl, "ctrl"),
+            (self.alt, "alt"),
+            (self.shift, "shift"),
+        ];
+        let mut parts: Vec<&str> = modifiers
+            .iter()
+            .filter(|(on, _)| *on)
+            .map(|(_, name)| *name)
+            .collect();
+        parts.push(&self.key);
+        parts.join("+")
+    }
 }
 
 fn key_name(name: &str) -> Option<String> {
@@ -565,6 +612,11 @@ mod tests {
         for wrong in ["cmd", "a+b", "cmd+nope", "", "é"] {
             assert!(keys(wrong).is_err(), "{wrong}");
         }
+        // What the user approves is what is pressed: no hidden lines or controls.
+        for hidden in ["\nenter", "enter\t", "cmd+\u{7}t", "cmd\r+t", "\u{a0}enter"] {
+            assert!(keys(hidden).is_err(), "{hidden:?}");
+        }
+        assert_eq!(keys(" Shift + CMD + t ").unwrap().shown(), "cmd+shift+t");
         // Every name the parser lets through, the desktop can press.
         for name in KEY_NAMES.iter().copied().chain(["a", "z", "0", "9"]) {
             assert!(Desktop.knows_key(name), "{name}");

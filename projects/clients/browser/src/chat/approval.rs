@@ -23,6 +23,8 @@ pub fn Approvals(chat: Chat) -> impl IntoView {
 fn ApprovalCard(request: ApprovalRequest) -> impl IntoView {
     let app = state();
     let id = request.id;
+    let lines: Vec<String> = request.steps.iter().map(|step| step.line()).collect();
+    let session = request.session.is_some();
     let answer = move |decision: Decision| {
         run(api::approve(id, decision), move |_| {
             // The core closes the request itself; every client sees that event.
@@ -31,10 +33,19 @@ fn ApprovalCard(request: ApprovalRequest) -> impl IntoView {
     };
     view! {
         <div class="approval">
-            <div class="approval-text">{request.request.describe("The agent")}</div>
+            <div class="approval-text">{request.title("The agent")}</div>
+            // A batch lists every step, numbered: the yes covers all of them.
+            {(!lines.is_empty()).then(|| view! {
+                <div class="approval-steps">
+                    {lines.into_iter().map(|line| view! { <div>{line}</div> }).collect_view()}
+                </div>
+            })}
             <div class="approval-actions">
                 <button class="primary" on:click=move |_| answer(Decision::Once)>"Allow once"</button>
-                <button class="ghost" on:click=move |_| answer(Decision::Session)>"Allow for this chat"</button>
+                // Only what the core can keep for the session is offered, as the other clients do.
+                {session.then(|| view! {
+                    <button class="ghost" on:click=move |_| answer(Decision::Session)>"Allow for this chat"</button>
+                })}
                 <button class="ghost danger" on:click=move |_| answer(Decision::Deny)>"Deny"</button>
             </div>
         </div>

@@ -2,16 +2,17 @@
 
 use std::sync::Arc;
 
+use anyhow::Result;
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Desktop, Screen, blocking, screen::keys};
+use super::{Desktop, Keys, Screen, screen::keys, step::Step};
 use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        schema,
+        Request, ToolResult, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -24,6 +25,32 @@ pub struct PressKeys(pub Arc<Screen>);
 struct PressKeysArguments {
     /// One key with its modifiers, such as `enter`, `cmd+t`, `cmd+shift+4` or `down`.
     keys: String,
+}
+
+impl PressKeysArguments {
+    /// Bounded before anything is asked or done.
+    fn parse(arguments: Value) -> Result<Keys> {
+        let arguments: Self = parse_arguments(arguments)?;
+        keys(&arguments.keys)
+    }
+}
+
+impl PressKeys {
+    /// Checked before anything is asked or done, so a batch can check every step first.
+    pub(super) fn step(screen: &Arc<Screen>, arguments: Value) -> Result<Step> {
+        screen.require_unscoped()?;
+        let combo = PressKeysArguments::parse(arguments)?;
+        let keys = combo.shown();
+        let request = Request::Keyboard {
+            action: format!("press {keys}"),
+        };
+        let screen = Arc::clone(screen);
+        Ok(Step::new(request, move || {
+            screen.unscoped(|| Desktop.press(&combo))?;
+            Desktop.touch();
+            Ok(ToolResult::text(format!("pressed {keys}")))
+        }))
+    }
 }
 
 impl Tool for PressKeys {
@@ -42,16 +69,8 @@ impl Tool for PressKeys {
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
-            self.0.require_unscoped()?;
-            let arguments: PressKeysArguments = parse_arguments(arguments)?;
-            let combo = keys(&arguments.keys)?;
-            context
-                .approve_screen(&format!("press {}", arguments.keys), true)
-                .await?;
-            let screen = Arc::clone(&self.0);
-            blocking(move || screen.unscoped(|| Desktop.press(&combo))).await?;
-            Desktop.touch();
-            Ok(format!("pressed {}", arguments.keys))
+            let step = Self::step(&self.0, arguments)?;
+            Ok(step.ask_and_run(&context).await?.content)
         })
     }
 }

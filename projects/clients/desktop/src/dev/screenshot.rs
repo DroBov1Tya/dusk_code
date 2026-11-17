@@ -730,6 +730,7 @@ fn act(
                         command: "cargo test --workspace".into(),
                     },
                     session: Some("cargo".into()),
+                    steps: Vec::new(),
                 }),
             };
             if let Some(chat) = ws.shown.clone().and_then(|id| ws.chats.get_mut(&id)) {
