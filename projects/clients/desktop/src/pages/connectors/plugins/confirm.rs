@@ -1,7 +1,7 @@
 //! The yes before the store changes this machine: what a plugin may do before it is
 //! installed, and what is lost before one is removed.
 
-use dusk_protocol::plugin::{Client, Listing};
+use dusk_protocol::plugin::{Client, Kind, Listing};
 use gpui_kit::{
     component::{
         ActiveTheme,
@@ -28,10 +28,10 @@ impl Confirm {
     }
 }
 
-/// "Update" when another version of it is installed, "Install" otherwise.
+/// "Update" when the source has a newer version than the one here, "Install" otherwise.
 pub fn verb(listing: &Listing) -> &'static str {
-    match &listing.installed {
-        Some(version) if *version != listing.version => "Update",
+    match (&listing.installed, &listing.update) {
+        (Some(_), Some(_)) => "Update",
         _ => "Install",
     }
 }
@@ -39,7 +39,7 @@ pub fn verb(listing: &Listing) -> &'static str {
 pub fn render(confirm: &Confirm, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let (body, yes) = match confirm {
-        Confirm::Install(listing) => (permissions(listing, muted), verb(listing)),
+        Confirm::Install(listing) => (permissions(listing, cx), verb(listing)),
         Confirm::Remove(_) => (
             div().small().text_color(muted).child(
                 "Its folder is deleted from this machine. It can be installed again from the Workshop.",
@@ -69,7 +69,8 @@ pub fn render(confirm: &Confirm, cx: &mut Context<Workspace>) -> Div {
 }
 
 /// What the plugin may do, one line each, as the store lists it.
-fn permissions(listing: &Listing, muted: Hsla) -> Div {
+fn permissions(listing: &Listing, cx: &App) -> Div {
+    let (muted, warning) = (cx.theme().muted_foreground, cx.theme().warning);
     let mut body = div().flex().flex_col().gap_2();
     body = if listing.permissions.is_empty() {
         body.child(
@@ -87,16 +88,33 @@ fn permissions(listing: &Listing, muted: Hsla) -> Div {
     for line in &listing.permissions {
         body = body.child(div().small().pl_3().child(format!("• {line}")));
     }
-    // Until the Workshop shows tier badges, say where it comes from before the yes.
-    let clash = if listing.clash {
-        "; another source offers the same name"
-    } else {
-        ""
+    if listing.kind != Kind::Plugin {
+        body =
+            body.child(div().meta().text_color(muted).child(
+                "Its skills and agents are text every thread may read; they run no programs.",
+            ));
+    }
+    let source = match listing.source.as_str() {
+        "" => "duskcode",
+        source => source,
     };
-    body = body.child(div().meta().text_color(muted).child(format!(
-        "From {} ({:?}){clash}.",
-        listing.source, listing.tier
-    )));
+    body = body.child(
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_1()
+            .meta()
+            .text_color(muted)
+            .child(format!("From {source} ("))
+            .child(super::workshop::tier::mark(listing.tier, cx))
+            .child(")"),
+    );
+    if listing.clash {
+        body = body.child(div().small().text_color(warning).child(
+            "Another source offers the same name. A mirror may copy a name to pass for another source's listing; check that this is the one you mean.",
+        ));
+    }
     if !listing.clients.is_empty() && !listing.clients.contains(&Client::Gui) {
         body = body.child(
             div()

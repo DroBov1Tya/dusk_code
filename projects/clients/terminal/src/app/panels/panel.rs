@@ -27,7 +27,7 @@ pub enum Panel {
         entry: Option<SecretEntry>,
     },
     /// The plugin store, opened from the plugins panel.
-    Workshop(super::Workshop),
+    Workshop(Box<super::Workshop>),
     Unsent {
         selected: usize,
     },

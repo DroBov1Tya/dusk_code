@@ -80,10 +80,12 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
         }
         Panel::Workshop(view) => {
             let (lines, row) = workshop(view, screen.width.saturating_sub(8) as usize);
-            let hints = match &view.confirm {
-                Some(_) => "left/right choose  enter do it  esc cancel",
-                None => {
-                    "type to narrow  up/down choose  enter install/remove  ctrl+r reload  esc back"
+            let hints = match (&view.confirm, &view.pack) {
+                (Some(_), _) => "left/right choose  enter do it  esc cancel",
+                (None, Some(_)) => "up/down choose  enter on/off  i install/update  esc back",
+                (None, None) => {
+                    "type to narrow  enter open/install  tab category  ctrl+o order  \
+                     ctrl+u update all  ctrl+r reload  esc back"
                 }
             };
             ("workshop", hints, lines, Some(row))

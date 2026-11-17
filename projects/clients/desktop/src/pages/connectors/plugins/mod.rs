@@ -1,9 +1,9 @@
 //! The plugins shelf: the installed plugins as cards, with what each brings and whether it
-//! waits for settings, or the Workshop, where the store's plugins are installed.
+//! waits for settings, or the Workshop, where the store's plugins, skills, packs and
+//! agents are installed.
 
 mod confirm;
-mod listing;
-mod workshop;
+pub mod workshop;
 
 pub use confirm::{Confirm, render as confirm};
 pub use workshop::Workshop;
@@ -35,7 +35,9 @@ pub fn render(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {
         .child(body)
 }
 
-/// "Installed | Workshop", and a refresh of the store while it is shown.
+/// "Installed | Workshop", and while the Workshop is shown "Update all" and a refresh.
+/// There is no auto-update switch: the core has no such setting, and a client keeps no
+/// timers of its own.
 fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let open = ws.workshop.open;
     let view = |id: &'static str, label: &'static str, chosen: bool, workshop: bool| {
@@ -54,19 +56,29 @@ fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex_row()
         .items_center()
         .gap_1()
-        .max_w(px(880.))
+        .max_w(px(1120.))
         .child(view("plugins-installed", "Installed", !open, false))
         .child(view("plugins-workshop", "Workshop", open, true))
         .when(open, |row| {
-            row.child(div().flex_1()).child(
-                Button::new("workshop-refresh")
-                    .ghost()
-                    .small()
-                    .icon(Icon::default().path(crate::ui::icons::REFRESH))
-                    .loading(ws.workshop.loading)
-                    .tooltip("Read the store again")
-                    .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx))),
-            )
+            row.child(div().flex_1())
+                .child(
+                    Button::new("workshop-update-all")
+                        .outline()
+                        .small()
+                        .label("Update all")
+                        .loading(ws.workshop.updating)
+                        .tooltip("Update everything whose update asks for nothing more")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.update_all(cx))),
+                )
+                .child(
+                    Button::new("workshop-refresh")
+                        .ghost()
+                        .small()
+                        .icon(Icon::default().path(crate::ui::icons::REFRESH))
+                        .loading(ws.workshop.loading)
+                        .tooltip("Read the store again")
+                        .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx))),
+                )
         })
 }
 

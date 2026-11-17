@@ -22,11 +22,14 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `file=PATH[:LINE]` | opens a file in the viewer |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
 | `fake=plan-limits` | the ChatGPT plan's 5-hour and weekly windows in the limits ring |
-| `fake=store` | fills the Workshop with thirty made-up listings instead of the store's |
-| `workshop`, `workshop=install:NAME\|remove:NAME\|busy:NAME\|failed:NAME` | shows the Workshop; opens its confirmation for a listing, or shows a row at work or failed |
+| `fake=store` | fills the Workshop with made-up listings of every tier and kind, covers, packs and a failed source instead of the store's |
+| `workshop`, `workshop=install:NAME\|remove:NAME\|busy:NAME\|failed:NAME\|pack:NAME`, `workshop=report` | shows the Workshop; opens its confirmation for a listing, shows a card at work or failed, a pack's page, or what "Update all" did |
 | `shot=NAME` | saves `$DUSK_SHOT_DIR/NAME.png`, drawn at the window's scale (2x on a Retina screen) |
 | `quit` | ends |
 
 Use a throwaway `HOME` with a copy of `config.yml` (mode 0600, folder 0700) and a project row
 inserted into `state.db`, so no real chat is shown; `duskcode run "..." ` in the project folder
 makes a chat to look at.
+
+The window draws no frames of its own, so an animation or a picture decoded after the first
+draw shows only on a second `shot`: take one, `wait`, and take the one to keep.
