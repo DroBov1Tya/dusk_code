@@ -10,11 +10,9 @@ const MAX_ANSWER_TIME: Duration = Duration::from_secs(30 * 60);
 
 /// A call that stayed silent this long is given up on, and the turn may try again.
 fn silent(idle: Duration) -> anyhow::Error {
-    crate::providers::Transient(format!(
-        "the model was silent for {} seconds",
-        idle.as_secs()
-    ))
-    .into()
+    let message = format!("the model was silent for {} seconds", idle.as_secs());
+    crate::providers::ProviderError::new(crate::providers::ProviderErrorKind::TimedOut, message)
+        .into()
 }
 
 /// The output is owned by the caller so what the model wrote survives when the caller

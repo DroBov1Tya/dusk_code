@@ -1,0 +1,2 @@
+Changed
+A failed model call now says what happened, such as "could not reach api.example.com: connection refused", instead of "provider completion request failed". Provider failures carry a kind (unreachable, timed out, rate limited, overloaded, auth, quota, refused, too long, interrupted) that decides retries and reaches clients in the `Retrying` event with the planned wait and the attempt limit; the log gets the underlying cause without URLs, keys or request bodies. Retry jitter comes from the system's random source. Protocol version 12.

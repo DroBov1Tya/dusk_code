@@ -1,0 +1,2 @@
+Added
+The eval runner records a token ledger per run (cached, uncached and cache-written prompt tokens, completion and reasoning tokens), provider retries and re-runs of identical tool calls, and prints tokens per solved task next to the pass rate. A timed-out run now keeps what it spent and is left out of the per-run means. `--set NAME=VALUE` changes a key of the run's config to compare a mechanism on and off, refuses unknown keys, and is recorded in the report so `--compare` shows what differed.

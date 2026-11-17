@@ -101,7 +101,7 @@ impl App {
                     }
                 }
             }
-            ThreadEvent::Retrying { attempt, error } => {
+            ThreadEvent::Retrying { attempt, error, .. } => {
                 self.activity = Activity::Retrying(attempt);
                 let text = format!("attempt {attempt} failed, trying again: {error}");
                 self.transcript.notice(text, Tone::Info);

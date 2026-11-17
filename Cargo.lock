@@ -2340,6 +2340,7 @@ dependencies = [
  "dusk_protocol",
  "regex",
  "serde",
+ "serde-saphyr 2.0.0",
  "serde_json",
  "tokio",
  "uuid",
@@ -2350,6 +2351,7 @@ name = "dusk_protocol"
 version = "0.74.4"
 dependencies = [
  "anyhow",
+ "proptest",
  "schemars",
  "serde",
  "serde_json",

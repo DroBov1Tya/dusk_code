@@ -63,9 +63,10 @@ plugin/  (7)
 project/  (6)
 release/  (4)
 system/  (3)
-thread/  (21)
+thread/  (28)
+  block/  (6)
   message/  (6)
-  transcript/  (5)
+  transcript/  (6)
 tools/  (6)
 ```
 
@@ -120,7 +121,7 @@ state/  (32)
     goal/  (3)
     work/  (5)
 terminal/  (4)
-tools/  (51)
+tools/  (54)
   agents/  (4)
   computer/  (18)
     backend/  (5)
@@ -229,5 +230,5 @@ When a file grows past what one reason to change holds, split it the way the exi
 
 ### evals
 
-Flat: `args`, `run`, `task`, `sandbox`, `score` beside `main.rs`; the tasks are in
+Flat: `args`, `overrides`, `run`, `task`, `sandbox`, `score` beside `main.rs`; the tasks are in
 `projects/evals/tasks/`.

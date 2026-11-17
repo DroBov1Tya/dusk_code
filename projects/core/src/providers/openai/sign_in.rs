@@ -360,9 +360,7 @@ async fn ask_tokens(http: &Client, form: &[(&str, &str)]) -> Result<Tokens> {
         .send()
         .await
         // The network may be back in a moment; a turn waits and asks again.
-        .map_err(|_| {
-            crate::providers::Transient("cannot reach the ChatGPT sign-in server".into())
-        })?;
+        .map_err(crate::providers::transport::http::unsent)?;
     let status = response.status();
     let body = limited(response).await?;
     if status.is_success() {

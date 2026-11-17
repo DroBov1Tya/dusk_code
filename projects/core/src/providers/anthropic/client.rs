@@ -13,7 +13,7 @@ use serde_json::Value;
 use crate::{
     config::{Effort, ProviderConfig},
     providers::{
-        errors::{Transient, UnsupportedEffort, UnsupportedPictures},
+        errors::{UnsupportedEffort, UnsupportedPictures},
         limits::{Account, Headers},
         registry::Model,
         request::{ChatMessage, ChatRequest},
@@ -150,27 +150,23 @@ impl Anthropic {
             .json(&body)
             .send()
             .await
-            .map_err(|_| Transient("provider completion request failed".into()))?;
+            .map_err(http::unsent)?;
         self.account.note(Headers::Anthropic, response.headers());
         let status = response.status();
         if !status.is_success() {
-            let wait = http::retry_failure(&response, String::new());
+            // Read before the body, which takes the response.
+            let mut failure = http::status_failure(&response, String::new());
             let reason = tokio::time::timeout(ERROR_BODY_TIMEOUT, error_message(response))
                 .await
                 .ok()
                 .flatten();
             let refused = http::refused("completion", status);
-            let message = match &reason {
+            failure.message = match &reason {
                 Some(reason) => format!("{refused}: {reason}"),
                 None => refused,
             };
-            if http::is_retryable(status) {
-                // Keeps the retry-after the headers gave, with this message.
-                return Err(match crate::providers::retry_after(&wait) {
-                    Some(after) => anyhow::Error::new(Transient(message))
-                        .context(crate::providers::RetryAfter(after)),
-                    None => Transient(message).into(),
-                });
+            if failure.kind.is_retryable() {
+                bail!(failure);
             }
             let reason = reason.unwrap_or_default().to_ascii_lowercase();
             if effort_off && status == StatusCode::BAD_REQUEST && reason.contains("thinking") {
@@ -179,7 +175,7 @@ impl Anthropic {
             if has_pictures && status == StatusCode::BAD_REQUEST && reason.contains("image") {
                 bail!(UnsupportedPictures);
             }
-            bail!(message);
+            bail!(failure);
         }
         ensure!(
             http::is_event_stream(&response),

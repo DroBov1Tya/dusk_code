@@ -6,6 +6,8 @@ use std::time::Duration;
 use anyhow::{Result, anyhow, ensure};
 use reqwest::{Client, Response, StatusCode, Url, header::CONTENT_TYPE, redirect::Policy};
 
+use crate::providers::errors::{ProviderError, ProviderErrorKind};
+
 /// Longest silence tolerated between streamed chunks; reasoning models can pause for a while.
 const STREAM_IDLE_TIMEOUT: Duration = Duration::from_secs(120);
 pub const EVENT_STREAM: &str = "text/event-stream";
@@ -87,28 +89,130 @@ pub fn endpoint(base_url: &Url, segments: &[&str]) -> Result<Url> {
     Ok(url)
 }
 
-/// Timeouts, conflicts, rate limits, overload and server errors may pass on a later
-/// attempt.
-pub fn is_retryable(status: StatusCode) -> bool {
-    matches!(status.as_u16(), 408 | 409 | 429) || status.is_server_error()
+/// What a failed status says about the request. Timeouts, conflicts, rate limits,
+/// overload and server errors may pass on a later attempt; the rest are the request's own.
+pub fn status_kind(status: StatusCode) -> ProviderErrorKind {
+    use ProviderErrorKind::*;
+    match status.as_u16() {
+        401 | 403 => Auth,
+        402 => Quota,
+        408 => TimedOut,
+        // Another request on the same thing is in flight; once it ends, this one passes.
+        409 => Overloaded,
+        413 => TooLong,
+        429 => RateLimited,
+        500..=599 => Overloaded,
+        _ => Refused,
+    }
 }
 
-/// A failure worth another attempt, carrying the provider's `retry-after` in seconds
-/// when it gave one, capped so a bad header cannot stall the turn.
-pub fn retry_failure(response: &Response, message: String) -> anyhow::Error {
-    use crate::providers::{RetryAfter, Transient};
+/// A request the provider answered with a failed status, carrying its `retry-after` in
+/// seconds when it gave one, capped so a bad header cannot stall the turn.
+pub fn status_failure(response: &Response, message: String) -> ProviderError {
     const MAX_WAIT: Duration = Duration::from_secs(60);
-    let wait = response
+    let status = response.status();
+    let retry_after = response
         .headers()
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse::<u64>().ok())
         .map(|seconds| Duration::from_secs(seconds).min(MAX_WAIT));
-    let error = anyhow::Error::new(Transient(message));
-    match wait {
-        Some(wait) => error.context(RetryAfter(wait)),
-        None => error,
+    ProviderError {
+        status: Some(status.as_u16()),
+        retry_after,
+        ..ProviderError::new(status_kind(status), message)
     }
+}
+
+/// A request that got no answer. Only the host is named: a reqwest error prints its URL,
+/// whose path and query may carry a key.
+pub fn unsent(error: reqwest::Error) -> ProviderError {
+    use ProviderErrorKind::*;
+    let host = error
+        .url()
+        .and_then(Url::host_str)
+        .unwrap_or("the provider")
+        .to_owned();
+    let error = error.without_url();
+    let (kind, message) = if error.is_dns() {
+        (Unreachable, format!("could not resolve {host}"))
+    } else if error.is_connect() {
+        (
+            Unreachable,
+            format!("could not reach {host}: {}", reason(&error)),
+        )
+    } else if error.is_timeout() {
+        (TimedOut, format!("{host} did not answer in time"))
+    } else {
+        let reason = reason(&error);
+        (
+            Unreachable,
+            format!("the connection to {host} failed: {reason}"),
+        )
+    };
+    ProviderError {
+        cause: Some(chain(&error)),
+        ..ProviderError::new(kind, message)
+    }
+}
+
+/// A stream that broke after the answer began.
+pub fn cut(error: reqwest::Error) -> ProviderError {
+    let error = error.without_url();
+    let kind = match error.is_timeout() {
+        true => ProviderErrorKind::TimedOut,
+        false => ProviderErrorKind::Interrupted,
+    };
+    let message = format!("cannot read provider stream: {}", reason(&error));
+    ProviderError {
+        cause: Some(chain(&error)),
+        ..ProviderError::new(kind, message)
+    }
+}
+
+/// The innermost cause in a few words, such as "connection refused". Nested reqwest
+/// errors are skipped, since they may still hold a URL.
+fn reason(error: &reqwest::Error) -> String {
+    use std::error::Error;
+    let mut innermost: Option<&(dyn Error + 'static)> = None;
+    let mut source = error.source();
+    while let Some(next) = source {
+        if !next.is::<reqwest::Error>() {
+            innermost = Some(next);
+        }
+        source = next.source();
+    }
+    let text = match innermost {
+        // An error of the system says the same as its kind, which reads better.
+        Some(cause) => match cause.downcast_ref::<std::io::Error>() {
+            Some(io) if io.raw_os_error().is_some() => io.kind().to_string(),
+            _ => cause.to_string(),
+        },
+        None => error.to_string(),
+    };
+    printable(&text, 160)
+}
+
+/// The whole chain for the log, under the same rule as `reason`.
+fn chain(error: &reqwest::Error) -> String {
+    use std::error::Error;
+    let mut text = error.to_string();
+    let mut source = error.source();
+    while let Some(next) = source {
+        if !next.is::<reqwest::Error>() {
+            text.push_str(": ");
+            text.push_str(&next.to_string());
+        }
+        source = next.source();
+    }
+    printable(&text, 500)
+}
+
+fn printable(text: &str, limit: usize) -> String {
+    text.chars()
+        .filter(|c| !c.is_control())
+        .take(limit)
+        .collect()
 }
 
 /// What a refused request tells the user; a bad key says so, with where to fix it.
@@ -162,11 +266,90 @@ mod tests {
         assert!(base_url("https://api.example.com/v1", false).is_ok());
     }
 
+    /// The retry decision by status before the failures had kinds: the oracle the
+    /// kinds must match.
+    fn is_retryable(status: StatusCode) -> bool {
+        matches!(status.as_u16(), 408 | 409 | 429) || status.is_server_error()
+    }
+
+    fn retried(code: u16) -> bool {
+        status_kind(StatusCode::from_u16(code).unwrap()).is_retryable()
+    }
+
     #[test]
     fn only_passing_failures_are_transient() {
         assert!(is_retryable(StatusCode::TOO_MANY_REQUESTS));
         assert!(is_retryable(StatusCode::BAD_GATEWAY));
         assert!(!is_retryable(StatusCode::UNAUTHORIZED));
         assert!(!is_retryable(StatusCode::BAD_REQUEST));
+        assert!(retried(429) && retried(502) && !retried(401) && !retried(400));
+    }
+
+    #[test]
+    fn statuses_are_retried_exactly_as_before() {
+        for code in 300..=599 {
+            let status = StatusCode::from_u16(code).unwrap();
+            assert_eq!(retried(code), is_retryable(status), "HTTP {code}");
+        }
+    }
+
+    #[test]
+    fn statuses_have_their_kinds() {
+        use ProviderErrorKind::*;
+        let table = [
+            (400, Refused, false),
+            (401, Auth, false),
+            (402, Quota, false),
+            (403, Auth, false),
+            (404, Refused, false),
+            (408, TimedOut, true),
+            (409, Overloaded, true),
+            (413, TooLong, false),
+            (422, Refused, false),
+            (429, RateLimited, true),
+            (500, Overloaded, true),
+            (503, Overloaded, true),
+            (529, Overloaded, true),
+        ];
+        for (code, kind, retryable) in table {
+            let status = StatusCode::from_u16(code).unwrap();
+            assert_eq!(status_kind(status), kind, "HTTP {code}");
+            assert_eq!(kind.is_retryable(), retryable, "HTTP {code}");
+        }
+    }
+
+    #[tokio::test]
+    async fn a_failed_request_names_the_host_and_nothing_else() {
+        // A port that was just free refuses the connection without leaving the machine.
+        let port = std::net::TcpListener::bind("127.0.0.1:0")
+            .unwrap()
+            .local_addr()
+            .unwrap()
+            .port();
+        let url = format!("http://127.0.0.1:{port}/v1/secret-path?key=sk-fake-0123456789");
+        let error = client()
+            .unwrap()
+            .post(url)
+            .header("x-api-key", "sk-fake-0123456789")
+            .body("user text that is private")
+            .send()
+            .await
+            .unwrap_err();
+        assert!(
+            format!("{error}").contains("sk-fake"),
+            "the test needs a URL in it"
+        );
+        let failure = unsent(error);
+        assert_eq!(failure.kind, ProviderErrorKind::Unreachable);
+        assert!(
+            failure.message.contains("could not reach 127.0.0.1"),
+            "{failure}"
+        );
+        let shown = anyhow::Error::new(failure);
+        for text in [format!("{shown:#}"), format!("{shown:?}")] {
+            for secret in ["sk-fake", "key=", "secret-path", "/v1", "private"] {
+                assert!(!text.contains(secret), "{secret} in {text}");
+            }
+        }
     }
 }
