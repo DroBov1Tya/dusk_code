@@ -17,7 +17,7 @@ use ratatui::layout::Rect;
 use super::{
     Activity, ApprovalHit, Asked, ButtonHit, ChipHit, EditorHit, Entry, Focus, GoalHit, Input,
     InputRow, Layout, Panel, PathPopup, PluginRow, Poll, Pressed, QueueHit, Selection,
-    ShownPreview, SubagentView, Tone, Transcript, TranscriptHit, panels::agents,
+    ShownPreview, SubagentView, Tab, TabHit, Tone, Transcript, TranscriptHit, panels::agents,
 };
 
 pub struct App {
@@ -38,6 +38,12 @@ pub struct App {
     pub input: Input,
     /// What was typed and not sent in the threads that are not shown; `None` is a new one.
     pub drafts: HashMap<Option<String>, Input>,
+    /// Every tab in strip order; the shown one's thread is in the fields here and its
+    /// slot holds what they held before.
+    pub tabs: Vec<Tab>,
+    /// The shown tab, by index into `tabs`.
+    pub tab: usize,
+    pub tab_hits: Vec<TabHit>,
     pub focus: Focus,
     pub panel: Option<Panel>,
     pub activity: Activity,
@@ -192,6 +198,9 @@ impl App {
             transcript: Transcript::default(),
             input: Input::default(),
             drafts: HashMap::new(),
+            tabs: vec![Tab::default()],
+            tab: 0,
+            tab_hits: Vec::new(),
             focus: Focus::Input,
             panel: None,
             activity: Activity::Idle,

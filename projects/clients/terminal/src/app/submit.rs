@@ -2,7 +2,9 @@
 
 use dusk_protocol::client::{Command, parse};
 
-use super::{Action, Activity, App, Connection, Panel, Tone, Workshop, schedule::ScheduleAction};
+use super::{
+    Action, Activity, App, Connection, Panel, TabMove, Tone, Workshop, schedule::ScheduleAction,
+};
 
 impl App {
     /// Takes the typed text for sending; commands show as notices, messages as the user's.
@@ -40,6 +42,16 @@ impl App {
                 return Action::None;
             }
             _ => {}
+        }
+        if trimmed == "/tab" || trimmed.starts_with("/tab ") {
+            return match TabMove::parse(&trimmed["/tab".len()..]) {
+                Some(step) => Action::Tab(step),
+                None => {
+                    self.flash =
+                        Some("Use /tab, /tab 2, /tab next, /tab prev or /tab close".into());
+                    Action::None
+                }
+            };
         }
         if let Some(name) = trimmed.strip_prefix("/snippet ") {
             return Action::OpenSnippet(name.trim().trim_start_matches('@').to_owned());

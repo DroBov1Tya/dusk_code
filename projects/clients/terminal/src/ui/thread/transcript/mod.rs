@@ -275,21 +275,26 @@ impl TranscriptView<'_> {
         let Some(index) = self.app.hover.or(browsed) else {
             return;
         };
-        let offered: &[(Button, &str, Color)] = match self.app.transcript.entries.get(index) {
-            Some(Entry::Notice { .. }) | None => &[],
+        let mut offered: Vec<(Button, &str, Color)> = match self.app.transcript.entries.get(index) {
+            Some(Entry::Notice { .. }) | None => Vec::new(),
             Some(_) if self.app.transcript.is_hidden(index) => {
-                &[(Button::Copy, " copy ", TEXT_SOFT)]
+                vec![(Button::Copy, " copy ", TEXT_SOFT)]
             }
-            Some(Entry::User { .. }) => &[
+            Some(Entry::User { .. }) => vec![
                 (Button::Hide, " hide ", TEXT_MUTED),
                 (Button::Edit, " edit ", TEXT_SOFT),
                 (Button::Copy, " copy ", TEXT_SOFT),
             ],
-            Some(_) => &[
+            Some(_) => vec![
                 (Button::Hide, " hide ", TEXT_MUTED),
                 (Button::Copy, " copy ", TEXT_SOFT),
             ],
         };
+        // While its command runs, it can go on in the background; copy stays last.
+        if self.app.transcript.running_command_at(index).is_some() {
+            let before_copy = offered.len().saturating_sub(1);
+            offered.insert(before_copy, (Button::Background, " background ", TEXT_SOFT));
+        }
         let Some(&(from, to)) = self.app.entry_lines.get(index) else {
             return;
         };

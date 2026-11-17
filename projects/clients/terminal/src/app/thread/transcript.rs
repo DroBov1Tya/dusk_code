@@ -382,6 +382,21 @@ impl Transcript {
         })
     }
 
+    /// The command still running at entry `index`, or in the run under the activity line
+    /// there.
+    pub fn running_command_at(&self, index: usize) -> Option<String> {
+        let running = |entry: &Entry| match entry {
+            Entry::Tool {
+                call, result: None, ..
+            } if call.name == "run_command" => Some(call.id.clone()),
+            _ => None,
+        };
+        match self.entries.get(index)? {
+            Entry::Activity { .. } => self.run(index).find_map(running),
+            entry => running(entry),
+        }
+    }
+
     pub fn start_tool(&mut self, call: ToolCall) {
         self.asked.call(&call);
         self.push(Entry::Tool {
