@@ -95,47 +95,41 @@ pub(super) fn user(text: &str, open: bool, width: usize) -> Vec<Line<'static>> {
     card(lines, width)
 }
 
-/// The agent's questions as the user answered them, on the card of a sent message: each
-/// question, its options with the chosen ones marked, then the user's own words.
+/// The agent's questions as the user answered them: one bordered block, a row for each
+/// question with its answer dimmed under it, the rows parted by a dim rule.
 pub(super) fn answered(answers: &[Answered], width: usize) -> Vec<Line<'static>> {
-    let bar = || Span::styled(format!(" {USER_BAR} "), fg(TEXT_MUTED));
-    // Text behind a mark; the lines it wraps to hang under its first.
-    let row = |mark: Span<'static>, text: &str, style: Style| -> Vec<Line<'static>> {
-        let hang = mark.content.width();
+    let outer = (width + 3).max(8);
+    let inner = outer - 4;
+    let edge = || fg(TEXT_MUTED);
+    let rule = |left: &str, right: &str| {
+        let line = format!("{left}{}{right}", "\u{2500}".repeat(outer - 2));
+        Line::from(Span::styled(line, edge()))
+    };
+    let text = |text: &str, style: Style| -> Vec<Line<'static>> {
         text.lines()
-            .flat_map(|line| {
-                let spans = vec![Span::styled(line.to_owned(), style)];
-                wrap::words(spans, width.saturating_sub(hang), 0)
-            })
-            .enumerate()
-            .map(|(at, spans)| {
-                let lead = match at {
-                    0 => mark.clone(),
-                    _ => Span::raw(" ".repeat(hang)),
-                };
-                Line::from([vec![bar(), lead], spans].concat())
+            .flat_map(|line| wrap::words(vec![Span::styled(line.to_owned(), style)], inner, 0))
+            .map(|spans| {
+                let pad = inner.saturating_sub(Line::from(spans.clone()).width());
+                let mut line = vec![Span::styled("\u{2502} ", edge())];
+                line.extend(spans);
+                line.push(Span::raw(" ".repeat(pad)));
+                line.push(Span::styled(" \u{2502}", edge()));
+                Line::from(line)
             })
             .collect()
     };
-    let mut lines = Vec::new();
-    for answer in answers {
-        lines.push(Line::from(bar()));
-        lines.extend(row(Span::raw(""), &answer.question, bold(TEXT)));
-        for (option, chosen) in &answer.options {
-            lines.extend(match chosen {
-                true => row(Span::styled("[x] ", fg(ACCENT)), option, fg(TEXT)),
-                false => row(Span::styled("[ ] ", dim()), option, dim()),
-            });
+    let mut lines = vec![rule("\u{256D}", "\u{256E}")];
+    for (index, answer) in answers.iter().enumerate() {
+        if index > 0 {
+            lines.push(rule("\u{251C}", "\u{2524}"));
         }
-        if answer.declined {
-            lines.extend(row(Span::raw(""), "declined", thought()));
-        }
-        if !answer.own.is_empty() {
-            lines.extend(row(Span::raw(""), &answer.own, fg(TEXT)));
+        lines.extend(text(&answer.question, fg(TEXT)));
+        for line in answer.lines() {
+            lines.extend(text(&line, dim()));
         }
     }
-    lines.push(Line::from(bar()));
-    card(lines, width)
+    lines.push(rule("\u{2570}", "\u{256F}"));
+    lines
 }
 
 /// A finished background job in one line; opened, the start of what it printed.

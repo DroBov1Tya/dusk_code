@@ -8,7 +8,6 @@ use crate::{
 };
 use dusk_protocol::thread::{Part, split};
 use dusk_protocol::thread::{Tool, ToolState};
-use dusk_protocol::tools::Reply;
 use leptos::{html, prelude::*};
 use wasm_bindgen::JsCast;
 
@@ -213,22 +212,18 @@ fn BlockView(all: Memo<Vec<Block>>, key: BlockKey) -> impl IntoView {
 
 fn item_view(item: Item) -> impl IntoView {
     match item {
-        Item::User(text) if Reply::parse_all(&text).is_some() => {
-            answered_view(Reply::parse_all(&text).unwrap_or_default()).into_any()
-        }
         Item::User(text) => view! {
             <div class="msg user"><div class="bubble">{user_text(&text)}</div></div>
         }
         .into_any(),
         Item::Answered(answers) => view! {
-            <div class="msg user"><div class="bubble">
+            <div class="msg user"><div class="answered">
                 {answers.into_iter().map(|answer| view! {
-                    <div><strong>{answer.question}</strong>
-                        {answer.options.into_iter().map(|(option, selected)| view! {
-                            <div>{if selected { "☑ " } else { "☐ " }}{option}</div>
+                    <div class="answered-row">
+                        <div>{answer.question.clone()}</div>
+                        {answer.lines().into_iter().map(|line| view! {
+                            <div class="answered-text">{line}</div>
                         }).collect_view()}
-                        {answer.declined.then(|| view! { <div>"Declined"</div> })}
-                        {(!answer.own.is_empty()).then(|| view! { <div>{answer.own}</div> })}
                     </div>
                 }).collect_view()}
             </div></div>
@@ -270,22 +265,6 @@ fn user_text(text: &str) -> String {
             Part::Sound { path, .. } => format!("[{}]", path.rsplit('/').next().unwrap_or(path)),
         })
         .collect()
-}
-
-/// The user's answers to the agent's questions as one card, not a chat message.
-fn answered_view(replies: Vec<Reply>) -> impl IntoView {
-    view! {
-        <div class="msg user">
-            <div class="answered">
-                {replies.into_iter().map(|reply| view! {
-                    <div class="answered-row">
-                        <div>{reply.question}</div>
-                        <div class="answered-text">{reply.answer}</div>
-                    </div>
-                }).collect_view()}
-            </div>
-        </div>
-    }
 }
 
 fn assistant_view(text: String, reasoning: String) -> impl IntoView {

@@ -18,9 +18,7 @@ use super::{
     picture::picture,
     sent_picture::{is_picture_name, sent_pictures},
 };
-use dusk_protocol::tools::Reply;
 
-use super::answered::answered_card;
 use crate::{
     pages::chat::{links, transcript::Item, working},
     ui::{Type, clipboard},
@@ -83,11 +81,6 @@ impl Workspace {
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
                 match &chat.items[at] {
-                    // An answer to the agent's questions is one card, not a chat message.
-                    Item::User { text, .. } if Reply::parse_all(text).is_some() => {
-                        let replies = Reply::parse_all(text).unwrap_or_default();
-                        answered_card(&key, &replies, cx)
-                    }
                     Item::User { text, sequence } => {
                         let group = SharedString::from(format!("user-row-{key}"));
                         let mut tools = div()
@@ -131,29 +124,31 @@ impl Workspace {
                             .flex_col()
                             .items_end()
                             .gap_1()
-                            .when(!user_text(text).trim().is_empty(), |row| {
-                                row.child(
-                                    // The user's words carry a breath of the accent, so the
-                                    // two sides of the chat part at a glance without glare.
-                                    div()
-                                        .px_4()
-                                        .py_2()
-                                        .rounded_xl()
-                                        .bg(accent.opacity(0.09))
-                                        .border_1()
-                                        .border_color(accent.opacity(0.16))
-                                        // Selectable like the answers; pastes and files show as labels.
-                                        .child(match chat.answered.get(&at) {
-                                            Some(answers) => super::answered(&key, answers, cx)
-                                                .into_any_element(),
-                                            None => links::markdown(
+                            .when_some(chat.answered.get(&at), |row, answers| {
+                                row.child(super::answered(&key, answers, cx))
+                            })
+                            .when(
+                                !chat.answered.contains_key(&at)
+                                    && !user_text(text).trim().is_empty(),
+                                |row| {
+                                    row.child(
+                                        // The user's words carry a breath of the accent, so the
+                                        // two sides of the chat part at a glance without glare.
+                                        div()
+                                            .px_4()
+                                            .py_2()
+                                            .rounded_xl()
+                                            .bg(accent.opacity(0.09))
+                                            .border_1()
+                                            .border_color(accent.opacity(0.16))
+                                            // Selectable like the answers; pastes and files show as labels.
+                                            .child(links::markdown(
                                                 SharedString::from(format!("user-{key}")),
                                                 user_text(text),
-                                            )
-                                            .into_any_element(),
-                                        }),
-                                )
-                            })
+                                            )),
+                                    )
+                                },
+                            )
                             .children(sent_pictures(self, &shown, &key, text, cx))
                             // Sounds the user sent play under the words.
                             .children(sent_sounds(text).iter().enumerate().map(|(n, clip)| {

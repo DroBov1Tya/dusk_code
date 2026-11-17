@@ -131,7 +131,7 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .meter { width: 60px; height: 4px; background: var(--raised); border-radius: 2px; overflow: hidden; display: inline-block; }
 .meter .fill { display: block; height: 100%; background: var(--accent); }
 .transcript { flex: 1; overflow: auto; padding: 8px 20px 20px; min-height: 0; }
-.transcript > * { max-width: 780px; margin-left: auto; margin-right: auto; }
+.transcript > * { max-width: 780px; margin-right: auto; }
 .empty { color: var(--muted); text-align: center; margin-top: 18vh; }
 .msg { margin: 14px auto; }
 .msg.user { display: flex; flex-direction: column; align-items: flex-end; }
@@ -503,4 +503,4 @@ a { text-underline-offset: 3px; }
 .answered { width: 100%; max-width: 85%; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
 .answered-row { padding: 8px 16px; overflow-wrap: anywhere; }
 .answered-row + .answered-row { border-top: 1px solid var(--line); }
-.answered-text { margin-top: 4px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
+.answered-text { margin-top: 2px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }
