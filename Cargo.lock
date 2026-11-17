@@ -2350,6 +2350,7 @@ name = "dusk_protocol"
 version = "0.74.4"
 dependencies = [
  "anyhow",
+ "proptest",
  "schemars",
  "serde",
  "serde_json",
