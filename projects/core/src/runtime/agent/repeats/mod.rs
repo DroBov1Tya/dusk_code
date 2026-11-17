@@ -78,6 +78,12 @@ impl Repeats {
         })
     }
 
+    /// Whether the turn `turn_id` must end once the call at hand is done, so the rest of
+    /// its calls are not run.
+    pub fn stopping(&self, turn_id: &str) -> bool {
+        self.turn == turn_id && self.stop.is_some()
+    }
+
     /// Why the turn `turn_id` must end now, once; None while it may go on.
     pub fn take_stop(&mut self, turn_id: &str) -> Option<String> {
         if self.turn != turn_id {

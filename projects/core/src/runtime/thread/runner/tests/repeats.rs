@@ -35,9 +35,14 @@ impl Tool for Failing {
 /// A step that calls the tool with `text`, then ends. Each call has its own id, as
 /// ids must differ within a turn.
 fn calls(text: String) -> Vec<Step> {
+    vec![call_at(0, text), Step::Done]
+}
+
+/// A call of the tool with `text` at `index` of its step's calls.
+fn call_at(index: u32, text: String) -> Step {
     static NEXT: AtomicUsize = AtomicUsize::new(0);
     let id = format!("call_{}", NEXT.fetch_add(1, Ordering::Relaxed));
-    vec![Step::Echo(id, json!({ "text": text })), Step::Done]
+    Step::Echo(index, id, json!({ "text": text }))
 }
 
 /// The same missing file, looked for in a different place each time.
@@ -201,6 +206,33 @@ async fn the_same_call_notice_is_an_event_with_the_switch_off() {
         "{}",
         results[2]
     );
+}
+
+/// Once the same error came back too often, the rest of the step's calls are not run:
+/// each gets the result a stop by the user gives them.
+#[tokio::test]
+async fn the_calls_after_the_stop_are_not_run() {
+    let mut scripts: Vec<_> = (1..=7).map(missing).collect();
+    let fail = "fail:cannot open /tmp/try8/config.yml: No such file or directory";
+    scripts.push(vec![
+        call_at(0, fail.into()),
+        call_at(1, "fail:something else".into()),
+        call_at(2, "read notes".into()),
+        Step::Done,
+    ]);
+    let (state, _, events, turn) = run("ladder_batch", LADDER_ON, scripts, 0).await;
+    assert_eq!(turn.status, TurnStatus::Failed);
+    let started = events
+        .iter()
+        .filter(|event| matches!(event, ThreadEvent::ToolStarted(_)))
+        .count();
+    assert_eq!(started, 8, "one call of the last step ran");
+    let results = tool_results(&state).await;
+    assert_eq!(results.len(), 10);
+    assert!(results[7].contains("the turn stops here"), "{}", results[7]);
+    for skipped in &results[8..] {
+        assert_eq!(skipped, "not run: the user interrupted the turn");
+    }
 }
 
 /// The stop of an agent ends its turn as failed, which `Launcher::report` passes to the
