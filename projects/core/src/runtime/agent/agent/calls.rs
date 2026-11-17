@@ -6,7 +6,7 @@ use crate::runtime::agent::{Inbox, Stop, generation};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
 use crate::{
     config::{Config, Effort},
-    providers::{ChatRequest, ModelOutput, ToolCall, is_transient, is_unsupported_effort},
+    providers::{ChatRequest, ModelOutput, ToolCall, is_unsupported_effort, provider_error},
     state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, Turn},
     tools::{Progress, ToolKind},
 };
@@ -72,20 +72,33 @@ impl Agent {
                 let rejected = std::mem::replace(error, anyhow!("reasoning effort rejected"));
                 *error = rejected.context(detail);
             }
-            let (error, asked_wait) = match &generated {
-                Ok(Err(error))
-                    if attempt < max_attempts && !output.answered() && is_transient(error) =>
-                {
-                    (format!("{error:#}"), crate::providers::retry_after(error))
+            let retry = match &generated {
+                Ok(Err(error)) if attempt < max_attempts && !output.answered() => {
+                    provider_error(error)
+                        .filter(|failure| failure.kind.is_retryable())
+                        .map(|failure| (format!("{error:#}"), failure))
                 }
-                _ => return Ok((output, generated)),
+                _ => None,
             };
+            let Some((error, failure)) = retry else {
+                return Ok((output, generated));
+            };
+            let kind = failure.kind;
+            let pause = failure.retry_after.unwrap_or_else(|| retry_delay(attempt));
             warn!(
+                kind = ?kind,
+                status = failure.status,
+                cause = failure.cause.as_deref(),
                 "thread {} model call failed, retry {attempt}: {error}",
                 self.thread_id
             );
-            self.emit(ThreadEvent::Retrying { attempt, error });
-            let pause = asked_wait.unwrap_or_else(|| retry_delay(attempt));
+            self.emit(ThreadEvent::Retrying {
+                attempt,
+                error,
+                kind,
+                wait_ms: u64::try_from(pause.as_millis()).unwrap_or(u64::MAX),
+                max_attempts,
+            });
             inbox.race(tokio::time::sleep(pause)).await?;
             attempt += 1;
         }

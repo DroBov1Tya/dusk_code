@@ -339,6 +339,9 @@ mod tests {
         chat.apply(ThreadEvent::Retrying {
             attempt: 2,
             error: "timeout".into(),
+            kind: dusk_protocol::model::ProviderErrorKind::TimedOut,
+            wait_ms: 1000,
+            max_attempts: 3,
         });
 
         assert_eq!(layout(&chat), [(0, 1), (1, 1)]);

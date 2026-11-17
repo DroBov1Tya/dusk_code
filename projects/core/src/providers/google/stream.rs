@@ -10,9 +10,9 @@ use uuid::Uuid;
 
 use super::signatures::Signatures;
 use crate::providers::{
-    errors::Transient,
+    errors::{ProviderError, ProviderErrorKind, ended_early},
     output::{FinishReason, ModelEvent, Usage},
-    transport::sse::SseDecoder,
+    transport::{http, sse::SseDecoder},
 };
 
 /// Events of one streamed response, read lazily from the network.
@@ -43,11 +43,7 @@ impl GenerateStream {
             }
             // Mark first so an error also ends the stream.
             self.finished = true;
-            let chunk = self
-                .response
-                .chunk()
-                .await
-                .map_err(|_| Transient("cannot read provider stream".into()))?;
+            let chunk = self.response.chunk().await.map_err(http::cut)?;
             match chunk {
                 Some(bytes) => {
                     self.pending.extend(self.parser.feed(&bytes)?);
@@ -159,9 +155,7 @@ impl GenerateParser {
     fn finish(&mut self) -> Result<()> {
         if !self.done {
             self.done = true;
-            bail!(Transient(
-                "provider stream ended before the response was complete".into()
-            ));
+            bail!(ended_early());
         }
         Ok(())
     }
@@ -264,7 +258,10 @@ fn finish_reason(reason: &str, called: bool) -> Result<FinishReason> {
         | "IMAGE_RECITATION" => FinishReason::ContentFilter,
         // The model slipped; the same request often passes when sent again.
         "MALFORMED_FUNCTION_CALL" | "MALFORMED_RESPONSE" | "OTHER" => {
-            bail!(Transient("model answer was malformed".into()))
+            bail!(ProviderError::new(
+                ProviderErrorKind::Interrupted,
+                "model answer was malformed"
+            ))
         }
         _ => bail!("model stopped for an unsupported reason"),
     })

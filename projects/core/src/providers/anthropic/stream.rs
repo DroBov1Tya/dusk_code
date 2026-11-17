@@ -8,9 +8,9 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::providers::{
-    errors::Transient,
+    errors::ended_early,
     output::{FinishReason, ModelEvent, Usage},
-    transport::sse::SseDecoder,
+    transport::{http, sse::SseDecoder},
 };
 
 /// Events of one streamed response, read lazily from the network.
@@ -41,11 +41,7 @@ impl MessageStream {
             }
             // Mark first so an error also ends the stream.
             self.finished = true;
-            let chunk = self
-                .response
-                .chunk()
-                .await
-                .map_err(|_| Transient("cannot read provider stream".into()))?;
+            let chunk = self.response.chunk().await.map_err(http::cut)?;
             match chunk {
                 Some(bytes) => {
                     self.pending.extend(self.parser.feed(&bytes)?);
@@ -124,9 +120,7 @@ impl MessageParser {
     fn finish(&mut self) -> Result<()> {
         if !self.done {
             self.done = true;
-            bail!(Transient(
-                "provider stream ended before the response was complete".into()
-            ));
+            bail!(ended_early());
         }
         Ok(())
     }

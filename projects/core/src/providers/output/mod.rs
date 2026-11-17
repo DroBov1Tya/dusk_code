@@ -8,7 +8,7 @@ pub mod text_calls;
 use anyhow::{Context, Result, bail, ensure};
 use serde_json::Value;
 
-use super::errors::{OutputLimit, Transient};
+use super::errors::{OutputLimit, ProviderError, ProviderErrorKind};
 use crate::BoxFuture;
 
 pub use dusk_protocol::model::{FinishReason, ModelEvent, ToolCall, Usage};
@@ -114,7 +114,8 @@ impl ModelOutput {
             .collect::<Result<Vec<_>>>()?;
         // Some servers end a stream with nothing after a long think; asking again helps.
         if self.text.trim().is_empty() && calls.is_empty() {
-            return Err(Transient("model returned an empty answer".into()).into());
+            let kind = ProviderErrorKind::Interrupted;
+            return Err(ProviderError::new(kind, "model returned an empty answer").into());
         }
         Ok(calls)
     }

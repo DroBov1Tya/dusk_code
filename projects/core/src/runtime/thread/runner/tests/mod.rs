@@ -10,7 +10,8 @@ use crate::state::{Goal, GoalStatus, Turn};
 use crate::{
     BoxFuture,
     providers::{
-        ChatMessage, ChatRequest, ChatStream, FinishReason, Model, ModelProvider, Transient,
+        ChatMessage, ChatRequest, ChatStream, FinishReason, Model, ModelProvider, ProviderError,
+        ProviderErrorKind,
     },
     runtime::model_choice::Choice,
     state::{MessageRole, TurnStatus},
@@ -81,7 +82,8 @@ impl ModelProvider for FakeProvider {
         }
         let script = self.scripts.lock().unwrap().pop_front().unwrap_or_default();
         if let Some(Step::Fail) = script.first() {
-            return Box::pin(async { Err(Transient("server busy".into()).into()) });
+            let busy = ProviderError::new(ProviderErrorKind::Overloaded, "server busy");
+            return Box::pin(async move { Err(busy.into()) });
         }
         if let Some(Step::Reject) = script.first() {
             return Box::pin(async { Err(anyhow::anyhow!("bad request")) });
@@ -139,7 +141,10 @@ impl ChatStream for FakeStream {
                 Some(Step::Hang) => std::future::pending().await,
                 Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
                 Some(Step::Length) => Some(ModelEvent::Finished(FinishReason::Length)),
-                Some(Step::Break) => return Err(Transient("connection reset".into()).into()),
+                Some(Step::Break) => {
+                    let kind = ProviderErrorKind::Interrupted;
+                    return Err(ProviderError::new(kind, "connection reset").into());
+                }
                 Some(Step::Fail | Step::Reject) | None => None,
             })
         })
