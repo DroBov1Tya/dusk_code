@@ -14,6 +14,8 @@ pub struct PendingMessage {
     /// The agent's thread for a message another agent sent; `None` for a client's.
     pub from_thread_id: Option<String>,
     pub from_job_id: Option<String>,
+    /// When it was stored, in Unix ms.
+    pub created_at: i64,
 }
 
 impl State {
@@ -31,6 +33,7 @@ impl State {
     ) -> Result<PendingMessage> {
         ensure!(!content.trim().is_empty(), "message is empty");
         let request_uid = Uuid::now_v7().to_string();
+        let created_at = timestamp_ms()?;
         let pending_id = sqlx::query_scalar(
             "INSERT INTO pending_messages (thread_id, request_uid, content, created_at,
                 from_thread_id)
@@ -39,7 +42,7 @@ impl State {
         .bind(thread_id)
         .bind(&request_uid)
         .bind(content)
-        .bind(timestamp_ms()?)
+        .bind(created_at)
         .bind(from)
         .fetch_one(&self.pool)
         .await
@@ -50,6 +53,7 @@ impl State {
             content: content.to_owned(),
             from_thread_id: from.map(str::to_owned),
             from_job_id: None,
+            created_at,
         })
     }
 
@@ -81,7 +85,8 @@ impl State {
 
     pub async fn pending_messages(&self, thread_id: &str) -> Result<Vec<PendingMessage>> {
         let rows = sqlx::query(
-            "SELECT pending_id, request_uid, content, from_thread_id, from_job_id FROM pending_messages
+            "SELECT pending_id, request_uid, content, from_thread_id, from_job_id, created_at
+             FROM pending_messages
              WHERE thread_id = ? ORDER BY pending_id",
         )
         .bind(thread_id)
@@ -96,6 +101,7 @@ impl State {
                     content: row.try_get("content")?,
                     from_thread_id: row.try_get("from_thread_id")?,
                     from_job_id: row.try_get("from_job_id")?,
+                    created_at: row.try_get("created_at")?,
                 })
             })
             .collect()

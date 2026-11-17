@@ -11,7 +11,7 @@ mod waits;
 
 pub use failure::{ProviderFailure, TurnFailure};
 pub use jobs::{BackgroundJob, JobSummary};
-pub use resume::{Settle, Unfinished};
+pub use resume::{CHECK_NOTE, CUT_OFF, Settle, Unfinished};
 pub use tasks::Task;
 pub use tokens::{CallPurpose, LastPrompt, ModelCall};
 pub use turns::{Turn, TurnAnswer, TurnOutcome, TurnStatus};

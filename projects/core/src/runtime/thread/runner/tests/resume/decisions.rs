@@ -195,3 +195,112 @@ async fn a_message_sent_before_the_restart_waits_for_the_decision() {
     );
     assert_eq!(steps(&provider), 2);
 }
+
+/// An answer stored before the wait began answered an earlier question worded the same,
+/// as a second tap on another client does: it is dropped and decides nothing.
+#[tokio::test]
+async fn an_answer_older_than_the_question_decides_nothing() {
+    let state = thread_state("resume_stale_answer").await;
+    killed_in_step(&state, &["a"], 0).await;
+    let counter = Counter::default();
+    let (_, runner, input, output) = restarted(&state, &counter, Vec::new());
+    let asked = question(&ask_only(runner, input, output).await);
+    let tapped = state
+        .add_pending("thread", &asked.reply("Continue"))
+        .await
+        .unwrap();
+    sqlx::query("UPDATE pending_messages SET created_at = created_at - 60000 WHERE pending_id = ?")
+        .bind(tapped.pending_id)
+        .execute(&state.pool)
+        .await
+        .unwrap();
+    let messages = state.list_messages("thread").await.unwrap();
+
+    let (provider, runner, input, output) = restarted(&state, &counter, answered("done"));
+    let events = ask_only(runner, input, output).await;
+
+    assert_eq!(question(&events), asked, "the user is asked again");
+    assert!(state.pending_messages("thread").await.unwrap().is_empty());
+    assert_eq!(state.list_messages("thread").await.unwrap(), messages);
+    let waiting = state.unfinished_turn("thread").await.unwrap().unwrap().turn;
+    assert!(matches!(waiting.waiting, Some(TurnWait::Decision { .. })));
+    assert!(counter.runs().is_empty());
+    assert_eq!(steps(&provider), 0);
+}
+
+/// With no model chosen, a message is kept as unsent; the answer to the question is not,
+/// so "Stop" still stops the turn.
+#[tokio::test]
+async fn the_answer_reaches_the_question_with_no_model_chosen() {
+    let state = thread_state("resume_no_model").await;
+    killed_in_step(&state, &["a"], 0).await;
+    let counter = Counter::default();
+    let (provider, runner, input, output) = restarted(&state, &counter, Vec::new());
+    runner.agent.model.clear();
+
+    let events = answer(runner, input, output, "Stop").await;
+
+    assert!(
+        !events
+            .iter()
+            .any(|e| matches!(e, ThreadEvent::LocalUnsent(_))),
+        "{events:?}"
+    );
+    assert_eq!(newest_turn(&state).await, TurnStatus::Interrupted);
+    assert_eq!(results(&state, "a").await, [LOST]);
+    assert!(state.pending_messages("thread").await.unwrap().is_empty());
+    assert!(counter.runs().is_empty());
+    assert_eq!(steps(&provider), 0);
+}
+
+/// Another agent's message while the user is asked waits for after the decision, even
+/// when it reads as an answer: only the user decides, and the message is not lost.
+#[tokio::test]
+async fn an_agents_message_while_asked_is_kept_and_decides_nothing() {
+    let state = thread_state("resume_agent_message").await;
+    let cut = killed_in_step(&state, &["a"], 0).await;
+    state
+        .create_agent_thread("helper", "thread", "agent", "helper")
+        .await
+        .unwrap();
+    let counter = Counter::default();
+    let (provider, runner, input, mut output) =
+        restarted(&state, &counter, answered("answered the agent"));
+    let running = tokio::spawn(runner.run());
+    let asked = loop {
+        if let Some(ThreadEvent::Question(question)) = output.next_event().await {
+            break question;
+        }
+    };
+    let posing = asked.reply("Continue");
+    state
+        .add_pending_from("thread", &posing, Some("helper"))
+        .await
+        .unwrap();
+    input.send(asked.reply("Stop")).await.unwrap();
+    drop(input);
+    drain(&mut output).await;
+    running.await.unwrap();
+
+    let status: String = sqlx::query_scalar("SELECT status FROM turns WHERE turn_id = ?")
+        .bind(&cut.turn_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "interrupted", "the user's Stop decided");
+    assert!(counter.runs().is_empty());
+    let history = state.list_messages("thread").await.unwrap();
+    let kept: Vec<_> = history
+        .iter()
+        .filter(|m| m.content == posing)
+        .map(|m| m.from_thread_id.as_deref())
+        .collect();
+    assert_eq!(kept, [Some("helper")]);
+    let last = history.last().unwrap();
+    assert_eq!(
+        (last.role, last.content.as_str()),
+        (MessageRole::Assistant, "answered the agent")
+    );
+    assert!(state.pending_messages("thread").await.unwrap().is_empty());
+    assert_eq!(steps(&provider), 1);
+}

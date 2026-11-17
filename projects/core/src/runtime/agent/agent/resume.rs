@@ -8,7 +8,9 @@ use super::Agent;
 use crate::providers::ToolCall;
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Inbox, Stop};
-use crate::state::{AgentPhase, PendingMessage, Settle, Turn, TurnStatus, Unfinished};
+use crate::state::{
+    AgentPhase, CHECK_NOTE, CUT_OFF, PendingMessage, Settle, Turn, TurnStatus, Unfinished,
+};
 use anyhow::{Result, ensure};
 use dusk_protocol::thread::{TurnWait, duration_words};
 use dusk_protocol::tools::Question;
@@ -37,9 +39,6 @@ const CONTINUE: &str = "Continue";
 const CHECK_FIRST: &str = "Check first";
 const STOP: &str = "Stop";
 
-/// What the model reads before it goes on after "Check first".
-const CHECK_NOTE: &str = "Before repeating the cut-off call, check whether it took effect.";
-
 /// How much of the cut-off call's arguments the question shows.
 const SHOWN_ARGUMENTS: usize = 80;
 
@@ -64,10 +63,7 @@ impl Decision {
 pub fn cut_off_question(call: &ToolCall) -> Question {
     let arguments = one_line(&call.arguments.to_string(), SHOWN_ARGUMENTS);
     Question {
-        question: format!(
-            "A restart cut off `{}`: {arguments}. It may or may not have taken effect.",
-            call.name
-        ),
+        question: format!("A restart cut off `{}`: {arguments}. {CUT_OFF}", call.name),
         options: [CONTINUE, CHECK_FIRST, STOP].map(String::from).to_vec(),
         multiple: false,
     }
@@ -205,8 +201,8 @@ impl Agent {
     }
 
     /// Stops the running turn as a restart always did: an open call gets the result that
-    /// says it may or may not have taken effect. `answer` is the user's "Stop", dropped
-    /// with it. The end is told, so an agent's asker learns it was stopped.
+    /// says it may have taken effect and may still be running. `answer` is the user's
+    /// "Stop", dropped with it. The end is told, so an agent's asker learns it was stopped.
     pub async fn stop_unfinished(&self, answer: Option<i64>) -> Result<()> {
         let turn = match answer {
             Some(answer) => self.state.stop_decided(&self.thread_id, answer).await?,
@@ -252,7 +248,7 @@ mod tests {
         assert_eq!(
             question.question,
             "A restart cut off `run_command`: {\"command\":\"rm -rf\\nbuild\"}. \
-             It may or may not have taken effect."
+             It may have taken effect and may still be running."
         );
         let answer = |option: &str| question.reply(option);
         assert_eq!(

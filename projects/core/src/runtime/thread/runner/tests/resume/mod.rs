@@ -11,10 +11,12 @@ use crate::state::TurnAnswer;
 use dusk_protocol::thread::TurnWait;
 use dusk_protocol::tools::Question;
 
-const LOST: &str =
-    "no result: the process stopped while this call ran, so it may or may not have taken effect";
+const LOST: &str = "no result: the process stopped while this call ran, so it may have taken \
+     effect and may still be running";
 const NOT_RUN: &str = "not run: an earlier call of this step was cut off by a restart";
-const CHECK_NOTE: &str = "Before repeating the cut-off call, check whether it took effect.";
+const CHECK_NOTE: &str = "The cut-off call may have taken effect and may still be running. \
+     Before repeating it, check whether it took effect; before repeating a command, check \
+     whether a process it started is still running.";
 
 /// The database as a kill in the middle of a step left it: the turn runs, its step
 /// called `echo` once per text under the text as its id, and the first `done` calls

@@ -190,8 +190,9 @@ impl Tool for Echo {
 }
 
 /// Counts its runs by their `text`, so a restart shows which calls ran again. `repeatable`
-/// is what it says of a lost result; `hang` keeps a run going once counted, as a call a
-/// kill cut off after its effect.
+/// is what it says of a lost result, unless the call's own `repeatable` argument says
+/// otherwise; `hang` keeps a run going once counted, as a call a kill cut off after its
+/// effect.
 #[derive(Clone, Default)]
 struct Counter {
     runs: Arc<Mutex<Vec<String>>>,
@@ -218,8 +219,8 @@ impl Tool for Counter {
         json!({ "type": "object" })
     }
 
-    fn repeatable(&self, _arguments: &Value) -> bool {
-        self.repeatable
+    fn repeatable(&self, arguments: &Value) -> bool {
+        arguments["repeatable"].as_bool().unwrap_or(self.repeatable)
     }
 
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {

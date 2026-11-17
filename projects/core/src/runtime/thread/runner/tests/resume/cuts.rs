@@ -91,7 +91,8 @@ async fn a_call_that_may_not_repeat_is_not_run_and_the_user_is_asked() {
     let asked = question(&events);
     assert_eq!(
         asked.question,
-        "A restart cut off `echo`: {\"text\":\"a\"}. It may or may not have taken effect."
+        "A restart cut off `echo`: {\"text\":\"a\"}. \
+         It may have taken effect and may still be running."
     );
     assert_eq!(asked.options, ["Continue", "Check first", "Stop"]);
 }
@@ -197,71 +198,163 @@ async fn a_stored_decision_is_applied_once_and_kept_out_of_the_history() {
     assert_eq!(newest_turn(&state).await, TurnStatus::Completed);
 }
 
-/// Either the answer was stored with the turn's end, or neither was.
+/// The answer is stored with the turn's end in one write, so a kill falls before both or
+/// after both: before, the restart asks the model once; after, it finds nothing to do.
 #[tokio::test]
 async fn a_kill_around_the_turns_end_gives_one_answer() {
-    let state = thread_state("resume_turn_end").await;
-    killed_in_step(&state, &["a"], 1).await;
-    let (provider, runner, input, _output) =
-        restarted(&state, &Counter::default(), answered("answer"));
-    drop(input);
-    runner.run().await;
-    assert_eq!(steps(&provider), 1);
     let answers = |messages: Vec<crate::state::Message>| {
         messages
             .into_iter()
             .filter(|m| m.role == MessageRole::Assistant && m.content == "answer")
             .count()
     };
-    assert_eq!(answers(state.list_messages("thread").await.unwrap()), 1);
 
-    // The end was stored: another restart finds nothing to do.
+    // Just before `finish_turn`: every result stored, the answer not.
+    let state = thread_state("resume_before_end").await;
+    killed_in_step(&state, &["a"], 1).await;
     let (provider, runner, input, _output) =
-        restarted(&state, &Counter::default(), answered("again"));
+        restarted(&state, &Counter::default(), answered("answer"));
+    drop(input);
+    runner.run().await;
+    assert_eq!(steps(&provider), 1);
+    assert_eq!(answers(state.list_messages("thread").await.unwrap()), 1);
+    assert_eq!(newest_turn(&state).await, TurnStatus::Completed);
+
+    // Just after it: the answer and the end are stored, nothing after them.
+    let state = thread_state("resume_after_end").await;
+    let turn = killed_in_step(&state, &["a"], 1).await;
+    let answer = TurnAnswer {
+        content: "answer".into(),
+        reasoning: None,
+    };
+    let ended = crate::state::TurnOutcome::Completed(answer);
+    state.finish_turn(&turn.turn_id, ended).await.unwrap();
+    let before = state.list_messages("thread").await.unwrap();
+    let counter = Counter {
+        repeatable: true,
+        ..Counter::default()
+    };
+    let (provider, runner, input, _output) = restarted(&state, &counter, answered("again"));
     drop(input);
     runner.run().await;
     assert_eq!(steps(&provider), 0);
-    assert_eq!(answers(state.list_messages("thread").await.unwrap()), 1);
+    assert!(counter.runs().is_empty());
+    assert_eq!(state.list_messages("thread").await.unwrap(), before);
+    assert_eq!(answers(before), 1);
     assert!(state.unfinished_turn("thread").await.unwrap().is_none());
 }
 
-/// A chat and its agent were both at work. The agent's call may not repeat, so it stops,
-/// and its chat is told so once; the chat's turn goes on.
+/// Calls run in order, so a call after the one a kill cut off never started. The first
+/// may run again, so it does; the second, which may not, runs once after it, as it would
+/// have, and nobody is asked.
 #[tokio::test]
-async fn an_agent_stopped_by_a_restart_tells_its_chat_once() {
+async fn a_call_after_a_repeatable_one_that_was_cut_off_runs_once() {
+    let state = thread_state("resume_repeatable_first").await;
+    state.add_user_message("thread", "go", "go").await.unwrap();
+    let turn = state.start_turn("thread").await.unwrap().unwrap();
+    let call = |text: &str, repeatable: bool| ToolCall {
+        id: text.into(),
+        name: "echo".into(),
+        arguments: json!({ "text": text, "repeatable": repeatable }),
+    };
+    let answer = TurnAnswer {
+        content: String::new(),
+        reasoning: None,
+    };
+    let calls = vec![call("a", true), call("b", false)];
+    let id = &turn.turn_id;
+    state.record_tool_calls(id, answer, calls).await.unwrap();
+    let counter = Counter::default();
+
+    let (provider, runner, input, mut output) = restarted(&state, &counter, answered("done"));
+    drop(input);
+    runner.run().await;
+    let events = drain(&mut output).await;
+
+    assert!(!events.iter().any(|e| matches!(e, ThreadEvent::Question(_))));
+    assert_eq!(counter.runs(), ["a", "b"]);
+    assert_eq!(results(&state, "a").await, ["a"]);
+    assert_eq!(results(&state, "b").await, ["b"]);
+    assert_eq!(steps(&provider), 1);
+    assert_eq!(newest_turn(&state).await, TurnStatus::Completed);
+}
+
+/// A second kill while the restart runs the open calls again: the third start runs what
+/// is still open, and every call ends with one result.
+#[tokio::test]
+async fn a_second_kill_while_calls_run_again_leaves_one_result_each() {
+    let state = thread_state("resume_killed_twice").await;
+    killed_in_step(&state, &["a", "b"], 0).await;
+    let hanging = Counter {
+        repeatable: true,
+        hang: true,
+        ..Counter::default()
+    };
+    let (_, runner, input, _output) = restarted(&state, &hanging, Vec::new());
+    let running = tokio::spawn(runner.run());
+    while hanging.runs().is_empty() {
+        tokio::task::yield_now().await;
+    }
+    running.abort();
+    assert!(running.await.unwrap_err().is_cancelled());
+    drop(input);
+    assert!(results(&state, "a").await.is_empty());
+
+    let counter = Counter {
+        hang: false,
+        ..hanging
+    };
+    let (provider, runner, input, _output) = restarted(&state, &counter, answered("done"));
+    drop(input);
+    runner.run().await;
+
+    assert_eq!(counter.runs(), ["a", "a", "b"]);
+    assert_eq!(results(&state, "a").await, ["a"]);
+    assert_eq!(results(&state, "b").await, ["b"]);
+    assert_eq!(steps(&provider), 1);
+    assert_eq!(newest_turn(&state).await, TurnStatus::Completed);
+}
+
+/// A runtime whose model answers "ok" to every call, and the project folder it works in.
+async fn agent_runtime(name: &str) -> (crate::runtime::Runtime, std::path::PathBuf) {
     use crate::{init::paths::Paths, runtime::Runtime};
-    let root = temp_dir("resume_agent");
+    let root = temp_dir(name);
     let cwd = root.join("project");
     std::fs::create_dir_all(&cwd).unwrap();
     let paths = Paths::new(root.join("config"), root.join("work"));
     let runtime = Runtime::start(paths, Some(root.join("state.db")))
         .await
         .unwrap();
-    let scripts = (0..6).map(|_| vec![Step::Text("ok"), Step::Done]).collect();
+    let scripts = (0..8).map(|_| vec![Step::Text("ok"), Step::Done]).collect();
     let fake = provider(scripts);
     runtime.launcher.model.set(Choice {
         provider_name: "fake".into(),
         provider: Arc::clone(&fake) as Arc<dyn ModelProvider>,
         model: model(None),
     });
+    (runtime, cwd)
+}
+
+/// An agent thread under `parent`, as `ask_agent` makes it, given `task`.
+async fn agent_thread(runtime: &crate::runtime::Runtime, id: &str, parent: &str) {
     let state = runtime.state();
-    state.create_thread("chat", "test").await.unwrap();
-    state.add_user_message("chat", "go", "go").await.unwrap();
-    state.start_turn("chat").await.unwrap().unwrap();
     state
-        .create_agent_thread("child", "chat", "agent", "child")
+        .create_agent_thread(id, parent, "agent", id)
         .await
         .unwrap();
-    // As `ask_agent` makes it.
-    let workspace = runtime.launcher.paths.thread_workspace("child").unwrap();
+    let workspace = runtime.launcher.paths.thread_workspace(id).unwrap();
     std::fs::create_dir_all(workspace).unwrap();
     state
-        .add_user_message("child", "task", "task")
+        .add_user_message(id, &format!("task_{id}"), "task")
         .await
         .unwrap();
-    let child = state.start_turn("child").await.unwrap().unwrap();
+}
+
+/// The agent's turn as a kill left it: it runs, cut off in a command that may not repeat.
+async fn killed_in_command(state: &State, id: &str) -> Turn {
+    let turn = state.start_turn(id).await.unwrap().unwrap();
     let call = ToolCall {
-        id: "run".into(),
+        id: format!("run_{id}"),
         name: "run_command".into(),
         arguments: json!({ "command": "touch made" }),
     };
@@ -270,9 +363,23 @@ async fn an_agent_stopped_by_a_restart_tells_its_chat_once() {
         reasoning: None,
     };
     state
-        .record_tool_calls(&child.turn_id, answer, vec![call])
+        .record_tool_calls(&turn.turn_id, answer, vec![call])
         .await
         .unwrap();
+    turn
+}
+
+/// A chat and its agent were both at work. The agent's call may not repeat, so it stops,
+/// and its chat is told so once; the chat's turn goes on.
+#[tokio::test]
+async fn an_agent_stopped_by_a_restart_tells_its_chat_once() {
+    let (runtime, cwd) = agent_runtime("resume_agent").await;
+    let state = runtime.state();
+    state.create_thread("chat", "test").await.unwrap();
+    state.add_user_message("chat", "go", "go").await.unwrap();
+    state.start_turn("chat").await.unwrap().unwrap();
+    agent_thread(&runtime, "child", "chat").await;
+    let child = killed_in_command(state, "child").await;
 
     let mut handle = runtime.resume_thread("chat", &cwd).await.unwrap();
     let mut finished = 0;
@@ -299,6 +406,60 @@ async fn an_agent_stopped_by_a_restart_tells_its_chat_once() {
         .await
         .unwrap();
     assert_eq!(child_status, "interrupted");
+    assert!(
+        !cwd.join("made").exists(),
+        "the cut-off command did not run again"
+    );
+}
+
+/// An agent asked another and ended its turn; the other was cut off in a command that may
+/// not repeat. It stops after the restart, and the agent that asked is woken with that, so
+/// the work reaches the chat instead of being lost with nobody at work to be told.
+#[tokio::test]
+async fn an_agent_stopped_by_a_restart_wakes_the_agent_that_asked() {
+    let (runtime, cwd) = agent_runtime("resume_agent_asker").await;
+    let state = runtime.state();
+    state.create_thread("chat", "test").await.unwrap();
+    agent_thread(&runtime, "child", "chat").await;
+    let asked = state.start_turn("child").await.unwrap().unwrap();
+    let answer = TurnAnswer {
+        content: "asked an agent".into(),
+        reasoning: None,
+    };
+    let ended = crate::state::TurnOutcome::Completed(answer);
+    state.finish_turn(&asked.turn_id, ended).await.unwrap();
+    agent_thread(&runtime, "grandchild", "child").await;
+    let cut = killed_in_command(state, "grandchild").await;
+
+    let mut handle = runtime.resume_thread("chat", &cwd).await.unwrap();
+    let wait = async {
+        loop {
+            if let Some(ThreadEvent::TurnFinished(_)) = handle.output.next_event().await {
+                return;
+            }
+        }
+    };
+    tokio::time::timeout(Duration::from_secs(20), wait)
+        .await
+        .expect("the chat answers what its agent reported");
+
+    let told = state.list_messages("child").await.unwrap();
+    let stopped = told
+        .iter()
+        .filter(|m| m.content.contains("was stopped before it finished"))
+        .count();
+    assert_eq!(stopped, 1, "{told:?}");
+    let chat = state.list_messages("chat").await.unwrap();
+    assert!(
+        chat.iter().any(|m| m.content == "finished:\nok"),
+        "{chat:?}"
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM turns WHERE turn_id = ?")
+        .bind(&cut.turn_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "interrupted");
     assert!(
         !cwd.join("made").exists(),
         "the cut-off command did not run again"

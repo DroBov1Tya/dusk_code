@@ -12,6 +12,7 @@ use crate::{
     tools::{ToolRegistry, ToolScope},
 };
 use anyhow::Result;
+use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
 use std::{path::PathBuf, sync::Arc, time::Duration};
 use tokio::sync::mpsc;
@@ -33,6 +34,8 @@ pub struct ThreadRunner {
     pub goal_waiting: bool,
     /// Took itself out of the mailboxes, so another runner of the thread may be there now.
     left: bool,
+    /// The question a restart asked while the runner waits for its answer.
+    pub(super) deciding: Arc<Mutex<Option<Question>>>,
     /// Keeps other processes off the thread while this runner has it.
     _lock: ThreadLock,
 }
@@ -66,6 +69,7 @@ impl ThreadRunner {
     pub fn new(setup: ThreadSetup) -> (Self, ThreadInput, ThreadOutput) {
         let (input_sender, inputs) = mpsc::unbounded_channel();
         let (events, event_receiver) = mpsc::unbounded_channel();
+        let deciding = Arc::default();
         let input = ThreadInput {
             state: Arc::clone(&setup.state),
             config: Arc::clone(&setup.config),
@@ -73,6 +77,7 @@ impl ThreadRunner {
             events: events.downgrade(),
             thread_id: setup.thread_id.clone(),
             inputs: input_sender,
+            deciding: Arc::clone(&deciding),
         };
         let agent = Agent {
             state: setup.state,
@@ -102,6 +107,7 @@ impl ThreadRunner {
             ends_when_idle: setup.ends_when_idle,
             goal_waiting: false,
             left: false,
+            deciding,
             _lock: setup.lock,
         };
         let output = ThreadOutput {
