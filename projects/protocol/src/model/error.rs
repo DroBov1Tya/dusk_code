@@ -61,6 +61,49 @@ impl ProviderErrorKind {
     }
 }
 
+/// A provider failure a turn may wait out because it passes by itself: the provider is
+/// limited, spent or out of reach for now, not refusing this request. Named on the wire
+/// as the `ProviderErrorKind` it stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ProviderWaitKind {
+    RateLimited,
+    Quota,
+    Unreachable,
+    TimedOut,
+    Overloaded,
+}
+
+impl From<ProviderWaitKind> for ProviderErrorKind {
+    fn from(kind: ProviderWaitKind) -> Self {
+        match kind {
+            ProviderWaitKind::RateLimited => Self::RateLimited,
+            ProviderWaitKind::Quota => Self::Quota,
+            ProviderWaitKind::Unreachable => Self::Unreachable,
+            ProviderWaitKind::TimedOut => Self::TimedOut,
+            ProviderWaitKind::Overloaded => Self::Overloaded,
+        }
+    }
+}
+
+impl TryFrom<ProviderErrorKind> for ProviderWaitKind {
+    /// The kind given back: no wait passes it.
+    type Error = ProviderErrorKind;
+
+    fn try_from(kind: ProviderErrorKind) -> Result<Self, Self::Error> {
+        Ok(match kind {
+            ProviderErrorKind::RateLimited => Self::RateLimited,
+            ProviderErrorKind::Quota => Self::Quota,
+            ProviderErrorKind::Unreachable => Self::Unreachable,
+            ProviderErrorKind::TimedOut => Self::TimedOut,
+            ProviderErrorKind::Overloaded => Self::Overloaded,
+            ProviderErrorKind::Auth
+            | ProviderErrorKind::Refused
+            | ProviderErrorKind::TooLong
+            | ProviderErrorKind::Interrupted => return Err(kind),
+        })
+    }
+}
+
 /// A model call that failed for good: why, and how many times it was sent.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ProviderFailure {

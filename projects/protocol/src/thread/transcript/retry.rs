@@ -86,6 +86,7 @@ pub fn retry_row(event: &ThreadEvent) -> Option<RetryRow> {
         }),
         ThreadEvent::Model(_)
         | ThreadEvent::TurnStarted(_)
+        | ThreadEvent::TurnWaiting(_)
         | ThreadEvent::TurnFailed(_)
         | ThreadEvent::TurnFinished(_)
         | ThreadEvent::CompactionFinished(_)

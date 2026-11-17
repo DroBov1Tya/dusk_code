@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::model::ProviderFailure;
+use crate::model::{ProviderErrorKind, ProviderFailure, ProviderWaitKind};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Turn {
@@ -16,6 +16,54 @@ pub struct Turn {
     pub started_at: i64,
     pub finished_at: Option<i64>,
     pub error_message: Option<String>,
+    /// Set while the running turn waits; never on a turn that ended. Absent from older
+    /// peers, which knew no waits.
+    #[serde(default)]
+    pub waiting: Option<TurnWait>,
+}
+
+/// What a running turn waits for. Times are Unix timestamps in milliseconds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum TurnWait {
+    /// A restart cut off a call that may have taken effect; the user decides.
+    Decision { since: i64 },
+    /// The provider cannot serve the turn now; it continues by itself at `wake_at`.
+    /// `since` is when the first of the waits in a row began, which bounds them all.
+    Provider {
+        kind: ProviderWaitKind,
+        since: i64,
+        wake_at: i64,
+    },
+}
+
+impl TurnWait {
+    /// A wait for the provider; `None` for a kind no wait passes, such as a refused
+    /// request or a key that was not accepted.
+    pub fn provider(kind: ProviderErrorKind, since: i64, wake_at: i64) -> Option<Self> {
+        let kind = ProviderWaitKind::try_from(kind).ok()?;
+        Some(Self::Provider {
+            kind,
+            since,
+            wake_at,
+        })
+    }
+
+    /// The line every client shows: "Waiting for your decision", or "Rate limited;
+    /// continues in 12m 5s" with the time left from `now` (Unix ms, the client's clock).
+    /// Without `now`, as in a line that stays in the chat: "Rate limited; continues by
+    /// itself".
+    pub fn text(&self, now: Option<i64>) -> String {
+        let (kind, wake_at) = match *self {
+            Self::Decision { .. } => return "Waiting for your decision".into(),
+            Self::Provider { kind, wake_at, .. } => (ProviderErrorKind::from(kind), wake_at),
+        };
+        let when = match now {
+            None => "by itself".to_owned(),
+            Some(now) if wake_at > now => format!("in {}", duration_words(wake_at - now)),
+            Some(_) => "now".to_owned(),
+        };
+        format!("{}; continues {when}", kind.label())
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -68,6 +116,69 @@ pub fn duration_words(ms: i64) -> String {
         0..60 => format!("{seconds}s"),
         60..3600 => format!("{}m {}s", seconds / 60, seconds % 60),
         _ => format!("{}h {}m", seconds / 3600, seconds % 3600 / 60),
+    }
+}
+
+#[cfg(test)]
+mod wait_tests {
+    use super::*;
+
+    fn turn(waiting: Option<TurnWait>) -> Turn {
+        Turn {
+            turn_id: "turn".into(),
+            thread_id: "thread".into(),
+            last_sequence: 3,
+            response_message_id: None,
+            status: TurnStatus::Running,
+            started_at: 1_000,
+            finished_at: None,
+            error_message: None,
+            waiting,
+        }
+    }
+
+    #[test]
+    fn a_turn_from_an_older_peer_does_not_wait() {
+        let mut json = serde_json::to_value(turn(None)).unwrap();
+        json.as_object_mut().unwrap().remove("waiting");
+        let read: Turn = serde_json::from_value(json).unwrap();
+        assert_eq!(read, turn(None));
+    }
+
+    #[test]
+    fn both_waits_survive_the_wire() {
+        let provider = TurnWait::provider(ProviderErrorKind::RateLimited, 5, 9).unwrap();
+        for wait in [TurnWait::Decision { since: 5 }, provider] {
+            let sent = turn(Some(wait));
+            let json = serde_json::to_string(&sent).unwrap();
+            assert_eq!(serde_json::from_str::<Turn>(&json).unwrap(), sent);
+        }
+    }
+
+    #[test]
+    fn only_a_failure_that_passes_by_itself_is_waited_out() {
+        use ProviderErrorKind::*;
+        for kind in [RateLimited, Quota, Unreachable, TimedOut, Overloaded] {
+            let wait = TurnWait::provider(kind, 0, 1);
+            assert!(
+                matches!(wait, Some(TurnWait::Provider { kind: waited, .. })
+                    if ProviderErrorKind::from(waited) == kind),
+                "{kind:?}"
+            );
+        }
+        for kind in [Auth, Refused, TooLong, Interrupted] {
+            assert_eq!(TurnWait::provider(kind, 0, 1), None, "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn a_wait_reads_as_one_line() {
+        let wait = TurnWait::provider(ProviderErrorKind::RateLimited, 0, 725_000).unwrap();
+        assert_eq!(wait.text(Some(0)), "Rate limited; continues in 12m 5s");
+        assert_eq!(wait.text(Some(725_000)), "Rate limited; continues now");
+        assert_eq!(wait.text(None), "Rate limited; continues by itself");
+        let decision = TurnWait::Decision { since: 0 };
+        assert_eq!(decision.text(Some(0)), "Waiting for your decision");
     }
 }
 

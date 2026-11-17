@@ -15,6 +15,7 @@ use super::{
     failure::{TurnFailure, columns},
     messages::{NewMessage, insert_message},
     timestamp_ms,
+    waits::decode_wait,
 };
 use crate::providers::ToolCall;
 
@@ -280,7 +281,8 @@ impl State {
         };
         let row = sqlx::query(
             "UPDATE turns SET status = ?, response_message_id = ?, error_message = ?,
-                error_kind = ?, attempts = ?, finished_at = MAX(started_at, ?)
+                error_kind = ?, attempts = ?, finished_at = MAX(started_at, ?),
+                waiting_for = NULL, waiting_since = NULL, wake_at = NULL
              WHERE turn_id = ? RETURNING *",
         )
         .bind(status.as_str())
@@ -307,7 +309,8 @@ impl State {
                     have taken effect";
         close_open_calls(&mut transaction, thread_id, lost, timestamp).await?;
         sqlx::query(
-            "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?)
+            "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?),
+                waiting_for = NULL, waiting_since = NULL, wake_at = NULL
              WHERE thread_id = ? AND status = 'running'",
         )
         .bind(timestamp)
@@ -378,7 +381,7 @@ async fn close_open_calls(
     Ok(())
 }
 
-async fn read_running_turn(
+pub(super) async fn read_running_turn(
     transaction: &mut Transaction<'_, Sqlite>,
     turn_id: &str,
 ) -> Result<Turn> {
@@ -391,7 +394,7 @@ async fn read_running_turn(
     decode_turn(row)
 }
 
-fn decode_turn(row: SqliteRow) -> Result<Turn> {
+pub(super) fn decode_turn(row: SqliteRow) -> Result<Turn> {
     let status: String = row.try_get("status")?;
     let status = match status.as_str() {
         "running" => TurnStatus::Running,
@@ -401,6 +404,7 @@ fn decode_turn(row: SqliteRow) -> Result<Turn> {
         _ => bail!("invalid stored turn status"),
     };
     let last_sequence: i64 = row.try_get("last_sequence")?;
+    let waiting = decode_wait(&row)?;
     Ok(Turn {
         turn_id: row.try_get("turn_id")?,
         thread_id: row.try_get("thread_id")?,
@@ -410,6 +414,7 @@ fn decode_turn(row: SqliteRow) -> Result<Turn> {
         started_at: row.try_get("started_at")?,
         finished_at: row.try_get("finished_at")?,
         error_message: row.try_get("error_message")?,
+        waiting,
     })
 }
 

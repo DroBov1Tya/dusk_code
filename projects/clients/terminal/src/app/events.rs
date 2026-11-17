@@ -2,7 +2,7 @@
 
 use dusk_protocol::{
     model::ModelEvent,
-    thread::{RetryRow, ThreadEvent, TurnStatus, retry_row},
+    thread::{Note, RetryRow, ThreadEvent, TurnStatus, note, retry_row},
 };
 
 use std::time::Instant;
@@ -114,6 +114,11 @@ impl App {
             }
             // The footer shows the retry in place; the transcript keeps no line of it.
             ThreadEvent::Retrying { .. } => {}
+            ThreadEvent::TurnWaiting(_) => {
+                if let Some(Note::Notice(text)) = note(&event) {
+                    self.transcript.notice(text, Tone::Info);
+                }
+            }
             ThreadEvent::TurnFailed(failure) => self.error(failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
             ThreadEvent::OutputLimitReached => {
