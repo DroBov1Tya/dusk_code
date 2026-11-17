@@ -23,8 +23,10 @@ you saw, look again only to check.
 ## Act
 
 - Plan the actions one picture allows: when the coordinates are known from the last
-  picture and nothing in between moves the layout, send the clicks and keys together in
-  one step instead of a screenshot between each.
+  picture and nothing in between moves the layout, send them as one `computer_actions`
+  call (up to 20 steps) instead of a screenshot between each. The user approves the
+  whole list at once, so keep a batch to what you would show them together; split it
+  where you need to see the result before typing.
 - `type_text` types where the keyboard focus is. Check the focused field first; a click
   may not focus it. Use `press_keys` for Enter, Tab, shortcuts and arrows.
 - Prefer keyboard shortcuts over hunting for a menu item in a picture.
