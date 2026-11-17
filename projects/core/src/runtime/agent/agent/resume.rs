@@ -4,12 +4,13 @@
 //! chat asks the user and an agent, with no one to ask, stops. A turn left long ago asks
 //! too, so opening an old chat spends no tokens unasked.
 
-use super::Agent;
+use super::{Agent, StepEnd};
 use crate::providers::ToolCall;
 use crate::runtime::ThreadEvent;
 use crate::runtime::agent::{Inbox, Stop};
 use crate::state::{
-    AgentPhase, CHECK_NOTE, CUT_OFF, PendingMessage, Settle, Turn, TurnStatus, Unfinished,
+    AgentPhase, CHECK_NOTE, CUT_OFF, PendingMessage, Settle, Turn, TurnOutcome, TurnStatus,
+    Unfinished,
 };
 use anyhow::{Result, ensure};
 use dusk_protocol::thread::{TurnWait, duration_words};
@@ -105,7 +106,12 @@ impl Agent {
         };
         let cut_off = self.cut_off(&unfinished).cloned();
         let limit = i64::from(self.config.current().limits().resume_within_seconds) * 1000;
-        let stale = dusk_protocol::system::now_ms() - unfinished.active_at > limit;
+        // A turn that waits for its provider is at work until the wait ends.
+        let active_at = match unfinished.turn.waiting {
+            Some(TurnWait::Provider { wake_at, .. }) => unfinished.active_at.max(wake_at),
+            _ => unfinished.active_at,
+        };
+        let stale = dusk_protocol::system::now_ms() - active_at > limit;
         let deciding = matches!(unfinished.turn.waiting, Some(TurnWait::Decision { .. }));
         // An agent has no one to ask: its asker learns it was stopped and decides.
         if self.depth > 0 {
@@ -173,16 +179,29 @@ impl Agent {
         Ok(Some(turn))
     }
 
-    /// Goes on with a turn a restart found: the open calls of its last step run first,
-    /// then the turn goes on as any other. A call that may have taken effect and may not
-    /// run again never gets here: it was settled or the turn stopped.
+    /// Goes on with a turn a restart found: the rest of a wait for its provider is slept
+    /// out, the open calls of its last step run, then the turn goes on as any other. A
+    /// call that may have taken effect and may not run again never gets here: it was
+    /// settled or the turn stopped.
     pub async fn resume_turn(
         &self,
         turn: &Turn,
         inbox: &mut Inbox,
     ) -> Result<(Option<Stop>, TurnStatus)> {
         info!("thread {} turn {} resumes", self.thread_id, turn.turn_id);
-        self.emit(ThreadEvent::TurnRunning(turn.clone()));
+        let slept = match turn.waiting {
+            Some(TurnWait::Provider { wake_at, .. }) => {
+                self.sleep_out(turn, wake_at, inbox).await?
+            }
+            _ => {
+                self.emit(ThreadEvent::TurnRunning(turn.clone()));
+                Ok(())
+            }
+        };
+        if let Err(stop) = slept {
+            let first = StepEnd::Stopped(stop, TurnOutcome::Interrupted(None));
+            return self.run_turn_from(turn, inbox, Some(first)).await;
+        }
         let unfinished = self.state.unfinished_turn(&self.thread_id).await?;
         let open = unfinished.as_ref().map_or(&[][..], |u| &u.open[..]);
         ensure!(

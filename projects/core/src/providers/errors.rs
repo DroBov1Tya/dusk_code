@@ -7,7 +7,7 @@ use std::{fmt, time::Duration};
 pub use dusk_protocol::model::ProviderErrorKind;
 
 /// A provider call that failed, with what the retry loop, the log and the user need.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ProviderError {
     pub kind: ProviderErrorKind,
     /// Safe to show: never a key, a header, the request body, or a URL path or query.

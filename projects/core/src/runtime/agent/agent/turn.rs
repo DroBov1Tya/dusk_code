@@ -1,5 +1,6 @@
 //! A turn: starting it, running it, and what joins it from outside.
 
+use super::wait::Waited;
 use super::{Agent, Pace, StepEnd};
 use crate::catalog::modes::Modes;
 use crate::plugins::HookEvent;
@@ -10,8 +11,12 @@ use crate::runtime::{
 };
 use crate::state::{AgentPhase, Goal, GoalStatus, PendingMessage, Turn, TurnOutcome, TurnStatus};
 use anyhow::Result;
+use dusk_protocol::thread::TurnWait;
 use serde_json::json;
 use tracing::{info, warn};
+
+/// Compactions a step that does not fit the model's context gets before the turn fails.
+const MAX_SHRINKS: u32 = 2;
 
 impl Agent {
     /// Starts a turn when something is queued and the context fits the input limit.
@@ -86,11 +91,21 @@ impl Agent {
         let outcome;
         let mut stop = None;
         let mut received = Vec::new();
+        // When the provider waits in a row began, while one is stored with the turn.
+        let mut waiting_since = match turn.waiting {
+            Some(TurnWait::Provider { since, .. }) => Some(since),
+            _ => None,
+        };
+        // Compactions of a context too large for the step at hand.
+        let mut shrunk = 0;
         loop {
             // A failed step ends the turn as failed; the thread itself goes on.
             let step = match first.take() {
                 Some(end) => Ok(end),
-                None => self.step(turn, inbox, &mut received).await,
+                None => {
+                    let waited = waiting_since.is_some();
+                    self.step(turn, inbox, &mut received, waited).await
+                }
             };
             let end = match step {
                 Ok(end) => end,
@@ -99,6 +114,11 @@ impl Agent {
                     break;
                 }
             };
+            // A step that called tools had its answer, which ended the wait it followed.
+            if matches!(end, StepEnd::CalledTools) {
+                waiting_since = None;
+                shrunk = 0;
+            }
             // The same error came back too often: another step would only spend the turn.
             // A stop by the user wins, so only a step that went on to the next is checked.
             let repeated = match end {
@@ -127,6 +147,36 @@ impl Agent {
                         outcome = TurnOutcome::Interrupted(None);
                     }
                 },
+                StepEnd::Wait(error, failure) => {
+                    let waited = self.wait_for_provider(turn, &error, waiting_since, inbox);
+                    match waited.await {
+                        Ok(Waited::Again { since }) => {
+                            waiting_since = Some(since);
+                            continue;
+                        }
+                        Ok(Waited::Stopped(reason)) => {
+                            stop = Some(reason);
+                            outcome = TurnOutcome::Interrupted(None);
+                        }
+                        Ok(Waited::Spent) => outcome = TurnOutcome::Failed(failure),
+                        Err(error) => outcome = TurnOutcome::failed(format!("{error:#}")),
+                    }
+                }
+                StepEnd::TooLarge(_) if shrunk < MAX_SHRINKS => {
+                    shrunk += 1;
+                    info!(
+                        "thread {} turn {}: the context is too large, compaction {shrunk}",
+                        self.thread_id, turn.turn_id
+                    );
+                    match self.compact(None, Some(turn), inbox).await {
+                        None => continue,
+                        Some(reason) => {
+                            stop = Some(reason);
+                            outcome = TurnOutcome::Interrupted(None);
+                        }
+                    }
+                }
+                StepEnd::TooLarge(failure) => outcome = TurnOutcome::Failed(failure),
                 StepEnd::Answered(answer) => outcome = answer,
                 StepEnd::Stopped(reason, partial) => {
                     stop = Some(reason);

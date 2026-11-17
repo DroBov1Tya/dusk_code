@@ -1,13 +1,15 @@
 //! One step of a turn: a model call and the tools it asks for.
 
 use super::calls::Called;
+use super::wait::waits_out;
 use super::{Agent, StepEnd, insert_project, interrupted, missing_tools, recorded_reasoning};
 use crate::runtime::agent::Inbox;
 use crate::runtime::{ThreadEvent, thread::Conversation};
 use crate::{
     message::sources::{SourceBlock, ThreadSources},
     providers::{
-        ChatMessage, ChatRequest, ToolSpec, is_output_limit, is_unsupported_pictures, text_calls,
+        ChatMessage, ChatRequest, ProviderErrorKind, ToolSpec, is_output_limit,
+        is_unsupported_pictures, text_calls,
     },
     runtime::goal::action as goal,
     state::{
@@ -21,12 +23,14 @@ use tracing::info;
 impl Agent {
     /// Database writes happen outside `race`, so stopping never cuts one in half.
     /// `received` gathers the sources a model call took in full, for the turn to mark.
+    /// `waited` says the turn's provider wait is stored, to end once the model answers.
     #[tracing::instrument(name = "step", skip_all)]
     pub(super) async fn step(
         &self,
         turn: &Turn,
         inbox: &mut Inbox,
         received: &mut Vec<String>,
+        waited: bool,
     ) -> Result<StepEnd> {
         let conversation = Conversation::load(&self.state, &self.thread_id).await?;
         // Messages that joined between steps are answered by this turn, not a next one.
@@ -77,7 +81,8 @@ impl Agent {
         let attached = project + sources.as_ref().map_or(0, SourceBlock::tokens);
         // Tool results grow the context within a turn, so every step checks it.
         if let Some(error) = self.context_too_large(&conversation, &tools, attached) {
-            return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
+            let provider = None;
+            return Ok(StepEnd::TooLarge(TurnFailure { error, provider }));
         }
         let mut messages = conversation.chat_messages();
         if with_pictures {
@@ -214,7 +219,8 @@ impl Agent {
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }
             Ok(Err(error)) => {
-                let provider = crate::providers::provider_error(&error).map(|failure| {
+                let failed = crate::providers::provider_error(&error);
+                let provider = failed.map(|failure| {
                     tracing::warn!(
                         kind = ?failure.kind,
                         status = failure.status,
@@ -228,17 +234,30 @@ impl Agent {
                         attempts,
                     }
                 });
-                let error = format!("{error:#}");
-                return Ok(StepEnd::Answered(TurnOutcome::Failed(TurnFailure {
-                    error,
+                let wait = failed
+                    .filter(|failure| config.limits().wait_for_provider && waits_out(failure.kind))
+                    .cloned();
+                let too_long =
+                    failed.is_some_and(|failure| failure.kind == ProviderErrorKind::TooLong);
+                let failure = TurnFailure {
+                    error: format!("{error:#}"),
                     provider,
-                })));
+                };
+                return Ok(match wait {
+                    Some(wait) => StepEnd::Wait(wait, failure),
+                    None if too_long => StepEnd::TooLarge(failure),
+                    None => StepEnd::Answered(TurnOutcome::Failed(failure)),
+                });
             }
             Ok(Ok(calls)) if calls.is_empty() => {
                 return Ok(StepEnd::Answered(TurnOutcome::Completed(answer)));
             }
             Ok(Ok(calls)) => calls,
         };
+        // The model answered: the waits for it are over, and a later one counts anew.
+        if waited {
+            self.state.end_wait(&turn.turn_id).await?;
+        }
 
         // On record before anything runs, so no tool takes effect without a trace.
         let recorded = self
