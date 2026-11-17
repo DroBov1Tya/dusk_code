@@ -42,6 +42,22 @@ impl Retry {
     }
 }
 
+impl Retry {
+    /// The time left before the next attempt, `elapsed_ms` after the event arrived:
+    /// "next in 8 s", rounded up, or "trying now".
+    pub fn countdown(&self, elapsed_ms: u64) -> String {
+        match self.wait_ms.saturating_sub(elapsed_ms) {
+            0 => "trying now".to_owned(),
+            left => format!("next in {} s", left.div_ceil(1000)),
+        }
+    }
+
+    /// The whole row: `text()` and the countdown.
+    pub fn line(&self, elapsed_ms: u64) -> String {
+        format!("{} \u{00B7} {}", self.text(), self.countdown(elapsed_ms))
+    }
+}
+
 /// What an event does to the retry row.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RetryRow {
@@ -78,4 +94,32 @@ pub fn retry_row(event: &ThreadEvent) -> Option<RetryRow> {
         | ThreadEvent::Idle => RetryRow::Clear,
         _ => return None,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn retry() -> Retry {
+        Retry {
+            attempt: 2,
+            max_attempts: Some(6),
+            kind: ProviderErrorKind::Overloaded,
+            wait_ms: 8000,
+            message: "busy".into(),
+        }
+    }
+
+    #[test]
+    fn the_countdown_rounds_up_and_ends_in_trying_now() {
+        assert_eq!(retry().countdown(0), "next in 8 s");
+        assert_eq!(retry().countdown(7_500), "next in 1 s");
+        assert_eq!(retry().countdown(8_000), "trying now");
+        assert_eq!(retry().countdown(99_000), "trying now");
+        assert!(
+            retry()
+                .line(0)
+                .ends_with("attempt 3 of 6 \u{00B7} next in 8 s")
+        );
+    }
 }

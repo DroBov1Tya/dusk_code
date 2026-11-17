@@ -60,7 +60,9 @@ impl Workspace {
                         (Some((retry, arrived)), _) => div()
                             .min_w_0()
                             .truncate()
-                            .child(super::retry::line(retry, *arrived))
+                            .child(retry.line(
+                                u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX),
+                            ))
                             .into_any_element(),
                         (None, Some((began, None))) => format!(
                             "Working \u{00B7} {}",

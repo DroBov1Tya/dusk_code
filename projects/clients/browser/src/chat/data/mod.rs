@@ -316,6 +316,15 @@ impl ChatData {
     }
 }
 
+impl ChatData {
+    /// The retry row's words at `now` in Unix milliseconds; none when no call is tried
+    /// again.
+    pub fn retry_line(&self, now: i64) -> Option<String> {
+        let (retry, arrived) = self.retry.as_ref()?;
+        Some(retry.line(u64::try_from(now.saturating_sub(*arrived)).unwrap_or(0)))
+    }
+}
+
 impl Agent {
     fn follow(&mut self, event: &ThreadEvent) {
         self.state = match event {
@@ -330,7 +339,6 @@ impl Agent {
     }
 }
 
-mod retry;
 #[cfg(test)]
 mod tests;
 

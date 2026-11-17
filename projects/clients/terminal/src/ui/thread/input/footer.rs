@@ -15,7 +15,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Paragraph},
 };
-use std::time::Instant;
 use unicode_width::UnicodeWidthStr;
 
 /// The chat's mode as a cell of its own colour, amber for MAIN and violet for the
@@ -58,19 +57,6 @@ pub(super) fn git_line(summary: &GitSummary) -> Line<'static> {
 }
 
 /// The rule: what the agent is doing and how far the transcript is scrolled.
-/// The time left before the next attempt, from when the event came.
-fn countdown(wait_ms: u64, arrived: Instant) -> String {
-    let elapsed = u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX);
-    countdown_left(wait_ms.saturating_sub(elapsed))
-}
-
-fn countdown_left(left_ms: u64) -> String {
-    match left_ms {
-        0 => "trying now".to_owned(),
-        left => format!("next in {} s", left.div_ceil(1000)),
-    }
-}
-
 /// What goes on the card's top edge, and the note for its right end.
 pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
     let doing = match (&app.activity, app.focus) {
@@ -105,11 +91,7 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
                 Activity::Forking => (DUSK, "describing the thread for a fork".to_owned()),
                 Activity::Retrying(retry, arrived) => (
                     NEGATIVE,
-                    format!(
-                        "{} \u{00B7} {}",
-                        retry.text(),
-                        countdown(retry.wait_ms, *arrived)
-                    ),
+                    retry.line(u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX)),
                 ),
                 Activity::Idle => (TEXT_MUTED, String::new()),
             };
@@ -199,17 +181,5 @@ impl InputView<'_> {
                 ..bottom
             },
         );
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::countdown_left;
-
-    #[test]
-    fn the_countdown_rounds_up_and_ends_in_trying_now() {
-        assert_eq!(countdown_left(8000), "next in 8 s");
-        assert_eq!(countdown_left(1), "next in 1 s");
-        assert_eq!(countdown_left(0), "trying now");
     }
 }

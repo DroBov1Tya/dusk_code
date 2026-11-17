@@ -10,7 +10,6 @@ mod command;
 mod cost;
 mod feedback;
 mod picture;
-mod retry;
 mod row;
 mod sent_picture;
 mod step;

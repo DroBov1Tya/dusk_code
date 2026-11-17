@@ -9,8 +9,7 @@ use crate::{
 use dusk_protocol::{
     client::{Answer, Command, SettingsRequest},
     config::ProviderKind,
-    model::{CallHealth, Effort},
-    thread::duration_words,
+    model::Effort,
 };
 use leptos::prelude::*;
 
@@ -57,12 +56,7 @@ pub fn ModelPage() -> impl IntoView {
                 let named = name.clone();
                 let health = move || app.status.with(|status| {
                     let found = status.as_ref()?.provider_health.iter().find(|h| h.name == named)?;
-                    Some(match &found.calls {
-                        CallHealth::Answering { .. } => "answering".to_owned(),
-                        CallHealth::Failing { kind, since, .. } => {
-                            format!("{}, since {} ago", kind.label(), duration_words(now_ms() - since))
-                        }
-                    })
+                    Some(found.calls.text(now_ms()))
                 });
                 view! {
                     <div class="provider" style:opacity=if enabled { "1" } else { "0.5" }>

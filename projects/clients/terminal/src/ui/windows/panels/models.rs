@@ -1,9 +1,6 @@
 //! /model: the models of every provider.
 
-use dusk_protocol::{
-    model::{CallHealth, ProviderHealth},
-    thread::duration_words,
-};
+use dusk_protocol::model::{CallHealth, ProviderHealth};
 use ratatui::text::{Line, Span};
 
 use super::frame::selectable;
@@ -18,13 +15,13 @@ use crate::ui::windows::{
 
 /// How a provider's calls went since the core started; nothing when it has not been asked.
 fn calls(health: Option<&ProviderHealth>) -> Span<'static> {
-    match health.map(|entry| &entry.calls) {
-        None => Span::raw(""),
-        Some(CallHealth::Answering { .. }) => Span::styled("  answering", dim()),
-        Some(CallHealth::Failing { kind, since, .. }) => {
-            let ago = duration_words(dusk_protocol::system::now_ms() - since);
-            Span::styled(format!("  {}, since {ago} ago", kind.label()), fg(NEGATIVE))
-        }
+    let Some(entry) = health else {
+        return Span::raw("");
+    };
+    let text = format!("  {}", entry.calls.text(dusk_protocol::system::now_ms()));
+    match entry.calls {
+        CallHealth::Answering { .. } => Span::styled(text, dim()),
+        CallHealth::Failing { .. } => Span::styled(text, fg(NEGATIVE)),
     }
 }
 
