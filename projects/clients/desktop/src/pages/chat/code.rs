@@ -2,6 +2,8 @@
 //! starts at once; the core runs the code in the chat's folder, confined as the chat's
 //! tools are, and the output lands in the chat under a bar that fills while it runs.
 
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use gpui_kit::base::text::CodeBlock;
 use gpui_kit::{
     component::{
@@ -11,14 +13,7 @@ use gpui_kit::{
     *,
 };
 
-use crate::workspace::Workspace;
-
-/// Puts a code block's text on the clipboard.
-#[derive(Clone, PartialEq, Default, Debug, Action)]
-#[action(namespace = dusk, no_json)]
-pub struct CopyCode {
-    pub text: String,
-}
+use crate::{ui::clipboard, workspace::Workspace};
 
 /// Runs a shell code block in the shown chat's folder.
 #[derive(Clone, PartialEq, Default, Debug, Action)]
@@ -29,21 +24,23 @@ pub struct RunCode {
 
 const SHELLS: [&str; 6] = ["sh", "bash", "zsh", "shell", "console", "fish"];
 
-pub fn actions(block: &CodeBlock, _: &mut Window, _: &mut App) -> Div {
+pub fn actions(block: &CodeBlock, _: &mut Window, cx: &mut App) -> Div {
     let code = block.code().to_string();
     let shell = block
         .lang()
         .is_some_and(|lang| SHELLS.contains(&lang.to_lowercase().as_str()));
     let copy = {
         let text = code.clone();
-        Button::new("copy")
+        // One id per block, so only the pressed one shows the check mark.
+        let mut hasher = DefaultHasher::new();
+        code.hash(&mut hasher);
+        let id = SharedString::from(format!("copy-code-{:x}", hasher.finish()));
+        Button::new(id.clone())
             .ghost()
             .small()
-            .icon(IconName::Copy)
+            .icon(clipboard::icon(&id, cx))
             .tooltip("Copy")
-            .on_click(move |_, window, cx| {
-                window.dispatch_action(Box::new(CopyCode { text: text.clone() }), cx)
-            })
+            .on_click(move |_, _, cx| clipboard::copy(&id, text.clone(), cx))
     };
     let run = shell.then(|| {
         Button::new("run")
@@ -79,10 +76,6 @@ fn shell_lines(code: &str) -> String {
 }
 
 impl Workspace {
-    pub fn copy_code(&mut self, action: &CopyCode, _: &mut Window, cx: &mut Context<Self>) {
-        cx.write_to_clipboard(ClipboardItem::new_string(action.text.clone()));
-    }
-
     pub fn run_code(&mut self, action: &RunCode, _: &mut Window, cx: &mut Context<Self>) {
         let Some(thread_id) = self.shown.clone() else {
             return;

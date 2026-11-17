@@ -58,11 +58,11 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
         let key = |part: &str| SharedString::from(format!("agent-{part}-{agent}-{at}"));
         // Every message copies whole, from a button that comes up under the pointer.
         let group = key("row");
-        let copy = |text: &str| {
+        let copy = |text: &str, cx: &App| {
             div()
                 .flex()
                 .justify_end()
-                .child(widgets::copy(key("copy"), &group, text))
+                .child(widgets::copy(key("copy"), &group, text, cx))
         };
         column = column.child(match item {
             // What it was asked reads as it was written: lists, code and all.
@@ -74,7 +74,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .bg(surface)
                 .small()
                 .child(links::markdown(key("asked"), text.clone()))
-                .child(copy(text))
+                .child(copy(text, cx))
                 .into_any_element(),
             Item::Agent { from, text } => {
                 agent_report(ws, agent, at, from, text, cx).into_any_element()
@@ -97,7 +97,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                     said = said
                         .group(group.clone())
                         .child(links::markdown(key("said"), text.clone()))
-                        .child(copy(text));
+                        .child(copy(text, cx));
                 }
                 said.into_any_element()
             }
@@ -126,12 +126,13 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 )
                 .into_any_element(),
             Item::Notice(text) => {
-                notice(&key("notice"), div().text_xs().text_color(muted), text).into_any_element()
+                notice(&key("notice"), div().text_xs().text_color(muted), text, cx)
+                    .into_any_element()
             }
             // What went wrong must not read as one more quiet note.
             Item::Error(text) => div()
                 .group(group.clone())
-                .child(copy(text))
+                .child(copy(text, cx))
                 .px_3()
                 .py_2()
                 .rounded_lg()

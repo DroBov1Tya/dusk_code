@@ -101,6 +101,8 @@ pub fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> A
                     .overflow_hidden()
                     .bg(surface)
                     .cursor_pointer()
+                    .hover(|card| card.opacity(0.9))
+                    .active(|card| card.opacity(0.8))
                     .child(img(path.clone()).size_full().object_fit(ObjectFit::Contain))
                     .on_click(cx.listener(move |ws, _, _, cx| {
                         ws.modal = Some(crate::modal::Modal::Picture {

@@ -52,6 +52,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .text_color(danger)
             .bg(danger.opacity(0.1))
             .cursor_pointer()
+            .hover(move |note| note.bg(danger.opacity(0.18)))
+            .active(move |note| note.bg(danger.opacity(0.25)))
             .child(text)
             .on_click(cx.listener(|ws, _, _, cx| {
                 ws.notice = None;

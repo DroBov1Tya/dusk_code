@@ -18,9 +18,12 @@ use super::{
     picture::picture,
     sent_picture::{is_picture_name, sent_pictures},
 };
+use dusk_protocol::tools::Reply;
+
+use super::answered::answered_card;
 use crate::{
     pages::chat::{links, transcript::Item, working},
-    ui::Type,
+    ui::{Type, clipboard},
     workspace::Workspace,
 };
 
@@ -80,6 +83,11 @@ impl Workspace {
             Row::Item(at) => {
                 let key = format!("{shown}-{at}");
                 match &chat.items[at] {
+                    // An answer to the agent's questions is one card, not a chat message.
+                    Item::User { text, .. } if Reply::parse_all(text).is_some() => {
+                        let replies = Reply::parse_all(text).unwrap_or_default();
+                        answered_card(&key, &replies, cx)
+                    }
                     Item::User { text, sequence } => {
                         let group = SharedString::from(format!("user-row-{key}"));
                         let mut tools = div()
@@ -89,15 +97,16 @@ impl Workspace {
                             .invisible()
                             .group_hover(group.clone(), |tools| tools.visible());
                         let copied = text.clone();
+                        let copy_id = SharedString::from(format!("copy-{key}"));
                         tools = tools.child(
-                            Button::new(SharedString::from(format!("copy-{key}")))
+                            Button::new(copy_id.clone())
                                 .ghost()
                                 .small()
-                                .icon(IconName::Copy)
+                                .icon(clipboard::icon(&copy_id, cx))
                                 .tooltip("Copy the message")
-                                .on_click(cx.listener(move |_, _, _, cx| {
-                                    cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
-                                })),
+                                .on_click(move |_, _, cx| {
+                                    clipboard::copy(&copy_id, copied.clone(), cx)
+                                }),
                         );
                         // The core refuses to go back inside a turn, so the button waits.
                         if let (Some(sequence), false) = (*sequence, chat.working) {
@@ -185,6 +194,7 @@ impl Workspace {
                                 (key.clone(), self.audio.listening.is_some() && !listening);
                             // The answer reads as plain text; its tools come up under the
                             // pointer, or while it is read aloud.
+                            let copy_id = SharedString::from(format!("copy-{key}"));
                             answer = answer.child(
                                 div()
                                     .flex()
@@ -195,16 +205,14 @@ impl Workspace {
                                             .group_hover(group.clone(), |row| row.opacity(1.))
                                     })
                                     .child(
-                                        Button::new(SharedString::from(format!("copy-{key}")))
+                                        Button::new(copy_id.clone())
                                             .ghost()
                                             .small()
-                                            .icon(IconName::Copy)
+                                            .icon(clipboard::icon(&copy_id, cx))
                                             .tooltip("Copy the answer")
-                                            .on_click(cx.listener(move |_, _, _, cx| {
-                                                cx.write_to_clipboard(ClipboardItem::new_string(
-                                                    copied.clone(),
-                                                ))
-                                            })),
+                                            .on_click(move |_, _, cx| {
+                                                clipboard::copy(&copy_id, copied.clone(), cx)
+                                            }),
                                     )
                                     .child(
                                         Button::new(SharedString::from(format!("listen-{key}")))
@@ -237,7 +245,7 @@ impl Workspace {
                     Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
                     Item::Audio(clip) => crate::pages::chat::audio::card(self, &key, clip, cx),
                     Item::Notice(text) => {
-                        notice(&key, div().meta().text_color(muted), text).into_any_element()
+                        notice(&key, div().meta().text_color(muted), text, cx).into_any_element()
                     }
                     Item::Error(text) => div()
                         .px_3()

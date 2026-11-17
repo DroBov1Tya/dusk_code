@@ -247,6 +247,8 @@ pub struct Workspace {
     pub settings: Option<Settings>,
     pub providers: Vec<ProviderStatus>,
     pub models_loading: bool,
+    /// Providers whose models have not come yet; each answers on its own.
+    pub models_pending: HashSet<String>,
     pub picker: Option<Picker>,
     pub picker_closed: Option<std::time::Instant>,
     /// Options marked in the shown chat's question.

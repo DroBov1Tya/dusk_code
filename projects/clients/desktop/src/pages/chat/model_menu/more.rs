@@ -40,7 +40,12 @@ pub fn all_models(
         let name = provider.name.clone();
         let open = ws.models_open.contains(&provider.name);
         let toggled = provider.name.clone();
-        let count = provider.models.as_ref().map_or(0, Vec::len);
+        let pending = ws.models_pending.contains(&provider.name);
+        let count = match (&provider.models, pending) {
+            (_, true) => String::from("..."),
+            (Ok(models), _) => models.len().to_string(),
+            (Err(_), _) => String::from("!"),
+        };
         // The provider's name is the landmark of the list: larger and brighter than its
         // models, and it folds them, so two providers' models are never read as one.
         scroll = scroll.child(
@@ -77,7 +82,7 @@ pub fn all_models(
                     .and_then(|balance| balance.as_ref().ok())
                     .map(|balance| div().small().text_color(hint).child(balance.text())),
             )
-            .child(div().small().text_color(hint).child(count.to_string()))
+            .child(div().small().text_color(hint).child(count))
             .tooltip(move |window, cx| Tooltip::new(name.clone()).build(window, cx))
             .on_click(cx.listener(move |ws, _, _, cx| {
                 if !ws.models_open.remove(&toggled) {
@@ -87,6 +92,11 @@ pub fn all_models(
             })),
         );
         if !open {
+            continue;
+        }
+        // Its own section says it is still being asked; the others are already usable.
+        if ws.models_pending.contains(&provider.name) {
+            scroll = scroll.child(widgets::muted("Loading the models...", cx));
             continue;
         }
         match &provider.models {

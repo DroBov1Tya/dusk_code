@@ -70,6 +70,8 @@ button.primary:hover { filter: brightness(.92); }
 button:disabled { opacity: .45; cursor: default; }
 button.ghost { border-color: color-mix(in srgb, var(--fg) 14%, transparent); }
 button.ghost:hover, button.icon:hover { background: var(--raised); }
+button.ghost:active, button.icon:active { background: color-mix(in srgb, var(--accent) 16%, var(--raised)); }
+button.icon.copied { color: var(--accent); }
 button.ghost.danger { color: var(--bad); }
 button.icon { padding: 0; min-width: 32px; color: var(--fg2); }
 button.wide { width: 100%; }
@@ -449,3 +451,9 @@ a { text-underline-offset: 3px; }
   .msg-actions { opacity: 1; }
   .chat-row .hover { visibility: visible; }
 }
+
+/* The answers to the agent's questions: one card, a row for each question. */
+.answered { width: 100%; max-width: 85%; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); overflow: hidden; }
+.answered-row { padding: 8px 16px; overflow-wrap: anywhere; }
+.answered-row + .answered-row { border-top: 1px solid var(--line); }
+.answered-text { margin-top: 4px; font-size: 13px; color: var(--muted); white-space: pre-wrap; }

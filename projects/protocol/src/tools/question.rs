@@ -88,3 +88,69 @@ impl Question {
         Ok(())
     }
 }
+
+/// One question with what the user answered, read back from the message that carried it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reply {
+    pub question: String,
+    pub answer: String,
+}
+
+impl Reply {
+    /// The replies of a message built by `Question::answer` or `declined`, one per question
+    /// asked in a row; none when the text is anything else, so it shows as a plain message.
+    pub fn parse_all(text: &str) -> Option<Vec<Reply>> {
+        text.strip_prefix("QUESTION: ")?
+            .split("\n\nQUESTION: ")
+            .map(|block| {
+                let (question, answer) = block.split_once("\nANSWER: ")?;
+                (!question.trim().is_empty()).then(|| Reply {
+                    question: question.trim().to_owned(),
+                    answer: answer.trim().to_owned(),
+                })
+            })
+            .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn asked(text: &str) -> Question {
+        Question {
+            question: text.into(),
+            options: vec!["a".into(), "b".into()],
+            multiple: false,
+        }
+    }
+
+    #[test]
+    fn replies_are_read_back_from_the_answers_that_wrote_them() {
+        let text = [
+            asked("One?").answer(&[0, 1], "own"),
+            asked("Two?").declined("later"),
+        ]
+        .join("\n\n");
+        assert_eq!(
+            Reply::parse_all(&text),
+            Some(vec![
+                Reply {
+                    question: "One?".into(),
+                    answer: "a; b; own".into()
+                },
+                Reply {
+                    question: "Two?".into(),
+                    answer: "(declined)\n\nlater".into()
+                },
+            ])
+        );
+    }
+
+    #[test]
+    fn other_text_is_not_a_reply() {
+        assert_eq!(Reply::parse_all("hello"), None);
+        assert_eq!(Reply::parse_all("QUESTION: no answer here"), None);
+        assert_eq!(Reply::parse_all("QUESTION: \nANSWER: x"), None);
+    }
+}

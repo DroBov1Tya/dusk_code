@@ -231,6 +231,7 @@ pub fn step(
                             SharedString::from(format!("step-copy-{title}-{shown}-{index}")),
                             &group,
                             text,
+                            cx,
                         )),
                 )
                 .child(
