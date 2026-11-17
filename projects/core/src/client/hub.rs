@@ -10,18 +10,20 @@ use dusk_protocol::client::{Hello, PROTOCOL_VERSION, Status};
 use tokio::sync::{mpsc, watch};
 
 use super::{
-    Client,
-    serve::{Message, Server, Subscribers},
+    Client, Scope,
+    serve::{Message, Server, Subscriber, Subscribers, blank_status},
 };
 use crate::runtime::Runtime;
 
-/// The running core, which any number of clients attach to. Every client sees the events
-/// of every open thread; the core stops when the last client and the hub are gone, or
-/// when one of them asks it to shut down.
+/// The running core, which any number of clients attach to. A client sees the events of
+/// the open threads its scope covers; the core stops when the last client and the hub are
+/// gone, or when one of them asks it to shut down.
 pub struct Hub {
     pub(super) calls: mpsc::UnboundedSender<Message>,
     subscribers: Subscribers,
     status: watch::Receiver<Status>,
+    /// What a client gets whose scope does not reach the status; kept so it stays open.
+    blank: watch::Sender<Status>,
     next_client: AtomicU64,
 }
 
@@ -35,6 +37,7 @@ impl Hub {
             calls,
             subscribers,
             status,
+            blank: watch::channel(blank_status()).0,
             next_client: AtomicU64::new(1),
         })
     }
@@ -44,8 +47,10 @@ impl Hub {
         self.status.borrow().clone()
     }
 
-    /// Attaches the client that said `hello`.
-    pub fn attach(self: &Arc<Self>, hello: Hello) -> Result<Client> {
+    /// Attaches the client that said `hello`, to see and ask what `scope` allows. The
+    /// scope is the caller's decision, never the client's, and holds until the client is
+    /// dropped: dropping it is how access is taken back.
+    pub fn attach(self: &Arc<Self>, hello: Hello, scope: Scope) -> Result<Client> {
         ensure!(
             hello.protocol == PROTOCOL_VERSION,
             "the client speaks protocol {}, the core {PROTOCOL_VERSION}",
@@ -54,15 +59,24 @@ impl Hub {
         let id = self.next_client.fetch_add(1, Ordering::Relaxed);
         let (queue, events) = mpsc::unbounded_channel();
         // Subscribed before the core hears of the client, so no event is missed.
-        self.subscribers.lock().push((id, queue));
+        self.subscribers.lock().push(Subscriber {
+            client: id,
+            scope: scope.clone(),
+            queue,
+        });
+        let status = match scope.reads_status() {
+            true => self.status.clone(),
+            false => self.blank.subscribe(),
+        };
         let attach = Message::Attach {
             client: id,
             source: hello.client,
+            scope,
         };
         ensure!(self.calls.send(attach).is_ok(), "the core has stopped");
         Ok(Client {
             events,
-            status: self.status.clone(),
+            status,
             id,
             hub: Arc::clone(self),
         })

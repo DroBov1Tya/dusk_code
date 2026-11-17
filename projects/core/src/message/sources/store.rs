@@ -22,6 +22,15 @@ use super::{
     picture::is_picture,
 };
 
+/// Whether the text of a sent message may name files of this machine: a path in it, or
+/// an `@` mention that brings the profile's files or a snippet.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HostFiles {
+    Taken,
+    /// A path and a mention stay the words they are.
+    Left,
+}
+
 pub(crate) const FOLDER: &str = "sources";
 /// Larger files are refused; a chat folder is not a backup.
 const MAX_FILE_BYTES: u64 = 64 * 1024 * 1024;
@@ -83,11 +92,25 @@ impl ThreadSources<'_> {
     /// path, so this is how a screenshot reaches the model. A sound it names is copied to
     /// a card of `sounds`, for the chat to play, and keeps its path for the model.
     pub async fn keep_pastes(&self, message: &str, sounds: &ArtifactStore) -> Result<String> {
+        self.kept(message, Some(sounds)).await
+    }
+
+    /// `message` with every pasted block moved to a source, and nothing else read: a
+    /// path in it stays text.
+    pub async fn keep_pasted_blocks(&self, message: &str) -> Result<String> {
+        self.kept(message, None).await
+    }
+
+    /// The files the text names are taken when there is a store for their sounds.
+    async fn kept(&self, message: &str, sounds: Option<&ArtifactStore>) -> Result<String> {
         let mut count = self.state.sources(self.thread_id).await?.len();
         let mut kept = String::new();
         for part in split(message) {
             match part {
-                Part::Text(text) => kept.push_str(&self.keep_files(text, sounds).await?),
+                Part::Text(text) => match sounds {
+                    Some(sounds) => kept.push_str(&self.keep_files(text, sounds).await?),
+                    None => kept.push_str(text),
+                },
                 Part::Source(name) => kept.push_str(&source_tag(name)),
                 Part::Sound { id, path } => kept.push_str(&sound_tag(id, path)),
                 Part::Pasted(text) => {

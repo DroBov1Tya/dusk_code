@@ -103,6 +103,45 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_search_within_chats_is_cut_before_the_limit() {
+        use std::collections::HashSet;
+        let state = temp_state("chat-search-within").await;
+        let say = async |thread: &str, text: String| {
+            let pending = state.add_pending(thread, &text).await.unwrap();
+            state.admit_pending(thread, &pending).await.unwrap();
+        };
+        for thread in ["mine", "theirs"] {
+            state.create_thread(thread, "test").await.unwrap();
+        }
+        // A long message ranks below short ones with the same word.
+        say("mine", format!("zebra {}", "and other words ".repeat(200))).await;
+        for _ in 0..12 {
+            say("theirs", "zebra".to_owned()).await;
+        }
+
+        let chats = |found: Vec<dusk_protocol::thread::Found>| -> Vec<String> {
+            found.into_iter().map(|found| found.thread_id).collect()
+        };
+        let all = chats(state.search_chats("zebra", 10, None).await.unwrap());
+        assert_eq!(all.len(), 10);
+        assert!(all.iter().all(|thread| thread == "theirs"));
+
+        let only = |ids: &[&str]| {
+            ids.iter()
+                .map(|id| (*id).to_owned())
+                .collect::<HashSet<_>>()
+        };
+        let mine = only(&["mine"]);
+        let found = state.search_chats("zebra", 10, Some(&mine)).await.unwrap();
+        assert_eq!(chats(found), ["mine"]);
+        // An id is a value, whatever it spells.
+        for ids in [only(&[]), only(&["nowhere", "x') OR 1=1 --", "\"]", "%"])] {
+            let found = state.search_chats("zebra", 10, Some(&ids)).await.unwrap();
+            assert!(found.is_empty());
+        }
+    }
+
+    #[tokio::test]
     async fn chat_search_takes_any_text_as_words_never_as_a_query() {
         let state = temp_state("chat-search").await;
         state.create_thread("thread", "test").await.unwrap();
@@ -113,7 +152,7 @@ mod tests {
         )
         .await;
 
-        let found = state.search_chats("cache \"cold", 10).await.unwrap();
+        let found = state.search_chats("cache \"cold", 10, None).await.unwrap();
         assert_eq!(found.len(), 1);
         assert_eq!(
             (found[0].thread_id.as_str(), found[0].sequence),
@@ -122,10 +161,10 @@ mod tests {
         assert!(found[0].snippet.contains("Cache \"cold\""));
         // Query syntax is text like any other, and matches nothing it does not spell.
         for text in ["NEAR(it)", "content : x", "a* OR b*", "\"\"\"", "-cold^2"] {
-            let found = state.search_chats(text, 10).await.unwrap();
+            let found = state.search_chats(text, 10, None).await.unwrap();
             assert_eq!(found.len(), usize::from(text == "NEAR(it)"), "{text}");
         }
-        assert!(state.search_chats("ab", 10).await.is_err());
+        assert!(state.search_chats("ab", 10, None).await.is_err());
     }
 
     #[tokio::test]

@@ -45,6 +45,36 @@ pub(super) fn read_status(runtime: &Runtime, install: Option<InstallProgress>) -
     }
 }
 
+/// What a client whose scope does not reach the settings gets in place of the status:
+/// nothing of this machine, and it never changes.
+pub fn blank_status() -> Status {
+    Status {
+        model: None,
+        discovering_model: false,
+        input_limit: 0,
+        context_policy: None,
+        effort: None,
+        mode: String::new(),
+        approvals: dusk_protocol::config::ApprovalPolicy::Ask,
+        max_goal_rounds: 0,
+        idle_screen_minutes: 0,
+        notifications: false,
+        sound_notifications: false,
+        mcp: Vec::new(),
+        mcp_starting: false,
+        plugins: Vec::new(),
+        available_update: None,
+        install: None,
+        updated_builtin: Vec::new(),
+        chatgpt: dusk_protocol::client::ChatGpt::SignedOut,
+        chatgpt_model: false,
+        plugin_parts: Arc::default(),
+        limits: None,
+        artifacts_dir: PathBuf::new(),
+        workspace_dir: PathBuf::new(),
+    }
+}
+
 impl Server {
     /// Installs a release in the background; the reply comes once it is done, and the
     /// status shows how far it got meanwhile.

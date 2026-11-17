@@ -28,10 +28,13 @@ async fn a_task_runs_only_in_a_saved_project_and_remembers_its_chat() {
     let paths = Paths::new(root.join("config"), root.join("work"));
     let hub = start_hub(paths, Some(root.join("state.db"))).await.unwrap();
     let client = hub
-        .attach(Hello {
-            protocol: PROTOCOL_VERSION,
-            client: "test".to_owned(),
-        })
+        .attach(
+            Hello {
+                protocol: PROTOCOL_VERSION,
+                client: "test".to_owned(),
+            },
+            dusk_core::client::Scope::full(),
+        )
         .unwrap();
     let projects = client.projects();
 

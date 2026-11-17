@@ -39,10 +39,11 @@ use crate::{
 };
 use std::sync::Arc;
 
-/// Starts the core over `paths` and serves the client that said `hello`.
+/// Starts the core over `paths` and serves the client that said `hello`: the one client
+/// of the core's own process, so with the full scope.
 pub async fn start(paths: Paths, state_db: Option<PathBuf>, hello: Hello) -> Result<Client> {
     let runtime = Runtime::start(paths, state_db).await?;
-    client::serve(runtime, hello)
+    client::serve(runtime, hello, client::Scope::full())
 }
 
 /// Starts the core over `paths` for several clients: each one attaches to the hub.

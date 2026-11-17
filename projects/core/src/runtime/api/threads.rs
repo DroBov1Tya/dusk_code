@@ -7,7 +7,7 @@ use crate::{
     state::{LocalUnsent, Message, State, Task, Thread},
 };
 use anyhow::{Result, ensure};
-use std::path::Path;
+use std::{collections::HashSet, path::Path};
 use tracing::info;
 
 impl Runtime {
@@ -54,8 +54,13 @@ impl Runtime {
     }
 
     /// What was said in any chat that contains `text`, best matches first.
-    pub async fn search_chats(&self, text: &str) -> Result<Vec<dusk_protocol::thread::Found>> {
-        self.launcher.state.search_chats(text, 40).await
+    /// Only in the chats of `within`, when it is given.
+    pub async fn search_chats(
+        &self,
+        text: &str,
+        within: Option<&HashSet<String>>,
+    ) -> Result<Vec<dusk_protocol::thread::Found>> {
+        self.launcher.state.search_chats(text, 40, within).await
     }
 
     /// Local messages waiting for an explicit resend. They are not model history.

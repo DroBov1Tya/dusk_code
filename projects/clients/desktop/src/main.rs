@@ -60,7 +60,7 @@ fn main() -> Result<()> {
         client: THREAD_SOURCE.to_owned(),
     };
     let hub = runtime.block_on(app::start_hub(paths, None))?;
-    let client = hub.attach(hello)?;
+    let client = hub.attach(hello, dusk_core::client::Scope::full())?;
     let (client, events, status) = core::split(client);
     let shutdown = Arc::clone(&client);
     let runtime = Arc::new(runtime);

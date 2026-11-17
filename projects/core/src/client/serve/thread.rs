@@ -1,7 +1,8 @@
 //! Requests about one thread: opening, sending, closing.
 
+use super::ClientId;
+use super::publish::{publish, send_to};
 use super::{CLOSE_TIMEOUT, OpenThread, Server};
-use super::{ClientId, Subscribers};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
@@ -9,12 +10,16 @@ use dusk_protocol::thread::ThreadEvent;
 use parking_lot::Mutex;
 use std::{
     collections::HashSet,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
 use tracing::warn;
+
+/// For a client bound to chats that asks to open one with no folder stored.
+const NO_FOLDER: &str = "this chat cannot be opened from this client";
 
 impl Server {
     pub(super) async fn thread(&mut self, request: ThreadRequest) -> Result<Response> {
@@ -56,6 +61,7 @@ impl Server {
                     .get(&thread_id)
                     .map(|open| open.clients.clone())
                     .unwrap_or_default();
+                let cwd = self.resume_folder(&thread_id, cwd).await?;
                 self.close(&thread_id).await;
                 let handle = runtime.resume_thread(&thread_id, &cwd).await?;
                 let opened = self.open(handle);
@@ -69,7 +75,10 @@ impl Server {
                 self.open(handle)
             }
             ThreadRequest::List => Response::Threads(runtime.list_threads().await?),
-            ThreadRequest::Search { text } => Response::Found(runtime.search_chats(&text).await?),
+            ThreadRequest::Search { text } => {
+                let within = self.bound();
+                Response::Found(runtime.search_chats(&text, within.as_deref()).await?)
+            }
             ThreadRequest::Messages { thread_id } => {
                 Response::Messages(runtime.thread_messages(&thread_id).await?)
             }
@@ -90,7 +99,7 @@ impl Server {
             } => {
                 let open = self.open_thread(&thread_id)?;
                 let text = runtime
-                    .keep_pastes(&thread_id, &text)
+                    .keep_pastes(&thread_id, &text, self.host_files())
                     .await
                     .context("cannot keep the paste")?;
                 match now {
@@ -234,6 +243,22 @@ impl Server {
         Response::Opened { thread_id }
     }
 
+    /// Where the tools of a thread that is picked up again work. A client bound to chats
+    /// does not choose: the agent goes on in the folder stored for the chat, and a chat
+    /// without one is not opened in a folder such a client names.
+    pub(super) async fn resume_folder(&self, thread_id: &str, cwd: PathBuf) -> Result<PathBuf> {
+        if self.bound().is_none() {
+            return Ok(cwd);
+        }
+        let state = self.runtime.state_of(thread_id).await;
+        // Whatever the reason, the client learns only that it cannot be opened.
+        let stored = state.load_thread(thread_id).await.ok().flatten();
+        stored
+            .and_then(|thread| thread.project)
+            .map(PathBuf::from)
+            .context(NO_FOLDER)
+    }
+
     pub(super) fn open_thread(&self, thread_id: &str) -> Result<&OpenThread> {
         self.threads
             .get(thread_id)
@@ -273,8 +298,10 @@ impl Server {
 
     /// A client went away: it leaves every thread, and the ones nobody keeps close.
     pub(super) async fn detach(&mut self, client: ClientId) {
-        self.sources.remove(&client);
-        self.subscribers.lock().retain(|(id, _)| *id != client);
+        self.clients.remove(&client);
+        self.subscribers
+            .lock()
+            .retain(|subscriber| subscriber.client != client);
         // A shell never outlives the client that opened it.
         self.terminals.close_client(client);
         // Nor does a part of a plugin's window.
@@ -324,92 +351,5 @@ impl Server {
         for thread_id in stale {
             self.close(&thread_id).await;
         }
-    }
-}
-
-/// Gives the event to every attached client, dropping the queues of the gone ones.
-fn publish(subscribers: &Subscribers, event: Event) {
-    subscribers
-        .lock()
-        .retain(|(_, queue)| queue.send(event.clone()).is_ok());
-}
-
-/// Gives the event to one client, dropping its queue if it is gone.
-fn send_to(subscribers: &Subscribers, client: ClientId, event: Event) {
-    subscribers
-        .lock()
-        .retain(|(id, queue)| *id != client || queue.send(event.clone()).is_ok());
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use tokio::sync::mpsc;
-
-    fn ended(thread_id: &str) -> Event {
-        Event::Ended {
-            thread_id: thread_id.to_owned(),
-        }
-    }
-
-    #[test]
-    fn every_attached_client_gets_each_event_in_order() {
-        let subscribers = Subscribers::default();
-        let (first, mut first_events) = mpsc::unbounded_channel();
-        let (second, mut second_events) = mpsc::unbounded_channel();
-        subscribers.lock().push((1, first));
-        subscribers.lock().push((2, second));
-
-        publish(&subscribers, ended("a"));
-        publish(&subscribers, ended("b"));
-
-        for events in [&mut first_events, &mut second_events] {
-            assert_eq!(events.try_recv().unwrap(), ended("a"));
-            assert_eq!(events.try_recv().unwrap(), ended("b"));
-        }
-    }
-
-    #[test]
-    fn a_gone_client_is_dropped_and_the_others_keep_receiving() {
-        let subscribers = Subscribers::default();
-        let (gone, gone_events) = mpsc::unbounded_channel();
-        let (stays, mut stays_events) = mpsc::unbounded_channel();
-        subscribers.lock().push((1, gone));
-        subscribers.lock().push((2, stays));
-        drop(gone_events);
-
-        publish(&subscribers, ended("a"));
-
-        assert_eq!(subscribers.lock().len(), 1);
-        assert_eq!(stays_events.try_recv().unwrap(), ended("a"));
-    }
-
-    #[test]
-    fn only_the_client_that_joined_hears_what_it_missed() {
-        let subscribers = Subscribers::default();
-        let (joined, mut joined_events) = mpsc::unbounded_channel();
-        let (other, mut other_events) = mpsc::unbounded_channel();
-        subscribers.lock().push((1, joined));
-        subscribers.lock().push((2, other));
-
-        send_to(&subscribers, 1, ended("a"));
-
-        assert_eq!(joined_events.try_recv().unwrap(), ended("a"));
-        assert!(other_events.try_recv().is_err());
-    }
-
-    #[test]
-    fn a_gone_client_targeted_by_itself_is_dropped() {
-        let subscribers = Subscribers::default();
-        let (gone, gone_events) = mpsc::unbounded_channel();
-        let (stays, mut stays_events) = mpsc::unbounded_channel();
-        subscribers.lock().push((1, gone));
-        subscribers.lock().push((2, stays));
-        drop(gone_events);
-
-        send_to(&subscribers, 1, ended("a"));
-
-        assert_eq!(subscribers.lock().len(), 1);
-        assert!(stays_events.try_recv().is_err());
     }
 }
