@@ -82,7 +82,8 @@ pub fn render(ws: &Workspace, listing: &Listing, width: f32, cx: &mut Context<Wo
         .child(picture(media[index].image.clone(), width).with_animation(
             ("gallery", index),
             Animation::new(FADE),
-            |picture, delta| picture.opacity(delta),
+            // It starts part shown, so a frame drawn at once never shows an empty stage.
+            |picture, delta| picture.opacity(0.35 + 0.65 * delta),
         ));
     if count > 1 {
         let top = (height - size::CONTROL) / 2.;

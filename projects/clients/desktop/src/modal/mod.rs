@@ -210,9 +210,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Listing { source, name } => {
             let (source, name) = (source.clone(), name.clone());
             let width = (window.viewport_size().width.as_f32() - 32.).clamp(320., listing::WIDTH);
-            // The window's own column names it; the title says where it is from.
             (
-                "Workshop".to_owned(),
+                name.clone(),
                 width,
                 listing::render(ws, &source, &name, width, cx),
             )

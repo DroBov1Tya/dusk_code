@@ -166,12 +166,16 @@ pub fn banner(art: Div, width: f32, panel: Div, foot: Div, cx: &App) -> Div {
                 .child(foot),
         );
     }
-    // The cover's last third fades into the panel, so the text never sits on the art.
+    // On a dark surface the cover's last third fades into the panel. On a light one the
+    // dark art would fade through grey, so it ends at a clean edge and the panel keeps
+    // its own margin; the text never sits on the art either way.
+    let dark = cx.theme().is_dark();
     let fade = (art_w * 0.34).floor();
-    frame
+    let mut frame = frame
         .h(px(height))
-        .child(div().absolute().top_0().left_0().child(art))
-        .child(
+        .child(div().absolute().top_0().left_0().child(art));
+    if dark {
+        frame = frame.child(
             div()
                 .absolute()
                 .top_0()
@@ -183,22 +187,24 @@ pub fn banner(art: Div, width: f32, panel: Div, foot: Div, cx: &App) -> Div {
                     linear_color_stop(surface.opacity(0.), 0.),
                     linear_color_stop(surface, 1.),
                 )),
-        )
-        .child(
-            div()
-                .absolute()
-                .top_0()
-                .bottom_0()
-                .left(px(art_w))
-                .right_0()
-                .flex()
-                .flex_col()
-                .justify_between()
-                .py(px(size::GAP_XL))
-                .pr(px(size::GAP_XL))
-                .child(panel)
-                .child(foot),
-        )
+        );
+    }
+    let inset = if dark { 0. } else { size::GAP_XL };
+    frame.child(
+        div()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .left(px(art_w + inset))
+            .right_0()
+            .flex()
+            .flex_col()
+            .justify_between()
+            .py(px(size::GAP_XL))
+            .pr(px(size::GAP_XL))
+            .child(panel)
+            .child(foot),
+    )
 }
 
 /// The tier's mark, the kind, the stars and the version on one line.

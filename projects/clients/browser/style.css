@@ -579,6 +579,10 @@ button.link, a.link { background: none; border: 0; padding: 0; color: var(--acce
 .hero-art { position: relative; }
 /* The cover's last third fades into the panel, so text never sits on the art. */
 .hero-art::after { content: ""; position: absolute; inset: 0 0 0 66%; background: linear-gradient(90deg, transparent, var(--surface)); pointer-events: none; }
+/* On a light surface the dark art would fade through grey: it ends at a clean edge and the
+   panel keeps its own margin. */
+[data-theme="light"] .hero-art::after { display: none; }
+[data-theme="light"] .hero-panel { padding-left: var(--s6); }
 .hero-panel { display: flex; flex-direction: column; gap: var(--s2); padding: var(--s6) var(--s6) var(--s6) 0; min-width: 0; }
 .hero-panel h2 { margin: 0; font-size: 28px; line-height: 1.2; overflow-wrap: anywhere; }
 .hero-panel p { margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

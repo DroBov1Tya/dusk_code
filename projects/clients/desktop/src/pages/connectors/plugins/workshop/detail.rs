@@ -96,7 +96,6 @@ fn side(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
                 .flex()
                 .flex_col()
                 .gap(px(size::GAP_S))
-                .child(div().title().child(listing.name.clone()))
                 .child(
                     div()
                         .meta()
@@ -164,10 +163,17 @@ fn side(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     }
     if listing.kind == Kind::Pack {
         let opened = listing.name.clone();
+        // The pack is the context, so a skill goes by its own name.
+        let prefix = format!("{}/", listing.name);
+        let skills = listing
+            .skills
+            .iter()
+            .map(|skill| skill.strip_prefix(&prefix).unwrap_or(skill).to_owned())
+            .collect();
         column = column
             .child(list(
                 &widgets::count(listing.skills.len(), "skill"),
-                listing.skills.clone(),
+                skills,
                 cx,
             ))
             .child(

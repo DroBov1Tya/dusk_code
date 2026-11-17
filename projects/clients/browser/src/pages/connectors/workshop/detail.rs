@@ -36,7 +36,7 @@ pub fn window(shop: Shop, source: String, name: String) -> impl IntoView {
                     "Escape" => close(),
                     _ => {}
                 }>
-                <div class="window-head"><b>"Workshop"</b><span class="grow"></span>
+                <div class="window-head"><b>{listing.name.clone()}</b><span class="grow"></span>
                     <button class="icon" aria-label="Close" on:click=move |_| close()><Icon name=IconName::Close /></button></div>
                 <div class="store-page">
                     <div class="store-main">
@@ -120,7 +120,11 @@ fn side(shop: Shop, listing: &Listing) -> impl IntoView {
         let opened = listing.name.clone();
         view! {
             <p class="menu-title">{format!("{} skills", listing.skills.len())}</p>
-            <ul class="plain">{listing.skills.iter().map(|skill| view! { <li>{skill.clone()}</li> }).collect_view()}</ul>
+            <ul class="plain">{listing.skills.iter().map(|skill| {
+                // The pack is the context, so a skill goes by its own name.
+                let short = skill.strip_prefix(&format!("{}/", listing.name)).unwrap_or(skill).to_owned();
+                view! { <li title=skill.clone()>{short}</li> }
+            }).collect_view()}</ul>
             <button class="link" on:click=move |_| { shop.window.set(None); shop.open.set(Some(opened.clone())); }>"Open the pack's page"</button>
         }
     });
@@ -143,7 +147,6 @@ fn side(shop: Shop, listing: &Listing) -> impl IntoView {
         .map(|url| view! { <a class="link" href=url target="_blank" rel="noopener noreferrer"><Icon name=IconName::ExternalLink />"Its page"</a> });
     view! {
         <aside class="store-side">
-            <h2>{listing.name.clone()}</h2>
             <span class="vendor">{format!("From {source}")}</span>
             {card::facts(listing)}
             {hero::tags(listing)}

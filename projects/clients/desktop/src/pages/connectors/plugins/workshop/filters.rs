@@ -31,7 +31,8 @@ const ORDERS: [(Order, &str); 4] = [
 
 const KINDS: [Kind; 4] = [Kind::Plugin, Kind::Skill, Kind::Pack, Kind::Agent];
 
-const MENU_WIDTH: f32 = 264.;
+/// Two columns: the order, tier and kind beside the categories, so all show at once.
+const MENU_WIDTH: f32 = 480.;
 const MENU_HEIGHT: f32 = 520.;
 /// A click on the button this soon after a click outside closed the menu is that click.
 const REOPEN: Duration = Duration::from_millis(250);
@@ -132,13 +133,19 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
     let shop = &ws.workshop;
     let theme = cx.theme();
     let (border, surface) = (theme.border, theme.popover);
-    let mut list = div()
-        .id("workshop-filters-menu")
-        .flex()
-        .flex_col()
-        .p(px(size::GAP_XS))
-        .max_h(px(MENU_HEIGHT))
-        .overflow_y_scroll();
+    let column = |id: &'static str| {
+        div()
+            .id(id)
+            .flex_1()
+            .min_w_0()
+            .flex()
+            .flex_col()
+            .p(px(size::GAP_XS))
+            .max_h(px(MENU_HEIGHT))
+            .overflow_y_scroll()
+    };
+    let mut list = column("workshop-filters-main");
+    let mut categories = column("workshop-filters-categories");
     list = list.child(section("Sort", cx));
     for (order, label) in ORDERS {
         list = list.child(
@@ -150,21 +157,6 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
             .child(label)
             .on_click(cx.listener(move |ws, _, _, cx| ws.set_order(order, cx))),
         );
-    }
-    if !shop.categories.is_empty() {
-        list = list.child(section("Category", cx));
-        for category in &shop.categories {
-            let chosen = shop.category.as_deref() == Some(category);
-            let picked = category.clone();
-            list = list.child(
-                row(format!("cat-{category}"), mark(Mark::Check, chosen, cx), cx)
-                    .child(widgets::capitalize(category))
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        let next = (!chosen).then(|| picked.clone());
-                        ws.set_category(next, cx)
-                    })),
-            );
-        }
     }
     list = list.child(section("Tier", cx));
     for each in tier::ALL {
@@ -198,12 +190,31 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
             })),
         );
     }
+    if !shop.categories.is_empty() {
+        categories = categories.child(section("Category", cx));
+        for category in &shop.categories {
+            let chosen = shop.category.as_deref() == Some(category);
+            let picked = category.clone();
+            categories = categories.child(
+                row(format!("cat-{category}"), mark(Mark::Check, chosen, cx), cx)
+                    .child(widgets::capitalize(category))
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        let next = (!chosen).then(|| picked.clone());
+                        ws.set_category(next, cx)
+                    })),
+            );
+        }
+    }
     let panel = div()
         .id("workshop-filters-panel")
         .absolute()
         .top(px(size::CONTROL + size::GAP_XS))
         .right_0()
-        .w(px(MENU_WIDTH))
+        .w(px(if shop.categories.is_empty() {
+            MENU_WIDTH / 2.
+        } else {
+            MENU_WIDTH
+        }))
         .flex()
         .flex_col()
         .rounded_lg()
@@ -217,7 +228,13 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
             ws.workshop.filters_closed = Some(Instant::now());
             cx.notify();
         }))
-        .child(list)
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .child(list)
+                .when(!shop.categories.is_empty(), |row| row.child(categories)),
+        )
         .child(
             div()
                 .flex()
