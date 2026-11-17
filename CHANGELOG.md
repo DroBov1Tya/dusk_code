@@ -1,8 +1,8 @@
 # Changelog
 
 What changed in each release. A release's section here is also its notes on GitHub.
-Patch versions are pre-releases; minor versions are full releases, made after end-to-end
-testing.
+Nightly versions are pre-releases tagged on main; full releases are tagged on `release/X.Y`
+branches after end-to-end testing. Entries of unreleased changes live in `changes/`.
 
 ## Unreleased
 
