@@ -168,7 +168,15 @@ scripts/build-web.sh                  # the web page, embedded by the next build
 ```
 
 `Cargo.lock` is committed, so a build uses the dependency versions of a release.
-[CONTRIBUTING.md](CONTRIBUTING.md) has the rules of the code.
+[CONTRIBUTING.md](CONTRIBUTING.md) has the rules of the code, and
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) says how we treat each other.
+
+## Documentation
+
+[docs/structure.md](docs/structure.md), [docs/agent-engine.md](docs/agent-engine.md),
+[docs/web.md](docs/web.md) and [docs/plugins.md](docs/plugins.md) describe the program.
+[docs/structure-audit.md](docs/structure-audit.md) is the maintainers' working note on
+the code's layout: public on purpose, and may be rough.
 
 ## Limitations
 
