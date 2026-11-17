@@ -102,7 +102,7 @@ pub fn sent_pictures(
             .w(px(WIDTH))
             .h(px(HEIGHT))
             .flex_none()
-            .rounded_xl()
+            .rounded_lg()
             .overflow_hidden()
             .bg(surface)
             .border_1()

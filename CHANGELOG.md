@@ -6,6 +6,11 @@ testing.
 
 ## Unreleased
 
+### Fixed
+
+- Pictures in the desktop chat keep their proportions and are never enlarged, and all of them
+  have lightly rounded corners.
+
 ## 0.74.4 - 2026-11-16
 
 ### Fixed
