@@ -105,6 +105,36 @@ fn the_same_error_through_varied_calls_has_one_signature() {
                     .into(),
             ),
         ),
+        (
+            "the same full disk under two temp names",
+            (
+                "python3 build.py",
+                "OSError: [Errno 28] No space left on device: 'tmpa81f3c.json'".into(),
+            ),
+            (
+                "python3 build.py --fast",
+                "OSError: [Errno 28] No space left on device: 'tmp9c02be.json'".into(),
+            ),
+        ),
+        (
+            "the same bad object at two commit hashes",
+            ("git show 3f2a9c1", "fatal: bad object 3f2a9c1".into()),
+            (
+                "git -C repo show e81b0d4f9a2c7d1e5b3f6a8c0d2e4f6a8b0c2d4e",
+                "fatal: bad object e81b0d4f9a2c7d1e5b3f6a8c0d2e4f6a8b0c2d4e".into(),
+            ),
+        ),
+        (
+            "the same missing record at two uuids",
+            (
+                "./cli get",
+                "error: record 550e8400-e29b-41d4-a716-446655440000 not found".into(),
+            ),
+            (
+                "./cli get --all",
+                "error: record 6ba7b810-9dad-11d1-80b4-00c04fd430c8 not found".into(),
+            ),
+        ),
     ];
     for (what, (first, first_output), (second, second_output)) in same {
         assert_eq!(
@@ -150,6 +180,34 @@ fn different_problems_have_different_signatures() {
                     .replace("DURATION", "0.00s")
                     .replace("tests::adds", "tests::subtracts"),
             ),
+        ),
+        // Progress through parametrized tests or numbered modules is not a loop.
+        (
+            "different numbered tests",
+            (
+                "pytest -q",
+                "FAILED tests/test_x.py::test_1 - assert 0 == 1".into(),
+            ),
+            (
+                "pytest -q",
+                "FAILED tests/test_x.py::test_2 - assert 0 == 1".into(),
+            ),
+        ),
+        (
+            "different numbered modules",
+            (
+                "cargo build",
+                "error[E0583]: file not found for module `mod3`".into(),
+            ),
+            (
+                "cargo build",
+                "error[E0583]: file not found for module `mod4`".into(),
+            ),
+        ),
+        (
+            "different numbered cases",
+            ("make check", "error: case_12 failed".into()),
+            ("make check", "error: case_13 failed".into()),
         ),
         (
             "different programs with the same error",
@@ -243,11 +301,15 @@ fn the_normalizer_makes_incidental_details_alike() {
         ),
         (
             "finished in 0.53s; took 950ms; v1.2.3",
-            "finished in #; took #; v#",
+            "finished in #; took #; #",
         ),
-        ("python3.11 at 0xdeadbeef id 3f2a9c1d", "python# at # id #"),
+        (
+            "python3.11 at 0xdeadbeef id 3f2a9c1d in test_1 of tmpa81f3c",
+            "python3.11 at # id # in test_1 of tmp#",
+        ),
         ("it's an unclosed 'quote", "it's an unclosed 'quote"),
-        ("2026-11-17T10:01:02Z", "#-#-#t#:#:#z"),
+        ("2026-11-17T10:01:02Z", "#-#-#:#:#"),
+        ("error E0425 in mod3", "error e0425 in mod3"),
     ];
     for (line, expected) in cases {
         assert_eq!(normalize(line), expected, "{line:?}");

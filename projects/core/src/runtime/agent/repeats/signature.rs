@@ -8,7 +8,9 @@
 //!   different problem, such as the next missing dependency after one was installed;
 //! - a word with `/` or `\` is a path: each of its `:`-parts with a separator is `<path>`,
 //!   so `src/main.rs:12:5` is `<path>:#:#` and a test id after `::` stays;
-//! - numbers, hex, versions, durations and timestamps are `#`.
+//! - a word that is a number (digits, a version, an address, a duration, a date-time) is
+//!   `#`, and so is a hex id or a uuid; other digits in a word with a letter or `_` stay,
+//!   since `test_1` and `test_2` are different things.
 //!
 //! Tool output is untrusted: only its last few KiB are read, every pass is linear, and
 //! nothing here panics on any text.
@@ -291,16 +293,20 @@ fn replace_quotes(line: &str) -> String {
     out
 }
 
-/// Runs of letters and digits that hold a number become `#`, or have their digits
-/// become `#`. A `.` between digits belongs to the number, so a version or a decimal is
-/// one `#`.
+/// Words are runs of letters, digits and `_`, with a `.` between digits kept in them
+/// so a version or a decimal is one word. A uuid is one `#` though it holds `-`.
 fn push_numbers(out: &mut String, text: &str) {
     let chars: Vec<char> = text.chars().collect();
     let mut index = 0;
     while let Some(&c) = chars.get(index) {
-        if !c.is_alphanumeric() {
+        if !is_word_char(c) {
             out.push(c);
             index += 1;
+            continue;
+        }
+        if is_uuid(&chars[index..]) {
+            out.push('#');
+            index += UUID_CHARS;
             continue;
         }
         let start = index;
@@ -308,46 +314,93 @@ fn push_numbers(out: &mut String, text: &str) {
             let in_number = c == '.'
                 && chars[index - 1].is_ascii_digit()
                 && chars.get(index + 1).is_some_and(char::is_ascii_digit);
-            if !(c.is_alphanumeric() || in_number) {
+            if !(is_word_char(c) || in_number) {
                 break;
             }
             index += 1;
         }
-        push_run(out, &chars[start..index]);
+        push_word(out, &chars[start..index]);
     }
 }
 
-/// Unit suffixes of a duration: `0.53s`, `950ms`.
-const UNITS: &[&str] = &["ns", "us", "µs", "ms", "s", "sec", "secs", "m", "min", "h"];
+fn is_word_char(c: char) -> bool {
+    c.is_alphanumeric() || c == '_'
+}
 
-fn push_run(out: &mut String, run: &[char]) {
-    if !run.iter().any(char::is_ascii_digit) {
-        out.extend(run);
+const UUID_CHARS: usize = 36;
+
+/// `8-4-4-4-12` hex digits that end the word.
+fn is_uuid(chars: &[char]) -> bool {
+    let Some(uuid) = chars.get(..UUID_CHARS) else {
+        return false;
+    };
+    let shaped = uuid.iter().enumerate().all(|(at, c)| match at {
+        8 | 13 | 18 | 23 => *c == '-',
+        _ => c.is_ascii_hexdigit(),
+    });
+    shaped && !chars.get(UUID_CHARS).is_some_and(|c| is_word_char(*c))
+}
+
+/// Suffixes that make a number a duration (`0.53s`, `950ms`) or a time in UTC (`02z`).
+const UNITS: &[&str] = &[
+    "ns", "us", "µs", "ms", "s", "sec", "secs", "m", "min", "h", "z",
+];
+
+/// Hex of at least this many characters, with a letter and a digit, is an id: a short
+/// commit hash has seven.
+const MIN_HEX_ID: usize = 6;
+
+/// A word that is a number becomes `#`: digits, a version (`1.2.3`, `v1.2.3`), an
+/// address (`0x7ffd`), a duration, a date-time (`17t10`). A hex id inside a word becomes
+/// `#` too (`tmpa81f3c` is `tmp#`). Other digits in a word with a letter or `_` stay, since
+/// `test_1` and `test_2` are different things.
+fn push_word(out: &mut String, word: &[char]) {
+    if !word.iter().any(char::is_ascii_digit) {
+        out.extend(word);
         return;
     }
-    let numeric = |c: &char| c.is_ascii_digit() || *c == '.';
-    let hex = run.iter().all(|c| c.is_ascii_hexdigit() || *c == '.');
-    let prefixed_hex = run.len() > 2
-        && run[0] == '0'
-        && run[1] == 'x'
-        && run[2..].iter().all(char::is_ascii_hexdigit);
-    let digits = run.iter().take_while(|c| numeric(c)).count();
-    let unit: String = run[digits..].iter().collect();
-    let duration = digits > 0 && UNITS.contains(&unit.as_str());
-    if hex || prefixed_hex || duration {
+    let number =
+        |part: &[char]| !part.is_empty() && part.iter().all(|c| c.is_ascii_digit() || *c == '.');
+    let digits = word
+        .iter()
+        .take_while(|c| c.is_ascii_digit() || **c == '.')
+        .count();
+    let suffix: String = word[digits..].iter().collect();
+    let date_time = word
+        .iter()
+        .position(|c| *c == 't')
+        .is_some_and(|at| number(&word[..at]) && number(&word[at + 1..]));
+    let whole = number(word)
+        || (word.len() > 2
+            && word[..2] == ['0', 'x']
+            && word[2..].iter().all(char::is_ascii_hexdigit))
+        || (digits > 0 && UNITS.contains(&suffix.as_str()))
+        || (word[0] == 'v' && number(&word[1..]))
+        || date_time;
+    if whole {
         out.push('#');
         return;
     }
-    let mut in_digits = false;
-    for c in run {
-        if numeric(c) && (in_digits || c.is_ascii_digit()) {
-            if !in_digits {
-                out.push('#');
-            }
-            in_digits = true;
-        } else {
-            out.push(*c);
-            in_digits = false;
+    let mut index = 0;
+    while index < word.len() {
+        let hex = word[index..]
+            .iter()
+            .take_while(|c| c.is_ascii_hexdigit())
+            .count();
+        if hex == 0 {
+            out.push(word[index]);
+            index += 1;
+            continue;
         }
+        let run = &word[index..index + hex];
+        let id = hex >= MIN_HEX_ID
+            && run.iter().any(char::is_ascii_digit)
+            && run.iter().any(char::is_ascii_alphabetic);
+        if id {
+            out.push('#');
+        } else {
+            out.extend(run);
+        }
+        index += hex;
     }
 }
