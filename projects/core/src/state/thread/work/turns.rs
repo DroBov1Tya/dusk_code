@@ -140,6 +140,7 @@ impl State {
                         | "load_skill"
                         | "display_image"
                         | "display_audio"
+                        | "show"
                         | "tasks"
                         | "remember"
                         | "ask_user"

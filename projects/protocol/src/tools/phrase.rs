@@ -34,6 +34,7 @@ pub fn phrase(tool: &str, seed: &str) -> &'static str {
         "message_parent" => &["Reporting back", "Sending word up"],
         "ask_user" => &["Asking you", "Waiting for your answer"],
         "display_image" => &["Showing a picture"],
+        "show" => &["Showing it", "Laying it out"],
         "display_audio" => &["Playing a sound"],
         "load_skill" => &["Picking up a skill", "Reading a skill"],
         "remember" => &["Taking a note", "Remembering this"],
