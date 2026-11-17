@@ -20,7 +20,6 @@ pub struct McpTool {
     description: String,
     schema: Value,
     /// The server's own hint that a call may run again; see `RemoteTool::repeatable`.
-    #[cfg_attr(not(test), expect(dead_code, reason = "crash recovery will call it"))]
     repeatable: bool,
     /// Where the pictures it returns are kept for the model.
     pictures: ArtifactStore,

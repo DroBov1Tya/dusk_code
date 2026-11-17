@@ -10,6 +10,8 @@ mod schedules;
 mod settings;
 mod status;
 mod terminal;
+#[cfg(test)]
+mod tests;
 mod thread;
 mod voice;
 mod work;
@@ -26,6 +28,7 @@ use crate::{
 use anyhow::{Result, anyhow};
 use dusk_protocol::client::{Event, Request, Response, Status};
 use dusk_protocol::thread::Turn;
+use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
 use std::{
     collections::{HashMap, HashSet},
@@ -97,7 +100,15 @@ struct OpenThread {
     done: Arc<std::sync::atomic::AtomicBool>,
     /// The turn running now, as the forwarding task sees it; a client that joins
     /// mid-turn is told so before any later event.
-    running: Arc<Mutex<Option<Turn>>>,
+    running: Arc<Mutex<Option<Running>>>,
+}
+
+/// A running turn as a client that joins is told of it.
+#[derive(Clone)]
+struct Running {
+    turn: Turn,
+    /// What the user is asked while the turn waits for a decision.
+    question: Option<Question>,
 }
 
 /// An attached client as the core knows it.

@@ -42,6 +42,11 @@ pub struct Limits {
     /// failures keep to `max_attempts`.
     #[serde(default = "default_retry_unreachable_seconds")]
     pub retry_unreachable_seconds: u32,
+    /// Seconds after its last activity within which a turn a restart cut off goes on by
+    /// itself. An older one asks the user first, so opening an old chat spends no tokens
+    /// unasked.
+    #[serde(default = "default_resume_within_seconds")]
+    pub resume_within_seconds: u32,
     /// The ladder for the same error coming back within a turn through calls that
     /// differ: a note, then a re-plan, then a stop. Off until the evals show it does not
     /// lower the pass rate.
@@ -68,6 +73,7 @@ impl Default for Limits {
             model_timeout_seconds: default_model_timeout_seconds(),
             max_attempts: default_max_attempts(),
             retry_unreachable_seconds: default_retry_unreachable_seconds(),
+            resume_within_seconds: default_resume_within_seconds(),
             failure_ladder: false,
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
@@ -107,6 +113,16 @@ fn default_max_attempts() -> u32 {
 
 fn default_retry_unreachable_seconds() -> u32 {
     DEFAULT_RETRY_UNREACHABLE_SECONDS
+}
+
+/// An hour: a restart in the middle of work resumes it, a chat left for the day asks.
+pub const DEFAULT_RESUME_WITHIN_SECONDS: u32 = 3600;
+/// A minute at least, so a quick restart never asks; a week at most.
+pub const MIN_RESUME_WITHIN_SECONDS: u32 = 60;
+pub const MAX_RESUME_WITHIN_SECONDS: u32 = 7 * 24 * 3600;
+
+fn default_resume_within_seconds() -> u32 {
+    DEFAULT_RESUME_WITHIN_SECONDS
 }
 
 /// Two of the same error is normal; the ladder starts later, and stops before a turn

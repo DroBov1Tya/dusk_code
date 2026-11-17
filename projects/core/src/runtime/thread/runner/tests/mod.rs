@@ -189,6 +189,51 @@ impl Tool for Echo {
     }
 }
 
+/// Counts its runs by their `text`, so a restart shows which calls ran again. `repeatable`
+/// is what it says of a lost result; `hang` keeps a run going once counted, as a call a
+/// kill cut off after its effect.
+#[derive(Clone, Default)]
+struct Counter {
+    runs: Arc<Mutex<Vec<String>>>,
+    repeatable: bool,
+    hang: bool,
+}
+
+impl Counter {
+    fn runs(&self) -> Vec<String> {
+        self.runs.lock().unwrap().clone()
+    }
+}
+
+impl Tool for Counter {
+    fn name(&self) -> &'static str {
+        "echo"
+    }
+
+    fn description(&self, _context: &ToolContext) -> String {
+        "Counts its runs.".into()
+    }
+
+    fn parameters(&self) -> Value {
+        json!({ "type": "object" })
+    }
+
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        self.repeatable
+    }
+
+    fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
+        Box::pin(async move {
+            let text = arguments["text"].as_str().unwrap_or_default().to_owned();
+            self.runs.lock().unwrap().push(text.clone());
+            if self.hang {
+                std::future::pending::<()>().await;
+            }
+            Ok(text)
+        })
+    }
+}
+
 fn provider(scripts: Vec<Vec<Step>>) -> Arc<FakeProvider> {
     Arc::new(FakeProvider {
         scripts: Mutex::new(scripts.into()),
@@ -275,6 +320,15 @@ fn runner_with(
     })
 }
 
+/// Every event until the runner ends.
+async fn drain(output: &mut ThreadOutput) -> Vec<ThreadEvent> {
+    let mut events = Vec::new();
+    while let Some(event) = output.next_event().await {
+        events.push(event);
+    }
+    events
+}
+
 async fn next_turn_finished(output: &mut ThreadOutput) -> Turn {
     loop {
         if let Some(ThreadEvent::TurnFinished(turn)) = output.next_event().await {
@@ -295,5 +349,6 @@ async fn transcript(state: &State) -> Vec<(MessageRole, String)> {
 
 mod goals;
 mod repeats;
+mod resume;
 mod retries;
 mod turns;

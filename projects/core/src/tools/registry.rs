@@ -101,7 +101,6 @@ impl ToolRegistry {
 
     /// Whether the call may simply run again after its result was lost; an unknown tool
     /// is never repeated.
-    #[cfg_attr(not(test), expect(dead_code, reason = "crash recovery will call it"))]
     pub fn repeatable(&self, name: &str, arguments: &Value) -> bool {
         self.tools
             .get(name)

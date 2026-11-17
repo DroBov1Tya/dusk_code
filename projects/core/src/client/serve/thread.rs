@@ -2,11 +2,11 @@
 
 use super::ClientId;
 use super::publish::{publish, send_to};
-use super::{CLOSE_TIMEOUT, OpenThread, Server};
+use super::{CLOSE_TIMEOUT, OpenThread, Running, Server};
 use crate::runtime::ThreadHandle;
 use anyhow::{Context, Result, ensure};
 use dusk_protocol::client::{Event, Response, ThreadRequest};
-use dusk_protocol::thread::ThreadEvent;
+use dusk_protocol::thread::{ThreadEvent, TurnWait};
 use parking_lot::Mutex;
 use std::{
     collections::HashSet,
@@ -48,15 +48,22 @@ impl Server {
                     open.clients.insert(self.caller);
                     open.orphaned = None;
                     // This client missed the turn's start; it learns the turn runs
-                    // without a fold boundary. The lock keeps it before the end. With no
-                    // turn running, it sees why the newest one failed, as the others did.
+                    // without a fold boundary, or waits, with the question it waits on.
+                    // The lock keeps it before the end. With no turn running, it sees why
+                    // the newest one failed, as the others did.
                     let running = open.running.lock();
-                    let event = match (running.clone(), failure) {
-                        (Some(turn), _) => Some(ThreadEvent::TurnRunning(turn)),
-                        (None, Some(failure)) => Some(ThreadEvent::TurnFailed(failure)),
-                        (None, None) => None,
+                    let events = match (running.clone(), failure) {
+                        (Some(Running { turn, question }), _) if turn.waiting.is_some() => {
+                            let question = question.map(ThreadEvent::Question);
+                            [Some(ThreadEvent::TurnWaiting(turn)), question]
+                        }
+                        (Some(Running { turn, .. }), _) => {
+                            [Some(ThreadEvent::TurnRunning(turn)), None]
+                        }
+                        (None, Some(failure)) => [Some(ThreadEvent::TurnFailed(failure)), None],
+                        (None, None) => [None, None],
                     };
-                    if let Some(event) = event {
+                    for event in events.into_iter().flatten() {
                         send_to(
                             &self.subscribers,
                             self.caller,
@@ -198,7 +205,7 @@ impl Server {
         let id = thread_id.clone();
         let done = Arc::new(AtomicBool::new(false));
         let flag = Arc::clone(&done);
-        let running = Arc::new(Mutex::new(None));
+        let running: Arc<Mutex<Option<Running>>> = Arc::new(Mutex::new(None));
         let current = Arc::clone(&running);
         let forward = tokio::spawn(async move {
             // A thread may say it is idle as it opens; it is done only once it has worked.
@@ -210,10 +217,30 @@ impl Server {
                     worked = true;
                     flag.store(false, Ordering::Relaxed);
                 }
-                // The start and the end of a turn are kept and sent under the lock a
-                // joining client takes, so it hears of a running turn before its end.
+                // The start, the waits and the end of a turn are kept and sent under the
+                // lock a joining client takes, so it hears of a running turn before its
+                // end. A question is kept while the turn waits for the user's decision:
+                // one the model asks is read back from the history instead.
                 let turn = match &event {
-                    ThreadEvent::TurnStarted(turn) => Some(Some(turn.clone())),
+                    ThreadEvent::TurnStarted(turn)
+                    | ThreadEvent::TurnRunning(turn)
+                    | ThreadEvent::TurnWaiting(turn) => Some(Some(Running {
+                        turn: turn.clone(),
+                        question: None,
+                    })),
+                    ThreadEvent::Question(question) => {
+                        let running = current.lock().clone();
+                        running
+                            .filter(|running| {
+                                matches!(running.turn.waiting, Some(TurnWait::Decision { .. }))
+                            })
+                            .map(|running| {
+                                Some(Running {
+                                    question: Some(question.clone()),
+                                    ..running
+                                })
+                            })
+                    }
                     ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) | ThreadEvent::Idle => {
                         Some(None)
                     }

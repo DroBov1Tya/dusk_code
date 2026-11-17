@@ -14,6 +14,6 @@ mod rate;
 mod repeats;
 mod vision;
 
-pub use agent::Agent;
+pub use agent::{Agent, Decision, Recovered};
 pub use inbox::{Inbox, Input, Stop};
 pub use mailboxes::{Mailbox, Mailboxes};

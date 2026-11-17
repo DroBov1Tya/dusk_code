@@ -227,7 +227,7 @@ impl State {
         let turn = read_running_turn(&mut transaction, turn_id).await?;
         let open = open_calls(&mut transaction, &turn.thread_id).await?;
         ensure!(
-            open.iter().any(|open| open == call_id),
+            open.iter().any(|open| open.id == call_id),
             "tool call {call_id} is not waiting for a result"
         );
         let new = NewMessage::tool(call_id.to_owned(), content).with_artifacts(artifacts);
@@ -300,35 +300,47 @@ impl State {
         Ok(turn)
     }
 
-    /// A process that stopped mid-turn leaves it running; mark such turns interrupted.
-    /// A tool that was running then may or may not have taken effect, and its result says so.
-    pub async fn interrupt_running_turns(&self, thread_id: &str) -> Result<()> {
-        let timestamp = timestamp_ms()?;
+    /// A process that stopped mid-turn leaves it running; mark such a turn interrupted and
+    /// return it. A tool that was running then may or may not have taken effect, and its
+    /// result says so.
+    pub async fn interrupt_running_turns(&self, thread_id: &str) -> Result<Option<Turn>> {
         let mut transaction = self.pool.begin().await.context("begin recovery")?;
-        let lost = "no result: the process stopped while this call ran, so it may or may not \
-                    have taken effect";
-        close_open_calls(&mut transaction, thread_id, lost, timestamp).await?;
-        sqlx::query(
-            "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?),
-                waiting_for = NULL, waiting_since = NULL, wake_at = NULL
-             WHERE thread_id = ? AND status = 'running'",
-        )
-        .bind(timestamp)
-        .bind(thread_id)
-        .execute(&mut *transaction)
-        .await
-        .context("interrupt running turns")?;
+        let turn = interrupt(&mut transaction, thread_id).await?;
         transaction.commit().await.context("commit recovery")?;
-        Ok(())
+        Ok(turn)
     }
+}
+
+/// What a call that was running when the process stopped gets for a result.
+pub(super) const LOST: &str =
+    "no result: the process stopped while this call ran, so it may or may not have taken effect";
+
+/// Interrupts the thread's running turn, if any, inside the caller's transaction.
+pub(super) async fn interrupt(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+) -> Result<Option<Turn>> {
+    let timestamp = timestamp_ms()?;
+    close_open_calls(transaction, thread_id, LOST, timestamp).await?;
+    let row = sqlx::query(
+        "UPDATE turns SET status = 'interrupted', finished_at = MAX(started_at, ?),
+            waiting_for = NULL, waiting_since = NULL, wake_at = NULL
+         WHERE thread_id = ? AND status = 'running' RETURNING *",
+    )
+    .bind(timestamp)
+    .bind(thread_id)
+    .fetch_optional(&mut **transaction)
+    .await
+    .context("interrupt running turns")?;
+    row.map(decode_turn).transpose()
 }
 
 /// Calls of the thread's newest tool step that have no result yet, in call order. Older
 /// steps are always complete: the next step only starts once every call has a result.
-async fn open_calls(
+pub(super) async fn open_calls(
     transaction: &mut Transaction<'_, Sqlite>,
     thread_id: &str,
-) -> Result<Vec<String>> {
+) -> Result<Vec<ToolCall>> {
     let step = sqlx::query(
         "SELECT sequence, tool_calls_json FROM messages
          WHERE thread_id = ? AND tool_calls_json IS NOT NULL ORDER BY sequence DESC LIMIT 1",
@@ -354,8 +366,7 @@ async fn open_calls(
     .context("load tool results")?;
     Ok(calls
         .into_iter()
-        .map(|call| call.id)
-        .filter(|id| !answered.contains(id))
+        .filter(|call| !answered.contains(&call.id))
         .collect())
 }
 
@@ -365,19 +376,41 @@ async fn close_open_calls(
     result: &str,
     timestamp: i64,
 ) -> Result<()> {
-    for call_id in open_calls(transaction, thread_id).await? {
-        let new = NewMessage::tool(call_id.clone(), result.to_owned());
-        let message = insert_message(transaction, thread_id, &new, None, timestamp).await?;
-        sqlx::query(
-            "UPDATE tool_executions SET outcome = 'unknown', result_message_id = ?
-            WHERE thread_id = ? AND call_id = ? AND outcome = 'pending'",
+    for call in open_calls(transaction, thread_id).await? {
+        close_call(
+            transaction,
+            thread_id,
+            &call.id,
+            result,
+            "unknown",
+            timestamp,
         )
-        .bind(message.message_id)
-        .bind(thread_id)
-        .bind(call_id)
-        .execute(&mut **transaction)
         .await?;
     }
+    Ok(())
+}
+
+/// Gives an open call the result it ends with when it did not run to its end.
+pub(super) async fn close_call(
+    transaction: &mut Transaction<'_, Sqlite>,
+    thread_id: &str,
+    call_id: &str,
+    result: &str,
+    outcome: &str,
+    timestamp: i64,
+) -> Result<()> {
+    let new = NewMessage::tool(call_id.to_owned(), result.to_owned());
+    let message = insert_message(transaction, thread_id, &new, None, timestamp).await?;
+    sqlx::query(
+        "UPDATE tool_executions SET outcome = ?, result_message_id = ?
+        WHERE thread_id = ? AND call_id = ? AND outcome = 'pending'",
+    )
+    .bind(outcome)
+    .bind(message.message_id)
+    .bind(thread_id)
+    .bind(call_id)
+    .execute(&mut **transaction)
+    .await?;
     Ok(())
 }
 

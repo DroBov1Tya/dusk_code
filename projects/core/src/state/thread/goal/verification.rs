@@ -140,11 +140,17 @@ impl State {
         self.goal(thread_id).await?.context("goal is gone")
     }
 
+    /// A review a stopped process cut off runs again: it only reads evidence, and its
+    /// attempt was counted when it began. Past the last attempt it ends as gaps. A review
+    /// still pending was never begun and stays so.
     pub async fn recover_goal_verification(&self, thread_id: &str) -> Result<()> {
         sqlx::query(
-            "UPDATE goals SET verification = 'gaps', verification_note =
-            'Verification was interrupted; no pass was recorded. Submit fresh verification.'
-            WHERE thread_id = ? AND verification IN ('checking', 'pending')",
+            "UPDATE goals SET
+                verification = CASE WHEN verification_attempts < 3 THEN 'pending' ELSE 'gaps' END,
+                verification_note = CASE WHEN verification_attempts < 3 THEN verification_note
+                    ELSE 'Verification was interrupted; no pass was recorded. Submit fresh verification.'
+                END
+             WHERE thread_id = ? AND verification = 'checking'",
         )
         .bind(thread_id)
         .execute(&self.pool)
