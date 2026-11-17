@@ -81,7 +81,12 @@ pub async fn list(
     listing::mark_clashes(&mut listings);
     listings.retain(|listing| category.is_none_or(|category| listing.category == category));
     listing::sort(&mut listings, order);
-    Ok(StoreList { listings, failed })
+    let picks = listing::picks(&listings);
+    Ok(StoreList {
+        listings,
+        failed,
+        picks,
+    })
 }
 
 /// What the user agreed to install, as they were shown it.
