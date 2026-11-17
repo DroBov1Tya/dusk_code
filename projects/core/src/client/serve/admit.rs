@@ -238,6 +238,40 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_bound_client_cannot_point_a_resumed_chat_at_another_folder() {
+        let mut server = server("resume").await;
+        let state = server.runtime.state();
+        state
+            .set_thread_project("a", "/stored/project")
+            .await
+            .unwrap();
+        let asked = || std::path::PathBuf::from("/");
+
+        server.caller = 1;
+        let folder = server.resume_folder("a", asked()).await.unwrap();
+        assert_eq!(folder, std::path::Path::new("/stored/project"));
+        // A chat with no folder stored does not take the one the client names.
+        server.clients.get_mut(&1).unwrap().scope =
+            Scope::threads(["a".to_owned(), "b".to_owned()], AREAS);
+        for thread_id in ["b", "nowhere"] {
+            let refused = server.resume_folder(thread_id, asked()).await.unwrap_err();
+            assert_eq!(
+                refused.to_string(),
+                "this chat cannot be opened from this client"
+            );
+        }
+
+        // Who sees every chat opens it where it says, as before.
+        server.caller = 2;
+        for thread_id in ["a", "b"] {
+            assert_eq!(
+                server.resume_folder(thread_id, asked()).await.unwrap(),
+                asked()
+            );
+        }
+    }
+
+    #[tokio::test]
     async fn a_client_that_is_not_attached_is_refused() {
         let server = server("unknown").await;
         for request in [messages("a"), Request::Thread(ThreadRequest::List)] {

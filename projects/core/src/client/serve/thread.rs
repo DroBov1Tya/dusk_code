@@ -10,12 +10,16 @@ use dusk_protocol::thread::ThreadEvent;
 use parking_lot::Mutex;
 use std::{
     collections::HashSet,
+    path::PathBuf,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
     },
 };
 use tracing::warn;
+
+/// For a client bound to chats that asks to open one with no folder stored.
+const NO_FOLDER: &str = "this chat cannot be opened from this client";
 
 impl Server {
     pub(super) async fn thread(&mut self, request: ThreadRequest) -> Result<Response> {
@@ -57,6 +61,7 @@ impl Server {
                     .get(&thread_id)
                     .map(|open| open.clients.clone())
                     .unwrap_or_default();
+                let cwd = self.resume_folder(&thread_id, cwd).await?;
                 self.close(&thread_id).await;
                 let handle = runtime.resume_thread(&thread_id, &cwd).await?;
                 let opened = self.open(handle);
@@ -236,6 +241,22 @@ impl Server {
             },
         );
         Response::Opened { thread_id }
+    }
+
+    /// Where the tools of a thread that is picked up again work. A client bound to chats
+    /// does not choose: the agent goes on in the folder stored for the chat, and a chat
+    /// without one is not opened in a folder such a client names.
+    pub(super) async fn resume_folder(&self, thread_id: &str, cwd: PathBuf) -> Result<PathBuf> {
+        if self.bound().is_none() {
+            return Ok(cwd);
+        }
+        let state = self.runtime.state_of(thread_id).await;
+        // Whatever the reason, the client learns only that it cannot be opened.
+        let stored = state.load_thread(thread_id).await.ok().flatten();
+        stored
+            .and_then(|thread| thread.project)
+            .map(PathBuf::from)
+            .context(NO_FOLDER)
     }
 
     pub(super) fn open_thread(&self, thread_id: &str) -> Result<&OpenThread> {
