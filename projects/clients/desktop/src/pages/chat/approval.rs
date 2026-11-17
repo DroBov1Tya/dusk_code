@@ -56,7 +56,27 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Deny, cx))),
         );
         // A command is shown as code, in full: it came from the model and is about to run.
+        // A batch shows every step, one row each: the yes covers all of them.
         let what = match &request.request {
+            // A long batch scrolls inside the card, so the buttons stay in view.
+            _ if !request.steps.is_empty() => {
+                let steps = request.steps.iter().fold(
+                    div()
+                        .id(SharedString::from(format!("steps-{id}")))
+                        .max_h(px(240.))
+                        .overflow_y_scroll()
+                        .flex()
+                        .flex_col()
+                        .gap_1(),
+                    |list, step| list.child(div().pl_3().child(step.line())),
+                );
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap_1()
+                    .child(request.title("The agent"))
+                    .child(steps)
+            }
             Request::Command { command } => {
                 let mono = crate::ui::theme::prefs(cx)
                     .mono_font

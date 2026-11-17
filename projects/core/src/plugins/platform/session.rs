@@ -24,6 +24,18 @@ use super::{
     wire::{FromPlatform, MAX_LINE_BYTES, ToPlatform},
 };
 
+/// The longest approval text a platform is sent. Telegram cuts a message at 4096
+/// characters, and its plugin at less; a cut request would allow steps the user never
+/// saw, so a longer one is not offered for a yes at all.
+const MAX_APPROVAL_CHARS: usize = 3500;
+
+/// What the platform shows for a yes: the title and every step, or `None` when that
+/// does not fit, and the request may then only be denied there.
+fn approvable_text(request: &ApprovalRequest) -> Option<String> {
+    let text = request.text("the agent");
+    (text.chars().count() <= MAX_APPROVAL_CHARS).then_some(text)
+}
+
 /// One run of a platform's program, bridged to its thread.
 pub(super) struct Session<'a> {
     launcher: &'a Launcher,
@@ -230,9 +242,20 @@ impl<'a> Session<'a> {
         let Some(request) = self.approvals.first() else {
             return Ok(());
         };
-        let (id, text) = (request.id, request.request.describe("the agent"));
+        let id = request.id;
         self.shown = Some(id);
-        self.send(ToPlatform::Approval { id, text }).await
+        match approvable_text(request) {
+            Some(text) => self.send(ToPlatform::Approval { id, text }).await,
+            // No button: deny still answers it, the app can still allow it.
+            None => {
+                let note = format!(
+                    "{} The request is too long to show here in full, so it cannot be \
+                     allowed here: answer it in the duskcode app, or deny it with /deny.",
+                    request.title("The agent")
+                );
+                self.reply(&note).await
+            }
+        }
     }
 
     /// Does what the user did on the platform, as if at the keyboard.
@@ -261,6 +284,15 @@ impl<'a> Session<'a> {
         else {
             return self.reply("Nothing is waiting for that approval.").await;
         };
+        let unseen = self
+            .approvals
+            .iter()
+            .any(|request| request.id == id && approvable_text(request).is_none());
+        if allow && unseen {
+            return self
+                .reply("That request is too long to allow here: answer it in the app, or deny it.")
+                .await;
+        }
         let decision = if allow {
             Decision::Once
         } else {
@@ -391,5 +423,37 @@ impl<'a> Session<'a> {
             }
             None => "Goal: none".into(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tools::Request;
+    use dusk_protocol::tools::ApprovalStep;
+
+    fn batch(steps: usize, typed: usize) -> ApprovalRequest {
+        let text = "x".repeat(typed);
+        let keyboard = |action: String| Request::Keyboard { action };
+        ApprovalRequest {
+            id: 1,
+            request: keyboard(format!("{steps} computer actions")),
+            session: None,
+            steps: (1..=steps)
+                .map(|number| ApprovalStep {
+                    number,
+                    request: keyboard(format!("type \"{text}\"")),
+                    allowed: false,
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_request_too_long_to_show_whole_is_never_offered_for_a_yes() {
+        let short = approvable_text(&batch(3, 20)).expect("fits");
+        assert!(short.contains("3. using the keyboard"), "{short}");
+        // Twenty typed steps of 200 shown characters would be cut by the platform.
+        assert!(approvable_text(&batch(20, 200)).is_none());
     }
 }

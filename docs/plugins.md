@@ -102,6 +102,12 @@ A hook reads one JSON object on stdin:
 - `{"context": "…"}` adds a note the model reads: to the tool's result after a tool, or
   to the thread for the other events.
 
+A call that runs other tools inside it, such as `computer_actions`, is checked first
+as itself and then once per step, with that step's `tool` and `arguments` and
+`"within": {"tool": "computer_actions", "step": 2}`, so a hook for `type_text` sees
+typing in a batch too. A deny from any step refuses the whole call before anything is
+asked or done. `after_tool` runs once, for the batch, with every step's result in it.
+
 Printing nothing allows the action. Hooks run in the order the plugins are named. A
 `before_tool` hook that fails, prints something other than JSON or runs past its
 timeout denies the call: a check that could not run has not allowed anything. Other

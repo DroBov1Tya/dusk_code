@@ -2,17 +2,17 @@
 
 use std::sync::Arc;
 
-use anyhow::ensure;
+use anyhow::{Result, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-use super::{Desktop, Screen, blocking};
+use super::{Desktop, Screen, step::Step};
 use crate::{
     BoxFuture,
     platform::Needs,
     tools::{
-        schema,
+        Request, ToolResult, schema,
         schema::parse_arguments,
         tool::{Tool, ToolContext, ToolKind},
     },
@@ -30,6 +30,41 @@ pub struct TypeText(pub Arc<Screen>);
 struct TypeTextArguments {
     /// What to type into the focused field, as it is.
     text: String,
+}
+
+impl TypeTextArguments {
+    /// Bounded before anything is asked or done.
+    fn parse(arguments: Value) -> Result<Self> {
+        let arguments: Self = parse_arguments(arguments)?;
+        let count = arguments.text.chars().count();
+        ensure!(count > 0, "the text is empty");
+        ensure!(
+            count <= MAX_TYPED_CHARS,
+            "type at most {MAX_TYPED_CHARS} characters at once"
+        );
+        Ok(arguments)
+    }
+}
+
+impl TypeText {
+    /// Checked before anything is asked or done, so a batch can check every step first.
+    pub(super) fn step(screen: &Arc<Screen>, arguments: Value) -> Result<Step> {
+        screen.require_unscoped()?;
+        let TypeTextArguments { text } = TypeTextArguments::parse(arguments)?;
+        let count = text.chars().count();
+        // The user sees what will be typed, since it can run anything a shell can.
+        let shown: String = text.chars().take(SHOWN_CHARS).collect();
+        let more = if count > SHOWN_CHARS { "..." } else { "" };
+        let request = Request::Keyboard {
+            action: format!("type \"{}{more}\"", shown.escape_debug()),
+        };
+        let screen = Arc::clone(screen);
+        Ok(Step::new(request, move || {
+            screen.unscoped(|| Desktop.type_text(&text))?;
+            Desktop.touch();
+            Ok(ToolResult::text(format!("typed {count} characters")))
+        }))
+    }
 }
 
 impl Tool for TypeText {
@@ -50,23 +85,8 @@ impl Tool for TypeText {
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
-            self.0.require_unscoped()?;
-            let arguments: TypeTextArguments = parse_arguments(arguments)?;
-            let count = arguments.text.chars().count();
-            ensure!(count > 0, "the text is empty");
-            ensure!(
-                count <= MAX_TYPED_CHARS,
-                "type at most {MAX_TYPED_CHARS} characters at once"
-            );
-            // The user sees what will be typed, since it can run anything a shell can.
-            let shown: String = arguments.text.chars().take(SHOWN_CHARS).collect();
-            let more = if count > SHOWN_CHARS { "..." } else { "" };
-            let action = format!("type \"{}{more}\"", shown.escape_debug());
-            context.approve_screen(&action, true).await?;
-            let screen = Arc::clone(&self.0);
-            blocking(move || screen.unscoped(|| Desktop.type_text(&arguments.text))).await?;
-            Desktop.touch();
-            Ok(format!("typed {count} characters"))
+            let step = Self::step(&self.0, arguments)?;
+            Ok(step.ask_and_run(&context).await?.content)
         })
     }
 }

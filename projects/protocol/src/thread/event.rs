@@ -170,6 +170,7 @@ mod tests {
                     command: "cargo test".into(),
                 },
                 session: Some("cargo".into()),
+                steps: Vec::new(),
             })),
         };
         let text = serde_json::to_string(&event).unwrap();

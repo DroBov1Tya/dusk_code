@@ -125,6 +125,41 @@ impl ToolRegistry {
         kinds
     }
 
+    /// The calls `name` runs inside it, for hooks to judge one by one; empty for a tool
+    /// that runs none or arguments that do not parse, which the call itself refuses.
+    pub fn calls_within(&self, name: &str, arguments: &Value) -> Vec<(String, Value)> {
+        self.tools
+            .get(name)
+            .and_then(|tool| tool.calls_within(arguments).ok())
+            .unwrap_or_default()
+    }
+
+    /// A call inside another is refused as it would be alone: a tool switched off in the
+    /// mode does not run because a batch names it.
+    fn check_within(
+        &self,
+        tool: &dyn Tool,
+        arguments: &Value,
+        config: &Config,
+    ) -> std::result::Result<(), String> {
+        let within = tool
+            .calls_within(arguments)
+            .map_err(|error| format!("{error:#}"))?;
+        for (index, (name, _)) in within.iter().enumerate() {
+            let on = self
+                .tools
+                .get(name.as_str())
+                .is_some_and(|inner| self.enabled(inner.as_ref(), config));
+            if !on {
+                return Err(format!(
+                    "step {} ({name}) is switched off, so no step ran",
+                    index + 1
+                ));
+            }
+        }
+        Ok(())
+    }
+
     fn enabled(&self, tool: &dyn Tool, config: &Config) -> bool {
         if tool.root_only() && !self.root || !self.platform.provides(tool.needs()) {
             return false;
@@ -215,6 +250,9 @@ impl ToolRegistry {
         {
             info!("tool {} called with invalid arguments", call.name);
             return error_result(problems);
+        }
+        if let Err(problem) = self.check_within(tool.as_ref(), &arguments, config) {
+            return error_result(problem);
         }
         let context = ToolContext {
             scope: Arc::clone(scope),
@@ -326,6 +364,57 @@ mod tests {
         assert_eq!(registry.kinds().len(), 1);
     }
 
+    /// A batch cannot run a tool the mode switched off: refused before anything is asked.
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    #[tokio::test]
+    async fn a_batch_step_switched_off_refuses_the_batch() {
+        use crate::tools::{ComputerActions, PressKeys, Screen, TypeText};
+        let dir = temp_dir("registry_batch_switch");
+        std::fs::create_dir_all(&dir).unwrap();
+        let scope = Arc::new(ToolScope::new(&dir, &dir).unwrap());
+        let mut config = (*crate::testing::tool_context(&scope).config).clone();
+        for (name, on) in [
+            ("computer_actions", true),
+            ("press_keys", true),
+            ("type_text", false),
+        ] {
+            config.set_tool_enabled(name, on);
+        }
+        let config = Arc::new(config);
+        let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
+        let mut registry = ToolRegistry {
+            root: true,
+            ..ToolRegistry::default()
+        };
+        registry.platform.gui = true;
+        registry.add(Box::new(ComputerActions(Arc::clone(&screen))));
+        registry.add(Box::new(PressKeys(Arc::clone(&screen))));
+        registry.add(Box::new(TypeText(screen)));
+        let call = ToolCall {
+            id: "c".into(),
+            name: "computer_actions".into(),
+            arguments: serde_json::json!({"steps": [
+                {"tool": "press_keys", "arguments": {"keys": "enter"}},
+                {"tool": "type_text", "arguments": {"text": "hi"}},
+            ]}),
+        };
+        let (events, mut asked) = tokio::sync::mpsc::unbounded_channel();
+        let progress = Progress {
+            call_id: "c".into(),
+            events,
+        };
+        let result = registry.call(&call, &scope, &config, progress).await;
+        assert!(result.is_error);
+        assert!(
+            result
+                .content
+                .contains("step 2 (type_text) is switched off"),
+            "{}",
+            result.content
+        );
+        assert!(asked.try_recv().is_err(), "nothing may be asked");
+    }
+
     /// Providers reject a schema that is not one plain object at the top.
     #[tokio::test]
     async fn every_schema_is_one_object_providers_accept() {
@@ -342,13 +431,16 @@ mod tests {
         tools.push(Box::new(AgentState::new(Arc::clone(&state), "t".into())));
         #[cfg(any(target_os = "macos", target_os = "linux"))]
         {
-            use crate::tools::{Click, PressKeys, Screen, Screenshot, Scroll, TypeText};
+            use crate::tools::{
+                Click, ComputerActions, PressKeys, Screen, Screenshot, Scroll, TypeText,
+            };
             let screen = Arc::new(Screen::new(ArtifactStore::new(dir.clone())));
             tools.push(Box::new(Screenshot(Arc::clone(&screen))));
             tools.push(Box::new(Click(Arc::clone(&screen))));
             tools.push(Box::new(Scroll(Arc::clone(&screen))));
             tools.push(Box::new(TypeText(Arc::clone(&screen))));
             tools.push(Box::new(PressKeys(Arc::clone(&screen))));
+            tools.push(Box::new(ComputerActions(Arc::clone(&screen))));
             #[cfg(target_os = "macos")]
             tools.push(Box::new(crate::tools::WindowSession(screen)));
         }

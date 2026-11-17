@@ -154,6 +154,7 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .card { margin: 10px auto; } .card img { max-width: 100%; border-radius: 10px; display: block; }
 .approvals, .question { max-width: 820px; margin: 0 auto; width: calc(100% - 40px); }
 .approval, .question { border: 1px solid var(--accent); border-radius: 12px; padding: 10px 14px; margin-bottom: 8px; background: var(--surface); }
+.approval-steps { margin: 6px 0 0 12px; display: flex; flex-direction: column; gap: 2px; overflow-wrap: anywhere; }
 .approval-actions, .row-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 8px 0; }
 .option {
   display: grid; grid-template-columns: var(--s4) minmax(0, 1fr); align-items: start; gap: var(--s3);
