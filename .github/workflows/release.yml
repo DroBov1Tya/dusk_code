@@ -1,6 +1,6 @@
 # A tag v* builds duskcode for macOS arm64 and Linux amd64/arm64 and publishes a release;
-# a tag on a commit of a release/* branch is a full release, any other tag (nightlies, tagged
-# on main) is a pre-release;
+# the kind comes from the branch that holds the tagged commit: `stable` is a full release,
+# `beta` a pre-release titled "(beta)", anything else (nightlies, tagged on main) a pre-release;
 # the desktop client also ships: as Duskcode.app in a disk image on macOS, and as an AppImage
 # on Linux amd64 and arm64. Every release carries a CycloneDX SBOM of each shipped program.
 # Started by hand, it only builds, to check the build before a tag.
@@ -26,19 +26,24 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0 # the release branches that hold the tagged commit decide the kind
+          fetch-depth: 0 # the beta and stable branches that hold the tagged commit decide the kind
       - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-        # A tag on a commit a release/X.Y branch holds is a full release: stable ships from
-        # those branches after end-to-end testing. A tag anywhere else, a nightly on main,
-        # ships as a pre-release, which "latest" skips. The notes are the version's section
-        # of CHANGELOG.md, or generated when it has none.
+        # The kind follows the branch that holds the tagged commit: `stable` is a full
+        # release ("latest"); `beta` is a pre-release titled "(beta)"; any other commit, a
+        # nightly on main, is a plain pre-release. A tag stays vX.Y.Z so it equals the Cargo
+        # version (checked in the build jobs) and the updater can still order it; the
+        # title, not the tag, says beta. The notes are the version's section of
+        # CHANGELOG.md, or generated when it has none.
         run: |
-          git fetch --no-tags origin '+refs/heads/release/*:refs/remotes/origin/release/*'
+          git fetch --no-tags origin '+refs/heads/beta:refs/remotes/origin/beta' '+refs/heads/stable:refs/remotes/origin/stable'
           flag=--prerelease
-          if [[ -n "$(git branch -r --contains "$GITHUB_SHA" --list 'origin/release/*')" ]]; then
+          title="$GITHUB_REF_NAME"
+          if git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/stable; then
             flag=--latest
+          elif git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/beta; then
+            title="$GITHUB_REF_NAME (beta)"
           fi
           version="${GITHUB_REF_NAME#v}"
           awk -v head="## $version " 'index($0, head) == 1 { on = 1; next } /^## / { on = 0 } on' \
@@ -48,7 +53,7 @@ jobs:
           else
             notes=(--generate-notes)
           fi
-          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$GITHUB_REF_NAME" "${notes[@]}" "$flag"
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --title "$title" "${notes[@]}" "$flag"
 
   build:
     needs: create
