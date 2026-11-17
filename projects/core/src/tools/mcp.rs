@@ -19,6 +19,9 @@ pub struct McpTool {
     remote: String,
     description: String,
     schema: Value,
+    /// The server's own hint that a call may run again; see `RemoteTool::repeatable`.
+    #[cfg_attr(not(test), expect(dead_code, reason = "crash recovery will call it"))]
+    repeatable: bool,
     /// Where the pictures it returns are kept for the model.
     pictures: ArtifactStore,
 }
@@ -36,6 +39,7 @@ impl McpTool {
                     remote: tool.name.clone(),
                     description: tool.description.clone(),
                     schema: tool.input_schema.clone(),
+                    repeatable: tool.repeatable,
                     pictures: pictures.clone(),
                 })
             })
@@ -67,6 +71,12 @@ impl Tool for McpTool {
 
     fn parameters(&self) -> Value {
         self.schema.clone()
+    }
+
+    /// The hint comes from the server and is not trusted for anything beyond repeating
+    /// that server's own call.
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        self.repeatable
     }
 
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {

@@ -281,3 +281,106 @@ impl Launcher {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeSet;
+
+    use serde_json::{Value, json};
+
+    use crate::{init::paths::Paths, runtime::Runtime};
+
+    /// Every built-in tool and whether a call whose result was lost may run again. A tool
+    /// added without a decision here fails the test.
+    const REPEATABLE: &[(&str, bool)] = &[
+        ("agent_state", true),
+        ("ask_agent", false),
+        ("ask_user", true),
+        ("click", false),
+        ("computer_actions", false),
+        ("display_audio", true),
+        ("display_image", true),
+        ("goal", false), // true for the show action only; see `argument_dependent_tools`
+        ("jobs", false), // true for list, status and output only
+        ("load_skill", true),
+        ("message_parent", false),
+        ("plan_edit", true),
+        ("press_keys", false),
+        ("read_file", true),
+        ("read_history", true),
+        ("remember", true),
+        ("remember_project", true),
+        ("run_command", false),
+        ("screenshot", true),
+        ("scroll", false),
+        ("search_files", true),
+        ("show", true),
+        ("tasks", false),
+        ("type_text", false),
+        ("window_session", false),
+    ];
+
+    /// The registries a chat (depth 0) and an agent (depth 1) get, as the launcher builds
+    /// them; the first call is `repeatable` with the arguments each test needs.
+    async fn registries(name: &str) -> (crate::tools::ToolRegistry, crate::tools::ToolRegistry) {
+        let root =
+            std::env::temp_dir().join(format!("dusk-repeatable-{name}-{}", std::process::id()));
+        let paths = Paths::new(root.join("config"), root.join("work"));
+        let runtime = Runtime::start(paths, Some(root.join("state.db")))
+            .await
+            .unwrap();
+        let launcher = &runtime.launcher;
+        (launcher.tools("t", None, 0), launcher.tools("t", None, 1))
+    }
+
+    #[tokio::test]
+    async fn every_built_in_tool_has_a_repeat_decision() {
+        let (chat, agent) = registries("table").await;
+        let mut built: BTreeSet<String> = BTreeSet::new();
+        built.extend(chat.names().map(str::to_owned));
+        built.extend(agent.names().map(str::to_owned));
+        let decided: BTreeSet<String> = REPEATABLE.iter().map(|(n, _)| (*n).to_owned()).collect();
+        let undecided: Vec<_> = built.difference(&decided).collect();
+        assert!(undecided.is_empty(), "no repeat decision for {undecided:?}");
+        // window_session exists on macOS only.
+        let missing: Vec<_> = decided
+            .difference(&built)
+            .filter(|name| cfg!(target_os = "macos") || *name != "window_session")
+            .collect();
+        assert!(
+            missing.is_empty(),
+            "the table names unknown tools {missing:?}"
+        );
+        for (name, expected) in REPEATABLE {
+            for registry in [&chat, &agent] {
+                if registry.names().any(|n| n == *name) {
+                    let got = registry.repeatable(name, &json!({}));
+                    assert_eq!(got, *expected, "{name}");
+                }
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn argument_dependent_tools_repeat_only_for_reads() {
+        let (chat, _) = registries("arguments").await;
+        let cases: [(&str, Value, bool); 8] = [
+            ("goal", json!({"action": "show"}), true),
+            ("goal", json!({"action": "propose"}), false),
+            ("goal", json!({"action": "request_verification"}), false),
+            ("jobs", json!({"action": "list"}), true),
+            ("jobs", json!({"action": "status", "job_id": "j"}), true),
+            ("jobs", json!({"action": "output", "job_id": "j"}), true),
+            ("jobs", json!({"action": "cancel", "job_id": "j"}), false),
+            ("jobs", json!({}), false),
+        ];
+        for (name, arguments, expected) in cases {
+            assert_eq!(
+                chat.repeatable(name, &arguments),
+                expected,
+                "{name} {arguments}"
+            );
+        }
+        assert!(!chat.repeatable("no_such_tool", &json!({})));
+    }
+}

@@ -43,6 +43,14 @@ impl Tool for Jobs {
     fn parameters(&self) -> Value {
         schema::of::<Arguments>()
     }
+    /// Listing and reading a job change nothing; cancelling one does.
+    fn repeatable(&self, arguments: &Value) -> bool {
+        matches!(
+            arguments.get("action").and_then(Value::as_str),
+            Some("list" | "status" | "output")
+        )
+    }
+
     fn call<'a>(&'a self, arguments: Value, _: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: Arguments = parse_arguments(arguments)?;

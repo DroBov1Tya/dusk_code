@@ -67,6 +67,10 @@ impl Tool for SearchFiles {
         schema::of::<SearchArguments>()
     }
 
+    fn repeatable(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         let scope = context.scope.clone();
         Box::pin(async move {
