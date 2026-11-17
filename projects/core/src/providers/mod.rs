@@ -20,8 +20,8 @@ mod request;
 pub(crate) mod transport;
 
 pub use errors::{
-    RetryAfter, Transient, is_output_limit, is_transient, is_unsupported_effort,
-    is_unsupported_pictures, retry_after, stream_error,
+    ProviderError, ProviderErrorKind, is_output_limit, is_transient, is_unsupported_effort,
+    is_unsupported_pictures, provider_error, stream_error,
 };
 pub use limits::Account;
 #[cfg(test)]

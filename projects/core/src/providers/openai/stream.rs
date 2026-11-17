@@ -9,9 +9,9 @@ use serde_json::Value;
 
 use crate::providers::{
     cost,
-    errors::{Transient, UnsupportedEffort},
+    errors::{UnsupportedEffort, ended_early},
     output::{FinishReason, ModelEvent, Usage},
-    transport::sse::SseDecoder,
+    transport::{http, sse::SseDecoder},
 };
 
 use super::client::error_rejects_effort_off;
@@ -48,11 +48,7 @@ impl CompletionStream {
             }
             // Mark first so an error also ends the stream.
             self.finished = true;
-            let chunk = self
-                .response
-                .chunk()
-                .await
-                .map_err(|_| Transient("cannot read provider stream".into()))?;
+            let chunk = self.response.chunk().await.map_err(http::cut)?;
             match chunk {
                 Some(bytes) => {
                     self.pending.extend(self.parser.feed(&bytes)?);
@@ -165,9 +161,7 @@ impl CompletionParser {
     fn finish(&mut self) -> Result<()> {
         self.done = true;
         if !self.finish_seen {
-            bail!(Transient(
-                "provider stream ended before the response was complete".into()
-            ));
+            bail!(ended_early());
         }
         Ok(())
     }

@@ -21,7 +21,7 @@ use serde_json::{Value, json};
 use crate::{
     config::{Effort, ProviderConfig},
     providers::{
-        errors::{Transient, UnsupportedPictures},
+        errors::{ProviderError, ProviderErrorKind, UnsupportedPictures, ended_early},
         limits::{Account, Headers, PlanUse},
         output::{FinishReason, ModelEvent, Usage},
         registry::Model,
@@ -99,7 +99,7 @@ impl ChatGpt {
     async fn send(
         &self,
         build: impl Fn() -> reqwest::RequestBuilder,
-        failed: impl Fn() -> anyhow::Error,
+        failed: impl Fn(reqwest::Error) -> anyhow::Error,
     ) -> Result<Response> {
         let mut refused: Option<String> = None;
         loop {
@@ -108,7 +108,7 @@ impl ChatGpt {
                 .header(AUTHORIZATION, bearer)
                 .send()
                 .await
-                .map_err(|_| failed())?;
+                .map_err(&failed)?;
             if response.status() != StatusCode::UNAUTHORIZED || refused.is_some() {
                 return Ok(response);
             }
@@ -125,7 +125,7 @@ impl ChatGpt {
                         .header(ACCEPT, "application/json")
                         .timeout(CATALOGUE_TIMEOUT)
                 },
-                || anyhow!("provider model request failed"),
+                |_| anyhow!("provider model request failed"),
             )
             .await?;
         self.account.note(Headers::ChatGpt, response.headers());
@@ -175,16 +175,16 @@ impl ChatGpt {
                         .header(ACCEPT, http::EVENT_STREAM)
                         .json(&wire)
                 },
-                || anyhow!(Transient("provider completion request failed".into())),
+                |error| http::unsent(error).into(),
             )
             .await?;
         self.account.note(Headers::ChatGpt, response.headers());
         let status = response.status();
         if !status.is_success() {
             // A missing service comes back; a spent plan does not until the user acts.
-            if http::is_retryable(status) && status != StatusCode::TOO_MANY_REQUESTS {
-                let message = http::refused("completion", status);
-                return Err(http::retry_failure(&response, message));
+            let failure = http::status_failure(&response, http::refused("completion", status));
+            if failure.kind.is_retryable() && status != StatusCode::TOO_MANY_REQUESTS {
+                bail!(failure);
             }
             if has_pictures && matches!(status.as_u16(), 413 | 415 | 422) {
                 bail!(UnsupportedPictures);
@@ -235,7 +235,7 @@ async fn body(mut response: Response) -> Result<Vec<u8>> {
 }
 
 /// Why a request was refused, from the error's code alone: its message can echo input.
-async fn refusal(response: Response, what: &str) -> String {
+async fn refusal(response: Response, what: &str) -> ProviderError {
     let status = response.status();
     let error = tokio::time::timeout(ERROR_BODY_TIMEOUT, body(response))
         .await
@@ -245,7 +245,12 @@ async fn refusal(response: Response, what: &str) -> String {
         .and_then(|body| body.get("error").cloned())
         .unwrap_or_default();
     let field = |name: &str| error.get(name).and_then(Value::as_str).unwrap_or_default();
-    said(field("code")).unwrap_or_else(|| match status {
+    // A spent plan answers 429 and does not come back until the user acts.
+    let kind = match status {
+        StatusCode::TOO_MANY_REQUESTS => ProviderErrorKind::Quota,
+        status => http::status_kind(status),
+    };
+    let fallback = match status {
         // There is no key to change here: the token was renewed once and refused again.
         StatusCode::UNAUTHORIZED => SIGN_IN_AGAIN.to_owned(),
         // The server's own words, short and printable, say more than the status.
@@ -258,33 +263,45 @@ async fn refusal(response: Response, what: &str) -> String {
             format!("{}: {message}", http::refused(what, status))
         }
         status => http::refused(what, status),
-    })
+    };
+    let (kind, message) = said(field("code")).unwrap_or((kind, fallback));
+    ProviderError {
+        status: Some(status.as_u16()),
+        ..ProviderError::new(kind, message)
+    }
 }
 
 /// The plan's own refusals, in words that tell the user what to do.
-fn said(code: &str) -> Option<String> {
+fn said(code: &str) -> Option<(ProviderErrorKind, String)> {
+    use ProviderErrorKind::*;
     Some(match code {
-        "subscription_sharing_usage_limit_exceeded" => {
-            format!("the ChatGPT plan's limit for apps is used up; see {CHATGPT_USAGE_URL}")
-        }
-        "usage_limit_reached" | "rate_limit_exceeded" | "insufficient_quota" => {
-            format!("the ChatGPT plan's usage limit is reached; see {CHATGPT_USAGE_URL}")
-        }
-        "usage_not_included" => {
-            format!("this ChatGPT plan does not include use in apps; see {CHATGPT_USAGE_URL}")
-        }
-        "context_length_exceeded" => {
-            "the chat is longer than the model takes; /compact makes it shorter".to_owned()
-        }
-        "subscription_sharing_user_not_eligible" => {
-            "this ChatGPT account may not use its plan in apps".to_owned()
-        }
-        "subscription_sharing_unsupported_capability" => {
-            "the ChatGPT plan does not take this model or one of the request's features".to_owned()
-        }
+        "subscription_sharing_usage_limit_exceeded" => (
+            Quota,
+            format!("the ChatGPT plan's limit for apps is used up; see {CHATGPT_USAGE_URL}"),
+        ),
+        "usage_limit_reached" | "rate_limit_exceeded" | "insufficient_quota" => (
+            Quota,
+            format!("the ChatGPT plan's usage limit is reached; see {CHATGPT_USAGE_URL}"),
+        ),
+        "usage_not_included" => (
+            Quota,
+            format!("this ChatGPT plan does not include use in apps; see {CHATGPT_USAGE_URL}"),
+        ),
+        "context_length_exceeded" => (
+            TooLong,
+            "the chat is longer than the model takes; /compact makes it shorter".to_owned(),
+        ),
+        "subscription_sharing_user_not_eligible" => (
+            Auth,
+            "this ChatGPT account may not use its plan in apps".to_owned(),
+        ),
+        "subscription_sharing_unsupported_capability" => (
+            Refused,
+            "the ChatGPT plan does not take this model or one of the request's features".to_owned(),
+        ),
         "subscription_sharing_invalid_user"
         | "chatpass_v2_scope_not_authorized"
-        | "chatpass_v2_invalid_authorization_context" => SIGN_IN_AGAIN.to_owned(),
+        | "chatpass_v2_invalid_authorization_context" => (Auth, SIGN_IN_AGAIN.to_owned()),
         _ => return None,
     })
 }
@@ -408,11 +425,7 @@ impl ResponseStream {
             }
             // Mark first so an error also ends the stream.
             self.finished = true;
-            let chunk = self
-                .response
-                .chunk()
-                .await
-                .map_err(|_| Transient("cannot read provider stream".into()))?;
+            let chunk = self.response.chunk().await.map_err(http::cut)?;
             match chunk {
                 Some(bytes) => {
                     let parsed = self.parser.feed(&bytes);
@@ -420,9 +433,7 @@ impl ResponseStream {
                     self.pending.extend(parsed?);
                     self.finished = self.parser.done;
                 }
-                None => bail!(Transient(
-                    "provider stream ended before the response was complete".into()
-                )),
+                None => bail!(ended_early()),
             }
         }
     }
@@ -638,7 +649,7 @@ impl Parser {
                     .collect();
                 tracing::warn!(code = %shown, "ChatGPT ended the stream with an error");
                 return Err(match said(&code) {
-                    Some(message) => anyhow!(message),
+                    Some((kind, message)) => ProviderError::new(kind, message).into(),
                     None => crate::providers::stream_error(&code),
                 });
             }

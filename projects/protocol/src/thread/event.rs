@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::agent::AgentPhase;
-use crate::model::{Effort, ModelEvent, ToolCall};
+use crate::model::{Effort, ModelEvent, ProviderErrorKind, ToolCall};
 use crate::thread::{Compaction, Goal, LocalUnsent, Message, Task, ThreadTokens, Turn};
 use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -35,6 +35,10 @@ pub enum ThreadEvent {
     Retrying {
         attempt: u32,
         error: String,
+        kind: ProviderErrorKind,
+        /// The pause before the next attempt.
+        wait_ms: u64,
+        max_attempts: u32,
     },
     /// Everything the model streams: reasoning, text, tool calls, usage.
     Model(ModelEvent),

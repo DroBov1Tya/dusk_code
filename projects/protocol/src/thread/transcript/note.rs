@@ -16,7 +16,7 @@ pub fn note(event: &ThreadEvent) -> Option<Note> {
         ThreadEvent::ProviderUnavailable => {
             Error("The provider is unavailable; check the connection in the settings.".into())
         }
-        ThreadEvent::Retrying { attempt, error } => {
+        ThreadEvent::Retrying { attempt, error, .. } => {
             Notice(format!("Retrying ({attempt}): {error}"))
         }
         ThreadEvent::AnswerCut { error } => Error(error.clone()),

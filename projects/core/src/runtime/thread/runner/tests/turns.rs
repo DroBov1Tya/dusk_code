@@ -467,7 +467,7 @@ async fn a_passing_failure_is_retried() {
     let mut status = None;
     while let Some(event) = output.next_event().await {
         match event {
-            ThreadEvent::Retrying { attempt, error } => {
+            ThreadEvent::Retrying { attempt, error, .. } => {
                 retried = attempt == 1 && error == "server busy";
             }
             ThreadEvent::TurnFinished(turn) => status = Some(turn.status),

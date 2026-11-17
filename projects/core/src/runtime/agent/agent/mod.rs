@@ -146,8 +146,7 @@ fn retry_delay(attempt: u32) -> Duration {
     let base = FIRST_RETRY_DELAY
         .saturating_mul(2u32.saturating_pow(attempt - 1))
         .min(MAX_RETRY_DELAY);
-    let noise = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |now| now.subsec_nanos());
+    // Without randomness the wait is only exact, which is still a wait.
+    let noise = getrandom::u32().unwrap_or(0);
     base + base.mul_f64(f64::from(noise % 1000) / 4000.0)
 }

@@ -206,6 +206,15 @@ impl Agent {
                 return Ok(StepEnd::Answered(interrupted(answer)));
             }
             Ok(Err(error)) => {
+                if let Some(failure) = crate::providers::provider_error(&error) {
+                    tracing::warn!(
+                        kind = ?failure.kind,
+                        status = failure.status,
+                        cause = failure.cause.as_deref(),
+                        "model call failed: {}",
+                        failure.message
+                    );
+                }
                 if is_transient(&error) {
                     self.emit(ThreadEvent::ProviderUnavailable);
                 }
