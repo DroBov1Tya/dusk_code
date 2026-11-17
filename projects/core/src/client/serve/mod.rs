@@ -19,7 +19,7 @@ use status::read_status;
 
 use crate::{
     client::Scope,
-    message::commands,
+    message::{commands, sources::HostFiles},
     runtime::{Runtime, ThreadInput},
     terminal::Terminals,
 };
@@ -139,6 +139,13 @@ impl Server {
         self.clients
             .get(&self.caller)
             .map_or("client", |attached| attached.source.as_str())
+    }
+
+    /// Whether a message of the client being answered may name files of this machine.
+    pub(super) fn host_files(&self) -> HostFiles {
+        self.clients
+            .get(&self.caller)
+            .map_or(HostFiles::Left, |attached| attached.scope.host_files())
     }
 
     /// Answers calls until the client asks to shut down or goes away, then closes every

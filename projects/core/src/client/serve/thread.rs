@@ -91,7 +91,7 @@ impl Server {
             } => {
                 let open = self.open_thread(&thread_id)?;
                 let text = runtime
-                    .keep_pastes(&thread_id, &text)
+                    .keep_pastes(&thread_id, &text, self.host_files())
                     .await
                     .context("cannot keep the paste")?;
                 match now {

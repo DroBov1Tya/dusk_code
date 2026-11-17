@@ -18,6 +18,8 @@ use std::{collections::HashSet, sync::Arc};
 
 use dusk_protocol::client::Request;
 
+use crate::message::sources::HostFiles;
+
 pub use classify::{Access, Subject, classify};
 
 /// A group of requests that is allowed or refused together. An area that would mix safe
@@ -47,7 +49,8 @@ pub enum Area {
     Project,
     FileWrite,
     /// Slash commands outside a thread: model, provider, settings, effort, migrate; and
-    /// adding a file of this machine to a thread's sources.
+    /// naming a file of this machine for a thread's sources, by `/sources add` or by a
+    /// path or an `@` mention in a sent message.
     Command,
     System,
     Voice,
@@ -149,6 +152,19 @@ impl Scope {
     /// is always a chat, and what its agents do comes inside its own events.
     pub(super) fn covers(&self, thread_id: &str) -> bool {
         self.bound().is_none_or(|ids| ids.contains(thread_id))
+    }
+
+    /// Whether a message the client sends may name files of this machine. It is the
+    /// area of `/sources add`: both copy a file by a path the client wrote.
+    pub(super) fn host_files(&self) -> HostFiles {
+        let held = match &self.0 {
+            Kind::Full => true,
+            Kind::Areas(areas) | Kind::Threads { areas, .. } => areas.contains(&Area::Command),
+        };
+        match held {
+            true => HostFiles::Taken,
+            false => HostFiles::Left,
+        }
     }
 
     /// Whether the client gets the status: it is settings-level state, so only a scope

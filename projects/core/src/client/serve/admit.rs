@@ -176,6 +176,67 @@ mod tests {
         }
     }
 
+    /// Only a scope holding the area of `/sources add` has a sent message read for the
+    /// files of this machine it names; any other has its words kept as words.
+    #[tokio::test]
+    async fn a_message_names_host_files_only_for_a_scope_that_may() {
+        use crate::message::sources::HostFiles;
+        let mut server = server("files").await;
+        let with_files = Scope::threads(["a".to_owned()], &[Area::ThreadWrite, Area::Command]);
+        let source = "test".to_owned();
+        let scope = with_files;
+        server.clients.insert(3, Attached { source, scope });
+        for (caller, files) in [
+            (1, HostFiles::Left),
+            (2, HostFiles::Taken),
+            (3, HostFiles::Taken),
+            (9, HostFiles::Left),
+        ] {
+            server.caller = caller;
+            assert_eq!(server.host_files(), files, "client {caller}");
+        }
+        assert_eq!(Scope::web().host_files(), HostFiles::Taken);
+
+        let runtime = &server.runtime;
+        let dir = crate::testing::temp_dir("admit-files");
+        std::fs::create_dir_all(&dir).unwrap();
+        let shot = dir.join("shot.png");
+        let mut png = Vec::new();
+        image::RgbImage::new(8, 8)
+            .write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png)
+            .unwrap();
+        std::fs::write(&shot, png).unwrap();
+        runtime.mentions().save_snippet("note", "SNIPPET").unwrap();
+        let paste = dusk_protocol::thread::wrap("PASTED BODY");
+        let message = format!("see {} and @note {paste}", shot.display());
+
+        server.caller = 1;
+        let kept = runtime
+            .keep_pastes("a", &message, server.host_files())
+            .await
+            .unwrap();
+        // The path and the mention are still words; the paste, which is the client's
+        // own text, is kept as a source like anyone's.
+        let words = format!("see {} and @note ", shot.display());
+        assert!(kept.starts_with(&words), "{kept}");
+        assert!(!kept.contains("PASTED BODY"));
+        let names = |sources: Vec<crate::state::Source>| {
+            sources
+                .into_iter()
+                .map(|source| source.name)
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(names(runtime.sources("a").await.unwrap()), ["pasted-1.txt"]);
+
+        server.caller = 2;
+        let kept = runtime
+            .keep_pastes("b", &message, server.host_files())
+            .await
+            .unwrap();
+        assert!(!kept.contains(&shot.display().to_string()) && !kept.contains("@note"));
+        assert_eq!(runtime.sources("b").await.unwrap().len(), 3);
+    }
+
     #[tokio::test]
     async fn a_client_that_is_not_attached_is_refused() {
         let server = server("unknown").await;

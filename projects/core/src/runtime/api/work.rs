@@ -4,7 +4,7 @@ use crate::runtime::Runtime;
 use crate::runtime::jobs::JobInfo;
 use crate::{
     catalog::mentions::Mentions,
-    message::sources::ThreadSources,
+    message::sources::{HostFiles, ThreadSources},
     runtime::thread::start::{self},
     state::{Source, UndoPoint},
     tools::Decision,
@@ -48,9 +48,15 @@ impl Runtime {
         crate::tools::console::run_for_user(command, &context).await
     }
 
-    /// `message` with its long pastes, and what its `@` mentions bring, moved to the
-    /// thread's sources.
-    pub async fn keep_pastes(&self, thread_id: &str, message: &str) -> Result<String> {
+    /// `message` with its long pastes moved to the thread's sources and, when `files`
+    /// are taken, the pictures and sounds it names by path and what its `@` mentions
+    /// bring.
+    pub async fn keep_pastes(
+        &self,
+        thread_id: &str,
+        message: &str,
+        files: HostFiles,
+    ) -> Result<String> {
         let launcher = self.of(thread_id).await;
         let workspace = start::workspace(&launcher.state, &launcher.paths, thread_id).await?;
         let sources = ThreadSources {
@@ -58,6 +64,9 @@ impl Runtime {
             workspace: &workspace,
             thread_id,
         };
+        if files == HostFiles::Left {
+            return sources.keep_pasted_blocks(message).await;
+        }
         let sounds = crate::state::artifacts::ArtifactStore::new(launcher.paths.artifacts_dir());
         let kept = sources.keep_pastes(message, &sounds).await?;
         sources.keep_mentions(&kept, &self.mentions()).await
