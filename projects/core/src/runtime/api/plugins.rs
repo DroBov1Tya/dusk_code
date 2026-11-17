@@ -26,23 +26,37 @@ impl Runtime {
         Ok(())
     }
 
-    /// Lists, installs or removes plugins of the store. An installed plugin is switched
-    /// on, allowing what its listing showed, which its manifest was checked to match.
+    /// Lists, installs, updates or removes plugins of the store. An installed plugin is
+    /// switched on, allowing what its listing showed, which its manifest was checked to
+    /// match; an updated one keeps its switch, since it asks for nothing more.
     pub async fn store(
         &self,
         request: dusk_protocol::plugin::StoreRequest,
     ) -> Result<dusk_protocol::client::Response> {
         use crate::plugins::store;
         use dusk_protocol::{client::Response, plugin::StoreRequest};
+        let mirrors = self.config().current().workshop().sources.clone();
         match request {
-            StoreRequest::List => return Ok(Response::Store(store::list(self.paths()).await?)),
+            StoreRequest::List { order, category } => {
+                let list = store::list(self.paths(), &mirrors, order, category.as_deref()).await?;
+                return Ok(Response::Store(list));
+            }
             StoreRequest::Install {
+                source,
+                tier,
                 name,
                 version,
                 agreed,
             } => {
-                store::install(self.paths(), &name, &version, &agreed).await?;
-                tracing::info!("plugin {name} {version} installed from the store");
+                let agreed = store::Agreed {
+                    source: &source,
+                    tier,
+                    name: &name,
+                    version: &version,
+                    permissions: &agreed,
+                };
+                store::install(self.paths(), &mirrors, &agreed).await?;
+                tracing::info!("plugin {name} {version} installed from {source}");
                 self.set_plugin_enabled(&name, true)?;
             }
             StoreRequest::Remove { name } => {
@@ -52,6 +66,22 @@ impl Runtime {
                 tracing::info!("plugin {name} removed");
                 let plugins = Arc::clone(&self.plugins);
                 tokio::task::spawn_blocking(move || plugins.scan());
+            }
+            StoreRequest::UpdateAll => {
+                let report = store::update_all(self.paths(), &mirrors).await?;
+                for line in &report.updated {
+                    tracing::info!("plugin {line} updated from the store");
+                }
+                let plugins = Arc::clone(&self.plugins);
+                tokio::task::spawn_blocking(move || plugins.scan());
+                return Ok(Response::StoreUpdates(report));
+            }
+            StoreRequest::Cover { source, name } => {
+                use base64::Engine;
+                let (bytes, mime) = store::cover(&mirrors, &source, &name).await?;
+                let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+                let mime = mime.to_owned();
+                return Ok(Response::Cover { base64, mime });
             }
         }
         Ok(Response::Done)

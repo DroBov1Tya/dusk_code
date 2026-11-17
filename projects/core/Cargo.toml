@@ -19,6 +19,8 @@ httparse = "1"
 # Plugin packages from the store are .tar.gz; flate2 is already in the tree.
 tar = { version = "0.4", default-features = false }
 flate2 = "1"
+# Store updates compare versions by semver; already in the tree.
+semver = "1"
 aws-lc-rs.workspace = true
 chrono.workspace = true
 getrandom.workspace = true

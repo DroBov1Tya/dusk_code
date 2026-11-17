@@ -163,7 +163,7 @@ fn actions(
             .label(label)
             .disabled(listing.unfit.is_some())
             .on_click(cx.listener(move |ws, _, _, cx| {
-                ws.confirm_store(Confirm::Install(shown.clone()), cx)
+                ws.confirm_store(Confirm::Install(Box::new(shown.clone())), cx)
             }))
     };
     match listing.installed.as_deref() {
