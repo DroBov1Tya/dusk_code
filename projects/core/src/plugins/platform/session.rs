@@ -36,6 +36,15 @@ fn approvable_text(request: &ApprovalRequest) -> Option<String> {
     (text.chars().count() <= MAX_APPROVAL_CHARS).then_some(text)
 }
 
+/// Whether `event` says a turn is at work, so the user can stop it: one that starts, one
+/// a restart resumed, and one that waits for the user or the provider.
+fn at_work(event: &ThreadEvent) -> bool {
+    matches!(
+        event,
+        ThreadEvent::TurnStarted(_) | ThreadEvent::TurnRunning(_) | ThreadEvent::TurnWaiting(_)
+    )
+}
+
 /// One run of a platform's program, bridged to its thread.
 pub(super) struct Session<'a> {
     launcher: &'a Launcher,
@@ -128,8 +137,10 @@ impl<'a> Session<'a> {
     /// Passes on what the user should see of a thread event.
     async fn show(&mut self, event: ThreadEvent) -> Result<()> {
         match event {
-            ThreadEvent::TurnStarted(_) => {
-                self.answer.clear();
+            event if at_work(&event) => {
+                if matches!(event, ThreadEvent::TurnStarted(_)) {
+                    self.answer.clear();
+                }
                 self.working = true;
                 self.send(ToPlatform::Working { on: true }).await
             }
@@ -455,5 +466,31 @@ mod tests {
         assert!(short.contains("3. using the keyboard"), "{short}");
         // Twenty typed steps of 200 shown characters would be cut by the platform.
         assert!(approvable_text(&batch(20, 200)).is_none());
+    }
+
+    /// A turn a restart resumed, or one that waits, can be stopped from the platform.
+    #[test]
+    fn a_resumed_or_waiting_turn_is_at_work() {
+        use dusk_protocol::thread::{Turn, TurnWait};
+        let turn = Turn {
+            turn_id: "t".into(),
+            thread_id: "thread".into(),
+            last_sequence: 1,
+            response_message_id: None,
+            status: TurnStatus::Running,
+            started_at: 1,
+            finished_at: None,
+            error_message: None,
+            waiting: Some(TurnWait::Decision { since: 1 }),
+        };
+        for event in [
+            ThreadEvent::TurnStarted(turn.clone()),
+            ThreadEvent::TurnRunning(turn.clone()),
+            ThreadEvent::TurnWaiting(turn.clone()),
+        ] {
+            assert!(at_work(&event), "{event:?}");
+        }
+        assert!(!at_work(&ThreadEvent::TurnFinished(turn)));
+        assert!(!at_work(&ThreadEvent::Idle));
     }
 }
