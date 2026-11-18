@@ -1,7 +1,7 @@
 //! The last row of the transcript while a turn runs: the working figure and what the turn
 //! does now, with how long it has run, the tokens it used and which step it is on, in
-//! boxes of fixed width so nothing moves as the numbers tick. The core counts the tokens
-//! and steps; a model call tried again replaces the words.
+//! tabular figures so nothing moves as the numbers tick. The core counts the tokens and
+//! steps; a model call tried again replaces the words.
 
 use dusk_protocol::{system::now_ms, thread::TurnWait};
 use gpui_kit::{component::ActiveTheme, *};
@@ -17,10 +17,6 @@ use crate::{
 
 /// The row's height, which is the figure's: it has all of it from its first frame.
 const HEIGHT: f32 = 28.;
-/// Boxes of the counts.
-const ELAPSED_BOX: f32 = 56.;
-const TOKENS_BOX: f32 = 96.;
-const STEP_BOX: f32 = 56.;
 
 /// What the row says, apart from how it is drawn.
 #[derive(Debug, PartialEq, Eq)]
@@ -60,6 +56,21 @@ pub fn status(chat: &Transcript, now: i64) -> Status {
     }
 }
 
+/// "2m 4s" as "2m 04s": the part after the first keeps two digits, so the text is as
+/// wide at every second of a minute and what follows it does not step sideways.
+fn steady(time: &str) -> String {
+    let mut parts = time.split(' ');
+    let mut out = parts.next().unwrap_or_default().to_owned();
+    for part in parts {
+        out.push(' ');
+        if part.chars().take_while(char::is_ascii_digit).count() == 1 {
+            out.push('0');
+        }
+        out.push_str(part);
+    }
+    out
+}
+
 pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
     let theme = cx.theme();
     let id = SharedString::from(format!("working-{shown}"));
@@ -85,24 +96,23 @@ pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
             .into_any_element();
     }
     let status = status(chat, now_ms());
-    let field = |text: String, width: f32| {
-        div()
-            .flex_none()
-            .w(px(width))
-            .font_features(tabular())
-            .child(text)
-    };
+    // Every count is as wide as its own text and the dots stand at one distance from
+    // both neighbours. Nothing moves as the numbers tick: the digits are tabular, and
+    // the second part of a time keeps two of them (`steady`).
     let dot = || div().flex_none().px_2().child("\u{00B7}");
-    let mut counts = div().flex().flex_row().items_center();
+    let mut counts = div()
+        .flex()
+        .flex_none()
+        .flex_row()
+        .items_center()
+        .font_features(tabular());
     let fields = [
-        (status.elapsed, ELAPSED_BOX),
-        (status.tokens, TOKENS_BOX),
-        (status.step, STEP_BOX),
+        status.elapsed.map(|time| steady(&time)),
+        status.tokens,
+        status.step,
     ];
-    for (text, width) in fields {
-        if let Some(text) = text {
-            counts = counts.child(dot()).child(field(text, width));
-        }
+    for text in fields.into_iter().flatten() {
+        counts = counts.child(dot()).child(div().flex_none().child(text));
     }
     row.child(working::figure(
         id,
@@ -136,7 +146,16 @@ mod tests {
         thread::{ThreadEvent, Turn, TurnStatus, TurnWait},
     };
 
-    use super::{Status, status};
+    use super::{Status, status, steady};
+
+    #[test]
+    fn a_time_keeps_its_width_through_a_minute() {
+        assert_eq!(steady("9s"), "9s");
+        assert_eq!(steady("2m 4s"), "2m 04s");
+        assert_eq!(steady("2m 14s"), "2m 14s");
+        assert_eq!(steady("1h 5m"), "1h 05m");
+    }
+
     use crate::pages::chat::transcript::Transcript;
 
     fn turn(waiting: Option<TurnWait>) -> Turn {
