@@ -47,7 +47,7 @@ impl UpdateWatch {
                         etag = Some((channel, tag));
                     }
                     if let Some(release) = polled.release {
-                        *self.found.write() = offer(&release);
+                        *self.found.write() = release.as_ref().and_then(offer);
                     }
                     polled.wait.unwrap_or(PERIOD)
                 }
@@ -62,8 +62,9 @@ impl UpdateWatch {
 }
 
 struct Polled {
-    /// `None` when nothing changed since the last answer.
-    release: Option<Release>,
+    /// `None` when nothing changed since the last answer; `Some(None)` when no release
+    /// carries this program's build.
+    release: Option<Option<Release>>,
     etag: Option<String>,
     /// Longer than the period when the rate limit is nearly used up.
     wait: Option<Duration>,
