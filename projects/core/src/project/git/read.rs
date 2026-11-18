@@ -1,13 +1,11 @@
-//! A project's repository through the git command: fixed arguments, no shell, no
-//! prompts, and a time limit. A branch is switched to only when git already has it.
+//! Reading a project's repository: its branch, changes, branches and worktrees.
 
-use std::{path::Path, process::Stdio, time::Duration};
+use std::path::Path;
 
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::Result;
 use dusk_protocol::project::{Change, ChangeKind, GitInfo, GitSummary, Project, Worktree};
-use tokio::process::Command;
 
-const TIMEOUT: Duration = Duration::from_secs(10);
+use super::run::git;
 
 /// An empty record outside a repository, or where git is missing.
 pub async fn info(project: &Project) -> Result<GitInfo> {
@@ -34,7 +32,7 @@ pub async fn info(project: &Project) -> Result<GitInfo> {
         .and_then(|remote| web_page(remote.trim()));
     let branch = branch.trim();
     let changes = parse_status(&status, prefix.trim());
-    let stat = super::diff::stat(dir, &changes).await;
+    let stat = super::super::diff::stat(dir, &changes).await;
     Ok(GitInfo {
         branch: (!branch.is_empty()).then(|| branch.to_owned()),
         branches: branches.lines().map(str::to_owned).collect(),
@@ -130,68 +128,9 @@ pub async fn changes(dir: &Path) -> Vec<Change> {
     }
 }
 
-pub async fn switch_branch(project: &Project, branch: &str) -> Result<()> {
-    let info = info(project).await?;
-    ensure!(
-        info.branches.iter().any(|known| known == branch),
-        "no such branch"
-    );
-    let tracked = info
-        .changes
-        .iter()
-        .any(|change| change.kind != ChangeKind::Untracked);
-    ensure!(!tracked, "commit or stash the changes before switching");
-    // The name is one git listed, so it cannot be read as an option.
-    git(&project.dir, &["switch", "--no-guess", branch]).await?;
-    Ok(())
-}
-
-pub(super) async fn git(dir: &Path, args: &[&str]) -> Result<String> {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .stdin(Stdio::null())
-        .kill_on_drop(true);
-    let output = tokio::time::timeout(TIMEOUT, command.output())
-        .await
-        .context("git took too long")?
-        .context("cannot run git")?;
-    if !output.status.success() {
-        let error = String::from_utf8_lossy(&output.stderr);
-        bail!("git: {}", error.trim());
-    }
-    String::from_utf8(output.stdout).context("git printed text that is not UTF-8")
-}
-
-/// Like `git`, but a status of 1 is no error: `diff --no-index` uses it for "differs".
-pub(super) async fn git_differs(dir: &Path, args: &[&str]) -> Result<String> {
-    let mut command = Command::new("git");
-    command
-        .arg("-C")
-        .arg(dir)
-        .args(args)
-        .env("GIT_TERMINAL_PROMPT", "0")
-        .env("GIT_OPTIONAL_LOCKS", "0")
-        .stdin(Stdio::null())
-        .kill_on_drop(true);
-    let output = tokio::time::timeout(TIMEOUT, command.output())
-        .await
-        .context("git took too long")?
-        .context("cannot run git")?;
-    if !matches!(output.status.code(), Some(0 | 1)) {
-        let error = String::from_utf8_lossy(&output.stderr);
-        bail!("git: {}", error.trim());
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
-}
-
 /// Paths come relative to the repository; `prefix` is where the project sits inside it,
 /// and changes outside the project are left out.
-fn parse_status(status: &str, prefix: &str) -> Vec<Change> {
+pub(super) fn parse_status(status: &str, prefix: &str) -> Vec<Change> {
     let mut changes = Vec::new();
     let mut entries = status.split('\0').filter(|entry| !entry.is_empty());
     while let Some(entry) = entries.next() {
@@ -208,6 +147,7 @@ fn parse_status(status: &str, prefix: &str) -> Vec<Change> {
         changes.push(Change {
             path: path.trim_end_matches('/').to_owned(),
             kind: kind(code),
+            staged: !matches!(code.as_bytes()[0], b' ' | b'?' | b'!'),
         });
     }
     changes
@@ -282,15 +222,15 @@ mod tests {
         let changes = parse_status(status, "app/");
         let shown: Vec<_> = changes
             .iter()
-            .map(|change| (change.path.as_str(), change.kind))
+            .map(|change| (change.path.as_str(), change.kind, change.staged))
             .collect();
         assert_eq!(
             shown,
             [
-                ("src/a.rs", ChangeKind::Modified),
-                ("b.rs", ChangeKind::Renamed),
-                ("new", ChangeKind::Untracked),
-                ("d.rs", ChangeKind::Conflicted),
+                ("src/a.rs", ChangeKind::Modified, false),
+                ("b.rs", ChangeKind::Renamed, true),
+                ("new", ChangeKind::Untracked, false),
+                ("d.rs", ChangeKind::Conflicted, true),
             ]
         );
     }

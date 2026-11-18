@@ -104,6 +104,20 @@ account only in its own apps. Claude models work here with an API key.
   installed on the machine.
 - **Headless**: `duskcode run "prompt"` prints the answer; `--json` adds the usage.
 
+### Git
+
+A saved project's repository is managed from the Changes page of the desktop app: stage
+or unstage a file, stage all, commit, discard a file's changes (after a yes), make a
+branch, fetch, pull (fast-forward only) and push (after a yes, to the upstream or to
+`origin` as a new one). The core also merges with a list of conflicts, aborts a merge,
+adds and removes worktrees beside the repository, and reads and opens pull requests
+through the GitHub CLI when `gh` is installed and signed in; the clients do not show
+these yet. Git runs with an argument vector and never a shell, with your own hooks,
+config and credential helper; the app never reads a token.
+
+It never forces a push, amends a commit, prunes worktrees or removes a worktree that has
+uncommitted or untracked files.
+
 ## How it is built
 
 ```text

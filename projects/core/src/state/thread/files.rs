@@ -37,6 +37,7 @@ impl State {
             .map(|row| Change {
                 path: row.get("path"),
                 kind: kind_from(row.get("kind")),
+                staged: false,
             })
             .collect())
     }

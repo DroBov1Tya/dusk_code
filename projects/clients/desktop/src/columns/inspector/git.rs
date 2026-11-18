@@ -52,6 +52,14 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .child(div().text_xs().text_color(muted).child(sync))
             .child(div().flex_1())
             .child(
+                Button::new("git-open-review")
+                    .ghost()
+                    .small()
+                    .icon(Icon::default().path(icons::GIT_COMPARE))
+                    .tooltip("Commit, branch, pull and push")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
+            )
+            .child(
                 Button::new("git-refresh")
                     .ghost()
                     .small()

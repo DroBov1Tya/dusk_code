@@ -54,13 +54,13 @@ Regenerate with `scripts/structure-map.sh` in the commit that changes the tree.
 ```
 agent/  (2)
 catalog/  (5)
-client/  (18)
+client/  (19)
   command/  (2)
-  request/  (9)
+  request/  (10)
 config/  (12)
 model/  (7)
 plugin/  (7)
-project/  (7)
+project/  (8)
 release/  (4)
 system/  (3)
 thread/  (33)
@@ -70,15 +70,16 @@ thread/  (33)
 tools/  (7)
 ```
 
+
 ### core
 
 ```
 backup/  (13)
   archive/  (11)
 catalog/  (7)
-client/  (30)
+client/  (31)
   scope/  (5)
-  serve/  (15)
+  serve/  (16)
 config/  (13)
   file/  (6)
 init/  (5)
@@ -95,8 +96,9 @@ plugins/  (38)
   store/  (15)
   ui/  (7)
     phone/  (2)
-project/  (32)
+project/  (40)
   episodes/  (4)
+  git/  (8)
   graph/  (16)
     ask/  (4)
     fixtures/  (1)
@@ -147,6 +149,7 @@ voice/  (15)
   local/  (7)
 ```
 
+
 ### clients/desktop
 
 ```
@@ -158,7 +161,7 @@ columns/  (30)
   topbar/  (3)
 dev/  (5)
 modal/  (11)
-pages/  (108)
+pages/  (109)
   artifacts/  (3)
   chat/  (55)
     audio/  (4)
@@ -170,7 +173,7 @@ pages/  (108)
   connectors/  (21)
     plugins/  (15)
   file/  (2)
-  review/  (3)
+  review/  (4)
   schedules/  (3)
   settings/  (20)
     ai/  (6)
@@ -181,6 +184,7 @@ ui/  (9)
   theme/  (2)
 workspace/  (6)
 ```
+
 
 ### server
 
@@ -212,6 +216,7 @@ pages/  (31)
 ui/  (6)
 ```
 
+
 The Leptos client, built to wasm with trunk. `link` is the WebSocket, `api` the typed calls by domain,
 `state` what the whole page knows, `chat/data` the transcript as plain data (testable without a
 browser), `markdown` model output as DOM text only. It draws and calls; it decides nothing.
@@ -241,6 +246,7 @@ ui/  (58)
     panels/  (19)
     settings/  (4)
 ```
+
 
 A number is the count of Rust files in a directory. `evals` is small and keeps its own layout.
 

@@ -1,7 +1,7 @@
 //! Giving the events of open threads to the clients whose scope covers them.
 
 use super::{ClientId, Subscribers};
-use dusk_protocol::client::Event;
+use dusk_protocol::client::{Event, ProjectRequest, Request};
 
 /// The thread an event is about; none for what belongs to one client, such as a
 /// terminal's bytes, which is never given to all.
@@ -12,7 +12,8 @@ fn thread_of(event: &Event) -> Option<&str> {
         | Event::TerminalClosed { .. }
         | Event::PluginView { .. }
         | Event::PluginFrame { .. }
-        | Event::PluginNotice { .. } => None,
+        | Event::PluginNotice { .. }
+        | Event::GitChanged { .. } => None,
     }
 }
 
@@ -24,6 +25,19 @@ pub(super) fn publish(subscribers: &Subscribers, event: Event) {
     };
     subscribers.lock().retain(|subscriber| {
         !subscriber.scope.covers(thread_id) || subscriber.queue.send(event.clone()).is_ok()
+    });
+}
+
+/// Tells every client that may read projects that one's repository changed.
+pub(super) fn git_changed(subscribers: &Subscribers, project_id: &str) {
+    let reads = Request::Project(ProjectRequest::Git {
+        id: project_id.to_owned(),
+    });
+    let event = Event::GitChanged {
+        project_id: project_id.to_owned(),
+    };
+    subscribers.lock().retain(|subscriber| {
+        !subscriber.scope.permits(&reads) || subscriber.queue.send(event.clone()).is_ok()
     });
 }
 

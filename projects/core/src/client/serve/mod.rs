@@ -3,6 +3,7 @@
 
 mod admit;
 mod catalog;
+mod git;
 #[cfg(test)]
 mod plan_tests;
 mod plugin;
@@ -28,7 +29,7 @@ use crate::{
     terminal::Terminals,
 };
 use anyhow::{Result, anyhow};
-use dusk_protocol::client::{Event, Request, Response, Status};
+use dusk_protocol::client::{Event, ProjectRequest, Request, Response, Status};
 use dusk_protocol::thread::Turn;
 use dusk_protocol::tools::Question;
 use parking_lot::Mutex;
@@ -197,6 +198,9 @@ impl Server {
                             Request::Shutdown => break Some(reply),
                             Request::InstallUpdate { tag } => self.install_update(tag, reply),
                             Request::Store(request) => self.store(request, reply),
+                            Request::Project(ProjectRequest::Repository { id, request }) => {
+                                self.repository(id, request, reply)
+                            }
                             request => {
                                 self.caller = client;
                                 let mut response = match self.handle(request).await {
