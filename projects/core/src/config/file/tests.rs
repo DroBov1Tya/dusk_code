@@ -180,12 +180,15 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
     assert_eq!(plain.limits().resume_within_seconds, 3600);
     assert!(plain.limits().wait_for_provider);
     assert!(!plain.limits().shrink_context);
+    assert!(!plain.limits().read_many_files);
     let set = parse(
         "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: true\n",
     )
     .unwrap();
     assert!(!set.limits().wait_for_provider);
     assert!(set.limits().shrink_context);
+    let reads = parse("limits:\n  read_many_files: true\n").unwrap();
+    assert!(reads.limits().read_many_files);
     assert_eq!(set.limits().model_timeout_seconds, 300);
     assert_eq!(set.limits().max_attempts, 3);
     assert_eq!(set.limits().retry_unreachable_seconds, 60);
@@ -200,6 +203,7 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
         "limits:\n  resume_within_seconds: 604801\n",
         "limits:\n  wait_for_provider: 3\n",
         "limits:\n  shrink_context: often\n",
+        "limits:\n  read_many_files: 1\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }

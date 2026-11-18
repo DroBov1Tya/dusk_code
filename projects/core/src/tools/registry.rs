@@ -25,7 +25,7 @@ use crate::{
 pub use dusk_protocol::tools::ToolResult;
 
 /// The model reads every result; a runaway one must not flood its context.
-const MAX_RESULT_BYTES: usize = 64 * 1024;
+pub(super) const MAX_RESULT_BYTES: usize = 64 * 1024;
 
 #[derive(Default)]
 pub struct ToolRegistry {
@@ -219,7 +219,7 @@ impl ToolRegistry {
             .map(|tool| ToolSpec {
                 name: tool.name().to_owned(),
                 description: tool.description(&context),
-                parameters: tool.parameters(),
+                parameters: tool.offered_parameters(&context),
             })
             .collect()
     }

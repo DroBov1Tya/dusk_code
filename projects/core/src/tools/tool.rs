@@ -183,6 +183,12 @@ pub trait Tool: Send + Sync {
     /// JSON Schema of the arguments object.
     fn parameters(&self) -> Value;
 
+    /// The schema the model is shown. It differs from `parameters`, which a call is
+    /// checked against, only for a tool whose arguments depend on a setting.
+    fn offered_parameters(&self, _context: &ToolContext) -> Value {
+        self.parameters()
+    }
+
     /// A tool with nothing to offer right now is not shown to the model.
     fn available(&self, _context: &ToolContext) -> bool {
         true

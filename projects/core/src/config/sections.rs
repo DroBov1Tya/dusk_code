@@ -61,6 +61,10 @@ pub struct Limits {
     /// lower the pass rate.
     #[serde(default)]
     pub failure_ladder: bool,
+    /// Whether `read_file` also takes `paths`, to read several files in one call. It
+    /// changes a tool the model reads, so it is off until the evals show it saves steps.
+    #[serde(default)]
+    pub read_many_files: bool,
     /// Times the same error comes back before the model is told to stop varying the call.
     #[serde(default = "default_failure_note_at")]
     pub failure_note_at: u32,
@@ -86,6 +90,7 @@ impl Default for Limits {
             wait_for_provider: true,
             shrink_context: false,
             failure_ladder: false,
+            read_many_files: false,
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),

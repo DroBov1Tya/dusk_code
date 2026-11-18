@@ -67,4 +67,13 @@ pub fn tool_context(scope: &ToolScope) -> ToolContext {
     }
 }
 
+/// The same with more settings appended as YAML, for a tool that reads one.
+pub fn tool_context_with(scope: &ToolScope, settings: &str) -> ToolContext {
+    let config = Config::parse(format!("{TEST_CONFIG}{settings}").as_bytes()).unwrap();
+    ToolContext {
+        config: Arc::new(config),
+        ..tool_context(scope)
+    }
+}
+
 const TEST_CONFIG: &str = "providers:\n  main:\n    kind: openai_compatible\n    base_url: 'https://host/v1'\n    api_key: 'sk-test'\n";
