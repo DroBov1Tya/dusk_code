@@ -340,14 +340,14 @@ fn load(root: &Path, path: &str, stored: Option<&str>, seams: &Seams) -> Result<
 /// Whether the folder of `file` is, links resolved, still under `root`: a folder on the
 /// way swapped for a link since the walk does not lead the read out. The file itself is
 /// opened without following a link.
-fn inside(root: &Path, file: &Path) -> bool {
+pub(super) fn inside(root: &Path, file: &Path) -> bool {
     file.parent()
         .and_then(|folder| folder.canonicalize().ok())
         .is_some_and(|folder| folder.starts_with(root))
 }
 
 /// The stamp the store keeps: the change time in milliseconds, negative before 1970.
-fn stamp(seen: ledger::Stamp) -> Stamp {
+pub(super) fn stamp(seen: ledger::Stamp) -> Stamp {
     let millis = |time: Duration| i64::try_from(time.as_millis()).unwrap_or(i64::MAX);
     Stamp {
         size: seen.size,

@@ -18,8 +18,6 @@ use super::refresh::{Limits, Refreshed, Seams, Work};
 use crate::state::{State, graph::GraphCounts};
 
 /// How long `project_graph` waits for the changed paths of its project to be indexed.
-// The tool is task G4 of the design.
-#[allow(dead_code)]
 pub const PATHS_WAIT: Duration = Duration::from_millis(300);
 /// More changed paths than this waiting for one project become a refresh.
 const MAX_QUEUED_PATHS: usize = 1_000;
@@ -44,8 +42,6 @@ pub struct Changed {
 }
 
 /// Where a project's index stands, in memory: nothing of it outlives the core.
-// Read through `Indexer::status`, which the tool will call (task G4 of the design).
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Status {
     /// Not indexed: the switch is off, the folder is not a saved project, or no refresh
@@ -164,8 +160,6 @@ impl Indexer {
 
     /// Waits, `limit` at most, until no changed path of the project is waiting or being
     /// indexed. A refresh is not waited for.
-    // Called by the `project_graph` tool before it answers (task G4 of the design).
-    #[allow(dead_code)]
     pub async fn settle(&self, root: &Path, limit: Duration) {
         let Some(project) = root.to_str() else {
             return;
@@ -186,8 +180,6 @@ impl Indexer {
     }
 
     /// Where the project's index stands: a read of memory, no query.
-    // The `available` check of the `project_graph` tool (task G4 of the design).
-    #[allow(dead_code)]
     pub fn status(&self, root: &Path) -> Status {
         if !(self.on)() {
             return Status::Off;

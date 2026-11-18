@@ -152,6 +152,7 @@ impl State {
                         | "search_files"
                         | "read_history"
                         | "recall"
+                        | "project_graph"
                         | "load_skill"
                         | "display_image"
                         | "display_audio"

@@ -13,6 +13,9 @@ use sqlx::{Row, sqlite::SqliteRow};
 use crate::project::graph::{Language, RefKind, Skipped, SymbolKind};
 use crate::state::State;
 
+#[path = "graph_counts.rs"]
+mod counts;
+
 /// Rows `graph_where` and `graph_dependencies` return: 10 to show, one to say there are more.
 pub const WHERE_LIMIT: i64 = 11;
 /// Rows `graph_uses` returns: 15 to show, one to say there are more.

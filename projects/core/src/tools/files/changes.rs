@@ -132,7 +132,7 @@ impl Tool for Changes {
 
 /// `path` as the ledger stores it, relative with `/`; `None` for the whole project.
 /// Refused when it is absolute, climbs with `..`, or leads out through a link.
-async fn project_path(scope: &ToolScope, path: &str) -> Result<Option<String>> {
+pub(super) async fn project_path(scope: &ToolScope, path: &str) -> Result<Option<String>> {
     let relative = Path::new(path.trim());
     crate::project::plain_relative(relative)?;
     let root = scope.cwd();

@@ -326,6 +326,7 @@ mod tests {
         ("load_skill", true, true),
         ("message_parent", false, false),
         ("plan_edit", true, false),
+        ("project_graph", true, true),
         ("press_keys", false, false),
         ("read_file", true, true),
         ("read_history", true, true),
