@@ -16,7 +16,7 @@ use gpui_kit::{
 
 use super::{
     actions,
-    byline::{byline, day},
+    byline::{dated_byline, day},
     capsule, contents, gallery, hero, pack, tier,
 };
 use crate::{
@@ -217,7 +217,7 @@ fn header(ws: &Workspace, listing: &Listing, width: f32, cx: &App) -> Div {
             div()
                 .small()
                 .text_color(cx.theme().muted_foreground)
-                .child(byline(listing)),
+                .child(dated_byline(listing)),
         )
         .child(marks(listing, cx));
     if let Some(tags) = hero::tags(listing, cx) {
