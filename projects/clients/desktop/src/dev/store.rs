@@ -405,7 +405,8 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 /// listing's window, `workshop=gallery:N` its Nth picture; `workshop=hero:N`: the Nth
 /// featured pick; `workshop=next:N`: the Official shelf from its Nth capsule;
 /// `workshop=all:TIER`: that tier's shelf whole; `workshop=tier:TIER`: filter by it;
-/// `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
+/// `workshop=coming:NAME`: its cover still coming; `workshop=offline:`: the store could not
+/// be read again, so covers not here are drawn offline; `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
 pub fn step(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
     ws.center = Center::Connectors;
     ws.shelf = Shelf::Plugins;
@@ -469,6 +470,18 @@ pub fn step(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         ("busy", Some(_)) => {
             ws.workshop.busy.insert(name.into(), "Installing...");
         }
+        // The cover still coming; with `offline:` as well, one not fetched while offline.
+        ("coming", Some(listing)) => {
+            if let Some(cover) = &listing.cover {
+                ws.workshop
+                    .covers
+                    .0
+                    .insert(cover.sha256.clone(), Drawn::Loading);
+            }
+        }
+        ("offline", _) => {
+            ws.workshop.error = Some("the network is unreachable".into());
+        }
         ("failed", Some(_)) => {
             ws.workshop.failed.insert(
                 name.into(),
@@ -476,8 +489,8 @@ pub fn step(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
             );
         }
         _ => eprintln!(
-            "workshop=install|remove|busy|failed|pack|open:NAME, gallery|hero|next:N, \
-             tier|all:TIER, filters: or report: {value}"
+            "workshop=install|remove|busy|failed|coming|pack|open:NAME, gallery|hero|next:N, \
+             tier|all:TIER, filters:, offline: or report: {value}"
         ),
     }
     cx.notify();

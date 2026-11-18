@@ -1,32 +1,35 @@
-//! Featured: the official picks as a wide hero, one at a time. The cover fills the left
-//! part at the art's aspect and fades into the panel, where the name, what it is, its
-//! tags and facts are, with its button always at the panel's foot. A strip of the picks'
-//! covers under it jumps to one; arrows step. It does not move by itself.
+//! Featured: the official picks as one card 280 high, one pick at a time. The cover at
+//! the art's aspect on the left, a hairline, then the panel: where it comes from, the
+//! name, three lines of what it is and its facts, and at the foot its slot, Details,
+//! and the arrows round the dots. Narrower than three columns the cover is on top. It
+//! never moves by itself; a change fades in.
 
-use std::time::Duration;
-
-use dusk_protocol::plugin::{Listing, Tier};
+use dusk_protocol::plugin::{Kind, Listing, Tier};
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName},
+    component::{
+        ActiveTheme, Icon, IconName,
+        button::{Button, ButtonVariants},
+    },
     prelude::FluentBuilder,
     *,
 };
 
-use super::{Grid, actions, capsule, grid, tier};
+use super::{Grid, actions, capsule, covers::Shown, grid, tier};
 use crate::{
-    ui::{Type, size},
+    ui::{OPEN, Type, size, widgets},
     workspace::Workspace,
 };
 
 const PICKS: usize = 5;
-/// The share of the hero's width the cover takes.
-const ART_SHARE: f32 = 0.62;
-/// A narrower hero puts its text under the cover.
-const SIDE_BY_SIDE: f32 = 720.;
-/// The width of a cover in the strip.
-const THUMB: f32 = 128.;
-/// The crossfade between picks: the change is seen, not chased.
-const FADE: Duration = Duration::from_millis(280);
+/// The hero's height when the cover is beside the panel.
+const HEIGHT: f32 = 280.;
+/// Narrower than three columns, the cover goes on top.
+const SIDE_BY_SIDE: f32 = 744.;
+const RADIUS: f32 = 12.;
+const DOT: f32 = 8.;
+const DOT_CURRENT: f32 = 20.;
+/// More than three lines never show.
+const TEXT_CHARS: usize = 400;
 
 /// The first official listings, in the core's order.
 pub fn featured<'a>(shown: &[&'a Listing]) -> Vec<&'a Listing> {
@@ -38,15 +41,21 @@ pub fn featured<'a>(shown: &[&'a Listing]) -> Vec<&'a Listing> {
         .collect()
 }
 
-pub fn render(ws: &Workspace, picks: &[&Listing], grid: Grid, cx: &mut Context<Workspace>) -> Div {
+pub fn render(
+    ws: &Workspace,
+    picks: &[&Listing],
+    grid: Grid,
+    cx: &mut Context<Workspace>,
+) -> AnimationElement<Div> {
     let count = picks.len();
     let index = ws.workshop.hero % count;
     let listing = picks[index];
+    let muted = cx.theme().muted_foreground;
     let source = match listing.source.as_str() {
-        "" => "duskcode".to_owned(),
-        source => source.to_owned(),
+        "" => "duskcode",
+        source => source,
     };
-    let mut panel = div()
+    let panel = div()
         .flex()
         .flex_col()
         .gap(px(size::GAP_S))
@@ -54,162 +63,107 @@ pub fn render(ws: &Workspace, picks: &[&Listing], grid: Grid, cx: &mut Context<W
         .child(
             div()
                 .meta()
-                .text_color(cx.theme().muted_foreground)
-                .child(format!("Featured \u{b7} from {source}")),
+                .text_color(muted)
+                .child(format!("From {source} \u{b7} {} of {count}", index + 1)),
         )
         .child(div().display().truncate().child(listing.name.clone()))
         .child(
             div()
                 .body()
-                .text_color(cx.theme().muted_foreground)
+                .text_color(muted)
                 .line_clamp(3)
                 .text_ellipsis()
-                .child(listing.description.clone()),
+                .child(capsule::clip(&listing.description, TEXT_CHARS)),
         )
         .child(facts(listing, cx));
-    if let Some(tags) = tags(listing, cx) {
-        panel = panel.child(tags);
-    }
-    let mut foot = div()
+    let opened = listing.clone();
+    let foot = div()
         .flex()
         .flex_row()
         .items_center()
         .gap(px(size::GAP_S))
-        .h(px(size::CONTROL));
-    if let Some(button) = actions::primary(listing, ws, false, cx) {
-        foot = foot.child(button);
-    }
-    if let Some(badge) = capsule::state_badge(listing, cx) {
-        foot = foot.child(badge);
-    }
-    let opened = listing.clone();
-    let more = div()
-        .id("hero-more")
-        .meta()
-        .cursor_pointer()
-        .text_color(cx.theme().muted_foreground)
-        .hover(|link| link.underline())
-        .child("Details")
-        .on_click(cx.listener(move |ws, _, window, cx| ws.open_listing(&opened, window, cx)));
-    let foot = foot.child(div().flex_1()).child(more);
-    let art = capsule::art(
-        ws.workshop.covers.get(listing),
-        &listing.name,
-        listing.tier,
-        art_width(grid.width),
-        None,
-        cx,
-    );
-    let mut hero = banner(art, grid.width, panel, foot, cx);
-    if count > 1 {
-        let art_w = art_width(grid.width);
-        let top = (grid::cover_height(art_w) - size::CONTROL) / 2.;
-        hero = hero
-            .child(
-                arrow("hero-back", IconName::ChevronLeft, count - 1, count, cx)
-                    .top(px(top))
-                    .left(px(size::GAP_M)),
-            )
-            .child(
-                arrow("hero-next", IconName::ChevronRight, 1, count, cx)
-                    .top(px(top))
-                    .left(px(art_w - size::CONTROL - size::GAP_M)),
-            );
-    }
-    let mut column = div()
-        .flex()
-        .flex_col()
-        .gap(px(size::GAP_M))
-        // Each pick fades in as it comes, so the change is seen without a slide.
+        .h(px(size::CONTROL))
+        .child(actions::slot(listing, ws, false, cx))
         .child(
-            hero.with_animation(("hero", index), Animation::new(FADE), |hero, delta| {
-                hero.opacity(0.35 + 0.65 * delta)
-            }),
-        );
-    if count > 1 {
-        column = column.child(strip(ws, picks, index, cx));
-    }
-    column
+            Button::new("hero-more")
+                .outline()
+                .label("Details")
+                .on_click(
+                    cx.listener(move |ws, _, window, cx| ws.open_listing(&opened, window, cx)),
+                ),
+        )
+        .child(div().flex_1())
+        .when(count > 1, |foot| foot.child(steps(index, count, cx)));
+    banner(ws.cover(listing), listing.kind, grid.width, panel, foot, cx)
+        // Each pick fades in as it comes, so the change is seen without a slide.
+        .with_animation(("hero", index), Animation::new(OPEN), |hero, delta| {
+            hero.opacity(0.35 + 0.65 * delta)
+        })
 }
 
-pub fn art_width(width: f32) -> f32 {
-    if width < SIDE_BY_SIDE {
-        width
-    } else {
-        (width * ART_SHARE).floor()
-    }
-}
-
-/// A cover with its panel: side by side, the cover fading into the panel; narrow, the
-/// panel under it. The pack's page draws its banner with this too.
-pub fn banner(art: Div, width: f32, panel: Div, foot: Div, cx: &App) -> Div {
+/// A cover with its panel in one card: side by side 280 high with a hairline between,
+/// or the cover on top when narrow. The pack's page draws its banner with this too.
+pub fn banner(shown: Shown, kind: Kind, width: f32, panel: Div, foot: Div, cx: &App) -> Div {
     let theme = cx.theme();
     let (surface, border) = (theme.muted, theme.border);
-    let art_w = art_width(width);
-    let height = grid::cover_height(art_w);
+    let inner = width - 2.;
     let frame = div()
-        .relative()
+        .flex()
         .w(px(width))
-        .rounded_xl()
-        .overflow_hidden()
+        .rounded(px(RADIUS))
         .border_1()
         .border_color(border)
         .bg(surface);
+    let text = div()
+        .flex()
+        .flex_col()
+        .justify_between()
+        .gap(px(size::GAP_L))
+        .flex_1()
+        .min_w_0()
+        .p(px(size::GAP_XL))
+        .child(panel)
+        .child(foot);
+    let radius = px(RADIUS - 1.);
     if width < SIDE_BY_SIDE {
-        return frame.flex().flex_col().child(art).child(
-            div()
-                .flex()
-                .flex_col()
-                .gap(px(size::GAP_L))
-                .p(px(size::GAP_XL))
-                .child(panel)
-                .child(foot),
-        );
-    }
-    // On a dark surface the cover's last third fades into the panel. On a light one the
-    // dark art would fade through grey, so it ends at a clean edge and the panel keeps
-    // its own margin; the text never sits on the art either way.
-    let dark = cx.theme().is_dark();
-    let fade = (art_w * 0.34).floor();
-    let mut frame = frame
-        .h(px(height))
-        .child(div().absolute().top_0().left_0().child(art));
-    if dark {
-        frame = frame.child(
-            div()
-                .absolute()
-                .top_0()
-                .left(px(art_w - fade))
-                .w(px(fade + 1.))
-                .h(px(height))
-                .bg(linear_gradient(
-                    90.,
-                    linear_color_stop(surface.opacity(0.), 0.),
-                    linear_color_stop(surface, 1.),
-                )),
-        );
-    }
-    let inset = if dark { 0. } else { size::GAP_XL };
-    frame.child(
-        div()
-            .absolute()
-            .top_0()
-            .bottom_0()
-            .left(px(art_w + inset))
-            .right_0()
-            .flex()
+        let corners = Corners {
+            top_left: radius,
+            top_right: radius,
+            ..Corners::default()
+        };
+        return frame
             .flex_col()
-            .justify_between()
-            .py(px(size::GAP_XL))
-            .pr(px(size::GAP_XL))
-            .child(panel)
-            .child(foot),
-    )
+            .child(capsule::art(shown, kind, inner, corners, cx))
+            .child(div().h(px(1.)).bg(border))
+            .child(text);
+    }
+    let corners = Corners {
+        top_left: radius,
+        bottom_left: radius,
+        ..Corners::default()
+    };
+    let art_w = (HEIGHT * grid::ASPECT).round();
+    frame
+        .flex_row()
+        .h(px(HEIGHT + 2.))
+        .child(capsule::art(shown, kind, art_w, corners, cx))
+        .child(div().w(px(1.)).h_full().bg(border))
+        .child(text)
 }
 
-/// The tier's mark, the kind, the stars and the version on one line.
+/// The tier's mark, the kind (with its skills for a pack), the stars, the version and
+/// the category on one line that wraps.
 pub fn facts(listing: &Listing, cx: &App) -> Div {
     let muted = cx.theme().muted_foreground;
+    let word = |text: String| div().meta().text_color(muted).child(text);
+    let kind = match listing.kind {
+        Kind::Pack if !listing.skills.is_empty() => format!(
+            "{} \u{b7} {}",
+            super::kind_word(listing.kind),
+            widgets::count(listing.skills.len(), "skill")
+        ),
+        kind => super::kind_word(kind).to_owned(),
+    };
     div()
         .flex()
         .flex_row()
@@ -217,21 +171,14 @@ pub fn facts(listing: &Listing, cx: &App) -> Div {
         .items_center()
         .gap(px(size::GAP_M))
         .child(tier::mark(listing.tier, cx))
-        .child(
-            div()
-                .meta()
-                .text_color(muted)
-                .child(super::kind_word(listing.kind)),
-        )
+        .child(word(kind))
         .when(listing.stars > 0, |row| {
             row.child(actions::stars(listing.stars, cx))
         })
-        .child(
-            div()
-                .meta()
-                .text_color(muted)
-                .child(format!("v{}", listing.version)),
-        )
+        .child(word(format!("v{}", listing.version)))
+        .when(!listing.category.is_empty(), |row| {
+            row.child(word(widgets::capitalize(&listing.category)))
+        })
 }
 
 /// The category and tags as quiet chips; none when it has neither.
@@ -239,7 +186,7 @@ pub fn tags(listing: &Listing, cx: &App) -> Option<Div> {
     let words: Vec<String> = std::iter::once(&listing.category)
         .chain(&listing.tags)
         .filter(|word| !word.is_empty())
-        .map(|word| crate::ui::widgets::capitalize(word))
+        .map(|word| widgets::capitalize(word))
         .collect();
     if words.is_empty() {
         return None;
@@ -267,21 +214,51 @@ pub fn tags(listing: &Listing, cx: &App) -> Option<Div> {
     )
 }
 
-/// A round arrow on the cover's edge, on the page's colour so it reads on any art.
-fn arrow(
-    id: &'static str,
-    icon: IconName,
-    step: usize,
-    count: usize,
-    cx: &mut Context<Workspace>,
-) -> Stateful<Div> {
-    round(id, icon, cx).on_click(cx.listener(move |ws, _, _, cx| {
-        ws.workshop.hero = (ws.workshop.hero % count + step) % count;
-        cx.notify();
-    }))
+/// Previous, a dot a pick (the one in view long, in the accent), next.
+fn steps(index: usize, count: usize, cx: &mut Context<Workspace>) -> Div {
+    let theme = cx.theme();
+    let (accent, quiet) = (theme.primary, theme.muted_foreground.opacity(0.4));
+    let step = |id: &'static str, icon: IconName, by: usize| {
+        Button::new(id)
+            .ghost()
+            .icon(Icon::new(icon))
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                ws.workshop.hero = (ws.workshop.hero % count + by) % count;
+                cx.notify();
+            }))
+    };
+    let back = step("hero-back", IconName::ChevronLeft, count - 1);
+    let next = step("hero-next", IconName::ChevronRight, 1);
+    let dots = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(size::GAP_XS))
+        .children((0..count).map(|each| {
+            let current = each == index;
+            div()
+                .id(("hero-dot", each))
+                .w(px(if current { DOT_CURRENT } else { DOT }))
+                .h(px(DOT))
+                .rounded_full()
+                .cursor_pointer()
+                .bg(if current { accent } else { quiet })
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.workshop.hero = each;
+                    cx.notify();
+                }))
+        }));
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(size::GAP_XS))
+        .child(back)
+        .child(dots)
+        .child(next)
 }
 
-/// A round button of a control's size over a picture; the gallery's arrows are these too.
+/// A round button of a control's size over a picture: the gallery's arrows.
 pub fn round(id: impl Into<ElementId>, icon: IconName, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
     let (back, hover, foreground) = (theme.background, theme.list_hover, theme.foreground);
@@ -297,39 +274,4 @@ pub fn round(id: impl Into<ElementId>, icon: IconName, cx: &App) -> Stateful<Div
         .bg(back.opacity(0.85))
         .hover(move |arrow| arrow.bg(hover))
         .child(Icon::new(icon).size(px(size::ICON)).text_color(foreground))
-}
-
-/// The picks' covers in a row; the one in view is ringed, the others quiet.
-fn strip(ws: &Workspace, picks: &[&Listing], index: usize, cx: &mut Context<Workspace>) -> Div {
-    let theme = cx.theme();
-    let (ring, border) = (theme.primary, theme.border);
-    div()
-        .flex()
-        .flex_row()
-        .gap(px(size::GAP_S))
-        .children(picks.iter().enumerate().map(|(each, listing)| {
-            let chosen = each == index;
-            div()
-                .id(("hero-thumb", each))
-                .flex_none()
-                .rounded_md()
-                .overflow_hidden()
-                .border_2()
-                .border_color(if chosen { ring } else { border })
-                .cursor_pointer()
-                .opacity(if chosen { 1. } else { 0.6 })
-                .hover(|thumb| thumb.opacity(1.))
-                .child(capsule::art(
-                    ws.workshop.covers.get(listing),
-                    &listing.name,
-                    listing.tier,
-                    THUMB,
-                    None,
-                    cx,
-                ))
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    ws.workshop.hero = each;
-                    cx.notify();
-                }))
-        }))
 }

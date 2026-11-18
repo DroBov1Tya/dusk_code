@@ -9,25 +9,37 @@ use base64::Engine;
 use dusk_protocol::plugin::Listing;
 use gpui_kit::*;
 
+use super::placeholder::Look;
 use crate::workspace::Workspace;
 
 pub enum Cover {
     Loading,
     Ready(Arc<Image>),
-    /// Not shown; the card keeps its letter.
+    /// Not shown; the placeholder stands in its place and the reason is in the log.
     Failed,
+}
+
+/// What a cover's place shows: the picture, or the placeholder in one of its looks.
+pub enum Shown {
+    Ready(Arc<Image>),
+    Placeholder(Look),
 }
 
 #[derive(Default)]
 pub struct Covers(pub HashMap<String, Cover>);
 
 impl Covers {
-    /// The listing's cover, once it has come.
-    pub fn get(&self, listing: &Listing) -> Option<Arc<Image>> {
-        let cover = listing.cover.as_ref()?;
-        match self.0.get(&cover.sha256)? {
-            Cover::Ready(image) => Some(Arc::clone(image)),
-            Cover::Loading | Cover::Failed => None,
+    /// The listing's cover, or what stands for it: none named, failed, still coming, or
+    /// not here while the store could not be read (`offline`).
+    pub fn shown(&self, listing: &Listing, offline: bool) -> Shown {
+        let Some(cover) = &listing.cover else {
+            return Shown::Placeholder(Look::None);
+        };
+        match self.0.get(&cover.sha256) {
+            Some(Cover::Ready(image)) => Shown::Ready(Arc::clone(image)),
+            _ if offline => Shown::Placeholder(Look::Offline),
+            Some(Cover::Failed) => Shown::Placeholder(Look::None),
+            Some(Cover::Loading) | None => Shown::Placeholder(Look::Coming),
         }
     }
 }
@@ -60,6 +72,13 @@ fn decode(base64: &str, mime: &str) -> Result<Arc<Image>> {
 }
 
 impl Workspace {
+    /// A listing's cover as its card shows it; one not here while the store could not be
+    /// read again is drawn as offline.
+    pub(super) fn cover(&self, listing: &Listing) -> Shown {
+        let shop = &self.workshop;
+        shop.covers.shown(listing, shop.error.is_some())
+    }
+
     /// Asks for the listing's screenshots, once per version this session.
     pub(super) fn load_screenshots(&mut self, listing: &Listing, cx: &mut Context<Self>) {
         let count = listing.screenshots.len();

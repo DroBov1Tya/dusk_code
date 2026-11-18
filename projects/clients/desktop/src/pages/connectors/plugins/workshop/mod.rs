@@ -14,6 +14,7 @@ mod gallery;
 mod grid;
 mod hero;
 mod pack;
+mod placeholder;
 mod shelves;
 pub mod tier;
 
@@ -90,6 +91,8 @@ pub struct Workshop {
     /// What the last "Update all" did, until it is closed.
     pub report: Option<UpdateReport>,
     pub updating: bool,
+    /// The page's width as last drawn, which the grid's columns come from.
+    pub measured: grid::Measured,
 }
 
 pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
@@ -101,8 +104,13 @@ pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Wor
         };
     };
     let grid = Grid::of(ws, window);
+    // The page fills the column so its width can be measured; the grid stays inside it.
+    let measured = div()
+        .relative()
+        .w_full()
+        .child(grid::measure(&shop.measured));
     if let Some(name) = &shop.pack {
-        return pack::render(ws, name, grid, cx);
+        return measured.child(pack::render(ws, name, grid, cx));
     }
     let mut page = div()
         .flex()
@@ -133,7 +141,7 @@ pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Wor
             page = page.child(hero::render(ws, &featured, grid, cx));
         }
     }
-    page.child(shelves::render(ws, &shown, query, grid, cx))
+    measured.child(page.child(shelves::render(ws, &shown, query, grid, cx)))
 }
 
 /// Nothing narrows the list and it is in trust order: the storefront, not results.

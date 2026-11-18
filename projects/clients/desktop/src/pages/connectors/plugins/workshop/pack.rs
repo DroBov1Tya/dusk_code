@@ -17,7 +17,7 @@ use gpui_kit::{
     *,
 };
 
-use super::{Grid, actions, capsule, hero, tier};
+use super::{Grid, actions, covers::Shown, hero, placeholder::Look, tier};
 use crate::{
     ui::{Type, size, widgets},
     workspace::Workspace,
@@ -109,10 +109,9 @@ fn banner(
         .gap(px(size::GAP_S))
         .h(px(size::CONTROL));
     if let Some(listing) = listing {
-        foot = foot.children(actions::all(listing, ws, cx));
-        if let Some(badge) = capsule::state_badge(listing, cx) {
-            foot = foot.child(badge);
-        }
+        foot = foot.child(actions::slot(listing, ws, false, cx)).children(
+            actions::remove(listing, ws, cx).map(|remove| div().pl(px(size::GAP_XL)).child(remove)),
+        );
     }
     if let Some(pack) = here {
         let switched = pack.name.clone();
@@ -128,15 +127,14 @@ fn banner(
                     })),
             );
     }
-    let art = capsule::art(
-        listing.and_then(|listing| ws.workshop.covers.get(listing)),
-        name,
-        listing.map_or(Tier::Local, |listing| listing.tier),
-        hero::art_width(grid.width),
-        None,
+    hero::banner(
+        listing.map_or(Shown::Placeholder(Look::None), |listing| ws.cover(listing)),
+        listing.map_or(Kind::Pack, |listing| listing.kind),
+        grid.width,
+        panel,
+        foot,
         cx,
-    );
-    hero::banner(art, grid.width, panel, foot, cx)
+    )
 }
 
 /// The skills of a pack that is here, a row each with its switch at the right edge.
