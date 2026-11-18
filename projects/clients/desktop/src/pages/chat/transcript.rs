@@ -6,9 +6,9 @@ use std::{collections::BTreeMap, time::Instant};
 use dusk_protocol::{
     model::ModelEvent,
     thread::{
-        AgentState, Block, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Retry, RetryRow,
-        Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, clip, note,
-        retry_row, turn_spend,
+        AgentState, Block, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Pin, Retry,
+        RetryRow, Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, clip,
+        note, retry_row, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
@@ -278,11 +278,31 @@ pub struct Transcript {
     pub agent_chats: BTreeMap<String, Transcript>,
     /// What passed between the agents and the arbiter, oldest first.
     pub exchanges: Vec<Exchange>,
+    /// The stored message each of the user's and the agent's items is, by item index, for
+    /// pinning it and for finding it again.
+    pub message_ids: BTreeMap<usize, String>,
+    /// The chat's pins, as the core last listed them.
+    pub pins: Vec<Pin>,
     /// When the arbiter last answered, for its pulse.
     pub arbiter_at: Option<Instant>,
 }
 
 impl Transcript {
+    /// The item that shows the stored message `message_id`.
+    pub fn item_of(&self, message_id: &str) -> Option<usize> {
+        self.message_ids
+            .iter()
+            .find(|(_, id)| id.as_str() == message_id)
+            .map(|(at, _)| *at)
+    }
+
+    /// Whether the message of item `at` is pinned.
+    pub fn pinned(&self, at: usize) -> bool {
+        self.message_ids
+            .get(&at)
+            .is_some_and(|id| self.pins.iter().any(|pin| pin.message_id == *id))
+    }
+
     /// Answers the question shown. Gives the message for the agent once every question
     /// asked has its answer: a second question must not take the place of the first.
     pub fn answer(&mut self, chosen: &[usize], own: &str) -> Option<String> {
@@ -345,6 +365,8 @@ impl Transcript {
                 if let Some(answers) = self.asked.answer(&message.content) {
                     self.answered.insert(self.items.len(), answers);
                 }
+                self.message_ids
+                    .insert(self.items.len(), message.message_id.clone());
                 self.items.push(Item::User {
                     text: message.content.clone(),
                     sequence: Some(message.sequence),
@@ -355,6 +377,8 @@ impl Transcript {
                 .push(Item::Job(JobResult::read(&message.content))),
             MessageRole::Assistant => {
                 if !message.content.is_empty() || message.reasoning.is_some() {
+                    self.message_ids
+                        .insert(self.items.len(), message.message_id.clone());
                     self.items.push(Item::Assistant {
                         text: message.content.clone(),
                         reasoning: message.reasoning.clone().unwrap_or_default(),
@@ -474,6 +498,15 @@ impl Transcript {
                 self.waiting = turn.waiting;
             }
             ThreadEvent::TurnFinished(turn) => {
+                // The answer streamed without its ID; the core names it as the turn ends.
+                if let Some(id) = turn.response_message_id.clone()
+                    && let Some(at) = self
+                        .items
+                        .iter()
+                        .rposition(|item| matches!(item, Item::Assistant { .. }))
+                {
+                    self.message_ids.entry(at).or_insert(id);
+                }
                 let spent = (turn.tokens > 0).then_some((turn.tokens, turn.cost_micro_usd));
                 if self.activity_boundary(dusk_protocol::system::now_ms())
                     && let Some(last) = self.boundary_spend.last_mut()
@@ -583,11 +616,13 @@ impl Transcript {
             }
             ThreadEvent::ApprovalClosed { id } => self.approvals.retain(|request| request.id != id),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
+            ThreadEvent::Pins(pins) => self.pins = pins,
             ThreadEvent::Undone { text } => {
                 // The core forgot the message and all after it; so does the view.
                 if let Some(at) = self.rollback_at.take() {
                     self.items.truncate(at);
                     self.answered.retain(|index, _| *index < at);
+                    self.message_ids.retain(|index, _| *index < at);
                     self.asked = Asked::default();
                     self.blocks.clear();
                     let kept = self

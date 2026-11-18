@@ -194,6 +194,7 @@ impl Render for Workspace {
             .on_action(cx.listener(Self::on_toggle_side_panel))
             .on_action(cx.listener(Self::on_toggle_terminal))
             .on_action(cx.listener(Self::on_save_file))
+            .on_action(cx.listener(Self::on_next_pin))
             .on_action(cx.listener(Self::run_code))
             .capture_key_down(cx.listener(Self::menu_keys))
     }

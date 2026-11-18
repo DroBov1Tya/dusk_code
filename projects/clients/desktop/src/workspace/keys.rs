@@ -18,7 +18,8 @@ actions!(
         SaveFile,
         Quit,
         FocusNextRow,
-        FocusPrevRow
+        FocusPrevRow,
+        NextPin
     ]
 );
 
@@ -33,6 +34,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("secondary-j", "Show or hide the terminal"),
     ("secondary-s", "Save the open file"),
     ("secondary-q", "Quit"),
+    ("secondary-shift-p", "Go to the next pinned message"),
     (
         "escape",
         "Close the menu or window; leave the review or the box",
@@ -41,12 +43,12 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
 
 pub fn bind(cx: &mut App) {
     // The parser takes names that live for the whole run, so each platform's are literals.
-    let (terminal, save, find_text) = if cfg!(target_os = "macos") {
-        ("cmd-j", "cmd-s", "cmd-f")
+    let (terminal, save, find_text, pin) = if cfg!(target_os = "macos") {
+        ("cmd-j", "cmd-s", "cmd-f", "cmd-shift-p")
     } else {
         // Control-J, Control-S and Control-F are the shell's own keys, so these take
         // Shift too.
-        ("ctrl-shift-j", "ctrl-shift-s", "ctrl-shift-f")
+        ("ctrl-shift-j", "ctrl-shift-s", "ctrl-shift-f", "ctrl-alt-p")
     };
     let (new, find, settings, sidebar, side, quit) = if cfg!(target_os = "macos") {
         ("cmd-n", "cmd-k", "cmd-,", "cmd-b", "cmd-alt-b", "cmd-q")
@@ -70,6 +72,7 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new(terminal, ToggleTerminal, None),
         KeyBinding::new(save, SaveFile, None),
         KeyBinding::new(quit, Quit, None),
+        KeyBinding::new(pin, NextPin, None),
         // Tab walks the rows only while a row has the keyboard; in a box it stays the box's.
         KeyBinding::new("tab", FocusNextRow, Some("Row")),
         KeyBinding::new("shift-tab", FocusPrevRow, Some("Row")),
@@ -119,6 +122,10 @@ impl Workspace {
         cx: &mut Context<Self>,
     ) {
         self.toggle_terminal(window, cx);
+    }
+
+    pub fn on_next_pin(&mut self, _: &NextPin, _: &mut Window, cx: &mut Context<Self>) {
+        self.next_pin(cx);
     }
 
     pub fn on_save_file(&mut self, _: &SaveFile, _: &mut Window, cx: &mut Context<Self>) {
