@@ -6,6 +6,7 @@ mod agents;
 mod arbiter;
 mod chat_menu;
 pub mod detail;
+mod picture;
 mod project;
 mod search;
 mod sphere;
@@ -78,9 +79,12 @@ pub enum Modal {
     WhatsNew {
         from: Option<String>,
     },
-    /// A picture large over the window; a click outside closes it.
+    /// A picture over the whole window, to zoom and move; a click beside it closes it.
     Picture {
         image: ImageSource,
+        /// Its pixel size, when its bytes were at hand.
+        size: Option<(u32, u32)>,
+        view: picture::PictureView,
     },
     /// A speech button was pressed with no server connected for it.
     VoiceMissing {
@@ -156,20 +160,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         Modal::Delete { title, .. } => {
             ("Delete chat".to_owned(), 480., chat_menu::delete(title, cx))
         }
-        Modal::Picture { image } => {
-            // As large as the window allows, below the title and its margins.
-            let room = window.viewport_size();
-            let height = (room.height.as_f32() - 140.).max(120.);
-            (
-                "Picture".to_owned(),
-                (room.width.as_f32() - 32.).clamp(220., 1600.),
-                div().p_3().child(
-                    img(image.clone())
-                        .w_full()
-                        .max_h(px(height))
-                        .object_fit(ObjectFit::Contain),
-                ),
-            )
+        // It has the whole window, not a panel with a title.
+        Modal::Picture { image, size, view } => {
+            return Some(picture::render(ws, image, *size, view, window, cx));
         }
         Modal::Uninstall(state) => (
             "Remove duskcode".to_owned(),

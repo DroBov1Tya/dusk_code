@@ -161,6 +161,8 @@ pub struct Workspace {
     pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
+    /// The todo module shows its finished tasks; they are folded away by default.
+    pub todo_done_open: bool,
     pub modal: Option<Modal>,
     pub settings_page: SettingsPage,
     pub ai_tab: crate::pages::settings::ai::Tab,
@@ -237,6 +239,8 @@ pub struct Workspace {
     /// The plugin store on the plugins shelf.
     pub workshop: crate::pages::connectors::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
+    /// The Advanced page's number being typed in place of its minus and plus.
+    pub limit_edit: crate::pages::settings::LimitEdit,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.

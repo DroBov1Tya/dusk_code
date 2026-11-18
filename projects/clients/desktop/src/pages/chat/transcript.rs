@@ -243,6 +243,8 @@ pub struct Transcript {
     /// When the last turn seen live ended, for the header's star.
     pub finished_at: Option<Instant>,
     pub working: bool,
+    /// Agents below the chat are at work, as the core says; the sidebar shows it working.
+    pub agents_working: bool,
     /// The model call being tried again and when its event came, for the countdown.
     pub retry: Option<(Retry, Instant)>,
     /// What the running turn waits for, as the core last said.
@@ -576,6 +578,7 @@ impl Transcript {
                     },
                 );
             }
+            ThreadEvent::AgentsWorking(on) => self.agents_working = on,
             ThreadEvent::Subagent { thread_id, event } => {
                 // What an agent asks, and what is answered for it, shows with its name.
                 let who = self.agent_name(&thread_id);

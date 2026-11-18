@@ -550,10 +550,7 @@ fn act(
         // The same picture large over the window, as a click on the thumbnail opens it.
         "viewer" if value == "picture" => {
             let image = std::sync::Arc::new(Image::from_bytes(ImageFormat::Png, demo_png()));
-            ws.modal = Some(Modal::Picture {
-                image: image.into(),
-            });
-            cx.notify();
+            ws.open_picture(image.into(), window, cx);
         }
         // The ChatGPT plan's windows, as its sign-in reports them.
         "fake" if value == "plan-limits" => {

@@ -53,6 +53,17 @@ impl Workspace {
             }
         })
         .detach();
+        let limit_edit = crate::pages::settings::LimitEdit::new(window, cx);
+        cx.subscribe_in(
+            &limit_edit.input,
+            window,
+            |ws, _, event: &InputEvent, _, cx| {
+                if matches!(event, InputEvent::PressEnter { .. } | InputEvent::Blur) {
+                    ws.commit_limit(cx);
+                }
+            },
+        )
+        .detach();
         let web_port = cx.new(|cx| InputState::new(window, cx).placeholder("8080"));
         let branch_input = cx.new(|cx| InputState::new(window, cx).placeholder("such as dusk/"));
         cx.subscribe_in(&branch_input, window, |ws, _, event: &InputEvent, _, cx| {
@@ -97,6 +108,7 @@ impl Workspace {
             shelf: Shelf::Connectors,
             shelf_search,
             shelf_scroll: ScrollHandle::new(),
+            todo_done_open: false,
             folded: Right::folded_from(crate::ui::theme::prefs(cx).right_folded.as_deref()),
             modal: None,
             settings_page: SettingsPage::Ai,
@@ -146,6 +158,7 @@ impl Workspace {
             voice_form: crate::pages::settings::ai::voice::VoiceForm::new(window, cx),
             workshop: Default::default(),
             token_box: crate::pages::settings::TokenBox::new(window, cx),
+            limit_edit,
             context_open: HashSet::new(),
             context_load: Default::default(),
             overview: Default::default(),

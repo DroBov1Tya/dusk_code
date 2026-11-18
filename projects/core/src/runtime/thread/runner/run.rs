@@ -160,6 +160,15 @@ impl ThreadRunner {
         {
             self.agent.emit(ThreadEvent::TurnFailed(failure));
         }
+        // A chat opened while its agents work shows it is at work from the start.
+        if self.agent.depth == 0
+            && self
+                .mailboxes
+                .agents_at_work(&self.agent.state, &self.agent.thread_id)
+                .await?
+        {
+            self.agent.emit(ThreadEvent::AgentsWorking(true));
+        }
         // A turn a restart cut off goes on before anything sent meanwhile is taken in,
         // which would come between its step's calls and their results.
         match self.take_up(recovered).await? {

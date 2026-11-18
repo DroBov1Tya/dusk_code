@@ -26,7 +26,7 @@ impl ApprovalPolicy {
         match self {
             Self::Ask => "ask",
             Self::Sandbox => "sandbox",
-            Self::Arbiter => "arbiter",
+            Self::Arbiter => "auto",
             Self::FullAccess => "full access",
         }
     }
@@ -35,7 +35,8 @@ impl ApprovalPolicy {
         *self == Self::Ask
     }
 
-    /// The name the config file and state records keep, for a thread's own mode.
+    /// The name the config file and state records keep, for a thread's own mode. Arbiter
+    /// keeps "arbiter" though it is shown as auto, so saved configs and threads still load.
     pub fn stored_name(self) -> &'static str {
         match self {
             Self::Ask => "ask",

@@ -104,11 +104,8 @@ pub fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> A
                     .hover(|card| card.opacity(0.9))
                     .active(|card| card.opacity(0.8))
                     .child(img(path.clone()).size_full().object_fit(ObjectFit::Contain))
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.modal = Some(crate::modal::Modal::Picture {
-                            image: path.clone().into(),
-                        });
-                        cx.notify();
+                    .on_click(cx.listener(move |ws, _, window, cx| {
+                        ws.open_picture(path.clone().into(), window, cx);
                     })),
             ),
         )

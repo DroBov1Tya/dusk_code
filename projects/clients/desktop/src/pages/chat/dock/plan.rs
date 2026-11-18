@@ -222,7 +222,10 @@ fn row(number: usize, task: &Task, cx: &App) -> Div {
             .truncate()
             .child(owner.name.clone())
     });
+    // A list item sizes to its content unless told otherwise; full width keeps the status
+    // words in one column at the right edge.
     div()
+        .w_full()
         .flex()
         .flex_row()
         .items_center()

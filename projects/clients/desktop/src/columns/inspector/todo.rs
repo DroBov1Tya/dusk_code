@@ -24,11 +24,54 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     if tasks.is_empty() {
         return div().child(widgets::muted("No tasks in this chat.", cx));
     }
+    let (over, open): (Vec<&Task>, Vec<&Task>) = tasks.iter().partition(|task| finished(task));
     let mut column = div().flex().flex_col().gap_2().p_2();
-    for task in tasks {
+    for task in open {
         column = column.child(card(task, cx));
     }
+    if over.is_empty() {
+        return column;
+    }
+    let shown = ws.todo_done_open;
+    let muted = cx.theme().muted_foreground;
+    let head = div()
+        .id("todo-done")
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_1()
+        .px_1()
+        .h(px(24.))
+        .rounded_md()
+        .cursor_pointer()
+        .hover(|head| head.bg(cx.theme().list_hover))
+        .text_xs()
+        .text_color(muted)
+        .child(widgets::icon(
+            if shown {
+                IconName::ChevronDown
+            } else {
+                IconName::ChevronRight
+            },
+            muted,
+        ))
+        .child(format!("Done ({})", over.len()))
+        .on_click(cx.listener(|ws, _, _, cx| {
+            ws.todo_done_open = !ws.todo_done_open;
+            cx.notify();
+        }));
+    column = column.child(head);
+    if shown {
+        for task in over {
+            column = column.child(card(task, cx));
+        }
+    }
     column
+}
+
+/// A task is over when the board says so or every item of it is done.
+fn finished(task: &Task) -> bool {
+    task.done || (!task.items.is_empty() && task.items.iter().all(|item| item.done))
 }
 
 fn card(task: &Task, cx: &App) -> Div {
@@ -36,7 +79,7 @@ fn card(task: &Task, cx: &App) -> Div {
     let (accent, muted, track) = (theme.primary, theme.muted_foreground, theme.border);
     let done = task.items.iter().filter(|item| item.done).count();
     let all = task.items.len();
-    let finished = task.done || (all > 0 && done == all);
+    let finished = finished(task);
     let share = if all == 0 {
         f32::from(u8::from(finished))
     } else {

@@ -163,7 +163,10 @@ fn ChatRow(thread: Thread) -> impl IntoView {
     let current = active.clone();
     let working = {
         let id = id.clone();
-        move || app.chat(&id).is_some_and(|chat| chat.with(|c| c.working))
+        move || {
+            app.chat(&id)
+                .is_some_and(|chat| chat.with(|c| c.working || c.agents_working))
+        }
     };
     let title = chat_title(&thread);
     let open_id = id.clone();

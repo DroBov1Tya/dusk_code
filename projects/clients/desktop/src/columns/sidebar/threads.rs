@@ -50,7 +50,10 @@ pub fn chat_row(
     let (muted, accent) = (theme.muted_foreground, theme.primary);
     let id = thread.id.clone();
     let shown = ws.shown.as_deref() == Some(thread.id.as_str());
-    let working = ws.chats.get(&thread.id).is_some_and(|chat| chat.working);
+    let working = ws
+        .chats
+        .get(&thread.id)
+        .is_some_and(|chat| chat.working || chat.agents_working);
     let title = ws
         .chats
         .get(&thread.id)

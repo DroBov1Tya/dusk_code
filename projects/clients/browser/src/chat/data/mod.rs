@@ -77,6 +77,8 @@ pub struct Agent {
 pub struct ChatData {
     pub items: Vec<Entry>,
     pub working: bool,
+    /// Agents below the chat are at work, as the core says; the sidebar shows it working.
+    pub agents_working: bool,
     /// When the running turn began, in Unix milliseconds of the core's clock.
     pub turn_started: Option<i64>,
     /// What the running turn waits for, until its next `TurnRunning`.
@@ -338,6 +340,7 @@ impl ChatData {
                 task,
                 state: AgentState::Thinking,
             }),
+            ThreadEvent::AgentsWorking(on) => self.agents_working = on,
             ThreadEvent::Subagent { thread_id, event } => {
                 if let Some(agent) = self.agents.iter_mut().find(|a| a.thread_id == thread_id) {
                     agent.follow(&event);
