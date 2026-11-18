@@ -15,7 +15,7 @@ use parking_lot::Mutex;
 
 use super::{
     fetch::{Via, fetch},
-    index::{self, Cover, Index, Screenshot},
+    index::{self, Cover, Download, Index, Screenshot},
     record::Record,
 };
 use crate::{config::Mirror, init::paths::Paths};
@@ -41,19 +41,20 @@ pub struct Fetched {
     pub index: Index,
 }
 
-/// The pictures of an entry as the last list read named them, with where that list
-/// came from.
+/// The files of an entry as the last list read named them, its pictures and its package
+/// for this machine, with where that list came from.
 #[derive(Debug, Clone)]
 pub struct Seen {
     pub url: String,
     pub key: String,
     pub cover: Option<Cover>,
     pub screenshots: Vec<Screenshot>,
+    pub package: Option<Download>,
 }
 
-/// The pictures of the lists read last, by (source, name), so a client asking for one
-/// gets only what a signed list named.
-static PICTURES: LazyLock<Mutex<BTreeMap<(String, String), Seen>>> = LazyLock::new(Mutex::default);
+/// The entries of the lists read last, by (source, name), so a client asking for a
+/// picture or the files of one gets only what a signed list named.
+static SEEN: LazyLock<Mutex<BTreeMap<(String, String), Seen>>> = LazyLock::new(Mutex::default);
 
 /// Reads the official list and every mirror. Each list must be no older than one
 /// accepted here before.
@@ -89,7 +90,7 @@ pub async fn read(paths: &Paths, mirrors: &[Mirror]) -> (Vec<Fetched>, Vec<Sourc
             Vec::new()
         }
     };
-    remember_pictures(&kept);
+    remember(&kept);
     (kept, failed)
 }
 
@@ -140,14 +141,14 @@ pub fn settle(
     (fetched, failed)
 }
 
-/// The pictures `name` of `source` showed in the last list read, while that source is
-/// still the one configured: a mirror whose address or key changed since is not.
+/// What `name` of `source` showed in the last list read, while that source is still the
+/// one configured: a mirror whose address or key changed since is not.
 pub fn seen(mirrors: &[Mirror], source: &str, name: &str) -> Result<Seen> {
-    let seen = PICTURES
+    let seen = SEEN
         .lock()
         .get(&(source.to_owned(), name.to_owned()))
         .cloned()
-        .ok_or_else(|| anyhow!("{source} showed no pictures for {name}; list the store again"))?;
+        .ok_or_else(|| anyhow!("{source} did not list {name}; list the store again"))?;
     let current = match source {
         OFFICIAL_SOURCE => seen.key == index::PUBLIC_KEY,
         _ => mirrors
@@ -227,21 +228,19 @@ pub fn screenshot(seen: &Seen, index: u32) -> Option<&Screenshot> {
         .and_then(|index| seen.screenshots.get(index))
 }
 
-pub fn remember_pictures(fetched: &[Fetched]) {
-    let mut pictures = PICTURES.lock();
+pub fn remember(fetched: &[Fetched]) {
+    let mut kept = SEEN.lock();
     for source in fetched {
-        pictures.retain(|(name, _), _| *name != source.name);
+        kept.retain(|(name, _), _| *name != source.name);
         for entry in &source.index.plugins {
-            if entry.cover.is_none() && entry.screenshots.is_empty() {
-                continue;
-            }
             let seen = Seen {
                 url: source.url.clone(),
                 key: source.key.clone(),
                 cover: entry.cover.clone(),
                 screenshots: entry.screenshots.clone(),
+                package: entry.download_here().ok().cloned(),
             };
-            pictures.insert((source.name.clone(), entry.name.clone()), seen);
+            kept.insert((source.name.clone(), entry.name.clone()), seen);
         }
     }
 }

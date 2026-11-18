@@ -61,7 +61,7 @@ pub fn render(
     let body = match content {
         ViewerContent::Loading => widgets::muted("Loading...", cx).into_any_element(),
         ViewerContent::Markdown(text) => {
-            links::markdown("viewer-markdown", text.clone()).into_any_element()
+            links::markdown("viewer-markdown", text.clone(), links::Links::Paths).into_any_element()
         }
         ViewerContent::Text(text) => div()
             .font_family(

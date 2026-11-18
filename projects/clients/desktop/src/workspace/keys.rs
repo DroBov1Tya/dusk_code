@@ -202,6 +202,9 @@ impl Workspace {
         if std::mem::take(&mut self.navigator_open) {
             return true;
         }
+        if self.welcome_back(cx) {
+            return true;
+        }
         if self.center == Center::Review {
             self.center = Center::Chat;
             return true;

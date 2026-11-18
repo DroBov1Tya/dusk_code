@@ -112,6 +112,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
             .child(links::markdown(
                 "tool-description",
                 tool.description.clone(),
+                links::Links::Web,
             ))
         }
         Detail::Plugin(name) => {
@@ -127,6 +128,7 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                 .child(links::markdown(
                     "plugin-description",
                     plugin.description.clone(),
+                    links::Links::Web,
                 ));
             if let Some(version) = &plugin.duskcode_version {
                 page = page.child(
@@ -202,12 +204,11 @@ pub fn render(ws: &Workspace, detail: &Detail, cx: &mut Context<Workspace>) -> D
                             .child(div().flex_1().min_w_0().child(value.clone())),
                     );
                 }
-                page.child(
-                    div()
-                        .pt_2()
-                        .small()
-                        .child(links::markdown("node-text", body(&file.text))),
-                )
+                page.child(div().pt_2().small().child(links::markdown(
+                    "node-text",
+                    body(&file.text),
+                    links::Links::Web,
+                )))
             }
         },
     }

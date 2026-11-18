@@ -13,11 +13,17 @@
 //! - `picture` — the covers and screenshots of the cards;
 //! - `record` — what the store did here;
 //! - `unpack` — a package into a folder;
-//! - `content`, `pack` — skills, packs and agents, which are plain files.
+//! - `content`, `pack` — skills, packs and agents, which are plain files;
+//! - `contents` — the files of a listing, for a client to look through.
 
+#[cfg(test)]
+mod brings_tests;
 mod content;
 #[cfg(test)]
 mod content_tests;
+pub mod contents;
+#[cfg(test)]
+mod contents_tests;
 #[cfg(test)]
 mod credit_tests;
 mod fetch;
@@ -50,6 +56,7 @@ use index::Entry;
 use record::{Installed, Record};
 use source::Fetched;
 
+pub use listing::Here;
 pub use pack::{FILE as PACK_FILE, Pack};
 pub use picture::{cover, screenshot};
 
@@ -61,12 +68,15 @@ const STAGING: &str = ".staging";
 static BUSY: LazyLock<Mutex<()>> = LazyLock::new(Mutex::default);
 
 /// What the sources offer, with what is installed here, in `order`; only `category`'s
-/// when it is given. A source that cannot be read is reported beside the rest.
+/// when it is given, and only of `kinds` when they are. A source that cannot be read is
+/// reported beside the rest.
 pub async fn list(
     paths: &Paths,
     mirrors: &[Mirror],
     order: Order,
     category: Option<&str>,
+    kinds: &[Kind],
+    here: &Here,
 ) -> Result<StoreList> {
     let (fetched, failed) = source::read(paths, mirrors).await;
     let record = Record::load(paths)?;
@@ -78,15 +88,17 @@ pub async fn list(
                 .index
                 .plugins
                 .iter()
-                .map(move |entry| listing::listing(paths, record, source, entry))
+                .map(move |entry| listing::listing(paths, record, here, source, entry))
         })
-        .chain(listing::local(paths, &record))
+        .chain(listing::local(paths, &record, here))
         .collect();
     listing::mark_clashes(&mut listings);
     listings.retain(|listing| {
-        category.is_none_or(|category| {
-            listing.category == category || listing.categories.iter().any(|item| item == category)
-        })
+        (kinds.is_empty() || kinds.contains(&listing.kind))
+            && category.is_none_or(|category| {
+                listing.category == category
+                    || listing.categories.iter().any(|item| item == category)
+            })
     });
     listing::sort(&mut listings, order);
     let picks = listing::picks(&listings);
@@ -202,6 +214,18 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
     Ok(report)
 }
 
+/// The single skills the store installed, by name: their folders are under `skills/` like
+/// the user's own, so only the record tells them apart.
+pub fn installed_skills(paths: &Paths) -> std::collections::BTreeSet<String> {
+    let record = Record::load(paths).unwrap_or_default();
+    record
+        .installed
+        .iter()
+        .filter(|(name, item)| item.kind == Kind::Skill && record.present(paths, name).is_some())
+        .map(|(name, _)| name.clone())
+        .collect()
+}
+
 /// What the store installed as `name`, when it may remove it: it installed it and its
 /// folder is there. Asked before anything changes.
 pub fn check_removable(paths: &Paths, name: &str) -> Result<Kind> {
@@ -297,9 +321,15 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
 }
 
 /// Whether `entry` asks for a permission or a model provider the plugin in `folder` does
-/// not have.
+/// not have, or brings an MCP server or a program it does not.
 fn asks_more(folder: &Path, entry: &Entry) -> Result<bool> {
     let manifest = Manifest::load(folder)?;
+    let (servers, programs) = (servers(&manifest), manifest.programs());
+    if entry.mcp.iter().any(|server| !servers.contains(server))
+        || entry.programs.iter().any(|line| !programs.contains(line))
+    {
+        return Ok(true);
+    }
     let had: Vec<&str> = manifest
         .providers
         .values()
@@ -375,5 +405,73 @@ fn check_manifest(folder: &Path, entry: &Entry) -> Result<()> {
         providers == entry.providers,
         "the package brings other model providers than the list shows"
     );
+    // A list before format 3 cannot say what a plugin runs; the user was shown nothing
+    // of it, as before.
+    if entry.format >= 3 {
+        let mut listed = entry.mcp.clone();
+        listed.sort();
+        ensure!(
+            servers(&manifest) == listed,
+            "the package brings other MCP servers than the list shows"
+        );
+        ensure!(
+            manifest.programs() == entry.programs,
+            "the package runs other programs than the list shows"
+        );
+        let listed: std::collections::BTreeSet<&str> =
+            entry.skills.iter().map(String::as_str).collect();
+        let held = skill_folders(folder)?;
+        ensure!(
+            held.iter()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>()
+                == listed,
+            "the package holds other skills than the list shows"
+        );
+    }
     Ok(())
+}
+
+/// A manifest's MCP servers as a list names them, sorted by name.
+pub fn servers(manifest: &Manifest) -> Vec<index::Server> {
+    use crate::config::McpServerConfig;
+    manifest
+        .mcp
+        .iter()
+        .map(|(name, server)| match server {
+            McpServerConfig::Stdio(stdio) => index::Server {
+                name: name.clone(),
+                command: Some(stdio.command.clone()),
+                args: stdio.args.clone(),
+                url: None,
+            },
+            McpServerConfig::Http(http) => index::Server {
+                name: name.clone(),
+                command: None,
+                args: Vec::new(),
+                url: Some(http.url.clone()),
+            },
+        })
+        .collect()
+}
+
+/// The folders under a plugin's `skills/`, each a skill or a set of them.
+fn skill_folders(folder: &Path) -> Result<Vec<String>> {
+    let skills = folder.join("skills");
+    if fs::symlink_metadata(&skills).is_err() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    for item in fs::read_dir(&skills).context("cannot list its skills")? {
+        let item = item?;
+        if item.file_type()?.is_dir() {
+            names.push(
+                item.file_name()
+                    .to_str()
+                    .context("a skill's name is not UTF-8")?
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(names)
 }

@@ -5,10 +5,15 @@
 use std::cmp::Reverse;
 
 use chrono::{DateTime, FixedOffset};
-use dusk_protocol::plugin::{Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, RepoStars, Tier};
+use std::collections::BTreeSet;
+
+use dusk_protocol::plugin::{
+    Connector, ConnectorState, Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, RepoStars, Runs,
+    Tier,
+};
 
 use super::{
-    index::{Badge, Entry},
+    index::{Badge, Entry, Server},
     record::Record,
     source::Fetched,
 };
@@ -17,11 +22,51 @@ use crate::{
     plugins::{catalog, manifest::Manifest},
 };
 
-pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) -> Listing {
+/// What is set up here, for the state of a plugin's connectors.
+#[derive(Debug, Default)]
+pub struct Here {
+    /// The MCP servers of the user's config, by name; a plugin's of the same name is
+    /// never used.
+    pub yours: BTreeSet<String>,
+    /// The plugins that are on.
+    pub on: BTreeSet<String>,
+}
+
+impl Here {
+    fn connectors(&self, plugin: &str, installed: bool, servers: &[Server]) -> Vec<Connector> {
+        servers
+            .iter()
+            .map(|server| Connector {
+                name: server.name.clone(),
+                runs: match &server.url {
+                    Some(url) => Runs::Url(url.clone()),
+                    None => Runs::Command(server.line()),
+                },
+                state: if self.yours.contains(&server.name) {
+                    ConnectorState::Yours
+                } else if installed && self.on.contains(plugin) {
+                    ConnectorState::Added
+                } else {
+                    ConnectorState::NotAdded
+                },
+            })
+            .collect()
+    }
+}
+
+pub fn listing(
+    paths: &Paths,
+    record: &Record,
+    here: &Here,
+    source: &Fetched,
+    entry: &Entry,
+) -> Listing {
     let installed = record
         .installed_from(paths, source, &entry.name)
         .map(|item| item.version.clone());
     Listing {
+        connectors: here.connectors(&entry.name, installed.is_some(), &entry.mcp),
+        programs: entry.programs.clone(),
         name: entry.name.clone(),
         version: entry.version.clone(),
         description: entry.description.clone(),
@@ -138,7 +183,7 @@ pub fn mark_clashes(listings: &mut [Listing]) {
 
 /// The plugins in the plugins folder that no source installed: shipped with duskcode or
 /// put there by the user. Shown, never updated or removed by the store.
-pub fn local(paths: &Paths, record: &Record) -> Vec<Listing> {
+pub fn local(paths: &Paths, record: &Record, here: &Here) -> Vec<Listing> {
     catalog::plugin_folders(&catalog::folder(paths))
         .into_iter()
         .filter_map(|folder| {
@@ -149,12 +194,19 @@ pub fn local(paths: &Paths, record: &Record) -> Vec<Listing> {
             let manifest = Manifest::load(&folder)
                 .inspect_err(|error| tracing::debug!("plugin {name} not listed: {error:#}"))
                 .ok()?;
+            let programs = manifest.programs();
+            let servers = super::servers(&manifest);
+            let connectors = here.connectors(&name, true, &servers);
+            let mut permissions = super::index::brings(&programs, &servers);
+            permissions.extend(manifest.permissions.lines());
             Some(Listing {
                 name,
+                connectors,
+                programs,
                 description: manifest.description,
                 platforms: manifest.platforms,
                 clients: manifest.clients,
-                permissions: manifest.permissions.lines(),
+                permissions,
                 installed: Some(manifest.version.clone()),
                 version: manifest.version,
                 tier: Tier::Local,

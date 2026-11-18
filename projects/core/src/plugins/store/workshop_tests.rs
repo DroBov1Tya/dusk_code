@@ -344,7 +344,9 @@ fn only_a_mirror_the_user_added_shows_stars_and_with_their_repository() {
             .index
             .plugins
             .iter()
-            .map(|entry| listing::listing(&paths, &record, &source, entry).repo_stars)
+            .map(|entry| {
+                listing::listing(&paths, &record, &Default::default(), &source, entry).repo_stars
+            })
             .collect()
     };
     assert_eq!(stars(Tier::Official), [None, None]);

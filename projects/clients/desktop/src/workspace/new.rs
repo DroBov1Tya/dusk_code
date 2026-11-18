@@ -215,12 +215,14 @@ impl Workspace {
             list_chat: None,
             texts: Default::default(),
             measure_again: false,
+            welcome: crate::pages::welcome::Welcome::new(window, cx),
         };
         workspace.pump_events(events, cx);
         workspace.pump_status(status, cx);
         workspace.watch_idle(cx);
         workspace.reload_projects(cx);
         workspace.reload_threads(cx);
+        workspace.ask_welcome(cx);
         // The runs since the last look come up on the chat's "while you were away" card.
         workspace.load_schedules(cx);
         // The first start of a new version says what it brought. A first start ever has

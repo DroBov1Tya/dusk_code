@@ -169,7 +169,9 @@ async fn the_live_store_installs_a_plugin() {
     use dusk_protocol::plugin::OFFICIAL_SOURCE as OFFICIAL;
     let paths = crate::testing::temp_paths("store-live");
     crate::init::create_private_dir(&super::super::catalog::folder(&paths)).unwrap();
-    let listed = super::list(&paths, &[], Order::Trust, None).await.unwrap();
+    let listed = super::list(&paths, &[], Order::Trust, None, &[], &Here::default())
+        .await
+        .unwrap();
     let telegram = listed
         .listings
         .iter()
@@ -188,7 +190,9 @@ async fn the_live_store_installs_a_plugin() {
     assert!(install(&paths, &[], &agreed).await.is_err());
     let folder = super::super::catalog::folder(&paths).join("telegram");
     assert!(folder.join("bin/telegram").is_file());
-    let listed = super::list(&paths, &[], Order::Trust, None).await.unwrap();
+    let listed = super::list(&paths, &[], Order::Trust, None, &[], &Here::default())
+        .await
+        .unwrap();
     let again = listed
         .listings
         .iter()

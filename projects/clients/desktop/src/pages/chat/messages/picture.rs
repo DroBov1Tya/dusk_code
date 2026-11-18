@@ -77,6 +77,7 @@ pub fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> A
         text = text.child(links::markdown(
             SharedString::from(format!("picture-{id}")),
             description.clone(),
+            links::Links::Paths,
         ));
     }
     if image.title.is_none() && image.description.is_none() {

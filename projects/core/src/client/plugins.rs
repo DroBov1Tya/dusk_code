@@ -4,7 +4,9 @@ use super::Client;
 use anyhow::{Result, bail};
 use dusk_protocol::{
     client::{PluginRequest, Request, Response},
-    plugin::{Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport},
+    plugin::{
+        Contents, FilePreview, Kind, Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport,
+    },
 };
 
 /// Views, frames and notes of the parts this client opened come as `Event::PluginView`,
@@ -56,10 +58,19 @@ impl Plugins<'_> {
 /// The plugin store. The core checks the signed list and every package; a client shows
 /// the list and asks the user before `install`, showing the listing's permissions.
 impl Plugins<'_> {
-    /// The listings in `order`, only `category`'s when one is given, and the sources
-    /// that could not be read; a client shows both.
-    pub async fn store(&self, order: Order, category: Option<String>) -> Result<StoreList> {
-        let request = StoreRequest::List { order, category };
+    /// The listings in `order`, only `category`'s when one is given and only of `kinds`
+    /// when they are, and the sources that could not be read; a client shows both.
+    pub async fn store(
+        &self,
+        order: Order,
+        category: Option<String>,
+        kinds: Vec<Kind>,
+    ) -> Result<StoreList> {
+        let request = StoreRequest::List {
+            order,
+            category,
+            kinds,
+        };
         let list = match self.0.call(Request::Store(request)).await? {
             Response::Store(list) => list,
             Response::Error(error) => bail!(error),
@@ -103,6 +114,34 @@ impl Plugins<'_> {
             index,
         };
         self.media(request).await
+    }
+
+    /// The files of `name` from `source`: the copy here, or the package checked by the
+    /// core, which may fetch it first.
+    pub async fn contents(&self, source: &str, name: &str) -> Result<Contents> {
+        let request = StoreRequest::Contents {
+            source: source.to_owned(),
+            name: name.to_owned(),
+        };
+        match self.0.call(Request::Store(request)).await? {
+            Response::StoreContents(contents) => Ok(contents),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
+    }
+
+    /// One text file of the last `contents` of `name`.
+    pub async fn contents_file(&self, source: &str, name: &str, path: &str) -> Result<FilePreview> {
+        let request = StoreRequest::File {
+            source: source.to_owned(),
+            name: name.to_owned(),
+            path: path.to_owned(),
+        };
+        match self.0.call(Request::Store(request)).await? {
+            Response::StoreFile(file) => Ok(file),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
     }
 
     async fn media(&self, request: StoreRequest) -> Result<(String, String)> {

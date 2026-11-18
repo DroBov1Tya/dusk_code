@@ -21,6 +21,8 @@ use crate::{
     },
 };
 
+use dusk_protocol::model::CheckFailure;
+
 use super::{request::CompletionRequest, stream::CompletionStream};
 
 const MAX_ERROR_BYTES: usize = 64 * 1024;
@@ -88,12 +90,13 @@ impl OpenAiCompatible {
             .timeout(CATALOGUE_TIMEOUT)
             .send()
             .await
-            .map_err(|_| anyhow!("provider model request failed"))?;
+            .map_err(|_| {
+                http::check_failed(CheckFailure::Unreachable, "provider model request failed")
+            })?;
         self.account.note(Headers::OpenAi, response.headers());
-        ensure!(
-            response.status().is_success(),
-            http::refused("model", response.status())
-        );
+        if !response.status().is_success() {
+            return Err(http::catalogue_refused(response.status()));
+        }
         ensure!(
             response
                 .content_length()
@@ -112,8 +115,12 @@ impl OpenAiCompatible {
             );
             bytes.extend_from_slice(&chunk);
         }
-        let catalogue: ModelCatalogue = serde_json::from_slice(&bytes)
-            .map_err(|_| anyhow!("invalid provider model catalogue JSON"))?;
+        let catalogue: ModelCatalogue = serde_json::from_slice(&bytes).map_err(|_| {
+            http::check_failed(
+                CheckFailure::NotCompatible,
+                "invalid provider model catalogue JSON",
+            )
+        })?;
         let mut models = BTreeMap::new();
         for model in catalogue.data {
             ensure!(

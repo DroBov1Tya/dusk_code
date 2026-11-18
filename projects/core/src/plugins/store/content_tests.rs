@@ -188,3 +188,48 @@ fn removing_a_pack_keeps_what_the_user_edited() {
     );
     assert!(!skills.join("pack.yml").exists());
 }
+
+#[test]
+fn a_single_skill_installs_beside_the_others_and_never_onto_a_pack() {
+    use super::record::{Installed, Record};
+    use crate::{catalog::skills, config::Config};
+
+    let paths = paths("content-single");
+    let skill = package(&[(
+        "triage/SKILL.md",
+        Regular,
+        b"---\ndescription: Sort the reports first.\n---\nSort.",
+    )]);
+    let triage = entry("triage", "skill", "");
+    let folder = content::place(&paths, &triage, &skill, None).unwrap();
+    Record::update(&paths, |record| {
+        record.installed.insert(
+            "triage".into(),
+            Installed {
+                version: "1.0.0".into(),
+                sha256: super::tests::SHA.into(),
+                source: "official".into(),
+                url: String::new(),
+                key: String::new(),
+                kind: dusk_protocol::plugin::Kind::Skill,
+                folder,
+            },
+        );
+        Ok(())
+    })
+    .unwrap();
+    let config = Config::parse(b"{}").unwrap();
+    let listed = skills::list(&paths.skills_dir(), &config);
+    let shown = listed.iter().find(|item| item.name == "triage").unwrap();
+    assert!(shown.enabled && shown.description == "Sort the reports first.");
+    assert!(super::installed_skills(&paths).contains("triage"));
+
+    // A skill named as a pack here lands in the pack's folder, so it is refused; the
+    // reverse too.
+    content::place(&paths, &entry("eng", "pack", ""), &pack_package(PACK), None).unwrap();
+    let eng = package(&[("eng/SKILL.md", Regular, b"---\ndescription: e\n---\nx")]);
+    assert!(content::place(&paths, &entry("eng", "skill", ""), &eng, None).is_err());
+    let pack = pack_package(&PACK.replace("name: eng", "name: triage"));
+    assert!(content::place(&paths, &entry("triage", "pack", ""), &pack, None).is_err());
+    assert!(paths.rules_root().join("skills/eng/pack.yml").is_file());
+}

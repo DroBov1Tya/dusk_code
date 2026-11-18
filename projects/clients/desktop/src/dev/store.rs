@@ -12,8 +12,8 @@ use std::sync::Arc;
 use dusk_protocol::{
     catalog::{PackSkill, SkillPack},
     plugin::{
-        Client, Cover, Kind, Listing, Os, PICKS, Picks, RepoStars, ScreenshotRef, SourceFailure,
-        Tier, UpdateReport,
+        Client, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind, Listing,
+        Os, PICKS, Picks, RepoStars, Runs, ScreenshotRef, SourceFailure, Tier, UpdateReport,
     },
 };
 use gpui_kit::*;
@@ -23,9 +23,10 @@ use crate::{
     pages::connectors::{
         Shelf,
         plugins::{
-            Confirm,
+            Confirm, Scope, View,
             workshop::{
                 Shelf as StoreShelf,
+                contents::{Loaded, Opened},
                 covers::{self, Cover as Drawn},
                 detail::Tab,
             },
@@ -106,9 +107,30 @@ pub fn listings() -> Vec<Listing> {
         Listing {
             platforms: vec![Os::Macos],
             clients: vec![Client::Gui, Client::Tui],
+            // The core's lines: its program, its servers, then what else it may reach.
             permissions: vec![
+                "run the program ./bin/telegram on this computer while it is on".into(),
+                "start the MCP server telegram-history (./bin/telegram mcp) on this computer; \
+                 the agent may use its tools"
+                    .into(),
+                "send the agent's requests for the tools of chat-search to \
+                 https://search.example.com/mcp"
+                    .into(),
                 "Reach https://api.telegram.org".into(),
                 "Use the secret TELEGRAM_TOKEN".into(),
+            ],
+            programs: vec!["./bin/telegram".into()],
+            connectors: vec![
+                Connector {
+                    name: "telegram-history".into(),
+                    runs: Runs::Command("./bin/telegram mcp".into()),
+                    state: ConnectorState::Added,
+                },
+                Connector {
+                    name: "chat-search".into(),
+                    runs: Runs::Url("https://search.example.com/mcp".into()),
+                    state: ConnectorState::Yours,
+                },
             ],
             installed: Some("1.0.0".into()),
             category: "communication".into(),
@@ -422,6 +444,56 @@ fn webp(bytes: &'static [u8]) -> Arc<Image> {
     ))
 }
 
+/// Single skills, as the Skills page's Workshop lists them: of each tier, one here.
+pub fn skill_listings() -> Vec<Listing> {
+    let skill = |name: &str, author: &str, tier: Tier, description: &str| Listing {
+        name: name.into(),
+        version: "1.0.0".into(),
+        description: description.into(),
+        kind: Kind::Skill,
+        source: match tier {
+            Tier::Community => "friends".into(),
+            _ => "official".into(),
+        },
+        tier,
+        author: author.into(),
+        license: "MIT".into(),
+        categories: vec!["coding".into()],
+        created: Some("2026-11-02T00:00:00Z".into()),
+        updated: Some("2026-11-12T00:00:00Z".into()),
+        ..Listing::default()
+    };
+    vec![
+        Listing {
+            installed: Some("1.0.0".into()),
+            ..skill(
+                "commit-messages",
+                "duskcode",
+                Tier::Official,
+                "Write commit subjects as area: imperative summary, with a body that says why.",
+            )
+        },
+        skill(
+            "changelog",
+            "duskcode",
+            Tier::Official,
+            "Keep a changelog of fragments, one per change, merged at release.",
+        ),
+        skill(
+            "sql-review",
+            "Data Tools Collective",
+            Tier::Verified,
+            "Read a migration for locks, missing indexes and irreversible steps.",
+        ),
+        skill(
+            "haiku-docs",
+            "someone",
+            Tier::Community,
+            "Explain a module in three short lines before the details.",
+        ),
+    ]
+}
+
 /// The core's picks, made here the way the core makes them.
 fn picks(listings: &[Listing]) -> Picks {
     let top = |key: &dyn Fn(&Listing) -> String| {
@@ -477,16 +549,33 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 /// `workshop`: the Workshop shown; `workshop=install:NAME|remove:NAME`: its window that
 /// asks first; `workshop=busy:NAME`: the capsule at work; `workshop=failed:NAME`: the
 /// capsule after a failure; `workshop=pack:NAME`: a pack's page; `workshop=open:NAME`: a
-/// listing's window, `workshop=gallery:N` its Nth picture, `workshop=tab:skills` its
-/// Skills tab; `workshop=hero:N`: the Nth
+/// listing's window, `workshop=gallery:N` its Nth picture, `workshop=tab:skills|contents|connectors`
+/// that tab; `workshop=hero:N`: the Nth
 /// featured pick; `workshop=next:N`: the Official shelf from its Nth capsule;
 /// `workshop=all:TIER`: that tier's shelf whole; `workshop=tier:TIER`: filter by it;
 /// `workshop=coming:NAME`: its cover still coming; `workshop=offline:`: the store could not
 /// be read again, so covers not here are drawn offline; `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
 pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Context<Workspace>) {
     ws.center = Center::Connectors;
-    ws.shelf = Shelf::Plugins;
-    ws.workshop.open = true;
+    // `skills:` shows the Skills page's Workshop of single skills instead.
+    let skills = value == "skills";
+    ws.shelf = if skills {
+        Shelf::Skills
+    } else {
+        Shelf::Plugins
+    };
+    ws.workshop.plugins_view = Some(View::Discover);
+    ws.workshop.skills_view = Some(View::Discover);
+    ws.workshop.scope = if skills {
+        Scope::Skills
+    } else {
+        Scope::Plugins
+    };
+    if skills {
+        let listings = skill_listings();
+        ws.workshop.picks = picks(&listings);
+        ws.workshop.listings = Some(listings);
+    }
     if ws.settings.is_none() {
         ws.load_settings(cx);
     }
@@ -513,7 +602,7 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         .find(|listing| listing.name == name)
         .cloned();
     match (what, listing) {
-        ("", _) => {}
+        ("", _) | ("skills", _) => {}
         ("pack", _) => ws.workshop.pack = Some(name.into()),
         ("open", Some(listing)) => {
             ws.workshop.gallery = 0;
@@ -527,7 +616,12 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         ("tab", _) => {
             ws.workshop.tab = match name {
                 "skills" => Tab::Skills,
+                "contents" => Tab::Contents,
+                "connectors" => Tab::Connectors,
                 _ => Tab::Overview,
+            };
+            if let Some(Modal::Listing { source, name }) = &ws.modal {
+                ws.workshop.contents = Some(contents(source, name));
             }
         }
         ("hero", _) => ws.workshop.hero = name.parse().unwrap_or(0),
@@ -578,6 +672,42 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         ),
     }
     cx.notify();
+}
+
+/// The files of a pack, the way the core lists them, with its first skill open.
+fn contents(source: &str, name: &str) -> Opened {
+    let file = |path: &str, size: u64, text: bool| FileRef {
+        path: path.into(),
+        size,
+        text,
+    };
+    Opened {
+        source: source.into(),
+        name: name.into(),
+        files: Loaded::Ready(Contents {
+            files: vec![
+                file("LICENSE", 1071, true),
+                file("bin/helper", 2_411_520, false),
+                file("pack.yml", 214, true),
+                file("review/SKILL.md", 3_890, true),
+                file("review/references/checklist.md", 1_204, true),
+                file("spike/SKILL.md", 2_317, true),
+                file("spike/scripts/time.sh", 402, true),
+            ],
+            package_sha256: "4f1c9a07be2d5e3f6a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f"
+                .into(),
+            installed: false,
+        }),
+        chosen: Some("spike/SKILL.md".into()),
+        preview: Loaded::Ready(FilePreview {
+            text: "---\ndescription: Answer one question with the smallest experiment.\n---\n\n\
+                   # Spike\n\nWrite down the question first. Then build the least code that answers \
+                   it, and **throw it away** once you know.\n\n- Time-box it: an hour, not a day.\n\
+                   - Keep notes of what you tried.\n- Report the answer, not the code.\n"
+                .into(),
+            truncated: false,
+        }),
+    }
 }
 
 fn tier_named(name: &str) -> Option<Tier> {

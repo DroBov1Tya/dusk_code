@@ -421,6 +421,7 @@ fn rest() -> Vec<R> {
         R::Store(St::List {
             order: Default::default(),
             category: None,
+            kinds: Vec::new(),
         }),
         R::Store(St::Install {
             source: word(),
@@ -439,6 +440,15 @@ fn rest() -> Vec<R> {
             source: word(),
             name: word(),
             index: 0,
+        }),
+        R::Store(St::Contents {
+            source: word(),
+            name: word(),
+        }),
+        R::Store(St::File {
+            source: word(),
+            name: word(),
+            path: word(),
         }),
         R::InstallUpdate { tag: word() },
         R::Shutdown,

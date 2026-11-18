@@ -86,6 +86,10 @@ pub enum Response {
     Answer(Box<Answer>),
     Store(crate::plugin::StoreList),
     StoreUpdates(crate::plugin::UpdateReport),
+    /// The files of a store listing.
+    StoreContents(crate::plugin::Contents),
+    /// One text file of a store listing.
+    StoreFile(crate::plugin::FilePreview),
     /// A store picture (a cover or a screenshot), checked against its list: its bytes in
     /// base64, and their type.
     Media {
