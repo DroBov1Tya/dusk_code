@@ -121,7 +121,7 @@ pub fn panel(
 }
 
 /// The chat's project folder, or the workspace root for a chat without a project; a
-/// click shows it in the file manager.
+/// click opens it in the file manager.
 fn folder(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
     let theme = cx.theme();
     let (muted, raised) = (theme.muted_foreground, theme.list_hover);
@@ -132,11 +132,7 @@ fn folder(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         || dir.display().to_string(),
         |name| name.to_string_lossy().into_owned(),
     );
-    let tip = SharedString::from(format!(
-        "{}: {}",
-        crate::columns::inspector::environment::reveal_label(),
-        dir.display()
-    ));
+    let tip = SharedString::from(format!("Open {}", dir.display()));
     div()
         .id("composer-folder")
         .flex()
@@ -160,25 +156,60 @@ fn folder(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
         })
-        .on_click(cx.listener(move |_, _, _, cx| cx.reveal_path(&dir)))
+        .on_click(cx.listener(move |_, _, _, cx| cx.open_with_system(&dir)))
 }
 
-/// The panel's rings, left to right. The provider's rate limit windows (5-hour, weekly)
-/// join here as meters of their own once the core reports them one by one.
+/// The panel's rings, left to right: the context, then each window the provider reported,
+/// the plan's first and then the per-minute requests and tokens. A new meter joins here.
 pub fn meters(ws: &Workspace) -> Vec<Meter> {
     let mut meters = vec![context(ws)];
-    // Until then, the tightest of the reported windows stands for them all.
-    if !ws.status.chatgpt_model
-        && let Some(limits) = ws.status.limits.as_ref()
-        && let Some(used) = limits.used()
-    {
+    let Some(limits) = ws.status.limits.as_ref() else {
+        return meters;
+    };
+    meters.extend(limits.plan.iter().map(|window| Meter {
+        label: plan_label(window.minutes).into(),
+        used: f32::from(window.used_percent) / 100.,
+        detail: window.resets_in.map_or_else(
+            || "last reported by the provider".to_owned(),
+            |seconds| format!("resets in {}", words(seconds)),
+        ),
+    }));
+    for (label, limit) in [("Requests", &limits.requests), ("Tokens", &limits.tokens)] {
+        let Some(limit) = limit.as_ref().filter(|limit| limit.limit > 0) else {
+            continue;
+        };
+        let mut detail = format!(
+            "{} of {} left this minute",
+            widgets::short(limit.remaining),
+            widgets::short(limit.limit)
+        );
+        if let Some(seconds) = limit.resets_in {
+            detail.push_str(&format!(", resets in {}", words(seconds)));
+        }
         meters.push(Meter {
-            label: "Rate limits".into(),
-            used,
-            detail: limits.text(),
+            label: label.into(),
+            used: 1. - limit.remaining as f32 / limit.limit as f32,
+            detail,
         });
     }
     meters
+}
+
+/// A plan window's name from its length.
+fn plan_label(minutes: Option<u64>) -> String {
+    match minutes {
+        Some(300) => "5 hours".into(),
+        Some(10_080) => "Week".into(),
+        Some(minutes) if minutes.is_multiple_of(1440) => format!("{} d", minutes / 1440),
+        Some(minutes) if minutes.is_multiple_of(60) => format!("{} h", minutes / 60),
+        Some(minutes) => format!("{minutes} min"),
+        None => "Plan".into(),
+    }
+}
+
+fn words(seconds: u64) -> String {
+    let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
+    dusk_protocol::thread::duration_words(ms)
 }
 
 /// How full the context is; the counts and the cost in its detail.

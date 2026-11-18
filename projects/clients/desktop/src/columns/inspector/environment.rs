@@ -147,7 +147,7 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
     }))
 }
 
-pub fn reveal_label() -> &'static str {
+fn reveal_label() -> &'static str {
     if cfg!(target_os = "macos") {
         "Show in Finder"
     } else {
