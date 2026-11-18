@@ -3,13 +3,13 @@
 //! git and files, and the chat's todo list, subagents and background jobs. Each module
 //! folds on its header.
 
-mod activity;
 pub mod context;
 mod environment;
 mod files;
 pub mod git;
 pub mod jobs;
 pub mod mascot;
+pub mod overview;
 pub mod plan;
 mod screenshots;
 mod sources;
@@ -32,7 +32,7 @@ pub const WIDTH: f32 = 300.;
 
 const MODULES: &[(Right, &str)] = &[
     (Right::Arbiter, "Arbiter"),
-    (Right::Statistics, "Statistics"),
+    (Right::Overview, "Overview"),
     (Right::Screenshots, "Screenshots"),
     (Right::Git, "Changes"),
     (Right::Files, "Files"),
@@ -112,7 +112,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         if open {
             let body = match module {
                 Right::Arbiter => arbiter_summary(ws, cx),
-                Right::Statistics => statistics(ws, cx),
+                Right::Overview => overview_column(ws, cx),
                 Right::Screenshots => screenshots::render(ws, cx),
                 Right::Git => git::render(ws, cx),
                 Right::Files => files::render(ws, cx),
@@ -153,7 +153,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
 fn module_icon(module: Right) -> Icon {
     match module {
         Right::Arbiter => IconName::Eye.into(),
-        Right::Statistics => IconName::ChartPie.into(),
+        Right::Overview => IconName::LayoutDashboard.into(),
         Right::Screenshots => IconName::Frame.into(),
         Right::Git => Icon::default().path(crate::ui::icons::GIT_BRANCH),
         Right::Files => IconName::Folder.into(),
@@ -173,7 +173,7 @@ fn summary(ws: &Workspace, module: Right) -> Option<String> {
             let count = chat.map_or(0, |chat| chat.exchanges.len());
             (count > 0).then(|| count.to_string())
         }
-        Right::Statistics => ws
+        Right::Overview => ws
             .context
             .as_ref()
             .map(|report| format!("{}%", report.total * 100 / report.limit.max(1))),
@@ -245,23 +245,20 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         )
 }
 
-/// The context, then the activity, each under a small caption when it has anything.
-fn statistics(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let mut column = div().flex().flex_col().gap_3();
-    if ws.context.is_some() {
-        column = column
-            .child(widgets::caption("Context", cx))
-            .child(context::render(ws, cx));
-    }
-    if ws
-        .shown_chat()
-        .is_some_and(|chat| !chat.activity().is_empty())
-    {
-        column = column
-            .child(widgets::caption("Activity", cx))
-            .child(activity::render(ws, cx));
-    }
-    column
+/// The Overview's sections in one column, and the way to its page.
+fn overview_column(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
+    let sections = overview::sections::all(ws, overview::Form::Narrow, cx);
+    div()
+        .flex()
+        .flex_col()
+        .child(
+            div().px_4().pb_1().child(
+                gpui_kit::component::button::Button::new("overview-open")
+                    .label("Open")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.open_overview(cx))),
+            ),
+        )
+        .children(sections)
 }
 
 impl Workspace {
@@ -273,9 +270,7 @@ impl Workspace {
                 self.status.approvals == dusk_protocol::config::ApprovalPolicy::Arbiter
                     || chat.is_some_and(|chat| !chat.exchanges.is_empty())
             }
-            Right::Statistics => {
-                self.context.is_some() || chat.is_some_and(|chat| !chat.activity().is_empty())
-            }
+            Right::Overview => chat.is_some(),
             Right::Screenshots => chat.is_some_and(|chat| !chat.screenshots.is_empty()),
             Right::Git => self
                 .git
@@ -309,13 +304,20 @@ impl Workspace {
         if self.folded.contains(&Right::Sources) {
             self.load_sources(cx);
         }
+        // The Overview opened as a page follows the shown chat with its module folded.
+        if self.folded.contains(&Right::Overview) && self.center == Center::Overview {
+            self.refresh_module(Right::Overview, cx);
+        }
     }
 
     fn refresh_module(&mut self, module: Right, cx: &mut Context<Self>) {
         match module {
             Right::Git => self.load_git(cx),
             Right::Files => self.load_folder(String::new(), cx),
-            Right::Statistics => self.load_context(cx),
+            Right::Overview => {
+                self.load_context(cx);
+                self.load_overview(cx);
+            }
             Right::Jobs => self.load_jobs(cx),
             Right::Sources => self.load_sources(cx),
             Right::Plan => self.load_plan(cx),

@@ -6,8 +6,8 @@ use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     thread::{
         AgentState, Block, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task,
-        ThreadEvent, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip, note, retry_row,
-        turn_spend,
+        ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip, note,
+        retry_row, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
@@ -90,6 +90,11 @@ pub struct ChatData {
     /// The context used and its limit.
     pub tokens: Option<(u64, u64)>,
     pub cost: Option<String>,
+    /// The token report as the core last sent it, for the Overview.
+    pub usage: Option<ThreadTokens>,
+    /// Counts the turns that ended and the plan's and team's changes, so the open
+    /// Overview knows to ask again.
+    pub moved: u64,
     pub access: Option<ApprovalPolicy>,
     pub tasks: Vec<Task>,
     pub agents: Vec<Agent>,
@@ -252,6 +257,12 @@ impl ChatData {
     pub fn apply(&mut self, event: ThreadEvent) {
         self.clock = now_ms();
         self.track_turn(&event);
+        if matches!(
+            event,
+            ThreadEvent::TurnFinished(_) | ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_)
+        ) {
+            self.moved += 1;
+        }
         match retry_row(&event) {
             Some(RetryRow::Show(retry)) => self.retry = Some((retry, self.clock)),
             Some(RetryRow::Clear) => self.retry = None,
@@ -308,6 +319,7 @@ impl ChatData {
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = Some((tokens.context, limit));
                 self.cost = tokens.cost();
+                self.usage = Some(tokens);
             }
             ThreadEvent::ModelSelected { input_limit, .. } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);

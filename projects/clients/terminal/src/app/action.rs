@@ -53,6 +53,8 @@ pub enum Action {
     SetBranchPrefix(String),
     /// `/plan`: open the chat's pinned plan in the editor.
     OpenPlan,
+    /// Read the Overview and open its panel.
+    Overview,
     /// `/files`: what this chat's commands changed in the project.
     ChangedFiles,
     /// `/diff`: the folder's changes line by line.
@@ -156,6 +158,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "a new tab; /tab 2 shows tab 2, /tab next, /tab prev, /tab close",
         ),
         ("/plan", "read and edit this chat's pinned plan"),
+        (
+            "/overview",
+            "how the chat's work stands: plan, tokens, changes, activity, log",
+        ),
         ("/files", "the files this chat's commands changed"),
         ("/diff", "review the changes in this chat's folder"),
         (

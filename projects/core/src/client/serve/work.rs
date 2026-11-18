@@ -1,4 +1,4 @@
-//! Requests about a thread's jobs, sources, plan and changes.
+//! Requests about a thread's jobs, sources, plan, changes and Overview.
 
 use super::{Server, publish::publish};
 use anyhow::Result;
@@ -60,6 +60,14 @@ impl Server {
                     .await?,
             ),
             WorkRequest::Team { thread_id } => Response::Team(runtime.team(&thread_id).await?),
+            WorkRequest::Overview { thread_id } => {
+                Response::Overview(runtime.overview(&thread_id).await?)
+            }
+            WorkRequest::Events {
+                thread_id,
+                before,
+                limit,
+            } => Response::Events(runtime.events(&thread_id, before, limit).await?),
             WorkRequest::ConfirmTask { thread_id, task_id } => {
                 let (chat, task) = runtime.confirm_task(&thread_id, &task_id).await?;
                 self.announce(&chat, ThreadEvent::TaskChanged(task));

@@ -59,6 +59,8 @@ named! {
     R::Work(W::FileChanges { .. }) => "work.file_changes",
     R::Work(W::PlanTasks { .. }) => "work.plan_tasks",
     R::Work(W::Team { .. }) => "work.team",
+    R::Work(W::Overview { .. }) => "work.overview",
+    R::Work(W::Events { .. }) => "work.events",
     R::Work(W::ConfirmTask { .. }) => "work.confirm_task",
     R::Work(W::StopTeam { .. }) => "work.stop_team",
     R::Work(W::SetTeamBudget { .. }) => "work.set_team_budget",

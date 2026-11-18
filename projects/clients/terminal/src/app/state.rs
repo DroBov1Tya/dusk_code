@@ -138,6 +138,13 @@ pub struct App {
     /// Read the jobs again at once: a tool ended, a result arrived, a thread opened.
     pub jobs_stale: bool,
     pub jobs_read: Instant,
+    /// The open thread's plan by status and its team, for the rail and /overview.
+    pub plan: Option<dusk_protocol::thread::PlanCounts>,
+    pub team: Option<dusk_protocol::thread::Team>,
+    /// Read the plan and team again, and the open Overview: a turn ended, the plan or
+    /// team changed, a thread opened. At most once every `OVERVIEW_PERIOD`.
+    pub overview_stale: bool,
+    pub overview_read: Instant,
     /// Image previews on screen in the last frame, and the pictures drawn over them
     /// where the terminal can.
     pub previews: Vec<ShownPreview>,
@@ -172,6 +179,13 @@ pub struct App {
 }
 
 impl App {
+    /// Another thread is shown: its plan and team are read anew.
+    pub fn forget_overview(&mut self) {
+        self.plan = None;
+        self.team = None;
+        self.overview_stale = true;
+    }
+
     /// A transcript line as drawn on the last frame, as plain text.
     pub fn drawn_text(&self, line: usize) -> Option<&str> {
         let earlier = self
@@ -275,6 +289,10 @@ impl App {
             jobs: Vec::new(),
             jobs_stale: false,
             jobs_read: Instant::now(),
+            plan: None,
+            team: None,
+            overview_stale: false,
+            overview_read: Instant::now(),
             previews: Vec::new(),
             pictures: Default::default(),
             subagents: Vec::new(),
@@ -319,6 +337,7 @@ impl App {
         self.recall_draft = None;
         self.jobs.clear();
         self.jobs_stale = true;
+        self.forget_overview();
         self.thread_id = thread_id;
         self.title = title;
         self.poll = None;

@@ -5,7 +5,7 @@ use crate::link::request;
 use dusk_protocol::{
     client::{Response, WorkRequest},
     project::{Change, FileDiff},
-    thread::JobInfo,
+    thread::{JobInfo, LogEntry, Overview, PlanCounts, Team},
 };
 
 use super::*;
@@ -52,4 +52,34 @@ pub async fn upload_picture(thread_id: &str, name: String, bytes: Vec<u8>) -> Re
         work(WorkRequest::UploadPicture { thread_id, name, bytes }),
         Response::Text(tag) => tag
     )
+}
+
+/// How the thread's work stands: activity, changes and the newest log lines.
+pub async fn overview(thread_id: &str) -> Res<Overview> {
+    let thread_id = thread_id.to_owned();
+    ask!(work(WorkRequest::Overview { thread_id }), Response::Overview(o) => o)
+}
+
+/// A page of the thread's event log older than `before`, newest first.
+pub async fn events(thread_id: &str, before: Option<i64>, limit: u32) -> Res<Vec<LogEntry>> {
+    let thread_id = thread_id.to_owned();
+    ask!(
+        work(WorkRequest::Events { thread_id, before, limit }),
+        Response::Events(entries) => entries
+    )
+}
+
+/// How many tasks of the chat's plan are in each status.
+pub async fn plan_counts(thread_id: &str) -> Res<PlanCounts> {
+    let thread_id = thread_id.to_owned();
+    ask!(
+        work(WorkRequest::PlanTasks { thread_id, done_before: None, limit: 1 }),
+        Response::PlanPage(page) => page.counts
+    )
+}
+
+/// The team running the chat's plan, or none before one ran.
+pub async fn team(thread_id: &str) -> Res<Option<Team>> {
+    let thread_id = thread_id.to_owned();
+    ask!(work(WorkRequest::Team { thread_id }), Response::Team(t) => t)
 }

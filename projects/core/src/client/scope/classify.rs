@@ -126,7 +126,9 @@ fn work(request: &Work) -> Access<'_> {
         | Work::ChangedFiles { thread_id }
         | Work::FileChanges { thread_id }
         | Work::PlanTasks { thread_id, .. }
-        | Work::Team { thread_id } => of(Area::ThreadRead, thread_id),
+        | Work::Team { thread_id }
+        | Work::Overview { thread_id }
+        | Work::Events { thread_id, .. } => of(Area::ThreadRead, thread_id),
         // The diff is of the whole project folder, whoever changed it, so it is about
         // the project and no one thread: a scope bound to threads does not get it.
         Work::Diff { .. } => apart(Area::Project),

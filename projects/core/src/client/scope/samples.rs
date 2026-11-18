@@ -141,6 +141,12 @@ fn work() -> Vec<W> {
             limit: 1,
         },
         W::Team { thread_id: id() },
+        W::Overview { thread_id: id() },
+        W::Events {
+            thread_id: id(),
+            before: None,
+            limit: 1,
+        },
         W::ConfirmTask {
             thread_id: id(),
             task_id: word(),

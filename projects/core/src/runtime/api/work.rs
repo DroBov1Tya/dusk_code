@@ -197,6 +197,23 @@ impl Runtime {
         launcher.state.thread_changes(thread_id).await
     }
 
+    /// How the thread's work stands: activity, changes and the newest log lines.
+    pub async fn overview(&self, thread_id: &str) -> Result<dusk_protocol::thread::Overview> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.overview(thread_id).await
+    }
+
+    /// A page of the thread's event log older than `before`, newest first.
+    pub async fn events(
+        &self,
+        thread_id: &str,
+        before: Option<i64>,
+        limit: u32,
+    ) -> Result<Vec<dusk_protocol::thread::LogEntry>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.events(thread_id, before, limit).await
+    }
+
     /// The background jobs of a thread, oldest first.
     pub async fn jobs(&self, thread_id: &str) -> Result<Vec<JobInfo>> {
         let launcher = self.of(thread_id).await;

@@ -252,6 +252,8 @@ pub struct Transcript {
     /// What the running turn has used so far, as the core counted it.
     pub spend: Option<TurnSpend>,
     pub tokens: Option<(u64, u64)>,
+    /// The token report as the core last sent it, for the Overview.
+    pub usage: Option<ThreadTokens>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
     /// Screenshots the model took to see the screen, oldest first: they go to the right
@@ -507,6 +509,7 @@ impl Transcript {
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = Some((context(&tokens), limit));
                 self.cost = tokens.cost();
+                self.usage = Some(tokens);
             }
             ThreadEvent::ModelSelected { input_limit, .. } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
@@ -608,22 +611,6 @@ impl Transcript {
         self.waiting = None;
         self.turn_started = None;
         self.spend = None;
-    }
-
-    /// How many times each tool ran in the chat, most used first.
-    pub fn activity(&self) -> Vec<(String, usize)> {
-        let mut counts: BTreeMap<&str, usize> = BTreeMap::new();
-        for item in &self.items {
-            if let Item::Tool(tool) = item {
-                *counts.entry(tool.name.as_str()).or_default() += 1;
-            }
-        }
-        let mut counts: Vec<_> = counts
-            .into_iter()
-            .map(|(name, count)| (name.to_owned(), count))
-            .collect();
-        counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-        counts
     }
 
     fn agent_name(&self, thread_id: &str) -> String {

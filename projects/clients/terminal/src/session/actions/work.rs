@@ -3,7 +3,7 @@
 use dusk_core::client::Client;
 use dusk_protocol::client::Command;
 
-use crate::app::{App, DiffView, Panel, PasteEditor};
+use crate::app::{App, DiffView, OverviewView, Panel, PasteEditor};
 use crate::session::{
     answers::answer,
     thread::{OpenThread, ensure_open},
@@ -20,6 +20,25 @@ pub async fn open_plan(client: &Client, app: &mut App) {
             app.panel = Some(Panel::Paste(PasteEditor::plan(text)));
         }
         Err(error) => app.error(format!("cannot read the plan: {error:#}")),
+    }
+}
+
+/// Opens the Overview; the clock keeps it current while it is open.
+pub async fn overview(client: &Client, app: &mut App) {
+    let Some(thread_id) = app.thread_id.clone() else {
+        app.flash = Some("Send a message first; the Overview belongs to a chat".into());
+        return;
+    };
+    match crate::session::answers::read_overview(client, &thread_id).await {
+        Ok((overview, context)) => {
+            app.panel = Some(Panel::Overview(Box::new(OverviewView {
+                overview,
+                context,
+                row: 0,
+            })));
+            app.overview_stale = true;
+        }
+        Err(error) => app.error(format!("cannot read the Overview: {error:#}")),
     }
 }
 

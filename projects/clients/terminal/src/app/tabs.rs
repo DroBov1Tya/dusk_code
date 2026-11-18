@@ -269,6 +269,7 @@ impl App {
         self.tabs[index].unseen = false;
         self.tabs[index].closed = false;
         self.jobs_stale = true;
+        self.forget_overview();
         // What the last frame drew belongs to the thread shown before.
         self.layout = None;
         self.tail_text.clear();

@@ -83,6 +83,7 @@ pub async fn apply(
         Action::OpenSnippet(name) => files::open_snippet(client, app, name).await,
         Action::SaveSnippet(name, text) => files::save_snippet(client, app, name, text).await,
         Action::OpenPlan => work::open_plan(client, app).await,
+        Action::Overview => work::overview(client, app).await,
         Action::Diff => work::diff(client, app).await,
         Action::ChangedFiles => work::changed_files(client, app).await,
         Action::SavePlan(text) => work::save_plan(client, app, text).await,

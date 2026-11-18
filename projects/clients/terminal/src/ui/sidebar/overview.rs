@@ -1,5 +1,6 @@
-//! The top of the rail: the model and its mode on a card, the context gauge and the
-//! activity of the turn.
+//! The top of the rail, the Overview in short: the model and its mode on a card, the
+//! context gauge, the activity of the turn, and the plan's line and its members while
+//! the chat has a plan.
 
 use dusk_protocol::thread::{AUTO_COMPACT_PERCENT, ThreadTokens};
 use ratatui::{
@@ -15,6 +16,10 @@ use super::{
     section::{GAUGE, PAD, fill, row, ruled},
 };
 use crate::app::compact_number;
+use crate::ui::windows::panels::{
+    fit,
+    overview::{member_line, plan_line, total},
+};
 use crate::ui::{
     text::format::format_duration,
     theme::{
@@ -23,8 +28,26 @@ use crate::ui::{
     },
 };
 
+/// The Overview without a plan: eleven lines and a blank one below.
+const BASE_HEIGHT: u16 = 12;
+/// The members the rail names; /overview lists them all.
+const MEMBERS_SHOWN: usize = 4;
+
 impl Sidebar<'_> {
-    pub fn statistics(&self, frame: &mut Frame, area: Rect) {
+    /// The rows the Overview takes: the plan adds its heading, its line and members.
+    pub fn overview_height(&self) -> u16 {
+        if !self.has_plan() {
+            return BASE_HEIGHT;
+        }
+        let members = self.app.team.as_ref().map_or(0, |team| team.members.len());
+        BASE_HEIGHT + 3 + members.min(MEMBERS_SHOWN) as u16
+    }
+
+    fn has_plan(&self) -> bool {
+        self.app.plan.is_some_and(|counts| total(counts) > 0)
+    }
+
+    pub fn overview(&self, frame: &mut Frame, area: Rect) {
         let width = area.width.saturating_sub(2 * PAD) as usize;
         let share = if self.app.limit == 0 {
             0.0
@@ -98,7 +121,7 @@ impl Sidebar<'_> {
                 ),
             ])
         };
-        let lines = vec![
+        let mut lines = vec![
             Line::default(),
             card(&self.app.model, bold(TEXT)),
             card(&mode, fg(TEXT_SOFT)),
@@ -135,6 +158,22 @@ impl Sidebar<'_> {
                 width,
             ),
         ];
+        if let Some(counts) = self.app.plan.filter(|_| self.has_plan()) {
+            let team = self.app.team.as_ref();
+            lines.push(Line::default());
+            lines.push(ruled("Plan", None, width));
+            lines.push(Line::from(Span::styled(
+                fill(&plan_line(counts, team), width),
+                fg(TEXT_SOFT),
+            )));
+            for member in team
+                .iter()
+                .flat_map(|team| &team.members)
+                .take(MEMBERS_SHOWN)
+            {
+                lines.push(fit(vec![member_line(member, "")], width).remove(0));
+            }
+        }
         frame.render_widget(
             Paragraph::new(lines)
                 .style(Style::new().fg(TEXT).bg(DEEP))

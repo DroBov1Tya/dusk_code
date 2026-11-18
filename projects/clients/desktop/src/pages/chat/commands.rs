@@ -140,7 +140,7 @@ impl Workspace {
             }
             Command::Context { .. } => {
                 self.right_hidden = false;
-                self.folded.remove(&Right::Statistics);
+                self.folded.remove(&Right::Overview);
                 self.load_context(cx);
             }
             Command::Migrate { .. } => self.core.call(

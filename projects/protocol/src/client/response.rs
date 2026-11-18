@@ -11,7 +11,9 @@ use crate::project::{
     Schedule,
 };
 use crate::system::SystemReport;
-use crate::thread::{Found, JobInfo, LocalUnsent, Message, PlanPage, Task, Team, Thread};
+use crate::thread::{
+    Found, JobInfo, LocalUnsent, LogEntry, Message, Overview, PlanPage, Task, Team, Thread,
+};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
@@ -32,6 +34,10 @@ pub enum Response {
     PlanPage(PlanPage),
     /// The team running a root thread's plan, or none before one ran.
     Team(Option<Team>),
+    /// How a thread's work stands.
+    Overview(Overview),
+    /// A page of a thread's event log, newest first.
+    Events(Vec<LogEntry>),
     LocalUnsent(Vec<LocalUnsent>),
     Jobs(Vec<JobInfo>),
     Node(NodeText),
