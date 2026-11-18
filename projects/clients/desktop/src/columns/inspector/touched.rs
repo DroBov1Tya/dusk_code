@@ -1,6 +1,7 @@
 //! The files the shown chat's commands changed in its project, as git saw them before
 //! and after each command.
 
+use crate::ui::Type;
 use gpui_kit::*;
 
 use super::git::{change_color, change_letter};
@@ -15,7 +16,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .flex_row()
                 .gap_2()
                 .px_3()
-                .text_xs()
+                .meta()
                 .child(
                     div()
                         .w(px(12.))

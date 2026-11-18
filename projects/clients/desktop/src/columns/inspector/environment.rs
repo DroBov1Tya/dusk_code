@@ -1,6 +1,7 @@
 //! Where the shown chat works: the project and its folder, the branch, the model, the
 //! mode and the approval policy. A click on the folder opens what to do with it.
 
+use crate::ui::Type;
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName},
     *,
@@ -30,7 +31,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             .gap_2()
             .px_4()
             .py_1()
-            .text_sm()
+            .small()
             .text_color(secondary)
             .child(widgets::icon(icon, muted))
             .child(div().flex_1().min_w_0().truncate().child(text))

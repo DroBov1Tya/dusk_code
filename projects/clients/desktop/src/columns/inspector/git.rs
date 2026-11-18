@@ -1,6 +1,7 @@
 //! The project's repository: its branch, the changes, the branches to switch to and
 //! the worktrees. The core refuses a switch while changes would be lost.
 
+use crate::ui::Type;
 use dusk_protocol::project::ChangeKind;
 use gpui_kit::{
     component::{
@@ -50,7 +51,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .font_weight(FontWeight::SEMIBOLD)
                     .child(branch.clone()),
             )
-            .child(div().text_xs().text_color(muted).child(sync))
+            .child(div().meta().text_color(muted).child(sync))
             .child(div().flex_1())
             .child(
                 Button::new("git-open-review")
@@ -95,21 +96,21 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .rounded_md()
                 .cursor_pointer()
                 .hover(|row| row.bg(cx.theme().list_hover))
-                .children(repository.map(|name| div().text_sm().truncate().child(name)))
+                .children(repository.map(|name| div().small().truncate().child(name)))
                 .child(
                     div()
-                        .text_sm()
+                        .small()
                         .text_color(ok)
                         .child(format!("+{}", pulls::grouped(stat.added))),
                 )
                 .child(
                     div()
-                        .text_sm()
+                        .small()
                         .text_color(bad)
                         .child(format!("\u{2212}{}", pulls::grouped(stat.removed))),
                 )
                 .child(div().flex_1())
-                .child(div().text_xs().text_color(muted).child(widgets::count(
+                .child(div().meta().text_color(muted).child(widgets::count(
                     stat.files.max(git.changes.len() as u64) as usize,
                     "file",
                 )))
@@ -143,7 +144,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 div()
                     .px_3()
                     .py_0p5()
-                    .text_xs()
+                    .meta()
                     .flex()
                     .flex_col()
                     .child(tree.branch.clone().unwrap_or_else(|| "detached".to_owned()))

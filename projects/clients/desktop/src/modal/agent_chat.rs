@@ -112,17 +112,17 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 crate::pages::chat::messages::job(ws, agent, at, result, cx).into_any_element()
             }
             Item::Command(run) => div()
-                .text_xs()
+                .meta()
                 .text_color(muted)
                 .child(format!("$ {}", run.command))
                 .into_any_element(),
             Item::Audio(clip) => div()
-                .text_xs()
+                .meta()
                 .text_color(muted)
                 .child(clip.title.clone().unwrap_or_else(|| "A sound".to_owned()))
                 .into_any_element(),
             Item::Image(picture) => div()
-                .text_xs()
+                .meta()
                 .text_color(muted)
                 .child(
                     picture
@@ -132,8 +132,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 )
                 .into_any_element(),
             Item::Notice(text) => {
-                notice(&key("notice"), div().text_xs().text_color(muted), text, cx)
-                    .into_any_element()
+                notice(&key("notice"), div().meta().text_color(muted), text, cx).into_any_element()
             }
             // What went wrong must not read as one more quiet note.
             Item::Error(text) => div()
