@@ -6,8 +6,8 @@
 d59429f25943a070cd6bb300f50a07ad144d85f9:projects/web/tests/browser.rs:generic-api-key:81
 # Made-up keys planted by tests that prove such text never reaches the project graph or an
 # episode: AWS's documented example key shapes, a generated PEM header and random bodies.
-d0482c4df0ed2f3e0e9d2ff7a8d26f8448c7000b:projects/core/src/project/graph/tests.rs:aws-access-token:122
-f0e647eb3d57917edf6687752ee4b7a88d2efc86:projects/core/src/project/episodes/clean_tests.rs:aws-access-token:511
-f0e647eb3d57917edf6687752ee4b7a88d2efc86:projects/core/src/project/episodes/clean_tests.rs:private-key:514
-f0e647eb3d57917edf6687752ee4b7a88d2efc86:projects/core/src/project/episodes/clean_tests.rs:generic-api-key:623
-f0e647eb3d57917edf6687752ee4b7a88d2efc86:projects/core/src/project/episodes/clean_tests.rs:generic-api-key:652
+292cedf84158635948baa95947dbb967fdac5afc:projects/core/src/project/episodes/clean_tests.rs:aws-access-token:511
+292cedf84158635948baa95947dbb967fdac5afc:projects/core/src/project/episodes/clean_tests.rs:generic-api-key:623
+292cedf84158635948baa95947dbb967fdac5afc:projects/core/src/project/episodes/clean_tests.rs:generic-api-key:652
+292cedf84158635948baa95947dbb967fdac5afc:projects/core/src/project/episodes/clean_tests.rs:private-key:514
+753c10ce879e2559c12ae1aafcb6f4d731f197f9:projects/core/src/project/graph/tests.rs:aws-access-token:122
