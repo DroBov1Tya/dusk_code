@@ -15,7 +15,7 @@ mod undo;
 pub use compactions::Compaction;
 pub use local_unsent::LocalUnsent;
 pub use messages::{Message, MessageRole, calls_of, estimate_tokens};
-pub use pending::PendingMessage;
+pub use pending::{Delivery, PendingMessage};
 pub use shaped::ShapedResult;
 pub use sources::Source;
 pub use stubs::{CallEnd, Ended, NewStub, Stub, saved_tokens};

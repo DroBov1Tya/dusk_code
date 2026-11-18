@@ -19,6 +19,12 @@ pub trait TeamRunner: Send + Sync {
 
     /// The plan's team, running or ended; `None` before its first run.
     fn team<'a>(&'a self, lead: &'a str) -> BoxFuture<'a, Option<Team>>;
+
+    /// The lead changed its plan (a review, a reopen, new tasks): a running team gives
+    /// out what became ready at once instead of at its next look.
+    fn changed<'a>(&'a self, _lead: &'a str) -> BoxFuture<'a, ()> {
+        Box::pin(async { Ok(()) })
+    }
 }
 
 /// Until the team runtime lands: `run` and `stop` say so, `show` has no budget line.

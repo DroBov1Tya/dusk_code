@@ -17,10 +17,11 @@ pub use db::State;
 pub use project::graph;
 pub use project::{Episode, Recall};
 pub use project::{EpisodeKind, NewEpisode};
+pub use thread::MEMBER_SOURCE;
 pub use thread::{
-    BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Ended, Goal,
-    GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent,
-    Message, MessageRole, ModelCall, NewStub, PendingMessage, ProviderFailure, Settle,
+    BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Delivery,
+    Ended, Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt,
+    LocalUnsent, Message, MessageRole, ModelCall, NewStub, PendingMessage, ProviderFailure, Settle,
     ShapedResult, Source, Stub, Task, Thread, Turn, TurnAnswer, TurnFailure, TurnOutcome,
     TurnStatus, UndoPoint, Unfinished, calls_of, estimate_tokens, saved_tokens,
 };

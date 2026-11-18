@@ -44,6 +44,8 @@ pub struct Runtime {
     pub(super) model_discovery: Option<JoinHandle<()>>,
     /// The worker that keeps the graph of saved projects current.
     pub(super) graph_index: JoinHandle<()>,
+    /// The dispatcher's look at the running teams, every 30 s.
+    pub(super) team_tick: JoinHandle<()>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
     pub(super) updated_builtin: Vec<String>,
     /// The latest sounds made by reading aloud, by what was asked, so asking again plays the
@@ -151,6 +153,7 @@ impl Runtime {
             platform,
             mcp,
             agents,
+            team: Arc::default(),
             temporary: false,
         };
         launcher
@@ -185,6 +188,7 @@ impl Runtime {
                 ..launcher.clone()
             }
         };
+        let team_tick = super::team::ticker(vec![launcher.clone(), temporary.clone()]);
         platforms.attach(launcher.clone());
         // Read before model discovery, so a plugin's provider can be the first that answers.
         let plugins = crate::plugins::Plugins::new(
@@ -244,6 +248,7 @@ impl Runtime {
             updates,
             model_discovery,
             graph_index,
+            team_tick,
             updated_builtin: initialized.builtin.updated,
             speech: Default::default(),
             local_voice,
@@ -287,6 +292,7 @@ impl Runtime {
         self.plugins_check.abort();
         self.update_check.abort();
         self.graph_index.abort();
+        self.team_tick.abort();
         if let Some(discovery) = self.model_discovery {
             discovery.abort();
         }

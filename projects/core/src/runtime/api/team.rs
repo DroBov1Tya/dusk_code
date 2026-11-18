@@ -4,7 +4,7 @@
 //! failure of the store itself is logged here and answered without its text.
 
 use anyhow::{Result, anyhow};
-use dusk_protocol::thread::{PlanPage, Task, Team, TeamBudget, TeamEnd};
+use dusk_protocol::thread::{PlanPage, Task, Team, TeamBudget};
 use tracing::warn;
 
 use crate::{
@@ -46,22 +46,21 @@ impl Runtime {
             .map_err(plan_refusal)?;
         let chat = passed.plan.clone();
         let task = state.present_task(passed).await.map_err(plan_refusal)?;
+        // What the task was before is ready now: a running team gives it out.
+        self.of(thread_id).await.team_changed(&chat).await;
         Ok((chat, task))
     }
 
     /// Ends the running team as stopped and gives its tasks at work back to open. Answers
     /// with the team and those tasks.
     ///
-    /// The members' running turns are not cancelled here: that is the dispatcher's, which
-    /// does not exist yet. Until it does, a member's turn that is running ends on its own
-    /// and finds its task already returned.
+    /// The members at work are cancelled with it (`Launcher::team_stop`).
     pub async fn stop_team(&self, thread_id: &str) -> Result<(Team, Vec<Task>)> {
         let state = self.state_of(thread_id).await;
         let now = timestamp_ms()?;
-        let (_, returned) = state
-            .end_team(thread_id, TeamEnd::Stopped, now)
-            .await
-            .map_err(team_refusal)?;
+        let chat = state.root_thread(thread_id).await?;
+        let launcher = self.of(thread_id).await;
+        let returned = launcher.team_stop(&chat).await.map_err(team_refusal)?;
         let mut tasks = Vec::with_capacity(returned.len());
         for task in returned {
             tasks.push(state.present_task(task).await.map_err(plan_refusal)?);
@@ -83,6 +82,9 @@ impl Runtime {
             .set_team_budget(thread_id, BudgetBy::User, budget, ceilings)
             .await
             .map_err(team_refusal)?;
+        // More members at once, or a budget no longer spent, takes hold now.
+        let chat = state.root_thread(thread_id).await?;
+        self.of(thread_id).await.team_changed(&chat).await;
         state
             .team(thread_id, timestamp_ms()?)
             .await

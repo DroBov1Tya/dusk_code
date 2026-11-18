@@ -8,6 +8,9 @@ use super::{State, timestamp_ms};
 
 pub use dusk_protocol::thread::Thread;
 
+/// The `source` of a thread a team made for a task.
+pub const MEMBER_SOURCE: &str = "member";
+
 impl State {
     pub async fn create_thread(&self, id: &str, source: &str) -> Result<Thread> {
         self.insert_thread(id, source, None, None, None).await
@@ -75,6 +78,20 @@ impl State {
         name: &str,
     ) -> Result<Thread> {
         self.insert_thread(id, "agent", Some(parent), Some(agent), Some(name))
+            .await
+    }
+
+    /// A thread the team made under its lead for one task of the plan, working as the
+    /// task's role. Its source marks it, so the team finds its own threads again and no
+    /// thread an agent asked for is ever taken for one.
+    pub async fn create_member_thread(
+        &self,
+        id: &str,
+        lead: &str,
+        role: &str,
+        name: &str,
+    ) -> Result<Thread> {
+        self.insert_thread(id, MEMBER_SOURCE, Some(lead), Some(role), Some(name))
             .await
     }
 
