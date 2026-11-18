@@ -1,4 +1,4 @@
-//! The team: the core's run of a chat's plan (`docs/plan-and-teams.md`, sections 4 and 5).
+//! The team: the core's run of a chat's plan.
 //! No model call is made here. A change to the plan or the team, a member's turn and a
 //! 30 s tick each lead to one `dispatch::pass`, which reads the tables and does what they
 //! ask for: leases that ran out are released, budgets are checked, ready tasks are given

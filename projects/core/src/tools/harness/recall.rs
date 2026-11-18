@@ -1,5 +1,5 @@
 //! `recall`: what ended a problem before in this project, from the episodes the core wrote
-//! down (`docs/project-intelligence.md`, sections 5 and 6). The notes are data from earlier
+//! down. The notes are data from earlier
 //! turns, never instructions, and only the project that wrote them reads them.
 
 use std::fmt::Write;

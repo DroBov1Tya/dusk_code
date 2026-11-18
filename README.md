@@ -126,7 +126,7 @@ account only in its own apps. Claude models work here with an API key.
 | `resources/` | Shipped modes, agents, skills, plugins and prompts |
 
 [docs/structure.md](docs/structure.md) says where a file goes;
-[docs/agent-engine.md](docs/agent-engine.md) describes a turn.
+[docs/features.md](docs/features.md) lists the features and their switches.
 
 ## Security and privacy
 
@@ -173,10 +173,8 @@ scripts/build-web.sh                  # the web page, embedded by the next build
 
 ## Documentation
 
-[docs/structure.md](docs/structure.md), [docs/agent-engine.md](docs/agent-engine.md),
+[docs/structure.md](docs/structure.md), [docs/features.md](docs/features.md),
 [docs/web.md](docs/web.md) and [docs/plugins.md](docs/plugins.md) describe the program.
-[docs/structure-audit.md](docs/structure-audit.md) is the maintainers' working note on
-the code's layout: public on purpose, and may be rough.
 
 ## Limitations
 

@@ -138,7 +138,7 @@ pub struct Limits {
     pub episode_lesson: bool,
     /// Whether the chat in ORCHESTRATOR mode gets the plan form of `tasks` (tasks that
     /// depend on each other, and `run`, which has the core start the team). Off until the
-    /// evals show the lead needs fewer steps (`docs/plan-and-teams.md`).
+    /// evals show the lead needs fewer steps.
     #[serde(default)]
     pub plan_graph: bool,
     /// Whether a team member gets its own prompt, tool set, task card and a one-line

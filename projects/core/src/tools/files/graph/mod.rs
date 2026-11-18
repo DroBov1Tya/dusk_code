@@ -1,6 +1,6 @@
 //! `project_graph`: where a name is defined, who uses it, what depends on a file and which
-//! tests cover it, answered from the project's index in one short result
-//! (`docs/project-intelligence.md`, sections 4 and 5). The questions are in
+//! tests cover it, answered from the project's index in one short result.
+//! The questions are in
 //! `project::graph::ask`; here are the arguments and the scope, and in `text` the wording.
 
 #[cfg(test)]

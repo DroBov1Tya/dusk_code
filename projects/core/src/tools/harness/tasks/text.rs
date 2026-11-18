@@ -1,5 +1,5 @@
-//! What the lead reads of the plan form: the description and schema it is offered
-//! (`docs/plan-and-teams.md`, section 9, byte for byte), and the plan as `show` prints it.
+//! What the lead reads of the plan form: the description and schema it is offered,
+//! and the plan as `show` prints it.
 
 use dusk_protocol::thread::{GoalCheck, Team, TeamStatus};
 use serde_json::{Value, json};

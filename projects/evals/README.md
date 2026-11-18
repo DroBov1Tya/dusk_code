@@ -74,8 +74,8 @@ large log. `--only hard-` runs them alone.
 
 ## Team tasks
 
-The `team-` tasks have parts for a lead and its members (`docs/plan-and-teams.md`, section
-13). Each part has its own files and a check command named in `task.md`, which a plan can
+The `team-` tasks have parts for a lead and its members (the plan graph in
+`docs/features.md`). Each part has its own files and a check command named in `task.md`, which a plan can
 take as the part's gate; `check.sh` runs those and hidden cases of each part. They run as
 well for one agent, the baseline they are compared with: `--mode ORCHESTRATOR` for a team,
 the default mode for one agent.

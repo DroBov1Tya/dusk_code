@@ -1,5 +1,5 @@
-//! Every move of a task from one status to another (the table of section 4 of
-//! `docs/plan-and-teams.md`), one function and one transaction each. A move the table
+//! Every move of a task from one status to another (the state machine of a
+//! task), one function and one transaction each. A move the table
 //! does not have is refused with `PlanError::Illegal` and changes nothing.
 //!
 //! The store cannot know who calls. What it can check it does: the plan is found from

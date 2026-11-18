@@ -121,7 +121,7 @@ fn the_designs_examples_render_byte_for_byte() {
                 times: 5,
             },
             ChangedWith {
-                path: "docs/context-life.md".into(),
+                path: "docs/computer-use.md".into(),
                 times: 2,
             },
         ],
@@ -138,7 +138,7 @@ fn the_designs_examples_render_byte_for_byte() {
          core/src/config/live.rs (ThreadConfig)\n\
          core/src/tools/files/read.rs (Limits)\n\
          tests: core/src/config/file/tests.rs, core/src/runtime/agent/repeats/tests.rs\n\
-         changed with it: core/src/config/file/mod.rs x5, docs/context-life.md x2"
+         changed with it: core/src/config/file/mod.rs x5, docs/computer-use.md x2"
     );
     assert_eq!(text.len(), 592);
 

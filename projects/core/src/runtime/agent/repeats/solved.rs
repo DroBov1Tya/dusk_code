@@ -1,6 +1,6 @@
 //! A loop that ended: the same error came back, and then a call like the ones that failed
-//! passed. What the loop was becomes a `fixed` episode (`docs/project-intelligence.md`,
-//! section 6), and the model may be asked for its lesson.
+//! passed. What the loop was becomes a `fixed` episode, and the model may be asked for its
+//! lesson.
 //!
 //! A call passed when it is `run_command` that ran in the foreground and exited 0: its
 //! result is no error and its exit code is 0. A background start, a command cut off, and

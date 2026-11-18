@@ -1,7 +1,7 @@
-//! Command output sent shaped (`limits.shape_output`, `docs/context-life.md` "Shaped
-//! output"): as a result is stored, the text the model is sent in its place is decided
-//! once and kept beside it. The model gets the tool's shaped output, the notes added
-//! after the call, and a last line that says what was left out and how to read it.
+//! Command output sent shaped (`limits.shape_output`): as a result is stored, the text the
+//! model is sent in its place is decided once and kept beside it. The model gets the tool's
+//! shaped output, the notes added after the call, and a last line that says what was left
+//! out and how to read it.
 
 use tracing::warn;
 

@@ -1,5 +1,4 @@
-//! The project graph's store (`docs/project-intelligence.md` sections 2 and 4): for each
-//! source file of a saved project, the symbols it defines and the names it refers to.
+//! The project graph's store: for each source file of a saved project, the symbols it defines and the names it refers to.
 //! Edges are stored by name and resolved when asked, so indexing one file rewrites that
 //! file's rows and nothing else. Every row is derived from the folder and can be built
 //! again. The answers here are rows; their wording is the tool's.
