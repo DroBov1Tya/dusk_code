@@ -1,7 +1,7 @@
 //! A row of the connectors page, in a card of rows: an icon slot, the name over one line
 //! of what kind it is and what it does, its state and its actions at the right end.
 
-use crate::ui::{Type, widgets::Focusable};
+use crate::ui::{Type, avatar::avatar, widgets::Focusable};
 use gpui_kit::{component::ActiveTheme, *};
 
 /// A row's height: two lines of text and their padding.
@@ -17,7 +17,7 @@ pub struct Card {
     pub kind: String,
     pub description: String,
     pub state: Option<(String, Hsla)>,
-    /// A picture the core found for it; a letter tile otherwise.
+    /// A picture the core found for it; the letter avatar otherwise.
     pub icon: Option<std::path::PathBuf>,
 }
 
@@ -40,13 +40,7 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
-        .child(match card.icon {
-            Some(path) => div()
-                .size(px(ICON))
-                .flex_none()
-                .child(img(path).size_full().rounded_lg()),
-            None => icon_slot(&card.name, cx),
-        })
+        .child(avatar(&card.name, ICON, card.icon, cx))
         .child(
             div()
                 .flex()
@@ -93,25 +87,4 @@ fn one_line(text: &str) -> String {
         line.push('\u{2026}');
     }
     line
-}
-
-/// Keep the fallback quiet so each connector's status gets the color.
-pub fn icon_slot(name: &str, cx: &App) -> Div {
-    let letter = name
-        .chars()
-        .find(|c| c.is_alphanumeric())
-        .map(|c| c.to_uppercase().to_string())
-        .unwrap_or_else(|| "?".to_owned());
-    div()
-        .size(px(ICON))
-        .flex_none()
-        .rounded_md()
-        .bg(cx.theme().accent)
-        .flex()
-        .items_center()
-        .justify_center()
-        .small()
-        .font_weight(FontWeight::SEMIBOLD)
-        .text_color(cx.theme().foreground)
-        .child(letter)
 }
