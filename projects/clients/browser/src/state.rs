@@ -10,7 +10,7 @@ use crate::{
 };
 use dusk_protocol::{
     client::{Event, Status},
-    project::Project,
+    project::{Project, RepositoryStatus},
     thread::{Thread, ThreadEvent},
 };
 use leptos::{prelude::*, task::spawn_local};
@@ -53,6 +53,8 @@ pub struct AppState {
     pub subagent: RwSignal<Option<(String, String)>>,
     /// Whether an answer is being read aloud.
     pub speaking: RwSignal<bool>,
+    /// The last repository status the core sent, and the project it is of.
+    pub repository: RwSignal<Option<(String, RepositoryStatus)>>,
 }
 
 thread_local! {
@@ -90,6 +92,7 @@ impl AppState {
             theme: RwSignal::new(theme::stored()),
             subagent: RwSignal::new(None),
             speaking: RwSignal::new(false),
+            repository: RwSignal::new(None),
         }
     }
 
@@ -205,6 +208,9 @@ impl AppState {
             | Event::PluginNotice { .. }
             // The project page reads the repository when it opens.
             | Event::GitChanged { .. } => {}
+            Event::RepositoryStatus { project_id, status } => {
+                self.repository.set(Some((project_id, *status)))
+            }
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chat(&thread_id) {
                     chat.update(|data| {
