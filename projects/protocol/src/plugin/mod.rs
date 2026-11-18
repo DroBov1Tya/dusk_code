@@ -21,8 +21,9 @@ pub use compat::{Client, Os, allows, runs_here};
 pub use permission::{KeyUse, Permissions};
 pub use place::{Opens, Part, Place};
 pub use store::{
-    CATEGORIES, Cover, Kind, LOCAL_SOURCE, Listing, OFFICIAL_SOURCE, Order, PICKS, Picks,
-    RepoStars, ScreenshotRef, SourceFailure, StoreList, StoreRequest, Tier, UpdateReport,
+    CATEGORIES, Contents, Cover, FilePreview, FileRef, Kind, LOCAL_SOURCE, Listing,
+    OFFICIAL_SOURCE, Order, PICKS, PREVIEW_BYTES, Picks, RepoStars, ScreenshotRef, SourceFailure,
+    StoreList, StoreRequest, Tier, UpdateReport,
 };
 pub use view::{
     ButtonIcon, ListItem, MAX_NODES, MAX_TEXT, RowLayout, Size, Tone, UiEvent, Widget, check_view,

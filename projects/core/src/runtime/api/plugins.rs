@@ -101,6 +101,15 @@ impl Runtime {
                 let mime = mime.to_owned();
                 return Ok(Response::Media { base64, mime });
             }
+            StoreRequest::Contents { source, name } => {
+                let contents =
+                    store::contents::contents(self.paths(), &mirrors, &source, &name).await?;
+                return Ok(Response::StoreContents(contents));
+            }
+            StoreRequest::File { source, name, path } => {
+                let file = store::contents::file(&source, &name, &path).await?;
+                return Ok(Response::StoreFile(file));
+            }
         }
         Ok(Response::Done)
     }

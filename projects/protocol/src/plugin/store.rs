@@ -253,4 +253,49 @@ pub enum StoreRequest {
         name: String,
         index: u32,
     },
+    /// The files of `name` from `source`: the copy installed here, or else the package
+    /// the last list read named, fetched and checked; answered with
+    /// `Response::StoreContents`. Nothing of it is installed, run or read by the model.
+    Contents { source: String, name: String },
+    /// One text file of the last `Contents` of `name`, by its `path` there; answered with
+    /// `Response::StoreFile`.
+    File {
+        source: String,
+        name: String,
+        path: String,
+    },
 }
+
+/// The answer to `StoreRequest::Contents`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Contents {
+    /// Sorted by path.
+    pub files: Vec<FileRef>,
+    /// The SHA-256 of the package, as the list names it or as it was installed.
+    pub package_sha256: String,
+    /// The files are the copy installed here, edits included, not the package's.
+    pub installed: bool,
+}
+
+/// One file of `Contents`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileRef {
+    /// Relative, `/` between names.
+    pub path: String,
+    pub size: u64,
+    /// UTF-8 text a client may ask for with `StoreRequest::File`; anything else, such as
+    /// a plugin's program, is shown by its size only.
+    pub text: bool,
+}
+
+/// The answer to `StoreRequest::File`: plain text, its control and bidi characters
+/// escaped, at most `PREVIEW_BYTES` of it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilePreview {
+    pub text: String,
+    /// The file is longer than what `text` holds.
+    pub truncated: bool,
+}
+
+/// The most of one file `StoreRequest::File` answers with.
+pub const PREVIEW_BYTES: usize = 256 * 1024;

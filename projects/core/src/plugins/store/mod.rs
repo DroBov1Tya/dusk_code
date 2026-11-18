@@ -13,11 +13,15 @@
 //! - `picture` — the covers and screenshots of the cards;
 //! - `record` — what the store did here;
 //! - `unpack` — a package into a folder;
-//! - `content`, `pack` — skills, packs and agents, which are plain files.
+//! - `content`, `pack` — skills, packs and agents, which are plain files;
+//! - `contents` — the files of a listing, for a client to look through.
 
 mod content;
 #[cfg(test)]
 mod content_tests;
+pub mod contents;
+#[cfg(test)]
+mod contents_tests;
 #[cfg(test)]
 mod credit_tests;
 mod fetch;

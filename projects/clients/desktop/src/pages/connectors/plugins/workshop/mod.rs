@@ -8,6 +8,7 @@
 mod actions;
 mod byline;
 mod capsule;
+pub mod contents;
 pub mod covers;
 pub mod detail;
 pub mod filters;
@@ -88,6 +89,8 @@ pub struct Workshop {
     pub shots: covers::Shots,
     /// The open listing's window: its tab in view, the picture in view and its strip.
     pub tab: detail::Tab,
+    /// The files of the listing last shown on its Contents tab.
+    pub contents: Option<contents::Opened>,
     pub gallery: usize,
     pub strip: ScrollHandle,
     /// What the last "Update all" did, until it is closed.

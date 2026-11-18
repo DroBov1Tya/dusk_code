@@ -4,7 +4,9 @@ use super::Client;
 use anyhow::{Result, bail};
 use dusk_protocol::{
     client::{PluginRequest, Request, Response},
-    plugin::{Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport},
+    plugin::{
+        Contents, FilePreview, Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport,
+    },
 };
 
 /// Views, frames and notes of the parts this client opened come as `Event::PluginView`,
@@ -103,6 +105,34 @@ impl Plugins<'_> {
             index,
         };
         self.media(request).await
+    }
+
+    /// The files of `name` from `source`: the copy here, or the package checked by the
+    /// core, which may fetch it first.
+    pub async fn contents(&self, source: &str, name: &str) -> Result<Contents> {
+        let request = StoreRequest::Contents {
+            source: source.to_owned(),
+            name: name.to_owned(),
+        };
+        match self.0.call(Request::Store(request)).await? {
+            Response::StoreContents(contents) => Ok(contents),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
+    }
+
+    /// One text file of the last `contents` of `name`.
+    pub async fn contents_file(&self, source: &str, name: &str, path: &str) -> Result<FilePreview> {
+        let request = StoreRequest::File {
+            source: source.to_owned(),
+            name: name.to_owned(),
+            path: path.to_owned(),
+        };
+        match self.0.call(Request::Store(request)).await? {
+            Response::StoreFile(file) => Ok(file),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
     }
 
     async fn media(&self, request: StoreRequest) -> Result<(String, String)> {
