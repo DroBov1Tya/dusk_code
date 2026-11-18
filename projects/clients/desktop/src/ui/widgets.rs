@@ -75,7 +75,7 @@ pub fn badge(text: impl Into<SharedString>, color: Hsla) -> Div {
     div()
         .px_1p5()
         .rounded_sm()
-        .text_xs()
+        .meta()
         .text_color(color)
         .bg(color.opacity(0.14))
         .child(text.into())

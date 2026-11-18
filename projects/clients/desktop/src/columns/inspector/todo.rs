@@ -1,6 +1,7 @@
 //! The shown chat's task board, as its agents keep it: each task a card with how far it
 //! is, and its items down a line, the one being worked on lit.
 
+use crate::ui::Type;
 use std::time::Duration;
 
 use gpui_kit::{
@@ -45,7 +46,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .rounded_md()
         .cursor_pointer()
         .hover(|head| head.bg(cx.theme().list_hover))
-        .text_xs()
+        .meta()
         .text_color(muted)
         .child(widgets::icon(
             if shown {
@@ -109,7 +110,7 @@ fn card(task: &Task, cx: &App) -> Div {
                     div()
                         .flex_1()
                         .min_w_0()
-                        .text_sm()
+                        .small()
                         .font_weight(FontWeight::MEDIUM)
                         .child(task.description.clone()),
                 )
@@ -117,7 +118,7 @@ fn card(task: &Task, cx: &App) -> Div {
                     head.child(
                         div()
                             .flex_none()
-                            .text_xs()
+                            .meta()
                             .text_color(if finished { fill } else { muted })
                             .child(format!("{done}/{all}")),
                     )
@@ -213,7 +214,7 @@ fn row(task: &Task, item: &TaskItem, last: bool, cx: &App) -> Div {
                 .flex_1()
                 .min_w_0()
                 .pb_2()
-                .text_xs()
+                .meta()
                 .when(item.done, |text| text.text_color(muted).line_through())
                 .when(active, |text| {
                     text.text_color(theme.foreground.mix_oklab(accent, 0.25))

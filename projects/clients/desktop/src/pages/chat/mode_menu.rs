@@ -47,8 +47,8 @@ pub fn render(ws: &Workspace, down: bool, cx: &mut Context<Workspace>) -> Statef
                 cx,
             )
             .h_auto()
-            .items_start()
-            .min_h(px(48.))
+            .items_center()
+            .min_h(px(crate::ui::ROW))
             .px_3()
             .py_2()
             .child(
@@ -65,13 +65,18 @@ pub fn render(ws: &Workspace, down: bool, cx: &mut Context<Workspace>) -> Statef
                             .font_weight(FontWeight::MEDIUM)
                             .child(title(&mode.name)),
                     )
-                    .child(
-                        div()
-                            .small()
-                            .text_color(muted)
-                            .line_clamp(2)
-                            .child(mode.summary.clone()),
-                    ),
+                    // A mode that says nothing of itself is a name alone, not a name
+                    // over an empty line.
+                    .when(!mode.summary.trim().is_empty(), |text| {
+                        text.child(
+                            div()
+                                .small()
+                                .text_color(muted)
+                                .line_clamp(2)
+                                .text_ellipsis()
+                                .child(mode.summary.clone()),
+                        )
+                    }),
             )
             .when(current, |row| {
                 row.child(widgets::icon(IconName::Check, accent))

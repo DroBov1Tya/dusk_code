@@ -52,8 +52,19 @@ pub fn kept(state: &Entity<TextViewState>, marked: bool) -> TextView {
     }
 }
 
+/// A list's marker. The library draws it as a glyph in one cell, bullets and numbers
+/// alike, and lets only that cell's text be styled: numbers take tabular figures, so
+/// they stand in one column. A larger or drawn dot would need the library's own change
+/// or a renderer of lists of our own; a larger font here would swell the numbers too.
+fn marker() -> StyleRefinement {
+    let mut style = StyleRefinement::default();
+    style.text.font_features = Some(super::working::tabular());
+    style
+}
+
 fn view(view: TextView, links: Links) -> TextView {
     view.selectable(true)
+        .list_style(marker())
         .code_block_actions(super::code::actions)
         .on_link_click(move |url, _, window, cx| {
             if let Some(path) = url

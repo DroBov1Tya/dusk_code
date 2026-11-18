@@ -1,5 +1,6 @@
 //! What a check of a provider found, as a line to show.
 
+use crate::ui::Type;
 use dusk_protocol::model::ProviderStatus;
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -41,7 +42,7 @@ impl Check {
             .flex_row()
             .items_start()
             .gap_2()
-            .text_sm()
+            .small()
             .child(
                 div()
                     .mt(px(6.))

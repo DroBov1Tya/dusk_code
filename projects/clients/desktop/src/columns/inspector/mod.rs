@@ -230,7 +230,7 @@ fn arbiter_summary(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .items_center()
         .gap_3()
         .px_4()
-        .text_sm()
+        .small()
         .child(div().flex_1().text_color(muted).child(format!(
             "{asked} asked · {allowed} allowed · {denied} denied"
         )))
@@ -389,7 +389,7 @@ fn footer(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .pt_1()
                     .flex()
                     .justify_end()
-                    .text_xs()
+                    .meta()
                     .text_color(muted)
                     .cursor_pointer()
                     .hover(|version| version.text_color(cx.theme().foreground))

@@ -44,7 +44,10 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         }
         buttons = buttons.child(
             Button::new(SharedString::from(format!("deny-{id}")))
+                // One filled button on the card: the yes. The no is its outline, in the
+                // danger color, so it is found and not pressed by habit.
                 .danger()
+                .outline()
                 .label("Deny")
                 .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Deny, cx))),
         );

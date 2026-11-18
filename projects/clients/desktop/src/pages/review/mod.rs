@@ -14,14 +14,14 @@ use files::{files, stat};
 use dusk_protocol::project::{DiffLine, FileDiff};
 use gpui_kit::{
     component::{
-        ActiveTheme, Icon, IconName, Sizable,
+        ActiveTheme, Icon, IconName,
         button::{Button, ButtonVariants},
     },
     *,
 };
 
 use crate::{
-    ui::widgets,
+    ui::{Type, widgets},
     workspace::{Center, Workspace},
 };
 
@@ -99,13 +99,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .items_center()
         .gap_3()
         .px_4()
-        .py_3()
+        .h(px(crate::ui::size::BAR))
+        .flex_none()
         .border_b_1()
         .border_color(border)
         .child(
             Button::new("review-back")
                 .ghost()
-                .small()
                 .icon(IconName::ArrowLeft)
                 .label("Chat")
                 .on_click(cx.listener(|ws, _, _, cx| {
@@ -113,7 +113,12 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     cx.notify();
                 })),
         )
-        .child(div().font_weight(FontWeight::SEMIBOLD).child("Changes"))
+        .child(
+            div()
+                .body()
+                .font_weight(FontWeight::SEMIBOLD)
+                .child("Changes"),
+        )
         .child(stat(
             ws.review.files.len(),
             added,
@@ -126,7 +131,6 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .child(
             Button::new("review-refresh")
                 .ghost()
-                .small()
                 .icon(IconName::RefreshCw)
                 .tooltip("Read the changes again")
                 .on_click(cx.listener(|ws, _, _, cx| ws.open_review(cx))),
