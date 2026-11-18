@@ -13,6 +13,7 @@ mod sphere;
 mod viewer;
 mod whats_new;
 
+use crate::ui::Type;
 use std::path::PathBuf;
 
 use gpui_kit::{
@@ -417,7 +418,7 @@ fn rollback(cx: &mut Context<Workspace>) -> Div {
         .gap_3()
         .p_5()
         .child("Go back to this message?")
-        .child(div().text_sm().text_color(muted).child(
+        .child(div().small().text_color(muted).child(
             "The message and everything after it are erased from the chat for good. \
              Files the agents wrote stay. The message returns to the box.",
         ))

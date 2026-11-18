@@ -1,5 +1,6 @@
 //! Saving the speech servers, and asking to connect one when a button needs it.
 
+use crate::ui::Type;
 use crate::workspace::Workspace;
 use dusk_protocol::config::{STT_KEY, TTS_KEY, VoiceEndpoint, VoiceSettings};
 use gpui_kit::{
@@ -42,7 +43,7 @@ pub fn missing(speech: Speech, cx: &mut Context<Workspace>) -> Div {
         .gap_3()
         .p_5()
         .child(div().font_weight(FontWeight::SEMIBOLD).child(title))
-        .child(div().text_sm().text_color(muted).child(text))
+        .child(div().small().text_color(muted).child(text))
         .child(
             div()
                 .flex()

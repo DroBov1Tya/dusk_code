@@ -3,6 +3,7 @@
 //! `remove`, started in the background; it waits for this window to close before it
 //! deletes anything, because the window holds the data it deletes.
 
+use crate::ui::Type;
 use std::process::{Command, Stdio};
 
 use anyhow::{Context as _, Result, ensure};
@@ -107,7 +108,7 @@ pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {
                 .text_color(danger)
                 .child(title),
         )
-        .child(div().text_sm().text_color(muted).child(text));
+        .child(div().small().text_color(muted).child(text));
     if state.step == 2 {
         column = column.child(
             Checkbox::new("uninstall-files")
@@ -123,7 +124,7 @@ pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {
         if state.files {
             column = column.child(
                 div()
-                    .text_sm()
+                    .small()
                     .text_color(danger)
                     .child("These files are your work. They will not come back either."),
             );
@@ -137,7 +138,7 @@ pub fn render(state: &Uninstall, cx: &mut Context<Workspace>) -> Div {
             "The chats' files in ~/Documents/duskcode are kept; cancel and tick the box on the second step to delete them too."
         };
         column = column
-            .child(div().text_sm().text_color(muted).child(kept))
+            .child(div().small().text_color(muted).child(kept))
             .child(Input::new(&state.typed));
     }
     let ready = !last || state.typed.read(cx).value().trim() == WORD;

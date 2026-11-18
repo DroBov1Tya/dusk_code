@@ -34,8 +34,8 @@ pub fn metrics(window: &Window, cx: &App) -> Metrics {
     }
 }
 
-/// The colors a program may name. The sixteen are the theme's own, so a prompt and a
-/// diff look at home; the rest of the 256 are the standard cube and greys.
+/// The colors a program may name. The sixteen are the theme's (`ui::theme::terminal`);
+/// the rest of the 256 are the standard cube and greys.
 #[derive(Clone)]
 pub struct Palette {
     pub foreground: Hsla,
@@ -48,51 +48,12 @@ pub struct Palette {
 impl Palette {
     pub fn of(cx: &App) -> Self {
         let theme = cx.theme();
-        let hex = |value: u32| -> Hsla { rgb(value).into() };
-        let named = if theme.is_dark() {
-            [
-                hex(0x262839),
-                theme.danger,
-                theme.success,
-                theme.warning,
-                hex(0x8fa8f8),
-                theme.primary,
-                hex(0x7cc7e8),
-                hex(0xaeadc4),
-                hex(0x83829c),
-                hex(0xff9bb0),
-                hex(0x93e6c8),
-                hex(0xf6d78e),
-                hex(0xa9bcff),
-                hex(0xcbbcff),
-                hex(0x9fdcf4),
-                theme.foreground,
-            ]
-        } else {
-            [
-                hex(0x171717),
-                hex(0xc0392b),
-                hex(0x1e8e4a),
-                hex(0xa06a00),
-                hex(0x2563c9),
-                hex(0x8b3fc7),
-                hex(0x0e7c86),
-                hex(0x737373),
-                hex(0x525252),
-                hex(0xdc2626),
-                hex(0x16a34a),
-                hex(0xb7791f),
-                hex(0x3b82f6),
-                hex(0xa855f7),
-                hex(0x0891b2),
-                hex(0x404040),
-            ]
-        };
+        let (named, selection) = crate::ui::theme::terminal(cx);
         Self {
             foreground: theme.foreground,
             background: theme.background,
             cursor: theme.primary,
-            selection: theme.selection,
+            selection,
             named,
         }
     }

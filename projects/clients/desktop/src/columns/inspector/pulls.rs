@@ -63,7 +63,7 @@ fn row(status: &RepositoryStatus, pull: &PullStatus, cx: &mut Context<Workspace>
                 .min_w_0()
                 .flex()
                 .flex_col()
-                .child(div().text_sm().truncate().child(pull.title.clone()))
+                .child(div().small().truncate().child(pull.title.clone()))
                 .child(
                     div()
                         .flex()

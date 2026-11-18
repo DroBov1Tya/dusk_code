@@ -147,6 +147,34 @@ pub fn palette(cx: &App) -> &'static Palette {
     palettes::find(&prefs(cx).theme)
 }
 
+/// How much of the accent lies over selected text in a field or a message, as two hex
+/// digits of alpha: enough to see the selection on every surface, and light enough that
+/// the words under it stay the page's own.
+const SELECTED_TEXT: &str = "40";
+/// The same for a terminal's cells, denser: its letters come in sixteen colors, and a
+/// selection has to hold them all apart from the screen.
+const SELECTED_CELLS: f32 = 0.33;
+
+/// A color of a palette as the window paints it. The palettes are checked by a test, so
+/// a value that does not read is clear instead of a crash.
+fn hex(value: &str) -> Hsla {
+    Rgba::try_from(value).map(Hsla::from).unwrap_or_default()
+}
+
+/// The band over the message box and its tab.
+pub fn band(cx: &App) -> Hsla {
+    hex(palette(cx).band)
+}
+
+/// The sixteen colors a terminal program names, and the color of its selected cells.
+pub fn terminal(cx: &App) -> ([Hsla; 16], Hsla) {
+    let palette = palette(cx);
+    (
+        palette.terminal.map(hex),
+        hex(palette.accent).opacity(SELECTED_CELLS),
+    )
+}
+
 /// The colors of code in the viewer, from the same palette, so code reads on the theme's
 /// own background. The library's default is a light theme's, which left names dark blue
 /// on a dark page.
@@ -191,9 +219,7 @@ fn highlight(p: &Palette) -> Value {
 fn config(p: &Palette, prefs: &Prefs) -> Value {
     let hairline = format!("{}14", p.foreground);
     let chosen = format!("{}26", p.accent);
-    // Selected text must read at a glance on every surface, a terminal's included: a
-    // third of the accent, where the soft tint of a chosen row would all but vanish.
-    let selected_text = format!("{}54", p.accent);
+    let selected_text = format!("{}{SELECTED_TEXT}", p.accent);
     // A pressed or hovered primary is the accent a little sunk into the page, so the
     // button answers the pointer without a second hue.
     let (primary_hover, primary_active) = (format!("{}e0", p.accent), format!("{}c4", p.accent));
@@ -302,7 +328,49 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
 #[cfg(test)]
 mod tests {
     // Not `super::*`: the window's prelude brings a `test` of its own.
-    use super::{Palette, Prefs, ThemeConfig, config, palettes, palettes::DangerButton};
+    use super::{
+        Palette, Prefs, Rgba, SELECTED_TEXT, ThemeConfig, config, palettes, palettes::DangerButton,
+    };
+
+    /// WCAG relative luminance.
+    fn luminance(color: Rgba) -> f32 {
+        let linear = |c: f32| {
+            if c <= 0.04045 {
+                c / 12.92
+            } else {
+                ((c + 0.055) / 1.055).powf(2.4)
+            }
+        };
+        0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b)
+    }
+
+    #[test]
+    fn palette_colors_read_and_selected_text_stands_out_of_every_surface() {
+        let alpha = f32::from(u8::from_str_radix(SELECTED_TEXT, 16).unwrap()) / 255.;
+        for p in palettes::PALETTES {
+            let read = |value: &str| {
+                Rgba::try_from(value).unwrap_or_else(|_| panic!("{}: {value}", p.name))
+            };
+            for value in p.terminal.iter().chain([&p.band]) {
+                read(value);
+            }
+            let accent = read(p.accent);
+            for surface in [p.background, p.panel, p.surface] {
+                let under = read(surface);
+                let mix = |a: f32, b: f32| a * alpha + b * (1. - alpha);
+                let selected = Rgba {
+                    r: mix(accent.r, under.r),
+                    g: mix(accent.g, under.g),
+                    b: mix(accent.b, under.b),
+                    a: 1.,
+                };
+                let (a, b) = (luminance(selected), luminance(under));
+                let ratio = (a.max(b) + 0.05) / (a.min(b) + 0.05);
+                // Not text on a fill but a fill beside its page: 1.3 is seen at a glance.
+                assert!(ratio >= 1.3, "{} on {surface}: {ratio:.2}", p.name);
+            }
+        }
+    }
 
     fn palette(danger_button: Option<DangerButton>) -> Palette {
         Palette {

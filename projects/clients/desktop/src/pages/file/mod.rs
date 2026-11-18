@@ -5,6 +5,7 @@
 
 mod open;
 
+use crate::ui::Type;
 use std::path::PathBuf;
 
 use gpui_kit::{
@@ -125,13 +126,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .flex_1()
                 .min_w_0()
                 .truncate()
-                .text_sm()
+                .small()
                 .child(ws.file.shown.clone()),
         )
         // Unsaved work says so beside the name, and has its two ways out next to it.
         .when(ws.file.dirty, |header| {
             header
-                .child(div().text_xs().text_color(theme.warning).child("Unsaved"))
+                .child(div().meta().text_color(theme.warning).child("Unsaved"))
                 .child(
                     Button::new("file-discard")
                         .ghost()
@@ -150,7 +151,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .tooltip("Save the file")
                 .on_click(cx.listener(|ws, _, _, cx| ws.save_file(cx))),
         )
-        .child(div().text_xs().text_color(muted).child(match ws.file.load {
+        .child(div().meta().text_color(muted).child(match ws.file.load {
             Load::Ready => widgets::count(ws.file.lines, "line"),
             _ => String::new(),
         }))

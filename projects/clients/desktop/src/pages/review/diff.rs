@@ -46,10 +46,20 @@ pub fn diff(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex_row()
         .items_center()
         .gap_2()
-        .px_4()
-        .py_2()
+        .pl_4()
+        .pr_2()
+        .h(px(crate::ui::size::ROW + 4.))
+        .flex_none()
+        .border_b_1()
+        .border_color(theme.border)
         .small()
-        .child(file.path.clone())
+        .child(
+            div()
+                .min_w_0()
+                .truncate()
+                .font_weight(FontWeight::MEDIUM)
+                .child(file.path.clone()),
+        )
         .child(div().meta().text_color(muted).child(match file.kind {
             ChangeKind::Untracked => "new file",
             ChangeKind::Deleted => "deleted",
@@ -164,8 +174,7 @@ fn row(ws: &Workspace, ix: usize, cx: &mut Context<Workspace>) -> AnyElement {
         Row::Hunk(header) => div()
             .w_full()
             .px_4()
-            .pt_3()
-            .pb_2()
+            .py_1p5()
             .bg(surface.opacity(0.6))
             .text_size(px(code_size))
             .font_family(mono)

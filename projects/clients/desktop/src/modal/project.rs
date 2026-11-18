@@ -1,6 +1,7 @@
 //! The project form: a name, a description to write at length, and a folder typed in
 //! or picked with the system's own folder dialog.
 
+use crate::ui::Type;
 use dusk_protocol::project::Project;
 use gpui_kit::{
     component::{
@@ -16,7 +17,7 @@ use crate::workspace::Workspace;
 
 pub fn render(form: &ProjectForm, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
-    let label = |text: &'static str| div().text_xs().text_color(muted).child(text);
+    let label = |text: &'static str| div().meta().text_color(muted).child(text);
     let mut actions = div().flex().flex_row().gap_2().justify_end().pt_2();
     if let Some(id) = form.id.clone() {
         actions = actions.child(
@@ -78,7 +79,7 @@ fn variables(form: &ProjectForm, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let mut column = div().flex().flex_col().gap_1().child(div().h_2()).child(
         div()
-            .text_xs()
+            .meta()
             .text_color(muted)
             .child("Variables: for the commands that run in this project; values are secret"),
     );
@@ -90,7 +91,7 @@ fn variables(form: &ProjectForm, cx: &mut Context<Workspace>) -> Div {
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .text_sm()
+                .small()
                 .child(div().flex_1().child(name.clone()))
                 .child(div().text_color(muted).child("••••••"))
                 .child(

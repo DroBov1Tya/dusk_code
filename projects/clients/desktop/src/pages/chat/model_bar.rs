@@ -3,7 +3,7 @@
 
 use crate::ui::Type;
 use dusk_protocol::{
-    client::{Answer, CHATGPT_USAGE_URL, Command},
+    client::{Answer, Command},
     model::{Effort, ProviderStatus},
 };
 use gpui_kit::{
@@ -59,71 +59,6 @@ pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 })),
         )
         .children(menu)
-}
-
-/// The ChatGPT plan's reported windows, apart from the model's context meter.
-pub fn quota(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
-    if !ws.status.chatgpt_model {
-        return None;
-    }
-    let windows = ws
-        .status
-        .limits
-        .as_ref()
-        .map_or(&[][..], |limits| limits.plan.as_slice());
-    let usage = Button::new("chatgpt-plan-usage")
-        .small()
-        .ghost()
-        .label("Using ChatGPT plan")
-        .icon(IconName::ExternalLink)
-        .tooltip("Open ChatGPT usage settings")
-        .on_click(cx.listener(|_, _, _, cx| cx.open_url(CHATGPT_USAGE_URL)));
-    let row = div()
-        .pb_1()
-        .flex()
-        .items_center()
-        .flex_wrap()
-        .gap_x_2()
-        .child(usage);
-    let muted = cx.theme().muted_foreground;
-    if windows.is_empty() {
-        return Some(row.child(div().meta().text_color(muted).child("Usage unavailable")));
-    }
-    Some(
-        row.children(windows.iter().enumerate().map(|(index, window)| {
-            let label = plan_window(window.minutes);
-            let text = SharedString::from(format!("{label} {}% used", window.used_percent));
-            let tip = match window.resets_in {
-                Some(seconds) => {
-                    let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-                    SharedString::from(format!(
-                        "{text}, resets in {}",
-                        dusk_protocol::thread::duration_words(ms)
-                    ))
-                }
-                None => SharedString::from(format!("{text}, last reported by ChatGPT")),
-            };
-            div()
-                .id(("chatgpt-plan-window", index))
-                .flex_none()
-                .meta()
-                .text_color(muted)
-                .child(text)
-                .tooltip(move |window, cx| {
-                    gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
-                })
-        })),
-    )
-}
-
-fn plan_window(minutes: Option<u64>) -> String {
-    match minutes {
-        Some(10_080) => "Weekly".into(),
-        Some(minutes) if minutes.is_multiple_of(1440) => format!("{}d", minutes / 1440),
-        Some(minutes) if minutes.is_multiple_of(60) => format!("{}h", minutes / 60),
-        Some(minutes) => format!("{minutes}m"),
-        None => "Unknown period".into(),
-    }
 }
 
 /// The Models button at the right of the composer's row: one click opens the models and

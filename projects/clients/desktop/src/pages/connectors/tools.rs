@@ -1,6 +1,7 @@
 //! The built-in tools of the chat's mode as rows, a card of them for each thing they
 //! work on; a row opens what the tool tells the model. MCP tools live with their servers.
 
+use crate::ui::Type;
 use dusk_protocol::{
     client::Switch as CoreSwitch,
     config::{Settings, ToolKind},
@@ -77,7 +78,7 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
             cx,
         ));
     }
-    page.child(div().pt_2().text_xs().text_color(muted).child(format!(
+    page.child(div().pt_2().meta().text_color(muted).child(format!(
         "Switches apply to the {} mode. MCP tools are under Connectors.",
         settings.mode
     )))

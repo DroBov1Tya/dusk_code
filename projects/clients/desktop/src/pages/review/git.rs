@@ -5,14 +5,14 @@
 use dusk_protocol::client::GitRequest;
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, IconName,
         button::{Button, ButtonVariants},
         input::{Input, InputState},
     },
     *,
 };
 
-use crate::{modal::Modal, workspace::Workspace};
+use crate::{modal::Modal, ui::Type, workspace::Workspace};
 
 /// What the user is asked before a git request that cannot be taken back.
 #[derive(Clone)]
@@ -65,7 +65,6 @@ pub fn bar(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>)
         .child(
             Button::new("git-new-branch")
                 .ghost()
-                .small()
                 .icon(IconName::Plus)
                 .label("New branch")
                 .tooltip("Make a branch from the current commit and switch to it")
@@ -131,7 +130,6 @@ pub fn bar(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>)
         .child(
             Button::new("git-commit")
                 .primary()
-                .small()
                 .label(format!("Commit {staged} staged"))
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     let message = ws.review.git.message.read(cx).value().trim().to_owned();
@@ -147,7 +145,7 @@ pub fn bar(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>)
         .flex_col()
         .gap_2()
         .px_4()
-        .py_2()
+        .py_3()
         .border_b_1()
         .border_color(border)
         .child(branch_row)
@@ -164,7 +162,6 @@ fn action(
 ) -> Button {
     Button::new(id)
         .ghost()
-        .small()
         .icon(icon)
         .label(label)
         .on_click(cx.listener(move |ws, _, _, cx| {
@@ -202,7 +199,7 @@ pub fn confirm(confirm: &GitConfirm, cx: &mut Context<Workspace>) -> Div {
         .gap_3()
         .p_5()
         .child(question)
-        .child(div().text_sm().text_color(muted).child(detail))
+        .child(div().small().text_color(muted).child(detail))
         .child(
             div()
                 .flex()

@@ -3,6 +3,7 @@
 //! right what passed between them, newest first: tasks given, reports back, approval
 //! requests and the arbiter's answers.
 
+use crate::ui::Type;
 use std::time::Duration;
 
 use gpui_kit::{
@@ -101,10 +102,10 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                         .min_w_0()
                         .flex()
                         .flex_col()
-                        .child(div().text_sm().truncate().child(agent.name.clone()))
+                        .child(div().small().truncate().child(agent.name.clone()))
                         .child(
                             div()
-                                .text_xs()
+                                .meta()
                                 .text_color(muted)
                                 .truncate()
                                 .child(agent.role.clone()),
@@ -112,7 +113,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .meta()
                         .text_color(muted)
                         .child(said(&agent.name).to_string()),
                 ),
@@ -147,7 +148,7 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                     })
                     .child(value.to_string()),
             )
-            .child(div().text_xs().text_color(muted).child(label))
+            .child(div().meta().text_color(muted).child(label))
     };
     let state = if on { success } else { muted };
     let middle = div()
@@ -176,12 +177,12 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                         .h(px(26.))
                         .rounded_full()
                         .bg(state.opacity(0.12))
-                        .text_xs()
+                        .meta()
                         .text_color(state)
                         .child(div().size(px(6.)).rounded_full().bg(state))
                         .child(if on { "Arbiter on" } else { "Arbiter off" }),
                 )
-                .child(div().text_xs().text_color(muted).child(if on {
+                .child(div().meta().text_color(muted).child(if on {
                     "It answers the approvals in your place"
                 } else {
                     "Approvals come to you"
@@ -295,21 +296,21 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                                         .flex_1()
                                         .min_w_0()
                                         .truncate()
-                                        .text_sm()
+                                        .small()
                                         .font_weight(FontWeight::MEDIUM)
                                         .child(line),
                                 )
                                 .child(
                                     div()
                                         .flex_none()
-                                        .text_xs()
+                                        .meta()
                                         .text_color(muted)
                                         .child(format!("{ago} ago")),
                                 ),
                         )
                         .child(
                             div()
-                                .text_xs()
+                                .meta()
                                 .text_color(muted)
                                 .line_clamp(2)
                                 .child(plain(&exchange.text)),

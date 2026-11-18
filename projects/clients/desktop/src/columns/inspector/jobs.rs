@@ -1,5 +1,6 @@
 //! The shown chat's background jobs, with a stop for those this run owns.
 
+use crate::ui::Type;
 use gpui_kit::{
     component::{
         ActiveTheme, Sizable,
@@ -53,12 +54,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                             if job.running { accent } else { muted },
                         ))
                         .child(div().flex_1())
-                        .child(div().text_xs().text_color(muted).child(ran(job)))
+                        .child(div().meta().text_color(muted).child(ran(job)))
                         .children(stop),
                 )
                 .child(
                     div()
-                        .text_xs()
+                        .meta()
                         .font_family("Menlo")
                         .line_clamp(2)
                         .child(job.command.clone()),
@@ -106,7 +107,7 @@ pub fn detail(
                     .flex()
                     .items_center()
                     .gap_1()
-                    .child(div().text_xs().text_color(muted).child(title))
+                    .child(div().meta().text_color(muted).child(title))
                     .child(widgets::copy(
                         SharedString::from(format!("job-copy-{name}")),
                         &group,
@@ -119,7 +120,7 @@ pub fn detail(
                     .p_3()
                     .rounded_md()
                     .bg(surface)
-                    .text_xs()
+                    .meta()
                     .font_family(mono.clone())
                     .child(text.to_owned()),
             )
@@ -135,7 +136,7 @@ pub fn detail(
     });
     let foreign = (job.running && !job.stoppable).then(|| {
         div()
-            .text_xs()
+            .meta()
             .text_color(muted)
             .child("Another duskcode runs it, so it is stopped from there.")
     });
@@ -154,7 +155,7 @@ pub fn detail(
                     job.status.clone(),
                     if job.running { accent } else { muted },
                 ))
-                .child(div().text_sm().child(if job.running {
+                .child(div().small().child(if job.running {
                     format!("Running for {}", ran(job))
                 } else {
                     format!("Ran for {}", ran(job))

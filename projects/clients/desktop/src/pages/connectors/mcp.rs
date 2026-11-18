@@ -22,6 +22,8 @@ const SHOWN: Duration = Duration::from_millis(800);
 const POLL: Duration = Duration::from_secs(1);
 /// A server that has not settled in this many polls is left as it is.
 const POLLS: usize = 40;
+/// The actions' column: a sign-in, a restart and the switch.
+const ACTIONS: f32 = 148.;
 
 pub fn render(
     settings: &Settings,
@@ -76,11 +78,14 @@ pub fn render(
         };
         let name = server.name.clone();
         let (restart, sign_in, open) = (name.clone(), name.clone(), name.clone());
+        // As wide with a sign-in as without, so the states before them stand in a column.
         let actions = div()
             .flex()
             .flex_row()
             .items_center()
-            .gap_1()
+            .justify_end()
+            .w(px(ACTIONS))
+            .gap_2()
             .when(server.remote, |row| {
                 row.child(
                     Button::new(SharedString::from(format!("sign-in-{name}")))

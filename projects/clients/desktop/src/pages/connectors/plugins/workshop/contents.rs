@@ -208,7 +208,7 @@ fn preview(opened: &Opened, width: f32, cx: &App) -> Div {
             let plain = |text: String| {
                 div()
                     .font_family(theme.mono_font_family.clone())
-                    .text_sm()
+                    .small()
                     .whitespace_normal()
                     .child(text)
             };

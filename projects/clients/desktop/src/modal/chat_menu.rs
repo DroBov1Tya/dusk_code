@@ -2,6 +2,7 @@
 //! a timetable, delete. Delete asks
 //! first, since the core erases the chat and its folder for good.
 
+use crate::ui::Type;
 use gpui_kit::{
     component::{
         ActiveTheme, IconName,
@@ -147,7 +148,7 @@ pub fn delete(title: &str, cx: &mut Context<Workspace>) -> Div {
         .child(format!("Delete \"{title}\"?"))
         .child(
             div()
-                .text_sm()
+                .small()
                 .text_color(muted)
                 .child("Its messages, its agents' threads and its folder in the workspace are erased. This cannot be undone."),
         )
@@ -187,7 +188,7 @@ pub fn delete_file(path: &std::path::Path, cx: &mut Context<Workspace>) -> Div {
         ))
         .child(
             div()
-                .text_sm()
+                .small()
                 .text_color(muted)
                 .child("The file is removed from the disk. This cannot be undone."),
         )
@@ -225,7 +226,7 @@ pub fn delete_files(count: usize, cx: &mut Context<Workspace>) -> Div {
         ))
         .child(
             div()
-                .text_sm()
+                .small()
                 .text_color(muted)
                 .child("They are removed from the disk. This cannot be undone."),
         )
