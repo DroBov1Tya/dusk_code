@@ -224,7 +224,11 @@ fn preview(opened: &Opened, width: f32, cx: &App) -> Div {
                         .when_some(front, |body, front| {
                             body.child(plain(front.to_owned()).text_color(muted))
                         })
-                        .child(links::markdown("contents-markdown", rest.to_owned()))
+                        .child(links::markdown(
+                            "contents-markdown",
+                            rest.to_owned(),
+                            links::Links::Web,
+                        ))
                 }
                 false => plain(file.text.clone()),
             };

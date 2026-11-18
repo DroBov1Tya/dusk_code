@@ -69,6 +69,7 @@ pub fn command_card(key: &str, run: &CommandRun, cx: &mut Context<Workspace>) ->
             card = card.child(links::markdown(
                 SharedString::from(format!("command-{key}")),
                 fenced,
+                links::Links::Paths,
             ));
         }
         Some(Err(error)) => {

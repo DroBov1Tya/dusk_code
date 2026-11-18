@@ -96,7 +96,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .flex_col()
         .gap_2()
         .px_4()
-        .child(links::markdown("plan-view", text))
+        .child(links::markdown("plan-view", text, links::Links::Paths))
         .child(
             div().flex().flex_row().child(
                 Button::new("plan-edit")

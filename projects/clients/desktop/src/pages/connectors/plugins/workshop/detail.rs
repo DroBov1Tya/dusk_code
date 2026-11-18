@@ -138,7 +138,7 @@ fn shown_tabs(listing: &Listing) -> Vec<Tab> {
     if contents::has_files(listing) {
         shown.push(Tab::Contents);
     }
-    if listing.kind == Kind::Pack && !listing.skills.is_empty() {
+    if matches!(listing.kind, Kind::Pack | Kind::Plugin) && !listing.skills.is_empty() {
         shown.push(Tab::Skills);
     }
     if !listing.connectors.is_empty() {
@@ -172,26 +172,30 @@ fn tabs(listing: &Listing, shown: &[Tab], open: Tab, cx: &mut Context<Workspace>
     row
 }
 
-/// The pack's skills, with their switches and descriptions once it is here, by name
-/// before; and the way to its page.
+/// The skills of a pack or a plugin, with their switches and descriptions once it is
+/// here, by name before; and for a pack the way to its page. A plugin's skills land as
+/// the pack of its name, so the rows are the same.
 fn skills(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     let opened = listing.name.clone();
-    div()
+    let list = div()
         .flex()
         .flex_col()
         .gap(px(size::GAP_M))
-        .child(pack::skill_list(ws, listing, cx))
-        .child(
-            div().flex().child(
-                Button::new("detail-pack-page")
-                    .link()
-                    .label("Open the pack's page")
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.workshop.pack = Some(opened.clone());
-                        ws.close_modal(cx);
-                    })),
-            ),
-        )
+        .child(pack::skill_list(ws, listing, cx));
+    if listing.kind != Kind::Pack {
+        return list;
+    }
+    list.child(
+        div().flex().child(
+            Button::new("detail-pack-page")
+                .link()
+                .label("Open the pack's page")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.workshop.pack = Some(opened.clone());
+                    ws.close_modal(cx);
+                })),
+        ),
+    )
 }
 
 /// The cover with the name, the byline, the mark and the chips beside it, or under it
