@@ -3,6 +3,7 @@
 //! until the model answers without calling a tool.
 
 mod calls;
+mod episodes;
 mod pictures;
 mod report;
 mod resume;

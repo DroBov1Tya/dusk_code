@@ -65,7 +65,7 @@ async fn a_goal_goes_on_round_after_round_until_they_run_out() {
     ));
 }
 
-async fn verified_fixture(state: &State) -> (Goal, String) {
+pub(super) async fn verified_fixture(state: &State) -> (Goal, String) {
     let goal = state.set_goal("thread", "build it").await.unwrap();
     let goal = state
         .propose_goal(

@@ -4,7 +4,7 @@ use super::retry::{Bound, MAX_RETRY_DELAY, retry_delay};
 use super::wait::waits_out;
 use super::{Agent, Pace, StepEnd};
 use crate::plugins::{HookEvent, hooks::Outcome};
-use crate::runtime::agent::{Inbox, Stop, generation};
+use crate::runtime::agent::{Inbox, Stop, generation, repeats};
 use crate::runtime::{ThreadEvent, model_choice::Choice};
 use crate::{
     config::{Config, Effort, Limits},
@@ -446,6 +446,20 @@ impl Agent {
         });
         if let Some(notice) = &notice {
             content.push_str(&format!("\n\n{}", notice.note));
+        }
+        // A pass that ended a loop is written down before the result is stored, so the
+        // lesson note is decided once, with the result, as the other notes are.
+        let limits = config.limits();
+        let solved = finished
+            .as_ref()
+            .filter(|_| limits.episodes)
+            .and_then(|result| self.repeats.lock().solved(&turn.turn_id, call, result));
+        if let Some(solved) = solved
+            && self.record_fixed(&turn.turn_id, call, &solved).await
+            && limits.episode_lesson
+        {
+            content.push_str(&format!("\n\n{}", repeats::lesson_note(solved.count)));
+            self.repeats.lock().ask_lesson(&turn.turn_id);
         }
         // What hooks and the repeat note added goes to the model shaped or not.
         let shaped = shaped.zip(finished.as_ref()).and_then(|(shaped, result)| {

@@ -22,7 +22,7 @@ pub use block::{
     MIN_LAYERS, SHOW_TOOL, Show,
 };
 pub use context::{ContextItemDetail, ContextReport, ContextSection, ContextSource};
-pub use event::{RepeatRung, ThreadEvent};
+pub use event::{EpisodeKind, RepeatRung, ThreadEvent};
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use job::{JobInfo, JobResult, job_message};
 pub use message::{

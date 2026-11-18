@@ -103,15 +103,22 @@ pub fn of(tool: &str, arguments: &Value, output: &str) -> Option<Signature> {
 /// `env`, `timeout 60`, ...), without its directory. Steps end at `;`, `&`, `|` and new
 /// lines, so `cd x && cargo test 2>&1 | tail` runs `cargo`.
 pub fn program(command: &str) -> Option<String> {
-    head(command, COMMAND_HEAD_BYTES)
-        .split(['\n', ';', '&', '|'])
-        .find_map(step_program)
+    invocation(command).map(|(program, _)| program)
 }
 
-fn step_program(step: &str) -> Option<String> {
+/// The program a shell command runs, as `program` finds it, and its first argument that
+/// is not an option: `cargo +1.99.1 test -p core` is `cargo` and `+1.99.1`, `npm run
+/// build` is `npm` and `run`, `make -j4` is `make` and none.
+pub fn invocation(command: &str) -> Option<(String, Option<String>)> {
+    head(command, COMMAND_HEAD_BYTES)
+        .split(['\n', ';', '&', '|'])
+        .find_map(step_invocation)
+}
+
+fn step_invocation(step: &str) -> Option<(String, Option<String>)> {
     let mut wrapped = false;
-    for word in step.split_whitespace() {
-        let word = word.trim_matches(['"', '\'', '(', ')', '{', '}']);
+    let mut words = step.split_whitespace().map(unquoted);
+    while let Some(word) = words.next() {
         let skipped = word.is_empty()
             || is_assignment(word)
             || (wrapped
@@ -127,9 +134,14 @@ fn step_program(step: &str) -> Option<String> {
         if SETUP.contains(&name) {
             return None;
         }
-        return Some(name.to_owned());
+        let first = words.find(|word| !word.is_empty() && !word.starts_with('-'));
+        return Some((name.to_owned(), first.map(str::to_owned)));
     }
     None
+}
+
+fn unquoted(word: &str) -> &str {
+    word.trim_matches(['"', '\'', '(', ')', '{', '}'])
 }
 
 fn is_assignment(word: &str) -> bool {

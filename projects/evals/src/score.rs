@@ -64,6 +64,9 @@ pub struct Outcome {
     pub shaped_results: u64,
     #[serde(default)]
     pub shape_saved_tokens: u64,
+    /// Episodes the core wrote down (`limits.episodes`), of the chat and its agents.
+    #[serde(default)]
+    pub episodes: u64,
     /// `read_history` calls that read one stored result back.
     #[serde(default)]
     pub retrievals: u64,
@@ -115,6 +118,7 @@ struct Totals {
     stub_saved_tokens: f64,
     shaped_results: f64,
     shape_saved_tokens: f64,
+    episodes: f64,
     retrievals: f64,
     compactions: f64,
 }
@@ -160,6 +164,7 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
         stub_saved_tokens: mean(|outcome| outcome.stub_saved_tokens),
         shaped_results: mean(|outcome| outcome.shaped_results),
         shape_saved_tokens: mean(|outcome| outcome.shape_saved_tokens),
+        episodes: mean(|outcome| outcome.episodes),
         retrievals: mean(|outcome| outcome.retrievals),
         compactions: mean(|outcome| outcome.compactions),
     }
@@ -192,7 +197,7 @@ impl Totals {
              {:.0} uncached, {:.0} written to cache; {:.0} out of which {:.0} reasoning), \
              {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} repeat notices, {:.2} repeat stops, \
              {:.1} stub moves ({:.1} results, {:.0} tokens saved), {:.1} shaped results \
-             ({:.0} tokens saved), {:.1} retrievals, {:.2} compactions, {:.0} s",
+             ({:.0} tokens saved), {:.2} episodes, {:.1} retrievals, {:.2} compactions, {:.0} s",
             self.runs - self.timed_out,
             self.calls,
             self.tokens,
@@ -211,6 +216,7 @@ impl Totals {
             self.stub_saved_tokens,
             self.shaped_results,
             self.shape_saved_tokens,
+            self.episodes,
             self.retrievals,
             self.compactions,
             self.seconds
@@ -432,7 +438,7 @@ mod tests {
         assert!(
             text.contains(
                 "0.0 stub moves (0.0 results, 0 tokens saved), 0.0 shaped results (0 tokens \
-                 saved), 0.0 retrievals"
+                 saved), 0.00 episodes, 0.0 retrievals"
             ),
             "{text}"
         );
@@ -455,6 +461,7 @@ mod tests {
         assert_eq!(outcome.stub_saved_tokens, 0);
         assert_eq!((outcome.shaped_results, outcome.shape_saved_tokens), (0, 0));
         assert_eq!((outcome.retrievals, outcome.compactions), (0, 0));
+        assert_eq!(outcome.episodes, 0);
     }
 
     #[test]
@@ -465,6 +472,7 @@ mod tests {
         moved.stub_saved_tokens = 9_000;
         moved.shaped_results = 3;
         moved.shape_saved_tokens = 1_200;
+        moved.episodes = 1;
         moved.retrievals = 1;
         moved.compactions = 1;
         let still = run("a", true, None, 100);
@@ -474,7 +482,7 @@ mod tests {
         assert!(
             means.contains(
                 "1.0 stub moves (3.5 results, 4500 tokens saved), 1.5 shaped results (600 \
-                 tokens saved), 0.5 retrievals, 0.50 compactions"
+                 tokens saved), 0.50 episodes, 0.5 retrievals, 0.50 compactions"
             ),
             "{means}"
         );

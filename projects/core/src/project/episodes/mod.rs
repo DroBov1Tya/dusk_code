@@ -30,8 +30,6 @@ const COMMAND_BREAKS: &[char] = &[
 ];
 
 /// Where and by whom the episode happened.
-// Built by task E3 (detection in the runtime); until it lands only tests do.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub struct Origin<'a> {
     /// The thread's folder, resolved as the ledger spells it.
@@ -43,8 +41,6 @@ pub struct Origin<'a> {
 }
 
 /// What happened, as the runtime saw it and before any cleaning.
-// Built by task E3; until it lands only tests do.
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 pub enum Facts<'a> {
     /// An error that came back ended with a call that passed.
@@ -72,8 +68,6 @@ pub enum Facts<'a> {
 
 /// Cleans and stores an episode; `None` when it is refused. An error is logged here and
 /// is the caller's to drop: an episode never fails a turn.
-// Called by task E3; until it lands only tests do.
-#[allow(dead_code)]
 pub async fn record(state: &State, origin: &Origin<'_>, facts: &Facts<'_>) -> Result<Option<i64>> {
     let stored = store(state, origin, facts).await;
     if let Err(error) = &stored {
@@ -85,8 +79,6 @@ pub async fn record(state: &State, origin: &Origin<'_>, facts: &Facts<'_>) -> Re
 
 /// Cleans the model's lesson and puts it on the episodes the turn recorded. Answers
 /// with how many it was put on; none when the folder is not a saved project's.
-// Called by task E3; until it lands only tests do.
-#[allow(dead_code)]
 pub async fn set_lesson(state: &State, project: &Path, turn_id: &str, lesson: &str) -> Result<u64> {
     let stored = store_lesson(state, project, turn_id, lesson).await;
     if let Err(error) = &stored {

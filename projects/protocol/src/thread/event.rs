@@ -108,6 +108,11 @@ pub enum ThreadEvent {
         /// Estimated tokens each later request carries less.
         saved_tokens: u64,
     },
+    /// The core wrote down what ended a problem in this saved project
+    /// (`limits.episodes`). Clients show nothing for it; evals count it.
+    EpisodeRecorded {
+        kind: EpisodeKind,
+    },
     /// The thread's token counts, when it starts and after each turn and compaction. `limit` is the largest request: the
     /// configured input limit or the model window, whichever is smaller.
     Tokens {
@@ -210,6 +215,15 @@ pub enum RepeatRung {
     Replan,
     /// The turn ends as failed, with the error and the attempts.
     Stop,
+}
+
+/// What an episode the core wrote down is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EpisodeKind {
+    /// An error that came back ended with a call that passed.
+    Fixed,
+    /// A goal's verification passed.
+    Verified,
 }
 
 #[cfg(test)]

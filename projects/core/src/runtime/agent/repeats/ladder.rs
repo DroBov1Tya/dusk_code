@@ -2,6 +2,9 @@
 //! differ, gets help that grows with the count. Two is normal; then a note to stop
 //! varying the call, then a request for a different plan, then the turn stops. Counts are
 //! not only in a row: a stuck model often reads a file between two failing commands.
+//!
+//! The count is kept here for two readers: the ladder's notes (`climb`) and the episodes
+//! a pass after a counted failure makes (`solved`).
 
 use std::collections::HashMap;
 
@@ -20,15 +23,30 @@ const MAX_ATTEMPT_CHARS: usize = 100;
 
 #[derive(Default)]
 pub struct Ladder {
-    seen: HashMap<u64, Seen>,
+    pub(super) seen: HashMap<u64, Seen>,
+    /// Failures counted in this turn, so the one that failed last is known.
+    pub(super) failures: u64,
+    /// Episodes this turn found, against their cap.
+    pub(super) solved: u32,
 }
 
 #[derive(Default)]
-struct Seen {
+pub(super) struct Seen {
     count: u32,
-    attempts: Vec<String>,
+    pub(super) attempts: Vec<String>,
     /// More distinct attempts came than are kept.
     more: bool,
+    /// The signature's key and its latest error lines.
+    pub(super) key: String,
+    pub(super) excerpt: String,
+    /// Failures since a pass last ended them: what a pass now would end.
+    pub(super) open: u32,
+    /// Unix ms of the first of the open failures.
+    pub(super) opened_at: i64,
+    /// Which failure of the turn this signature's latest was.
+    pub(super) last: u64,
+    /// The program and first argument of its failing commands, each once.
+    pub(super) invocations: Vec<(String, Option<String>)>,
 }
 
 /// What the ladder does about one failed call.
@@ -42,16 +60,37 @@ pub struct Climb {
 }
 
 impl Ladder {
-    /// Counts a failed call; what to do once its error has come back often enough.
-    pub fn climb(&mut self, call: &ToolCall, output: &str, limits: &Limits) -> Option<Climb> {
+    /// Counts a failed call under its signature; the signature's hash, or None when the
+    /// output has nothing to recognize or the turn keeps count of too many.
+    pub fn count(&mut self, call: &ToolCall, output: &str) -> Option<u64> {
         let signature = signature::of(&call.name, &call.arguments, output)?;
         let key = hash(&signature.key);
         if !self.seen.contains_key(&key) && self.seen.len() >= MAX_SIGNATURES {
             return None;
         }
+        self.failures += 1;
         let seen = self.seen.entry(key).or_default();
         seen.count = seen.count.saturating_add(1);
         seen.add(attempt(call));
+        if seen.open == 0 {
+            seen.opened_at = dusk_protocol::system::now_ms();
+        }
+        seen.open = seen.open.saturating_add(1);
+        seen.last = self.failures;
+        if let Some(invocation) = invocation(call)
+            && !seen.invocations.contains(&invocation)
+            && seen.invocations.len() < MAX_ATTEMPTS
+        {
+            seen.invocations.push(invocation);
+        }
+        seen.key = signature.key;
+        seen.excerpt = signature.excerpt;
+        Some(key)
+    }
+
+    /// What to do once the error counted under `key` has come back often enough.
+    pub fn climb(&self, key: u64, limits: &Limits) -> Option<Climb> {
+        let seen = self.seen.get(&key)?;
         let count = seen.count;
         let attempts = seen.list();
         let stop_at = limits.failure_stop_at;
@@ -62,7 +101,7 @@ impl Ladder {
             let stop = format!(
                 "the agent stopped: the same error came back {count} times in this turn.\n\
                  error:\n{}\nattempts:\n{attempts}",
-                signature.excerpt
+                seen.excerpt
             );
             (RepeatRung::Stop, note, Some(stop))
         } else if count >= limits.failure_replan_at {
@@ -113,8 +152,16 @@ impl Seen {
     }
 }
 
+/// The program and first argument of a command call; None for any other tool.
+pub(super) fn invocation(call: &ToolCall) -> Option<(String, Option<String>)> {
+    if call.name != signature::RUN_COMMAND {
+        return None;
+    }
+    signature::invocation(call.arguments["command"].as_str()?)
+}
+
 /// A call on one short line: a command as written, another tool with its arguments.
-fn attempt(call: &ToolCall) -> String {
+pub(super) fn attempt(call: &ToolCall) -> String {
     let text = match call.arguments["command"].as_str() {
         Some(command) if call.name == signature::RUN_COMMAND => command.to_owned(),
         _ => format!("{} {}", call.name, call.arguments),
