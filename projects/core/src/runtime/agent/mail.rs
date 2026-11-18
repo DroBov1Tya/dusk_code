@@ -6,6 +6,7 @@ use std::{
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
+    sync::Arc,
 };
 
 use anyhow::{Context, Result, ensure};
@@ -15,7 +16,10 @@ use super::Input;
 use crate::{
     BoxFuture,
     catalog::agents::GENERAL_AGENT,
-    runtime::{Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, team},
+    runtime::{
+        Launcher, ThreadEvent, ThreadInput, ThreadOutput, ThreadRunner, model_choice::ModelChoice,
+        team,
+    },
     state::{Thread, TurnStatus, estimate_tokens},
 };
 
@@ -248,6 +252,10 @@ impl Launcher {
         // A member of a team has what the core fixed for it, not what its role lists.
         if team::is_member(thread) {
             team::limit_tools(&mut setup.tools, &self.config.current(), name);
+            // A role may answer on a model of its own; without one it is the chat's.
+            if let Some(choice) = team::member_model(self, thread).await? {
+                setup.model = Arc::new(ModelChoice::new(choice));
+            }
         }
         Ok(ThreadRunner::new(setup))
     }

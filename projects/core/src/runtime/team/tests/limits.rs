@@ -136,3 +136,40 @@ async fn with_the_switch_off_nothing_runs_and_the_lead_has_the_board() {
     assert_eq!(spec(0), spec(1));
     assert!(!spec(0).0.contains("the core runs it"));
 }
+
+#[tokio::test]
+async fn a_role_answers_on_its_own_model_and_one_that_cannot_answer_fails_the_task() {
+    // `fake` is the chat's provider in a test, and no provider of the config: a role
+    // set to it could never answer. A role with no setting follows the chat.
+    let rig = Rig::with(
+        "team_role_model",
+        "mode: TEAM\nteam:\n  models:\n    code-reviewer: nowhere/strong\n",
+        hang,
+    )
+    .await;
+    let ids = rig
+        .plan(&[
+            task("write"),
+            NewTask {
+                role: Some("code-reviewer".into()),
+                ..task("review")
+            },
+        ])
+        .await;
+    rig.run().await;
+
+    let written = rig.task(&ids[0]).await;
+    assert_eq!(written.model.as_deref(), Some("fake/scripted"));
+    assert_eq!(written.status, PlanStatus::Claimed);
+    // Not moved to the chat's model behind the user's back: the lead reads why.
+    let reviewed = rig.task(&ids[1]).await;
+    assert_eq!(reviewed.status, PlanStatus::Failed);
+    assert!(
+        reviewed
+            .note
+            .contains("nowhere/strong set for code-reviewer names no provider"),
+        "{}",
+        reviewed.note
+    );
+    assert_eq!(rig.members().await.len(), 1);
+}

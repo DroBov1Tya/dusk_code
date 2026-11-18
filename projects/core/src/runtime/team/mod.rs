@@ -45,7 +45,7 @@ use crate::{
 
 pub(crate) use hand_in::member_event;
 pub(crate) use lease::{Beat, may_step};
-pub(crate) use member::{is_member, limit_tools};
+pub(crate) use member::{is_member, limit_tools, model as member_model};
 
 /// How often the dispatcher looks at every running team by itself.
 const TICK: Duration = Duration::from_secs(30);

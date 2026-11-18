@@ -7,7 +7,7 @@
 //! | tools | `MEMBER_TOOLS`, cut by its role and by `team.tools` | `limit_tools`, when its runner is built |
 //! | folder | the lead's project folder | `give`, as the folder its card is delivered in |
 //! | approval mode | the lead thread's, copied | `give`, before the claim |
-//! | model | `team.models[role]`, else `team.model`, else the chat's | `model_name`, into the claim |
+//! | model | `team.models[role]`, else `team.model`, else the chat's | `model_name`, into the claim; `model`, when its runner is built |
 //! | depth | 1, and no `ask_agent` | the thread's parent is the lead; `MEMBER_TOOLS` |
 //!
 //! The order of `give`, and what a stop between two steps leaves:
@@ -28,6 +28,7 @@ use super::{card, clean, gate};
 use crate::{
     catalog::{agents::GENERAL_AGENT, skills},
     config::Config,
+    providers::ProviderRegistry,
     runtime::{
         Launcher,
         model_choice::Choice,
@@ -71,16 +72,52 @@ pub(crate) fn limit_tools(tools: &mut ToolRegistry, config: &Config, role: &str)
     tools.keep(&kept);
 }
 
-/// The model a member of `role` answers on, as `provider/model`: the user's setting for
-/// the role, else for the team, else the chat's. Recorded with the claim; M0 makes the
-/// member's runner ask it.
-pub(super) fn model_name(config: &Config, role: &str, chat: Option<&Choice>) -> Option<String> {
+/// The model the user's settings name for a member of `role`: the role's, else the
+/// team's. `None` leaves the member on the chat's model.
+fn named_model<'a>(config: &'a Config, role: &str) -> Option<&'a String> {
     let team = config.team();
-    team.models
-        .get(role)
-        .or(team.model.as_ref())
+    team.models.get(role).or(team.model.as_ref())
+}
+
+/// The model a member of `role` answers on, as `provider/model`: the user's setting for
+/// the role, else for the team, else the chat's. Recorded with the claim, so a member
+/// keeps one model for its life whatever the settings say later.
+pub(super) fn model_name(config: &Config, role: &str, chat: Option<&Choice>) -> Option<String> {
+    named_model(config, role)
         .cloned()
         .or_else(|| chat.map(Choice::name))
+}
+
+/// Why the model the settings name for `role` cannot be asked, if they name one and it
+/// cannot: its provider is not in the config. Found before the task is given out, so a
+/// member is never started on a model that cannot answer, and never moved to the
+/// chat's dearer one without the user's word.
+fn unusable_model(config: &Config, role: &str) -> Option<String> {
+    let name = named_model(config, role)?;
+    let provider = name
+        .split_once('/')
+        .map_or(name.as_str(), |(provider, _)| provider);
+    let known = ProviderRegistry::from_config(config)
+        .is_ok_and(|registry| registry.provider(provider).is_some());
+    (!known).then(|| format!("the model {name} set for {role} names no provider of the config"))
+}
+
+/// The model `member` answers on when that is not the chat's: the one its task was
+/// claimed with. `None` leaves it on the chat's model, which it follows as the chat does.
+pub(crate) async fn model(launcher: &Launcher, member: &Thread) -> Result<Option<Choice>> {
+    let Some(lead) = member.parent_thread_id.as_deref() else {
+        return Ok(None);
+    };
+    let held = super::lease::held(&launcher.state, lead, &member.id).await?;
+    let Some(name) = held.and_then(|held| held.model) else {
+        return Ok(None);
+    };
+    let chat = launcher.model.current();
+    if chat.is_some_and(|chat| chat.name() == name) {
+        return Ok(None);
+    }
+    let choice = Choice::pick(&launcher.config.current(), Some(&name)).await?;
+    Ok(Some(choice))
 }
 
 /// How giving a task out went.
@@ -115,6 +152,9 @@ pub(super) async fn give(
         }
     };
     let role = task.role.as_deref().unwrap_or(GENERAL_AGENT);
+    if let Some(why) = unusable_model(&config, role) {
+        return Ok(Given::NoAgent(why));
+    }
     let member = match state.spare_member(lead, role).await? {
         Some(spare) => spare,
         None => match make(launcher, &config, lead, role).await {
