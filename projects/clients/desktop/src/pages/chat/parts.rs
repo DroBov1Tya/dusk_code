@@ -51,6 +51,7 @@ fn place(
             .into_any_element(),
         Part::Agents => super::composer::agents_button(ws, cx)?.into_any_element(),
         Part::Plugins => crate::plugins::place::composer(ws, cx)?,
+        Part::Context => super::ring::context(ws, cx).into_any_element(),
         _ => return None,
     })
 }

@@ -3,7 +3,7 @@
 
 use crate::ui::Type;
 use dusk_protocol::{
-    client::{Answer, CHATGPT_USAGE_URL, Command},
+    client::{Answer, Command},
     model::{Effort, ProviderStatus},
 };
 use gpui_kit::{
@@ -59,39 +59,6 @@ pub fn mode(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 })),
         )
         .children(menu)
-}
-
-/// The way to the ChatGPT plan's usage page, the only one this window has. The plan's
-/// windows are the rings of the composer's panel; this row says them a second time only
-/// when there is nothing to draw a ring from.
-pub fn quota(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
-    if !ws.status.chatgpt_model {
-        return None;
-    }
-    let reported = ws
-        .status
-        .limits
-        .as_ref()
-        .is_some_and(|limits| !limits.plan.is_empty());
-    let usage = Button::new("chatgpt-plan-usage")
-        .small()
-        .ghost()
-        .label("Using ChatGPT plan")
-        .icon(IconName::ExternalLink)
-        .tooltip("Open ChatGPT usage settings")
-        .on_click(cx.listener(|_, _, _, cx| cx.open_url(CHATGPT_USAGE_URL)));
-    let muted = cx.theme().muted_foreground;
-    Some(
-        div()
-            .pb_1()
-            .flex()
-            .items_center()
-            .gap_x_2()
-            .child(usage)
-            .children(
-                (!reported).then(|| div().meta().text_color(muted).child("Usage unavailable")),
-            ),
-    )
 }
 
 /// The Models button at the right of the composer's row: one click opens the models and

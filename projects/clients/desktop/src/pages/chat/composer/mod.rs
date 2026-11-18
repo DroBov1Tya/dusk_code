@@ -194,7 +194,6 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                     div()
                         .flex_1()
                         .min_w_0()
-                        .children(super::model_bar::quota(ws, cx))
                         .child(
                             // The panel, when open, stands on the card and takes its upper
                             // edge; the tab stands on whichever is on top.

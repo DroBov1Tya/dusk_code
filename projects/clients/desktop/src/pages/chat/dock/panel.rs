@@ -1,6 +1,6 @@
 //! The composer's panel: a small tab on the box's upper edge, and the band it opens, glued
-//! on top of the box. The band shows where the chat works on the left and its meters on
-//! the right. Open or closed is the window's, never the core's.
+//! on top of the box. The band shows where the chat works on the left and the plan's
+//! limits on the right. Open or closed is the window's, never the core's.
 
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName, Sizable},
@@ -8,7 +8,7 @@ use gpui_kit::{
 };
 
 use crate::{
-    pages::chat::ring::{self, Meter},
+    pages::chat::ring,
     ui::{Type, widgets},
     workspace::Workspace,
 };
@@ -117,7 +117,6 @@ pub fn panel(
         return None;
     }
     ws.shown.as_ref()?;
-    let meters = meters(ws);
     let band = div()
         .flex()
         .flex_row()
@@ -132,12 +131,7 @@ pub fn panel(
         .bg(surface(cx))
         .child(folder(ws, cx))
         .child(div().flex_1())
-        .children(
-            meters
-                .iter()
-                .enumerate()
-                .map(|(index, meter)| ring::meter(index, meter, RING, cx)),
-        );
+        .children(ring::limits(ws, RING, cx));
     Some(widgets::unfold("composer-panel-open", band))
 }
 
@@ -178,85 +172,6 @@ fn folder(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
             gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
         })
         .on_click(cx.listener(move |_, _, _, cx| cx.open_with_system(&dir)))
-}
-
-/// The panel's rings, left to right: the context, then each window the provider reported,
-/// the plan's first and then the per-minute requests and tokens. A new meter joins here.
-pub fn meters(ws: &Workspace) -> Vec<Meter> {
-    let mut meters = vec![context(ws)];
-    let Some(limits) = ws.status.limits.as_ref() else {
-        return meters;
-    };
-    meters.extend(limits.plan.iter().map(|window| Meter {
-        label: plan_label(window.minutes).into(),
-        used: f32::from(window.used_percent) / 100.,
-        detail: window.resets_in.map_or_else(
-            || "last reported by the provider".to_owned(),
-            |seconds| format!("resets in {}", words(seconds)),
-        ),
-    }));
-    for (label, limit) in [("Requests", &limits.requests), ("Tokens", &limits.tokens)] {
-        let Some(limit) = limit.as_ref().filter(|limit| limit.limit > 0) else {
-            continue;
-        };
-        let mut detail = format!(
-            "{} of {} left this minute",
-            widgets::short(limit.remaining),
-            widgets::short(limit.limit)
-        );
-        if let Some(seconds) = limit.resets_in {
-            detail.push_str(&format!(", resets in {}", words(seconds)));
-        }
-        meters.push(Meter {
-            label: label.into(),
-            used: 1. - limit.remaining as f32 / limit.limit as f32,
-            detail,
-        });
-    }
-    meters
-}
-
-/// A plan window's name from its length.
-fn plan_label(minutes: Option<u64>) -> String {
-    match minutes {
-        Some(300) => "5 hours".into(),
-        Some(10_080) => "Week".into(),
-        Some(minutes) if minutes.is_multiple_of(1440) => format!("{} d", minutes / 1440),
-        Some(minutes) if minutes.is_multiple_of(60) => format!("{} h", minutes / 60),
-        Some(minutes) => format!("{minutes} min"),
-        None => "Plan".into(),
-    }
-}
-
-fn words(seconds: u64) -> String {
-    let ms = i64::try_from(seconds).map_or(i64::MAX, |s| s.saturating_mul(1000));
-    dusk_protocol::thread::duration_words(ms)
-}
-
-/// How full the context is; the counts and the cost in its detail.
-fn context(ws: &Workspace) -> Meter {
-    let (used, limit) = ws
-        .shown_chat()
-        .and_then(|chat| chat.tokens)
-        .unwrap_or((0, ws.status.input_limit));
-    let share = if limit == 0 {
-        0.
-    } else {
-        (used as f32 / limit as f32).min(1.)
-    };
-    let mut detail = format!(
-        "{} of {} tokens",
-        widgets::short(used),
-        widgets::short(limit)
-    );
-    if let Some(cost) = ws.shown_chat().and_then(|chat| chat.cost.clone()) {
-        detail.push_str(&format!(" \u{00B7} {cost}"));
-    }
-    Meter {
-        label: "Context".into(),
-        used: share,
-        detail,
-    }
 }
 
 impl Workspace {

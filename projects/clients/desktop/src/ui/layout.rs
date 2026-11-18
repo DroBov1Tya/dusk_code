@@ -41,6 +41,8 @@ pub enum Part {
     Model,
     History,
     Agents,
+    /// How full the context is: the ring beside the box.
+    Context,
 }
 
 /// Where each part stands. A part a place does not know is passed over there.
@@ -71,7 +73,7 @@ pub struct Layout {
 }
 
 /// Parts an earlier version had; a kept layout that names one loads without it.
-const RETIRED: &[&str] = &["simulator", "context"];
+const RETIRED: &[&str] = &["simulator"];
 
 /// A list of parts, less the retired ones. Any other name it does not know is an error.
 fn parts<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Part>, D::Error> {
@@ -96,7 +98,7 @@ impl Default for Layout {
             under_left: vec![Mode],
             under_right: vec![Model],
             side_left: vec![History, Plugins],
-            side_right: vec![Agents],
+            side_right: vec![Agents, Context],
         }
     }
 }
@@ -136,6 +138,11 @@ impl Layout {
         if self.side_left == [History] {
             self.side_left = Self::default().side_left;
         }
+        // For a while the context ring stood in the panel over the box and the side kept
+        // the subagents alone; a file kept then takes the ring back.
+        if self.side_right == [Agents] {
+            self.side_right = Self::default().side_right;
+        }
         self
     }
 }
@@ -160,6 +167,16 @@ mod tests {
         )
         .unwrap();
         assert_eq!(layout.header, Layout::default().header);
+    }
+
+    #[test]
+    fn the_context_ring_stands_beside_the_box_whichever_file_was_kept() {
+        let with: Layout =
+            serde_json::from_str(r#"{ "side_right": ["agents", "context"] }"#).unwrap();
+        let without: Layout = serde_json::from_str(r#"{ "side_right": ["agents"] }"#).unwrap();
+        for kept in [with, without] {
+            assert_eq!(kept.refreshed().side_right, [Part::Agents, Part::Context]);
+        }
     }
 
     #[test]
