@@ -110,7 +110,10 @@ mod tests {
         .execute(&pool)
         .await
         .unwrap();
-        let state = State { pool };
+        let state = State {
+            pool,
+            episodes: Default::default(),
+        };
         let active = state.goal("active").await.unwrap().unwrap();
         assert_eq!(active.status, GoalStatus::Paused);
         assert!(!active.approved);

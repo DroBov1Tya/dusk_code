@@ -166,16 +166,25 @@ async fn store_lesson(state: &State, project: &Path, turn_id: &str, lesson: &str
 /// The saved project whose folder is exactly `dir`, as the store names it, and the
 /// values of its variables. A subfolder of a project is not the project.
 async fn saved_project(state: &State, dir: &Path) -> Result<Option<(String, Secrets)>> {
+    let Some(name) = saved_dir(state, dir).await? else {
+        return Ok(None);
+    };
+    let variables = state.project_env_for_dir(&name).await?;
+    let secrets = Secrets::new(variables.into_iter().map(|(_, value)| value));
+    Ok(Some((name, secrets)))
+}
+
+/// The store's name for `dir` when it is exactly a saved project's folder; what episodes
+/// are filed under, and what `recall` reads.
+pub(crate) async fn saved_dir(state: &State, dir: &Path) -> Result<Option<String>> {
     let Some(name) = dir.to_str() else {
         return Ok(None);
     };
     let projects = state.list_projects().await?;
-    if !projects.iter().any(|project| project.dir == dir) {
-        return Ok(None);
-    }
-    let variables = state.project_env_for_dir(name).await?;
-    let secrets = Secrets::new(variables.into_iter().map(|(_, value)| value));
-    Ok(Some((name.to_owned(), secrets)))
+    Ok(projects
+        .iter()
+        .any(|project| project.dir == dir)
+        .then(|| name.to_owned()))
 }
 
 fn kind(facts: &Facts<'_>) -> &'static str {

@@ -1,8 +1,10 @@
 //! The state database handle.
 
 use std::{
+    collections::HashMap,
     io::ErrorKind,
     path::Path,
+    sync::RwLock,
     time::{SystemTime, UNIX_EPOCH},
 };
 
@@ -23,6 +25,9 @@ static MIGRATOR: Migrator = {
 // One connection, so writes never interleave: each one runs in its own transaction.
 pub struct State {
     pub pool: SqlitePool,
+    /// Episodes per project, kept in memory so `recall` can tell, without a query, whether
+    /// it has anything to say. Filled when the database is opened.
+    pub(crate) episodes: RwLock<HashMap<String, u64>>,
 }
 
 impl State {
@@ -63,7 +68,12 @@ impl State {
             .run(&pool)
             .await
             .context("migrate state database")?;
-        Ok(Self { pool })
+        let state = Self {
+            pool,
+            episodes: RwLock::default(),
+        };
+        state.load_episode_counts().await?;
+        Ok(state)
     }
 
     /// A database that lives in this process alone and is gone with it: nothing of it
@@ -86,7 +96,10 @@ impl State {
             .run(&pool)
             .await
             .context("set up a database in memory")?;
-        Ok(Self { pool })
+        Ok(Self {
+            pool,
+            episodes: RwLock::default(),
+        })
     }
 
     pub async fn close(&self) {

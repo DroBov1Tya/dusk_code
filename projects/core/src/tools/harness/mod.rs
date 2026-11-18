@@ -8,6 +8,7 @@ mod goal;
 mod load_skill;
 mod plan_edit;
 mod read_history;
+mod recall;
 mod remember;
 mod show;
 mod stored_result;
@@ -22,6 +23,7 @@ pub use plan_edit::{
     PLAN_NAME, PlanEdit, clear as clear_plan, read as read_plan, save as save_plan,
 };
 pub use read_history::ReadHistory;
+pub use recall::RecallTool;
 pub use remember::Remember;
 pub(crate) use remember::project_folder;
 pub use show::Show;
