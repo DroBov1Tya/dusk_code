@@ -93,6 +93,15 @@ impl Runtime {
         launcher.state.last_failure(thread_id).await
     }
 
+    /// An agent below the chat works, so a client joining it shows it at work.
+    pub async fn agents_at_work(&self, thread_id: &str) -> Result<bool> {
+        let launcher = self.of(thread_id).await;
+        launcher
+            .mailboxes
+            .agents_at_work(&launcher.state, thread_id)
+            .await
+    }
+
     /// Local messages waiting for an explicit resend. They are not model history.
     pub async fn local_unsent(&self, thread_id: &str) -> Result<Vec<LocalUnsent>> {
         let launcher = self.of(thread_id).await;

@@ -162,6 +162,10 @@ impl Launcher {
             let (runner, input, output) = self.agent_runner(thread, cwd).await?;
             live.insert(thread.id.clone(), runner.mailbox(&input));
             self.mailboxes.begin_agent_report(&thread.id).await;
+            // The chat shows it is at work while its agents are, whatever its own turn does.
+            if let Some(chat) = live.get(&root) {
+                chat.emit(ThreadEvent::AgentsWorking(true));
+            }
             drop(live);
             let launcher = self.clone();
             let folder = cwd.to_owned();
@@ -333,6 +337,11 @@ impl Launcher {
         let live = self.mailboxes.lock().await;
         self.mailboxes.end_agent_report(&thread.id).await;
         if let Some(mailbox) = live.get(&root) {
+            match self.mailboxes.agents_at_work(&self.state, &root).await {
+                Ok(true) => {}
+                Ok(false) => mailbox.emit(ThreadEvent::AgentsWorking(false)),
+                Err(error) => warn!("cannot tell whether agents of {root} work: {error:#}"),
+            }
             mailbox.send(Input::DependencyFinished);
         }
     }

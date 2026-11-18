@@ -42,6 +42,7 @@ impl Server {
                 {
                     // Read before the lock, which no wait may hold.
                     let failure = runtime.last_failure(&thread_id).await?;
+                    let agents = runtime.agents_at_work(&thread_id).await?;
                     let Some(open) = self.threads.get_mut(&thread_id) else {
                         anyhow::bail!("thread has ended");
                     };
@@ -63,7 +64,8 @@ impl Server {
                         (None, Some(failure)) => [Some(ThreadEvent::TurnFailed(failure)), None],
                         (None, None) => [None, None],
                     };
-                    for event in events.into_iter().flatten() {
+                    let agents = agents.then_some(ThreadEvent::AgentsWorking(true));
+                    for event in events.into_iter().chain([agents]).flatten() {
                         send_to(
                             &self.subscribers,
                             self.caller,

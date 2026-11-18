@@ -161,6 +161,10 @@ pub enum ThreadEvent {
         thread_id: String,
         event: Box<ThreadEvent>,
     },
+    /// An agent below this chat, a subagent or a team member, is at work (true), or the
+    /// last of them ended (false). The chat counts as working while they are, whatever its
+    /// own turn does.
+    AgentsWorking(bool),
     /// The thread's task board changed: every task with its steps.
     Tasks(Vec<Task>),
     /// One task of the plan this thread leads changed; `Tasks` stays for the board.
