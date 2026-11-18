@@ -1,20 +1,13 @@
-//! A project's pull requests on GitHub, through the GitHub CLI (`gh`) the user installed
-//! and signed in to. The core holds no token: `gh` keeps its own. Arguments are a vector
-//! with every value in `--flag=value` form; what `gh` prints is untrusted JSON, parsed
-//! into fixed shapes, its text made plain and capped.
-
-use std::{path::Path, time::Duration};
+//! A project's pull requests: listing the open ones, one with its body and checks, and
+//! a new one from the current branch.
 
 use anyhow::{Context, Result, bail};
 use dusk_protocol::project::{Check, CheckState, Project, PullRequest, PullRequestDetail};
 use serde::Deserialize;
 
-use super::git;
+use super::gh::{PROGRAM, gh, link, plain};
+use crate::project::git;
 
-const PROGRAM: &str = "gh";
-const LIMIT: Duration = Duration::from_secs(60);
-/// What is said when `gh` cannot be used, and nothing else.
-pub const MISSING: &str = "GitHub CLI is not installed or signed in";
 const MAX_TITLE_CHARS: usize = 300;
 const MAX_BODY_CHARS: usize = 20_000;
 const MAX_LISTED: usize = 50;
@@ -91,60 +84,6 @@ async fn view_of(project: &Project, number: Option<u64>) -> Result<PullRequestDe
         body,
         checks,
     })
-}
-
-/// Runs `gh` in `dir` once it is known to be there and signed in; an error carries
-/// what it said, plain.
-async fn gh(program: &str, dir: &Path, args: &[&str]) -> Result<String> {
-    ready(program, dir).await?;
-    let output = run(program, dir, args).await?;
-    if !output.success {
-        bail!("gh: {}", output.message());
-    }
-    Ok(output.stdout)
-}
-
-/// `gh` is installed and signed in; otherwise `MISSING`, whatever the cause.
-async fn ready(program: &str, dir: &Path) -> Result<()> {
-    match run(program, dir, &["auth", "status"]).await {
-        Ok(output) if output.success => Ok(()),
-        _ => bail!(MISSING),
-    }
-}
-
-async fn run(program: &str, dir: &Path, args: &[&str]) -> Result<git::Output> {
-    let mut command = git::command(program, dir);
-    command
-        .args(args)
-        .env("GH_PROMPT_DISABLED", "1")
-        .env("GH_NO_UPDATE_NOTIFIER", "1")
-        .env("GH_SPINNER_DISABLED", "1")
-        .env("GH_PAGER", "cat")
-        .env("NO_COLOR", "1");
-    git::finish(command, LIMIT).await
-}
-
-/// Untrusted text as plain text: control characters out, capped.
-fn plain(text: &str, max: usize) -> String {
-    let mut out: String = text
-        .chars()
-        .filter(|c| !c.is_control() || *c == '\n')
-        .take(max)
-        .collect();
-    if text.chars().count() > max {
-        out.push_str("...");
-    }
-    out
-}
-
-/// An https link to GitHub, or nothing.
-fn link(url: &str) -> String {
-    let safe = url.starts_with("https://")
-        && url.len() <= 500
-        && url
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || "-._~:/?#[]@!$&'()*+,;=%".contains(c));
-    if safe { url.to_owned() } else { String::new() }
 }
 
 #[derive(Deserialize)]
