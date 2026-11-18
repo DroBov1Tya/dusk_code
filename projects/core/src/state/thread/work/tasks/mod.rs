@@ -27,6 +27,7 @@ pub use claims::{Claim, PassedBy};
 pub use dusk_protocol::thread::{Task, TaskItem};
 pub use error::{PlanError, Unclaimable};
 pub use files::{TaskFiles, overlaps};
+pub(super) use graph::root_of;
 pub use plan::{
     BlockedOn, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_OPEN_TASKS, MAX_REWORKS,
     MAX_TASKS_AN_ADD, NewTask, PlanStatus, PlanTask, TaskEdit, WaitsOn,

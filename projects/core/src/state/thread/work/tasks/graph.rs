@@ -252,8 +252,11 @@ fn check_dependency_count(after: &[String]) -> Result<(), PlanError> {
     Ok(())
 }
 
-/// The root thread of the chat `thread` is in: where its plan is kept.
-pub(super) async fn root_of(transaction: &mut Tx<'_>, thread: &str) -> Result<String, PlanError> {
+/// The root thread of the chat `thread` is in: where its plan and its team are kept.
+pub(in crate::state::thread::work) async fn root_of(
+    transaction: &mut Tx<'_>,
+    thread: &str,
+) -> Result<String, PlanError> {
     // UNION ends the walk on parent links that loop, as `State::root_thread` does.
     sqlx::query_scalar(
         "WITH RECURSIVE above(id, parent) AS (
