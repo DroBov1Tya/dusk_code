@@ -5,20 +5,20 @@ the `show` tool; a coloured label inside its text needs no tool. Types and helpe
 `projects/protocol/src/thread/block/` and `projects/protocol/src/thread/transcript/mark.rs`,
 the tool in `projects/core/src/tools/harness/show.rs`.
 
-## Switching it on
+## Switching it off
 
-`show` is off until the clients draw blocks. While it is off the model is not offered the
-tool and no prompt mentions the label syntax, which is taught only in the tool's
-description. To switch it on, name it in the config (`~/.config/duskcode/config.yml`):
+`show` is on by default: all three clients draw blocks. The label syntax is taught only in
+the tool's description, so with the tool off no prompt mentions it. To switch it off in
+MAIN, name it in the config (`~/.config/duskcode/config.yml`):
 
 ```yaml
 tools:
-  show: true
+  show: false
 ```
 
-That one switch covers every mode; a mode's own switch cannot turn it on alone. The eval
-runner takes `--set tools.show=true`. The list of such tools is `OFF_UNTIL_SWITCHED_ON` in
-`projects/core/src/config/file/switches.rs`; take `show` out of it when the clients are ready.
+PLAN and ORCHESTRATOR list `show` among their own tools; switch it off there under
+`modes:` (`modes: { PLAN: { show: false } }`) or in the settings. The eval runner takes
+`--set tools.show=false`.
 
 ## Kinds
 

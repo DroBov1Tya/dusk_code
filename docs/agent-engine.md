@@ -145,6 +145,9 @@ Largest tools: `ask_agent` 2,043, `goal` 1,995 (1,254 of it schema), `run_comman
 `load_skill` 1,444 (grows with the skills installed), `tasks` 1,274. A memory adds up to
 2,000 characters to `remember` and as much to `remember_project`.
 
+With `show` on by default (same day) a 15th tool adds 2,260 (description 530, schema
+1,726): the prefix above becomes 24,875.
+
 What changes the prefix within a thread. Tool specs are built for every model call
 (`step.rs`), and three descriptions read live state each time:
 
