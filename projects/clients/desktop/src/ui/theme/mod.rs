@@ -256,6 +256,18 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         Value::String(format!("{}40", p.muted)),
     )])
     .collect();
+    let mut colors = colors;
+    // Absent keys leave the kit's own fallback, the pale tint of `danger`.
+    if let Some(solid) = &p.danger_button {
+        for (key, value) in [
+            ("button.danger.background", solid.background),
+            ("button.danger.foreground", solid.foreground),
+            ("button.danger.hover.background", solid.hover),
+            ("button.danger.active.background", solid.active),
+        ] {
+            colors.insert(key.to_owned(), Value::String(value.to_owned()));
+        }
+    }
     let mut config = json!({
         "name": p.name,
         "mode": if p.dark { "dark" } else { "light" },
@@ -274,4 +286,42 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         config["mono_font.family"] = json!(font);
     }
     config
+}
+
+#[cfg(test)]
+mod tests {
+    // Not `super::*`: the window's prelude brings a `test` of its own.
+    use super::{Palette, Prefs, ThemeConfig, config, palettes, palettes::DangerButton};
+
+    fn palette(danger_button: Option<DangerButton>) -> Palette {
+        Palette {
+            danger_button,
+            ..*palettes::find(palettes::DEFAULT)
+        }
+    }
+
+    #[test]
+    fn a_palette_without_the_solid_danger_keeps_the_kits_tint() {
+        let config = config(&palette(None), &Prefs::default());
+        let colors = config["colors"].as_object().unwrap();
+        assert!(!colors.keys().any(|key| key.starts_with("button.danger")));
+        assert!(serde_json::from_value::<ThemeConfig>(config).is_ok());
+    }
+
+    #[test]
+    fn a_palette_with_it_sets_the_button_colors() {
+        let solid = DangerButton {
+            background: "#112233",
+            foreground: "#ffffff",
+            hover: "#223344",
+            active: "#334455",
+        };
+        let config = config(&palette(Some(solid)), &Prefs::default());
+        let colors = &config["colors"];
+        assert_eq!(colors["button.danger.background"], "#112233");
+        assert_eq!(colors["button.danger.foreground"], "#ffffff");
+        assert_eq!(colors["button.danger.hover.background"], "#223344");
+        assert_eq!(colors["button.danger.active.background"], "#334455");
+        assert!(serde_json::from_value::<ThemeConfig>(config).is_ok());
+    }
 }

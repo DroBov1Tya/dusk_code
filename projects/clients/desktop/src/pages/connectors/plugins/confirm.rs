@@ -50,8 +50,8 @@ pub fn render(confirm: &Confirm, focus: &FocusHandle, cx: &mut Context<Workspace
     let button = Button::new("store-confirm").label(yes);
     let button = match confirm {
         Confirm::Install(_) => button.primary(),
-        // Outline like the listing window's Remove: the kit's filled danger is a pale tint.
-        Confirm::Remove(_) => button.danger().outline(),
+        // Solid when the theme sets `button.danger.*`, the kit's pale tint otherwise.
+        Confirm::Remove(_) => button.danger(),
     };
     div().flex().flex_col().gap_4().p_5().child(body).child(
         div()
