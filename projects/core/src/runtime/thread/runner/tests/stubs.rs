@@ -314,7 +314,7 @@ async fn a_reopened_thread_sends_the_same_prefix() {
 #[tokio::test]
 async fn with_the_switch_off_every_result_goes_whole() {
     let state = thread_state("stubs_off").await;
-    let settings = "limits:\n  stub_keep_steps: 2\n  stub_min_tokens: 50\n";
+    let settings = "limits:\n  stub_results: false\n  stub_keep_steps: 2\n  stub_min_tokens: 50\n";
     let (provider, events) = run_on(&state, "stubs_off", settings, big_then_small()).await;
 
     assert_eq!(moves(&events), []);

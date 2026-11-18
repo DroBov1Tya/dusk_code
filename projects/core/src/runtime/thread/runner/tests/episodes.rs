@@ -10,7 +10,7 @@ use dusk_protocol::project::EditKind;
 use dusk_protocol::thread::EpisodeKind as Recorded;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-const EPISODES_ON: &str = "limits:\n  episodes: true\n";
+const EPISODES_ON: &str = "limits:\n  episodes: true\n  episode_lesson: false\n";
 const LESSON_ON: &str = "limits:\n  episodes: true\n  episode_lesson: true\n";
 const UNKNOWN: &str = "error[E0425]: cannot find value `limit` in this scope";
 
@@ -238,7 +238,13 @@ async fn with_the_lesson_off_nothing_is_asked_or_stored() {
 
 #[tokio::test]
 async fn with_the_switch_off_nothing_is_written() {
-    let ran = run("episode_off", "", a_loop("Lesson: x"), true).await;
+    let ran = run(
+        "episode_off",
+        "limits:\n  episodes: false\n",
+        a_loop("Lesson: x"),
+        true,
+    )
+    .await;
     assert_eq!(ran.turn.status, TurnStatus::Completed);
     assert_eq!(ran.recorded(), []);
     assert_eq!(ran.rows().await, 0);

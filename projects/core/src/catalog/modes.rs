@@ -23,9 +23,11 @@ pub const ORCHESTRATOR: &str = "ORCHESTRATOR";
 const BUILTIN: [&str; 3] = [MAIN, PLAN, ORCHESTRATOR];
 
 /// What PLAN can do: read, look things up, and write the plan down.
-const PLAN_TOOLS: [&str; 7] = [
+const PLAN_TOOLS: [&str; 9] = [
     "read_file",
     "search_files",
+    "project_graph",
+    "recall",
     "read_history",
     "load_skill",
     "tasks",

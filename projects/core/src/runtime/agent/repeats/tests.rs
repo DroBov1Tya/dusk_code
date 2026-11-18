@@ -126,7 +126,8 @@ fn errors_that_differ_never_climb() {
 #[test]
 fn with_the_ladder_off_only_the_same_call_is_noted() {
     let mut repeats = Repeats::default();
-    let limits = Limits::default();
+    let mut limits = Limits::default();
+    limits.failure_ladder = false;
     let mut rungs = Vec::new();
     for attempt in 1..=10 {
         rungs.push(fail(&mut repeats, "t", attempt, &limits));

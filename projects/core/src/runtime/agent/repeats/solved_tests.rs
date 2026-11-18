@@ -155,7 +155,9 @@ fn a_turn_makes_three_episodes_at_most() {
 #[test]
 fn with_both_switches_off_nothing_is_counted() {
     let mut repeats = Repeats::default();
-    let off = Limits::default();
+    let mut off = Limits::default();
+    off.failure_ladder = false;
+    off.episodes = false;
     fail(&mut repeats, "cargo test", UNKNOWN, &off);
     fail(&mut repeats, "cargo test", UNKNOWN, &off);
     // Asked anyway, the pass finds no count to end.

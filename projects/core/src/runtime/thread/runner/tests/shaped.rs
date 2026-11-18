@@ -189,7 +189,8 @@ async fn with_the_switch_off_every_output_is_sent_byte_for_byte() {
     for (index, output) in OUTPUTS.into_iter().enumerate() {
         let name = format!("shaped_off_{index}");
         let state = thread_state(&name).await;
-        let (provider, events) = run_cargo_test(&state, &name, "", output).await;
+        let (provider, events) =
+            run_cargo_test(&state, &name, "limits:\n  shape_output: false\n", output).await;
         assert_eq!(sent_result(&provider), output);
         assert_eq!(stored_result(&state).await.content, output);
         assert!(shaped_events(&events).is_empty());

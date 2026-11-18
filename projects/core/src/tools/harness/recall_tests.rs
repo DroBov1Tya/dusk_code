@@ -218,7 +218,7 @@ async fn an_unsaved_folder_has_no_notes() {
 
 /// Offered only when the config switches it on and the project has an episode.
 #[tokio::test]
-async fn the_tool_is_off_until_switched_on_and_until_there_is_a_note() {
+async fn the_tool_is_on_until_switched_off_and_until_there_is_a_note() {
     let f = fixture("recall_switch", true).await;
     let mut registry = ToolRegistry::default();
     registry.set_depth(0);
@@ -229,9 +229,9 @@ async fn the_tool_is_off_until_switched_on_and_until_there_is_a_note() {
         let specs = registry.specs(&f.scope, &Arc::new(config.clone()));
         specs.iter().any(|spec| spec.name == "recall")
     };
-    let off = (*tool_context(&f.scope).config).clone();
-    let mut on = off.clone();
-    on.set_tool_enabled("recall", true);
+    let on = (*tool_context(&f.scope).config).clone();
+    let mut off = on.clone();
+    off.set_tool_enabled("recall", false);
 
     assert!(!offered(&off));
     // Switched on, but the project has no episode yet.

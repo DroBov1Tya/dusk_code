@@ -53,17 +53,16 @@ pub struct Limits {
     #[serde(default = "yes")]
     pub wait_for_provider: bool,
     /// Whether a compaction whose own request is too large for the model summarizes the
-    /// older half of the context instead. Off until the evals show it helps.
-    #[serde(default)]
+    /// older half of the context instead.
+    #[serde(default = "yes")]
     pub shrink_context: bool,
     /// The ladder for the same error coming back within a turn through calls that
-    /// differ: a note, then a re-plan, then a stop. Off until the evals show it does not
-    /// lower the pass rate.
-    #[serde(default)]
+    /// differ: a note, then a re-plan, then a stop.
+    #[serde(default = "yes")]
     pub failure_ladder: bool,
     /// Whether `read_file` also takes `paths`, to read several files in one call. It
-    /// changes a tool the model reads, so it is off until the evals show it saves steps.
-    #[serde(default)]
+    /// changes a tool the model reads.
+    #[serde(default = "yes")]
     pub read_many_files: bool,
     /// Whether the read-only calls of one step run together instead of one by one. The
     /// model sees the same results in the same order; off is for comparing runs.
@@ -72,8 +71,8 @@ pub struct Limits {
     /// Whether each tool's description stays as a thread first showed it until the
     /// thread's next compaction, so a memory rewritten, or a skill or an agent added,
     /// mid-thread does not change the start of its requests and the provider's cache of
-    /// it holds. Off until the evals show it does not lower the pass rate.
-    #[serde(default)]
+    /// it holds.
+    #[serde(default = "yes")]
     pub stable_prefix: bool,
     /// Times the same error comes back before the model is told to stop varying the call.
     #[serde(default = "default_failure_note_at")]
@@ -90,9 +89,8 @@ pub struct Limits {
     #[serde(default = "yes")]
     pub record_changes: bool,
     /// Whether old tool results are sent as short stubs that say how to get them back,
-    /// instead of word for word on every request. The full text stays stored. Off until
-    /// the evals show the model does not run again what it no longer sees.
-    #[serde(default)]
+    /// instead of word for word on every request. The full text stays stored.
+    #[serde(default = "yes")]
     pub stub_results: bool,
     /// Steps, newest first, whose tool results are always sent whole.
     #[serde(default = "default_stub_keep_steps")]
@@ -103,8 +101,7 @@ pub struct Limits {
     pub stub_min_tokens: u64,
     /// Whether a compaction summarizes only the older part of the context and keeps the
     /// newest messages word for word, so the step in hand is not retold from a summary.
-    /// Off until the evals show it does not lower the pass rate.
-    #[serde(default)]
+    #[serde(default = "yes")]
     pub compact_tail: bool,
     /// The most a kept tail holds, in estimated tokens; never more than a fifth of the
     /// model's input limit, so a compaction always frees most of it.
@@ -113,28 +110,25 @@ pub struct Limits {
     /// Whether the context is also compacted between turns once it passes 60% of the input
     /// limit, so the summary is written in the pause and not in the middle of a turn. Off
     /// until the evals show the cached share and the wall time do not get worse.
-    #[serde(default)]
+    #[serde(default = "yes")]
     pub compact_early: bool,
     /// Whether the output of a command whose program is known (cargo, pytest, npm, git
     /// transfers) is sent with passing tests, progress and repeats left out, and a note
-    /// on how to read it whole. The full output stays stored. Off until the evals show
-    /// the model does not miss what it no longer sees.
-    #[serde(default)]
+    /// on how to read it whole. The full output stays stored.
+    #[serde(default = "yes")]
     pub shape_output: bool,
     /// Whether the core keeps an index of a saved project's source (files, symbols, the
     /// names each file uses) for the `project_graph` tool. The model sees nothing of it.
-    /// Off until the indexer's benchmark meets its budget.
-    #[serde(default)]
+    #[serde(default = "yes")]
     pub project_graph: bool,
     /// Whether the core writes down what ended a problem in a saved project (a repeated
     /// error that then passed, a verification that passed) for the `recall` tool. Off
     /// until the evals show recalled notes help.
-    #[serde(default)]
+    #[serde(default = "yes")]
     pub episodes: bool,
     /// Whether a call that ends a repeated failure asks the model for a one-line lesson
-    /// at the end of its answer, stored with the episode. Off until the evals show the
-    /// lesson adds to the facts.
-    #[serde(default)]
+    /// at the end of its answer, stored with the episode.
+    #[serde(default = "yes")]
     pub episode_lesson: bool,
     /// Whether the chat in ORCHESTRATOR mode gets the plan form of `tasks` (tasks that
     /// depend on each other, and `run`, which has the core start the team). Off until the
@@ -183,25 +177,25 @@ impl Default for Limits {
             retry_unreachable_seconds: default_retry_unreachable_seconds(),
             resume_within_seconds: default_resume_within_seconds(),
             wait_for_provider: true,
-            shrink_context: false,
-            failure_ladder: false,
-            read_many_files: false,
+            shrink_context: true,
+            failure_ladder: true,
+            read_many_files: true,
             parallel_reads: true,
-            stable_prefix: false,
+            stable_prefix: true,
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),
             record_changes: true,
-            stub_results: false,
+            stub_results: true,
             stub_keep_steps: default_stub_keep_steps(),
             stub_min_tokens: default_stub_min_tokens(),
-            compact_tail: false,
+            compact_tail: true,
             compact_tail_tokens: default_compact_tail_tokens(),
-            compact_early: false,
-            shape_output: false,
-            project_graph: false,
-            episodes: false,
-            episode_lesson: false,
+            compact_early: true,
+            shape_output: true,
+            project_graph: true,
+            episodes: true,
+            episode_lesson: true,
             plan_graph: false,
             task_packets: false,
             member_worktrees: false,

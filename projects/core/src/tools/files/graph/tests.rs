@@ -710,11 +710,11 @@ async fn the_four_questions_on_a_project_the_indexer_read() {
 
 /// Offered only when the config switches it on and this run has a finished refresh.
 #[tokio::test]
-async fn the_tool_is_off_until_switched_on_and_ready() {
+async fn the_tool_is_on_until_switched_off_and_until_ready() {
     let (f, indexer, worker) = indexed_project("graph_tool_switch").await;
-    let off = (*tool_context(&f.scope).config).clone();
-    let mut on = off.clone();
-    on.set_tool_enabled("project_graph", true);
+    let on = (*tool_context(&f.scope).config).clone();
+    let mut off = on.clone();
+    off.set_tool_enabled("project_graph", false);
     let offered = |graph: Option<Arc<Indexer>>, config: &crate::config::Config| {
         let mut registry = ToolRegistry::default();
         registry.set_depth(0);

@@ -179,20 +179,20 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
     assert_eq!(plain.limits().retry_unreachable_seconds, 300);
     assert_eq!(plain.limits().resume_within_seconds, 3600);
     assert!(plain.limits().wait_for_provider);
-    assert!(!plain.limits().shrink_context);
-    assert!(!plain.limits().read_many_files && plain.limits().parallel_reads);
-    assert!(!plain.limits().stable_prefix);
+    assert!(plain.limits().shrink_context);
+    assert!(plain.limits().read_many_files && plain.limits().parallel_reads);
+    assert!(plain.limits().stable_prefix);
     assert!(plain.limits().record_changes);
     let set = parse(
-        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: true\n  stable_prefix: true\n  record_changes: false\n",
+        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: false\n  stable_prefix: false\n  record_changes: false\n",
     )
     .unwrap();
     assert!(!set.limits().record_changes);
     assert!(!set.limits().wait_for_provider);
-    assert!(set.limits().shrink_context);
-    let reads = parse("limits:\n  read_many_files: true\n  parallel_reads: false\n").unwrap();
-    assert!(reads.limits().read_many_files && !reads.limits().parallel_reads);
-    assert!(set.limits().stable_prefix);
+    assert!(!set.limits().shrink_context);
+    let reads = parse("limits:\n  read_many_files: false\n  parallel_reads: false\n").unwrap();
+    assert!(!reads.limits().read_many_files && !reads.limits().parallel_reads);
+    assert!(!set.limits().stable_prefix);
     assert_eq!(set.limits().model_timeout_seconds, 300);
     assert_eq!(set.limits().max_attempts, 3);
     assert_eq!(set.limits().retry_unreachable_seconds, 60);
@@ -217,15 +217,15 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
 }
 
 #[test]
-fn stubs_are_off_and_their_limits_stay_inside_their_bounds() {
+fn stubs_are_on_and_their_limits_stay_inside_their_bounds() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(!plain.stub_results);
+    assert!(plain.stub_results);
     assert_eq!((plain.stub_keep_steps, plain.stub_min_tokens), (8, 200));
     let set =
-        parse("limits:\n  stub_results: true\n  stub_keep_steps: 2\n  stub_min_tokens: 4000\n")
+        parse("limits:\n  stub_results: false\n  stub_keep_steps: 2\n  stub_min_tokens: 4000\n")
             .unwrap()
             .limits();
-    assert!(set.stub_results);
+    assert!(!set.stub_results);
     assert_eq!((set.stub_keep_steps, set.stub_min_tokens), (2, 4000));
     let set = parse("limits:\n  stub_keep_steps: 50\n  stub_min_tokens: 50\n")
         .unwrap()
@@ -245,10 +245,10 @@ fn stubs_are_off_and_their_limits_stay_inside_their_bounds() {
 }
 
 #[test]
-fn shaped_output_is_off_until_set() {
-    assert!(!parse(PROVIDERS).unwrap().limits().shape_output);
-    let set = parse("limits:\n  shape_output: true\n").unwrap().limits();
-    assert!(set.shape_output);
+fn shaped_output_is_on_until_unset() {
+    assert!(parse(PROVIDERS).unwrap().limits().shape_output);
+    let set = parse("limits:\n  shape_output: false\n").unwrap().limits();
+    assert!(!set.shape_output);
     for bad in [
         "limits:\n  shape_output: 1\n",
         "limits:\n  shape_output: yes please\n",
@@ -258,13 +258,14 @@ fn shaped_output_is_off_until_set() {
 }
 
 #[test]
-fn the_graph_and_episodes_are_off_until_set() {
+fn the_graph_and_episodes_are_on_until_unset() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(!plain.project_graph && !plain.episodes && !plain.episode_lesson);
-    let set = parse("limits:\n  project_graph: true\n  episodes: true\n  episode_lesson: true\n")
-        .unwrap()
-        .limits();
-    assert!(set.project_graph && set.episodes && set.episode_lesson);
+    assert!(plain.project_graph && plain.episodes && plain.episode_lesson);
+    let set =
+        parse("limits:\n  project_graph: false\n  episodes: false\n  episode_lesson: false\n")
+            .unwrap()
+            .limits();
+    assert!(!set.project_graph && !set.episodes && !set.episode_lesson);
     for bad in [
         "limits:\n  project_graph: 1\n",
         "limits:\n  episodes: sometimes\n",
@@ -275,40 +276,38 @@ fn the_graph_and_episodes_are_off_until_set() {
 }
 
 #[test]
-fn the_graph_and_recall_tools_are_off_until_switched_on() {
+fn the_graph_and_recall_tools_are_on_until_switched_off() {
     use crate::{catalog::modes, tools::ToolKind};
     let tools = [
         ("project_graph", ToolKind::Files),
         ("recall", ToolKind::Harness),
     ];
-    let mut config = parse(PROVIDERS).unwrap();
+    let config = parse(PROVIDERS).unwrap();
     for (name, kind) in tools {
-        // A mode's switch alone cannot turn it on: only the user's `tools:` can.
-        config.set_mode_tool_enabled(modes::PLAN, name, true);
-        for mode in [modes::MAIN, modes::PLAN, modes::ORCHESTRATOR] {
+        for mode in [modes::MAIN, modes::PLAN] {
             assert!(
-                !config.mode_tool_enabled(mode, name, kind),
+                config.mode_tool_enabled(mode, name, kind),
                 "{name} in {mode}"
             );
         }
     }
-    let on = parse("tools:\n  project_graph: true\n  recall: true\n").unwrap();
+    let off = parse("tools:\n  project_graph: false\n  recall: false\n").unwrap();
     for (name, kind) in tools {
-        assert!(on.mode_tool_enabled(modes::MAIN, name, kind), "{name}");
+        assert!(!off.mode_tool_enabled(modes::MAIN, name, kind), "{name}");
     }
 }
 
 #[test]
-fn the_kept_tail_is_off_and_stays_inside_its_bounds() {
+fn the_kept_tail_is_on_and_stays_inside_its_bounds() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(!plain.compact_tail && !plain.compact_early);
+    assert!(plain.compact_tail && plain.compact_early);
     assert_eq!(plain.compact_tail_tokens, 16_000);
     let set = parse(
-        "limits:\n  compact_tail: true\n  compact_early: true\n  compact_tail_tokens: 2000\n",
+        "limits:\n  compact_tail: false\n  compact_early: false\n  compact_tail_tokens: 2000\n",
     )
     .unwrap()
     .limits();
-    assert!(set.compact_tail && set.compact_early);
+    assert!(!set.compact_tail && !set.compact_early);
     assert_eq!(set.compact_tail_tokens, 2_000);
     let set = parse("limits:\n  compact_tail_tokens: 64000\n")
         .unwrap()
@@ -327,17 +326,17 @@ fn the_kept_tail_is_off_and_stays_inside_its_bounds() {
 }
 
 #[test]
-fn the_failure_ladder_is_off_and_its_rungs_rise() {
+fn the_failure_ladder_is_on_and_its_rungs_rise() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(!plain.failure_ladder);
+    assert!(plain.failure_ladder);
     let rungs = (
         plain.failure_note_at,
         plain.failure_replan_at,
         plain.failure_stop_at,
     );
     assert_eq!(rungs, (3, 5, 8));
-    let set = parse("limits:\n  failure_ladder: true\n  failure_stop_at: 12\n").unwrap();
-    assert!(set.limits().failure_ladder);
+    let set = parse("limits:\n  failure_ladder: false\n  failure_stop_at: 12\n").unwrap();
+    assert!(!set.limits().failure_ladder);
     assert_eq!(set.limits().failure_stop_at, 12);
     for bad in [
         "limits:\n  failure_note_at: 1\n",
