@@ -206,8 +206,8 @@ fn git_drops_only_transfer_progress() {
     assert_eq!(shaped.left_out, 6);
 }
 
-/// Behind a pipe or a chain the output is not one program's, so only identical lines
-/// in a row fold; content and lines that cannot be followed stay whole.
+/// Behind a pipe or a chain the output is not one program's, and a program without
+/// rules may print content: none of it changes, not even repeated lines.
 #[test]
 fn what_is_not_sure_passes_through() {
     for command in ["cargo test | grep test", "make && cargo test", "ls"] {
@@ -219,14 +219,35 @@ fn what_is_not_sure_passes_through() {
         "cat log.txt",
         "cargo test $(x)",
         "cargo t | tail -3",
+        "cargo test | grep same",
+        "awk '{print $1}' data.txt",
+        "python -c 'print(open(\"f\").read())'",
+        "sort words.txt",
+        "xxd blob.bin",
+        "base64 blob.bin",
     ] {
         assert_eq!(shape(command, repeats), None, "{command}");
     }
-    let folded = shaped("cargo test | grep same", repeats);
+    // A known program without rules of its own still folds its repeats.
+    let folded = shaped("npx tsc --noEmit", repeats);
     assert_eq!(folded.text, "exit code: 0\nstdout:\nsame (x3)\n\n\nother\n");
     assert_eq!(
         (folded.left_out, folded.what.as_str()),
         (2, "repeated lines")
+    );
+}
+
+/// Two warnings that differ only in their frame are counted apart by cargo's rule; the
+/// fold of identical lines must not count their headers again (found by the property
+/// test below).
+#[test]
+fn a_counted_warning_is_not_folded_again() {
+    let output = "warning: x\nwarning: x\n  |\nwarning: x\n  |\nwarning: x";
+    let shaped = shaped("cargo test", output);
+    assert_eq!(shaped.text, "warning: x (x2)\nwarning: x (x2)\n  |");
+    assert_eq!(
+        (shaped.left_out, shaped.what.as_str()),
+        (3, "repeated warnings")
     );
 }
 
@@ -265,6 +286,7 @@ proptest! {
             Just("pytest"),
             Just("npm test"),
             Just("git pull"),
+            Just("tsc"),
             Just("ls"),
         ],
     ) {

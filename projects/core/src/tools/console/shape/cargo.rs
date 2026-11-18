@@ -28,7 +28,7 @@ pub(super) fn shape<'a>(lines: &[&'a str], tests: bool, kept: &mut Kept<'a>) {
         if !is_warning(line) {
             match left_out(line, tests) {
                 Some(what) => kept.leave_out(what, 1),
-                None => kept.lines.push((*line).into()),
+                None => kept.keep(line),
             }
             at += 1;
             continue;
@@ -46,16 +46,16 @@ pub(super) fn shape<'a>(lines: &[&'a str], tests: bool, kept: &mut Kept<'a>) {
             }
             Entry::Vacant(first) => {
                 first.insert((kept.lines.len(), 1));
-                kept.lines.extend(block.iter().map(|line| (*line).into()));
+                for line in block {
+                    kept.keep(line);
+                }
             }
         }
         at = end;
     }
     for (header, count) in warnings.into_values() {
-        if count > 1
-            && let Some(line) = kept.lines.get_mut(header)
-        {
-            *line = format!("{line} (x{count})").into();
+        if let Some(line) = kept.lines.get_mut(header) {
+            line.count = count;
         }
     }
 }
