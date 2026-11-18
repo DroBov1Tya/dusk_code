@@ -108,7 +108,7 @@ pub fn turn_activity(
                     ))
                 }
                 Item::Agent { from, text } => {
-                    detail.child(agent_report(ws, shown, index, from, text, cx))
+                    detail.child(agent_report(ws, shown, index, (from, text), true, cx))
                 }
                 Item::User {
                     text,
@@ -159,19 +159,31 @@ pub fn notice(key: &str, body: Div, text: &str, cx: &App) -> Div {
         ))
 }
 
+/// An agent's report, folded to its first line. `kept`: it is a row of the chat's list,
+/// whose text is kept with the chat's (`Texts`) so the list measures it at its height.
 pub fn agent_report(
     ws: &Workspace,
     shown: &str,
     index: usize,
-    from: &str,
-    text: &str,
+    (from, text): (&str, &str),
+    kept: bool,
     cx: &mut Context<Workspace>,
 ) -> Div {
-    let label = if ws.unfolded.contains(&(shown.to_owned(), index)) {
+    let open = ws.unfolded.contains(&(shown.to_owned(), index));
+    let label = if open {
         format!("{from} reported")
     } else {
         let first = text.lines().next().unwrap_or_default();
         format!("{from} reported: {first}")
+    };
+    let key = SharedString::from(format!("report-{shown}-{index}"));
+    let body = match (open, kept) {
+        (true, true) => Some(
+            ws.texts
+                .message(key.clone(), index, text, cx)
+                .into_any_element(),
+        ),
+        _ => None,
     };
     activity_text(
         ws,
@@ -179,13 +191,7 @@ pub fn agent_report(
         index,
         (&label, IconName::Bot),
         text,
-        || {
-            links::markdown(
-                SharedString::from(format!("report-{shown}-{index}")),
-                text.to_owned(),
-            )
-            .into_any_element()
-        },
+        || body.unwrap_or_else(|| links::markdown(key, text.to_owned()).into_any_element()),
         cx,
     )
 }

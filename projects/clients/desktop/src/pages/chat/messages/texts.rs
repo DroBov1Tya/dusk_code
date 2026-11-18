@@ -5,7 +5,7 @@
 //! height and the next scroll landed a long way from where the reader was. Kept here, a
 //! row comes back at its real height, and when a parse lands its row is measured again.
 
-use std::collections::HashMap;
+use std::{cell::RefCell, collections::HashMap};
 
 use gpui_kit::{
     component::text::{TextView, TextViewState},
@@ -15,9 +15,11 @@ use gpui_kit::{
 use super::Row;
 use crate::{pages::chat::links, workspace::Workspace};
 
+/// Kept behind a cell so rows drawn from a shared `Workspace`, such as an agent's report
+/// inside an unfolded activity, keep their texts too.
 #[derive(Default)]
 pub struct Texts {
-    kept: HashMap<SharedString, Kept>,
+    kept: RefCell<HashMap<SharedString, Kept>>,
 }
 
 struct Kept {
@@ -29,7 +31,7 @@ struct Kept {
 impl Texts {
     /// A message's words, under `key`, for item `item` of the chat.
     pub fn message(
-        &mut self,
+        &self,
         key: SharedString,
         item: usize,
         text: &str,
@@ -43,7 +45,7 @@ impl Texts {
 
     /// An answer's words, with its labels, as `message`.
     pub fn answer(
-        &mut self,
+        &self,
         key: SharedString,
         item: usize,
         text: &str,
@@ -53,21 +55,21 @@ impl Texts {
     }
 
     fn state(
-        &mut self,
+        &self,
         key: SharedString,
         item: usize,
         source: String,
         cx: &mut Context<Workspace>,
     ) -> Entity<TextViewState> {
-        if let Some(kept) = self.kept.get(&key) {
+        let known = self.kept.borrow().get(&key).map(|kept| kept.state.clone());
+        if let Some(state) = known {
             // Unchanged words cost a comparison; grown ones are parsed as an append.
-            kept.state
-                .update(cx, |state, cx| state.set_text(&source, cx));
-            return kept.state.clone();
+            state.update(cx, |state, cx| state.set_text(&source, cx));
+            return state;
         }
         let state = cx.new(|cx| TextViewState::markdown(&source, cx));
         let changed = cx.observe(&state, move |ws, _, cx| ws.text_changed(item, cx));
-        self.kept.insert(
+        self.kept.borrow_mut().insert(
             key,
             Kept {
                 state: state.clone(),
@@ -79,8 +81,14 @@ impl Texts {
 }
 
 impl Workspace {
+    /// Measures again the row that shows item `item`: its own, or the activity it is in.
     fn text_changed(&mut self, item: usize, cx: &mut Context<Self>) {
-        if let Some(row) = self.rows.iter().position(|row| *row == Row::Item(item)) {
+        let shows = |row: &Row| match *row {
+            Row::Item(at) => at == item,
+            Row::Activity { start, end, .. } => (start..end).contains(&item),
+            Row::Working => false,
+        };
+        if let Some(row) = self.rows.iter().position(shows) {
             self.list.remeasure_items(row..row + 1);
             cx.notify();
         }
