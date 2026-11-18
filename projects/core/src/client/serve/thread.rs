@@ -241,6 +241,23 @@ impl Server {
                                 })
                             })
                     }
+                    // A joining client is told the totals so far with the turn.
+                    ThreadEvent::TurnProgress {
+                        turn_id,
+                        steps,
+                        tokens,
+                        cost_micro_usd,
+                    } => {
+                        let running = current.lock().clone();
+                        running
+                            .filter(|running| running.turn.turn_id == *turn_id)
+                            .map(|mut running| {
+                                running.turn.steps = *steps;
+                                running.turn.tokens = *tokens;
+                                running.turn.cost_micro_usd = *cost_micro_usd;
+                                Some(running)
+                            })
+                    }
                     ThreadEvent::TurnFinished(_) | ThreadEvent::Failed(_) | ThreadEvent::Idle => {
                         Some(None)
                     }

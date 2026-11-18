@@ -1,0 +1,2 @@
+Added
+The working row shows what the running turn has used, counted by the core: `Working · 2m 14s · 18.4k tokens · step 7` in the desktop and browser chat, ` · 18.4k tok · step 7` in the terminal footer. A new `TurnProgress` event carries the turn's steps, tokens and cost after each model call, and every `Turn` carries the same totals, so a chat opened mid-turn and a finished turn's fold show them too. Clients no longer count steps or diff the thread's spend, and they share one number format (`short_count`). Protocol version 22.

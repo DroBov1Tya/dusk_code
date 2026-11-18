@@ -16,14 +16,8 @@ pub fn size(bytes: u64) -> String {
     }
 }
 
-/// A count with thousands marked, such as `12.3k`.
-pub fn compact(number: u64) -> String {
-    match number {
-        0..=999 => number.to_string(),
-        1_000..=999_999 => format!("{:.1}k", number as f64 / 1e3),
-        _ => format!("{:.1}M", number as f64 / 1e6),
-    }
-}
+/// A count with thousands marked, such as `12.3k`, as every client says it.
+pub use dusk_protocol::thread::short_count as compact;
 
 /// Seconds since the epoch as a local date and time.
 pub fn when(seconds: i64) -> String {

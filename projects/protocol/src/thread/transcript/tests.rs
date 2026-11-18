@@ -172,6 +172,9 @@ fn a_waiting_turn_leaves_one_line_and_no_retry_row() {
         finished_at: None,
         error_message: None,
         waiting: TurnWait::provider(ProviderErrorKind::Quota, 0, 60_000),
+        steps: 0,
+        tokens: 0,
+        cost_micro_usd: 0,
     });
     assert_eq!(retry_row(&waiting), Some(RetryRow::Clear));
     assert_eq!(

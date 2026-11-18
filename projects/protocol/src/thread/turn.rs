@@ -20,6 +20,16 @@ pub struct Turn {
     /// peers, which knew no waits.
     #[serde(default)]
     pub waiting: Option<TurnWait>,
+    /// The model calls of the turn that answered so far. This and the two below are
+    /// counted by the core; absent from older peers, which sent no spend.
+    #[serde(default)]
+    pub steps: u32,
+    /// Prompt and completion tokens of every model call of the turn.
+    #[serde(default)]
+    pub tokens: u64,
+    /// The summed cost of the turn's calls whose cost is known.
+    #[serde(default)]
+    pub cost_micro_usd: u64,
 }
 
 /// What a running turn waits for. Times are Unix timestamps in milliseconds.
@@ -134,6 +144,9 @@ mod wait_tests {
             finished_at: None,
             error_message: None,
             waiting,
+            steps: 0,
+            tokens: 0,
+            cost_micro_usd: 0,
         }
     }
 

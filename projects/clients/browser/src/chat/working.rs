@@ -1,7 +1,7 @@
 //! The working row under a running turn: what the turn does now and how long it has
 //! taken. Each field has a box of fixed width and the row its full height from the first
-//! frame, so nothing around it moves while the numbers change. The turn's tokens and step
-//! are not known to the client yet; a field with nothing to show is absent, not zero.
+//! frame, so nothing around it moves while the numbers change. The core counts the turn's
+//! tokens and steps; a field with nothing to show is absent, not zero.
 
 use super::data::{ChatData, now_ms};
 use crate::state::Chat;
@@ -15,6 +15,10 @@ pub struct Row {
     pub words: String,
     /// How long the turn has run; absent when its start is not known.
     pub elapsed: Option<String>,
+    /// "18.4k tokens", absent before any call reported usage.
+    pub tokens: Option<String>,
+    /// "step 7", the call under way; absent when the turn's counts are not known.
+    pub step: Option<String>,
     /// The figure stands still while the turn waits for the user.
     pub still: bool,
 }
@@ -29,6 +33,8 @@ pub fn row(chat: &ChatData, now: i64) -> Row {
         return Row {
             words: line,
             elapsed: None,
+            tokens: None,
+            step: None,
             still: false,
         };
     }
@@ -43,6 +49,11 @@ pub fn row(chat: &ChatData, now: i64) -> Row {
     Row {
         words,
         elapsed,
+        tokens: chat
+            .spend
+            .and_then(|spend| spend.tokens())
+            .map(|tokens| format!("{tokens} tokens")),
+        step: chat.spend.map(|spend| spend.step()),
         still,
     }
 }
@@ -84,6 +95,14 @@ pub fn Working(chat: Chat) -> impl IntoView {
                     <span class="working-dot"></span>
                     <span class="working-box num">{elapsed}</span>
                 })}
+                {move || current.with(|r| r.tokens.clone()).map(|tokens| view! {
+                    <span class="working-dot"></span>
+                    <span class="working-box tokens num">{tokens}</span>
+                })}
+                {move || current.with(|r| r.step.clone()).map(|step| view! {
+                    <span class="working-dot"></span>
+                    <span class="working-box num">{step}</span>
+                })}
             </span>
         </div>
     }
@@ -106,6 +125,9 @@ mod tests {
             finished_at: None,
             error_message: None,
             waiting,
+            steps: 0,
+            tokens: 0,
+            cost_micro_usd: 0,
         }
     }
 

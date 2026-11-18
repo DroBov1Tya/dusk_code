@@ -176,6 +176,7 @@ impl Agent {
                 let error = format!("cannot store the model usage: {error:#}");
                 return Ok(StepEnd::Answered(TurnOutcome::failed(error)));
             }
+            self.report_progress(&turn.turn_id).await;
         }
         let reasoning = recorded_reasoning(&config, &output);
         let (content, generated) = match generated {

@@ -150,7 +150,7 @@ fn transcript_rows(chat: &Transcript) -> Vec<Row> {
             .rfind(|row| matches!(row, Row::Activity { .. }))
         {
             *span = chat.span(turn);
-            *spent = chat.turn_spend(turn);
+            *spent = chat.boundary_spend.get(turn).copied().flatten();
         }
         start = end;
     }

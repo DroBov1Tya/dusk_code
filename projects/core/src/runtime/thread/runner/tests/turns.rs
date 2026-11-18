@@ -32,6 +32,40 @@ async fn a_chat_is_automatically_named_only_on_its_first_turn() {
     assert_eq!(provider.requests.lock().unwrap().len(), 3);
 }
 
+/// The core counts what a turn spent: after each model call its totals so far, and the
+/// same totals on the finished turn, so no client sums usage.
+#[tokio::test]
+async fn a_turn_reports_the_sum_of_its_model_calls() {
+    let state = thread_state("turn_progress").await;
+    let config = live_config("turn_progress_config");
+    let provider = provider(vec![
+        vec![Step::Call("one"), Step::Usage(100, 20, 5), Step::Done],
+        vec![Step::Text("done"), Step::Usage(300, 40, 7), Step::Done],
+    ]);
+    let (runner, input, mut output) = runner(&state, &provider, &config, model(None));
+    let client = async move {
+        input.send("go").await.unwrap();
+        let mut progress = Vec::new();
+        loop {
+            match output.next_event().await.expect("thread is open") {
+                ThreadEvent::TurnProgress {
+                    steps,
+                    tokens,
+                    cost_micro_usd,
+                    ..
+                } => progress.push((steps, tokens, cost_micro_usd)),
+                ThreadEvent::TurnFinished(turn) => {
+                    assert_eq!(progress, [(1, 120, 5), (2, 460, 12)]);
+                    assert_eq!((turn.steps, turn.tokens, turn.cost_micro_usd), (2, 460, 12));
+                    break;
+                }
+                _ => {}
+            }
+        }
+    };
+    tokio::join!(runner.run(), client);
+}
+
 #[tokio::test]
 async fn undo_does_not_retry_a_failed_title_request() {
     let state = thread_state("failed_title_undo").await;

@@ -6,7 +6,7 @@ use dusk_protocol::thread::TurnWait;
 
 use super::{
     State, messages, timestamp_ms,
-    turns::{Turn, close_call, decode_turn, interrupt, open_calls, read_running_turn},
+    turns::{Turn, close_call, decode_turn, interrupt, open_calls, read_running_turn, turn_row},
 };
 use crate::providers::ToolCall;
 
@@ -66,11 +66,15 @@ impl State {
     /// The thread's running turn with its open calls; `None` when no turn runs.
     pub async fn unfinished_turn(&self, thread_id: &str) -> Result<Option<Unfinished>> {
         let mut transaction = self.pool.begin().await.context("begin unfinished turn")?;
-        let row = sqlx::query("SELECT * FROM turns WHERE thread_id = ? AND status = 'running'")
-            .bind(thread_id)
-            .fetch_optional(&mut *transaction)
-            .await
-            .context("load running turn")?;
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            turn_row!(),
+            " FROM turns WHERE thread_id = ? AND status = 'running'"
+        ))
+        .bind(thread_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("load running turn")?;
         let Some(row) = row else {
             return Ok(None);
         };
@@ -141,10 +145,11 @@ impl State {
                 insert.await?;
             }
         }
-        let row = sqlx::query(
+        let row = sqlx::query(concat!(
             "UPDATE turns SET waiting_for = NULL, waiting_since = NULL, wake_at = NULL
-             WHERE turn_id = ? RETURNING *",
-        )
+             WHERE turn_id = ? RETURNING ",
+            turn_row!()
+        ))
         .bind(turn_id)
         .fetch_one(&mut *transaction)
         .await

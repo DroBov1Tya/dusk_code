@@ -158,6 +158,8 @@ pub struct App {
     pub mcp: Vec<McpStatus>,
     pub turn_started_at: Option<i64>,
     pub last_turn_duration_ms: Option<u64>,
+    /// What the running turn has used so far, as the core counted it.
+    pub turn_spend: Option<dusk_protocol::thread::TurnSpend>,
     /// What the core last said about itself: model, settings, MCP, updates.
     pub status: Status,
     pub turn_running: bool,
@@ -280,6 +282,7 @@ impl App {
             mcp: Vec::new(),
             turn_started_at: None,
             last_turn_duration_ms: None,
+            turn_spend: None,
             status,
             turn_running: false,
             compacting: false,
@@ -352,6 +355,7 @@ impl App {
         self.goal = None;
         self.turn_started_at = None;
         self.last_turn_duration_ms = None;
+        self.turn_spend = None;
         self.output_samples.clear();
         self.turn_running = false;
         self.compacting = false;
@@ -427,6 +431,7 @@ impl App {
         self.turn_running = false;
         self.compacting = false;
         self.turn_started_at = None;
+        self.turn_spend = None;
         self.transcript.stop_running_tools();
         let unavailable_at = now_ms();
         for agent in self.subagents.iter_mut().filter(|agent| agent.is_working()) {
@@ -484,20 +489,5 @@ impl App {
     }
 }
 
-/// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M".
-pub fn compact_number(value: u64) -> String {
-    match value {
-        0..1_000 => value.to_string(),
-        1_000..1_000_000 => format!("{}k", tenths(value, 1_000)),
-        _ => format!("{}M", tenths(value, 1_000_000)),
-    }
-}
-
-/// `value / unit` with one decimal, dropped when it is zero.
-pub fn tenths(value: u64, unit: u64) -> String {
-    let tenths = (value * 10 + unit / 2) / unit;
-    match tenths % 10 {
-        0 => (tenths / 10).to_string(),
-        rest => format!("{}.{rest}", tenths / 10),
-    }
-}
+/// 1234 as "1.2k", 100000 as "100k", 1234567 as "1.2M", as every client says it.
+pub use dusk_protocol::thread::short_count as compact_number;

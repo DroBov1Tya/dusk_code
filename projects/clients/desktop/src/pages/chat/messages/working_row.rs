@@ -1,6 +1,7 @@
 //! The last row of the transcript while a turn runs: the working figure and what the turn
-//! does now, with how long it has run and which step it is on, in boxes of fixed width so
-//! nothing moves as the numbers tick. A model call tried again replaces the words.
+//! does now, with how long it has run, the tokens it used and which step it is on, in
+//! boxes of fixed width so nothing moves as the numbers tick. The core counts the tokens
+//! and steps; a model call tried again replaces the words.
 
 use dusk_protocol::{system::now_ms, thread::TurnWait};
 use gpui_kit::{component::ActiveTheme, *};
@@ -16,9 +17,9 @@ use crate::{
 
 /// The row's height, which is the figure's: it has all of it from its first frame.
 const HEIGHT: f32 = 28.;
-/// Boxes of the counts. The tokens of the turn go between them (96 px) once the core
-/// reports them.
+/// Boxes of the counts.
 const ELAPSED_BOX: f32 = 56.;
+const TOKENS_BOX: f32 = 96.;
 const STEP_BOX: f32 = 56.;
 
 /// What the row says, apart from how it is drawn.
@@ -26,6 +27,8 @@ const STEP_BOX: f32 = 56.;
 pub struct Status {
     pub words: String,
     pub elapsed: Option<String>,
+    /// Absent, not zero, before any call reported usage.
+    pub tokens: Option<String>,
     pub step: Option<String>,
     /// The turn waits for the user: the figure stands still.
     pub still: bool,
@@ -47,11 +50,12 @@ pub fn status(chat: &Transcript, now: i64) -> Status {
         elapsed: began
             .filter(|_| !decision)
             .map(|began| timing::duration(now - began)),
-        // The call under way is the one after those that finished.
-        step: chat
-            .steps
+        tokens: chat
+            .spend
             .filter(|_| !decision)
-            .map(|done| format!("step {}", done.saturating_add(1))),
+            .and_then(|spend| spend.tokens())
+            .map(|tokens| format!("{tokens} tokens")),
+        step: chat.spend.filter(|_| !decision).map(|spend| spend.step()),
         still: decision,
     }
 }
@@ -90,7 +94,12 @@ pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
     };
     let dot = || div().flex_none().px_2().child("\u{00B7}");
     let mut counts = div().flex().flex_row().items_center();
-    for (text, width) in [(status.elapsed, ELAPSED_BOX), (status.step, STEP_BOX)] {
+    let fields = [
+        (status.elapsed, ELAPSED_BOX),
+        (status.tokens, TOKENS_BOX),
+        (status.step, STEP_BOX),
+    ];
+    for (text, width) in fields {
         if let Some(text) = text {
             counts = counts.child(dot()).child(field(text, width));
         }
@@ -123,7 +132,7 @@ pub fn render(shown: &str, chat: &Transcript, cx: &App) -> AnyElement {
 #[cfg(test)]
 mod tests {
     use dusk_protocol::{
-        model::{FinishReason, ModelEvent, ProviderWaitKind},
+        model::ProviderWaitKind,
         thread::{ThreadEvent, Turn, TurnStatus, TurnWait},
     };
 
@@ -141,6 +150,9 @@ mod tests {
             finished_at: None,
             error_message: None,
             waiting,
+            steps: 0,
+            tokens: 0,
+            cost_micro_usd: 0,
         }
     }
 
@@ -153,23 +165,20 @@ mod tests {
             Status {
                 words: "Working".into(),
                 elapsed: Some("2m 14s".into()),
+                tokens: None,
                 step: Some("step 1".into()),
                 still: false,
             }
         );
-        chat.apply(ThreadEvent::Model(ModelEvent::Finished(
-            FinishReason::ToolCalls,
-        )));
-        assert_eq!(status(&chat, 135_000).step.as_deref(), Some("step 2"));
-    }
-
-    #[test]
-    fn a_turn_joined_midway_shows_no_step() {
-        let mut chat = Transcript::default();
-        chat.apply(ThreadEvent::TurnRunning(turn(None)));
-        let now = status(&chat, 9_000);
-        assert_eq!(now.elapsed.as_deref(), Some("8s"));
-        assert_eq!(now.step, None);
+        chat.apply(ThreadEvent::TurnProgress {
+            turn_id: "t".into(),
+            steps: 6,
+            tokens: 18_420,
+            cost_micro_usd: 0,
+        });
+        let now = status(&chat, 135_000);
+        assert_eq!(now.tokens.as_deref(), Some("18.4k tokens"));
+        assert_eq!(now.step.as_deref(), Some("step 7"));
     }
 
     #[test]
@@ -194,6 +203,7 @@ mod tests {
             Status {
                 words: "Waiting for your decision".into(),
                 elapsed: None,
+                tokens: None,
                 step: None,
                 still: true,
             }

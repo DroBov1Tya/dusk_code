@@ -95,14 +95,20 @@ pub(super) fn status(app: &App) -> (Vec<Span<'static>>, String) {
                 ),
                 Activity::Idle => (TEXT_MUTED, String::new()),
             };
-            // How long the turn has run, beside what it does now.
-            let took = app
+            // How long the turn has run and what it used, beside what it does now.
+            let mut took = app
                 .turn_started_at
                 .map(|started| {
                     let ms = dusk_protocol::system::now_ms() - started;
                     format!(" \u{00B7} {}", dusk_protocol::thread::duration_words(ms))
                 })
                 .unwrap_or_default();
+            if let Some(spend) = app.turn_spend.filter(|_| app.turn_started_at.is_some()) {
+                if let Some(tokens) = spend.tokens() {
+                    took.push_str(&format!(" \u{00B7} {tokens} tok"));
+                }
+                took.push_str(&format!(" \u{00B7} {}", spend.step()));
+            }
             vec![
                 Span::styled(format!("{} ", spinner(app)), fg(color)),
                 Span::styled(what, fg(color)),

@@ -457,6 +457,9 @@ mod tests {
             finished_at: None,
             error_message: None,
             waiting: None,
+            steps: 0,
+            tokens: 0,
+            cost_micro_usd: 0,
         }
     }
 
