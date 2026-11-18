@@ -77,8 +77,16 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                     let image = cx
                         .update_window(window, |_, window, cx| {
                             // The window may not be on screen, so it draws no frames of
-                            // its own: draw the current state, then render that frame.
-                            window.draw(cx).clear(cx);
+                            // its own: draw the current state, then render that frame. A
+                            // draw may ask for the next frame (the Workshop's grid does, once
+                            // it has measured its page), so deliver those until none is left,
+                            // as the platform's frame loop would.
+                            for _ in 0..8 {
+                                window.draw(cx).clear(cx);
+                                if window.simulate_next_frame(cx) == 0 {
+                                    break;
+                                }
+                            }
                             window.render_to_image()
                         })
                         .ok()
