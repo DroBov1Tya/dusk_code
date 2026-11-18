@@ -99,7 +99,8 @@ fn thread(request: &Thread) -> Access<'_> {
         Thread::Messages { thread_id }
         | Thread::Tasks { thread_id }
         | Thread::LocalUnsent { thread_id }
-        | Thread::GetApprovals { thread_id } => of(Area::ThreadRead, thread_id),
+        | Thread::GetApprovals { thread_id }
+        | Thread::Pins { thread_id } => of(Area::ThreadRead, thread_id),
         Thread::Resume { thread_id, .. }
         | Thread::ResendLocalUnsent { thread_id, .. }
         | Thread::Send { thread_id, .. }
@@ -107,7 +108,8 @@ fn thread(request: &Thread) -> Access<'_> {
         | Thread::Background { thread_id, .. }
         | Thread::Close { thread_id }
         | Thread::StopAgent { thread_id }
-        | Thread::Rename { thread_id, .. } => of(Area::ThreadWrite, thread_id),
+        | Thread::Rename { thread_id, .. }
+        | Thread::Pin { thread_id, .. } => of(Area::ThreadWrite, thread_id),
         // An approval is known by its number alone, so it is about no thread: a scope
         // bound to threads cannot answer one.
         Thread::Approve { .. } => apart(Area::ThreadWrite),

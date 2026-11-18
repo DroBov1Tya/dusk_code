@@ -12,7 +12,7 @@ use crate::project::{
 };
 use crate::system::SystemReport;
 use crate::thread::{
-    Found, JobInfo, LocalUnsent, LogEntry, Message, Overview, PlanPage, Task, Team, Thread,
+    Found, JobInfo, LocalUnsent, LogEntry, Message, Overview, Pin, PlanPage, Task, Team, Thread,
 };
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
@@ -38,6 +38,8 @@ pub enum Response {
     Overview(Overview),
     /// A page of a thread's event log, newest first.
     Events(Vec<LogEntry>),
+    /// A thread's pins, oldest message first.
+    Pins(Vec<Pin>),
     LocalUnsent(Vec<LocalUnsent>),
     Jobs(Vec<JobInfo>),
     Node(NodeText),

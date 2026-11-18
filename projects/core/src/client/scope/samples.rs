@@ -92,6 +92,12 @@ fn threads() -> Vec<T> {
             policy: None,
         },
         T::GetApprovals { thread_id: id() },
+        T::Pin {
+            thread_id: id(),
+            message_id: word(),
+            pinned: true,
+        },
+        T::Pins { thread_id: id() },
     ]
 }
 

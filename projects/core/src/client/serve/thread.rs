@@ -1,4 +1,4 @@
-//! Requests about one thread: opening, sending, closing.
+//! Requests about one thread: opening, sending, pinning, closing.
 
 use super::ClientId;
 use super::publish::{publish, send_to};
@@ -191,6 +191,23 @@ impl Server {
                 let state = runtime.state_of(&thread_id).await;
                 Response::Approvals(state.thread_approvals(&thread_id).await?)
             }
+            ThreadRequest::Pin {
+                thread_id,
+                message_id,
+                pinned,
+            } => {
+                let pins = runtime.set_pinned(&thread_id, &message_id, pinned).await?;
+                // Every client showing the chat redraws its bar.
+                publish(
+                    &self.subscribers,
+                    Event::Thread {
+                        thread_id,
+                        event: Box::new(ThreadEvent::Pins(pins.clone())),
+                    },
+                );
+                Response::Pins(pins)
+            }
+            ThreadRequest::Pins { thread_id } => Response::Pins(runtime.pins(&thread_id).await?),
         })
     }
 

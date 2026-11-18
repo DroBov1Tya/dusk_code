@@ -94,4 +94,15 @@ pub enum ThreadRequest {
     GetApprovals {
         thread_id: String,
     },
+    /// Pins or unpins one of the thread's messages, at most `MAX_PINS`; answers with
+    /// `Response::Pins` and tells the thread's clients `ThreadEvent::Pins`.
+    Pin {
+        thread_id: String,
+        message_id: String,
+        pinned: bool,
+    },
+    /// Answers with `Response::Pins`: the thread's pins, oldest message first.
+    Pins {
+        thread_id: String,
+    },
 }

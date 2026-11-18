@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::AgentPhase;
 use crate::model::{Effort, ModelEvent, ProviderErrorKind, ToolCall};
 use crate::thread::{
-    Compaction, Goal, LocalUnsent, Message, Task, Team, ThreadTokens, Turn, TurnFailure,
+    Compaction, Goal, LocalUnsent, Message, Pin, Task, Team, ThreadTokens, Turn, TurnFailure,
 };
 use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -204,6 +204,9 @@ pub enum ThreadEvent {
     Undone {
         text: String,
     },
+    /// The thread's pins changed, by a pin, an unpin or an /undo that took a pinned
+    /// message: all of them, oldest message first.
+    Pins(Vec<Pin>),
     /// /fork wrote its summary; a client opens a new thread that starts from it.
     Forked {
         summary: String,
