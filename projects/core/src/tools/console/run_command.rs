@@ -33,6 +33,10 @@ use crate::runtime::jobs::Launch;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
 const MAX_TIMEOUT_SECONDS: u64 = 600;
+/// Added while old results are sent as stubs, so a model reads one back instead of
+/// running the command again.
+const STUB_SENTENCE: &str = " A result shown as `[result N put away ...]` is stored; get it \
+    with read_history, run again only if something changed.";
 
 #[derive(Default)]
 pub struct RunCommand {
@@ -258,6 +262,10 @@ impl Tool for RunCommand {
             " Set background=true to start a long command and continue immediately. Returns job_id after spawn; the result joins this agent automatically at a safe boundary, even after this turn ends. Jobs survive turn cancellation; use jobs(action=cancel) to stop one. At most 8 jobs per thread and 64 per runtime; commands are limited to 16 KiB. Incomplete jobs are never restarted after application restart."
         } else {
             ""
+        } + if context.config.limits().stub_results {
+            STUB_SENTENCE
+        } else {
+            ""
         }
     }
 
@@ -426,7 +434,40 @@ mod tests {
     use std::fs;
 
     use super::*;
-    use crate::testing::{temp_dir, tool_context};
+    use crate::testing::{temp_dir, tool_context, tool_context_with};
+
+    /// The description with stubs off is the one every cached prompt already holds.
+    #[test]
+    fn the_description_gains_the_stub_sentence_only_with_the_switch_on() {
+        let scope = scope("shell-description");
+        let tool = RunCommand::default();
+        let off = tool.description(&tool_context(&scope));
+        let before = format!(
+            "Run a command with sh -c. The first starts in {}; the folder a command ends in \
+             carries over to the next, so `cd` once, not in every command. Stdin is empty. \
+             Returns the exit code, stdout and stderr; a long stream keeps its first 8 KiB \
+             and last 24 KiB. A non-zero exit code is a failed result. Put temporary and \
+             downloaded files in {}. Change files here too: a quoted heredoc \
+             (cat > file <<'EOF') for a new file; for an edit, a short script that replaces \
+             one exact, unique piece and fails otherwise; then check with git diff. Do more \
+             per call: join commands with `&&` or `;`, and keep output small with `head`, \
+             `tail` or `grep`; never dump whole logs or files. Never wait with `sleep`. \
+             The project may hold environment variables the user set, such as API tokens: \
+             `env` lists them with the values masked; use them as `$NAME` and never print \
+             or copy a value.",
+            scope.cwd().display(),
+            scope.workspace().display()
+        );
+        assert_eq!(off, before);
+        let on = tool_context_with(&scope, "limits:\n  stub_results: true\n");
+        assert_eq!(
+            tool.description(&on),
+            format!(
+                "{before} A result shown as `[result N put away ...]` is stored; get it with \
+                 read_history, run again only if something changed."
+            )
+        );
+    }
 
     fn scope(name: &str) -> ToolScope {
         let root = temp_dir(name);

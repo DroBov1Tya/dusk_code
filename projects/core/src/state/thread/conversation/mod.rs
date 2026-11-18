@@ -12,10 +12,10 @@ mod undo;
 
 pub use compactions::Compaction;
 pub use local_unsent::LocalUnsent;
-pub use messages::{Message, MessageRole, estimate_tokens};
+pub use messages::{Message, MessageRole, calls_of, estimate_tokens};
 pub use pending::PendingMessage;
 pub use sources::Source;
-pub use stubs::{NewStub, Stub};
+pub use stubs::{CallEnd, Ended, NewStub, Stub, saved_tokens};
 pub use undo::UndoPoint;
 
 use super::{State, timestamp_ms};

@@ -93,6 +93,14 @@ pub enum ThreadEvent {
     CompactionFailed {
         error: String,
     },
+    /// Old tool results were put away: from this request on, each is sent as a one-line
+    /// stub that says how to read it back, and the whole text stays stored. Clients
+    /// show nothing for it; evals count it.
+    ResultsStubbed {
+        results: u32,
+        /// Estimated tokens each later request carries less.
+        saved_tokens: u64,
+    },
     /// The thread's token counts, when it starts and after each turn and compaction. `limit` is the largest request: the
     /// configured input limit or the model window, whichever is smaller.
     Tokens {

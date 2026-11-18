@@ -1,6 +1,6 @@
 //! Thread messages in order: what the system prompt, the user, the model and the tools said.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
@@ -300,6 +300,24 @@ const MESSAGE_OVERHEAD: u64 = 4;
 /// The estimated size of a message whose content is `content`, its markup included.
 pub fn content_tokens(content: &str) -> u64 {
     estimate_tokens(content) + MESSAGE_OVERHEAD
+}
+
+/// The call each tool result of `messages`, in thread order, answers, by the result's
+/// message ID, with the assistant message that made it. Some providers number calls per
+/// step, so an ID can come back later; a result takes the newest call before it.
+pub fn calls_of(messages: &[Message]) -> HashMap<&str, (&Message, &ToolCall)> {
+    let mut made = HashMap::new();
+    let mut answered = HashMap::new();
+    for message in messages {
+        for call in &message.tool_calls {
+            made.insert(call.id.as_str(), (message, call));
+        }
+        let call = message.tool_call_id.as_deref().and_then(|id| made.get(id));
+        if let Some(&call) = call.filter(|_| message.role == MessageRole::Tool) {
+            answered.insert(message.message_id.as_str(), call);
+        }
+    }
+    answered
 }
 
 /// Appends a message at the end of the thread inside the caller's transaction.

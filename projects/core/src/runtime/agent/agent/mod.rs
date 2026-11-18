@@ -8,6 +8,7 @@ mod report;
 mod resume;
 mod retry;
 mod step;
+mod stubs;
 #[cfg(test)]
 mod tests;
 mod turn;

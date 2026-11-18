@@ -17,7 +17,7 @@ use crate::tools::{
 };
 use crate::{
     BoxFuture,
-    state::{Message, MessageRole, State},
+    state::{Message, MessageRole, State, calls_of},
 };
 
 /// Added to the description while the `result` form is offered.
@@ -128,21 +128,18 @@ impl ReadHistory {
     /// The name of the tool whose call this result answers: the call sits in an assistant
     /// message shortly before it, so the search widens only when it is not there.
     async fn tool_of(&self, result: &Message) -> Result<String> {
-        let Some(call_id) = &result.tool_call_id else {
+        if result.tool_call_id.is_none() {
             return Ok("tool".into());
-        };
+        }
         let mut span = 16u64;
         loop {
             let from = result.sequence.saturating_sub(span).max(1);
+            // Through the result itself, which is how `calls_of` pairs them.
             let before = self
                 .state
                 .messages_from(&self.thread_id, from, span as u32 + 1)
                 .await?;
-            let call = before
-                .iter()
-                .flat_map(|message| &message.tool_calls)
-                .find(|call| &call.id == call_id);
-            if let Some(call) = call {
+            if let Some((_, call)) = calls_of(&before).get(result.message_id.as_str()) {
                 return Ok(call.name.clone());
             }
             if from == 1 {
