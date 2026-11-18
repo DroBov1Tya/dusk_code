@@ -1,7 +1,7 @@
 //! The transcript: the items of a chat, with runs of tool steps folded into one line.
 
 use super::data::{ChatData, Entry, Item, Shown};
-use super::{markdown::Markdown, shown::ShownBlock, voice};
+use super::{markdown::Markdown, shown::ShownBlock, voice, working::Working};
 use crate::{
     state::{Chat, state},
     ui::{Icon, IconName},
@@ -138,34 +138,6 @@ pub fn Transcript(
     let scroller = NodeRef::<html::Div>::new();
     let all = Memo::new(move |_| chat.with(blocks));
     let firsts = Memo::new(move |_| all.with(|all| all.iter().map(Block::key).collect::<Vec<_>>()));
-    // A second's tick for the time the running turn has taken.
-    let tick = RwSignal::new(0u32);
-    let _ = set_interval_with_handle(
-        move || tick.update(|n| *n = n.wrapping_add(1)),
-        std::time::Duration::from_secs(1),
-    );
-    let working_for = move || {
-        tick.track();
-        if let Some(line) = chat.with(|c| c.retry_line(super::data::now_ms())) {
-            return line;
-        }
-        let started = chat.with(|c| {
-            c.items
-                .iter()
-                .rev()
-                .find(|entry| {
-                    matches!(entry.item, Item::User(_) | Item::Answered(_) | Item::Job(_))
-                })
-                .map(|entry| entry.at)
-        });
-        match started {
-            Some(started) => format!(
-                "Working \u{00B7} {}",
-                duration(super::data::now_ms() - started)
-            ),
-            None => "Working".to_owned(),
-        }
-    };
     let pending = move || {
         chat.with(|c| c.pending.clone())
             .into_iter()
@@ -197,7 +169,7 @@ pub fn Transcript(
                 <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
             </For>
             <Show when=move || chat.with(|c| c.working)>
-                <div class="working"><span class="spinner"></span>{working_for}</div>
+                <Working chat />
             </Show>
         </div>
     }

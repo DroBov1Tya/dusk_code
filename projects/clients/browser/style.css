@@ -141,7 +141,6 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .msg:hover .msg-actions, .msg:focus-within .msg-actions { opacity: 1; }
 .reasoning { color: var(--muted); margin-bottom: 6px; }
 .reasoning summary { cursor: pointer; }
-.working { color: var(--muted); margin: 8px auto; }
 .notice { color: var(--muted); font-size: 13px; margin: 8px auto; }
 .notice.error { color: var(--bad); }
 .steps { margin: 8px auto; border: 1px solid color-mix(in srgb, var(--fg) 10%, transparent); border-radius: 10px; background: var(--surface); }
@@ -448,6 +447,15 @@ a { text-underline-offset: 3px; }
 .tone-danger { color: var(--tone-bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .tone-accent { color: var(--tone-accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
 
+/* The working row: 28 px high from its first frame; the clock has a box of fixed width. */
+.working-row { height: 28px; display: flex; align-items: center; gap: 12px; margin: 8px auto; color: var(--muted); font-size: .78rem; }
+.working-figure { width: 28px; height: 28px; flex: none; display: flex; align-items: center; justify-content: center; }
+.working-figure .spinner { margin: 0; }
+.working-figure.still .spinner { animation: none; }
+.working-fields { display: flex; align-items: center; min-width: 0; white-space: nowrap; }
+.working-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.working-dot::before { content: "\00B7"; margin: 0 8px; }
+.working-box { display: inline-block; min-width: 56px; }
 /* ==== end of what the agent shows ==== */
 .chat-empty { margin-top: clamp(60px, 19vh, 190px); text-align: center; }
 .chat-empty h2 { font-size: 26px; color: var(--fg); letter-spacing: -.035em; font-weight: 500; }
