@@ -3,7 +3,7 @@
 //! the right. Open or closed is the window's, never the core's.
 
 use gpui_kit::{
-    component::{ActiveTheme, Colorize, Icon, IconName, Sizable},
+    component::{ActiveTheme, Icon, IconName, Sizable},
     *,
 };
 
@@ -17,9 +17,9 @@ use crate::{
 pub const TAB: (f32, f32) = (36., 14.);
 const RING: f32 = 16.;
 
-/// The band's color: a shade under the box's, so the two read as one piece.
+/// The band's color, the theme's: a shade beside the box's, so the two read as one piece.
 pub fn surface(cx: &App) -> Hsla {
-    cx.theme().muted.darken(0.06)
+    crate::ui::theme::band(cx)
 }
 
 /// How long the tab takes to come and go.
