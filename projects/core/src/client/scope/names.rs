@@ -165,6 +165,7 @@ named! {
     R::Store(St::Remove { .. }) => "store.remove",
     R::Store(St::UpdateAll) => "store.update_all",
     R::Store(St::Cover { .. }) => "store.cover",
+    R::Store(St::Screenshot { .. }) => "store.screenshot",
     R::InstallUpdate { .. } => "install_update",
     R::Shutdown => "shutdown",
 }

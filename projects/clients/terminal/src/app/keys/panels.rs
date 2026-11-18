@@ -3,7 +3,7 @@
 use super::EFFORTS;
 use crate::app::{
     Action, App, Panel,
-    panels::{Connection, ModelRow, Preset, SecretEntry, Workshop, step},
+    panels::{Connection, ModelRow, Preset, SecretEntry, step},
     schedule::ScheduleAction,
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -313,7 +313,7 @@ impl App {
                         return plugin.map_or(Action::None, Action::TogglePlugin);
                     }
                     KeyCode::Char('w') => {
-                        self.panel = Some(Panel::Workshop(Workshop::default()));
+                        self.panel = Some(Panel::Workshop(Box::default()));
                         return Action::LoadStore;
                     }
                     KeyCode::Esc => self.panel = None,

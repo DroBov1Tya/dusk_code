@@ -383,6 +383,11 @@ fn rest() -> Vec<R> {
             source: word(),
             name: word(),
         }),
+        R::Store(St::Screenshot {
+            source: word(),
+            name: word(),
+            index: 0,
+        }),
         R::InstallUpdate { tag: word() },
         R::Shutdown,
     ]

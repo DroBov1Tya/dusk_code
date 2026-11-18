@@ -2,7 +2,8 @@
 
 use super::Config;
 use crate::config::{
-    Appearance, ApprovalPolicy, Limits, Logging, Memory, ThreadConfig, VersionControl, WorkHistory,
+    Appearance, ApprovalPolicy, Limits, Logging, Memory, Team, ThreadConfig, VersionControl,
+    WorkHistory,
 };
 use crate::release::update::Channel;
 use dusk_protocol::config::VoiceSettings;
@@ -10,6 +11,10 @@ use dusk_protocol::config::VoiceSettings;
 impl Config {
     pub fn thread(&self) -> &ThreadConfig {
         &self.thread
+    }
+
+    pub fn team(&self) -> &Team {
+        &self.team
     }
 
     pub fn limits(&self) -> Limits {

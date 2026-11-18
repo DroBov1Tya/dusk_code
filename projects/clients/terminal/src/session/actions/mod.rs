@@ -60,6 +60,8 @@ pub async fn apply(
         Action::LoadStore => store::load(client, app, terminal).await?,
         Action::InstallPlugin(listing) => store::install(client, app, terminal, &listing).await?,
         Action::RemovePlugin(name) => store::remove(client, app, terminal, name).await?,
+        Action::UpdateAll => store::update_all(client, app, terminal).await?,
+        Action::PackSwitch(switch, on) => store::switch(client, app, switch, on).await,
         Action::Send(text) => send(client, app, open, text, false).await,
         Action::Approve { id, decision } => thread::approve(client, app, id, decision).await,
         Action::SendNow(text) => send(client, app, open, text, true).await,

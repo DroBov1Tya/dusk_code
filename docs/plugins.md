@@ -301,7 +301,8 @@ for line in sys.stdin:
 The Workshop under Plugins lists what the store and its mirrors offer and installs a
 plugin with a click, after showing what it may do. The official list is at
 `https://drobov1tya.github.io/duskcode-workshop/index.json`; when that address cannot be
-reached, the old `https://drobov1tya.github.io/duskcode-plugins/index.json` is tried.
+reached, the old `https://drobov1tya.github.io/duskcode-plugins/index.json` is tried
+(it stopped answering when the repository was renamed on 2026-11-18).
 The core installs a plugin only when:
 
 - the list is signed (Ed25519) by its source's key: the key built into duskcode for the
@@ -361,7 +362,7 @@ others, which are listed all the same.
 
 The store fetches over https, and only from public addresses: a name that resolves to
 this machine, a private or link-local network, carrier NAT, multicast or a cloud's
-metadata service is refused. Lists and covers follow no redirect. A package may follow up
+metadata service is refused. Lists, covers and screenshots follow no redirect. A package may follow up
 to three https redirects to the host it was asked from or to GitHub's asset hosts
 (`github.com`, `objects.githubusercontent.com`, `release-assets.githubusercontent.com`),
 as release downloads need; its SHA-256 is checked either way.
@@ -376,6 +377,8 @@ Format 2 (format 1, the same without the new fields and `verified`, is still rea
   "name": "telegram", "version": "1.0.0", "kind": "plugin", "description": "...",
   "category": "chat", "tags": ["bot", "voice"],
   "cover": {"path": "covers/telegram.webp", "sha256": "...", "size": 40213},
+  "screenshots": [{"path": "screenshots/telegram/1-chat.webp", "sha256": "...",
+                   "size": 182044, "caption": "A thread answered from Telegram"}],
   "stars": 42, "created": "2026-01-02T00:00:00Z", "updated": "2026-03-04T00:00:00Z",
   "platforms": ["macos"], "clients": ["gui", "tui"],
   "permissions": {"network": ["https://api.telegram.org"]},
@@ -392,7 +395,14 @@ Format 2 (format 1, the same without the new fields and `verified`, is still rea
   "arch": "any"`; a plugin runs programs, so a plugin package for `any` is refused.
 - `category` and `tags` (up to 8) are `a-z`, `0-9` and `-`.
 - `cover` is a `.png` or `.webp` of at most 512 KiB, by a path under the list's folder;
-  the core fetches it, checks its size, SHA-256 and first bytes, and keeps the last 64.
+  the core fetches it, checks its size, SHA-256 and first bytes, and keeps it in memory.
+- `screenshots` (up to 8) are pictures of the item at work, each checked like a cover but
+  up to 1 MiB, with an optional `caption`: one line of at most 120 characters, without
+  control characters or bidi overrides. A client gets their count and captions in the
+  listing and asks for each by its place (`StoreRequest::Screenshot`); the core fetches
+  only what the last list read named, from a source that is still the one configured.
+  Covers and screenshots share a 32 MiB in-memory cache. A bad cover or screenshot
+  refuses the whole list, as any bad field does.
 - `stars` is counted by the publisher when signing; duskcode never calls GitHub.
 - `created` and `updated` are RFC 3339.
 - `verified` is believed only in the official list.
@@ -453,5 +463,5 @@ package for all, for a script run by an interpreter already on the machine. A `r
 ## Plugins of the store
 
 Telegram and the rest live in their own repository,
-[duskcode-plugins](https://github.com/DroBov1Tya/duskcode-plugins), and install from
+[duskcode-workshop](https://github.com/DroBov1Tya/duskcode-workshop), and install from
 Plugins, Workshop. duskcode ships no plugin in its binary.

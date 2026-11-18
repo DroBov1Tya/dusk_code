@@ -10,6 +10,21 @@ use leptos::prelude::*;
 
 #[component]
 pub fn Plugins() -> impl IntoView {
+    let workshop = RwSignal::new(false);
+    view! {
+        <div class="segmented" role="group" aria-label="Plugins view">
+            <button class:active=move || !workshop.get() on:click=move |_| workshop.set(false)>"Installed"</button>
+            <button class:active=move || workshop.get() on:click=move |_| workshop.set(true)>"Workshop"</button>
+        </div>
+        {move || match workshop.get() {
+            true => view! { <super::workshop::Workshop /> }.into_any(),
+            false => view! { <Installed /> }.into_any(),
+        }}
+    }
+}
+
+#[component]
+fn Installed() -> impl IntoView {
     let app = state();
     view! {
         <Show when=move || app.status.with(|s| s.as_ref().is_some_and(|s| !s.plugins.is_empty()))

@@ -115,7 +115,7 @@ pub fn agents_button(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div>
             ws.modal = Some(crate::modal::Modal::Agents {
                 thread_id: thread_id.clone(),
             });
-            ws.agents_modal_focus.focus(window, cx);
+            ws.modal_focus.focus(window, cx);
             cx.notify();
         }));
     // The count sits on the circle's upper right, half outside it.

@@ -72,8 +72,9 @@ pub enum Response {
     Answer(Box<Answer>),
     Store(crate::plugin::StoreList),
     StoreUpdates(crate::plugin::UpdateReport),
-    /// A store cover, checked against its list: its bytes in base64, and their type.
-    Cover {
+    /// A store picture (a cover or a screenshot), checked against its list: its bytes in
+    /// base64, and their type.
+    Media {
         base64: String,
         mime: String,
     },

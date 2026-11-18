@@ -78,7 +78,9 @@ pub fn classify(request: &Request) -> Access<'_> {
             | Plugin::Close { .. }
             | Plugin::Event { .. },
         ) => apart(Area::PluginParts),
-        Request::Store(Store::List { .. } | Store::Cover { .. }) => apart(Area::Store),
+        Request::Store(Store::List { .. } | Store::Cover { .. } | Store::Screenshot { .. }) => {
+            apart(Area::Store)
+        }
         Request::Store(Store::Install { .. } | Store::Remove { .. } | Store::UpdateAll) => {
             apart(Area::StoreInstall)
         }
