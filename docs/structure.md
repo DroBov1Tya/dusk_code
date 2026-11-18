@@ -196,9 +196,10 @@ start, stop). Everything else is the core's.
 ```
 api/  (9)
 auth/  (2)
-chat/  (18)
+chat/  (19)
   data/  (2)
   inspector/  (7)
+  shown/  (1)
 columns/  (3)
 pages/  (30)
   connectors/  (14)
