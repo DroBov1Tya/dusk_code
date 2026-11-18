@@ -11,6 +11,18 @@ pub fn thread_link(id: &str) -> String {
     format!("{THREAD_LINK_PREFIX}{id}")
 }
 
+/// The thread ids of the chat links written in `text`, in order.
+pub fn links_in(text: &str) -> impl Iterator<Item = &str> {
+    text.match_indices(THREAD_LINK_PREFIX)
+        .filter_map(|(start, _)| {
+            let rest = &text[start..];
+            let end = rest[THREAD_LINK_PREFIX.len()..]
+                .find(|c: char| !(c.is_ascii_alphanumeric() || c == '-' || c == '_'))
+                .map_or(rest.len(), |at| at + THREAD_LINK_PREFIX.len());
+            thread_of_link(&rest[..end])
+        })
+}
+
 /// The thread id in a chat link, or a bare id; none for anything else. An id is letters,
 /// digits, `-` and `_`, so a link cannot carry a path or a query.
 pub fn thread_of_link(text: &str) -> Option<&str> {
@@ -31,6 +43,8 @@ mod tests {
         let id = "0192f3a4-5b6c-7d8e-9f00-112233445566";
         assert_eq!(thread_of_link(&thread_link(id)), Some(id));
         assert_eq!(thread_of_link(id), Some(id));
+        let text = format!("see {}, and dusk://thread/b_2.", thread_link(id));
+        assert_eq!(links_in(&text).collect::<Vec<_>>(), [id, "b_2"]);
         for bad in [
             "",
             "dusk://thread/",

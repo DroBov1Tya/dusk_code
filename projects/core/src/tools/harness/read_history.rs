@@ -20,7 +20,9 @@ use crate::{
     BoxFuture,
     state::{Message, MessageRole, State, calls_of},
 };
-use dusk_protocol::thread::{THREAD_LINK_PREFIX, thread_of_link};
+use dusk_protocol::thread::{
+    Part, THREAD_LINK_PREFIX, links_in, split, thread_link, thread_of_link,
+};
 
 /// Added to the description while the `result` form is offered.
 const RESULT_SENTENCE: &str = " `result` N returns tool result #N whole, `limit` lines from line `offset`; `search` then finds lines in it.";
@@ -28,6 +30,10 @@ const DEFAULT_LIMIT: u32 = 20;
 const MAX_LIMIT: u32 = 50;
 /// Keeps one long message from filling the whole result.
 const MAX_MESSAGE_CHARS: usize = 2000;
+/// How many messages naming a link are looked through for the user's own.
+const LINK_SEARCH: u32 = 200;
+/// Agents ask agents only this deep; a longer chain of parents is not followed.
+const MAX_PARENTS: usize = 16;
 
 pub struct ReadHistory {
     state: Arc<State>,
@@ -96,12 +102,48 @@ impl ReadHistory {
         if id == self.thread_id {
             return Ok((self.thread_id.clone(), String::new()));
         }
+        ensure!(
+            self.linked_by_user(id).await?,
+            "chat {id} was not linked by the user in this chat: ask them to paste its link"
+        );
         let thread =
             self.state.load_thread(id).await?.ok_or_else(|| {
                 anyhow::anyhow!("no chat {id}: ask the user to copy its link again")
             })?;
         let title = thread.title.as_deref().unwrap_or("untitled");
         Ok((thread.id.clone(), format!("chat {title:?} ({id}):\n\n")))
+    }
+
+    /// Whether the user wrote the link to `id` in the chat this thread belongs to: in what
+    /// they typed or pasted, never in a model's, a tool's or a file's text. An agent's own
+    /// thread starts with its parent's words, so only the chat at the top counts.
+    async fn linked_by_user(&self, id: &str) -> Result<bool> {
+        let mut chat = self.thread_id.clone();
+        let mut parents = 0;
+        while let Some(parent) = self
+            .state
+            .load_thread(&chat)
+            .await?
+            .and_then(|thread| thread.parent_thread_id)
+        {
+            parents += 1;
+            if parents > MAX_PARENTS {
+                return Ok(false);
+            }
+            chat = parent;
+        }
+        let link = thread_link(id);
+        let found = self
+            .state
+            .search_messages(&chat, &link, LINK_SEARCH)
+            .await?;
+        Ok(found.iter().any(|message| {
+            message.role == MessageRole::User
+                && split(&message.content).iter().any(|part| match part {
+                    Part::Text(text) | Part::Pasted(text) => links_in(text).any(|it| it == id),
+                    Part::Source(_) | Part::Sound { .. } => false,
+                })
+        }))
     }
 
     /// One stored tool result of `thread`. A number that is missing, another thread's or
@@ -195,8 +237,8 @@ impl Tool for ReadHistory {
             summary. Give `search` to find messages containing some text (at least 3 \
             characters, best matches first), or `from` to read in order from a message \
             number. Each message is shown with its number, so you can read on around a match. \
-            A `dusk://thread/<id>` link in a message names another chat: pass it as `thread` \
-            to read that chat the same way."
+            A `dusk://thread/<id>` link the user wrote names another chat: pass it as \
+            `thread` to read that chat the same way."
             .to_owned();
         if self.result_form(context) {
             text.push_str(RESULT_SENTENCE);
@@ -343,20 +385,55 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn reads_another_chat_by_its_link_only() {
+    async fn reads_another_chat_only_when_the_user_linked_it() {
         let tool = history("history_link").await;
-        let link = dusk_protocol::thread::thread_link("other");
-        let found = read(&tool, json!({ "thread": link, "from": 1 }))
+        let state = Arc::clone(&tool.state);
+        state.create_thread("secret", "test").await.unwrap();
+        state
+            .add_user_message("secret", "4", "private")
             .await
             .unwrap();
+        let (other, secret) = (thread_link("other"), thread_link("secret"));
+        // The user's words link `other`; `secret` is named only by a file and a model.
+        let typed = format!("look at {other} too");
+        state.add_user_message("thread", "5", &typed).await.unwrap();
+        let attached = dusk_protocol::thread::source_tag(&secret);
+        state
+            .add_user_message("thread", "6", &attached)
+            .await
+            .unwrap();
+        let ask = TurnAnswer {
+            content: format!("I will read {secret}"),
+            reasoning: None,
+        };
+        let pending = state.add_pending("thread", "go").await.unwrap();
+        state.admit_pending("thread", &pending).await.unwrap();
+        let turn = state.start_turn("thread").await.unwrap().unwrap().turn_id;
+        let call = ToolCall {
+            id: "c".into(),
+            name: "read_history".into(),
+            arguments: json!({ "thread": secret }),
+        };
+        state
+            .record_tool_calls(&turn, ask, vec![call])
+            .await
+            .unwrap();
+
+        let found = read(&tool, json!({ "thread": other, "from": 1 })).await;
+        let found = found.unwrap();
         assert!(
             found.ends_with("#1 user:\nmain.rs of another thread"),
             "{found}"
         );
         assert!(!found.contains("staging"));
-        for bad in ["dusk://thread/../other", "dusk://thread/missing"] {
+        for (bad, says) in [
+            ("dusk://thread/../other", "takes a chat link"),
+            (secret.as_str(), "not linked by the user"),
+            ("secret", "not linked by the user"),
+            ("dusk://thread/missing", "not linked by the user"),
+        ] {
             let error = read(&tool, json!({ "thread": bad })).await.unwrap_err();
-            assert!(format!("{error:#}").contains("chat"), "{bad}: {error:#}");
+            assert!(format!("{error:#}").contains(says), "{bad}: {error:#}");
         }
     }
 
@@ -504,8 +581,8 @@ mod tests {
             summary. Give `search` to find messages containing some text (at least 3 \
             characters, best matches first), or `from` to read in order from a message \
             number. Each message is shown with its number, so you can read on around a match. \
-            A `dusk://thread/<id>` link in a message names another chat: pass it as `thread` \
-            to read that chat the same way.";
+            A `dusk://thread/<id>` link the user wrote names another chat: pass it as \
+            `thread` to read that chat the same way.";
         assert_eq!(plain.description(&off), before);
         let offered = tool.offered_parameters(&off);
         assert!(offered["properties"].get("result").is_some());
