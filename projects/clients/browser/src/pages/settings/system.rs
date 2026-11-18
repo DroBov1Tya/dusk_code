@@ -53,7 +53,7 @@ pub fn Usage() -> impl IntoView {
         <h2>"System usage"</h2>
         <p class="muted">"What duskcode takes from the machine it runs on."</p>
         {move || report.get().map(|r: dusk_protocol::system::SystemReport| view! {
-            {r.process.map(|p| view! {
+            {r.total().map(|p| view! {
                 <Row name="Memory" hint=""><span>{size(p.resident_bytes)}</span></Row>
                 <Row name="CPU" hint=""><span>{format!("{:.1}%", p.cpu_percent)}</span></Row>
             })}

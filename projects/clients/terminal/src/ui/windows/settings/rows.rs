@@ -431,7 +431,7 @@ impl SettingsWindow<'_> {
             lead: 0,
         };
         let mut rows = vec![heading("application")];
-        match report.process {
+        match report.total() {
             Some(process) => {
                 rows.push(value("memory in use", bytes(process.resident_bytes)));
                 rows.push(value(
