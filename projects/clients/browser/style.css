@@ -10,8 +10,8 @@
 }
 :root, [data-theme="dusk"] {
   color-scheme: dark;
-  --bg: #13141f; --panel: #0e0f18; --surface: #1b1c2a; --raised: #262839;
-  --fg: #efedf7; --fg2: #aeadc4; --muted: #9695ae;
+  --bg: #14141e; --panel: #0f0f17; --surface: #1c1c29; --raised: #272838;
+  --fg: #e6e3dd; --fg2: #b3aea6; --muted: #9d988f;
   --accent: #b4a0f8; --on-accent: #13121d;
   --good: #74d4b3; --warn: #ecc46e; --bad: #f27a96; --info: #7fb4f5;
 }
