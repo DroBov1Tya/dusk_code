@@ -6,7 +6,12 @@ use dusk_protocol::{
     config::{ApprovalPolicy, ContextPolicy, ContextPreset},
 };
 use gpui_kit::{
-    component::{ActiveTheme, Disableable, IconName, button::Button, input::Input, switch::Switch},
+    component::{
+        ActiveTheme, Disableable, IconName,
+        button::Button,
+        input::{Input, InputState},
+        switch::Switch,
+    },
     *,
 };
 
@@ -184,6 +189,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                                 cx,
                             )
                             .child(stepper(
+                                ws,
                                 "agents",
                                 agents,
                                 (1, 32),
@@ -196,6 +202,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                                 cx,
                             )
                             .child(stepper(
+                                ws,
                                 "rounds",
                                 rounds,
                                 (1, 200),
@@ -207,13 +214,13 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                                 "How long a silent model call waits before it is given up on",
                                 cx,
                             )
-                            .child(stepper("timeout", timeout, (5, 3600), Limit::Timeout, cx)),
+                            .child(stepper(ws, "timeout", timeout, (5, 3600), Limit::Timeout, cx)),
                             line(
                                 "Tries per call",
                                 "Tries of one model call that wrote nothing, the first included",
                                 cx,
                             )
-                            .child(stepper("attempts", attempts, (1, 20), Limit::Attempts, cx)),
+                            .child(stepper(ws, "attempts", attempts, (1, 20), Limit::Attempts, cx)),
                         ],
                         cx,
                     ))
@@ -368,8 +375,8 @@ fn size_line(
     line(label, hint, cx).child(row)
 }
 
-#[derive(Clone, Copy)]
-enum Limit {
+#[derive(Clone, Copy, PartialEq)]
+pub enum Limit {
     Agents,
     Rounds,
     Timeout,
@@ -378,6 +385,7 @@ enum Limit {
 
 /// A limit's number with a minus and a plus, kept inside its bounds.
 fn stepper(
+    ws: &Workspace,
     id: &'static str,
     value: u64,
     (min, max): (u64, u64),
@@ -387,7 +395,62 @@ fn stepper(
     let less =
         cx.listener(move |ws, _, _, cx| ws.set_limit(limit, value.saturating_sub(1).max(min), cx));
     let more = cx.listener(move |ws, _, _, cx| ws.set_limit(limit, (value + 1).min(max), cx));
-    controls::stepper(id, value, (min, max), less, more, cx)
+    let middle = if ws.limit_edit.limit == Some((limit, (min, max))) {
+        div()
+            .w(px(64.))
+            // Escape leaves the number as it was; the input itself only lets it pass.
+            .capture_key_down(cx.listener(|ws, event: &KeyDownEvent, _, cx| {
+                if event.keystroke.key == "escape" {
+                    ws.limit_edit.limit = None;
+                    cx.notify();
+                }
+            }))
+            .child(Input::new(&ws.limit_edit.input).appearance(false))
+            .into_any_element()
+    } else {
+        div()
+            .id(SharedString::from(format!("{id}-value")))
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .cursor_text()
+            .child(value.to_string())
+            .on_click(cx.listener(move |ws, _, window, cx| {
+                ws.limit_edit.limit = Some((limit, (min, max)));
+                ws.limit_edit.input.update(cx, |input, cx| {
+                    input.set_value(value.to_string(), window, cx);
+                    input.focus(window, cx);
+                });
+                cx.notify();
+            }))
+            .into_any_element()
+    };
+    controls::stepper(id, value, (min, max), middle, less, more, cx)
+}
+
+/// The limit whose number is being typed, with its bounds, and the box it is typed in.
+pub struct LimitEdit {
+    pub limit: Option<(Limit, (u64, u64))>,
+    pub input: Entity<InputState>,
+}
+
+impl LimitEdit {
+    pub fn new(window: &mut Window, cx: &mut App) -> Self {
+        Self {
+            limit: None,
+            input: cx.new(|cx| InputState::new(window, cx)),
+        }
+    }
+}
+
+/// The typed number held to the bounds the minus and plus keep; none for what is not a
+/// number.
+fn typed_limit(text: &str, (min, max): (u64, u64)) -> Option<u64> {
+    text.trim()
+        .parse::<u64>()
+        .ok()
+        .map(|value| value.clamp(min, max))
 }
 
 /// The switch that serves this core to browsers on this machine, with its port.
@@ -607,6 +670,18 @@ impl Workspace {
                 Err(error) => ws.fail(error, cx),
             },
         );
+    }
+
+    /// Enter or leaving the box sets the typed number; text that is no number changes
+    /// nothing.
+    pub fn commit_limit(&mut self, cx: &mut Context<Self>) {
+        let Some((limit, bounds)) = self.limit_edit.limit.take() else {
+            return;
+        };
+        cx.notify();
+        if let Some(value) = typed_limit(self.limit_edit.input.read(cx).value().as_ref(), bounds) {
+            self.set_limit(limit, value, cx);
+        }
     }
 
     fn set_limit(&mut self, limit: Limit, value: u64, cx: &mut Context<Self>) {

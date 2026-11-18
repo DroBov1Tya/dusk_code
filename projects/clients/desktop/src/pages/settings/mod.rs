@@ -4,6 +4,7 @@ pub mod about_me;
 pub mod ai;
 mod appearance;
 mod behavior;
+pub use behavior::LimitEdit;
 pub mod providers;
 mod secrets;
 pub use secrets::TokenBox;

@@ -35,11 +35,13 @@ pub fn choice(button: Button, chosen: bool, cx: &App) -> Button {
 }
 
 /// A number between a minus and a plus, joined in one rounded field as on macOS. A side
-/// at its bound is greyed out, so the field says where the range ends.
+/// at its bound is greyed out, so the field says where the range ends. `middle` is the
+/// number as drawn: its text, or a box to type it in.
 pub fn stepper(
     id: &'static str,
     value: u64,
     (min, max): (u64, u64),
+    middle: impl IntoElement,
     less: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     more: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
@@ -75,7 +77,7 @@ pub fn stepper(
                 .border_color(theme.border)
                 .body()
                 .font_weight(FontWeight::MEDIUM)
-                .child(value.to_string()),
+                .child(middle),
         )
         .child(side("more", IconName::Plus, value < max, Box::new(more)))
 }

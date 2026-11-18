@@ -239,6 +239,8 @@ pub struct Workspace {
     /// The plugin store on the plugins shelf.
     pub workshop: crate::pages::connectors::plugins::Workshop,
     pub token_box: crate::pages::settings::TokenBox,
+    /// The Advanced page's number being typed in place of its minus and plus.
+    pub limit_edit: crate::pages::settings::LimitEdit,
     /// Parts of the context unfolded to what they are made of, by name.
     pub context_open: HashSet<String>,
     /// Providers unfolded in More models, by name; each starts folded.
