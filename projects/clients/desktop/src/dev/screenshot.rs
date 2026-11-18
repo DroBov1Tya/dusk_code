@@ -179,7 +179,7 @@ fn act(
                 chat.activity_boundaries.push(chat.items.len());
                 chat.boundary_times
                     .push(dusk_protocol::system::now_ms() - minutes * 60_000);
-                chat.boundary_spend.push((0, 0));
+                chat.boundary_spend.push(None);
             }
         }
         "detail" => {

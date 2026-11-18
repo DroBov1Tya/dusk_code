@@ -39,9 +39,9 @@ pub use team::{
     MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES, MAX_TEAM_STEPS, MAX_TEAM_TOKENS, Team,
     TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed,
 };
-pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts};
+pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts, short_count};
 pub use transcript::{
     AgentState, DETAIL_KEYS, MAX_MARK_CHARS, Note, Retry, RetryRow, SHOWN_CHARS, Span, Tone, Tool,
-    ToolState, clip, marks, note, retry_row, tool_detail, unmarked,
+    ToolState, TurnSpend, clip, marks, note, retry_row, tool_detail, turn_spend, unmarked,
 };
 pub use turn::{Turn, TurnFailure, TurnStatus, TurnWait, duration_words};

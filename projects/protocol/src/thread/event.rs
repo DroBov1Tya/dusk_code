@@ -70,6 +70,14 @@ pub enum ThreadEvent {
         count: u32,
     },
     TurnFinished(Turn),
+    /// A model call of the running turn ended: the turn's totals so far, as `Turn` keeps
+    /// them, so a client shows them without counting.
+    TurnProgress {
+        turn_id: String,
+        steps: u32,
+        tokens: u64,
+        cost_micro_usd: u64,
+    },
     /// The thread got a name: the start of its first message at once, then one the model
     /// gives after the first turn.
     TitleChanged {

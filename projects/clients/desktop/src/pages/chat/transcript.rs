@@ -7,7 +7,8 @@ use dusk_protocol::{
     model::ModelEvent,
     thread::{
         AgentState, Block, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Retry, RetryRow,
-        Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnWait, clip, note, retry_row,
+        Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnSpend, TurnWait, clip, note,
+        retry_row, turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
@@ -236,11 +237,9 @@ pub struct Transcript {
     pub activity_boundaries: Vec<usize>,
     /// When each boundary was drawn, in Unix milliseconds, beside `activity_boundaries`.
     pub boundary_times: Vec<i64>,
-    /// What the thread had spent, as tokens and micro-dollars, when each boundary was
-    /// drawn; a turn's own spend is the difference across it.
-    pub boundary_spend: Vec<(u64, u64)>,
-    /// The thread's spend as the core last reported it.
-    spent: (u64, u64),
+    /// What the turn ending at each boundary spent, as tokens and micro-dollars, as the
+    /// core said when it finished; none for a turn read from history.
+    pub boundary_spend: Vec<Option<(u64, u64)>>,
     /// When the last turn seen live ended, for the header's star.
     pub finished_at: Option<Instant>,
     pub working: bool,
@@ -250,9 +249,8 @@ pub struct Transcript {
     pub waiting: Option<TurnWait>,
     /// When the running turn began, in Unix milliseconds, as the core stamped it.
     pub turn_started: Option<i64>,
-    /// The model calls the running turn has finished, counted here only until the core's
-    /// progress event carries them; none for a turn this client joined midway.
-    pub steps: Option<u32>,
+    /// What the running turn has used so far, as the core counted it.
+    pub spend: Option<TurnSpend>,
     pub tokens: Option<(u64, u64)>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
@@ -418,6 +416,9 @@ impl Transcript {
         if let ThreadEvent::TurnWaiting(turn) = &event {
             self.waiting = turn.waiting;
         }
+        if let Some(spend) = turn_spend(&event) {
+            self.spend = spend;
+        }
         // The row above is the whole of a retry: it leaves no notice.
         if matches!(event, ThreadEvent::Retrying { .. }) {
             return;
@@ -460,7 +461,6 @@ impl Transcript {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 self.working = true;
                 self.turn_started = Some(turn.started_at);
-                self.steps = Some(0);
                 self.waiting = turn.waiting;
             }
             // The turn began before this client listened: it works, but its items are
@@ -468,13 +468,23 @@ impl Transcript {
             // comes after a wait, with the turn no longer waiting.
             ThreadEvent::TurnRunning(turn) => {
                 self.working = true;
-                if self.turn_started != Some(turn.started_at) {
-                    self.turn_started = Some(turn.started_at);
-                    self.steps = None;
-                }
+                self.turn_started = Some(turn.started_at);
                 self.waiting = turn.waiting;
             }
-            ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
+            ThreadEvent::TurnFinished(turn) => {
+                let spent = (turn.tokens > 0).then_some((turn.tokens, turn.cost_micro_usd));
+                if self.activity_boundary(dusk_protocol::system::now_ms())
+                    && let Some(last) = self.boundary_spend.last_mut()
+                {
+                    *last = spent;
+                }
+                if self.working {
+                    self.finished_at = Some(Instant::now());
+                }
+                self.working = false;
+                self.end_turn();
+            }
+            ThreadEvent::Idle => {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 if self.working {
                     self.finished_at = Some(Instant::now());
@@ -484,9 +494,6 @@ impl Transcript {
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
-            ThreadEvent::Model(ModelEvent::Finished(_)) => {
-                self.steps = self.steps.map(|steps| steps.saturating_add(1));
-            }
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => self.start_tool(&call, ToolState::Running),
             ThreadEvent::ToolFinished { call_id, result } => {
@@ -500,8 +507,6 @@ impl Transcript {
             ThreadEvent::Tokens { tokens, limit } => {
                 self.tokens = Some((context(&tokens), limit));
                 self.cost = tokens.cost();
-                let used = tokens.spent.prompt_tokens + tokens.spent.completion_tokens;
-                self.spent = (used, tokens.cost_micro_usd);
             }
             ThreadEvent::ModelSelected { input_limit, .. } => {
                 let used = self.tokens.map_or(0, |(used, _)| used);
@@ -602,7 +607,7 @@ impl Transcript {
     fn end_turn(&mut self) {
         self.waiting = None;
         self.turn_started = None;
-        self.steps = None;
+        self.spend = None;
     }
 
     /// How many times each tool ran in the chat, most used first.
@@ -715,34 +720,27 @@ impl Transcript {
         }
     }
 
-    fn activity_boundary(&mut self, at: i64) {
+    /// Draws a boundary after the last item; false when there is one there already.
+    fn activity_boundary(&mut self, at: i64) -> bool {
         let end = self.items.len();
-        if end > 0 && self.activity_boundaries.last() != Some(&end) {
+        let new = end > 0 && self.activity_boundaries.last() != Some(&end);
+        if new {
             self.activity_boundaries.push(end);
             self.boundary_times.push(at);
-            self.boundary_spend.push(self.spent);
+            self.boundary_spend.push(None);
         }
+        new
     }
 
     /// When the turn whose items end at boundary `index` began and ended; the turn after
     /// the last boundary is still open.
-    /// What the turn ending at boundary `index` spent, as tokens and micro-dollars; none
-    /// for a turn read from history, whose spend was not seen.
-    pub fn turn_spend(&self, index: usize) -> Option<(u64, u64)> {
-        let before = *self.boundary_spend.get(index.checked_sub(1)?)?;
-        let after = *self.boundary_spend.get(index)?;
-        let spent = (
-            after.0.saturating_sub(before.0),
-            after.1.saturating_sub(before.1),
-        );
-        (spent.0 > 0).then_some(spent)
-    }
-
     /// The mean cost of the turns that have one, to tell an unusually dear turn.
     pub fn mean_turn_cost(&self) -> Option<u64> {
-        let costs: Vec<u64> = (1..self.boundary_spend.len())
-            .filter_map(|index| self.turn_spend(index))
-            .map(|(_, micro)| micro)
+        let costs: Vec<u64> = self
+            .boundary_spend
+            .iter()
+            .flatten()
+            .map(|(_, micro)| *micro)
             .filter(|micro| *micro > 0)
             .collect();
         (!costs.is_empty()).then(|| costs.iter().sum::<u64>() / costs.len() as u64)

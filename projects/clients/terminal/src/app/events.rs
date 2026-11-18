@@ -2,7 +2,7 @@
 
 use dusk_protocol::{
     model::ModelEvent,
-    thread::{Note, RetryRow, ThreadEvent, TurnStatus, note, retry_row},
+    thread::{Note, RetryRow, ThreadEvent, TurnStatus, note, retry_row, turn_spend},
 };
 
 use std::time::Instant;
@@ -21,6 +21,9 @@ impl App {
                 self.activity = Activity::Thinking;
             }
             _ => {}
+        }
+        if let Some(spend) = turn_spend(&event) {
+            self.turn_spend = spend;
         }
         match event {
             // Crash recovery may admit a pending request already in the snapshot.

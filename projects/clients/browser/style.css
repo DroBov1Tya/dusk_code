@@ -456,6 +456,7 @@ a { text-underline-offset: 3px; }
 .working-words { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .working-dot::before { content: "\00B7"; margin: 0 8px; }
 .working-box { display: inline-block; min-width: 56px; }
+.working-box.tokens { min-width: 96px; }
 /* ==== end of what the agent shows ==== */
 .chat-empty { margin-top: clamp(60px, 19vh, 190px); text-align: center; }
 .chat-empty h2 { font-size: 26px; color: var(--fg); letter-spacing: -.035em; font-weight: 500; }

@@ -50,6 +50,8 @@ enum Step {
     Named(&'static str, String, Value),
     PartialCall(&'static str),
     Hang,
+    /// Reports prompt and completion tokens and a cost in micro-dollars.
+    Usage(u64, u64, u64),
     Done,
     Length,
     /// The call fails before any output, in a way worth retrying.
@@ -183,6 +185,17 @@ impl ChatStream for FakeStream {
                     })
                 }
                 Some(Step::Hang) => std::future::pending().await,
+                Some(Step::Usage(prompt_tokens, completion_tokens, micro_usd)) => {
+                    Some(ModelEvent::Usage(crate::providers::Usage {
+                        prompt_tokens,
+                        completion_tokens,
+                        cost: Some(crate::providers::cost::Cost {
+                            micro_usd,
+                            source: crate::providers::cost::CostSource::Provider,
+                        }),
+                        ..Default::default()
+                    }))
+                }
                 Some(Step::Done) => Some(ModelEvent::Finished(FinishReason::Stop)),
                 Some(Step::Length) => Some(ModelEvent::Finished(FinishReason::Length)),
                 Some(Step::Break) => {

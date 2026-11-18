@@ -482,6 +482,9 @@ mod tests {
             finished_at: None,
             error_message: None,
             waiting: Some(TurnWait::Decision { since: 1 }),
+            steps: 0,
+            tokens: 0,
+            cost_micro_usd: 0,
         };
         for event in [
             ThreadEvent::TurnStarted(turn.clone()),

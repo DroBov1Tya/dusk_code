@@ -6,7 +6,8 @@ use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     thread::{
         AgentState, Block, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task,
-        ThreadEvent, Tool, ToolState, TurnWait, agent_name, clip, note, retry_row,
+        ThreadEvent, Tool, ToolState, TurnSpend, TurnWait, agent_name, clip, note, retry_row,
+        turn_spend,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
@@ -80,6 +81,8 @@ pub struct ChatData {
     pub turn_started: Option<i64>,
     /// What the running turn waits for, until its next `TurnRunning`.
     pub waiting: Option<TurnWait>,
+    /// What the running turn has used so far, as the core counted it.
+    pub spend: Option<TurnSpend>,
     /// The context is being compacted.
     pub compacting: bool,
     /// The model call being tried again and when its event came, in Unix milliseconds.
@@ -220,6 +223,9 @@ impl ChatData {
 
     /// What the working row says about the running turn.
     fn track_turn(&mut self, event: &ThreadEvent) {
+        if let Some(spend) = turn_spend(event) {
+            self.spend = spend;
+        }
         match event {
             ThreadEvent::TurnStarted(turn)
             | ThreadEvent::TurnRunning(turn)

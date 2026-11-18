@@ -10,7 +10,7 @@ use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{
     State, timestamp_ms,
-    turns::{Turn, decode_turn, read_running_turn},
+    turns::{Turn, decode_turn, read_running_turn, turn_row},
 };
 use crate::providers::ProviderErrorKind;
 
@@ -40,11 +40,12 @@ impl State {
     ) -> Result<Turn> {
         let kind = ProviderWaitKind::try_from(kind)
             .map_err(|kind| anyhow!("a turn does not wait out {kind:?}"))?;
-        let row = sqlx::query(
+        let row = sqlx::query(concat!(
             "UPDATE turns SET waiting_for = ?, waiting_since = COALESCE(waiting_since, ?),
                 wake_at = ?
-             WHERE turn_id = ? AND status = 'running' RETURNING *",
-        )
+             WHERE turn_id = ? AND status = 'running' RETURNING ",
+            turn_row!()
+        ))
         .bind(provider_column(kind)?)
         .bind(timestamp_ms()?)
         .bind(wake_at)
@@ -61,10 +62,11 @@ impl State {
     pub async fn wait_for_decision(&self, thread_id: &str) -> Result<Turn> {
         let since = timestamp_ms()?;
         let mut transaction = self.pool.begin().await.context("begin decision wait")?;
-        let updated = sqlx::query(
+        let updated = sqlx::query(concat!(
             "UPDATE turns SET waiting_for = ?, waiting_since = ?
-             WHERE thread_id = ? AND status = 'running' AND waiting_for IS NULL RETURNING *",
-        )
+             WHERE thread_id = ? AND status = 'running' AND waiting_for IS NULL RETURNING ",
+            turn_row!()
+        ))
         .bind(DECISION)
         .bind(since)
         .bind(thread_id)
@@ -73,12 +75,16 @@ impl State {
         .context("let the turn wait for a decision")?;
         let row = match updated {
             Some(row) => row,
-            None => sqlx::query("SELECT * FROM turns WHERE thread_id = ? AND status = 'running'")
-                .bind(thread_id)
-                .fetch_optional(&mut *transaction)
-                .await
-                .context("load running turn")?
-                .context("thread has no running turn")?,
+            None => sqlx::query(concat!(
+                "SELECT ",
+                turn_row!(),
+                " FROM turns WHERE thread_id = ? AND status = 'running'"
+            ))
+            .bind(thread_id)
+            .fetch_optional(&mut *transaction)
+            .await
+            .context("load running turn")?
+            .context("thread has no running turn")?,
         };
         let turn = decode_turn(row)?;
         transaction.commit().await.context("commit decision wait")?;
@@ -89,11 +95,12 @@ impl State {
     /// nothing is written.
     pub async fn end_wait(&self, turn_id: &str) -> Result<Turn> {
         let mut transaction = self.pool.begin().await.context("begin wait end")?;
-        let updated = sqlx::query(
+        let updated = sqlx::query(concat!(
             "UPDATE turns SET waiting_for = NULL, waiting_since = NULL, wake_at = NULL
              WHERE turn_id = ? AND status = 'running' AND waiting_for IS NOT NULL
-             RETURNING *",
-        )
+             RETURNING ",
+            turn_row!()
+        ))
         .bind(turn_id)
         .fetch_optional(&mut *transaction)
         .await
@@ -158,11 +165,15 @@ mod tests {
     }
 
     async fn load(state: &State, turn_id: &str) -> Turn {
-        let row = sqlx::query("SELECT * FROM turns WHERE turn_id = ?")
-            .bind(turn_id)
-            .fetch_one(&state.pool)
-            .await
-            .unwrap();
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            turn_row!(),
+            " FROM turns WHERE turn_id = ?"
+        ))
+        .bind(turn_id)
+        .fetch_one(&state.pool)
+        .await
+        .unwrap();
         decode_turn(row).unwrap()
     }
 
