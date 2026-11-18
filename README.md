@@ -5,8 +5,8 @@ or browser. Chat history is stored locally, and you choose which model provider 
 
 [Website](https://drobov1tya.github.io/dusk_code/) ·
 [Releases](https://github.com/DroBov1Tya/dusk_code/releases) ·
-[Plugin Workshop](https://drobov1tya.github.io/duskcode-plugins/) ·
-[Plugins repository](https://github.com/DroBov1Tya/duskcode-plugins)
+[Plugin Workshop](https://drobov1tya.github.io/duskcode-workshop/) ·
+[Plugins repository](https://github.com/DroBov1Tya/duskcode-workshop)
 
 ## Install
 
@@ -92,8 +92,8 @@ account only in its own apps. Claude models work here with an API key.
   servers add tools, with OAuth where the server asks; plugins bring skills, agents,
   providers, hooks, platforms and panels. Each runs in a sandbox, never sees your keys
   and installs in one click from the signed store, the
-  [Workshop](https://drobov1tya.github.io/duskcode-plugins/); its plugins, Telegram
-  among them, live in [duskcode-plugins](https://github.com/DroBov1Tya/duskcode-plugins)
+  [Workshop](https://drobov1tya.github.io/duskcode-workshop/); its plugins, Telegram
+  among them, live in [duskcode-workshop](https://github.com/DroBov1Tya/duskcode-workshop)
   ([writing one](docs/plugins.md)).
 - **Memory you can read**: notes per project and about you, as plain files. A temporary
   chat is kept in memory only and leaves nothing on disk.

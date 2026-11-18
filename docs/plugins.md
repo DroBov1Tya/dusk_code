@@ -301,7 +301,8 @@ for line in sys.stdin:
 The Workshop under Plugins lists what the store and its mirrors offer and installs a
 plugin with a click, after showing what it may do. The official list is at
 `https://drobov1tya.github.io/duskcode-workshop/index.json`; when that address cannot be
-reached, the old `https://drobov1tya.github.io/duskcode-plugins/index.json` is tried.
+reached, the old `https://drobov1tya.github.io/duskcode-plugins/index.json` is tried
+(it stopped answering when the repository was renamed on 2026-11-18).
 The core installs a plugin only when:
 
 - the list is signed (Ed25519) by its source's key: the key built into duskcode for the
@@ -462,5 +463,5 @@ package for all, for a script run by an interpreter already on the machine. A `r
 ## Plugins of the store
 
 Telegram and the rest live in their own repository,
-[duskcode-plugins](https://github.com/DroBov1Tya/duskcode-plugins), and install from
+[duskcode-workshop](https://github.com/DroBov1Tya/duskcode-workshop), and install from
 Plugins, Workshop. duskcode ships no plugin in its binary.
