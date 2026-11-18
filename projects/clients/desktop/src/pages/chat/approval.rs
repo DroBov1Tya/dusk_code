@@ -5,7 +5,7 @@ use std::rc::Rc;
 use dusk_protocol::tools::{Decision, Question, Request};
 use gpui_kit::{
     component::{
-        ActiveTheme, IconName, Sizable,
+        ActiveTheme, IconName,
         button::{Button, ButtonVariants},
     },
     prelude::FluentBuilder,
@@ -19,14 +19,7 @@ use crate::{
 };
 
 pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let mut cards = div()
-        .flex()
-        .flex_col()
-        .gap_2()
-        .px_6()
-        .max_w(px(780.))
-        .mx_auto()
-        .w_full();
+    let mut cards = div().flex().flex_col().gap_2();
     let Some(chat) = ws.shown_chat() else {
         return cards;
     };
@@ -37,14 +30,12 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         let mut buttons = div().flex().flex_row().gap_2().child(
             Button::new(SharedString::from(format!("once-{id}")))
                 .primary()
-                .small()
                 .label("Allow once")
                 .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Once, cx))),
         );
         if let Some(scope) = &request.session {
             buttons = buttons.child(
                 Button::new(SharedString::from(format!("session-{id}")))
-                    .small()
                     .label(format!("Allow {scope} for the session"))
                     .on_click(
                         cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Session, cx)),
@@ -54,7 +45,6 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         buttons = buttons.child(
             Button::new(SharedString::from(format!("deny-{id}")))
                 .danger()
-                .small()
                 .label("Deny")
                 .on_click(cx.listener(move |ws, _, _, cx| ws.approve(id, Decision::Deny, cx))),
         );
@@ -105,7 +95,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         };
         cards = cards.child(
             card(border, surface)
-                .border_color(warning)
+                .border_color(warning.opacity(0.6))
                 .child(what)
                 .child(buttons),
         );
@@ -246,9 +236,9 @@ fn card(border: Hsla, surface: Hsla) -> Div {
     div()
         .flex()
         .flex_col()
-        .gap_2()
+        .gap_3()
         .p_3()
-        .rounded_lg()
+        .rounded_xl()
         .border_1()
         .border_color(border)
         .bg(surface)

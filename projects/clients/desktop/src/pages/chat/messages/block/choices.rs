@@ -120,7 +120,9 @@ pub fn pills(
                 .px_3()
                 .flex()
                 .items_center()
-                .rounded_full()
+                // A button's own corner, as the box's controls have: a full round read as a
+                // tag, not as something to press.
+                .rounded_lg()
                 .border_1()
                 .border_color(rule)
                 .small()

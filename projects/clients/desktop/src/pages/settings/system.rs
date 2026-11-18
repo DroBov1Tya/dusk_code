@@ -84,7 +84,7 @@ pub fn render(ws: &Workspace, page: SettingsPage, cx: &mut Context<Workspace>) -
                     .flex()
                     .flex_col()
                     .gap_2()
-                    .child(widgets::caption("On disk", cx).px_1().pt_0())
+                    .child(widgets::caption("On disk", cx).px_0().pt_0())
                     .child(disk),
             )
             .child(

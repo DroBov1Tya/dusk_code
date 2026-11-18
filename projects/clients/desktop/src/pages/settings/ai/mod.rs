@@ -132,7 +132,7 @@ pub fn render(
         .flex_col()
         .child(
             column()
-                .pt_6()
+                .pt_8()
                 .pb_3()
                 .flex_none()
                 .child(div().title().pb_4().child("AI"))

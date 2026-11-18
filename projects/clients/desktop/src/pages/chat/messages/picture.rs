@@ -104,7 +104,13 @@ pub fn picture(folder: &Path, image: &Picture, cx: &mut Context<Workspace>) -> A
                     .cursor_pointer()
                     .hover(|card| card.opacity(0.9))
                     .active(|card| card.opacity(0.8))
-                    .child(img(path.clone()).size_full().object_fit(ObjectFit::Contain))
+                    // The clip of a box is square: the picture rounds its own corners.
+                    .child(
+                        img(path.clone())
+                            .size_full()
+                            .rounded_lg()
+                            .object_fit(ObjectFit::Contain),
+                    )
                     .on_click(cx.listener(move |ws, _, window, cx| {
                         ws.open_picture(path.clone().into(), window, cx);
                     })),

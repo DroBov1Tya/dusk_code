@@ -190,8 +190,10 @@ fn highlight(p: &Palette) -> Value {
 /// Spreads the palette's few colors over the component library's many.
 fn config(p: &Palette, prefs: &Prefs) -> Value {
     let hairline = format!("{}14", p.foreground);
-    let soft = format!("{}1f", p.accent);
     let chosen = format!("{}26", p.accent);
+    // Selected text must read at a glance on every surface, a terminal's included: a
+    // third of the accent, where the soft tint of a chosen row would all but vanish.
+    let selected_text = format!("{}54", p.accent);
     // A pressed or hovered primary is the accent a little sunk into the page, so the
     // button answers the pointer without a second hue.
     let (primary_hover, primary_active) = (format!("{}e0", p.accent), format!("{}c4", p.accent));
@@ -206,7 +208,7 @@ fn config(p: &Palette, prefs: &Prefs) -> Value {
         ("input.border", &hairline),
         ("ring", p.accent),
         ("caret", p.accent),
-        ("selection.background", &soft),
+        ("selection.background", &selected_text),
         ("muted.background", p.surface),
         ("muted.foreground", p.muted),
         ("accent.background", p.raised),

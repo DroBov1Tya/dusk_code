@@ -108,27 +108,24 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         )
         .track_scroll(&ws.dock.rows)
         .h(px(shown as f32 * ROW))
-        .border_t_1()
-        .border_color(border)
+        .my_1()
     });
     Some(
-        div()
-            .px_6()
-            .pb_2()
-            .max_w(px(780.))
-            .mx_auto()
-            .w_full()
-            .child(
-                div()
-                    .flex()
-                    .flex_col()
-                    .rounded_xl()
-                    .border_1()
-                    .border_color(border)
-                    .bg(surface)
-                    .child(line)
-                    .children(rows),
-            ),
+        crate::pages::chat::composer::dock_lane(
+            div()
+                .flex()
+                .flex_col()
+                .rounded_xl()
+                .border_1()
+                .border_color(border)
+                .bg(surface)
+                .overflow_hidden()
+                .child(line)
+                // The hairline under the line is the rows' own frame, so their air
+                // above and below stays inside the card.
+                .children(rows.map(|rows| div().border_t_1().border_color(border).child(rows))),
+        )
+        .pb_2(),
     )
 }
 

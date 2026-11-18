@@ -22,16 +22,20 @@ pub fn surface(cx: &App) -> Hsla {
     cx.theme().muted.darken(0.06)
 }
 
-/// The tab over the upper edge of whatever stands on top, the band or the box: `under`
-/// is that one's color and `border` its edge's. A later sibling of both, so it paints
-/// over their edge.
+/// How long the tab takes to come and go.
+const TAB_FADE: std::time::Duration = std::time::Duration::from_millis(140);
+
+/// The tab over the upper edge of whatever stands on top, the band or the box, in the
+/// band's color: it is the band's handle. `border` is the edge's color. A later sibling
+/// of both, so it paints over their edge. It is in sight only while the pointer is over
+/// the chat, the panel is open or the keyboard is on it; out of sight it is still there,
+/// so Tab reaches it and it shows itself.
 pub fn tab(
     ws: &Workspace,
-    under: Hsla,
     border: Hsla,
     window: &Window,
     cx: &mut Context<Workspace>,
-) -> Option<Div> {
+) -> Option<AnimationElement<Div>> {
     ws.shown.as_ref()?;
     let open = ws.dock.panel_open;
     let theme = cx.theme();
@@ -55,7 +59,7 @@ pub fn tab(
         .border_1()
         .border_b_0()
         .border_color(if focused { ring } else { border })
-        .bg(under)
+        .bg(surface(cx))
         .cursor_pointer()
         .child(
             Icon::new(if open {
@@ -73,16 +77,33 @@ pub fn tab(
             }
         }))
         .on_click(cx.listener(|ws, _, _, cx| ws.toggle_panel(cx)));
-    Some(
-        div()
-            .absolute()
-            .top(px(1. - TAB.1))
-            .left_0()
-            .right_0()
-            .flex()
-            .justify_center()
-            .child(handle),
-    )
+    let shown = open || focused || ws.dock.chat_hovered;
+    let seen = ws.dock.tab_seen;
+    let tab = div()
+        .absolute()
+        .top(px(1. - TAB.1))
+        .left_0()
+        .right_0()
+        .flex()
+        .justify_center()
+        .child(handle);
+    // A new name each way, so the fade plays when the state turns and only then.
+    Some(tab.with_animation(
+        if shown {
+            "composer-tab-in"
+        } else {
+            "composer-tab-out"
+        },
+        Animation::new(TAB_FADE),
+        move |tab, delta| {
+            tab.opacity(match (shown, seen) {
+                (true, _) => delta,
+                (false, true) => 1. - delta,
+                // Never in sight yet: nothing to fade away as the chat opens.
+                (false, false) => 0.,
+            })
+        },
+    ))
 }
 
 /// The band on top of the box, as wide as it, sharing its edge: the project's folder on
@@ -244,6 +265,7 @@ impl Workspace {
             return;
         }
         self.dock.panel_open = !self.dock.panel_open;
+        self.dock.tab_seen = true;
         cx.notify();
     }
 }

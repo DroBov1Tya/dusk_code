@@ -123,15 +123,19 @@ fn card(task: &Task, cx: &App) -> Div {
                     )
                 }),
         )
-        .child(
-            div()
-                .h(px(3.))
-                .w_full()
-                .rounded_full()
-                .bg(track)
-                .overflow_hidden()
-                .child(div().h_full().rounded_full().bg(fill).w(relative(share))),
-        )
+        // A task with no items has nothing to measure until it is over: an empty track
+        // under every card would be a line that says nothing.
+        .when(all > 0 || finished, |card| {
+            card.child(
+                div()
+                    .h(px(3.))
+                    .w_full()
+                    .rounded_full()
+                    .bg(track)
+                    .overflow_hidden()
+                    .child(div().h_full().rounded_full().bg(fill).w(relative(share))),
+            )
+        })
         .when(all > 0, |card| card.child(list))
 }
 

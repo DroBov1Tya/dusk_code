@@ -33,7 +33,8 @@ use screen::{Reach, Screen, Size as Cells, Spot};
 const HEIGHT: f32 = 280.;
 const HEIGHTS: (f32, f32) = (120., 720.);
 const TABS: f32 = 36.;
-const PADDING: f32 = 8.;
+/// Around the grid; the tabs start at the same left edge.
+const PADDING: f32 = crate::ui::size::GAP_M;
 /// The size a shell starts with, before the panel was measured.
 const FIRST: Cells = Cells { cols: 80, rows: 24 };
 /// Past this, a paste is refused rather than cut in the middle.
@@ -95,6 +96,16 @@ impl Panel {
     pub fn dragging(&self) -> bool {
         self.drag.is_some() || self.selecting
     }
+
+    /// Selects cells `from..=to` of `row` in the shown shell, as a drag over them would.
+    #[cfg(feature = "screenshot")]
+    pub fn select_cells(&mut self, row: usize, from: usize, to: usize) {
+        if let Some(tab) = self.tabs.get_mut(self.active) {
+            let spot = |col, right| Spot { row, col, right };
+            tab.screen.select(spot(from, false), Reach::Cells);
+            tab.screen.extend_selection(spot(to, true));
+        }
+    }
 }
 
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Option<Div> {
@@ -118,7 +129,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .items_center()
         .gap_1()
         .h(px(TABS))
-        .px_2()
+        .px(px(PADDING))
         .overflow_x_scroll();
     for (index, tab) in ws.terminal.tabs.iter().enumerate() {
         let chosen = index == ws.terminal.active;
