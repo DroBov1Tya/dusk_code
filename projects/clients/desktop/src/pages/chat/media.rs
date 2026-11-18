@@ -28,7 +28,7 @@ pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
         .iter()
         .any(|block| matches!(block, Block::Card { .. }))
     {
-        return reading(links::markdown(
+        return reading(links::answer(
             SharedString::from(id.to_owned()),
             text.to_owned(),
         ));
@@ -39,7 +39,7 @@ pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
     for (index, block) in blocks.into_iter().enumerate() {
         let key = SharedString::from(format!("{id}-{index}"));
         column = column.child(match block {
-            Block::Text(text) => reading(links::markdown(key, text)),
+            Block::Text(text) => reading(links::answer(key, text)),
             Block::Card { url, text } => div()
                 .flex()
                 .flex_row()
@@ -61,7 +61,7 @@ pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
                                 .object_fit(ObjectFit::Cover),
                         ),
                 )
-                .child(div().flex_1().min_w_0().child(links::markdown(key, text)))
+                .child(div().flex_1().min_w_0().child(links::answer(key, text)))
                 .into_any_element(),
         });
     }
