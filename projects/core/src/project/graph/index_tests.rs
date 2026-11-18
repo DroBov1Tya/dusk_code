@@ -24,6 +24,8 @@ use crate::{
 
 /// A source file that makes the test parser panic, as a fault in a grammar would.
 const PANICS: &str = "fn panics_the_parser() {}\n";
+/// A source file the test parser gives up on as past its time limit.
+const SLOW: &str = "fn too_slow_for_the_parser() {}\n";
 
 /// A saved project in a folder of its own, and an indexer the test drives by hand.
 struct Fixture {
@@ -70,7 +72,11 @@ impl Fixture {
             }),
             parse: Arc::new(move |language, path, source| {
                 assert!(source != PANICS.as_bytes(), "the parser fell over");
-                (real.parse)(language, path, source)
+                let mut parsed = (real.parse)(language, path, source)?;
+                if source == SLOW.as_bytes() {
+                    parsed.outline = Err(Skipped::TooSlow);
+                }
+                Ok(parsed)
             }),
         };
         let switch = Arc::clone(&on);
@@ -466,6 +472,73 @@ async fn a_project_past_a_cap_has_no_graph() {
     fixture.write("src/a.rs", "pub struct Alpha;\n");
     assert!(fixture.refresh().await.is_empty());
     assert_eq!(fixture.indexer.status(&fixture.dir), Status::TooLarge);
+}
+
+/// Definitions are counted for the project as refs are: across files, each under its own
+/// cap, and again over what is stored.
+#[tokio::test]
+async fn a_project_past_the_symbols_cap_has_no_graph() {
+    let limits = Limits {
+        symbols: 3,
+        ..Limits::default()
+    };
+    let fixture = Fixture::with("index-cap-symbols", limits).await;
+    fixture.write("src/a.rs", "pub struct Alpha;\npub struct Beta;\n");
+    fixture.refresh().await;
+    assert!(matches!(
+        fixture.indexer.status(&fixture.dir),
+        Status::Ready(_)
+    ));
+    assert_eq!(fixture.rows().await, 1);
+    // Only the new file is parsed; the stored ones bring the project past the cap.
+    fixture.write("src/b.rs", "pub struct Gamma;\npub struct Delta;\n");
+    fixture.refresh().await;
+    assert_eq!(fixture.indexer.status(&fixture.dir), Status::TooLarge);
+    assert_eq!(fixture.rows().await, 0);
+
+    let fixture = Fixture::with("index-cap-symbols-one-refresh", limits).await;
+    for (path, name) in [("src/a.rs", "Alpha"), ("src/b.rs", "Beta")] {
+        fixture.write(
+            path,
+            &format!("pub struct {name};\npub fn {name}_new() {{}}\n"),
+        );
+    }
+    fixture.refresh().await;
+    assert_eq!(fixture.indexer.status(&fixture.dir), Status::TooLarge);
+    assert_eq!(fixture.rows().await, 0);
+}
+
+/// Files that each run into the parse's time limit would hold the one worker for hours:
+/// past a number of them, or past a time for the refresh, the project has no graph.
+#[tokio::test]
+async fn a_project_that_takes_too_long_to_parse_has_no_graph() {
+    let limits = Limits {
+        slow_files: 1,
+        ..Limits::default()
+    };
+    let fixture = Fixture::with("index-cap-slow", limits).await;
+    fixture.write("src/a.rs", SLOW);
+    fixture.write("src/b.rs", "pub struct Beta;\n");
+    fixture.refresh().await;
+    assert!(matches!(
+        fixture.indexer.status(&fixture.dir),
+        Status::Ready(_)
+    ));
+    fixture.write("src/c.rs", SLOW);
+    fixture.write("src/d.rs", SLOW);
+    fixture.refresh().await;
+    assert_eq!(fixture.indexer.status(&fixture.dir), Status::TooLarge);
+    assert_eq!(fixture.rows().await, 0);
+
+    let limits = Limits {
+        parse_time: Duration::ZERO,
+        ..Limits::default()
+    };
+    let fixture = Fixture::with("index-cap-parse-time", limits).await;
+    fixture.write("src/a.rs", "pub struct Alpha;\n");
+    assert!(!fixture.refresh().await.is_empty());
+    assert_eq!(fixture.indexer.status(&fixture.dir), Status::TooLarge);
+    assert_eq!(fixture.rows().await, 0);
 }
 
 #[tokio::test]
