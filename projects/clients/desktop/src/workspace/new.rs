@@ -196,6 +196,7 @@ impl Workspace {
             rows: Vec::new(),
             reading_width: 720.,
             replied: None,
+            pins: Default::default(),
             list_chat: None,
             measure_again: false,
         };

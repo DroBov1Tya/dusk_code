@@ -5,7 +5,7 @@ use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, ThreadRequest},
     config::ApprovalPolicy,
-    thread::{LocalUnsent, Message, Task, Thread},
+    thread::{LocalUnsent, Message, Pin, Task, Thread},
     tools::Decision,
 };
 use std::path::PathBuf;
@@ -162,6 +162,28 @@ impl Threads<'_> {
         let thread_id = thread_id.to_owned();
         match self.call(ThreadRequest::GetApprovals { thread_id }).await? {
             Response::Approvals(policy) => Ok(policy),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// The thread's pins, oldest message first.
+    pub async fn pins(&self, thread_id: &str) -> Result<Vec<Pin>> {
+        let thread_id = thread_id.to_owned();
+        match self.call(ThreadRequest::Pins { thread_id }).await? {
+            Response::Pins(pins) => Ok(pins),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Pins or unpins a message of the thread; answers with its pins.
+    pub async fn pin(&self, thread_id: &str, message_id: &str, pinned: bool) -> Result<Vec<Pin>> {
+        let request = ThreadRequest::Pin {
+            thread_id: thread_id.to_owned(),
+            message_id: message_id.to_owned(),
+            pinned,
+        };
+        match self.call(request).await? {
+            Response::Pins(pins) => Ok(pins),
             other => Err(unexpected(other)),
         }
     }

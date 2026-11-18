@@ -330,6 +330,8 @@ pub struct Workspace {
     /// The chat whose reply buttons were just pressed and how many items it had then,
     /// so one press sends once.
     pub replied: Option<(String, usize)>,
+    /// The pinned bar: the pin it shows, whether its list is open, a pin under way.
+    pub pins: chat::pins::PinsView,
 }
 
 impl Workspace {

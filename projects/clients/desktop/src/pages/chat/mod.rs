@@ -1,4 +1,4 @@
-//! The middle column: the shown chat's transcript, the cards that wait for the user,
+//! The middle column: the pinned bar, the shown chat's transcript, the cards that wait for the user,
 //! the composer and the bar under it.
 
 mod access_menu;
@@ -19,6 +19,7 @@ mod model_bar;
 mod model_menu;
 mod navigator;
 mod parts;
+pub mod pins;
 pub mod queue;
 mod ring;
 pub mod timing;
@@ -77,6 +78,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             ws.attachments.extend(paths.paths().iter().cloned());
             cx.notify();
         }))
+        .children(pins::render(ws, cx))
         .children(notice)
         .children(crate::pages::schedules::report::render(ws, cx))
         .child(

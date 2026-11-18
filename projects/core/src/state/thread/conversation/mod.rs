@@ -1,12 +1,13 @@
 //! What is said in a thread: its messages, those waiting for the next turn or kept
 //! unsent, what compactions left of the older ones, the stubs sent in place of old tool
 //! results and the shaped text sent in place of command output, the points it can be
-//! undone to and the sources attached to it.
+//! undone to, the sources attached to it and the messages the user pinned.
 
 mod compactions;
 mod local_unsent;
 pub mod messages;
 mod pending;
+mod pins;
 mod shaped;
 mod sources;
 mod stubs;

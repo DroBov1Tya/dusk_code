@@ -53,6 +53,26 @@ impl Runtime {
         launcher.state.list_messages(thread_id).await
     }
 
+    /// The thread's pins, oldest message first.
+    pub async fn pins(&self, thread_id: &str) -> Result<Vec<dusk_protocol::thread::Pin>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.pins(thread_id).await
+    }
+
+    /// Pins or unpins one of the thread's messages; answers with its pins.
+    pub async fn set_pinned(
+        &self,
+        thread_id: &str,
+        message_id: &str,
+        pinned: bool,
+    ) -> Result<Vec<dusk_protocol::thread::Pin>> {
+        let launcher = self.of(thread_id).await;
+        launcher
+            .state
+            .set_pinned(thread_id, message_id, pinned)
+            .await
+    }
+
     /// What was said in any chat that contains `text`, best matches first.
     /// Only in the chats of `within`, when it is given.
     pub async fn search_chats(

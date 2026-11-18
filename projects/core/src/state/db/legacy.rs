@@ -537,6 +537,7 @@ mod tests {
              ALTER TABLE turns DROP COLUMN waiting_since;
              ALTER TABLE turns DROP COLUMN wake_at;
              DROP TABLE teams;
+             DROP TABLE pinned_messages;
              DROP TRIGGER tasks_done_is_status;
              DROP TRIGGER tasks_done_is_status_new;
              DROP TRIGGER tasks_lease_by_status;
@@ -609,6 +610,7 @@ mod tests {
              ALTER TABLE turns DROP COLUMN waiting_since;
              ALTER TABLE turns DROP COLUMN wake_at;
              DROP TABLE teams;
+             DROP TABLE pinned_messages;
              DROP TRIGGER tasks_done_is_status;
              DROP TRIGGER tasks_done_is_status_new;
              DROP TRIGGER tasks_lease_by_status;
@@ -732,7 +734,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs', 'shaped results', 'episodes', 'project graph', 'plan graph', 'teams', 'pinned messages'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

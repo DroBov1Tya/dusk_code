@@ -88,6 +88,7 @@ pub async fn apply(
         Action::ChangedFiles => work::changed_files(client, app).await,
         Action::SavePlan(text) => work::save_plan(client, app, text).await,
         Action::Access(name) => thread::access(client, app, name).await,
+        Action::Pin(ask) => thread::pin(client, app, ask).await,
         Action::SetBranchPrefix(prefix) => settings::set_branch_prefix(client, app, prefix).await,
         Action::SetIdleMinutes(minutes) => settings::set_idle_minutes(client, app, minutes).await,
         Action::SetGoalRounds(rounds) => settings::set_goal_rounds(client, app, rounds).await,

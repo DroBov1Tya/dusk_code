@@ -125,6 +125,7 @@ impl App {
             }
             ThreadEvent::TurnFailed(failure) => self.error(failure.text()),
             ThreadEvent::TitleChanged { title } => self.title = Some(title),
+            ThreadEvent::Pins(pins) => self.pins = pins,
             ThreadEvent::OutputLimitReached => {
                 let text = "the answer reached the model's output limit".to_owned();
                 self.transcript.notice(text, Tone::Info);

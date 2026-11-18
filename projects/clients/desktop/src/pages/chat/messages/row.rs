@@ -81,6 +81,8 @@ impl Workspace {
                                     clipboard::copy(&copy_id, copied.clone(), cx)
                                 }),
                         );
+                        tools =
+                            tools.children(crate::pages::chat::pins::button(self, &shown, at, cx));
                         // The core refuses to go back inside a turn, so the button waits.
                         if let (Some(sequence), false) = (*sequence, chat.working) {
                             let (thread_id, text) = (shown.clone(), text.clone());
@@ -212,7 +214,10 @@ impl Workspace {
                                                     ws.speak_answer(&spoken_key, &spoken, cx);
                                                 }
                                             })),
-                                    ),
+                                    )
+                                    .children(crate::pages::chat::pins::button(
+                                        self, &shown, at, cx,
+                                    )),
                             );
                         }
                         answer.into_any_element()
@@ -244,9 +249,12 @@ impl Workspace {
         } else {
             gutter
         };
+        // A message gone to from the pinned bar is tinted for a moment, then plain.
+        let flashed = matches!(row, Row::Item(at) if self.flashed(&shown, at));
         div()
             .pt(px(top))
             .pb(px(bottom))
+            .when(flashed, |row| row.bg(accent.opacity(0.12)))
             .child(lane(content))
             .into_any_element()
     }

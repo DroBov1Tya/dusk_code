@@ -1,5 +1,5 @@
 //! What happens in a thread: the events it tells a client, its messages, turns, tasks,
-//! the team that runs its plan, token counts, goal and context, the Overview, the blocks it shows, and the steps of the transcript a
+//! the team that runs its plan, token counts, goal and context, the Overview, its pins, the blocks it shows, and the steps of the transcript a
 //! client folds them into.
 
 mod block;
@@ -10,6 +10,7 @@ mod job;
 mod message;
 mod name;
 mod overview;
+mod pin;
 mod summary;
 mod task;
 mod team;
@@ -36,6 +37,7 @@ pub use overview::{
     Activity, ChangeSum, ChangedPath, EVENTS_PAGE, LOG_CHARS, LogEntry, LogKind, OVERVIEW_LOG,
     OVERVIEW_PATHS, OVERVIEW_TOOLS, Overview, ToolRuns,
 };
+pub use pin::{MAX_PINS, PIN_CHARS, Pin, excerpt};
 pub use summary::{Found, Thread};
 pub use task::{
     PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskItem, TaskOwner, TaskStatus, WaitsOn,

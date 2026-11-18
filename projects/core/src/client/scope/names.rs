@@ -45,6 +45,8 @@ named! {
     R::Thread(T::Approve { .. }) => "thread.approve",
     R::Thread(T::SetApprovals { .. }) => "thread.set_approvals",
     R::Thread(T::GetApprovals { .. }) => "thread.get_approvals",
+    R::Thread(T::Pin { .. }) => "thread.pin",
+    R::Thread(T::Pins { .. }) => "thread.pins",
     R::Work(W::Jobs { .. }) => "work.jobs",
     R::Work(W::JobOutput { .. }) => "work.job_output",
     R::Work(W::StopJob { .. }) => "work.stop_job",
