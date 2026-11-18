@@ -1,11 +1,12 @@
 //! What a chat waits on: a tool's request for a yes, and a question the agent asks.
 
+use super::shown::{ReplyRow, question_labels};
 use crate::{
     api,
     state::{Chat, state},
     ui::run,
 };
-use dusk_protocol::tools::{ApprovalRequest, Decision};
+use dusk_protocol::tools::{ApprovalRequest, Decision, Question};
 use leptos::prelude::*;
 
 #[component]
@@ -52,33 +53,71 @@ fn ApprovalCard(request: ApprovalRequest) -> impl IntoView {
     }
 }
 
-/// The agent's question: pick from its options, add words of your own.
+/// Records the answer to the question on the page: the next question shows, and the
+/// answers go to the agent together after the last one.
+fn answer_question(
+    chat: Chat,
+    id: Option<String>,
+    question: &Question,
+    chosen: &[usize],
+    own: &str,
+) {
+    let reply = question.answer(chosen, own);
+    let mut all = None;
+    chat.update(|c| {
+        c.answers.push(reply);
+        c.question = c.questions_waiting.pop_front();
+        if c.question.is_none() {
+            all = Some(std::mem::take(&mut c.answers).join("\n\n"));
+        }
+    });
+    if let Some(all) = all {
+        state().send(id, all, false, Vec::new());
+    }
+}
+
+/// The agent's question: pick from its options, add words of your own. A light one is
+/// reply buttons; "Other..." opens the card for words of your own or a decline.
 #[component]
 pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
     let app = state();
     let chosen = RwSignal::new(Vec::<usize>::new());
     let own = RwSignal::new(String::new());
+    let card = RwSignal::new(false);
     move || {
         let question = chat.with(|c| c.question.clone())?;
+        if !card.get()
+            && let Some(labels) = question_labels(&question)
+        {
+            let (asked, id) = (question.clone(), id.clone());
+            let pick = Callback::new(move |at: usize| {
+                answer_question(chat, id.clone(), &asked, &[at], "");
+            });
+            let other = Callback::new(move |()| card.set(true));
+            return Some(
+                view! {
+                    <div class="question light" role="group" aria-label="Question from the agent">
+                        <div class="question-text">{question.question.clone()}</div>
+                        <ReplyRow labels live=true pick other />
+                    </div>
+                }
+                .into_any(),
+            );
+        }
         let multiple = question.multiple;
         let (for_answer, for_decline, id) = (question.clone(), question.clone(), id.clone());
         let id_decline = id.clone();
         let submit = move |_| {
-            let reply = for_answer.answer(&chosen.get_untracked(), &own.get_untracked());
-            // The next question shows; the answers go together after the last one.
-            let mut all = None;
-            chat.update(|c| {
-                c.answers.push(reply);
-                c.question = c.questions_waiting.pop_front();
-                if c.question.is_none() {
-                    all = Some(std::mem::take(&mut c.answers).join("\n\n"));
-                }
-            });
-            if let Some(all) = all {
-                app.send(id.clone(), all, false, Vec::new());
-            }
+            answer_question(
+                chat,
+                id.clone(),
+                &for_answer,
+                &chosen.get_untracked(),
+                &own.get_untracked(),
+            );
             chosen.set(Vec::new());
             own.set(String::new());
+            card.set(false);
         };
         let decline = move |_| {
             let reply = for_decline.declined(&own.get_untracked());
@@ -90,46 +129,50 @@ pub fn AskUser(chat: Chat, id: Option<String>) -> impl IntoView {
                 all = std::mem::take(&mut c.answers).join("\n\n");
             });
             app.send(id_decline.clone(), all, false, Vec::new());
+            card.set(false);
         };
-        Some(view! {
-            <div class="question">
-                <div class="question-text">{question.question.clone()}</div>
-                <div class="options">
-                    {question.options.iter().enumerate().map(|(at, option)| {
-                        let option = option.clone();
-                        view! {
-                            <label class="option">
-                                <input
-                                    type=if multiple { "checkbox" } else { "radio" }
-                                    name="answer"
-                                    prop:checked=move || chosen.with(|c| c.contains(&at))
-                                    on:change=move |_| chosen.update(|c| {
-                                        if multiple {
-                                            match c.iter().position(|x| *x == at) {
-                                                Some(p) => { c.remove(p); }
-                                                None => c.push(at),
+        Some(
+            view! {
+                <div class="question">
+                    <div class="question-text">{question.question.clone()}</div>
+                    <div class="options">
+                        {question.options.iter().enumerate().map(|(at, option)| {
+                            let option = option.clone();
+                            view! {
+                                <label class="option">
+                                    <input
+                                        type=if multiple { "checkbox" } else { "radio" }
+                                        name="answer"
+                                        prop:checked=move || chosen.with(|c| c.contains(&at))
+                                        on:change=move |_| chosen.update(|c| {
+                                            if multiple {
+                                                match c.iter().position(|x| *x == at) {
+                                                    Some(p) => { c.remove(p); }
+                                                    None => c.push(at),
+                                                }
+                                            } else {
+                                                *c = vec![at];
                                             }
-                                        } else {
-                                            *c = vec![at];
-                                        }
-                                    })
-                                />
-                                {option}
-                            </label>
-                        }
-                    }).collect_view()}
+                                        })
+                                    />
+                                    {option}
+                                </label>
+                            }
+                        }).collect_view()}
+                    </div>
+                    <input
+                        class="own"
+                        placeholder="Or say it your way"
+                        prop:value=move || own.get()
+                        on:input=move |ev| own.set(event_target_value(&ev))
+                    />
+                    <div class="approval-actions">
+                        <button class="primary" on:click=submit>"Answer"</button>
+                        <button class="ghost" on:click=decline>"Decline"</button>
+                    </div>
                 </div>
-                <input
-                    class="own"
-                    placeholder="Or say it your way"
-                    prop:value=move || own.get()
-                    on:input=move |ev| own.set(event_target_value(&ev))
-                />
-                <div class="approval-actions">
-                    <button class="primary" on:click=submit>"Answer"</button>
-                    <button class="ghost" on:click=decline>"Decline"</button>
-                </div>
-            </div>
-        })
+            }
+            .into_any(),
+        )
     }
 }

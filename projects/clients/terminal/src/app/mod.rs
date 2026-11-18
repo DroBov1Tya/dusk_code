@@ -31,6 +31,8 @@ pub use panels::{
 };
 pub use panels::{Choice, Confirm, PackPage, Row, Step, Workshop, choices, order_word};
 pub use state::{App, compact_number};
+#[cfg(test)]
+pub(crate) use tabs::tests::app as test_app;
 pub use tabs::{Tab, TabHit, TabMove};
 #[cfg(test)]
 pub(crate) use thread::approval::tests::batch as approval_batch;

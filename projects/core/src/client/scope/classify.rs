@@ -124,7 +124,9 @@ fn work(request: &Work) -> Access<'_> {
         | Work::SourcePicture { thread_id, .. }
         | Work::Plan { thread_id }
         | Work::ChangedFiles { thread_id }
-        | Work::FileChanges { thread_id } => of(Area::ThreadRead, thread_id),
+        | Work::FileChanges { thread_id }
+        | Work::PlanTasks { thread_id, .. }
+        | Work::Team { thread_id } => of(Area::ThreadRead, thread_id),
         // The diff is of the whole project folder, whoever changed it, so it is about
         // the project and no one thread: a scope bound to threads does not get it.
         Work::Diff { .. } => apart(Area::Project),
@@ -132,7 +134,11 @@ fn work(request: &Work) -> Access<'_> {
         | Work::PinSource { thread_id, .. }
         | Work::RemoveSource { thread_id, .. }
         | Work::UploadPicture { thread_id, .. }
-        | Work::SavePlan { thread_id, .. } => of(Area::ThreadWrite, thread_id),
+        | Work::SavePlan { thread_id, .. }
+        | Work::ConfirmTask { thread_id, .. }
+        | Work::StopTeam { thread_id } => of(Area::ThreadWrite, thread_id),
+        // How much the team may spend unasked, so it sits with the approval mode.
+        Work::SetTeamBudget { thread_id, .. } => of(Area::ThreadApprovals, thread_id),
     }
 }
 

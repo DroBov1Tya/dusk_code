@@ -75,6 +75,10 @@ pub struct Outcome {
     pub compactions: u64,
     pub subagents: u64,
     pub questions: u64,
+    /// The tool event after which the runner killed the core and started it again
+    /// (`kill_after`); none when the task asks for no kill or the run ended first.
+    #[serde(default)]
+    pub killed_after: Option<u64>,
 }
 
 impl Outcome {
@@ -90,6 +94,9 @@ pub struct Report {
     /// The `--set` keys of the run, by name.
     #[serde(default)]
     pub settings: BTreeMap<String, String>,
+    /// Picks the kill point of each run of a task with `kill_after`.
+    #[serde(default)]
+    pub seed: u64,
     pub outcomes: Vec<Outcome>,
 }
 
@@ -365,6 +372,7 @@ mod tests {
                 .iter()
                 .map(|(name, value)| (name.to_string(), value.to_string()))
                 .collect(),
+            seed: 1,
             outcomes,
         }
     }

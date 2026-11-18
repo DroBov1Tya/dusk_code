@@ -284,7 +284,7 @@ impl App {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::app::Entry;
     use dusk_protocol::{
@@ -294,7 +294,7 @@ mod tests {
         thread::ThreadEvent,
     };
 
-    fn app() -> App {
+    pub(crate) fn app() -> App {
         App::new(Status {
             model: None,
             discovering_model: false,

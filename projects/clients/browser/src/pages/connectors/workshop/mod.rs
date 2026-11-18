@@ -1,16 +1,18 @@
 //! The Workshop in the browser: the same storefront as the desktop app. A featured hero
-//! of official picks, shelves of capsules (a tier each, the core's picks of the newest,
+//! of official picks, shelves of cards (a tier each, the core's picks of the newest,
 //! the latest updated and the most starred, the local packs), one Filters menu, a
 //! listing's window with its gallery, and a pack's page with its switches. A browser may
 //! look and switch, never install: the server refuses it, so no install button is drawn.
 //! The core sorts, filters by category and picks the shelves; tiers and kinds only
-//! narrow what is shown here.
+//! narrow what is shown here. The hero, the shelves and the results share one grid of 1 to
+//! 4 columns from the page's measured width; a shelf shows one row and pages by a row.
 
 mod card;
 mod detail;
 mod filters;
 mod hero;
 mod pack;
+mod placeholder;
 
 use std::collections::{BTreeSet, HashMap};
 
@@ -18,14 +20,25 @@ use dusk_protocol::{
     catalog::SkillPack,
     plugin::{Kind, Listing, Order, StoreList, Tier},
 };
-use leptos::prelude::*;
+use leptos::{html, prelude::*};
+use wasm_bindgen::{JsCast, closure::Closure};
+use web_sys::ResizeObserver;
 
 use crate::{
     api,
     ui::{Icon, IconName, run},
 };
+use placeholder::Picture;
 
 pub const TIERS: [Tier; 4] = [Tier::Official, Tier::Verified, Tier::Community, Tier::Local];
+
+/// The grid, as the desktop's: cards at least this wide, gaps of 16, at most 4 columns
+/// (the page stops at 1184 px, where a fifth never fits).
+const CARD_MIN: usize = 232;
+const GAP: usize = 16;
+const COLUMNS_MAX: usize = 4;
+/// Under this width the hero's cover goes on top of its text.
+const NARROW: i32 = 744;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Shelf {
@@ -78,10 +91,14 @@ pub struct Shop {
     /// The listing whose window is open, by source and name, and its picture in view.
     window: RwSignal<Option<(String, String)>>,
     gallery: RwSignal<usize>,
-    /// Covers as `data:` addresses by SHA-256; empty while asked for or when not shown.
-    covers: RwSignal<HashMap<String, String>>,
+    /// Covers by SHA-256, from asked for to shown or missing.
+    covers: RwSignal<HashMap<String, Picture>>,
     /// Screenshots by `source/name@version`, each empty while asked for or when not shown.
     shots: RwSignal<HashMap<String, Vec<String>>>,
+    /// The page's measured width in CSS pixels, and what follows from it.
+    width: RwSignal<i32>,
+    columns: Memo<usize>,
+    narrow: Memo<bool>,
 }
 
 impl Shop {
@@ -102,29 +119,43 @@ impl Shop {
         run(api::skill_packs(), move |packs| self.packs.set(packs));
     }
 
-    /// Asks once per cover; one that fails keeps the capsule's letter, with no toast.
+    /// Asks once per cover, and again on a later read for one that failed. A failure
+    /// draws the placeholder (offline when this browser has no network); its reason goes
+    /// to the console, not to the card.
     fn load_covers(self, listings: &[Listing]) {
         for listing in listings {
             let Some(cover) = &listing.cover else {
                 continue;
             };
-            if self
-                .covers
-                .with_untracked(|covers| covers.contains_key(&cover.sha256))
-            {
+            let asked = self.covers.with_untracked(|covers| {
+                matches!(
+                    covers.get(&cover.sha256),
+                    Some(Picture::Loading | Picture::Shown(_))
+                )
+            });
+            if asked {
                 continue;
             }
             let sha = cover.sha256.clone();
             self.covers.update(|covers| {
-                covers.insert(sha.clone(), String::new());
+                covers.insert(sha.clone(), Picture::Loading);
             });
             let (source, name) = (listing.source.clone(), listing.name.clone());
             leptos::task::spawn_local(async move {
-                if let Ok(url) = api::cover(source, name).await {
-                    self.covers.update(|covers| {
-                        covers.insert(sha, url);
-                    });
-                }
+                let picture = match api::cover(source, name.clone()).await {
+                    Ok(url) => Picture::Shown(url),
+                    Err(error) => {
+                        web_sys::console::warn_1(&format!("cover of {name}: {error}").into());
+                        if offline() {
+                            Picture::Offline
+                        } else {
+                            Picture::Missing
+                        }
+                    }
+                };
+                self.covers.update(|covers| {
+                    covers.insert(sha, picture);
+                });
             });
         }
     }
@@ -153,10 +184,13 @@ impl Shop {
         }
     }
 
-    pub fn cover(self, listing: &Listing) -> Option<String> {
-        let sha = &listing.cover.as_ref()?.sha256;
+    /// A cover by its SHA-256; a listing without one has none to wait for.
+    pub fn picture(self, sha: Option<&str>) -> Picture {
+        let Some(sha) = sha else {
+            return Picture::Missing;
+        };
         self.covers
-            .with(|covers| covers.get(sha).filter(|url| !url.is_empty()).cloned())
+            .with(|covers| covers.get(sha).cloned().unwrap_or(Picture::Loading))
     }
 
     fn open_listing(self, listing: &Listing) {
@@ -187,12 +221,52 @@ impl Shop {
     }
 }
 
+fn offline() -> bool {
+    web_sys::window().is_some_and(|window| !window.navigator().on_line())
+}
+
+/// The grid's columns for a page this wide.
+fn columns(width: i32) -> usize {
+    let width = usize::try_from(width).unwrap_or(0);
+    ((width + GAP) / (CARD_MIN + GAP)).clamp(1, COLUMNS_MAX)
+}
+
+/// Keeps `width` at the element's width while it is shown, so the grid follows the room
+/// it has (a panel opening beside it, too), not the window's.
+fn watch_width(node: NodeRef<html::Div>, width: RwSignal<i32>) {
+    let watcher = StoredValue::new_local(None::<(ResizeObserver, Closure<dyn FnMut()>)>);
+    Effect::new(move || {
+        let Some(element) = node.get() else {
+            return;
+        };
+        if watcher.with_value(Option::is_some) {
+            return;
+        }
+        width.set(element.client_width());
+        let measured = element.clone();
+        let resized = Closure::<dyn FnMut()>::new(move || width.set(measured.client_width()));
+        match ResizeObserver::new(resized.as_ref().unchecked_ref()) {
+            Ok(observer) => {
+                observer.observe(&element);
+                watcher.set_value(Some((observer, resized)));
+            }
+            Err(error) => web_sys::console::warn_1(&error),
+        }
+    });
+    on_cleanup(move || {
+        if let Some((observer, _)) = watcher.try_update_value(Option::take).flatten() {
+            observer.disconnect();
+        }
+    });
+}
+
 fn shots_key(listing: &Listing) -> String {
     format!("{}/{}@{}", listing.source, listing.name, listing.version)
 }
 
 #[component]
 pub fn Workshop() -> impl IntoView {
+    let width = RwSignal::new(0);
     let shop = Shop {
         list: RwSignal::new(None),
         packs: RwSignal::new(Vec::new()),
@@ -210,10 +284,18 @@ pub fn Workshop() -> impl IntoView {
         gallery: RwSignal::new(0),
         covers: RwSignal::new(HashMap::new()),
         shots: RwSignal::new(HashMap::new()),
+        width,
+        columns: Memo::new(move |_| columns(width.get())),
+        narrow: Memo::new(move |_| width.get() < NARROW),
     };
     shop.load();
+    let node = NodeRef::<html::Div>::new();
+    watch_width(node, shop.width);
     view! {
-        <div class="workshop">
+        <div node_ref=node class=move || {
+            let narrow = if shop.narrow.get() { " narrow" } else { "" };
+            format!("workshop cols-{}{narrow}", shop.columns.get())
+        }>
             <p class="note">"Look and switch packs here. Installing and updating happen in the \
                 desktop app or the terminal: a plugin runs programs on this machine."</p>
             <div class="store-bar">
@@ -341,15 +423,39 @@ fn capsules(shop: Shop, items: Vec<Item>) -> impl IntoView {
         .collect_view()
 }
 
-/// One shelf: its heading with "See all", and its capsules in a row that scrolls sideways.
+/// One shelf: one row of the grid, paged by a row with its arrows, and "See all" when it
+/// holds more than a row.
 fn shelf_row(shop: Shop, shelf: Shelf, items: Vec<Item>) -> AnyView {
-    let all = view! {
-        <button class="ghost quiet" on:click=move |_| shop.shelf.set(Some(shelf))>"See all"</button>
+    let count = items.len();
+    let items = StoredValue::new(items);
+    let page = RwSignal::new(0usize);
+    let pages = move || count.div_ceil(shop.columns.get()).max(1);
+    let shown = move || page.get().min(pages() - 1);
+    let title = shelf.title();
+    // `aria-disabled`, not `disabled`: a button that disables itself under the keyboard
+    // would drop the focus to the page.
+    let first = move || (shown() == 0).to_string();
+    let last = move || (shown() + 1 >= pages()).to_string();
+    let end = move || {
+        (count > shop.columns.get()).then(|| view! {
+            <button class="icon" aria-label=format!("Previous row of {title}") aria-disabled=first
+                on:click=move |_| page.set(shown().saturating_sub(1))><Icon name=IconName::ChevronLeft /></button>
+            <button class="icon" aria-label=format!("Next row of {title}") aria-disabled=last
+                on:click=move |_| page.set((shown() + 1).min(pages() - 1))><Icon name=IconName::ChevronRight /></button>
+            <button class="ghost quiet" on:click=move |_| shop.shelf.set(Some(shelf))>"See all"</button>
+        })
+    };
+    let row = move || {
+        let columns = shop.columns.get();
+        let start = shown() * columns;
+        let items =
+            items.with_value(|items| items.iter().skip(start).take(columns).cloned().collect());
+        capsules(shop, items)
     };
     view! {
         <section class="shelf">
-            {heading(Some(shelf), shelf.title(), items.len(), Some(all.into_any()))}
-            <div class="shelf-row">{capsules(shop, items)}</div>
+            {heading(Some(shelf), title, count, Some(view! { {end} }.into_any()))}
+            <div class="capsules">{row}</div>
         </section>
     }
     .into_any()

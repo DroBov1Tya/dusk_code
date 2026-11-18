@@ -1,7 +1,7 @@
 //! The transcript: the items of a chat, with runs of tool steps folded into one line.
 
 use super::data::{ChatData, Entry, Item, Shown};
-use super::{markdown::Markdown, voice};
+use super::{markdown::Markdown, shown::ShownBlock, voice, working::Working};
 use crate::{
     state::{Chat, state},
     ui::{Icon, IconName},
@@ -37,11 +37,12 @@ impl Block {
     }
 }
 
-/// What a finished turn folds away: all but its answer, the user's words and errors.
+/// What a finished turn folds away: all but its answer, the user's words, the blocks the
+/// agent showed and errors.
 fn folds(item: &Item) -> bool {
     !matches!(
         item,
-        Item::User(_) | Item::Answered(_) | Item::Job(_) | Item::Error(_)
+        Item::User(_) | Item::Answered(_) | Item::Job(_) | Item::Block(_) | Item::Error(_)
     )
 }
 
@@ -127,38 +128,16 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
 use dusk_protocol::thread::duration_words as duration;
 
 #[component]
-pub fn Transcript(chat: Chat) -> impl IntoView {
+pub fn Transcript(
+    chat: Chat,
+    thread: Option<String>,
+    /// Nothing here may be answered: a subagent's chat, which the user only reads.
+    #[prop(optional)]
+    read_only: bool,
+) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
     let all = Memo::new(move |_| chat.with(blocks));
     let firsts = Memo::new(move |_| all.with(|all| all.iter().map(Block::key).collect::<Vec<_>>()));
-    // A second's tick for the time the running turn has taken.
-    let tick = RwSignal::new(0u32);
-    let _ = set_interval_with_handle(
-        move || tick.update(|n| *n = n.wrapping_add(1)),
-        std::time::Duration::from_secs(1),
-    );
-    let working_for = move || {
-        tick.track();
-        if let Some(line) = chat.with(|c| c.retry_line(super::data::now_ms())) {
-            return line;
-        }
-        let started = chat.with(|c| {
-            c.items
-                .iter()
-                .rev()
-                .find(|entry| {
-                    matches!(entry.item, Item::User(_) | Item::Answered(_) | Item::Job(_))
-                })
-                .map(|entry| entry.at)
-        });
-        match started {
-            Some(started) => format!(
-                "Working \u{00B7} {}",
-                duration(super::data::now_ms() - started)
-            ),
-            None => "Working".to_owned(),
-        }
-    };
     let pending = move || {
         chat.with(|c| c.pending.clone())
             .into_iter()
@@ -184,13 +163,13 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
                 <div class="empty chat-empty"><h2>"What are we working on?"</h2><p>"Ask a question, explore your code, or start something new."</p></div>
             </Show>
             <For each=move || firsts.get() key=|key| *key let:key>
-                <BlockView all key />
+                <BlockView all key chat thread=thread.clone() read_only />
             </For>
             <For each=pending key=|(at, text)| (*at, text.clone()) let:pair>
                 <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
             </For>
             <Show when=move || chat.with(|c| c.working)>
-                <div class="working"><span class="spinner"></span>{working_for}</div>
+                <Working chat />
             </Show>
         </div>
     }
@@ -204,17 +183,24 @@ fn element_to_end(scroller: &NodeRef<html::Div>) {
 }
 
 #[component]
-fn BlockView(all: Memo<Vec<Block>>, key: BlockKey) -> impl IntoView {
+fn BlockView(
+    all: Memo<Vec<Block>>,
+    key: BlockKey,
+    chat: Chat,
+    thread: Option<String>,
+    read_only: bool,
+) -> impl IntoView {
     let block = Memo::new(move |_| all.with(|all| all.iter().find(|b| b.key() == key).cloned()));
     move || match block.get() {
-        Some(Block::One(entry)) => item_view(entry.item).into_any(),
+        Some(Block::One(entry)) => item_view(entry, chat, thread.clone(), read_only).into_any(),
         Some(Block::Turn { entries, took }) => view! { <Turn entries took /> }.into_any(),
         None => ().into_any(),
     }
 }
 
-fn item_view(item: Item) -> impl IntoView {
-    match item {
+fn item_view(entry: Entry, chat: Chat, thread: Option<String>, read_only: bool) -> impl IntoView {
+    let id = entry.id;
+    match entry.item {
         Item::User(text) => view! {
             <div class="msg user"><div class="bubble">{user_text(&text)}</div></div>
         }
@@ -250,6 +236,7 @@ fn item_view(item: Item) -> impl IntoView {
         .into_any(),
         Item::Assistant { text, reasoning } => assistant_view(text, reasoning).into_any(),
         Item::Tool(_) => ().into_any(),
+        Item::Block(block) => view! { <ShownBlock block id chat thread read_only /> }.into_any(),
         Item::Image(shown) => view! { <ImageCard shown /> }.into_any(),
         Item::Audio(shown) => view! { <AudioCard shown /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
@@ -291,7 +278,7 @@ fn assistant_view(text: String, reasoning: String) -> impl IntoView {
                     <Markdown text=reasoning />
                 </details>
             })}
-            <Markdown text=text />
+            <Markdown text=text marks=true />
             <div class="msg-actions">
                 <button class="icon" class:copied=move || copied.get() title="Copy the answer" aria-label="Copy the answer" on:click=copy_answer>
                     {move || if copied.get() {
@@ -359,7 +346,7 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
                         {(!reasoning.trim().is_empty()).then(|| view! {
                             <details class="reasoning"><summary>"Thinking"</summary><Markdown text=reasoning /></details>
                         })}
-                        {(!text.trim().is_empty()).then(|| view! { <Markdown text=text /> })}
+                        {(!text.trim().is_empty()).then(|| view! { <Markdown text=text marks=true /> })}
                     </div>
                 }.into_any(),
                 Item::Agent { from, text } => view! {
@@ -529,5 +516,35 @@ mod tests {
             })
             .collect();
         assert_eq!(texts, ["first", "second"]);
+    }
+
+    /// A block is what the agent showed, not a step on its way: a finished turn keeps it
+    /// in sight with the answer.
+    #[test]
+    fn a_finished_turn_keeps_its_block_in_sight() {
+        let call = ToolCall {
+            id: "show".into(),
+            name: dusk_protocol::thread::SHOW_TOOL.into(),
+            arguments: serde_json::json!({ "choices": { "labels": ["Yes", "No"] } }),
+        };
+        let shown = dusk_protocol::thread::Block::asked(&call).expect("a block");
+        let mut chat = ChatData::default();
+        chat.apply(ThreadEvent::Rejected {
+            reason: "first".into(),
+        });
+        chat.apply(ThreadEvent::ToolStarted(call));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "show".into(),
+            result: dusk_protocol::tools::ToolResult::text(shown.text()),
+        });
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("Pick one".into())));
+        let blocks = blocks(&chat);
+        assert!(blocks.iter().any(|block| matches!(block, Block::One(entry)
+            if matches!(&entry.item, Item::Block(block) if *block == shown))));
+        assert!(
+            !blocks
+                .iter()
+                .any(|block| matches!(block, Block::Turn { .. }))
+        );
     }
 }

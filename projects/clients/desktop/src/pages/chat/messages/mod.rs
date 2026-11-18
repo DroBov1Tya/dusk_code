@@ -3,9 +3,11 @@
 //! folds, pictures are cards, and the agent's steps fold so only the latest shows. The
 //! list follows new output while it is scrolled to the end. `row` draws one row, `activity`
 //! a group of steps folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
-//! cards and notes beside them; `sent_picture` the pictures a user's message carries.
+//! cards and notes beside them; `sent_picture` the pictures a user's message carries;
+//! `block` what the model showed with `show`; `working_row` the last row while a turn runs.
 
 mod activity;
+mod block;
 mod command;
 mod cost;
 mod feedback;
@@ -13,8 +15,10 @@ mod picture;
 mod row;
 mod sent_picture;
 mod step;
+mod working_row;
 
 pub use activity::{activity_text, agent_report, notice};
+pub use block::{Pick, pills, render as block};
 pub use feedback::{answered, job};
 pub use picture::picture_path;
 pub use row::label;
@@ -46,7 +50,9 @@ pub enum Row {
     Working,
 }
 
-pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
+pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
+    // Rows stand in a lane at most 780 px wide, with 24 px beside it.
+    ws.reading_width = (ws.chat_width(window) - 48.).clamp(0., 780.);
     let shown = ws.shown.clone().unwrap_or_default();
     let Some(chat) = ws.chats.get(&shown) else {
         return widgets::muted("Opening...", cx).into_any_element();
@@ -284,7 +290,7 @@ fn primary_activity(item: &Item) -> bool {
 mod tests {
     use dusk_protocol::{
         model::{ModelEvent, ToolCall},
-        thread::{Message, MessageRole, ThreadEvent},
+        thread::{Block, Message, MessageRole, SHOW_TOOL, ThreadEvent, ToolState},
         tools::ToolResult,
     };
 
@@ -483,6 +489,117 @@ mod tests {
         )]);
         assert!(plain.answered.is_empty());
     }
+
+    fn show(id: &str, arguments: serde_json::Value) -> ToolCall {
+        ToolCall {
+            id: id.into(),
+            name: SHOW_TOOL.into(),
+            arguments,
+        }
+    }
+
+    fn flow() -> serde_json::Value {
+        serde_json::json!({ "flow": { "layers": [
+            { "title": "Parse", "cards": [{ "title": "lexer", "line": "tokens" }] },
+            { "title": "Check", "emphasis": true },
+        ] } })
+    }
+
+    fn blocks(chat: &Transcript) -> Vec<&Block> {
+        chat.items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Block(block) => Some(block),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_shown_block_takes_the_place_of_its_step_in_order() {
+        let block: Block = serde_json::from_value(flow()).unwrap();
+        let mut chat = Transcript::default();
+        chat.apply(ThreadEvent::ToolStarted(call("a")));
+        chat.apply(ThreadEvent::ToolStarted(show("s", flow())));
+        // Until its result comes it is a step like any other.
+        assert!(matches!(&chat.items[1], Item::Tool(tool) if tool.call_id == "s"));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "s".into(),
+            result: ToolResult::text(block.text()),
+        });
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("after".into())));
+        assert_eq!(chat.items.len(), 3);
+        assert!(matches!(&chat.items[1], Item::Block(shown) if *shown == block));
+        assert_eq!(layout(&chat), [(0, 1), (1, 1), (2, 2)]);
+    }
+
+    #[test]
+    fn a_show_call_that_was_not_shown_stays_a_step() {
+        let long = "x".repeat(100_000);
+        let refused = [
+            // Out of caps, unknown fields, not an object, and a heading of another kind.
+            serde_json::json!({ "flow": { "layers": [{ "title": "only one" }] } }),
+            serde_json::json!({ "flow": { "layers": [{ "title": long }, { "title": "b" }] } }),
+            serde_json::json!({ "choices": { "labels": ["a", "b"], "style": "danger" } }),
+            serde_json::json!("<button>Approve</button>"),
+            serde_json::json!({ "checks": { "items": [{ "name": "t", "state": "passed" }] } }),
+        ];
+        for arguments in refused {
+            let mut chat = Transcript::default();
+            chat.apply(ThreadEvent::ToolStarted(show("s", arguments)));
+            chat.apply(ThreadEvent::ToolFinished {
+                call_id: "s".into(),
+                result: ToolResult::text(format!("Flow:\n{long}")),
+            });
+            assert!(blocks(&chat).is_empty());
+            assert!(matches!(&chat.items[0], Item::Tool(tool) if tool.call_id == "s"));
+        }
+        // A refused call answers with an error, not the block's heading.
+        let mut chat = Transcript::default();
+        chat.apply(ThreadEvent::ToolStarted(show("s", flow())));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "s".into(),
+            result: ToolResult {
+                is_error: true,
+                ..ToolResult::text("show is switched off".into())
+            },
+        });
+        assert!(blocks(&chat).is_empty());
+        assert!(matches!(&chat.items[0], Item::Tool(tool) if tool.state == ToolState::Failed));
+    }
+
+    #[test]
+    fn a_restored_chat_shows_the_same_blocks() {
+        let block: Block = serde_json::from_value(flow()).unwrap();
+        let mut live = Transcript::default();
+        live.apply(ThreadEvent::Model(ModelEvent::Text("Here it is".into())));
+        live.apply(ThreadEvent::ToolStarted(show("s", flow())));
+        live.apply(ThreadEvent::ToolFinished {
+            call_id: "s".into(),
+            result: ToolResult::text(block.text()),
+        });
+        live.apply(ThreadEvent::Model(ModelEvent::Text("Done".into())));
+        live.apply(ThreadEvent::Idle);
+
+        let result = Message {
+            tool_call_id: Some("s".into()),
+            ..message(MessageRole::Tool, &block.text(), Vec::new())
+        };
+        let history = Transcript::from_history(&[
+            message(
+                MessageRole::Assistant,
+                "Here it is",
+                vec![show("s", flow())],
+            ),
+            result,
+            message(MessageRole::Assistant, "Done", Vec::new()),
+        ]);
+        assert_eq!(blocks(&live), [&block]);
+        assert_eq!(blocks(&history), blocks(&live));
+        assert_eq!(layout(&history), layout(&live));
+        assert_eq!(layout(&history), [(0, 0), (1, 1), (2, 2)]);
+    }
+
     #[cfg(feature = "screenshot")]
     #[gpui_pre::test]
     fn measured_rows_keep_scroll_position_and_resume_tail(cx: &mut gpui_pre::TestAppContext) {

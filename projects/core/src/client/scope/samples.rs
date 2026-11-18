@@ -9,6 +9,7 @@ use dusk_protocol::{
     config::{ContextPolicy, Profile, ProviderKind, VoiceSettings},
     plugin::{StoreRequest as St, UiEvent},
     project::{Repeat, ScheduleDraft},
+    thread::TeamBudget,
     tools::Decision,
 };
 
@@ -134,6 +135,21 @@ fn work() -> Vec<W> {
         },
         W::ChangedFiles { thread_id: id() },
         W::FileChanges { thread_id: id() },
+        W::PlanTasks {
+            thread_id: id(),
+            done_before: None,
+            limit: 1,
+        },
+        W::Team { thread_id: id() },
+        W::ConfirmTask {
+            thread_id: id(),
+            task_id: word(),
+        },
+        W::StopTeam { thread_id: id() },
+        W::SetTeamBudget {
+            thread_id: id(),
+            budget: TeamBudget::new(1, 1, 1, 1).expect("a budget within the caps"),
+        },
     ]
 }
 

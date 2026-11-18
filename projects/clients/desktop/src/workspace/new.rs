@@ -191,6 +191,8 @@ impl Workspace {
             unfolded: HashSet::new(),
             list: ListState::new(0, ListAlignment::Top, px(800.)),
             rows: Vec::new(),
+            reading_width: 720.,
+            replied: None,
             list_chat: None,
             measure_again: false,
         };

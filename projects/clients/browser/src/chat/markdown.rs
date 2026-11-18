@@ -1,18 +1,25 @@
 //! Model output as markdown, drawn with DOM text nodes and elements only: there is no
 //! HTML path, so what the model writes can only be text. Links open only if they are
-//! http(s); pictures are never fetched, they show as their description.
+//! http(s); pictures are never fetched, they show as their description. In an assistant's
+//! text a `{{tone: label}}` is a coloured label, found by the protocol's parser.
 
+use dusk_protocol::thread::{Span, Tone, marks};
 use leptos::{html, prelude::*};
 use pulldown_cmark::{CodeBlockKind, Event, HeadingLevel, Options, Parser, Tag, TagEnd};
 use web_sys::{Document, Element, Node};
 
 #[component]
-pub fn Markdown(#[prop(into)] text: Signal<String>) -> impl IntoView {
+pub fn Markdown(
+    #[prop(into)] text: Signal<String>,
+    /// Draw `{{tone: label}}` as labels: for the assistant's own text only.
+    #[prop(optional)]
+    marks: bool,
+) -> impl IntoView {
     let root = NodeRef::<html::Div>::new();
     Effect::new(move |_| {
         let source = text.get();
         if let Some(root) = root.get() {
-            draw(&root, &source);
+            draw(&root, &source, marks);
         }
     });
     view! { <div class="md" node_ref=root></div> }
@@ -24,26 +31,33 @@ pub fn safe_link(url: &str) -> bool {
     lower.starts_with("https://") || lower.starts_with("http://")
 }
 
-fn draw(root: &Element, source: &str) {
+fn draw(root: &Element, source: &str, with_marks: bool) {
     let Some(document) = root.owner_document() else {
         return;
     };
     root.set_text_content(None);
     let mut stack: Vec<Element> = vec![root.clone()];
+    // Labels are never read in code.
+    let mut in_code = false;
     let options =
         Options::ENABLE_TABLES | Options::ENABLE_STRIKETHROUGH | Options::ENABLE_TASKLISTS;
     for event in Parser::new_ext(source, options) {
         match event {
             Event::Start(tag) => {
+                in_code |= matches!(tag, Tag::CodeBlock(_));
                 if let Some((outer, inner)) = open(&document, &tag) {
                     append(&stack, &outer);
                     stack.push(inner);
                 }
             }
             Event::End(end) => {
+                in_code &= !matches!(end, TagEnd::CodeBlock);
                 if closes_element(&end) && stack.len() > 1 {
                     stack.pop();
                 }
+            }
+            Event::Text(text) if with_marks && !in_code => {
+                add_marked(&document, &stack, &text);
             }
             Event::Text(text) => add_text(&document, &stack, &text),
             Event::Code(code) => {
@@ -79,6 +93,54 @@ fn add_text(document: &Document, stack: &[Element], text: &str) {
     if let Some(parent) = stack.last() {
         let node = document.create_text_node(text);
         let _ = parent.append_child(&node);
+    }
+}
+
+/// A text run as the protocol splits it: the words as they are and each label as a span
+/// of its own, always a text node.
+fn add_marked(document: &Document, stack: &[Element], text: &str) {
+    for piece in pieces(text) {
+        match piece {
+            Piece::Text(text) => add_text(document, stack, text),
+            Piece::Mark { class, text } => {
+                let span = make(document, "span");
+                span.set_class_name(class);
+                span.set_text_content(Some(text));
+                append(stack, &span);
+            }
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Piece<'a> {
+    Text(&'a str),
+    Mark { class: &'static str, text: &'a str },
+}
+
+fn pieces(text: &str) -> Vec<Piece<'_>> {
+    marks(text)
+        .into_iter()
+        .map(|span| match span {
+            Span::Text(text) => Piece::Text(text),
+            Span::Mark { tone, text } => Piece::Mark {
+                class: tone_class(tone),
+                text,
+            },
+        })
+        .collect()
+}
+
+/// The tones are a closed set; each is a class of the stylesheet, so the model never
+/// names a colour.
+fn tone_class(tone: Tone) -> &'static str {
+    match tone {
+        Tone::Neutral => "tone tone-neutral",
+        Tone::Info => "tone tone-info",
+        Tone::Success => "tone tone-success",
+        Tone::Warning => "tone tone-warning",
+        Tone::Danger => "tone tone-danger",
+        Tone::Accent => "tone tone-accent",
     }
 }
 
@@ -159,4 +221,55 @@ fn closes_element(end: &TagEnd) -> bool {
             | TagEnd::Link
             | TagEnd::Image
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn each_tone_has_its_own_class() {
+        for tone in Tone::ALL {
+            let text = format!("a {{{{{}: word}}}} b", tone.name());
+            assert_eq!(
+                pieces(&text),
+                [
+                    Piece::Text("a "),
+                    Piece::Mark {
+                        class: tone_class(tone),
+                        text: "word"
+                    },
+                    Piece::Text(" b")
+                ]
+            );
+            assert_eq!(tone_class(tone), format!("tone tone-{}", tone.name()));
+        }
+    }
+
+    #[test]
+    fn an_unknown_tone_stays_the_text_it_was_written_as() {
+        assert_eq!(
+            pieces("{{purple: word}}"),
+            [Piece::Text("{{purple: word}}")]
+        );
+        assert_eq!(
+            pieces("{{red; background:url(x): w}}"),
+            [Piece::Text("{{red; background:url(x): w}}")]
+        );
+    }
+
+    #[test]
+    fn a_hostile_label_stays_text() {
+        for hostile in [
+            "{{danger: <img src=x onerror=alert(1)>}}",
+            "{{info: [click](javascript:x)}}",
+            "{{success: `code`}}",
+            "{{accent: a\u{202e}b}}",
+        ] {
+            assert_eq!(pieces(hostile), [Piece::Text(hostile)], "{hostile}");
+        }
+        // Only the label's own words reach a span, as text.
+        let found = pieces("{{warning: <b>}}");
+        assert_eq!(found, [Piece::Text("{{warning: <b>}}")]);
+    }
 }

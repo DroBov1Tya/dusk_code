@@ -27,6 +27,33 @@ pub fn render(id: impl Into<ElementId>, accent: Hsla, light: Hsla) -> impl IntoE
     )
 }
 
+/// The figure, or at rest, frozen at the start of its loop, when the turn waits for the
+/// user or the person asked for less motion.
+pub fn figure(
+    id: impl Into<ElementId>,
+    accent: Hsla,
+    light: Hsla,
+    still: bool,
+    cx: &App,
+) -> AnyElement {
+    if still || cx.reduce_motion() {
+        div()
+            .relative()
+            .size(px(SIZE))
+            .flex_none()
+            .child(heart(0., accent))
+            .children(dots(0., accent, light))
+            .into_any_element()
+    } else {
+        render(id, accent, light).into_any_element()
+    }
+}
+
+/// Numbers that keep their width as they change, for counts that tick.
+pub fn tabular() -> FontFeatures {
+    FontFeatures(std::sync::Arc::new(vec![("tnum".into(), 1)]))
+}
+
 /// The glow in the middle, swelling with the spiral's breath.
 fn heart(phase: f32, accent: Hsla) -> Div {
     let beat = (phase * TAU * 2.).sin() * 0.5 + 0.5;
