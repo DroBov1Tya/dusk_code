@@ -245,6 +245,10 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .card-tile, .tile { background: var(--surface); border-radius: 12px; padding: 12px; min-width: 0; }
 .tile img { width: 100%; height: 160px; object-fit: cover; border-radius: 8px; }
 .tile-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.tile-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.avatar { flex: none; width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; font-size: 13px; font-weight: 600; color: var(--fg); background: color-mix(in srgb, var(--tone, var(--accent)) 25%, var(--surface)); }
+.avatar.c0 { --tone: var(--accent); } .avatar.c1 { --tone: var(--good); } .avatar.c2 { --tone: var(--warn); } .avatar.c3 { --tone: var(--bad); }
+.avatar.c4 { --tone: var(--info); } .avatar.c5 { --tone: color-mix(in srgb, var(--accent) 50%, var(--bad)); } .avatar.c6 { --tone: color-mix(in srgb, var(--good) 50%, var(--info)); } .avatar.c7 { --tone: color-mix(in srgb, var(--warn) 50%, var(--bad)); }
 .tile-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-tree, .agent-tree ul { list-style: none; padding-left: 20px; } .node { display: flex; gap: 12px; align-items: center; padding: 4px 0; }
 .model { display: flex; justify-content: space-between; width: 100%; background: none; border: 0; padding: 4px 8px; border-radius: 8px; text-align: left; }

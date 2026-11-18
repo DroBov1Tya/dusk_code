@@ -4,7 +4,7 @@ use super::editor::Editor;
 use crate::{
     api,
     state::state,
-    ui::{Icon, IconName, Switch, run},
+    ui::{Avatar, Icon, IconName, Switch, run},
 };
 use dusk_protocol::{
     client::Switch as Flag,
@@ -36,7 +36,7 @@ pub fn Mcp() -> impl IntoView {
                 };
                 view! {
                     <div class="card-tile">
-                        <div class="tile-head"><b>{server.name.clone()}</b>
+                        <div class="tile-head"><span class="tile-title"><Avatar name=server.name.clone() /><b>{server.name.clone()}</b></span>
                             <span class="chip">{if server.remote { "remote" } else { "local" }}</span></div>
                         <p class="muted">{server.target.clone()}</p>
                         <p class:bad=failed>{state_text}</p>
