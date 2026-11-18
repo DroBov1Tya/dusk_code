@@ -4,7 +4,7 @@
 use std::collections::BTreeMap;
 
 use dusk_protocol::{
-    catalog::{AgentNode, AgentTree},
+    catalog::{AgentNode, AgentTree, Problem},
     client::Switch as CoreSwitch,
 };
 use gpui_kit::{
@@ -23,20 +23,17 @@ use crate::{
 };
 
 const CARD_W: f32 = 288.;
+/// A name, two lines of description and a line of chips.
+const CARD_H: f32 = 120.;
 
 pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let (muted, border, danger, surface) = (
-        theme.muted_foreground,
-        theme.border,
-        theme.danger,
-        theme.muted,
-    );
+    let (muted, border, surface) = (theme.muted_foreground, theme.border, theme.muted);
     let paths = paths(&tree.root);
     let asked_by = asked_by(&tree.root);
     let (focus, trail) = focus(&tree.root, &ws.agent_path);
     // Breadcrumb: Agents › a › b, each a way back.
-    let mut crumbs = div().flex().flex_row().items_center().gap_2().text_sm();
+    let mut crumbs = div().flex().flex_row().items_center().gap_2().small();
     crumbs = crumbs.child(crumb("crumb-root", "Agents", 0, trail.is_empty(), cx));
     for (depth, name) in trail.iter().enumerate() {
         crumbs = crumbs
@@ -102,15 +99,60 @@ pub fn render(ws: &Workspace, tree: &AgentTree, cx: &mut Context<Workspace>) -> 
     if children.is_empty() {
         page = page.child(widgets::muted("This agent asks no one of its own.", cx).px_0());
     }
-    for problem in tree.problems.iter().chain(&tree.skipped) {
-        page = page.child(
+    page.children(problems("Could not be read", &tree.problems, cx))
+        .children(problems(
+            "Links to agents that are not there",
+            &tree.skipped,
+            cx,
+        ))
+}
+
+/// What the tree left out, under the graph: a quiet group with one row for each, the
+/// agent's name and why. A note to read, not an alarm, so only its mark is colored.
+fn problems(title: &str, problems: &[Problem], cx: &App) -> Option<Div> {
+    if problems.is_empty() {
+        return None;
+    }
+    let theme = cx.theme();
+    let (muted, warning) = (theme.muted_foreground, theme.warning);
+    let mut group = div().flex().flex_col().gap_1().pt_3().child(
+        div()
+            .flex()
+            .flex_row()
+            .items_center()
+            .gap_2()
+            .group_name()
+            .text_color(muted)
+            .child(widgets::icon(IconName::TriangleAlert, warning))
+            .child(format!("{title} \u{00B7} {}", problems.len())),
+    );
+    for problem in problems {
+        group = group.child(
             div()
-                .text_xs()
-                .text_color(danger)
-                .child(format!("{}: {}", problem.node, problem.reason)),
+                .flex()
+                .flex_row()
+                .items_baseline()
+                .gap_3()
+                .pl(px(crate::ui::size::ICON + crate::ui::size::GAP_S))
+                .small()
+                .child(
+                    div()
+                        .flex_none()
+                        .w(px(200.))
+                        .truncate()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child(problem.node.clone()),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .text_color(muted)
+                        .child(problem.reason.clone()),
+                ),
         );
     }
-    page
+    Some(group)
 }
 
 fn card(
@@ -162,7 +204,7 @@ fn card(
                 .truncate()
                 .px_1p5()
                 .rounded_sm()
-                .text_xs()
+                .meta()
                 .text_color(accent)
                 .bg(accent.opacity(0.1))
                 .cursor_pointer()
@@ -183,7 +225,7 @@ fn card(
         chips = chips.child(
             div()
                 .flex_none()
-                .text_xs()
+                .meta()
                 .text_color(muted)
                 .child(format!("+{}", links.len() - 2)),
         );
@@ -196,9 +238,9 @@ fn card(
         .focusable_row(cx)
         .w(px(CARD_W))
         .max_w_full()
-        .min_h(px(72.))
+        .h(px(CARD_H))
         .px_3()
-        .py_2()
+        .py_2p5()
         .flex()
         .flex_col()
         .gap_1()
@@ -229,7 +271,7 @@ fn card(
                         .flex_row()
                         .items_center()
                         .gap_0p5()
-                        .text_xs()
+                        .meta()
                         .text_color(muted)
                         .child(format!("{inside} inside"))
                         .child(widgets::icon(IconName::ChevronRight, muted))
@@ -247,13 +289,19 @@ fn card(
                         ),
                 ),
         )
+        // Two lines of what the agent is for; every card is as tall, with or without
+        // chips, so a row of them keeps one lower edge.
         .child(
             div()
-                .text_xs()
+                .flex_none()
+                .meta()
+                .line_height(rems(1.2))
                 .text_color(muted)
-                .truncate()
+                .line_clamp(2)
+                .text_ellipsis()
                 .child(node.description.clone()),
         )
+        .child(div().flex_1())
         .when(!links.is_empty(), |card| card.child(chips))
         // Enters an agent with children of its own; opens the file of one without.
         .on_click(cx.listener(move |ws, _, _, cx| {

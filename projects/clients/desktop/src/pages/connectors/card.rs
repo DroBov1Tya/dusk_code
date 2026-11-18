@@ -7,6 +7,8 @@ use gpui_kit::{component::ActiveTheme, *};
 /// A row's height: two lines of text and their padding.
 const HEIGHT: f32 = 68.;
 const ICON: f32 = 36.;
+/// The state's column: "Ready · 12 tools" fits.
+const STATE: f32 = 120.;
 /// One line is ever shown; the rest is not shaped.
 const LINE_CHARS: usize = 300;
 
@@ -57,9 +59,12 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
                 )
                 .child(div().small().text_color(muted).truncate().child(facts)),
         )
+        // One column for every row's state, so a list of them reads down as a column.
         .children(card.state.map(|(text, color)| {
             div()
                 .flex_none()
+                .w(px(STATE))
+                .truncate()
                 .meta()
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(color)
