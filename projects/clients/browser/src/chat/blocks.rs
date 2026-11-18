@@ -306,7 +306,7 @@ fn assistant_view(text: String, reasoning: String) -> impl IntoView {
                     <Markdown text=reasoning />
                 </details>
             })}
-            <Markdown text=text />
+            <Markdown text=text marks=true />
             <div class="msg-actions">
                 <button class="icon" class:copied=move || copied.get() title="Copy the answer" aria-label="Copy the answer" on:click=copy_answer>
                     {move || if copied.get() {
@@ -374,7 +374,7 @@ fn Turn(entries: Vec<Entry>, took: Option<i64>) -> impl IntoView {
                         {(!reasoning.trim().is_empty()).then(|| view! {
                             <details class="reasoning"><summary>"Thinking"</summary><Markdown text=reasoning /></details>
                         })}
-                        {(!text.trim().is_empty()).then(|| view! { <Markdown text=text /> })}
+                        {(!text.trim().is_empty()).then(|| view! { <Markdown text=text marks=true /> })}
                     </div>
                 }.into_any(),
                 Item::Agent { from, text } => view! {

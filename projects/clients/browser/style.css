@@ -436,6 +436,18 @@ a { text-underline-offset: 3px; }
 .pill:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .question.light .reply { margin: 8px 0 0; }
 
+/* Marks: inline, 4 px round, the tone on a tint of itself. Text, never a control. The text is
+   the tone with a third of the page's text colour mixed in: the pure tone measured under
+   4.5:1 on its tint in the Light palette (warning 3.0, success 2.7) and for danger in Dark. */
+.tone { --tone-info: color-mix(in srgb, var(--info) 65%, var(--fg)); --tone-good: color-mix(in srgb, var(--good) 65%, var(--fg)); --tone-warn: color-mix(in srgb, var(--warn) 65%, var(--fg)); --tone-bad: color-mix(in srgb, var(--bad) 65%, var(--fg)); --tone-accent: color-mix(in srgb, var(--accent) 65%, var(--fg)); }
+.tone { font-size: .86rem; font-weight: 500; padding: 0 6px; border-radius: 4px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+.tone-neutral { color: var(--fg2); background: var(--raised); }
+.tone-info { color: var(--tone-info); background: color-mix(in srgb, var(--info) 14%, transparent); }
+.tone-success { color: var(--tone-good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.tone-warning { color: var(--tone-warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }
+.tone-danger { color: var(--tone-bad); background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.tone-accent { color: var(--tone-accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
+
 /* ==== end of what the agent shows ==== */
 .chat-empty { margin-top: clamp(60px, 19vh, 190px); text-align: center; }
 .chat-empty h2 { font-size: 26px; color: var(--fg); letter-spacing: -.035em; font-weight: 500; }
