@@ -136,9 +136,18 @@ pub fn render(
         )
 }
 
-/// Cards wrap at the available width.
-fn grid() -> Div {
-    div().flex().flex_wrap().gap_3()
+/// One card of rows, as wide as the Workshop's grid at most.
+fn grid(cx: &App) -> Div {
+    let theme = cx.theme();
+    div()
+        .flex()
+        .flex_col()
+        .max_w(px(1184.))
+        .p_1()
+        .rounded_xl()
+        .border_1()
+        .border_color(theme.border)
+        .bg(theme.muted)
 }
 
 fn matches(query: &str, texts: &[&str]) -> bool {
