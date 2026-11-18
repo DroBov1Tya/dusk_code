@@ -1,0 +1,2 @@
+Changed
+With `limits.stable_prefix` (off by default; the eval runner turns it on with `--set`), a thread keeps each tool's description as it first showed it until its next compaction, so a memory rewritten through `remember`, or a skill or an agent added mid-thread, no longer changes the start of every later request and the provider's cache of it holds. Tool schemas no longer carry the integer widths schemars names (`"format": "uint64"`) or `null` in an enum of a field that is a string, which every request paid for.

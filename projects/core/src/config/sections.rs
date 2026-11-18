@@ -61,6 +61,12 @@ pub struct Limits {
     /// lower the pass rate.
     #[serde(default)]
     pub failure_ladder: bool,
+    /// Whether each tool's description stays as a thread first showed it until the
+    /// thread's next compaction, so a memory rewritten, or a skill or an agent added,
+    /// mid-thread does not change the start of its requests and the provider's cache of
+    /// it holds. Off until the evals show it does not lower the pass rate.
+    #[serde(default)]
+    pub stable_prefix: bool,
     /// Times the same error comes back before the model is told to stop varying the call.
     #[serde(default = "default_failure_note_at")]
     pub failure_note_at: u32,
@@ -86,6 +92,7 @@ impl Default for Limits {
             wait_for_provider: true,
             shrink_context: false,
             failure_ladder: false,
+            stable_prefix: false,
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),

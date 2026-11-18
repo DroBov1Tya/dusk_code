@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::Result;
+use parking_lot::Mutex;
 use serde_json::Value;
 use tracing::info;
 
@@ -44,6 +45,9 @@ pub struct ToolRegistry {
     pub(crate) state: Option<Arc<crate::state::State>>,
     /// The thread these tools run for; its own mode applies.
     pub(crate) thread_id: String,
+    /// With `limits.stable_prefix`, each description as this thread first showed it, so
+    /// the start of its requests stays byte-identical and the provider's cache holds.
+    shown: Mutex<BTreeMap<String, String>>,
 }
 
 impl ToolRegistry {
@@ -213,15 +217,40 @@ impl ToolRegistry {
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
         };
+        let stable = config.limits().stable_prefix;
         self.tools
             .values()
             .filter(|tool| self.enabled(tool.as_ref(), config) && tool.available(&context))
             .map(|tool| ToolSpec {
                 name: tool.name().to_owned(),
-                description: tool.description(&context),
+                description: self.description(tool.as_ref(), &context, stable),
                 parameters: tool.parameters(),
             })
             .collect()
+    }
+
+    /// What the model reads of `tool`: as it is now, or with `stable` as first shown.
+    fn description(&self, tool: &dyn Tool, context: &ToolContext, stable: bool) -> String {
+        if !stable {
+            return tool.description(context);
+        }
+        if let Some(shown) = self.shown.lock().get(tool.name()) {
+            return shown.clone();
+        }
+        // Rendered outside the lock: a description may read files.
+        let description = tool.description(context);
+        let mut shown = self.shown.lock();
+        shown
+            .entry(tool.name().to_owned())
+            .or_insert(description)
+            .clone()
+    }
+
+    /// Descriptions are rendered anew from the next request. A compaction calls it: the
+    /// calls that showed the model what changed are summarized away, and its new context
+    /// is read cold anyway.
+    pub fn refresh_descriptions(&self) {
+        self.shown.lock().clear();
     }
 
     /// Never fails: an unknown, switched-off or failed call becomes an error result for

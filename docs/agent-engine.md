@@ -125,3 +125,68 @@ runs each, the pass rate and the cost are the same. A run that answered with no 
 happened with the old prompt as well. Reading: no measurable change in quality or in work
 done; the saving is the shorter prefix on every request. Too few runs to see a small
 difference either way.
+
+## Request prefix (2026-11-18)
+
+Measured with the ignored test `runtime::thread::prefix::prefix_sizes` (fresh install, MAIN
+mode, this repository with its local `AGENTS.md` as the project, default config: user
+memory on and empty, project memory off, no MCP servers). Bytes as the request carries them.
+
+| Part | Before | After |
+|---|---|---|
+| System prompt (`modes/MAIN.md`) | 2,473 | 2,473 |
+| Project block (`AGENTS.md` is 5,147 of it) | 5,570 | 5,570 |
+| 14 tools: names | 127 | 127 |
+| 14 tools: descriptions | 8,737 | 8,737 |
+| 14 tools: schemas | 5,799 | 5,708 |
+| Prefix | 22,706 | 22,615 |
+
+Largest tools: `ask_agent` 2,043, `goal` 1,995 (1,254 of it schema), `run_command` 1,955,
+`load_skill` 1,444 (grows with the skills installed), `tasks` 1,274. A memory adds up to
+2,000 characters to `remember` and as much to `remember_project`.
+
+What changes the prefix within a thread. Tool specs are built for every model call
+(`step.rs`), and three descriptions read live state each time:
+
+- `remember` and `remember_project` read their MEMORY.md (`remember.rs`), so a rewrite
+  changes the tools at the next step: one cold read of the whole context per rewrite, and
+  one in every other open thread of that memory.
+- `load_skill` reads the skills folder again after 5 s, so a skill added, edited or
+  switched off moves it.
+- `ask_agent` lists the agents the catalog finds on its scan every 60 s.
+
+Stable already: the system prompt is a stored message and changes only at a mode switch
+(next turn) and a compaction; the project block, date included, is read once when the
+thread's task starts (`Launcher::setup`); MCP tools are taken once at the same point;
+tools, skills and agents are listed in name order. Switching a tool, a skill or an agent
+in the settings changes the next step, as asked. The sources block, the goal reminder and
+the missing-tools note come after the messages, so they are read cold on every step by
+design and break nothing before them.
+
+The log (`core.log`, 3,352 `model call` lines since 2026-11-10) has 1,191 `prompt cache
+dropped` warnings and 55% of prompt tokens from the cache. It cannot confirm the memory
+cause: no `remember` call since per-call logging began, and no user memory file exists.
+Of the drops, 319 had another thread's call in between (one server slot), 133 came after
+a gap of over 5 minutes, and 724 came within 5 minutes with nothing else running, 574 of
+them with nothing cached; the daily cache rate was 72 to 91% except 35%, 5% and 32% on
+11-14 to 11-16, which points at the provider of those days, not at the prefix. The log
+does not name the model; `model_usage` would.
+
+Fixed: with `limits.stable_prefix` (off until the evals show it does not lower the pass
+rate) the registry keeps each description as the thread first showed it until its next
+compaction, which refreshes them; the model sees a memory rewrite as its own call until
+then. Test: `with_stable_prefix_the_start_of_a_request_stays_byte_identical`. Always on,
+since it changes no meaning: schemas drop schemars' integer widths (`"format": "uint64"`,
+`minimum` stays) and `null` in an enum of a string field, 91 bytes a request.
+
+Proposed, not done (bytes per request):
+
+- Offer `goal` only while the thread has a goal or after `/goal`: -1,995 when unused;
+  `display_image`, `display_audio` and `plan_edit` likewise by mode: -1,888.
+- `goal`'s criteria `check` is a `oneOf` of two objects; one object with `kind` as an
+  enum and an optional `command` says the same in about 120 fewer.
+- The project path appears in the project block and again in the descriptions of
+  `run_command`, `read_file` and `search_files`; "the project folder" there saves about
+  150. `ask_user` repeats MAIN's rule on asking (about 190, but MAIN also serves agents
+  that cannot ask); `run_command` says "Defaults to false" beside `default: false` (about
+  20) and repeats what `jobs` says of jobs (about 250).

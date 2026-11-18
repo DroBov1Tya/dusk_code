@@ -115,6 +115,9 @@ impl Agent {
             .state
             .add_compaction(&self.thread_id, through, &summary);
         let compaction = compaction.await?;
+        // A memory rewritten since the thread started is no longer in view as the call
+        // that wrote it, so the tools show it from here on.
+        self.tools.refresh_descriptions();
         // The context starts over here, so a chat takes up the prompt of its mode now.
         if self.depth == 0 {
             let mode = self.config.current().mode().to_owned();
