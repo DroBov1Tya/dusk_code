@@ -105,11 +105,7 @@ fn checks_dot(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
     } else {
         dot.into_any_element()
     };
-    let (checks, url, said) = (
-        pull.checks.clone(),
-        pull.url.clone(),
-        checks_said(&pull.checks),
-    );
+    let (checks, url, said) = (pull.checks, pull.url.clone(), checks_said(&pull.checks));
     let number = pull.number as usize;
     Some(
         HoverCard::new(("pull-checks-card", number))
