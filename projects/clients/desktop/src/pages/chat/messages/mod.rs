@@ -4,7 +4,8 @@
 //! list follows new output while it is scrolled to the end. `row` draws one row, `activity`
 //! a group of steps folded into one, `step` the agent's steps, and `command`, `picture` and `cost` the
 //! cards and notes beside them; `sent_picture` the pictures a user's message carries;
-//! `block` what the model showed with `show`; `working_row` the last row while a turn runs.
+//! `block` what the model showed with `show`; `working_row` the last row while a turn runs;
+//! `texts` the parsed words of the rows, kept while the chat is shown.
 
 mod activity;
 mod block;
@@ -15,6 +16,7 @@ mod picture;
 mod row;
 mod sent_picture;
 mod step;
+mod texts;
 mod working_row;
 
 pub use activity::{activity_text, agent_report, notice};
@@ -24,6 +26,7 @@ pub use picture::picture_path;
 pub use row::label;
 pub use sent_picture::SentPicture;
 pub use step::{run, steps};
+pub use texts::Texts;
 
 use gpui_kit::*;
 
@@ -183,6 +186,7 @@ fn add_activity(rows: &mut Vec<Row>, items: &[Item], start: usize, end: usize) {
 fn sync(ws: &mut Workspace, shown: &str, rows: &[Row], changed_from: Option<usize>) {
     if ws.list_chat.as_deref() != Some(shown) {
         ws.list_chat = Some(shown.to_owned());
+        ws.texts = Texts::default();
         ws.list.reset(rows.len());
         ws.list.set_follow_mode(FollowMode::Tail);
         return;

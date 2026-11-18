@@ -327,6 +327,8 @@ pub struct Workspace {
     pub rows: Vec<crate::pages::chat::messages::Row>,
     /// The chat the list was built for; another one starts it anew.
     pub list_chat: Option<String>,
+    /// The parsed words of that chat's rows, so a row scrolled back comes at its height.
+    pub texts: crate::pages::chat::messages::Texts,
     /// A row changed height, as when folded: measure every row again.
     pub measure_again: bool,
     /// How wide the transcript's rows are drawn, for blocks that set their columns by it.

@@ -4,7 +4,8 @@
 
 use gpui_kit::{component::ActiveTheme, *};
 
-use super::links;
+use super::messages::Texts;
+use crate::workspace::Workspace;
 
 const COVER_W: f32 = 104.;
 const COVER_H: f32 = 148.;
@@ -22,16 +23,20 @@ fn reading(text: impl IntoElement) -> AnyElement {
         .into_any_element()
 }
 
-pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
+/// Answer `item` of the chat, its words parsed by `texts`.
+pub fn render(
+    id: &str,
+    item: usize,
+    text: &str,
+    texts: &mut Texts,
+    cx: &mut Context<Workspace>,
+) -> AnyElement {
     let blocks = split(text);
     if !blocks
         .iter()
         .any(|block| matches!(block, Block::Card { .. }))
     {
-        return reading(links::answer(
-            SharedString::from(id.to_owned()),
-            text.to_owned(),
-        ));
+        return reading(texts.answer(SharedString::from(id.to_owned()), item, text, cx));
     }
     let theme = cx.theme();
     let (border, surface) = (theme.border, theme.muted);
@@ -39,7 +44,7 @@ pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
     for (index, block) in blocks.into_iter().enumerate() {
         let key = SharedString::from(format!("{id}-{index}"));
         column = column.child(match block {
-            Block::Text(text) => reading(links::answer(key, text)),
+            Block::Text(text) => reading(texts.answer(key, item, &text, cx)),
             Block::Card { url, text } => div()
                 .flex()
                 .flex_row()
@@ -61,7 +66,12 @@ pub fn render(id: &str, text: &str, cx: &App) -> AnyElement {
                                 .object_fit(ObjectFit::Cover),
                         ),
                 )
-                .child(div().flex_1().min_w_0().child(links::answer(key, text)))
+                .child(
+                    div()
+                        .flex_1()
+                        .min_w_0()
+                        .child(texts.answer(key, item, &text, cx)),
+                )
                 .into_any_element(),
         });
     }

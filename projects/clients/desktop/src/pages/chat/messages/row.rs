@@ -21,7 +21,7 @@ use super::{
 };
 
 use crate::{
-    pages::chat::{links, transcript::Item},
+    pages::chat::transcript::Item,
     ui::{Type, clipboard},
     workspace::Workspace,
 };
@@ -124,9 +124,11 @@ impl Workspace {
                                             .border_1()
                                             .border_color(accent.opacity(0.16))
                                             // Selectable like the answers; pastes and files show as labels.
-                                            .child(links::markdown(
+                                            .child(self.texts.message(
                                                 SharedString::from(format!("user-{key}")),
-                                                user_text(text),
+                                                at,
+                                                &user_text(text),
+                                                cx,
                                             )),
                                     )
                                 },
@@ -162,7 +164,9 @@ impl Workspace {
                         if !text.is_empty() {
                             answer = answer.child(crate::pages::chat::media::render(
                                 &format!("answer-{key}"),
+                                at,
                                 text,
+                                &mut self.texts,
                                 cx,
                             ));
                             let (copied, spoken) = (text.clone(), text.clone());
