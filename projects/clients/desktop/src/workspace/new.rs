@@ -97,6 +97,7 @@ impl Workspace {
             shelf: Shelf::Connectors,
             shelf_search,
             shelf_scroll: ScrollHandle::new(),
+            todo_done_open: false,
             folded: Right::folded_from(crate::ui::theme::prefs(cx).right_folded.as_deref()),
             modal: None,
             settings_page: SettingsPage::Ai,

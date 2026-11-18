@@ -161,6 +161,8 @@ pub struct Workspace {
     pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
+    /// The todo module shows its finished tasks; they are folded away by default.
+    pub todo_done_open: bool,
     pub modal: Option<Modal>,
     pub settings_page: SettingsPage,
     pub ai_tab: crate::pages::settings::ai::Tab,
