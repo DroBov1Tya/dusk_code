@@ -48,17 +48,31 @@ async fn run(program: &str, dir: &Path, args: &[&str]) -> Result<git::Output> {
     git::finish(command, LIMIT).await
 }
 
-/// Untrusted text as plain text: control characters out, capped.
+/// Untrusted text as plain text: control and direction-changing characters out, capped.
 pub(super) fn plain(text: &str, max: usize) -> String {
     let mut out: String = text
         .chars()
-        .filter(|c| !c.is_control() || *c == '\n')
+        .filter(|c| (!c.is_control() || *c == '\n') && !is_bidi(*c))
         .take(max)
         .collect();
     if text.chars().count() > max {
         out.push_str("...");
     }
     out
+}
+
+/// Marks that reorder text on screen, so a name could show other than it reads.
+fn is_bidi(c: char) -> bool {
+    matches!(c, '\u{061c}' | '\u{200e}' | '\u{200f}' | '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}')
+}
+
+/// Unix seconds of a time GitHub gives, such as `2026-11-18T12:07:21Z`; `None` for
+/// anything else, and for the zero time it gives a check not started.
+pub(super) fn time(text: &str) -> Option<i64> {
+    chrono::DateTime::parse_from_rfc3339(text)
+        .ok()
+        .map(|time| time.timestamp())
+        .filter(|seconds| *seconds > 0)
 }
 
 /// An https link to GitHub, or nothing.

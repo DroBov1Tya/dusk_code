@@ -27,10 +27,38 @@ pub struct PullRequest {
     pub url: String,
 }
 
+/// Where one check stands, finer than `CheckState`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CheckStage {
+    Queued,
+    Running,
+    Passed,
+    Skipped,
+    Failed,
+}
+
+impl CheckStage {
+    pub fn state(self) -> CheckState {
+        match self {
+            CheckStage::Queued | CheckStage::Running => CheckState::Pending,
+            CheckStage::Passed | CheckStage::Skipped => CheckState::Passing,
+            CheckStage::Failed => CheckState::Failing,
+        }
+    }
+}
+
+/// One check of a pull request; text plain and capped by the core.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Check {
     pub name: String,
-    pub state: CheckState,
+    /// The workflow it runs in; empty when GitHub names none.
+    pub workflow: String,
+    pub stage: CheckStage,
+    /// Its page, https only; empty when GitHub gave none that is safe.
+    pub url: String,
+    /// Unix seconds; `None` when not known.
+    pub started: Option<i64>,
+    pub finished: Option<i64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,13 +81,16 @@ pub enum PullState {
 
 /// A pull request's checks counted. `state` is the worst of them: failing over
 /// running over passing; `None` when there are none.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Checks {
     pub total: u32,
     pub passed: u32,
     pub failed: u32,
     pub running: u32,
     pub state: Option<CheckState>,
+    /// The checks themselves: failed first, then running, queued, passed and skipped;
+    /// capped, so `total` may count more.
+    pub list: Vec<Check>,
 }
 
 /// One pull request as the repository status shows it; text plain and capped.
@@ -70,8 +101,15 @@ pub struct PullStatus {
     pub state: PullState,
     /// The head branch.
     pub branch: String,
+    /// The author's login; empty when GitHub gave none.
+    pub author: String,
+    /// Unix seconds; `None` when not known.
+    pub created: Option<i64>,
+    pub updated: Option<i64>,
     pub added: u64,
     pub removed: u64,
+    /// How many files it changes; `None` when not known.
+    pub files: Option<u64>,
     /// The page on GitHub, https only; empty when GitHub gave none that is safe.
     pub url: String,
     pub checks: Checks,
@@ -84,6 +122,8 @@ pub struct PullStatus {
 pub struct RepositoryStatus {
     /// The name of the repository's top folder; empty outside a repository.
     pub repository: String,
+    /// `owner/repo` of `origin` when it is on github.com; `None` otherwise.
+    pub github: Option<String>,
     /// `None` on a detached head or outside a repository.
     pub branch: Option<String>,
     /// Lines added and removed in the work tree against the last commit.
@@ -102,4 +142,54 @@ pub struct PullSummary {
     pub pulls: Vec<PullStatus>,
     /// The worst checks state of them all; `None` when none has checks.
     pub checks: Option<CheckState>,
+}
+
+/// The number of the pull request `url` points to when it is one of `github`'s, the
+/// `owner/repo` of a project; `None` for any other page, host or repository.
+pub fn pull_number(url: &str, github: &str) -> Option<u64> {
+    let path = url.strip_prefix("https://github.com/")?;
+    let (repository, rest) = path.split_at_checked(github.len())?;
+    let rest = rest.strip_prefix("/pull/")?;
+    let end = rest.find(['/', '#', '?']).unwrap_or(rest.len());
+    let (digits, _) = rest.split_at(end);
+    let own = !github.is_empty() && repository.eq_ignore_ascii_case(github);
+    let number = (digits.len() <= 12 && digits.bytes().all(|b| b.is_ascii_digit()))
+        .then(|| digits.parse::<u64>().ok())
+        .flatten()
+        .filter(|number| *number > 0);
+    number.filter(|_| own)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pull_number;
+
+    #[test]
+    fn only_a_link_to_the_projects_own_pull_request_has_a_number() {
+        let own = "DroBov1Tya/dusk_code";
+        let base = "https://github.com/DroBov1Tya/dusk_code/pull";
+        assert_eq!(pull_number(&format!("{base}/13"), own), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13/files"), own), Some(13));
+        assert_eq!(pull_number(&format!("{base}/13#top"), own), Some(13));
+        assert_eq!(
+            pull_number("https://github.com/drobov1tya/DUSK_CODE/pull/7", own),
+            Some(7)
+        );
+        for other in [
+            "https://github.com/someone/else/pull/13".to_owned(),
+            "https://github.com/DroBov1Tya/dusk_code_fork/pull/13".to_owned(),
+            "https://github.com/DroBov1Tya/dusk/pull/13".to_owned(),
+            "http://github.com/DroBov1Tya/dusk_code/pull/13".to_owned(),
+            "https://github.com.evil.com/DroBov1Tya/dusk_code/pull/13".to_owned(),
+            "https://gitlab.com/DroBov1Tya/dusk_code/pull/13".to_owned(),
+            format!("{base}/"),
+            format!("{base}/0"),
+            format!("{base}/12a"),
+            format!("{base}/99999999999999999999"),
+            "https://github.com/DroBov1Tya/dusk_code/issues/13".to_owned(),
+        ] {
+            assert_eq!(pull_number(&other, own), None, "{other}");
+        }
+        assert_eq!(pull_number(&format!("{base}/13"), ""), None);
+    }
 }

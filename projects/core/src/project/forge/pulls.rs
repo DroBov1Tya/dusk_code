@@ -2,10 +2,12 @@
 //! a new one from the current branch.
 
 use anyhow::{Context, Result, bail};
-use dusk_protocol::project::{Check, CheckState, Project, PullRequest, PullRequestDetail};
+use dusk_protocol::project::{
+    Check, CheckStage, CheckState, Project, PullRequest, PullRequestDetail,
+};
 use serde::Deserialize;
 
-use super::gh::{PROGRAM, gh, link, plain};
+use super::gh::{PROGRAM, gh, link, plain, time};
 use crate::project::git;
 
 const MAX_TITLE_CHARS: usize = 300;
@@ -71,10 +73,7 @@ async fn view_of(project: &Project, number: Option<u64>) -> Result<PullRequestDe
         .status_check_rollup
         .iter()
         .take(MAX_LISTED)
-        .map(|check| Check {
-            name: plain(check.name(), MAX_TITLE_CHARS),
-            state: check.state(),
-        })
+        .map(RawCheck::shown)
         .collect();
     let state = plain(&raw.state, 20);
     let body = plain(&raw.body, MAX_BODY_CHARS);
@@ -120,8 +119,10 @@ struct RawAuthor {
     login: String,
 }
 
-/// A check run (`name`, `status`, `conclusion`) or a commit status (`context`, `state`).
+/// A check run (`name`, `status`, `conclusion`, `detailsUrl`) or a commit status
+/// (`context`, `state`, `targetUrl`).
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(super) struct RawCheck {
     #[serde(default)]
     name: String,
@@ -133,6 +134,16 @@ pub(super) struct RawCheck {
     conclusion: String,
     #[serde(default)]
     state: String,
+    #[serde(default)]
+    workflow_name: String,
+    #[serde(default)]
+    details_url: String,
+    #[serde(default)]
+    target_url: String,
+    #[serde(default)]
+    started_at: String,
+    #[serde(default)]
+    completed_at: String,
 }
 
 impl RawCheck {
@@ -145,6 +156,10 @@ impl RawCheck {
     }
 
     pub(super) fn state(&self) -> CheckState {
+        self.stage().state()
+    }
+
+    pub(super) fn stage(&self) -> CheckStage {
         let failed = [
             "FAILURE",
             "CANCELLED",
@@ -153,14 +168,35 @@ impl RawCheck {
             "ERROR",
             "STARTUP_FAILURE",
         ];
-        if failed.contains(&self.conclusion.as_str()) || failed.contains(&self.state.as_str()) {
-            CheckState::Failing
-        } else if self.state == "SUCCESS"
-            || (self.status == "COMPLETED" && !self.conclusion.is_empty())
-        {
-            CheckState::Passing
+        let waiting = ["QUEUED", "WAITING", "PENDING", "REQUESTED"];
+        let (status, conclusion) = (self.status.as_str(), self.conclusion.as_str());
+        if failed.contains(&conclusion) || failed.contains(&self.state.as_str()) {
+            CheckStage::Failed
+        } else if conclusion == "SKIPPED" || conclusion == "NEUTRAL" {
+            CheckStage::Skipped
+        } else if self.state == "SUCCESS" || (status == "COMPLETED" && !conclusion.is_empty()) {
+            CheckStage::Passed
+        } else if waiting.contains(&status) || self.state == "EXPECTED" {
+            CheckStage::Queued
         } else {
-            CheckState::Pending
+            CheckStage::Running
+        }
+    }
+
+    /// The check as shown: its text plain and on one line, its link https only.
+    pub(super) fn shown(&self) -> Check {
+        let url = if self.details_url.is_empty() {
+            &self.target_url
+        } else {
+            &self.details_url
+        };
+        Check {
+            name: plain(self.name(), MAX_TITLE_CHARS).replace('\n', " "),
+            workflow: plain(&self.workflow_name, 200).replace('\n', " "),
+            stage: self.stage(),
+            url: link(url),
+            started: time(&self.started_at),
+            finished: time(&self.completed_at),
         }
     }
 }

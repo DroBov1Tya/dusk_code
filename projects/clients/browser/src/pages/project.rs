@@ -7,7 +7,7 @@ use crate::{
     ui::{Icon, IconName, Section, confirm, run},
 };
 use dusk_protocol::project::{
-    CheckState, FileDiff, FileEntry, GitInfo, Project, PullState, PullStatus,
+    Check, CheckStage, CheckState, FileDiff, FileEntry, GitInfo, Project, PullState, PullStatus,
 };
 use leptos::prelude::*;
 
@@ -244,7 +244,32 @@ fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
             <span class="muted">{format!("{repository} #{}", pull.number)}</span>
             <span class="add">{format!("+{}", pull.added)}</span>
             <span class="del">{format!("\u{2212}{}", pull.removed)}</span>
-            {dot.map(|dot| view! { <span class=dot title=checks></span> })}
+            {dot.map(|dot| view! { <span class=dot title=checks.clone()></span> })}
+            {(!pull.checks.list.is_empty()).then(|| view! {
+                <details class="pull-checks">
+                    <summary class="muted">{checks.clone()}</summary>
+                    <ul>{pull.checks.list.iter().map(check_row).collect_view()}</ul>
+                </details>
+            })}
+        </li>
+    }
+}
+
+/// One check, failed ones first as the core orders them; its page opens in a new tab.
+fn check_row(check: &Check) -> impl IntoView + use<> {
+    let (tone, word) = match check.stage {
+        CheckStage::Failed => ("tone-danger", "failed"),
+        CheckStage::Running => ("tone-warning", "running"),
+        CheckStage::Queued => ("tone-neutral", "queued"),
+        CheckStage::Passed => ("tone-success", "passed"),
+        CheckStage::Skipped => ("tone-neutral", "skipped"),
+    };
+    let url = Some(check.url.clone()).filter(|url| url.starts_with("https://"));
+    view! {
+        <li>
+            <span class=format!("tone {tone}")>{word}</span>
+            <a href=url target="_blank" rel="noopener noreferrer">{check.name.clone()}</a>
+            <span class="muted">{check.workflow.clone()}</span>
         </li>
     }
 }
