@@ -83,7 +83,11 @@ pub async fn list(
         .chain(listing::local(paths, &record))
         .collect();
     listing::mark_clashes(&mut listings);
-    listings.retain(|listing| category.is_none_or(|category| listing.category == category));
+    listings.retain(|listing| {
+        category.is_none_or(|category| {
+            listing.category == category || listing.categories.iter().any(|item| item == category)
+        })
+    });
     listing::sort(&mut listings, order);
     let picks = listing::picks(&listings);
     Ok(StoreList {
