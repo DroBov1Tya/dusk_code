@@ -3,6 +3,7 @@
 //! git and files, and the chat's todo list, subagents and background jobs. Each module
 //! folds on its header.
 
+pub mod checks;
 pub mod context;
 mod environment;
 mod files;

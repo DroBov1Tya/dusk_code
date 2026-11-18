@@ -10,10 +10,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use dusk_protocol::project::{CheckState, PullState, PullSummary, RepositoryStatus};
+use dusk_protocol::project::{CheckState, PullState, PullStatus, PullSummary, RepositoryStatus};
 use parking_lot::Mutex;
 
-use super::status::Reading;
+use super::{
+    lookup::{Look, Lookups},
+    status::Reading,
+};
 
 /// How often the server asks what is due.
 pub const PERIOD: Duration = Duration::from_secs(5);
@@ -36,6 +39,8 @@ struct Inner {
     projects: HashMap<String, Tracked>,
     /// Each client watches one project: the one it last asked the status of.
     watchers: HashMap<u64, String>,
+    /// Single pull requests read for the cards of links in chats.
+    lookups: Lookups,
 }
 
 struct Tracked {
@@ -79,6 +84,27 @@ impl Tracker {
         Some(status)
     }
 
+    /// Pull request `number` of `project_id`: at hand when its status lists it or it
+    /// was read lately; otherwise read, by the asker or by the one already reading it.
+    pub fn look_up(&self, project_id: &str, number: u64) -> Look {
+        let mut inner = self.0.lock();
+        let listed = inner
+            .projects
+            .get(project_id)
+            .and_then(|tracked| tracked.status.as_ref())
+            .and_then(|status| status.pulls.iter().find(|pull| pull.number == number));
+        if let Some(pull) = listed {
+            return Look::Known(Some(Box::new(pull.clone())));
+        }
+        inner.lookups.look(project_id, number, Instant::now())
+    }
+
+    /// The read `look_up` asked for ended.
+    pub fn looked_up(&self, project_id: &str, number: u64, pull: Option<PullStatus>) {
+        let mut inner = self.0.lock();
+        inner.lookups.done(project_id, number, pull, Instant::now());
+    }
+
     /// The client is gone; what it watched is no longer read for it.
     pub fn forget(&self, client: u64) {
         self.0.lock().watchers.remove(&client);
@@ -107,7 +133,9 @@ impl Tracker {
     pub fn due(&self) -> Vec<String> {
         let now = Instant::now();
         let mut inner = self.0.lock();
-        let Inner { projects, watchers } = &mut *inner;
+        let Inner {
+            projects, watchers, ..
+        } = &mut *inner;
         let mut picked = Vec::new();
         let mut unwatched = false;
         for (id, tracked) in projects.iter_mut() {
@@ -233,8 +261,12 @@ mod tests {
             title: "t".to_owned(),
             state: PullState::Open,
             branch: "b".to_owned(),
+            author: String::new(),
+            created: None,
+            updated: None,
             added: 0,
             removed: 0,
+            files: None,
             url: String::new(),
             checks: Checks {
                 total: running,

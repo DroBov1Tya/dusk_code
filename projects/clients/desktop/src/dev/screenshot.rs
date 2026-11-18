@@ -31,8 +31,9 @@
 //! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
 //!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
 //!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
-//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, and a chat
-//!   of the chosen project in the sidebar with their icon;
+//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, the first
+//!   with its checks unfolded, a chat of the chosen project in the sidebar with their
+//!   icon, and a chat that links two of them, drawn as chips;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
 //!   menu; `fake=sentpicture`: a user's message with a picture thumbnail under it;
@@ -903,20 +904,34 @@ pub(super) fn demo_png() -> Vec<u8> {
 /// Pull requests in every state, for the Changes module and a chat row's icon.
 fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     use dusk_protocol::project::{
-        CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary, RepositoryStatus,
+        Check, CheckStage, CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary,
+        RepositoryStatus,
     };
     let Some(project) = ws.selected_project().cloned() else {
         return;
     };
+    let now = crate::columns::inspector::checks::now();
     let pull = |number, title: &str, state, checks: Checks| PullStatus {
         number,
         title: title.to_owned(),
         state,
         branch: "pr-status".to_owned(),
+        author: "octo-dev".to_owned(),
+        created: Some(now - 4 * 3600 - 60 * number as i64),
+        updated: Some(now - 600),
         added: 10 * number,
         removed: 7 * number,
+        files: Some(number),
         url: format!("https://github.com/example/repo/pull/{number}"),
         checks,
+    };
+    let check = |name: &str, stage, started: i64, finished: Option<i64>| Check {
+        name: name.to_owned(),
+        workflow: "ci".to_owned(),
+        stage,
+        url: "https://github.com/example/repo/actions/runs/1".to_owned(),
+        started: Some(now - started),
+        finished: finished.map(|ago| now - ago),
     };
     let checks = |passed, running, failed, state| Checks {
         total: passed + running + failed,
@@ -924,6 +939,24 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
         running,
         failed,
         state: Some(state),
+        list: vec![
+            check(
+                "check (x86_64-unknown-linux-gnu)",
+                CheckStage::Running,
+                192,
+                None,
+            ),
+            check(
+                "check (aarch64-apple-darwin)",
+                CheckStage::Running,
+                75,
+                None,
+            ),
+            check("web", CheckStage::Queued, 0, None),
+            check("fmt", CheckStage::Passed, 400, Some(380)),
+            check("deny", CheckStage::Passed, 400, Some(360)),
+            check("changes", CheckStage::Skipped, 400, Some(398)),
+        ],
     };
     let pulls = vec![
         pull(
@@ -960,8 +993,10 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             checks: Some(CheckState::Pending),
         },
     );
+    ws.open_checks.insert(12);
     ws.repository = Some(RepositoryStatus {
         repository: "dusk_code".to_owned(),
+        github: Some("example/repo".to_owned()),
         branch: Some("pr-status".to_owned()),
         stat: DiffStat {
             files: 23,
@@ -998,5 +1033,24 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             temporary: false,
         },
     );
+    crate::pages::chat::pull_link::show(ws, cx);
+    let mut chat = crate::pages::chat::transcript::Transcript::default();
+    chat.items = vec![
+        crate::pages::chat::transcript::Item::User {
+            text: "Where is https://github.com/example/repo/pull/12 now?".into(),
+            sequence: Some(1),
+        },
+        crate::pages::chat::transcript::Item::Assistant {
+            text: "It is open: https://github.com/example/repo/pull/12 builds on \
+                   https://github.com/example/repo/pull/9, which is merged. A fork has its own, \
+                   https://github.com/someone/fork/pull/3, which stays a plain link."
+                .into(),
+            reasoning: String::new(),
+        },
+    ];
+    let thread_id = ws.shown.clone().unwrap_or_else(|| "shot".to_owned());
+    ws.chats.insert(thread_id.clone(), chat);
+    ws.shown = Some(thread_id);
+    ws.center = crate::workspace::Center::Chat;
     cx.notify();
 }

@@ -8,7 +8,7 @@ use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
     Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile,
-    Project, PullRequest, PullRequestDetail, PullSummary, RepositoryStatus, Schedule,
+    Project, PullRequest, PullRequestDetail, PullStatus, PullSummary, RepositoryStatus, Schedule,
 };
 use crate::system::SystemReport;
 use crate::thread::{
@@ -71,6 +71,8 @@ pub enum Response {
     PullRequests(Vec<PullRequest>),
     PullRequest(Box<PullRequestDetail>),
     RepositoryStatus(Box<RepositoryStatus>),
+    /// `None` when the repository has no such pull request or GitHub cannot be asked.
+    PullStatus(Option<Box<PullStatus>>),
     PullSummaries(Vec<PullSummary>),
     Diff(Vec<FileDiff>),
     Files(Vec<FileEntry>),

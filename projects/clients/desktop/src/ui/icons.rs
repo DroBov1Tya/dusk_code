@@ -69,6 +69,16 @@ pub const GIT_PULL_DRAFT: &str = "icons/dusk/git-pull-request-draft.svg";
 pub const GIT_PULL_CLOSED: &str = "icons/dusk/git-pull-request-closed.svg";
 pub const GIT_MERGE: &str = "icons/dusk/git-merge.svg";
 
+/// A check waiting to start, and one skipped.
+pub const CHECK_QUEUED: &str = "icons/dusk/circle-dashed.svg";
+pub const CHECK_SKIPPED: &str = "icons/dusk/circle-minus.svg";
+
+const CHECK_QUEUED_SVG: &[u8] = lucide!(
+    r#"<path d="M10.1 2.182a10 10 0 0 1 3.8 0" /><path d="M13.9 21.818a10 10 0 0 1-3.8 0" /><path d="M17.609 3.721a10 10 0 0 1 2.69 2.7" /><path d="M2.182 13.9a10 10 0 0 1 0-3.8" /><path d="M20.279 17.609a10 10 0 0 1-2.7 2.69" /><path d="M21.818 10.1a10 10 0 0 1 0 3.8" /><path d="M3.721 6.391a10 10 0 0 1 2.7-2.69" /><path d="M6.391 20.279a10 10 0 0 1-2.69-2.7" />"#
+);
+const CHECK_SKIPPED_SVG: &[u8] =
+    lucide!(r#"<circle cx="12" cy="12" r="10" /><path d="M8 12h8" />"#);
+
 const GIT_PULL_SVG: &[u8] = lucide!(
     r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><line x1="6" x2="6" y1="9" y2="21" />"#
 );
@@ -188,6 +198,8 @@ impl AssetSource for Assets {
             GIT_BRANCH => return Ok(Some(Cow::Borrowed(GIT_BRANCH_SVG))),
             GIT_COMPARE => return Ok(Some(Cow::Borrowed(GIT_COMPARE_SVG))),
             GIT_PULL => return Ok(Some(Cow::Borrowed(GIT_PULL_SVG))),
+            CHECK_QUEUED => return Ok(Some(Cow::Borrowed(CHECK_QUEUED_SVG))),
+            CHECK_SKIPPED => return Ok(Some(Cow::Borrowed(CHECK_SKIPPED_SVG))),
             GIT_PULL_DRAFT => return Ok(Some(Cow::Borrowed(GIT_PULL_DRAFT_SVG))),
             GIT_PULL_CLOSED => return Ok(Some(Cow::Borrowed(GIT_PULL_CLOSED_SVG))),
             GIT_MERGE => return Ok(Some(Cow::Borrowed(GIT_MERGE_SVG))),
