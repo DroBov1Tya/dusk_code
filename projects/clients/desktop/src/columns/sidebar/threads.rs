@@ -249,6 +249,7 @@ impl Workspace {
         self.plan.editing = false;
         self.refresh_inspector(cx);
         self.load_plan(cx);
+        self.load_plan_counts(cx);
         self.touched.clear();
         self.load_touched(cx);
         cx.notify();

@@ -8,6 +8,7 @@ pub mod code;
 mod commands;
 pub mod composer;
 pub mod dictation;
+pub mod dock;
 mod fireflies;
 pub mod links;
 mod media;
@@ -86,7 +87,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .children(fireflies::render(ws, cx))
                 .children(to_bottom(ws, cx)),
         )
+        .children(dock::plan_strip(ws, cx))
         .child(approval::render(ws, cx))
+        .children(dock::views_tab(ws, window, cx))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))
 }

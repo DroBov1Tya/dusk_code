@@ -64,6 +64,7 @@ impl Workspace {
                 self.notify_event(&thread_id, &event, cx);
                 self.watch_plan(&thread_id, &event, cx);
                 self.overview_heard(&thread_id, &event, cx);
+                self.plan_heard(&thread_id, &event, cx);
                 if matches!(*event, dusk_protocol::thread::ThreadEvent::Tokens { .. }) {
                     self.context_counted(&thread_id, cx);
                 }

@@ -516,6 +516,7 @@ impl Transcript {
                 self.tokens = Some((used, input_limit));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::TaskChanged(task) => task_changed(&mut self.tasks, task),
             ThreadEvent::SubagentStarted {
                 call_id,
                 thread_id,
@@ -778,4 +779,12 @@ fn tool(call: &dusk_protocol::model::ToolCall, state: ToolState) -> Tool {
             .collect();
     }
     tool
+}
+
+/// A task the core moved: it takes its place on the board, or joins it at the end.
+fn task_changed(tasks: &mut Vec<Task>, task: Task) {
+    match tasks.iter_mut().find(|known| known.task_id == task.task_id) {
+        Some(known) => *known = task,
+        None => tasks.push(task),
+    }
 }
