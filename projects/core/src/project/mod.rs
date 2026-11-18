@@ -6,6 +6,7 @@ mod edit;
 pub mod env;
 mod files;
 mod git;
+pub mod graph;
 pub mod ledger;
 mod outputs;
 pub mod schedule;

@@ -66,6 +66,9 @@ getrandom = "0.3"
 aws-lc-rs = "1"
 subtle = "2.6"
 rust-embed = "8"
+# The project graph's parsers: C code that reads project files nobody vetted, so exact.
+tree-sitter = "=0.27.2"
+tree-sitter-rust = "=0.24.2"
 dusk_server = { path = "projects/server" }
 dusk_core = { path = "projects/core" }
 dusk_protocol = { path = "projects/protocol" }
