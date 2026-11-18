@@ -182,10 +182,12 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
     assert!(!plain.limits().shrink_context);
     assert!(!plain.limits().read_many_files && plain.limits().parallel_reads);
     assert!(!plain.limits().stable_prefix);
+    assert!(plain.limits().record_changes);
     let set = parse(
-        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: true\n  stable_prefix: true\n",
+        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: true\n  stable_prefix: true\n  record_changes: false\n",
     )
     .unwrap();
+    assert!(!set.limits().record_changes);
     assert!(!set.limits().wait_for_provider);
     assert!(set.limits().shrink_context);
     let reads = parse("limits:\n  read_many_files: true\n  parallel_reads: false\n").unwrap();
@@ -208,6 +210,7 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
         "limits:\n  read_many_files: 1\n",
         "limits:\n  parallel_reads: sometimes\n",
         "limits:\n  stable_prefix: 1\n",
+        "limits:\n  record_changes: sometimes\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }

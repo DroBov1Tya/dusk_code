@@ -187,6 +187,15 @@ impl Runtime {
         launcher.state.thread_files(thread_id).await
     }
 
+    /// The thread's change ledger, newest first, capped.
+    pub async fn file_changes(
+        &self,
+        thread_id: &str,
+    ) -> Result<Vec<dusk_protocol::project::FileChange>> {
+        let launcher = self.of(thread_id).await;
+        launcher.state.thread_changes(thread_id).await
+    }
+
     /// The background jobs of a thread, oldest first.
     pub async fn jobs(&self, thread_id: &str) -> Result<Vec<JobInfo>> {
         let launcher = self.of(thread_id).await;

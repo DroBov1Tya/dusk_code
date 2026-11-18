@@ -63,4 +63,9 @@ pub enum WorkRequest {
     ChangedFiles {
         thread_id: String,
     },
+    /// What the chat's commands changed in its project, file by file with diffs, newest
+    /// first, at most `MAX_FILE_CHANGES`.
+    FileChanges {
+        thread_id: String,
+    },
 }

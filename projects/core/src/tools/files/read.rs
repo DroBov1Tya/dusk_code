@@ -2,12 +2,15 @@
 //! flood the context.
 
 use anyhow::{Result, bail, ensure};
+use std::path::Path;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
 use crate::{
     BoxFuture,
+    project::ledger::{self, Stamp},
     tools::{
         registry::MAX_RESULT_BYTES,
         schema,
@@ -102,7 +105,17 @@ impl Tool for ReadFile {
             let arguments: ReadArguments = parse_arguments(arguments)?;
             match (&arguments.path, &arguments.paths) {
                 (Some(path), None) => {
-                    let text = read_text(&context.resolve(path, false).await?).await?;
+                    let path = context.resolve(path, false).await?;
+                    // Taken before the read: a write in between leaves a stamp the text
+                    // does not match, so the text is never used as a "before" it was not.
+                    let stamp = tokio::fs::symlink_metadata(&path)
+                        .await
+                        .ok()
+                        .and_then(|meta| Stamp::from_metadata(&meta));
+                    let text = read_text(&path).await?;
+                    if let Some(stamp) = stamp {
+                        keep_seen(&context, &path, stamp, &text);
+                    }
                     Ok(window(&text, arguments.offset, arguments.limit))
                 }
                 (None, Some(paths)) => {
@@ -211,6 +224,23 @@ fn section(text: &str, allowance: usize) -> String {
         out.push_str("\n[cut; read this file alone with path]");
     }
     out
+}
+
+/// Keeps the text of a project file as the "before" of its next change, for the ledger.
+fn keep_seen(context: &ToolContext, path: &Path, stamp: Stamp, text: &str) {
+    if !context.config.limits().record_changes {
+        return;
+    }
+    let Some(relative) = path
+        .strip_prefix(context.scope.cwd())
+        .ok()
+        .and_then(Path::to_str)
+    else {
+        return;
+    };
+    if ledger::may_keep_text(relative) {
+        ledger::seen::remember(path, stamp, text);
+    }
 }
 
 /// The lines from `offset` (1-based), at most `limit` of them and `MAX_BYTES` in all,

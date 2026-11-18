@@ -4,7 +4,7 @@ use super::{Client, unexpected};
 use anyhow::Result;
 use dusk_protocol::{
     client::{Request, Response, WorkRequest},
-    project::{Change, FileDiff},
+    project::{Change, FileChange, FileDiff},
     thread::JobInfo,
 };
 
@@ -58,6 +58,19 @@ impl Work<'_> {
             .await?
         {
             Response::Changes(changes) => Ok(changes),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// What the chat's commands changed in its project, newest first, with diffs.
+    pub async fn file_changes(&self, thread_id: &str) -> Result<Vec<FileChange>> {
+        let thread_id = thread_id.to_owned();
+        match self
+            .0
+            .call(Request::Work(WorkRequest::FileChanges { thread_id }))
+            .await?
+        {
+            Response::FileChanges(changes) => Ok(changes),
             other => Err(unexpected(other)),
         }
     }

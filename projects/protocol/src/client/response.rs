@@ -7,7 +7,8 @@ use crate::catalog::{NodeText, SkillPack};
 use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
-    Change, FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project, Schedule,
+    Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project,
+    Schedule,
 };
 use crate::system::SystemReport;
 use crate::thread::{Found, JobInfo, LocalUnsent, Message, Task, Thread};
@@ -56,6 +57,8 @@ pub enum Response {
     Diff(Vec<FileDiff>),
     Files(Vec<FileEntry>),
     Changes(Vec<Change>),
+    /// A thread's change ledger, newest first.
+    FileChanges(Vec<FileChange>),
     Outputs(Vec<OutputFile>),
     /// A file read for the editor.
     File(FileText),

@@ -307,6 +307,7 @@ mod tests {
         ("agent_state", true, false),
         ("ask_agent", false, false),
         ("ask_user", true, false),
+        ("changes", true, false),
         ("click", false, false),
         ("computer_actions", false, false),
         ("display_audio", true, false),

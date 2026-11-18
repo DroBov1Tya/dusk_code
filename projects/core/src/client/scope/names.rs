@@ -56,6 +56,7 @@ named! {
     R::Work(W::SavePlan { .. }) => "work.save_plan",
     R::Work(W::Diff { .. }) => "work.diff",
     R::Work(W::ChangedFiles { .. }) => "work.changed_files",
+    R::Work(W::FileChanges { .. }) => "work.file_changes",
     R::Settings(S::ContextPolicy(_)) => "settings.context_policy",
     R::Settings(S::MaxAgentsAtWork(_)) => "settings.max_agents_at_work",
     R::Settings(S::IdleScreenMinutes(_)) => "settings.idle_screen_minutes",

@@ -133,6 +133,7 @@ fn work() -> Vec<W> {
             path: None,
         },
         W::ChangedFiles { thread_id: id() },
+        W::FileChanges { thread_id: id() },
     ]
 }
 
