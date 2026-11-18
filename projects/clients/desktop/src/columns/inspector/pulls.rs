@@ -4,7 +4,11 @@
 
 use dusk_protocol::project::{CheckState, Checks, PullState, PullStatus, RepositoryStatus};
 use gpui_kit::{
-    component::{ActiveTheme, Icon},
+    component::{
+        ActiveTheme, Icon, IconName, Sizable,
+        button::{Button, ButtonVariants},
+        hover_card::HoverCard,
+    },
     prelude::FluentBuilder,
     *,
 };
@@ -86,32 +90,123 @@ fn row(status: &RepositoryStatus, pull: &PullStatus, cx: &mut Context<Workspace>
 }
 
 /// A dot for the checks: green passed, yellow and breathing while one runs, red failed;
-/// nothing without checks. Its tooltip counts them.
+/// nothing without checks. Under the pointer it opens a card that counts them by state.
 fn checks_dot(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
     let state = pull.checks.state?;
     let color = check_color(state, cx);
-    let said = checks_said(&pull.checks);
-    let dot = div()
-        .id(("pull-checks", pull.number as usize))
-        .mt_1p5()
-        .size_2()
-        .flex_none()
-        .rounded_full()
-        .bg(color)
-        .tooltip(move |window, cx| {
-            gpui_kit::component::tooltip::Tooltip::new(said.clone()).build(window, cx)
-        });
-    if state != CheckState::Pending {
-        return Some(dot.into_any_element());
-    }
-    Some(
+    let dot = div().size_2().rounded_full().bg(color);
+    let dot = if state == CheckState::Pending {
         dot.with_animation(
             SharedString::from(format!("pull-running-{}", pull.number)),
             Animation::new(std::time::Duration::from_millis(1400)).repeat(),
             |dot, phase| dot.opacity(0.35 + 0.65 * (phase * std::f32::consts::TAU).cos().abs()),
         )
-        .into_any_element(),
+        .into_any_element()
+    } else {
+        dot.into_any_element()
+    };
+    let (checks, url, said) = (
+        pull.checks.clone(),
+        pull.url.clone(),
+        checks_said(&pull.checks),
+    );
+    let number = pull.number as usize;
+    Some(
+        HoverCard::new(("pull-checks-card", number))
+            .anchor(Anchor::TopRight)
+            .open_delay(std::time::Duration::from_millis(150))
+            .trigger(
+                // Wider than the dot, so the pointer finds it; a press on it is the card's,
+                // not the row's, which would open the pull request.
+                div()
+                    .id(("pull-checks", number))
+                    .role(Role::Button)
+                    .aria_label(said)
+                    .flex_none()
+                    .size_5()
+                    .flex()
+                    .items_center()
+                    .justify_center()
+                    .rounded_md()
+                    .child(dot)
+                    .on_click(|_, _, cx| cx.stop_propagation()),
+            )
+            .content(move |_, _, cx| checks_card(number, &checks, &url, cx))
+            // The card pads its own rows; the popover's wide padding made a small list large.
+            .p_1()
+            .into_any_element(),
     )
+}
+
+/// "CI monitoring": a way to the checks' page, then a row for each state that has any.
+fn checks_card(number: usize, checks: &Checks, url: &str, cx: &App) -> Div {
+    let theme = cx.theme();
+    let muted = theme.muted_foreground;
+    let page = format!("{url}/checks");
+    let rows = [
+        (
+            IconName::CircleCheck,
+            "Passed",
+            checks.passed,
+            theme.success,
+        ),
+        (
+            IconName::LoaderCircle,
+            "Running",
+            checks.running,
+            theme.warning,
+        ),
+        (IconName::CircleX, "Failed", checks.failed, theme.danger),
+    ];
+    div()
+        .w(px(208.))
+        .flex()
+        .flex_col()
+        .gap_1()
+        .p_2()
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .pl_1()
+                .child(
+                    div()
+                        .flex_1()
+                        .small()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child("CI monitoring"),
+                )
+                .child(
+                    Button::new(("pull-checks-open", number))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ExternalLink)
+                        .tooltip("Open the checks in the browser")
+                        .on_click(move |_, _, cx| {
+                            cx.stop_propagation();
+                            // The core gives https links only; anything else is not opened.
+                            if page.starts_with("https://") {
+                                cx.open_url(&page);
+                            }
+                        }),
+                ),
+        )
+        .children(rows.into_iter().filter(|(_, _, count, _)| *count > 0).map(
+            |(icon, word, count, color)| {
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap_2()
+                    .h(px(24.))
+                    .px_1()
+                    .small()
+                    .child(widgets::icon(icon, color))
+                    .child(div().flex_1().child(word))
+                    .child(div().text_color(muted).child(count.to_string()))
+            },
+        ))
 }
 
 fn checks_said(checks: &Checks) -> String {
