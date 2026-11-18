@@ -1,6 +1,7 @@
 //! A group of activity folded into one row, and the foldable texts inside it: thoughts,
 //! agent reports, background results.
 
+use crate::ui::press::Press;
 use dusk_protocol::thread::ToolState;
 use gpui_kit::{
     component::{ActiveTheme, Colorize, IconName},
@@ -309,6 +310,7 @@ pub fn disclosure(id: impl Into<ElementId>, open: bool, cx: &App) -> Stateful<Di
         .cursor_pointer()
         .when(open, |row| row.bg(hover))
         .hover(move |row| row.bg(hover))
+        .press(hover, cx)
 }
 
 /// Whether an unfolded text is long enough that its end is far from its heading.

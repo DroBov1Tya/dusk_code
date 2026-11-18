@@ -39,7 +39,8 @@
 //!   `viewer=picture`: the same picture large over the window;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
-//! - `hover=X,Y`: move the pointer to a point of the window;
+//! - `hover=X,Y`: move the pointer to a point of the window; `press=X,Y`: hold the left
+//!   button down there;
 //! - `fake=welcome`: no providers, so the chat page shows the welcome; `welcome=form`: its
 //!   form, as the button opens it; `welcome=address:URL`: type the address in it;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
@@ -145,6 +146,38 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                             });
                         }
                         None => eprintln!("hover=X,Y: {value}"),
+                    }
+                }
+                // The left button held down at a point, with no release: what is under it
+                // shows its pressed look.
+                "press" => {
+                    let at = value
+                        .split_once(',')
+                        .and_then(|(x, y)| Some(point(px(x.parse().ok()?), px(y.parse().ok()?))));
+                    match at {
+                        Some(position) => {
+                            let _ = cx.update_window(window, |_, window, cx| {
+                                window.dispatch_event(
+                                    PlatformInput::MouseMove(MouseMoveEvent {
+                                        position,
+                                        pressed_button: None,
+                                        modifiers: Modifiers::default(),
+                                    }),
+                                    cx,
+                                );
+                                window.dispatch_event(
+                                    PlatformInput::MouseDown(MouseDownEvent {
+                                        button: MouseButton::Left,
+                                        position,
+                                        modifiers: Modifiers::default(),
+                                        click_count: 1,
+                                        first_mouse: false,
+                                    }),
+                                    cx,
+                                );
+                            });
+                        }
+                        None => eprintln!("press=X,Y: {value}"),
                     }
                 }
                 "quit" => break,

@@ -2,6 +2,7 @@
 //! and a compact title with its detail under it in a toolbar, as a device picker is.
 
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use dusk_protocol::plugin::{ListItem, UiEvent};
 use gpui_kit::{
     component::{ActiveTheme, Icon},
@@ -120,6 +121,7 @@ fn boxed_face(key: &Key, id: &str, chosen: Option<&ListItem>, cx: &App) -> State
         .border_color(border)
         .cursor_pointer()
         .hover(move |button| button.bg(hover))
+        .press(hover, cx)
         .child(
             div().flex_1().min_w_0().truncate().body().child(
                 chosen
@@ -155,6 +157,7 @@ fn compact_face(key: &Key, id: &str, chosen: Option<&ListItem>, cx: &App) -> Sta
         .rounded_lg()
         .cursor_pointer()
         .hover(move |button| button.bg(hover))
+        .press(hover, cx)
         .child(
             div()
                 .min_w_0()

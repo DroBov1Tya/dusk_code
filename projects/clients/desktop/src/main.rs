@@ -75,6 +75,7 @@ fn main() -> Result<()> {
             gpui_kit::init(cx);
             workspace::keys::bind(cx);
             platform::icon::set_dock_icon();
+            cx.set_reduce_motion(platform::motion::reduced());
             ui::theme::init(look_file, cx);
             let core = core::Core::new(client, Arc::clone(&runtime), Arc::clone(&hub));
             let options = WindowOptions {

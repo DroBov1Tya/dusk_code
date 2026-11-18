@@ -3,6 +3,7 @@
 //! limits on the right. Open or closed is the window's, never the core's.
 
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName, Sizable},
     *,
@@ -160,6 +161,7 @@ fn folder(ws: &Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> {
         .rounded_md()
         .cursor_pointer()
         .hover(move |link| link.bg(raised))
+        .press(raised, cx)
         .child(Icon::new(IconName::Folder).xsmall().text_color(muted))
         .child(
             div()

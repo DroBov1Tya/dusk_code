@@ -5,6 +5,7 @@
 //! never moves by itself; a change fades in.
 
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use dusk_protocol::plugin::{Kind, Listing, Tier};
 use gpui_kit::{
     component::{
@@ -296,5 +297,6 @@ pub fn round(id: impl Into<ElementId>, icon: IconName, cx: &App) -> Stateful<Div
         .cursor_pointer()
         .bg(back.opacity(0.85))
         .hover(move |arrow| arrow.bg(hover))
+        .press(hover, cx)
         .child(Icon::new(icon).size(px(size::ICON)).text_color(foreground))
 }

@@ -3,6 +3,7 @@
 //! Excerpts are the core's plain text.
 
 use crate::ui::elevation::{Level, shadows};
+use crate::ui::press::Press;
 use std::time::{Duration, Instant};
 
 use dusk_protocol::thread::{MessageRole, Pin};
@@ -80,6 +81,7 @@ pub fn handle(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Di
             .border_color(border)
             .cursor_pointer()
             .hover(move |bar| bar.bg(raised))
+            .press(raised, cx)
             .child(Icon::default().path(icons::PIN).xsmall().text_color(accent))
             .child(
                 div()
@@ -168,6 +170,7 @@ fn list_row(
         .rounded_md()
         .cursor_pointer()
         .hover(move |row| row.bg(raised))
+        .press(raised, cx)
         .child(
             div()
                 .flex_none()

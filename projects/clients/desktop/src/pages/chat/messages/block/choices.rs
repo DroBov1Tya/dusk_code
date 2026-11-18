@@ -6,6 +6,7 @@
 //! round, 32 px, and only they are ever filled or danger coloured. A pill is never either,
 //! whatever its label says, so a model cannot dress one up as an approval.
 
+use crate::ui::press::Press;
 use std::rc::Rc;
 
 use dusk_protocol::thread::Choices;
@@ -139,7 +140,7 @@ pub fn pills(
                 .tab_stop(true)
                 .tab_index(0)
                 .hover(move |pill| pill.bg(raised))
-                .active(move |pill| pill.bg(pressed))
+                .press(pressed, cx)
                 .focus_visible(move |pill| pill.border_color(ring).shadow(focus))
                 // Left and Right move along the row and stop at its ends.
                 .on_key_down(cx.listener(move |_, event: &KeyDownEvent, window, cx| {

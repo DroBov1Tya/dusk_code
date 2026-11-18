@@ -3,6 +3,7 @@
 //! and a pin. Few plugins start unfolded, many folded, and a search unfolds what it finds.
 
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use std::time::{Duration, Instant};
 
 use dusk_protocol::plugin::{Part, Place};
@@ -165,6 +166,7 @@ fn row(ws: &Workspace, part: &Part, cx: &mut Context<Workspace>) -> Stateful<Div
             .rounded_md()
             .cursor_pointer()
             .hover(move |pin| pin.bg(hover))
+            .press(hover, cx)
             .tooltip(move |window, cx| Tooltip::new(tip).build(window, cx))
             .child(
                 Icon::default()

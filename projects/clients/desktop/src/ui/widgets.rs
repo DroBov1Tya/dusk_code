@@ -2,6 +2,7 @@
 
 use crate::ui::Type;
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{ActiveTheme, Icon},
     prelude::FluentBuilder,
@@ -35,7 +36,7 @@ pub fn row(id: impl Into<ElementId>, active: bool, cx: &App) -> Stateful<Div> {
         .cursor_pointer()
         .when(active, |row| row.bg(selected))
         .hover(move |row| row.bg(hover))
-        .active(move |row| row.bg(selected))
+        .press(selected, cx)
         .focusable_row(cx)
 }
 
@@ -56,7 +57,7 @@ pub fn menu_item(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
-        .active(move |row| row.bg(hover.opacity(0.7)))
+        .press(hover.opacity(0.7), cx)
         .focusable_row(cx)
 }
 

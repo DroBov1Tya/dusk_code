@@ -1,6 +1,7 @@
 //! One file as a tile: a thumbnail or an icon, its name, folder and size.
 
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use dusk_protocol::project::{OutputFile, OutputKind, OutputPreview};
 use gpui_kit::{
     component::{
@@ -82,6 +83,7 @@ pub fn card(index: usize, file: &OutputFile, cx: &mut Context<Workspace>) -> Sta
         .overflow_hidden()
         .cursor_pointer()
         .hover(move |card| card.bg(raised))
+        .press(raised, cx)
         .child(
             if image {
                 div().w_full().h(px(108.)).bg(theme.background)

@@ -30,6 +30,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `fake=mcp` | five connectors, one of each state, in the place of the config's |
 | `open=pins\|plan\|panel\|done`, `scroll=N`, `right=lower` | the pins drawer, the plan's rows, the composer's panel, the Todo's finished tasks; the transcript from its Nth row; the right column with its tall upper modules folded |
 | `hover=X,Y` | moves the pointer to a point of the window, for what shows only under it (the composer's tab, the checks card of a pull request) |
+| `press=X,Y` | holds the left button down at a point, for the pressed look of what is under it |
 | `select=ROW:FROM-TO` | selects cells of a row of the shown terminal |
 | `sidebar=project\|recent` | lists the chats under their projects, or all by last activity |
 | `size=WxH` | resizes the window, as a drag of its edge would |

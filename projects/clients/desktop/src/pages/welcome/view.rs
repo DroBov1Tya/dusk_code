@@ -1,5 +1,6 @@
 //! The welcome drawn: the greeting with its one large button, then the two boxes.
 
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{
         ActiveTheme, Disableable, Sizable,
@@ -59,6 +60,7 @@ fn intro(cx: &mut Context<Workspace>) -> Div {
         .rounded_xl()
         .bg(primary)
         .hover(|button| button.bg(hover))
+        .press(hover, cx)
         .cursor_pointer()
         .text_color(on_primary)
         .child(

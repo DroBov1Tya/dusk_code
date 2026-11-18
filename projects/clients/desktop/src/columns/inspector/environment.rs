@@ -3,6 +3,7 @@
 
 use crate::ui::Type;
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName},
     *,
@@ -42,6 +43,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .id("environment-path")
         .cursor_pointer()
         .hover(|row| row.bg(theme.accent))
+        .press(theme.accent, cx)
         .on_click(cx.listener(|ws, _, _, cx| {
             ws.path_menu = !ws.path_menu;
             cx.notify();

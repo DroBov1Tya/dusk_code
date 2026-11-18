@@ -1,6 +1,7 @@
 //! A row of the connectors page, in a card of rows: an icon slot, the name over one line
 //! of what kind it is and what it does, its state and its actions at the right end.
 
+use crate::ui::press::Press;
 use crate::ui::{Type, avatar::avatar, widgets::Focusable};
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -42,6 +43,7 @@ pub fn render(card: Card, action: impl IntoElement, cx: &App) -> Stateful<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(move |row| row.bg(hover))
+        .press(hover, cx)
         .child(avatar(&card.name, ICON, card.icon, cx))
         .child(
             div()

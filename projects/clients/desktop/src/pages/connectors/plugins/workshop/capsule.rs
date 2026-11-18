@@ -165,6 +165,7 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
 fn shell(group: SharedString, width: f32, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
     let (surface, hover, ring) = (theme.muted, theme.list_hover, theme.ring);
+    let dent = crate::ui::press::dent(cx);
     div()
         .id(group.clone())
         .group(group)
@@ -177,7 +178,11 @@ fn shell(group: SharedString, width: f32, cx: &App) -> Stateful<Div> {
         .elevation(Level::Raised, cx)
         .cursor_pointer()
         .hover(move |card| card.border_color(ring.opacity(0.45)).bg(hover))
-        .active(move |card| card.border_color(ring.opacity(0.6)).bg(surface))
+        .active(move |card| {
+            card.border_color(ring.opacity(0.6))
+                .bg(surface)
+                .shadow(dent)
+        })
         .tab_stop(true)
         .tab_index(0)
         .focus_visible(move |card| card.border_color(ring))

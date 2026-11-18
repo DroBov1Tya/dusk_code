@@ -1,6 +1,7 @@
 //! The projects, each folding over its chats. A project row is quiet until the pointer
 //! is over it; its chats sit indented below with their own, lighter hover.
 
+use crate::ui::press::Press;
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -51,6 +52,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .rounded_md()
             .cursor_pointer()
             .hover(move |row| row.bg(hover))
+            .press(hover, cx)
             .child(widgets::icon(chevron, muted))
             .child(widgets::icon(IconName::Folder, muted))
             .child(

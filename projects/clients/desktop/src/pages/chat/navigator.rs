@@ -1,6 +1,7 @@
 //! A compact index of the user's sent messages, beside the composer.
 
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use std::cell::Cell;
 
 use gpui_kit::{
@@ -101,6 +102,7 @@ pub fn render(
                     .rounded_md()
                     .cursor_pointer()
                     .hover(move |line| line.bg(raised))
+                    .press(raised, cx)
                     .child(
                         div()
                             .flex_none()
@@ -195,6 +197,7 @@ pub fn render(
                 .cursor_pointer()
                 .when(open, |button| button.bg(selected))
                 .hover(move |button| button.bg(raised))
+                .press(raised, cx)
                 .tooltip(|window, cx| Tooltip::new("Message history").build(window, cx))
                 .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
                     if *hovered {

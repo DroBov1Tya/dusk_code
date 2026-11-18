@@ -1,5 +1,6 @@
 //! The Voice tab: the two server cards, where to start, and the models to try.
 
+use crate::ui::press::Press;
 use crate::{
     pages::settings::providers::Check,
     ui::{
@@ -208,6 +209,7 @@ fn tile(id: impl Into<ElementId>, cx: &App) -> Stateful<Div> {
         .focusable_row(cx)
         .border_color(theme.border)
         .hover(move |tile| tile.bg(theme.accent))
+        .press(theme.accent, cx)
 }
 
 /// A tile that fills the boxes with a known server's address and models.

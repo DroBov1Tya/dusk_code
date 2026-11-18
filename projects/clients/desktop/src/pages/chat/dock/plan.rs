@@ -3,6 +3,7 @@
 //! lays out only the rows in sight, so two hundred tasks cost what six do.
 
 use crate::ui::elevation::{Elevation, Level};
+use crate::ui::press::Press;
 use std::ops::Range;
 
 use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus};
@@ -69,6 +70,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .rounded_lg()
         .cursor_pointer()
         .hover(|line| line.bg(cx.theme().list_hover))
+        .press(cx.theme().list_hover, cx)
         .focusable_row(cx)
         .child(
             widgets::icon(
