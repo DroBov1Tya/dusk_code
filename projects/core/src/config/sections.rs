@@ -163,6 +163,12 @@ pub struct Limits {
     /// The most minutes a team may run.
     #[serde(default = "default_team_max_minutes")]
     pub team_max_minutes: u32,
+    /// The longest one gate command may run before it is killed and counts as failed.
+    #[serde(default = "default_team_gate_seconds")]
+    pub team_gate_seconds: u64,
+    /// The most gate commands one team may run; past it a gated task waits for the lead.
+    #[serde(default = "default_team_max_gate_runs")]
+    pub team_max_gate_runs: u32,
 }
 
 impl Default for Limits {
@@ -205,6 +211,8 @@ impl Default for Limits {
             team_max_steps: default_team_max_steps(),
             team_max_tokens: default_team_max_tokens(),
             team_max_minutes: default_team_max_minutes(),
+            team_gate_seconds: default_team_gate_seconds(),
+            team_max_gate_runs: default_team_max_gate_runs(),
         }
     }
 }
@@ -310,6 +318,11 @@ pub const MIN_TEAM_MAX_TOKENS: u64 = 100_000;
 pub const MAX_TEAM_MAX_TOKENS: u64 = 100_000_000;
 pub const MIN_TEAM_MAX_MINUTES: u32 = 5;
 pub const MAX_TEAM_MAX_MINUTES: u32 = 1_440;
+/// A gate is a check such as a build and its tests; the top is a command's own longest.
+pub const MIN_TEAM_GATE_SECONDS: u64 = 10;
+pub const MAX_TEAM_GATE_SECONDS: u64 = 600;
+pub const MIN_TEAM_MAX_GATE_RUNS: u32 = 1;
+pub const MAX_TEAM_MAX_GATE_RUNS: u32 = 1_000;
 
 fn default_team_at_once() -> usize {
     3
@@ -325,6 +338,15 @@ fn default_team_max_tokens() -> u64 {
 
 fn default_team_max_minutes() -> u32 {
     120
+}
+
+fn default_team_gate_seconds() -> u64 {
+    300
+}
+
+/// Two gate runs a task (its first and a rework) for a plan of 64 tasks, the most open.
+fn default_team_max_gate_runs() -> u32 {
+    128
 }
 
 /// A role name is an agent's folder name.

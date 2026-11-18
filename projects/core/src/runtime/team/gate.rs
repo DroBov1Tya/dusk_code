@@ -1,17 +1,21 @@
 //! The command gate of a handed-in task: the core runs it, with no model call. It runs in
 //! the team's folder as a member's own command would: approved under the chat's approval
-//! mode, which a member's is a copy of, and confined by it. Exit 0 passes the task. Anything else sends it back
-//! to its member with the end of the output, at most `MAX_REWORKS` times; after that the
-//! task fails and the lead decides.
+//! mode, which a member's is a copy of, and confined by it. Exit 0 passes the task.
+//! Anything else sends it back to its member with the end of the output, at most
+//! `MAX_REWORKS` times; after that the task fails and the lead decides.
+//!
+//! A gate runs `limits.team_gate_seconds` at most, a team runs `limits.team_max_gate_runs`
+//! of them, and the end of the team kills the ones that run (`stop`).
 //!
 //! Nothing of a running gate is stored. A gate is a check, so one that a stop of the core
-//! cut off simply runs again: a pass starts the gate of every task that is in review for
-//! a command and has none running (`resume`).
+//! or an end of the team cut off simply runs again: a pass starts the gate of every task
+//! that is in review for a command and has none running (`resume`).
 
 use std::{future::Future, pin::Pin, sync::Arc};
 
 use anyhow::{Context, Result};
 use dusk_protocol::thread::TeamStatus;
+use tokio::task::AbortHandle;
 use tracing::{info, warn};
 
 use super::{allow, clean, dispatch, events, lead_lines};
@@ -19,10 +23,7 @@ use crate::{
     message::plain::plain,
     runtime::{Launcher, thread::start},
     state::{GoalCheck, PassedBy, PlanError, PlanStatus, PlanTask, WaitsOn, timestamp_ms},
-    tools::{
-        ToolContext, ToolResult,
-        console::{CHECK_TIMEOUT_SECONDS, run_check},
-    },
+    tools::{ToolContext, ToolResult, console::run_check},
 };
 
 /// How the note of a task begins when its gate sent it back; `member::deliver_rework`
@@ -35,9 +36,18 @@ const TAIL_CHARS: usize = 480;
 /// What the lead reads of a task whose answer is not at hand, as after a restart.
 const NO_RESULT: &str = "see its thread";
 
+/// A gate whose command runs now, so a pass starts none twice and an end kills it.
+pub(super) struct Running {
+    lead: String,
+    /// Set once the run is spawned; aborting it drops the command, which kills its
+    /// process group.
+    abort: Option<AbortHandle>,
+}
+
 /// Begins the gate of `task`, which its member handed in with `result`, unless it runs
 /// already. Answers with the task as it is now: still in review while the gate runs, or
-/// held for the lead when the command may not run unasked.
+/// held for the lead when the command may not run unasked or the team's gate runs are
+/// spent.
 pub(super) async fn begin(
     launcher: &Launcher,
     lead: &str,
@@ -48,8 +58,16 @@ pub(super) async fn begin(
     let Some(GoalCheck::Command { command }) = &task.gate else {
         return Ok(task.clone());
     };
-    if !launcher.team.gates.lock().insert(task.task_id.clone()) {
-        return Ok(task.clone());
+    {
+        let mut gates = launcher.team.gates.lock();
+        if gates.contains_key(&task.task_id) {
+            return Ok(task.clone());
+        }
+        let running = Running {
+            lead: lead.to_owned(),
+            abort: None,
+        };
+        gates.insert(task.task_id.clone(), running);
     }
     let context = match approved(launcher, lead, command).await {
         Ok(context) => context,
@@ -60,23 +78,81 @@ pub(super) async fn begin(
                 "its gate was not run: {}",
                 lead_lines::quoted(&format!("{error:#}"), 200)
             );
-            let why = clean::note(launcher, lead, &why).await;
-            let held = launcher
-                .state
-                .hold_for_lead(lead, &task.task_id, &why)
-                .await?;
-            lead_lines::review(launcher, lead, member, &held, result, &why).await;
-            return Ok(held);
+            return hold(launcher, lead, member, task, result, &why).await;
         }
     };
-    tokio::spawn(run(
+    let limits = context.config.limits();
+    if !count_run(launcher, lead, limits.team_max_gate_runs) {
+        launcher.team.gates.lock().remove(&task.task_id);
+        let why = format!(
+            "its gate was not run: the team ran its {} gates",
+            limits.team_max_gate_runs
+        );
+        return hold(launcher, lead, member, task, result, &why).await;
+    }
+    let spawned = tokio::spawn(run(
         launcher.clone(),
         lead.to_owned(),
         task.task_id.clone(),
         command.clone(),
         context,
     ));
+    match launcher.team.gates.lock().get_mut(&task.task_id) {
+        Some(running) => running.abort = Some(spawned.abort_handle()),
+        // The team ended between the two: nothing is to run for it.
+        None => spawned.abort(),
+    }
     Ok(task.clone())
+}
+
+/// Holds the task for the lead, who reads `why`.
+async fn hold(
+    launcher: &Launcher,
+    lead: &str,
+    member: &str,
+    task: &PlanTask,
+    result: &str,
+    why: &str,
+) -> Result<PlanTask> {
+    let why = clean::note(launcher, lead, why).await;
+    let held = launcher
+        .state
+        .hold_for_lead(lead, &task.task_id, &why)
+        .await?;
+    lead_lines::review(launcher, lead, member, &held, result, &why).await;
+    Ok(held)
+}
+
+/// Counts one more gate run of the team; false once `cap` are spent.
+fn count_run(launcher: &Launcher, lead: &str, cap: u32) -> bool {
+    let mut runs = launcher.team.gate_runs.lock();
+    let ran = runs.entry(lead.to_owned()).or_default();
+    if *ran >= cap {
+        return false;
+    }
+    *ran += 1;
+    true
+}
+
+/// The team of `lead` ended: its gates that run now are killed, and its count of gate
+/// runs starts again with the next team. Their tasks stay in review, and the next run
+/// runs their gates again (`resume`): a gate is a check.
+pub(super) fn stop(launcher: &Launcher, lead: &str) {
+    let stopped: Vec<Running> = {
+        let mut gates = launcher.team.gates.lock();
+        let ids: Vec<String> = gates
+            .iter()
+            .filter(|(_, running)| running.lead == lead)
+            .map(|(id, _)| id.clone())
+            .collect();
+        ids.iter().filter_map(|id| gates.remove(id)).collect()
+    };
+    for running in stopped {
+        if let Some(abort) = running.abort {
+            abort.abort();
+        }
+    }
+    launcher.team.gate_runs.lock().remove(lead);
 }
 
 /// Runs the command and moves the task by how it ended. Boxed, since the pass that
@@ -89,8 +165,12 @@ fn run(
     context: ToolContext,
 ) -> Pin<Box<dyn Future<Output = ()> + Send>> {
     Box::pin(async move {
-        let ran = run_check(&command, &context, CHECK_TIMEOUT_SECONDS).await;
-        launcher.team.gates.lock().remove(&task_id);
+        let seconds = context.config.limits().team_gate_seconds;
+        let ran = run_check(&command, &context, seconds).await;
+        // An end of the team took the gate off the list: it is not the team's anymore.
+        if launcher.team.gates.lock().remove(&task_id).is_none() {
+            return;
+        }
         // A stop of the core killed the command: its result says nothing about the task.
         if launcher.mailboxes.is_closed() {
             return;

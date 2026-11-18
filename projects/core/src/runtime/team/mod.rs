@@ -70,7 +70,10 @@ pub struct Teams {
     allowed: parking_lot::Mutex<HashMap<String, HashSet<String>>>,
     /// The tasks whose gate runs now, so a pass starts none twice. After a restart it
     /// is empty and a gate that was cut off runs again: a gate is a check.
-    gates: parking_lot::Mutex<HashSet<String>>,
+    gates: parking_lot::Mutex<HashMap<String, gate::Running>>,
+    /// The gates each running team has run, against `limits.team_max_gate_runs`. After
+    /// a restart it counts again from nothing; the team's time still bounds it.
+    gate_runs: parking_lot::Mutex<HashMap<String, u32>>,
     /// The members a runner of this process has reported for. Recovery settles only
     /// the others: what a stopped process left.
     served: parking_lot::Mutex<HashSet<String>>,

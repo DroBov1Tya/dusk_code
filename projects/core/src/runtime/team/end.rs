@@ -6,7 +6,7 @@
 use dusk_protocol::thread::{TaskStatus, TeamEnd};
 use tracing::warn;
 
-use super::{allow, events, lead_lines};
+use super::{allow, events, gate, lead_lines};
 use crate::{
     runtime::{Launcher, agent::Input},
     state::{Delivery, PlanTask, TeamError, TeamRun},
@@ -39,6 +39,7 @@ pub(super) async fn end(
     }
     let (run, returned) = ended?;
     allow::forget(launcher, lead);
+    gate::stop(launcher, lead);
     for task in &returned {
         events::task(launcher, lead, task).await;
     }

@@ -348,3 +348,36 @@ async fn a_change_outside_the_tasks_files_holds_it_for_the_lead() {
         .await
         .unwrap();
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn stopping_the_team_kills_its_running_gate() {
+    let rig = unasked("team_gate_stop").await;
+    // The gate's own child, in the gate's process group, says who it is and waits.
+    let ids = rig
+        .plan(&[gated("one", command("sleep 60 & echo $! > gate.pid; wait"))])
+        .await;
+    rig.run().await;
+    let pid_file = rig.folder.join("gate.pid");
+    until("the gate runs", || async {
+        std::fs::read_to_string(&pid_file).is_ok_and(|pid| pid.ends_with('\n'))
+    })
+    .await;
+    let pid: i32 = std::fs::read_to_string(&pid_file)
+        .unwrap()
+        .trim()
+        .parse()
+        .unwrap();
+    let pid = nix::unistd::Pid::from_raw(pid);
+    assert!(nix::sys::signal::kill(pid, None).is_ok(), "the gate runs");
+
+    rig.launcher().team_stop(&rig.lead).await.unwrap();
+
+    until("the gate's child is gone", || async {
+        nix::sys::signal::kill(pid, None).is_err()
+    })
+    .await;
+    // A gate is a check: its task waits in review for the next run to run it again.
+    assert_eq!(rig.status(&ids[0]).await, PlanStatus::Review);
+    assert!(rig.launcher().team.gates.lock().is_empty());
+}

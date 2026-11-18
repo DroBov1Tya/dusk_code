@@ -382,9 +382,6 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
         .content)
 }
 
-/// The longest a check the core starts may run: a command's own longest.
-pub const CHECK_TIMEOUT_SECONDS: u64 = MAX_TIMEOUT_SECONDS;
-
 /// Runs a command nobody's tool call started, such as a task's gate, in the folder of
 /// `context` and confined as that thread's own commands are. The caller has had it
 /// approved. Answers its exit code and capped output; an error when it could not start
