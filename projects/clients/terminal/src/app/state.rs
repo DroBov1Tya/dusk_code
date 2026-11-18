@@ -34,6 +34,8 @@ pub struct App {
     pub temporary_next: bool,
     pub temporary: bool,
     pub title: Option<String>,
+    /// The open chat's pins, as the core last listed them.
+    pub pins: Vec<dusk_protocol::thread::Pin>,
     pub transcript: Transcript,
     pub input: Input,
     /// What was typed and not sent in the threads that are not shown; `None` is a new one.
@@ -211,6 +213,7 @@ impl App {
             temporary_next: false,
             temporary: false,
             title: None,
+            pins: Vec::new(),
             transcript: Transcript::default(),
             input: Input::default(),
             drafts: HashMap::new(),
@@ -324,6 +327,7 @@ impl App {
             self.input = self.drafts.remove(&thread_id).unwrap_or_default();
         }
         self.temporary = false;
+        self.pins.clear();
         (self.sent_ids, self.sent) = history
             .iter()
             .filter(|message| {

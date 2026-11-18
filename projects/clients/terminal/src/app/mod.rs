@@ -16,7 +16,7 @@ mod submit;
 mod tabs;
 mod thread;
 
-pub use action::{Action, commands};
+pub use action::{Action, PinAsk, commands};
 pub use composer::PathPopup;
 pub use composer::{EditorButton, EditorHit, EditorTarget, Input, PasteEditor, paste};
 pub use hits::{

@@ -145,3 +145,63 @@ pub async fn open_agent(client: &Client, app: &mut App, thread_id: String) {
         Err(error) => app.error(format!("cannot open the agent: {error:#}")),
     }
 }
+
+/// `/pins` lists the chat's pins, `/pin` pins the agent's last answer, `/unpin N` takes
+/// pin N away.
+pub async fn pin(client: &Client, app: &mut App, ask: crate::app::PinAsk) {
+    use crate::app::PinAsk;
+    use dusk_protocol::thread::MessageRole;
+    let Some(thread_id) = app.thread_id.clone() else {
+        app.flash = Some("Send a message first; pins belong to a chat".into());
+        return;
+    };
+    let threads = client.threads();
+    let result = match ask {
+        PinAsk::List => threads.pins(&thread_id).await,
+        PinAsk::Last => {
+            let last = threads.messages(&thread_id).await.map(|messages| {
+                messages
+                    .into_iter()
+                    .rev()
+                    .find(|message| {
+                        message.role == MessageRole::Assistant && !message.content.trim().is_empty()
+                    })
+                    .map(|message| message.message_id)
+            });
+            match last {
+                Ok(Some(message_id)) => threads.pin(&thread_id, &message_id, true).await,
+                Ok(None) => {
+                    app.flash = Some("No answer to pin yet".into());
+                    return;
+                }
+                Err(error) => Err(error),
+            }
+        }
+        PinAsk::Unpin(number) => match app.pins.get(number - 1) {
+            Some(pin) => threads.pin(&thread_id, &pin.message_id, false).await,
+            None => {
+                app.flash = Some(format!("No pin {number}; /pins lists them"));
+                return;
+            }
+        },
+    };
+    match result {
+        Ok(pins) => {
+            app.pins = pins;
+            if app.pins.is_empty() {
+                app.flash = Some("No pinned messages".into());
+            }
+            for (n, pin) in app.pins.iter().enumerate() {
+                let who = match pin.role {
+                    MessageRole::User => "you",
+                    _ => "agent",
+                };
+                let folded = if pin.compacted { " (compacted)" } else { "" };
+                let text = format!("pin {}  {who}: {}{folded}", n + 1, pin.excerpt);
+                app.transcript.notice(text, crate::app::Tone::Info);
+            }
+        }
+        // Such as "Unpin one first".
+        Err(error) => app.flash = Some(format!("{error:#}")),
+    }
+}

@@ -50,10 +50,17 @@ pub fn draw(frame: &mut Frame, area: Rect, app: &mut App) {
         if app.temporary || app.temporary_next {
             spans.push(Span::styled("temporary \u{00B7} ", thought()));
         }
-        spans.push(match &app.title {
+        let title = match &app.title {
             Some(title) => Span::styled(wrap::clip(title, room), ratatui::style::Style::new()),
             None => Span::styled(wrap::clip("new thread", room), thought()),
-        });
+        };
+        let left = room.saturating_sub(title.width());
+        spans.push(title);
+        // The first pin, as plain text the core cut: `/pins` lists them all.
+        if let Some(first) = app.pins.first().filter(|_| left > 16) {
+            let pinned = format!("  pinned {}  {}", app.pins.len(), first.excerpt);
+            spans.push(Span::styled(wrap::clip(&pinned, left), fg(TEXT_MUTED)));
+        }
     }
     frame.render_widget(Paragraph::new(Line::from(spans)), title_area);
     frame.render_widget(
