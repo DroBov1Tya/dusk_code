@@ -378,6 +378,65 @@ a { text-underline-offset: 3px; }
 .md th { background: var(--panel); text-align: left; }
 .md td { background: var(--surface); }
 .md h1, .md h2 { font-size: 21px; font-weight: 600; letter-spacing: -.02em; }
+
+/* ==== What the agent shows: blocks, reply buttons, marks and the working row ====
+   Model content lives in the transcript only; none of it is filled, accent-bordered or
+   danger-coloured like the app's own buttons and cards. Tokens only, no new colours. */
+.sr-only { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; border: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.num { font-variant-numeric: tabular-nums; }
+.meta { font-size: .78rem; }
+.shown { --hair: color-mix(in srgb, var(--fg) 10%, transparent); margin: 16px auto; min-width: 0; }
+
+/* Flow: layers of surface, an arrow in the 28 px gap, cards of raised in a grid. */
+.flow { display: flex; flex-direction: column; container-type: inline-size; }
+.flow-layer { background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; padding: 16px; min-width: 0; }
+.flow-layer.emphasis { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.flow-title { font-size: .95rem; font-weight: 500; overflow-wrap: anywhere; }
+.flow-sub { font-size: .86rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-cards { display: grid; gap: 8px; margin-top: 12px; grid-template-columns: minmax(0, 1fr); }
+.flow-card { background: var(--raised); border-radius: 8px; padding: 8px 12px; min-height: 52px; min-width: 0; }
+.flow-card b { display: block; font-size: .86rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flow-card span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden; font-size: .78rem; color: var(--muted); line-height: 1.4; overflow-wrap: anywhere; }
+.flow-arrow { height: 28px; display: flex; align-items: center; justify-content: center; color: var(--muted); }
+.flow-arrow svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.flow .folded { display: none; }
+.flow-more { align-self: flex-start; margin-top: 12px; }
+@container (min-width: 360px) { .flow-cards:not(.n1) { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@container (min-width: 540px) { .flow-cards:is(.n3, .n4, .n5, .n6, .n7, .n8) { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@container (min-width: 720px) { .flow-cards:is(.n4, .n5, .n6, .n7, .n8) { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+
+/* Checks: a head that says whose it is, then a row each with a glyph and the state as a word. */
+.checks { background: var(--surface); border: 1px solid var(--hair); border-radius: 12px; overflow: hidden; }
+.checks-head { height: 36px; display: flex; align-items: center; gap: 12px; padding: 0 16px; border-bottom: 1px solid var(--hair); }
+.checks-head b { font-size: .86rem; font-weight: 500; flex: none; }
+.checks-head .muted:first-of-type { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.checks-head .muted:last-child { flex: none; white-space: nowrap; }
+.check { min-height: 32px; display: flex; align-items: center; gap: 8px; padding: 4px 16px; }
+.check:has(.check-detail) { min-height: 48px; }
+.check-name { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.check-title { font-size: .86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.check-detail { font-size: .78rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.check > .meta { flex: none; }
+.glyph { flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.glyph.queued, .glyph.skipped { color: var(--muted); }
+.glyph.running { color: var(--accent); }
+.glyph.running .track { stroke: color-mix(in srgb, var(--fg) 14%, transparent); }
+.glyph.passed { color: var(--good); }
+.glyph.failed { color: var(--bad); }
+
+/* Reply buttons: pills 28 px high with an outline. App buttons are 8 px round and 32 px. */
+.reply { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 8px auto 16px; }
+.msg + .reply { margin-top: -12px; }
+.pill {
+  height: 28px; min-height: 28px; padding: 0 12px; border-radius: 999px; line-height: 1;
+  border: 1px solid color-mix(in srgb, var(--fg) 14%, transparent); background: transparent;
+  color: var(--fg2); font-size: .86rem; font-weight: 500; max-width: 100%;
+}
+.pill:hover:not(:disabled) { background: var(--raised); }
+.pill:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.question.light .reply { margin: 8px 0 0; }
+
+/* ==== end of what the agent shows ==== */
 .chat-empty { margin-top: clamp(60px, 19vh, 190px); text-align: center; }
 .chat-empty h2 { font-size: 26px; color: var(--fg); letter-spacing: -.035em; font-weight: 500; }
 .chat-empty p { margin: 10px auto; max-width: 320px; font-size: 14px; line-height: 1.7; }

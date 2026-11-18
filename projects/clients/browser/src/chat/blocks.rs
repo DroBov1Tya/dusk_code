@@ -128,7 +128,13 @@ fn blocks(chat: &ChatData) -> Vec<Block> {
 use dusk_protocol::thread::duration_words as duration;
 
 #[component]
-pub fn Transcript(chat: Chat) -> impl IntoView {
+pub fn Transcript(
+    chat: Chat,
+    thread: Option<String>,
+    /// Nothing here may be answered: a subagent's chat, which the user only reads.
+    #[prop(optional)]
+    read_only: bool,
+) -> impl IntoView {
     let scroller = NodeRef::<html::Div>::new();
     let all = Memo::new(move |_| chat.with(blocks));
     let firsts = Memo::new(move |_| all.with(|all| all.iter().map(Block::key).collect::<Vec<_>>()));
@@ -185,7 +191,7 @@ pub fn Transcript(chat: Chat) -> impl IntoView {
                 <div class="empty chat-empty"><h2>"What are we working on?"</h2><p>"Ask a question, explore your code, or start something new."</p></div>
             </Show>
             <For each=move || firsts.get() key=|key| *key let:key>
-                <BlockView all key />
+                <BlockView all key chat thread=thread.clone() read_only />
             </For>
             <For each=pending key=|(at, text)| (*at, text.clone()) let:pair>
                 <div class="msg user queued"><div class="bubble">{pair.1}</div><div class="muted">"queued"</div></div>
@@ -205,17 +211,24 @@ fn element_to_end(scroller: &NodeRef<html::Div>) {
 }
 
 #[component]
-fn BlockView(all: Memo<Vec<Block>>, key: BlockKey) -> impl IntoView {
+fn BlockView(
+    all: Memo<Vec<Block>>,
+    key: BlockKey,
+    chat: Chat,
+    thread: Option<String>,
+    read_only: bool,
+) -> impl IntoView {
     let block = Memo::new(move |_| all.with(|all| all.iter().find(|b| b.key() == key).cloned()));
     move || match block.get() {
-        Some(Block::One(entry)) => item_view(entry.item).into_any(),
+        Some(Block::One(entry)) => item_view(entry, chat, thread.clone(), read_only).into_any(),
         Some(Block::Turn { entries, took }) => view! { <Turn entries took /> }.into_any(),
         None => ().into_any(),
     }
 }
 
-fn item_view(item: Item) -> impl IntoView {
-    match item {
+fn item_view(entry: Entry, chat: Chat, thread: Option<String>, read_only: bool) -> impl IntoView {
+    let id = entry.id;
+    match entry.item {
         Item::User(text) => view! {
             <div class="msg user"><div class="bubble">{user_text(&text)}</div></div>
         }
@@ -251,7 +264,7 @@ fn item_view(item: Item) -> impl IntoView {
         .into_any(),
         Item::Assistant { text, reasoning } => assistant_view(text, reasoning).into_any(),
         Item::Tool(_) => ().into_any(),
-        Item::Block(block) => view! { <ShownBlock block /> }.into_any(),
+        Item::Block(block) => view! { <ShownBlock block id chat thread read_only /> }.into_any(),
         Item::Image(shown) => view! { <ImageCard shown /> }.into_any(),
         Item::Audio(shown) => view! { <AudioCard shown /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),

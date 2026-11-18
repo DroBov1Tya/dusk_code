@@ -51,7 +51,7 @@ pub fn SubagentWindow() -> impl IntoView {
                             <Icon name=IconName::Close />
                         </button>
                     </header>
-                    <Transcript chat=view_chat />
+                    <Transcript chat=view_chat thread=None read_only=true />
                 </div>
             </div>
         })
