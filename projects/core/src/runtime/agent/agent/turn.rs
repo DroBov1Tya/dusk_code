@@ -24,8 +24,10 @@ impl Agent {
         if self.model.current().is_none() {
             return Ok(None);
         }
-        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
-        let specs = self.tools.specs(&self.scope, &self.config.current());
+        let config = self.config.current();
+        let stub_results = config.limits().stub_results;
+        let conversation = Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        let specs = self.tools.specs(&self.scope, &config);
         if !conversation.has_queued() || self.context_too_large(&conversation, &specs, 0).is_some()
         {
             return Ok(None);

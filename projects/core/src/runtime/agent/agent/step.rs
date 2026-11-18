@@ -32,7 +32,10 @@ impl Agent {
         received: &mut Vec<String>,
         waited: bool,
     ) -> Result<StepEnd> {
-        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+        // One snapshot per step: switches flipped meanwhile apply from the next step.
+        let config = self.config.current();
+        let stub_results = config.limits().stub_results;
+        let conversation = Conversation::load(&self.state, &self.thread_id, stub_results).await?;
         // Messages that joined between steps are answered by this turn, not a next one.
         let newest_user = conversation
             .messages
@@ -44,8 +47,6 @@ impl Agent {
         if newest_user > conversation.answered_through {
             self.state.extend_turn(&turn.turn_id, newest_user).await?;
         }
-        // One snapshot per step: switches flipped meanwhile apply from the next step.
-        let config = self.config.current();
         let mut tools = self.tools.specs(&self.scope, &config);
         let screen = |spec: &ToolSpec| {
             self.tools.kind_of(&spec.name) == Some(crate::tools::ToolKind::Computer)

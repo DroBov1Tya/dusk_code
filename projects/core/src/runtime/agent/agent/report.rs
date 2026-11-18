@@ -64,7 +64,9 @@ impl Agent {
         let specs = source.specs();
         let counted = async {
             let mut tokens = self.state.thread_tokens(&self.thread_id).await?;
-            let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+            let stub_results = source.config.current().limits().stub_results;
+            let conversation =
+                Conversation::load(&self.state, &self.thread_id, stub_results).await?;
             tokens.current.tool_specs = spec_tokens(&specs);
             tokens.context = conversation.tokens(&specs);
             anyhow::Ok(tokens)

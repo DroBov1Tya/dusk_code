@@ -486,6 +486,36 @@ mod tests {
         state.close().await;
     }
 
+    /// A database from before stubs gets their table; its messages stay and take stubs.
+    #[tokio::test]
+    async fn a_database_before_stubs_gets_their_table() {
+        let path = temp_dir("legacy-stubs").join("state.db");
+        let state = State::open(&path).await.unwrap();
+        state.create_thread("thread", "test").await.unwrap();
+        state.add_system_message("thread", "prompt").await.unwrap();
+        sqlx::raw_sql(
+            "DROP TABLE result_stubs;
+             DELETE FROM _sqlx_migrations WHERE version = 32;",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        assert_eq!(state.list_messages("thread").await.unwrap().len(), 1);
+        assert!(state.stubs("thread", 0).await.unwrap().is_empty());
+        // A row the schema forbids is refused: a stub has text.
+        let refused = sqlx::query(
+            "INSERT INTO result_stubs (message_id, thread_id, stub, saved_tokens,
+                made_at_sequence)
+             SELECT message_id, thread_id, ' ', 0, 1 FROM messages",
+        )
+        .execute(&state.pool)
+        .await;
+        assert!(refused.is_err());
+        state.close().await;
+    }
+
     #[tokio::test]
     async fn messages_without_image_cards_get_the_column() {
         let path = temp_dir("legacy-messages").join("state.db");
@@ -646,7 +676,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes', 'result stubs'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

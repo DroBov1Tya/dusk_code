@@ -50,14 +50,17 @@ impl Agent {
     /// to work on: a queued message, or the running `turn`.
     pub async fn compact_if_needed(&self, turn: Option<&Turn>, inbox: &mut Inbox) -> Option<Stop> {
         let limit = self.input_limit();
-        let conversation = match Conversation::load(&self.state, &self.thread_id).await {
-            Ok(conversation) => conversation,
-            Err(error) => {
-                warn!("cannot check the context size: {error:#}");
-                return None;
-            }
-        };
-        let specs = self.tools.specs(&self.scope, &self.config.current());
+        let config = self.config.current();
+        let stub_results = config.limits().stub_results;
+        let conversation =
+            match Conversation::load(&self.state, &self.thread_id, stub_results).await {
+                Ok(conversation) => conversation,
+                Err(error) => {
+                    warn!("cannot check the context size: {error:#}");
+                    return None;
+                }
+            };
+        let specs = self.tools.specs(&self.scope, &config);
         let working = turn.is_some() || conversation.has_queued();
         let full = conversation.tokens(&specs) >= limit / 100 * AUTO_COMPACT_PERCENT;
         if !working || !full || conversation.compactable_through().is_none() {
@@ -160,7 +163,8 @@ impl Agent {
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Result<Result<(String, u64), Stop>> {
-        let conversation = Conversation::load(&self.state, &self.thread_id).await?;
+        let stub_results = self.config.current().limits().stub_results;
+        let conversation = Conversation::load(&self.state, &self.thread_id, stub_results).await?;
         let through = match half {
             true => conversation.compactable_half(),
             false => conversation.compactable_through(),

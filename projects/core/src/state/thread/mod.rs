@@ -14,8 +14,8 @@ mod work;
 
 pub use changes::ChangeQuery;
 pub use conversation::{
-    Compaction, LocalUnsent, Message, MessageRole, PendingMessage, Source, UndoPoint,
-    estimate_tokens,
+    Compaction, LocalUnsent, Message, MessageRole, NewStub, PendingMessage, Source, Stub,
+    UndoPoint, estimate_tokens,
 };
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use threads::Thread;

@@ -9,8 +9,9 @@ mod switches;
 mod tests;
 
 use super::sections::{
-    MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS,
-    is_zero, yes,
+    MAX_FAILURE_RUNG, MAX_RESUME_WITHIN_SECONDS, MAX_STUB_KEEP_STEPS, MAX_STUB_MIN_TOKENS,
+    MIN_FAILURE_RUNG, MIN_RESUME_WITHIN_SECONDS, MIN_STUB_KEEP_STEPS, MIN_STUB_MIN_TOKENS, is_zero,
+    yes,
 };
 use super::{
     Appearance, ApprovalPolicy, ContextPolicy, Effort, Limits, Logging, MAX_ATTEMPTS,
@@ -312,6 +313,16 @@ impl Config {
                 .contains(&self.limits.resume_within_seconds),
             "limits.resume_within_seconds must be between {MIN_RESUME_WITHIN_SECONDS} and \
              {MAX_RESUME_WITHIN_SECONDS}"
+        );
+        ensure!(
+            (MIN_STUB_KEEP_STEPS..=MAX_STUB_KEEP_STEPS).contains(&self.limits.stub_keep_steps),
+            "limits.stub_keep_steps must be between {MIN_STUB_KEEP_STEPS} and \
+             {MAX_STUB_KEEP_STEPS}"
+        );
+        ensure!(
+            (MIN_STUB_MIN_TOKENS..=MAX_STUB_MIN_TOKENS).contains(&self.limits.stub_min_tokens),
+            "limits.stub_min_tokens must be between {MIN_STUB_MIN_TOKENS} and \
+             {MAX_STUB_MIN_TOKENS}"
         );
         ensure!(
             self.appearance.idle_screen_minutes <= Appearance::MAX_IDLE_SCREEN_MINUTES,
