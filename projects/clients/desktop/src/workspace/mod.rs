@@ -316,6 +316,11 @@ pub struct Workspace {
     pub list_chat: Option<String>,
     /// A row changed height, as when folded: measure every row again.
     pub measure_again: bool,
+    /// How wide the transcript's rows are drawn, for blocks that set their columns by it.
+    pub reading_width: f32,
+    /// The chat whose reply buttons were just pressed and how many items it had then,
+    /// so one press sends once.
+    pub replied: Option<(String, usize)>,
 }
 
 impl Workspace {
