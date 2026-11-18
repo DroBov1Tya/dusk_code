@@ -10,7 +10,7 @@ use anyhow::Result;
 use dusk_protocol::thread::TaskStatus;
 use tracing::warn;
 
-use super::{clean, dispatch, events, gate, lead_lines, lease};
+use super::{clean, dispatch, events, gate, lead_lines, lease, outside};
 use crate::{
     runtime::{Launcher, ThreadEvent},
     state::{GoalCheck, PlanError, Thread, Turn, TurnStatus},
@@ -209,21 +209,36 @@ pub(super) async fn completed(
         Err(PlanError::NotOwner { .. } | PlanError::Illegal { .. }) => return Ok(false),
         Err(error) => return Err(error.into()),
     };
-    let task = match (&report.blocked, &task.gate) {
-        (Some(_), _) => {
+    // A change outside the task's files is the lead's to judge, whatever its gate.
+    let outside = match &report.blocked {
+        Some(_) => None,
+        None => outside::line(launcher, &member.id, &task).await?,
+    };
+    let task = match (&report.blocked, &outside, &task.gate) {
+        (Some(_), _, _) => {
             lead_lines::blocked(launcher, lead, member, &task).await;
             task
         }
-        (None, None) => {
+        (None, Some(outside), gate) => {
+            let why = match gate {
+                None => format!("no gate; {outside}"),
+                Some(_) => format!("its gate was not run: it {outside}"),
+            };
+            let why = clean::note(launcher, lead, &why).await;
+            let held = state.hold_for_lead(lead, &task.task_id, &why).await?;
+            lead_lines::review(launcher, lead, &member.id, &held, &report.result, &why).await;
+            held
+        }
+        (None, None, None) => {
             lead_lines::review(launcher, lead, &member.id, &task, &report.result, "no gate").await;
             task
         }
-        (None, Some(GoalCheck::Command { .. })) => {
+        (None, None, Some(GoalCheck::Command { .. })) => {
             gate::begin(launcher, lead, &member.id, &task, &report.result).await?
         }
         // It stays in review until the user's ConfirmTask passes it. Clients show it,
         // and the lead is told once so the chat says what the user is asked for.
-        (None, Some(GoalCheck::UserConfirmation)) => {
+        (None, None, Some(GoalCheck::UserConfirmation)) => {
             lead_lines::confirm(launcher, lead, member, &task, &report.result).await;
             task
         }

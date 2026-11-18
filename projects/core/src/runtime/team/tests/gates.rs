@@ -303,3 +303,48 @@ async fn a_secret_in_a_members_words_or_a_gates_output_does_not_reach_the_lead()
         );
     }
 }
+
+#[tokio::test]
+async fn a_change_outside_the_tasks_files_holds_it_for_the_lead() {
+    // The member writes its file, one more, and build output the project ignores.
+    let rig = Rig::new("team_outside_files", |asked| match (asked.lead, &asked.result) {
+        (true, _) => Out::Say("Noted.".into()),
+        (false, None) => Out::Call(
+            "run_command",
+            serde_json::json!({ "command":
+                "echo a > src/a.rs && echo b > notes.md && mkdir -p target && echo o > target/x.o"
+            }),
+        ),
+        (false, Some(_)) => Out::Say(DONE.into()),
+    })
+    .await;
+    std::fs::write(rig.folder.join(".gitignore"), "target/\n").unwrap();
+    rig.state()
+        .set_thread_approvals(&rig.lead, Some(ApprovalPolicy::FullAccess))
+        .await
+        .unwrap();
+    let ids = rig
+        .plan(&[NewTask {
+            files: crate::state::TaskFiles::new(["src/a.rs"]).unwrap(),
+            ..gated("one", command("true"))
+        }])
+        .await;
+    rig.run().await;
+
+    until("the task was held for the lead", || async {
+        rig.task(&ids[0]).await.waits_on == Some(WaitsOn::Lead)
+    })
+    .await;
+    let held = rig.task(&ids[0]).await;
+    assert_eq!(held.status, PlanStatus::Review, "its gate did not pass it");
+    assert!(
+        held.note.ends_with("changed outside its files: notes.md"),
+        "{}",
+        held.note
+    );
+    // The lead accepts it, as the store lets it for a held task.
+    rig.state()
+        .pass_task(&rig.lead, &ids[0], crate::state::PassedBy::Lead)
+        .await
+        .unwrap();
+}

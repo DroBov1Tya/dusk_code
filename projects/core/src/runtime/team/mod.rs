@@ -7,9 +7,10 @@
 //! `member` makes a member's thread and fixes what it may do, `allow` is the user's one
 //! yes for the plan's gates, `card` writes its first message, `clean` takes secrets out
 //! of every text that is forwarded, `lease` keeps its claim while its runner lives,
-//! `hand_in` moves its task when its turn ends, `gate` is where a command gate starts,
-//! `lead_lines` is what the lead is told, `end` ends a team, `settle` recovers one after
-//! a restart, `events` tells the clients.
+//! `hand_in` moves its task when its turn ends, `outside` finds what it changed beyond
+//! its files, `gate` is where a command gate starts, `lead_lines` is what the lead is
+//! told, `end` ends a team, `settle` recovers one after a restart, `events` tells the
+//! clients.
 //!
 //! Everything it needs to go on is in the database. `Teams` holds a lock and a few caches.
 
@@ -24,6 +25,7 @@ mod hand_in;
 mod lead_lines;
 mod lease;
 mod member;
+mod outside;
 mod settle;
 #[cfg(test)]
 mod tests;
