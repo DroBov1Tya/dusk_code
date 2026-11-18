@@ -59,7 +59,7 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
     }
 }
 
-/// Rename, close and delete of the chat.
+/// Rename, copy the link of, close and delete the chat.
 #[component]
 fn ChatMenu(id: String) -> impl IntoView {
     let app = state();
@@ -78,6 +78,7 @@ fn ChatMenu(id: String) -> impl IntoView {
             });
         }
     };
+    let link = dusk_protocol::thread::thread_link(&id);
     let close = {
         let id = id.clone();
         move |_| app.close_chat(id.clone())
@@ -86,6 +87,9 @@ fn ChatMenu(id: String) -> impl IntoView {
         <div class="chat-menu">
             <button class="ghost" title="Rename this chat" on:click=rename>
                 <Icon name=IconName::FileText />"Rename"
+            </button>
+            <button class="ghost" title="Copy a link to paste into another chat" on:click=move |_| blocks::copy(&link)>
+                <Icon name=IconName::Copy />"Copy link"
             </button>
             <button class="ghost" title="Stop using it here; it stays in the list" on:click=close>
                 <Icon name=IconName::Close />"Close"

@@ -1,6 +1,7 @@
 //! `read_history`: the thread's own messages, read by sequence or found by text. After a
 //! compaction the summary stands in for older messages; this is how the agent gets
-//! their details back.
+//! their details back. With `thread` it reads another of the user's chats the same way,
+//! named by the link the user pasted.
 
 use std::sync::Arc;
 
@@ -19,6 +20,7 @@ use crate::{
     BoxFuture,
     state::{Message, MessageRole, State, calls_of},
 };
+use dusk_protocol::thread::{THREAD_LINK_PREFIX, thread_of_link};
 
 /// Added to the description while the `result` form is offered.
 const RESULT_SENTENCE: &str = " `result` N returns tool result #N whole, `limit` lines from line `offset`; `search` then finds lines in it.";
@@ -52,6 +54,8 @@ struct ReadHistoryArguments {
     /// First line of the result to read. Defaults to 1.
     #[schemars(range(min = 1))]
     offset: Option<usize>,
+    /// Another chat to read: its `dusk://thread/<id>` link or id. Defaults to this one.
+    thread: Option<String>,
 }
 
 /// Whether the `result` form is offered and accepted: only where results are sent as
@@ -80,20 +84,50 @@ impl ReadHistory {
         self.result_form_forced || result_form_on(context)
     }
 
-    /// One stored tool result of this thread. A number that is missing, another thread's or
+    /// The thread a call reads and the line that names it: this one, or another chat of
+    /// the user's store by its link or id.
+    async fn target(&self, named: Option<&str>) -> Result<(String, String)> {
+        let Some(named) = named else {
+            return Ok((self.thread_id.clone(), String::new()));
+        };
+        let id = thread_of_link(named).ok_or_else(|| {
+            anyhow::anyhow!("`thread` takes a chat link `{THREAD_LINK_PREFIX}<id>` or a thread id")
+        })?;
+        if id == self.thread_id {
+            return Ok((self.thread_id.clone(), String::new()));
+        }
+        let thread =
+            self.state.load_thread(id).await?.ok_or_else(|| {
+                anyhow::anyhow!("no chat {id}: ask the user to copy its link again")
+            })?;
+        let title = thread.title.as_deref().unwrap_or("untitled");
+        Ok((thread.id.clone(), format!("chat {title:?} ({id}):\n\n")))
+    }
+
+    /// One stored tool result of `thread`. A number that is missing, another thread's or
     /// not a tool message all get the same answer.
-    async fn read_result(&self, arguments: &ReadHistoryArguments, number: u64) -> Result<String> {
+    async fn read_result(
+        &self,
+        thread: &str,
+        arguments: &ReadHistoryArguments,
+        number: u64,
+    ) -> Result<String> {
         ensure!(
             arguments.from.is_none(),
             "`result` reads one result; `from` lists messages. Give one of them"
         );
-        let not_found = || anyhow::anyhow!("no tool result #{number} in this thread");
-        let found = self.state.messages_from(&self.thread_id, number, 1).await?;
+        let place = if thread == self.thread_id {
+            "this thread".to_owned()
+        } else {
+            format!("thread {thread}")
+        };
+        let not_found = || anyhow::anyhow!("no tool result #{number} in {place}");
+        let found = self.state.messages_from(thread, number, 1).await?;
         let message = found
             .into_iter()
             .find(|message| message.sequence == number && message.role == MessageRole::Tool)
             .ok_or_else(not_found)?;
-        let tool = self.tool_of(&message).await?;
+        let tool = self.tool_of(thread, &message).await?;
         if let Some(query) = &arguments.search {
             ensure!(
                 arguments.offset.is_none() && arguments.limit.is_none(),
@@ -128,7 +162,7 @@ impl ReadHistory {
 
     /// The name of the tool whose call this result answers: the call sits in an assistant
     /// message shortly before it, so the search widens only when it is not there.
-    async fn tool_of(&self, result: &Message) -> Result<String> {
+    async fn tool_of(&self, thread: &str, result: &Message) -> Result<String> {
         if result.tool_call_id.is_none() {
             return Ok("tool".into());
         }
@@ -138,7 +172,7 @@ impl ReadHistory {
             // Through the result itself, which is how `calls_of` pairs them.
             let before = self
                 .state
-                .messages_from(&self.thread_id, from, span as u32 + 1)
+                .messages_from(thread, from, span as u32 + 1)
                 .await?;
             if let Some((_, call)) = calls_of(&before).get(result.message_id.as_str()) {
                 return Ok(call.name.clone());
@@ -160,7 +194,9 @@ impl Tool for ReadHistory {
         let mut text = "Read earlier messages of this conversation, including those replaced by a \
             summary. Give `search` to find messages containing some text (at least 3 \
             characters, best matches first), or `from` to read in order from a message \
-            number. Each message is shown with its number, so you can read on around a match."
+            number. Each message is shown with its number, so you can read on around a match. \
+            A `dusk://thread/<id>` link in a message names another chat: pass it as `thread` \
+            to read that chat the same way."
             .to_owned();
         if self.result_form(context) {
             text.push_str(RESULT_SENTENCE);
@@ -203,12 +239,14 @@ impl Tool for ReadHistory {
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ReadHistoryArguments = parse_arguments(arguments)?;
+            let (thread, header) = self.target(arguments.thread.as_deref()).await?;
             if let Some(number) = arguments.result {
                 ensure!(
                     self.result_form(&context),
                     "`result` is not available: use `search` or `from`"
                 );
-                return self.read_result(&arguments, number).await;
+                let result = self.read_result(&thread, &arguments, number).await?;
+                return Ok(header + &result);
             }
             ensure!(
                 arguments.offset.is_none(),
@@ -222,23 +260,20 @@ impl Tool for ReadHistory {
             let messages = match (&arguments.search, arguments.from) {
                 (Some(_), Some(_)) => bail!("give either search or from, not both"),
                 (Some(text), None) => {
-                    let found = self.state.search_messages(&self.thread_id, text, limit);
+                    let found = self.state.search_messages(&thread, text, limit);
                     found.await?
                 }
                 (None, from) => {
                     let from = from.unwrap_or(1);
-                    let read = self.state.messages_from(&self.thread_id, from, limit);
+                    let read = self.state.messages_from(&thread, from, limit);
                     read.await?
                 }
             };
             if messages.is_empty() {
-                return Ok("no messages".into());
+                return Ok(header + "no messages");
             }
-            Ok(messages
-                .iter()
-                .map(describe)
-                .collect::<Vec<_>>()
-                .join("\n\n"))
+            let messages: Vec<_> = messages.iter().map(describe).collect();
+            Ok(header + &messages.join("\n\n"))
         })
     }
 }
@@ -308,6 +343,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn reads_another_chat_by_its_link_only() {
+        let tool = history("history_link").await;
+        let link = dusk_protocol::thread::thread_link("other");
+        let found = read(&tool, json!({ "thread": link, "from": 1 }))
+            .await
+            .unwrap();
+        assert!(
+            found.ends_with("#1 user:\nmain.rs of another thread"),
+            "{found}"
+        );
+        assert!(!found.contains("staging"));
+        for bad in ["dusk://thread/../other", "dusk://thread/missing"] {
+            let error = read(&tool, json!({ "thread": bad })).await.unwrap_err();
+            assert!(format!("{error:#}").contains("chat"), "{bad}: {error:#}");
+        }
+    }
+
+    #[tokio::test]
     async fn query_syntax_is_plain_text() {
         let tool = history("history_syntax").await;
         let found = read(&tool, json!({ "search": "\"main OR" })).await.unwrap();
@@ -327,6 +380,8 @@ mod tests {
         /// How many messages. Defaults to 20.
         #[schemars(range(min = 1, max = MAX_LIMIT))]
         limit: Option<u32>,
+        /// Another chat to read: its `dusk://thread/<id>` link or id. Defaults to this one.
+        thread: Option<String>,
     }
 
     /// The tool as the model sees it with the `result` form on; the thread `thread` has a
@@ -448,7 +503,9 @@ mod tests {
         let before = "Read earlier messages of this conversation, including those replaced by a \
             summary. Give `search` to find messages containing some text (at least 3 \
             characters, best matches first), or `from` to read in order from a message \
-            number. Each message is shown with its number, so you can read on around a match.";
+            number. Each message is shown with its number, so you can read on around a match. \
+            A `dusk://thread/<id>` link in a message names another chat: pass it as `thread` \
+            to read that chat the same way.";
         assert_eq!(plain.description(&off), before);
         let offered = tool.offered_parameters(&off);
         assert!(offered["properties"].get("result").is_some());

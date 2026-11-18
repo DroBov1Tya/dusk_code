@@ -295,7 +295,7 @@ fn assistant_view(text: String, reasoning: String) -> impl IntoView {
     }
 }
 
-fn copy(text: &str) {
+pub(super) fn copy(text: &str) {
     // The clipboard API is still unstable in web-sys, so it is reached by name.
     let Some(window) = web_sys::window() else {
         return;
