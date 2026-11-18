@@ -36,7 +36,8 @@ pub struct Listing {
     pub platforms: Vec<Os>,
     /// All when empty.
     pub clients: Vec<Client>,
-    /// What it may do, one line each, as the user is asked before it is installed.
+    /// What it may do, one line each, as the user is asked before it is installed: first
+    /// one line per `programs`, then one per `connectors`, then what else it may reach.
     pub permissions: Vec<String>,
     /// An `https` page about it.
     pub homepage: Option<String>,
@@ -98,6 +99,52 @@ pub struct Listing {
     /// name to pass for another source's plugin.
     #[serde(default)]
     pub clash: bool,
+    /// For a plugin: the MCP servers it brings.
+    #[serde(default)]
+    pub connectors: Vec<Connector>,
+    /// For a plugin: the command lines of its own programs, run on this computer while it
+    /// is on.
+    #[serde(default)]
+    pub programs: Vec<String>,
+}
+
+impl Listing {
+    /// The lines of `permissions` after those of its programs and connectors: what else
+    /// it may reach.
+    pub fn reach(&self) -> &[String] {
+        let skip = self.programs.len() + self.connectors.len();
+        self.permissions.get(skip..).unwrap_or_default()
+    }
+}
+
+/// An MCP server a plugin brings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Connector {
+    pub name: String,
+    pub runs: Runs,
+    pub state: ConnectorState,
+}
+
+/// What an MCP server is: a program on this computer, or an address on the network.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Runs {
+    /// The command line, `./` being the plugin's folder.
+    Command(String),
+    /// An `https` address the core sends the agent's requests to.
+    Url(String),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectorState {
+    /// The plugin is not here or not on.
+    #[default]
+    NotAdded,
+    /// The plugin is on and its server is among the connectors.
+    Added,
+    /// A connector the user configured has the name; it is used, never replaced.
+    Yours,
 }
 
 /// Trust, highest first; the list is sorted in this order.

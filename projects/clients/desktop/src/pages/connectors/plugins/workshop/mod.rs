@@ -8,6 +8,7 @@
 mod actions;
 mod byline;
 mod capsule;
+pub mod connectors;
 pub mod contents;
 pub mod covers;
 pub mod detail;
@@ -42,6 +43,7 @@ use crate::{
     workspace::Workspace,
 };
 
+pub use capsule::clip;
 pub use grid::Grid;
 pub use shelves::Shelf;
 

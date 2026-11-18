@@ -170,6 +170,19 @@ impl Manifest {
         runs_here(&self.platforms)
     }
 
+    /// The command lines of its own programs, its platform, panel and hooks, sorted and
+    /// each once, as the store lists them.
+    pub fn programs(&self) -> Vec<String> {
+        let lines = self
+            .platform
+            .iter()
+            .map(|platform| &platform.command)
+            .chain(self.ui.iter().map(|ui| &ui.command))
+            .chain(self.hooks.iter().map(|hook| &hook.command))
+            .map(|command| command.join(" "));
+        lines.collect::<BTreeSet<_>>().into_iter().collect()
+    }
+
     /// Whether it runs programs of its own, which then run confined.
     pub fn runs_programs(&self) -> bool {
         !self.mcp.is_empty()

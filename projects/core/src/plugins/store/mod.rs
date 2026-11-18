@@ -16,6 +16,8 @@
 //! - `content`, `pack` — skills, packs and agents, which are plain files;
 //! - `contents` — the files of a listing, for a client to look through.
 
+#[cfg(test)]
+mod brings_tests;
 mod content;
 #[cfg(test)]
 mod content_tests;
@@ -54,6 +56,7 @@ use index::Entry;
 use record::{Installed, Record};
 use source::Fetched;
 
+pub use listing::Here;
 pub use pack::{FILE as PACK_FILE, Pack};
 pub use picture::{cover, screenshot};
 
@@ -73,6 +76,7 @@ pub async fn list(
     order: Order,
     category: Option<&str>,
     kinds: &[Kind],
+    here: &Here,
 ) -> Result<StoreList> {
     let (fetched, failed) = source::read(paths, mirrors).await;
     let record = Record::load(paths)?;
@@ -84,9 +88,9 @@ pub async fn list(
                 .index
                 .plugins
                 .iter()
-                .map(move |entry| listing::listing(paths, record, source, entry))
+                .map(move |entry| listing::listing(paths, record, here, source, entry))
         })
-        .chain(listing::local(paths, &record))
+        .chain(listing::local(paths, &record, here))
         .collect();
     listing::mark_clashes(&mut listings);
     listings.retain(|listing| {
@@ -317,9 +321,15 @@ async fn put(paths: &Paths, source: &Fetched, entry: &Entry) -> Result<()> {
 }
 
 /// Whether `entry` asks for a permission or a model provider the plugin in `folder` does
-/// not have.
+/// not have, or brings an MCP server or a program it does not.
 fn asks_more(folder: &Path, entry: &Entry) -> Result<bool> {
     let manifest = Manifest::load(folder)?;
+    let (servers, programs) = (servers(&manifest), manifest.programs());
+    if entry.mcp.iter().any(|server| !servers.contains(server))
+        || entry.programs.iter().any(|line| !programs.contains(line))
+    {
+        return Ok(true);
+    }
     let had: Vec<&str> = manifest
         .providers
         .values()
@@ -395,5 +405,73 @@ fn check_manifest(folder: &Path, entry: &Entry) -> Result<()> {
         providers == entry.providers,
         "the package brings other model providers than the list shows"
     );
+    // A list before format 3 cannot say what a plugin runs; the user was shown nothing
+    // of it, as before.
+    if entry.format >= 3 {
+        let mut listed = entry.mcp.clone();
+        listed.sort();
+        ensure!(
+            servers(&manifest) == listed,
+            "the package brings other MCP servers than the list shows"
+        );
+        ensure!(
+            manifest.programs() == entry.programs,
+            "the package runs other programs than the list shows"
+        );
+        let listed: std::collections::BTreeSet<&str> =
+            entry.skills.iter().map(String::as_str).collect();
+        let held = skill_folders(folder)?;
+        ensure!(
+            held.iter()
+                .map(String::as_str)
+                .collect::<std::collections::BTreeSet<_>>()
+                == listed,
+            "the package holds other skills than the list shows"
+        );
+    }
     Ok(())
+}
+
+/// A manifest's MCP servers as a list names them, sorted by name.
+pub fn servers(manifest: &Manifest) -> Vec<index::Server> {
+    use crate::config::McpServerConfig;
+    manifest
+        .mcp
+        .iter()
+        .map(|(name, server)| match server {
+            McpServerConfig::Stdio(stdio) => index::Server {
+                name: name.clone(),
+                command: Some(stdio.command.clone()),
+                args: stdio.args.clone(),
+                url: None,
+            },
+            McpServerConfig::Http(http) => index::Server {
+                name: name.clone(),
+                command: None,
+                args: Vec::new(),
+                url: Some(http.url.clone()),
+            },
+        })
+        .collect()
+}
+
+/// The folders under a plugin's `skills/`, each a skill or a set of them.
+fn skill_folders(folder: &Path) -> Result<Vec<String>> {
+    let skills = folder.join("skills");
+    if fs::symlink_metadata(&skills).is_err() {
+        return Ok(Vec::new());
+    }
+    let mut names = Vec::new();
+    for item in fs::read_dir(&skills).context("cannot list its skills")? {
+        let item = item?;
+        if item.file_type()?.is_dir() {
+            names.push(
+                item.file_name()
+                    .to_str()
+                    .context("a skill's name is not UTF-8")?
+                    .to_owned(),
+            );
+        }
+    }
+    Ok(names)
 }

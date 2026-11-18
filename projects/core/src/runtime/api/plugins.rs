@@ -45,8 +45,19 @@ impl Runtime {
                 category,
                 kinds,
             } => {
+                let here = store::Here {
+                    yours: self.config().current().mcp().keys().cloned().collect(),
+                    on: self
+                        .plugins
+                        .list()
+                        .into_iter()
+                        .filter(|plugin| plugin.enabled)
+                        .map(|plugin| plugin.name)
+                        .collect(),
+                };
+                let category = category.as_deref();
                 let list =
-                    store::list(self.paths(), &mirrors, order, category.as_deref(), &kinds).await?;
+                    store::list(self.paths(), &mirrors, order, category, &kinds, &here).await?;
                 return Ok(Response::Store(list));
             }
             StoreRequest::Install {

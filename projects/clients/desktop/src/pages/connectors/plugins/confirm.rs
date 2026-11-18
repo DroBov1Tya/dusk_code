@@ -1,7 +1,7 @@
 //! The yes before the store changes this machine: what a plugin may do before it is
 //! installed, and what is lost before one is removed.
 
-use dusk_protocol::plugin::{Client, Kind, Listing, Tier};
+use dusk_protocol::plugin::{Client, ConnectorState, Kind, Listing, Tier};
 use gpui_kit::{
     component::{
         ActiveTheme,
@@ -10,7 +10,11 @@ use gpui_kit::{
     *,
 };
 
-use crate::{ui::Type, workspace::Workspace};
+use super::workshop::connectors;
+use crate::{
+    ui::{Type, widgets},
+    workspace::Workspace,
+};
 
 #[derive(Clone)]
 pub enum Confirm {
@@ -26,6 +30,14 @@ impl Confirm {
             Self::Remove(name) => format!("Remove {name}"),
         }
     }
+}
+
+fn group(title: &'static str, cx: &App) -> Div {
+    div()
+        .pt_1()
+        .group_name()
+        .text_color(cx.theme().muted_foreground)
+        .child(title)
 }
 
 /// "Update" when the source has a newer version than the one here, "Install" otherwise.
@@ -70,25 +82,92 @@ pub fn render(confirm: &Confirm, focus: &FocusHandle, cx: &mut Context<Workspace
     )
 }
 
-/// What the plugin may do, one line each, as the store lists it.
+/// What the install adds, in three groups: what runs on this machine or sends data
+/// elsewhere, what else it may reach, and what it adds for the agent. The lines are the
+/// listing's own; the core refuses the install if they changed since they were shown.
 fn permissions(listing: &Listing, cx: &App) -> Div {
-    let (muted, warning) = (cx.theme().muted_foreground, cx.theme().warning);
+    let theme = cx.theme();
+    let (muted, warning) = (theme.muted_foreground, theme.warning);
+    let mono = theme.mono_font_family.clone();
     let mut body = div().flex().flex_col().gap_2();
-    body = if listing.permissions.is_empty() {
-        body.child(
+    let runs: Vec<(&str, String)> = listing
+        .programs
+        .iter()
+        .map(|line| (connectors::RUNS_HERE, line.clone()))
+        .chain(listing.connectors.iter().map(|connector| {
+            (
+                connectors::can(&connector.runs),
+                format!(
+                    "{}: {}",
+                    connector.name,
+                    connectors::target(&connector.runs)
+                ),
+            )
+        }))
+        .collect();
+    let reach = match listing.kind {
+        Kind::Plugin => listing.reach(),
+        _ => &listing.permissions[..],
+    };
+    if runs.is_empty() && reach.is_empty() && listing.skills.is_empty() {
+        body = body.child(
             div()
                 .body()
                 .child("It asks for nothing beyond its own folder."),
-        )
+        );
     } else {
-        body.child(
+        body = body.child(
             div()
                 .body()
-                .child(format!("{} {} may:", listing.name, listing.version)),
-        )
-    };
-    for line in &listing.permissions {
-        body = body.child(div().small().pl_3().child(format!("• {line}")));
+                .child(format!("{} {} adds:", listing.name, listing.version)),
+        );
+    }
+    if !runs.is_empty() {
+        body = body.child(group("Runs on your machine", cx));
+        for (can, line) in runs {
+            body = body.child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .pl_3()
+                    .child(div().small().child(format!("\u{2022} {can}")))
+                    .child(
+                        div()
+                            .pl_3()
+                            .small()
+                            .font_family(mono.clone())
+                            .text_color(muted)
+                            .child(super::workshop::clip(&line, 200)),
+                    ),
+            );
+        }
+        for connector in &listing.connectors {
+            if connector.state == ConnectorState::Yours {
+                body = body.child(div().meta().text_color(muted).pl_3().child(format!(
+                    "Your connector {} stays; the plugin's of that name is not used.",
+                    connector.name
+                )));
+            }
+        }
+    }
+    if !reach.is_empty() {
+        body = body.child(group("May reach", cx));
+        for line in reach {
+            body = body.child(div().small().pl_3().child(format!("\u{2022} {line}")));
+        }
+    }
+    if !listing.skills.is_empty() {
+        body = body.child(group("Adds for the agent", cx)).child(
+            div()
+                .small()
+                .pl_3()
+                .child(widgets::count(listing.skills.len(), "skill"))
+                .child(
+                    div()
+                        .text_color(muted)
+                        .child(super::workshop::clip(&listing.skills.join(", "), 300)),
+                ),
+        );
     }
     if listing.kind != Kind::Plugin {
         body =

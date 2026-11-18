@@ -1,6 +1,7 @@
 //! A listing's window, as a store page: on the left its cover with its name, byline, mark
 //! and categories, then its tabs: Overview (screenshots and the whole description),
-//! Contents (its files) and, for a pack, Skills; on the right its action (with Remove apart and in the danger
+//! Contents (its files), for a pack Skills and for a plugin that brings MCP servers
+//! Connectors; on the right its action (with Remove apart and in the danger
 //! colour), what it warns of, what it may access, where it comes from and its details
 //! with dates in words, its license and its addresses shown. A tab with nothing in it is
 //! not drawn. All of it is the publisher's text, drawn as plain text.
@@ -17,7 +18,7 @@ use gpui_kit::{
 use super::{
     actions,
     byline::{dated_byline, day},
-    capsule, contents, gallery, hero, pack, tier,
+    capsule, connectors, contents, gallery, hero, pack, tier,
 };
 use crate::{
     ui::{Type, controls, size, widgets},
@@ -31,6 +32,7 @@ pub enum Tab {
     Overview,
     Contents,
     Skills,
+    Connectors,
 }
 
 impl Tab {
@@ -39,6 +41,7 @@ impl Tab {
             Self::Overview => "Overview",
             Self::Contents => "Contents",
             Self::Skills => "Skills",
+            Self::Connectors => "Connectors",
         }
     }
 }
@@ -102,6 +105,7 @@ pub fn render(
         }
         Tab::Contents => main.child(contents::render(ws, listing, main_w, cx)),
         Tab::Skills => main.child(skills(ws, listing, cx)),
+        Tab::Connectors => main.child(connectors::render(listing, cx)),
     };
     let side = side(ws, listing, cx).w(px(if wide { SIDE } else { main_w }));
     if wide {
@@ -137,10 +141,13 @@ fn shown_tabs(listing: &Listing) -> Vec<Tab> {
     if listing.kind == Kind::Pack && !listing.skills.is_empty() {
         shown.push(Tab::Skills);
     }
+    if !listing.connectors.is_empty() {
+        shown.push(Tab::Connectors);
+    }
     shown
 }
 
-/// "Overview | Contents | Skills", the ones with something in them; Contents asks the
+/// "Overview | Contents | Skills | Connectors", the ones with something in them; Contents asks the
 /// core for the files when it opens, not before, since that may fetch the package.
 fn tabs(listing: &Listing, shown: &[Tab], open: Tab, cx: &mut Context<Workspace>) -> Div {
     let mut row = div().flex().flex_row().items_center().gap(px(size::GAP_S));

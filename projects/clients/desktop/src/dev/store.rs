@@ -12,8 +12,8 @@ use std::sync::Arc;
 use dusk_protocol::{
     catalog::{PackSkill, SkillPack},
     plugin::{
-        Client, Contents, Cover, FilePreview, FileRef, Kind, Listing, Os, PICKS, Picks, RepoStars,
-        ScreenshotRef, SourceFailure, Tier, UpdateReport,
+        Client, Connector, ConnectorState, Contents, Cover, FilePreview, FileRef, Kind, Listing,
+        Os, PICKS, Picks, RepoStars, Runs, ScreenshotRef, SourceFailure, Tier, UpdateReport,
     },
 };
 use gpui_kit::*;
@@ -107,9 +107,30 @@ pub fn listings() -> Vec<Listing> {
         Listing {
             platforms: vec![Os::Macos],
             clients: vec![Client::Gui, Client::Tui],
+            // The core's lines: its program, its servers, then what else it may reach.
             permissions: vec![
+                "run the program ./bin/telegram on this computer while it is on".into(),
+                "start the MCP server telegram-history (./bin/telegram mcp) on this computer; \
+                 the agent may use its tools"
+                    .into(),
+                "send the agent's requests for the tools of chat-search to \
+                 https://search.example.com/mcp"
+                    .into(),
                 "Reach https://api.telegram.org".into(),
                 "Use the secret TELEGRAM_TOKEN".into(),
+            ],
+            programs: vec!["./bin/telegram".into()],
+            connectors: vec![
+                Connector {
+                    name: "telegram-history".into(),
+                    runs: Runs::Command("./bin/telegram mcp".into()),
+                    state: ConnectorState::Added,
+                },
+                Connector {
+                    name: "chat-search".into(),
+                    runs: Runs::Url("https://search.example.com/mcp".into()),
+                    state: ConnectorState::Yours,
+                },
             ],
             installed: Some("1.0.0".into()),
             category: "communication".into(),
@@ -528,8 +549,8 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 /// `workshop`: the Workshop shown; `workshop=install:NAME|remove:NAME`: its window that
 /// asks first; `workshop=busy:NAME`: the capsule at work; `workshop=failed:NAME`: the
 /// capsule after a failure; `workshop=pack:NAME`: a pack's page; `workshop=open:NAME`: a
-/// listing's window, `workshop=gallery:N` its Nth picture, `workshop=tab:skills|contents` its
-/// Skills or Contents tab; `workshop=hero:N`: the Nth
+/// listing's window, `workshop=gallery:N` its Nth picture, `workshop=tab:skills|contents|connectors`
+/// that tab; `workshop=hero:N`: the Nth
 /// featured pick; `workshop=next:N`: the Official shelf from its Nth capsule;
 /// `workshop=all:TIER`: that tier's shelf whole; `workshop=tier:TIER`: filter by it;
 /// `workshop=coming:NAME`: its cover still coming; `workshop=offline:`: the store could not
@@ -596,6 +617,7 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
             ws.workshop.tab = match name {
                 "skills" => Tab::Skills,
                 "contents" => Tab::Contents,
+                "connectors" => Tab::Connectors,
                 _ => Tab::Overview,
             };
             if let Some(Modal::Listing { source, name }) = &ws.modal {
