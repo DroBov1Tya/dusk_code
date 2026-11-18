@@ -1,7 +1,9 @@
 //! Projects: named folders. Their chats are found by folder, so none is stored here.
-//! `env` keeps a project's variables, `schedules` its scheduled tasks.
+//! `env` keeps a project's variables, `schedules` its scheduled tasks, `graph` the index
+//! of its source.
 
 mod env;
+mod graph;
 mod schedules;
 
 use std::path::PathBuf;
