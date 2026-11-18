@@ -93,7 +93,6 @@ impl Agent {
         // The user's stop and the context's compaction end a long run, not a step count.
         let outcome;
         let mut stop = None;
-        let mut received = Vec::new();
         // When the provider waits in a row began, while one is stored with the turn.
         let mut waiting_since = match turn.waiting {
             Some(TurnWait::Provider { since, .. }) => Some(since),
@@ -107,7 +106,7 @@ impl Agent {
                 Some(end) => Ok(end),
                 None => {
                     let waited = waiting_since.is_some();
-                    self.step(turn, inbox, &mut received, waited).await
+                    self.step(turn, inbox, waited).await
                 }
             };
             let end = match step {
@@ -193,14 +192,6 @@ impl Agent {
                 }
             }
             break;
-        }
-        // However the turn ended, sources a model read go as a short line from now on.
-        // Each step of this turn carried them in full, since the block is not kept.
-        if let Err(error) = self.state.mark_sources_delivered(&received).await {
-            warn!(
-                "thread {}: cannot mark sources delivered: {error:#}",
-                self.thread_id
-            );
         }
         if let TurnOutcome::Completed(answer) = &outcome {
             self.store_lesson(&turn.turn_id, &answer.content).await;
