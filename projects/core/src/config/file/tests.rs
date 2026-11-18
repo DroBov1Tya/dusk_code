@@ -349,9 +349,10 @@ fn the_failure_ladder_is_on_and_its_rungs_rise() {
 }
 
 #[test]
-fn the_team_switches_are_off_and_its_ceilings_have_defaults() {
+fn the_team_parts_are_off_and_its_ceilings_have_defaults() {
     let plain = parse(PROVIDERS).unwrap().limits();
-    assert!(!plain.plan_graph && !plain.task_packets && !plain.member_worktrees);
+    // The team itself is chosen by the mode; `plan_graph` only switches it off.
+    assert!(plain.plan_graph && !plain.task_packets && !plain.member_worktrees);
     assert!(!plain.peer_messages && !plain.procedures);
     let ceilings = (
         plain.team_at_once,

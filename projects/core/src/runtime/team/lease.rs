@@ -9,7 +9,7 @@ use anyhow::{Result, bail, ensure};
 use dusk_protocol::thread::{TaskStatus, TeamEnd, TeamMember};
 use tracing::debug;
 
-use super::member::is_member;
+use super::member::{is_member, lead_policy};
 use crate::{
     config::Config,
     runtime::{Launcher, ThreadEvent, ThreadOutput},
@@ -107,6 +107,12 @@ pub(crate) async fn may_step(
         at_work(state, lead, thread_id).await?.is_some(),
         "this member holds no task at work: its task was taken back or is finished"
     );
+    // The lead's mode as it is now: one the user tightened since the claim holds from
+    // the member's next step on.
+    let policy = lead_policy(state, config, lead).await?;
+    if state.thread_approvals(thread_id).await? != Some(policy) {
+        state.set_thread_approvals(thread_id, Some(policy)).await?;
+    }
     match state
         .team_check(lead, TeamAsk::Step, timestamp_ms()?)
         .await?

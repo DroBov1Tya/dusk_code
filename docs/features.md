@@ -74,13 +74,42 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 - **Working row.** While a turn runs, the chat shows time, tokens and step, for example
   `Working · 2m 14s · 18.4k tokens · step 7`, counted by the core; no switch.
 
-## Plan graph and teams (unfinished)
+## Teams (TEAM mode)
 
-`limits.plan_graph` (off). In ORCHESTRATOR mode the lead's `tasks` tool takes a plan: tasks
-that depend on each other, with files, roles and acceptance. `run` has the core give each
-ready task to a member (a thread under the chat), keep a lease on it and hand it out again
-if the lease runs out, and end the team when all tasks are done or a budget of steps,
-tokens or minutes (`limits.team_max_steps`, `team_max_tokens`, `team_max_minutes`) is
-spent. Not finished: command gates are not run (such a task waits for the lead's review)
-and there is no recovery after a restart. Further switches, all off: `limits.task_packets`,
-`member_worktrees`, `peer_messages`, `procedures`.
+A team runs only in the chat's TEAM mode; every other mode keeps the board and the agents
+`ask_agent` starts. `limits.plan_graph` (on) is the kill switch: off, TEAM mode has the
+board too and no team runs.
+
+- **The plan.** In TEAM mode the lead's `tasks` tool takes a plan: tasks that depend on
+  each other, each with its files, role, acceptance and gate. `run` has the core give each
+  ready task to a member (a thread under the chat) and keep a lease on it. In another mode
+  nothing new is given out; what is at work finishes, and the team goes on when the mode
+  is back.
+- **Members.** A member gets a card the core writes: the task, its files, how done is
+  told, what was done before it, and the rules. Its tools are an allowlist (`run_command`,
+  `jobs`, `read_file`, `search_files`, `project_graph`, `recall`, `read_history`,
+  `load_skill`); a role's own `tools` and `team: { tools: { <role>: [..] } }` only take
+  from it. Its approval mode is the chat's, read again before each step. It answers on
+  `team: { models: { <role>: provider/model } }`, else `team.model`, else the chat's
+  model; a role set to a provider the config lacks fails its task with that reason.
+- **Gates.** A command gate is run by the core in the project folder under the chat's
+  approval mode: exit 0 makes the task done; anything else sends it back to its member
+  with the end of the output, twice at most, then the task fails and the lead decides. In
+  a mode that would ask the user the gate is not run and the task waits for the lead. A
+  task without a gate waits for the lead's review. A task whose gate is the user's
+  confirmation waits in review while the team goes on; the lead is told once, and the
+  desktop plan row has `confirm`.
+- **What is forwarded.** A line to the lead (400 bytes at most), a task's note, a gate's
+  output and a card are made plain and cleared of the project's variables and of what is
+  shaped like a key before they are stored or sent.
+- **Budgets and ends.** `limits.team_max_steps`, `team_max_tokens`, `team_max_minutes`
+  and `team_at_once` are the ceilings; a member takes no step once one is spent. The team
+  ends when all is done, a budget is spent, it is stopped, or nothing can start and the
+  lead changed nothing.
+- **Recovery.** When the chat is opened after a restart, an ended team's work goes back
+  to open, a turn still running gets its lease again, a turn that completed is handed in,
+  a lost one is released, and a gate that was cut off runs again.
+
+Not built: a worktree per member, messages between members, procedures (their switches
+`limits.member_worktrees`, `peer_messages`, `procedures` do nothing yet; `task_packets`
+is no longer read). A task's `files` are told to its member and not checked at hand-in.

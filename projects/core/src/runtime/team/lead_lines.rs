@@ -11,6 +11,7 @@ use std::path::Path;
 
 use tracing::warn;
 
+use super::clean;
 use crate::{
     message::plain::plain,
     runtime::Launcher,
@@ -58,12 +59,30 @@ fn line(head: &str, text: &str, tail: &str) -> String {
     format!("{head}{}{tail}", &text[..end])
 }
 
+/// `text` at `MAX_LINE` bytes at most, never inside a character.
+fn cut(text: &str) -> &str {
+    let mut end = text.len().min(MAX_LINE);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
+}
+
 pub(super) fn review_line(folded: &str, task: &PlanTask, result: &str, why: &str) -> String {
     let head = format!(
         "{folded}#{} waits for you: {why}. Result: ",
         short_task_id(&task.task_id)
     );
     let tail = ". Accept or reject with tasks review.";
+    line(&head, &quoted(result, MAX_QUOTED), tail)
+}
+
+pub(super) fn confirm_line(folded: &str, task: &PlanTask, result: &str) -> String {
+    let head = format!(
+        "{folded}#{} waits for the user to confirm it. Result: ",
+        short_task_id(&task.task_id)
+    );
+    let tail = ". Tell the user what to look at; only they can confirm it, the team goes on.";
     line(&head, &quoted(result, MAX_QUOTED), tail)
 }
 
@@ -116,17 +135,31 @@ pub(super) fn stall_line(counts: &TeamCounts) -> String {
 pub(super) async fn review(
     launcher: &Launcher,
     lead: &str,
-    member: &Thread,
+    member: &str,
     task: &PlanTask,
     result: &str,
     why: &str,
 ) {
     let folded = folded(launcher, lead).await;
     let line = review_line(&folded, task, result, why);
+    tell(launcher, lead, member, &uid(task), &line, true).await;
+}
+
+/// A task waits for the user's confirmation.
+pub(super) async fn confirm(
+    launcher: &Launcher,
+    lead: &str,
+    member: &Thread,
+    task: &PlanTask,
+    result: &str,
+) {
+    let folded = folded(launcher, lead).await;
+    let line = confirm_line(&folded, task, result);
     tell(launcher, lead, &member.id, &uid(task), &line, true).await;
 }
 
-/// A task failed: its member's turns were lost three times.
+/// A task failed: its member's turns were lost three times, or its gate failed after
+/// its last rework.
 pub(super) async fn failed(launcher: &Launcher, lead: &str, task: &PlanTask) {
     let folded = folded(launcher, lead).await;
     let from = task.owner_thread_id.as_deref().unwrap_or(lead);
@@ -164,6 +197,10 @@ pub(super) async fn tell(
     wake: bool,
 ) {
     let state = &launcher.state;
+    // The one way a line reaches the lead: a member's or a program's words in it are
+    // cleared of secrets here, whoever built the line.
+    let cleaned = clean::text(launcher, lead, line).await;
+    let line = cut(&cleaned);
     let stored = match wake {
         // A chat is woken, never started, so no folder is used.
         true => {

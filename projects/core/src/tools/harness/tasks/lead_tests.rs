@@ -19,7 +19,7 @@ use crate::{
 };
 
 const LEAD: &str = "lead";
-const ON: &str = "mode: ORCHESTRATOR\nlimits:\n  plan_graph: true\n";
+const ON: &str = "mode: TEAM\n";
 
 struct Fixture {
     state: Arc<State>,
@@ -137,7 +137,7 @@ fn spec_bytes(tasks: &Tasks, context: &ToolContext) -> (usize, usize, usize) {
 }
 
 #[tokio::test]
-async fn the_plan_form_is_offered_only_to_a_chat_in_orchestrator_with_the_switch_on() {
+async fn the_plan_form_is_offered_only_to_a_chat_in_team_mode() {
     let on = fixture("plan_offered").await;
     let board = Tasks::new(Arc::clone(&on.state), LEAD.into());
     let board_context = |settings: &str| ToolContext {
@@ -150,14 +150,15 @@ async fn the_plan_form_is_offered_only_to_a_chat_in_orchestrator_with_the_switch
     );
     for settings in [
         "limits:\n  plan_graph: true\n",
-        "mode: PLAN\nlimits:\n  plan_graph: true\n",
+        "mode: PLAN\n",
         "mode: ORCHESTRATOR\n",
+        "mode: TEAM\nlimits:\n  plan_graph: false\n",
     ] {
         let context = board_context(settings);
         assert_eq!(on.tasks.description(&context), board_form.0, "{settings}");
         assert_eq!(on.tasks.offered_parameters(&context), board_form.1);
     }
-    // An agent's tasks (no lead) stay the board under an ORCHESTRATOR chat.
+    // An agent's tasks (no lead) stay the board under a TEAM chat.
     assert_eq!(board.description(&on.context), board_form.0);
     assert_eq!(on.tasks.description(&on.context), text::DESCRIPTION);
     assert_eq!(on.tasks.offered_parameters(&on.context), text::schema());
@@ -595,7 +596,7 @@ async fn the_board_works_as_before_and_leaves_given_out_tasks_alone() {
     ] {
         let refused = main.refused(plan_only).await;
         assert!(
-            refused.starts_with("the plan's actions need ORCHESTRATOR"),
+            refused.starts_with("the plan's actions need TEAM mode"),
             "{refused}"
         );
     }

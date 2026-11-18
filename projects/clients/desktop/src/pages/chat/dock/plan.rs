@@ -4,7 +4,7 @@
 
 use std::ops::Range;
 
-use dusk_protocol::thread::{PlanCounts, Task, TaskStatus};
+use dusk_protocol::thread::{GoalCheck, PlanCounts, Task, TaskStatus};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     prelude::FluentBuilder,
@@ -209,10 +209,30 @@ fn bar(counts: PlanCounts, cx: &App) -> Div {
 }
 
 /// One task: its number, the state's glyph and word, its words on one line and its owner.
-fn row(number: usize, task: &Task, cx: &App) -> Div {
+/// A task that waits for the user's confirmation has `confirm` for its word, and a
+/// click on it passes the task.
+fn row(number: usize, task: &Task, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
-    let muted = theme.muted_foreground;
+    let (muted, accent) = (theme.muted_foreground, theme.primary);
     let (glyph, color) = look(task.status, cx);
+    let word = div().flex_none().w(px(56.)).meta().text_right();
+    let for_user =
+        task.status == TaskStatus::Review && task.gate == Some(GoalCheck::UserConfirmation);
+    let word = match for_user {
+        true => {
+            let task_id = task.task_id.clone();
+            word.id(SharedString::from(format!("confirm-{}", task.task_id)))
+                .text_color(accent)
+                .cursor_pointer()
+                .child("confirm")
+                .on_click(cx.listener(move |ws, _, _, cx| ws.confirm_task(&task_id, cx)))
+                .into_any_element()
+        }
+        false => word
+            .text_color(color)
+            .child(task.status.name())
+            .into_any_element(),
+    };
     let owner = task.owner.as_ref().map(|owner| {
         div()
             .flex_none()
@@ -262,15 +282,7 @@ fn row(number: usize, task: &Task, cx: &App) -> Div {
                 .child(one_line(&task.description)),
         )
         .children(owner)
-        .child(
-            div()
-                .flex_none()
-                .w(px(56.))
-                .meta()
-                .text_color(color)
-                .text_right()
-                .child(task.status.name()),
-        )
+        .child(word)
 }
 
 /// The glyph and colour of a status; its word is always beside it, so colour is never

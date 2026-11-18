@@ -299,13 +299,11 @@ async fn a_card_delivered_again_is_dropped() {
         .collect();
     assert_eq!(cards.len(), 1);
     let id = crate::tools::short_task_id(&ids[0]);
-    assert_eq!(
-        cards[0].content,
-        format!(
-            "Task #{id}: write (it)\nAccept: the test passes\nGate: the user confirms it\n\
-             Yours: no file; change nothing"
-        )
+    let head = format!(
+        "Task #{id}: write (it)\nAccept: the test passes\nGate: the user confirms it\n\
+         Yours: no file; change nothing\nRules: "
     );
+    assert!(cards[0].content.starts_with(&head), "{}", cards[0].content);
 }
 
 #[tokio::test]

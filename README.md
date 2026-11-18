@@ -80,7 +80,8 @@ account only in its own apps. Claude models work here with an API key.
 
 ## What it does
 
-- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, PLAN to plan first; your own
+- **Modes**: MAIN for direct work, ORCHESTRATOR to delegate, TEAM to have a
+  plan run by a team, PLAN to plan first; your own
   modes are Markdown files.
 - **Tools**: read, search and edit files, run commands in the foreground or as background
   jobs, look at pictures, and on a desktop see the screen and use the mouse and keyboard.

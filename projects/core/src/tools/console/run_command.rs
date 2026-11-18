@@ -377,6 +377,23 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
         command.len() <= MAX_USER_COMMAND_BYTES,
         "command is longer than {MAX_USER_COMMAND_BYTES} bytes"
     );
+    Ok(run_check(command, context, DEFAULT_TIMEOUT_SECONDS)
+        .await?
+        .content)
+}
+
+/// The longest a check the core starts may run: a command's own longest.
+pub const CHECK_TIMEOUT_SECONDS: u64 = MAX_TIMEOUT_SECONDS;
+
+/// Runs a command nobody's tool call started, such as a task's gate, in the folder of
+/// `context` and confined as that thread's own commands are. The caller has had it
+/// approved. Answers its exit code and capped output; an error when it could not start
+/// or ran out of time.
+pub async fn run_check(
+    command: &str,
+    context: &ToolContext,
+    timeout_seconds: u64,
+) -> Result<crate::tools::ToolResult> {
     platform::login_path::load().await;
     let confinement = confinement(context).await;
     let scope = &*context.scope;
@@ -386,13 +403,13 @@ pub async fn run_for_user(command: &str, context: &ToolContext) -> Result<String
         &CommandEnv::default().secrets(project_env(context).await?),
         scope,
         confinement.as_ref(),
-        DEFAULT_TIMEOUT_SECONDS,
+        timeout_seconds,
         None,
     )
     .await?;
     match ran {
-        Ran::Done(result) => Ok(result.content),
-        Ran::Detached(_) => bail!("a command the user runs is never handed on"),
+        Ran::Done(result) => Ok(result),
+        Ran::Detached(_) => bail!("a command nobody watches is never handed on"),
     }
 }
 

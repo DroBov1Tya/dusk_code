@@ -66,7 +66,7 @@ pub fn parse_args() -> Args {
         .arg(
             Arg::new("mode")
                 .long("mode")
-                .help("MAIN, ORCHESTRATOR or another mode"),
+                .help("MAIN, ORCHESTRATOR, TEAM or another mode"),
         )
         .arg(
             Arg::new("runs")

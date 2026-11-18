@@ -5,13 +5,15 @@
 //! to members, and the team ends when it is done, spent or stalled.
 //!
 //! `member` makes a member's thread and fixes what it may do, `card` writes its first
-//! message, `lease` keeps its claim while its runner lives, `hand_in` moves its task when
+//! message, `clean` takes secrets out of every text that is forwarded, `lease` keeps its claim while its runner lives, `hand_in` moves its task when
 //! its turn ends, `gate` is where a command gate starts, `lead_lines` is what the lead is
-//! told, `end` ends a team, `events` tells the clients.
+//! told, `end` ends a team, `settle` recovers one after a restart, `events` tells the
+//! clients.
 //!
 //! Everything it needs to go on is in the database. `Teams` holds a lock and two caches.
 
 mod card;
+mod clean;
 mod dispatch;
 mod end;
 mod events;
@@ -20,11 +22,12 @@ mod hand_in;
 mod lead_lines;
 mod lease;
 mod member;
+mod settle;
 #[cfg(test)]
 mod tests;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -35,6 +38,7 @@ use tracing::warn;
 
 use crate::{
     BoxFuture,
+    catalog::modes::TEAM,
     runtime::Launcher,
     state::{BudgetBy, PlanTask, TeamCeilings, TeamError, timestamp_ms},
     tools::TeamRunner,
@@ -42,7 +46,7 @@ use crate::{
 
 pub(crate) use hand_in::member_event;
 pub(crate) use lease::{Beat, may_step};
-pub(crate) use member::{is_member, limit_tools};
+pub(crate) use member::{is_member, limit_tools, model as member_model};
 
 /// How often the dispatcher looks at every running team by itself.
 const TICK: Duration = Duration::from_secs(30);
@@ -58,6 +62,12 @@ pub struct Teams {
     told: parking_lot::Mutex<HashMap<String, lead_lines::Told>>,
     /// When each lead's clients last heard of its team: at most one event a second.
     heard: parking_lot::Mutex<HashMap<String, Instant>>,
+    /// The tasks whose gate runs now, so a pass starts none twice. After a restart it
+    /// is empty and a gate that was cut off runs again: a gate is a check.
+    gates: parking_lot::Mutex<HashSet<String>>,
+    /// The members a runner of this process has reported for. Recovery settles only
+    /// the others: what a stopped process left.
+    served: parking_lot::Mutex<HashSet<String>>,
 }
 
 /// The team behind a chat's `tasks`: what its `run`, `stop` and `show` reach.
@@ -78,6 +88,10 @@ impl Runner {
         ensure!(
             config.limits().plan_graph,
             "the team is switched off (limits.plan_graph); the plan is kept"
+        );
+        ensure!(
+            config.mode() == TEAM,
+            "a team runs only in TEAM mode; the plan is kept"
         );
         let state = &launcher.state;
         let chat = state
@@ -161,6 +175,19 @@ impl Launcher {
             warn!("team of thread {lead}: {error:#}");
         }
         events::team(self, lead, now, false).await;
+    }
+
+    /// The chat `lead` was opened: what a stopped core left of its team is settled, then
+    /// a pass goes on with it. Called before the chat's agents are woken, so a member
+    /// whose turn can go on finds its lease started again.
+    pub async fn team_settle(&self, lead: &str) {
+        if !self.config.current().limits().plan_graph {
+            return;
+        }
+        if let Err(error) = settle::settle(self, lead).await {
+            warn!("team of thread {lead}: cannot settle it: {error:#}");
+        }
+        self.team_changed(lead).await;
     }
 
     /// Ends the chat's running team as stopped: its members at work are cancelled, their

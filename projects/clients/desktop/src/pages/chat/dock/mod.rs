@@ -90,6 +90,24 @@ impl Workspace {
         );
     }
 
+    /// Passes a task that waits for the user's confirmation. The core answers with the
+    /// task's own event, which moves the row.
+    pub fn confirm_task(&mut self, task_id: &str, cx: &mut Context<Self>) {
+        let Some(thread_id) = self.shown.clone() else {
+            return;
+        };
+        let task_id = task_id.to_owned();
+        self.core.call(
+            cx,
+            move |client| async move { client.work().confirm_task(&thread_id, &task_id).await },
+            |ws, result, cx| {
+                if let Err(error) = result {
+                    ws.fail(error, cx);
+                }
+            },
+        );
+    }
+
     pub fn toggle_plan(&mut self, cx: &mut Context<Self>) {
         self.dock.plan_open = !self.dock.plan_open;
         cx.notify();

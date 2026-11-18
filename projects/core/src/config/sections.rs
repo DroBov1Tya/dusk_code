@@ -130,10 +130,10 @@ pub struct Limits {
     /// at the end of its answer, stored with the episode.
     #[serde(default = "yes")]
     pub episode_lesson: bool,
-    /// Whether the chat in ORCHESTRATOR mode gets the plan form of `tasks` (tasks that
-    /// depend on each other, and `run`, which has the core start the team). Off until the
-    /// evals show the lead needs fewer steps.
-    #[serde(default)]
+    /// The kill switch of teams. On, a chat in TEAM mode gets the plan form of `tasks`
+    /// (tasks that depend on each other, and `run`, which has the core start the team).
+    /// Off, TEAM mode has the board like any other mode and no team runs.
+    #[serde(default = "yes")]
     pub plan_graph: bool,
     /// Whether a team member gets its own prompt, tool set, task card and a one-line
     /// hand-in, instead of today's subagent prompt. Off until the evals show it helps.
@@ -196,7 +196,7 @@ impl Default for Limits {
             project_graph: true,
             episodes: true,
             episode_lesson: true,
-            plan_graph: false,
+            plan_graph: true,
             task_packets: false,
             member_worktrees: false,
             peer_messages: false,
@@ -340,6 +340,10 @@ pub struct Team {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
+    /// The tools a member of a role keeps, by role. A list only takes tools away from
+    /// what every member may have; a role without one keeps them all.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tools: BTreeMap<String, Vec<String>>,
 }
 
 impl Team {
@@ -357,14 +361,23 @@ impl Team {
                 "team models must be written as provider/model"
             );
         }
-        for role in self.models.keys() {
+        for tool in self.tools.values().flatten() {
+            anyhow::ensure!(
+                !tool.is_empty()
+                    && tool.len() <= MAX_ROLE_NAME
+                    && tool.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
+                "team.tools names tools, such as read_file"
+            );
+        }
+        for role in self.models.keys().chain(self.tools.keys()) {
             anyhow::ensure!(
                 !role.is_empty()
                     && role.len() <= MAX_ROLE_NAME
                     && role
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                "team.models keys must be role names of up to {MAX_ROLE_NAME} of a-z, 0-9, - and _"
+                "team.models and team.tools keys must be role names of up to {MAX_ROLE_NAME} of \
+                 a-z, 0-9, - and _"
             );
         }
         Ok(())

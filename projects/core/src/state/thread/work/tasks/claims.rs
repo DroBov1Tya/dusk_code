@@ -171,6 +171,29 @@ impl State {
         finish(transaction, &root, &task_id).await
     }
 
+    /// Marks a later turn of the owner with the task it holds running: the turn that
+    /// redoes it after a review. Without the mark that turn's changes and tokens would
+    /// not be counted as the task's. A turn that is marked already stays as it is.
+    pub async fn mark_task_turn(
+        &self,
+        owner: &str,
+        task_id: &str,
+        turn_id: &str,
+    ) -> Result<(), PlanError> {
+        sqlx::query(
+            "UPDATE turns SET task_id = ?1 WHERE turn_id = ?2 AND thread_id = ?3
+                 AND task_id IS NULL
+                 AND EXISTS (SELECT 1 FROM tasks WHERE task_id = ?1
+                     AND owner_thread_id = ?3 AND status = 'running')",
+        )
+        .bind(task_id)
+        .bind(turn_id)
+        .bind(owner)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
     /// Moves the lease on, for the owner's runner alone: the statement names the thread,
     /// so no other thread and no tool can hold a task it was not given. `task_id` is whole.
     pub async fn renew_lease(&self, owner: &str, task_id: &str, now: i64) -> Result<(), PlanError> {

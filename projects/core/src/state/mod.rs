@@ -28,9 +28,9 @@ pub use thread::{
 // `tasks` tool (L1); until they land only its tests use these.
 #[allow(unused_imports)]
 pub use thread::{
-    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_OPEN_TASKS,
-    MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus, PlanTask, TaskEdit,
-    TaskFiles, Unclaimable, WaitsOn, overlaps,
+    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_NOTE,
+    MAX_OPEN_TASKS, MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus,
+    PlanTask, TaskEdit, TaskFiles, Unclaimable, WaitsOn, overlaps,
 };
 // The team's store. Its callers are the team's runtime (T1), serving (P1) and recovery
 // (R1); until they land only its tests use these.
