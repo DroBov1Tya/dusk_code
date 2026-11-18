@@ -258,6 +258,47 @@ fn shaped_output_is_off_until_set() {
 }
 
 #[test]
+fn the_graph_and_episodes_are_off_until_set() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(!plain.project_graph && !plain.episodes && !plain.episode_lesson);
+    let set = parse("limits:\n  project_graph: true\n  episodes: true\n  episode_lesson: true\n")
+        .unwrap()
+        .limits();
+    assert!(set.project_graph && set.episodes && set.episode_lesson);
+    for bad in [
+        "limits:\n  project_graph: 1\n",
+        "limits:\n  episodes: sometimes\n",
+        "limits:\n  episode_lesson: yes please\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_graph_and_recall_tools_are_off_until_switched_on() {
+    use crate::{catalog::modes, tools::ToolKind};
+    let tools = [
+        ("project_graph", ToolKind::Files),
+        ("recall", ToolKind::Harness),
+    ];
+    let mut config = parse(PROVIDERS).unwrap();
+    for (name, kind) in tools {
+        // A mode's switch alone cannot turn it on: only the user's `tools:` can.
+        config.set_mode_tool_enabled(modes::PLAN, name, true);
+        for mode in [modes::MAIN, modes::PLAN, modes::ORCHESTRATOR] {
+            assert!(
+                !config.mode_tool_enabled(mode, name, kind),
+                "{name} in {mode}"
+            );
+        }
+    }
+    let on = parse("tools:\n  project_graph: true\n  recall: true\n").unwrap();
+    for (name, kind) in tools {
+        assert!(on.mode_tool_enabled(modes::MAIN, name, kind), "{name}");
+    }
+}
+
+#[test]
 fn the_kept_tail_is_off_and_stays_inside_its_bounds() {
     let plain = parse(PROVIDERS).unwrap().limits();
     assert!(!plain.compact_tail && !plain.compact_early);
