@@ -44,7 +44,9 @@ Each run records its verdict, time, model calls and a token ledger taken from th
 own count, subagents included: prompt tokens served from the provider's cache, not
 served from it, and written to it; completion tokens and the reasoning among them. Beside
 those: tool calls and errors, provider retries, and re-runs (tool calls with the name and
-arguments of an earlier call of the same agent).
+arguments of an earlier call of the same agent). For context work: stub moves, the results
+they put away and the tokens they saved (`limits.stub_results`), retrievals (`read_history`
+calls that read one stored result back), and finished compactions.
 
 The headline is the pass rate and tokens per solved task: every token of every run,
 failed and timed-out ones included, over the runs that passed; `n/a` when none did. A run

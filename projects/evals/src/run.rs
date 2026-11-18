@@ -140,6 +140,11 @@ struct Watch {
     reruns: u64,
     repeat_notices: u64,
     repeat_stops: u64,
+    stub_moves: u64,
+    stubbed_results: u64,
+    stub_saved_tokens: u64,
+    retrievals: u64,
+    compactions: u64,
     /// Every call so far, as the agent's thread ("" for the chat) and name and arguments.
     calls: HashSet<(String, String)>,
     subagents: u64,
@@ -157,6 +162,13 @@ impl Watch {
             }
             ThreadEvent::ToolStarted(call) => {
                 self.tool_calls += 1;
+                // A `result` is a retrieval of a stub; null is a plain read.
+                let result = call
+                    .arguments
+                    .get("result")
+                    .filter(|result| !result.is_null());
+                let reads_back = call.name == "read_history" && result.is_some();
+                self.retrievals += u64::from(reads_back);
                 let key = format!("{} {}", call.name, call.arguments);
                 self.reruns += u64::from(
                     !self
@@ -181,6 +193,15 @@ impl Watch {
                 ..
             } => self.repeat_stops += 1,
             ThreadEvent::RepeatNotice { .. } => self.repeat_notices += 1,
+            ThreadEvent::ResultsStubbed {
+                results,
+                saved_tokens,
+            } => {
+                self.stub_moves += 1;
+                self.stubbed_results += u64::from(results);
+                self.stub_saved_tokens = self.stub_saved_tokens.saturating_add(saved_tokens);
+            }
+            ThreadEvent::CompactionFinished(_) => self.compactions += 1,
             ThreadEvent::Question(_) => self.questions += 1,
             ThreadEvent::Tokens { tokens, .. } if thread.is_none() => {
                 self.spent = tokens.spent;
@@ -317,6 +338,11 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         reruns: watch.reruns,
         repeat_notices: watch.repeat_notices,
         repeat_stops: watch.repeat_stops,
+        stub_moves: watch.stub_moves,
+        stubbed_results: watch.stubbed_results,
+        stub_saved_tokens: watch.stub_saved_tokens,
+        retrievals: watch.retrievals,
+        compactions: watch.compactions,
         subagents: watch.subagents,
         questions: watch.questions,
     })
@@ -338,6 +364,53 @@ mod tests {
         watch.see(from_agent(notice(RepeatRung::Replan)), None);
         watch.see(from_agent(notice(RepeatRung::Stop)), None);
         assert_eq!((watch.repeat_notices, watch.repeat_stops), (2, 1));
+    }
+
+    #[test]
+    fn stub_moves_retrievals_and_compactions_are_counted_for_the_chat_and_its_agents() {
+        let mut watch = Watch::default();
+        let stubbed = |results, saved_tokens| ThreadEvent::ResultsStubbed {
+            results,
+            saved_tokens,
+        };
+        let read = |arguments| {
+            ThreadEvent::ToolStarted(dusk_protocol::model::ToolCall {
+                id: "call".into(),
+                name: "read_history".into(),
+                arguments,
+            })
+        };
+        let from_agent = |event| ThreadEvent::Subagent {
+            thread_id: "child".into(),
+            event: Box::new(event),
+        };
+        watch.see(stubbed(3, 9_000), None);
+        watch.see(from_agent(stubbed(2, 5_000)), None);
+        watch.see(read(serde_json::json!({ "result": 12 })), None);
+        watch.see(
+            from_agent(read(serde_json::json!({ "result": 4, "search": "x" }))),
+            None,
+        );
+        watch.see(read(serde_json::json!({ "search": "error" })), None);
+        watch.see(read(serde_json::json!({ "result": null, "from": 3 })), None);
+        let compaction = dusk_protocol::thread::Compaction {
+            compaction_id: 1,
+            thread_id: "chat".into(),
+            through_sequence: 9,
+            summary: "so far".into(),
+            summary_tokens: 2,
+        };
+        watch.see(ThreadEvent::CompactionFinished(compaction), None);
+        watch.see(ThreadEvent::CompactionFailed { error: "x".into() }, None);
+        let counts = (
+            watch.stub_moves,
+            watch.stubbed_results,
+            watch.stub_saved_tokens,
+            watch.retrievals,
+            watch.compactions,
+        );
+        assert_eq!(counts, (2, 5, 14_000, 2, 1));
+        assert_eq!(watch.tool_calls, 4);
     }
 
     /// A run never waits hours for a provider, unless `--set` asks it to.
