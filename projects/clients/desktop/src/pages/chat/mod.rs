@@ -20,6 +20,7 @@ mod model_menu;
 mod navigator;
 mod parts;
 pub mod pins;
+pub mod pull_link;
 pub mod queue;
 mod ring;
 pub mod timing;

@@ -6,7 +6,7 @@ use dusk_protocol::{
     client::{GitRequest, ProjectRequest, Request, Response, Secret},
     project::{
         FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile, Project,
-        PullSummary, RepositoryStatus, Schedule, ScheduleDraft,
+        PullStatus, PullSummary, RepositoryStatus, Schedule, ScheduleDraft,
     },
 };
 use std::path::PathBuf;
@@ -105,6 +105,17 @@ impl Projects<'_> {
         let request = ProjectRequest::RepositoryStatus { id };
         match self.0.call(Request::Project(request)).await? {
             Response::RepositoryStatus(status) => Ok(*status),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// Pull request `number` of the project's own GitHub repository, for a card; `None`
+    /// when there is none such or GitHub cannot be asked.
+    pub async fn pull_status(&self, id: &str, number: u64) -> Result<Option<PullStatus>> {
+        let id = id.to_owned();
+        let request = ProjectRequest::PullStatus { id, number };
+        match self.0.call(Request::Project(request)).await? {
+            Response::PullStatus(pull) => Ok(pull.map(|pull| *pull)),
             other => Err(unexpected(other)),
         }
     }

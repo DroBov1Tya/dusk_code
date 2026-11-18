@@ -40,7 +40,9 @@ impl Server {
                 self.pulls.changed(&id);
                 Response::Done
             }
-            ProjectRequest::Repository { .. } | ProjectRequest::RepositoryStatus { .. } => {
+            ProjectRequest::Repository { .. }
+            | ProjectRequest::RepositoryStatus { .. }
+            | ProjectRequest::PullStatus { .. } => {
                 anyhow::bail!("repository requests are answered beside the loop")
             }
             ProjectRequest::PullSummaries => self.pull_summaries().await?,

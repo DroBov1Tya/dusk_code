@@ -5,7 +5,10 @@
 use std::sync::Arc;
 
 use anyhow::Result;
-use dusk_protocol::{client::Response, project::RepositoryStatus};
+use dusk_protocol::{
+    client::Response,
+    project::{PullStatus, RepositoryStatus},
+};
 use tokio::sync::oneshot;
 
 use super::{ClientId, Server, Subscribers, publish};
@@ -37,6 +40,33 @@ impl Server {
             };
             let _ = reply.send(response);
         });
+    }
+
+    /// One pull request of the project's own repository, for a card in a chat: from
+    /// the tracker when it has it, else read beside the loop, once at a time.
+    pub(super) fn pull_status(&self, id: String, number: u64, reply: oneshot::Sender<Response>) {
+        let answer = |pull: Option<PullStatus>| Response::PullStatus(pull.map(Box::new));
+        match self.pulls.look_up(&id, number) {
+            forge::Look::Known(pull) => {
+                let _ = reply.send(Response::PullStatus(pull));
+            }
+            forge::Look::Wait(waiting) => {
+                tokio::spawn(async move {
+                    let _ = reply.send(answer(waiting.await.ok().flatten()));
+                });
+            }
+            forge::Look::Read => {
+                let (runtime, tracker) = (Arc::clone(&self.runtime), self.pulls.clone());
+                tokio::spawn(async move {
+                    let pull = match project::find(runtime.state(), &id).await {
+                        Ok(project) => forge::read_pull(&project, number).await,
+                        Err(_) => None,
+                    };
+                    tracker.looked_up(&id, number, pull.clone());
+                    let _ = reply.send(answer(pull));
+                });
+            }
+        }
     }
 
     /// Starts a read of every project the tracker says is due.

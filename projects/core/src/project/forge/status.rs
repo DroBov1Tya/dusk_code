@@ -6,12 +6,12 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use dusk_protocol::project::{
-    CheckState, Checks, Project, PullState, PullStatus, RepositoryStatus,
+    CheckStage, CheckState, Checks, Project, PullState, PullStatus, RepositoryStatus,
 };
 use serde::Deserialize;
 
 use super::{
-    gh::{MISSING, PROGRAM, link, output, plain, ready},
+    gh::{MISSING, PROGRAM, gh, link, output, plain, ready, time},
     pulls::RawCheck,
 };
 use crate::project::{diff, git};
@@ -22,9 +22,11 @@ const MAX_BRANCH_PULLS: usize = 5;
 const MAX_OPEN_PULLS: usize = 10;
 /// More checks than this on one pull request are not counted.
 const MAX_CHECKS: usize = 500;
+/// More checks than this on one pull request are counted but not listed.
+const MAX_LISTED_CHECKS: usize = 50;
 const MAX_TITLE_CHARS: usize = 300;
-const FIELDS: &str = "number,title,state,isDraft,isCrossRepository,headRefName,additions,\
-                      deletions,url,statusCheckRollup";
+const FIELDS: &str = "number,title,state,isDraft,isCrossRepository,headRefName,author,\
+                      createdAt,updatedAt,additions,deletions,changedFiles,url,statusCheckRollup";
 
 /// A status as read, and what the tracker needs besides it.
 pub struct Reading {
@@ -62,7 +64,8 @@ async fn read_with(program: &str, dir: &Path) -> Reading {
         .map(|branch| branch.trim().to_owned())
         .filter(|branch| !branch.is_empty());
     status.stat = diff::stat(dir, &git::changes(dir).await).await;
-    if !on_github(dir).await {
+    status.github = github(dir).await;
+    if status.github.is_none() {
         status.unavailable = Some("Not a GitHub repository".to_owned());
         return reading;
     }
@@ -84,13 +87,47 @@ async fn read_with(program: &str, dir: &Path) -> Reading {
     reading
 }
 
-/// Whether `origin` is on github.com; another host is not asked.
-async fn on_github(dir: &Path) -> bool {
-    git::git(dir, &["remote", "get-url", "origin"])
-        .await
-        .ok()
-        .and_then(|remote| git::web_page(remote.trim()))
-        .is_some_and(|page| page.starts_with("https://github.com/"))
+/// `owner/repo` of `origin` when it is on github.com; another host is not asked.
+async fn github(dir: &Path) -> Option<String> {
+    let remote = git::git(dir, &["remote", "get-url", "origin"]).await.ok()?;
+    let page = git::web_page(remote.trim())?;
+    let slug = page.strip_prefix("https://github.com/")?;
+    let (owner, repo) = slug.split_once('/')?;
+    let fine = |part: &str| {
+        !part.is_empty()
+            && part.len() <= 100
+            && !part.starts_with('.')
+            && part
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || "._-".contains(c))
+    };
+    (fine(owner) && fine(repo)).then(|| slug.to_owned())
+}
+
+/// Pull request `number` of the project's own GitHub repository, asked of that
+/// repository by name; `None` when it has none such or GitHub cannot be asked.
+pub(super) async fn read_one(project: &Project, number: u64) -> Option<PullStatus> {
+    let slug = github(&project.dir).await?;
+    let number_arg = number.to_string();
+    let repo = format!("--repo={slug}");
+    let fields = format!("--json={FIELDS}");
+    let args = ["pr", "view", &number_arg, &repo, &fields];
+    let text = match gh(PROGRAM, &project.dir, &args).await {
+        Ok(text) => text,
+        Err(error) => {
+            tracing::debug!("pull request {number} not read: {error:#}");
+            return None;
+        }
+    };
+    one(&text, &slug, number)
+}
+
+/// What `gh pr view --json` printed, when it is pull request `number` of `slug`.
+fn one(text: &str, slug: &str, number: u64) -> Option<PullStatus> {
+    let raw: RawPull = serde_json::from_str(text).ok()?;
+    let pull = raw.shown();
+    let page = format!("https://github.com/{slug}/pull/{number}");
+    (pull.number == number && pull.url.eq_ignore_ascii_case(&page)).then_some(pull)
 }
 
 /// The branch's pull requests, then the other open ones; and how many are the branch's.
@@ -140,10 +177,23 @@ fn parse(text: &str, max: usize) -> Result<Vec<(PullStatus, bool)>> {
         .collect())
 }
 
-/// Every check counted; the state is the worst of them.
+/// Every check counted, the state the worst of them; and the first of them listed,
+/// the ones that need a look first.
 pub(super) fn roll_up(checks: &[RawCheck]) -> Checks {
     let mut counted = Checks::default();
-    for check in checks.iter().take(MAX_CHECKS) {
+    let checks = &checks[..checks.len().min(MAX_CHECKS)];
+    let mut list: Vec<_> = checks.iter().map(RawCheck::shown).collect();
+    // Stable, so checks of one stage keep the order GitHub gave.
+    list.sort_by_key(|check| match check.stage {
+        CheckStage::Failed => 0,
+        CheckStage::Running => 1,
+        CheckStage::Queued => 2,
+        CheckStage::Passed => 3,
+        CheckStage::Skipped => 4,
+    });
+    list.truncate(MAX_LISTED_CHECKS);
+    counted.list = list;
+    for check in checks {
         counted.total += 1;
         match check.state() {
             CheckState::Passing => counted.passed += 1,
@@ -178,13 +228,27 @@ struct RawPull {
     #[serde(default)]
     head_ref_name: String,
     #[serde(default)]
+    author: Option<RawAuthor>,
+    #[serde(default)]
+    created_at: String,
+    #[serde(default)]
+    updated_at: String,
+    #[serde(default)]
     additions: u64,
     #[serde(default)]
     deletions: u64,
     #[serde(default)]
+    changed_files: Option<u64>,
+    #[serde(default)]
     url: String,
     #[serde(default)]
     status_check_rollup: Vec<RawCheck>,
+}
+
+#[derive(Deserialize)]
+struct RawAuthor {
+    #[serde(default)]
+    login: String,
 }
 
 impl RawPull {
@@ -200,8 +264,13 @@ impl RawPull {
             title: plain(&self.title, MAX_TITLE_CHARS).replace('\n', " "),
             state,
             branch: plain(&self.head_ref_name, 250),
+            author: plain(&self.author.map(|a| a.login).unwrap_or_default(), 100)
+                .replace('\n', " "),
+            created: time(&self.created_at),
+            updated: time(&self.updated_at),
             added: self.additions,
             removed: self.deletions,
+            files: self.changed_files,
             url: link(&self.url),
             checks: roll_up(&self.status_check_rollup),
         }
@@ -302,6 +371,78 @@ mod tests {
             parse(&crowded, 1).unwrap()[0].0.checks.total,
             MAX_CHECKS as u32
         );
+    }
+
+    #[test]
+    fn a_pull_carries_its_author_times_files_and_each_check() {
+        let text = r#"{"number":13,"title":"Cards","state":"OPEN","headRefName":"x",
+          "author":{"login":"ev\u202eil\u0007","is_bot":false},
+          "createdAt":"2026-11-18T12:07:21Z","updatedAt":"not a time","changedFiles":7,
+          "url":"https://github.com/o/r/pull/13",
+          "statusCheckRollup":[
+            {"__typename":"CheckRun","name":"fmt\u2066x","workflowName":"ci",
+             "status":"COMPLETED","conclusion":"SUCCESS",
+             "startedAt":"2026-11-18T12:14:01Z","completedAt":"2026-11-18T12:14:14Z",
+             "detailsUrl":"https://github.com/o/r/actions/runs/1/job/2"},
+            {"__typename":"CheckRun","name":"build","status":"QUEUED",
+             "startedAt":"0001-01-01T00:00:00Z","detailsUrl":"javascript:alert(1)"},
+            {"__typename":"StatusContext","context":"deploy","state":"FAILURE",
+             "targetUrl":"https://ci.example.com/7"}]}"#;
+        let pull = one(text, "o/r", 13).unwrap();
+        assert_eq!(pull.author, "evil", "control and bidi characters are cut");
+        assert_eq!(pull.created, Some(1_795_003_641));
+        assert_eq!(pull.updated, None);
+        assert_eq!(pull.files, Some(7));
+        let list = &pull.checks.list;
+        assert_eq!(list.len(), 3);
+        assert_eq!(
+            (list[0].name.as_str(), list[0].stage),
+            ("deploy", CheckStage::Failed)
+        );
+        assert_eq!(list[0].url, "https://ci.example.com/7");
+        assert_eq!(
+            (list[1].stage, list[1].url.as_str()),
+            (CheckStage::Queued, "")
+        );
+        assert_eq!(list[1].started, None, "the zero time is no time");
+        let passed = &list[2];
+        assert_eq!(
+            (passed.name.as_str(), passed.workflow.as_str()),
+            ("fmtx", "ci")
+        );
+        assert_eq!(
+            passed.finished.zip(passed.started).map(|(f, s)| f - s),
+            Some(13)
+        );
+        assert_eq!(pull.checks.state, Some(CheckState::Failing));
+
+        // Another number, another repository, or a list in place of one: no card.
+        assert!(one(text, "o/r", 12).is_none());
+        assert!(one(text, "o/other", 13).is_none());
+        assert!(one("[]", "o/r", 13).is_none());
+        assert!(one("{", "o/r", 13).is_none());
+    }
+
+    #[test]
+    fn the_listed_checks_need_a_look_first_and_are_capped() {
+        let stages = [
+            r#"{"name":"p","status":"COMPLETED","conclusion":"SUCCESS"}"#,
+            r#"{"name":"s","status":"COMPLETED","conclusion":"SKIPPED"}"#,
+            r#"{"name":"q","status":"QUEUED"}"#,
+            r#"{"name":"r","status":"IN_PROGRESS"}"#,
+            r#"{"name":"f","status":"COMPLETED","conclusion":"FAILURE"}"#,
+        ];
+        let checks: Vec<RawCheck> = (0..30)
+            .flat_map(|_| stages.iter().map(|json| check(json)))
+            .collect();
+        let counted = roll_up(&checks);
+        assert_eq!(counted.total, 150);
+        assert_eq!(counted.list.len(), MAX_LISTED_CHECKS);
+        let names: String = counted.list.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, format!("{}{}", "f".repeat(30), "r".repeat(20)));
+        let few = roll_up(&checks[..5]);
+        let names: Vec<_> = few.list.iter().map(|c| c.name.as_str()).collect();
+        assert_eq!(names, ["f", "r", "q", "p", "s"]);
     }
 
     #[tokio::test]

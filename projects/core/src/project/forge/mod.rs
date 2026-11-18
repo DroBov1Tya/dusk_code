@@ -4,10 +4,12 @@
 //! repository status puts them beside the work tree, and the tracker keeps it fresh.
 
 mod gh;
+mod lookup;
 mod pulls;
 mod status;
 mod watch;
 
+pub use lookup::{Look, read as read_pull};
 pub use pulls::{create, list, view};
 pub use status::read as read_status;
 pub use watch::{PERIOD as TRACK_PERIOD, Tracker};

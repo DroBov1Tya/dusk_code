@@ -48,6 +48,13 @@ pub enum ProjectRequest {
     RepositoryStatus {
         id: String,
     },
+    /// One pull request of the project's own GitHub repository, for a card where a chat
+    /// links it; answered beside the loop from what the core knows or read lately, and
+    /// read from GitHub at most once at a time and every few minutes per pull request.
+    PullStatus {
+        id: String,
+        number: u64,
+    },
     /// The pull requests of each saved project's current branch, from what the core
     /// last read; a project not read yet is read in the background.
     PullSummaries,

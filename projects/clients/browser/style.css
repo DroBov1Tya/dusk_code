@@ -199,6 +199,10 @@ input:is([type=radio], [type=checkbox]) { accent-color: var(--accent); }
 .pull-state { padding: 0 6px; border-radius: 6px; font-size: 11px; flex: none; }
 .pull-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); }
 .pulls .add { color: var(--good); } .pulls .del { color: var(--bad); } .pulls .dot { flex: none; }
+.pulls li:has(.pull-checks) { flex-wrap: wrap; }
+.pull-checks { flex-basis: 100%; font-size: 12px; }
+.pull-checks ul { list-style: none; padding: 0 0 0 12px; margin: 4px 0; display: flex; flex-direction: column; gap: 2px; }
+.pull-checks li a { color: var(--fg); }
 .dot.running { animation: breathe 1.4s ease-in-out infinite; }
 @keyframes breathe { 50% { opacity: 0.35; } }
 .files { list-style: none; padding: 0; margin: 4px 0; } .tree { list-style: none; padding-left: 14px; margin: 0; }

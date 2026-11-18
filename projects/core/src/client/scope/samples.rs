@@ -281,6 +281,10 @@ fn projects() -> Vec<P> {
             path: word(),
         },
         P::RepositoryStatus { id: word() },
+        P::PullStatus {
+            id: word(),
+            number: 7,
+        },
         P::PullSummaries,
         repository(G::CreateBranch {
             name: word(),

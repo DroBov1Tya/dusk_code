@@ -210,6 +210,9 @@ impl Server {
                             Request::Project(ProjectRequest::RepositoryStatus { id }) => {
                                 self.repository_status(client, id, reply)
                             }
+                            Request::Project(ProjectRequest::PullStatus { id, number }) => {
+                                self.pull_status(id, number, reply)
+                            }
                             request => {
                                 self.caller = client;
                                 let mut response = match self.handle(request).await {

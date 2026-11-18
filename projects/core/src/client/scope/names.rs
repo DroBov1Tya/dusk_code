@@ -131,6 +131,7 @@ named! {
     R::Project(P::Repository { request: G::PullRequest { .. }, .. }) => "project.repository.pull_request",
     R::Project(P::Repository { request: G::CreatePullRequest { .. }, .. }) => "project.repository.create_pull_request",
     R::Project(P::RepositoryStatus { .. }) => "project.repository_status",
+    R::Project(P::PullStatus { .. }) => "project.pull_status",
     R::Project(P::PullSummaries) => "project.pull_summaries",
     R::Project(P::Files { .. }) => "project.files",
     R::Project(P::Outputs) => "project.outputs",

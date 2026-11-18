@@ -258,6 +258,7 @@ fn project(request: &Project) -> Area {
         // are asked of the user by the client before they are sent.
         | Project::Repository { .. }
         | Project::RepositoryStatus { .. }
+        | Project::PullStatus { .. }
         | Project::PullSummaries
         | Project::Files { .. }
         | Project::Outputs
