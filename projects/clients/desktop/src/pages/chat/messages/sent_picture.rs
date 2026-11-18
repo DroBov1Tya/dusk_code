@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use gpui_kit::{component::ActiveTheme, *};
 
-use crate::{modal::Modal, ui::Type, workspace::Workspace};
+use crate::{ui::Type, workspace::Workspace};
 
 /// A thumbnail keeps its size before its picture comes, so the list's cached row height
 /// stays right.
@@ -114,11 +114,8 @@ pub fn sent_pictures(
                     .hover(|tile| tile.opacity(0.9))
                     .active(|tile| tile.opacity(0.8))
                     .child(img(image.clone()).size_full().object_fit(ObjectFit::Cover))
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.modal = Some(Modal::Picture {
-                            image: large.clone().into(),
-                        });
-                        cx.notify();
+                    .on_click(cx.listener(move |ws, _, window, cx| {
+                        ws.open_picture(large.clone().into(), window, cx);
                     }))
             }
             Some(SentPicture::Gone) => tile
