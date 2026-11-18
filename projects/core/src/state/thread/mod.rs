@@ -24,5 +24,10 @@ pub use work::{
     ProviderFailure, Settle, Task, Turn, TurnAnswer, TurnFailure, TurnOutcome, TurnStatus,
     Unfinished,
 };
+pub use work::{
+    BlockedOn, Claim, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_OPEN_TASKS,
+    MAX_REWORKS, MAX_TASKS_AN_ADD, NewTask, PassedBy, PlanError, PlanStatus, PlanTask, TaskEdit,
+    TaskFiles, Unclaimable, WaitsOn, overlaps,
+};
 
 use super::{State, timestamp_ms};

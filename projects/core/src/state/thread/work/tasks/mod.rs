@@ -1,9 +1,21 @@
-//! The tasks an agent sets itself in a thread, and their steps. Every query is bound to
-//! the thread, so an agent only ever sees and changes its own.
+//! The tasks an agent sets itself in a thread, and their steps. Every query of this file
+//! is bound to the thread, so an agent only ever sees and changes its own.
 //!
 //! A task holds the IDs of its steps in order. Steps run one after another: when one is
 //! done the next starts, so each has a timer without the agent keeping one. A task is
 //! done once all of its steps are, or when the agent says so.
+//!
+//! The same table is a chat's plan: the tasks of its root thread, shared by the threads
+//! under it, each with a status, dependencies and an owner. `plan` has its words,
+//! `graph` writes and reads it, `claims` moves a task from one status to the next. The
+//! board here knows two of the statuses, open and done, and leaves a task in any other
+//! to the plan.
+
+mod claims;
+mod error;
+mod files;
+mod graph;
+mod plan;
 
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
@@ -11,7 +23,14 @@ use uuid::Uuid;
 
 use super::{State, timestamp_ms};
 
+pub use claims::{Claim, PassedBy};
 pub use dusk_protocol::thread::{Task, TaskItem};
+pub use error::{PlanError, Unclaimable};
+pub use files::{TaskFiles, overlaps};
+pub use plan::{
+    BlockedOn, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_OPEN_TASKS, MAX_REWORKS,
+    MAX_TASKS_AN_ADD, NewTask, PlanStatus, PlanTask, TaskEdit, WaitsOn,
+};
 
 /// What an ID the agent gave turned out to be.
 enum Found {
@@ -81,6 +100,23 @@ impl State {
             bail!("{task} is a step, not a task");
         };
         let mut transaction = self.pool.begin().await.context("begin task steps")?;
+        // New steps open a done task again. One that a member handed in, or that another
+        // task waited for, stays done: what was built on it would lose its ground.
+        let (owned, needed): (bool, bool) = sqlx::query_as(
+            "SELECT t.owner_thread_id IS NOT NULL,
+                    EXISTS (SELECT 1 FROM tasks o, json_each(o.depends_on) d
+                            WHERE o.thread_id = t.thread_id AND d.value = t.task_id)
+             FROM tasks t WHERE t.task_id = ? AND t.status = 'done'",
+        )
+        .bind(&task_id)
+        .fetch_optional(&mut *transaction)
+        .await
+        .context("read the task")?
+        .unwrap_or_default();
+        ensure!(
+            !owned && !needed,
+            "{task} is done and other work stands on it; add a new task instead"
+        );
         append_items(&mut transaction, &task_id, items, timestamp_ms()?).await?;
         transaction.commit().await.context("commit task steps")?;
         self.task(&task_id).await
@@ -123,12 +159,21 @@ impl State {
                 .execute(&mut *transaction)
                 .await
                 .context("complete task steps")?;
-                sqlx::query("UPDATE tasks SET done = 1, updated_at = ? WHERE task_id = ?")
-                    .bind(now)
-                    .bind(&task_id)
-                    .execute(&mut *transaction)
-                    .await
-                    .context("complete task")?;
+                // A task the team has given out is done by its review, not from here.
+                let closed = sqlx::query(
+                    "UPDATE tasks SET done = 1, status = 'done', updated_at = ?
+                     WHERE task_id = ? AND status IN ('open', 'done')",
+                )
+                .bind(now)
+                .bind(&task_id)
+                .execute(&mut *transaction)
+                .await
+                .context("complete task")?
+                .rows_affected();
+                ensure!(
+                    closed == 1,
+                    "{id} is with the team; its review decides when it is done"
+                );
                 task_id
             }
             Found::Item { task_id, item_id } => {
@@ -317,8 +362,8 @@ async fn append_items(
     settle(transaction, task_id, now).await
 }
 
-/// After the steps changed: the first open step starts when none runs, and the task is
-/// done exactly when it has steps and all of them are.
+/// After the steps changed: the first open step starts when none runs, and a task on the
+/// board is done exactly when it has steps and all of them are.
 async fn settle(transaction: &mut Transaction<'_, Sqlite>, task_id: &str, now: i64) -> Result<()> {
     sqlx::query(
         "UPDATE task_items SET started_at = ?1, updated_at = ?1
@@ -335,10 +380,17 @@ async fn settle(transaction: &mut Transaction<'_, Sqlite>, task_id: &str, now: i
     .execute(&mut **transaction)
     .await
     .context("start the next task step")?;
+    // `done` and `status` are written together (a trigger refuses anything else), and
+    // only between open and done: a task in another status is the plan's to move.
     sqlx::query(
-        "UPDATE tasks SET updated_at = ?1,
-             done = EXISTS (SELECT 1 FROM task_items WHERE task_id = ?2)
-                AND NOT EXISTS (SELECT 1 FROM task_items WHERE task_id = ?2 AND done = 0)
+        "WITH steps(all_done) AS (
+             SELECT EXISTS (SELECT 1 FROM task_items WHERE task_id = ?2)
+                AND NOT EXISTS (SELECT 1 FROM task_items WHERE task_id = ?2 AND done = 0))
+         UPDATE tasks SET updated_at = ?1,
+             done = CASE WHEN status NOT IN ('open', 'done') THEN done
+                         ELSE (SELECT all_done FROM steps) END,
+             status = CASE WHEN status NOT IN ('open', 'done') THEN status
+                           WHEN (SELECT all_done FROM steps) THEN 'done' ELSE 'open' END
          WHERE task_id = ?2",
     )
     .bind(now)
