@@ -1,2 +1,0 @@
-Added
-An episode store in the state database (migration 0035): a project's episodes, each what ended a problem in it, with a trigram search index, counted again instead of copied when the same one recurs, at most 500 a project (the least seen, oldest go first), kept when their chat is deleted and removed with their project. Searches take only the words of a query, each as a quoted phrase, so query text is never read as search syntax. Nothing writes or reads episodes yet.
