@@ -224,6 +224,9 @@ fn card(github: &str, pull: &PullStatus, cx: &App) -> Div {
         .flex_col()
         .gap_1p5()
         .p_1()
+        // The card is drawn inside the link and would take its underline and color.
+        .text_decoration_0()
+        .text_color(theme.foreground)
         .child(
             div()
                 .font_weight(FontWeight::SEMIBOLD)
