@@ -15,7 +15,7 @@ use footer::status;
 use goal::goal_rows;
 pub use layout::layout;
 use layout::{show_cursor, text_width};
-use poll::poll_rows;
+use poll::{poll_rows, reply_rows};
 use queue::queue_rows;
 
 use super::theme::{ACCENT, HAIRLINE, SELECTED, SURFACE, TEXT_SOFT, bold, fg, thought};
@@ -50,6 +50,7 @@ pub struct InputView<'a> {
 pub fn height(app: &App, width: u16) -> u16 {
     let (rows, _) = layout(&app.input, text_width(width));
     approval_rows(app, width)
+        + reply_rows(app)
         + poll_rows(app, width)
         + goal_rows(app)
         + queue_rows(app)
@@ -83,6 +84,19 @@ impl InputView<'_> {
         let area = Rect {
             y: area.y + approval,
             height: area.height.saturating_sub(approval),
+            ..area
+        };
+        let reply = reply_rows(self.app).min(area.height);
+        self.draw_reply(
+            frame,
+            Rect {
+                height: reply,
+                ..area
+            },
+        );
+        let area = Rect {
+            y: area.y + reply,
+            height: area.height.saturating_sub(reply),
             ..area
         };
         let polled = poll_rows(self.app, area.width).min(area.height);

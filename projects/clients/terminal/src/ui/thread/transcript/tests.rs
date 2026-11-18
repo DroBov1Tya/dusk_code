@@ -114,3 +114,96 @@ fn a_hostile_block_stays_a_plain_step_and_cannot_steer_the_terminal() {
         assert!(!screen.contains("from the agent"), "{screen}");
     }
 }
+
+#[test]
+fn a_flow_is_boxes_with_arrows_inside_every_width() {
+    for width in [60, 80, 120] {
+        let screen = screen(&shown(widest_flow()), width);
+        let text = screen.join("\n");
+        assert!(
+            text.contains('\u{256D}') && text.contains('\u{2193}'),
+            "{text}"
+        );
+        assert!(text.contains("from the agent"), "{text}");
+        assert!(text.contains('\u{1f680}'), "{text}");
+        // Every box edge on a line closes on the same column: no wide character pushed it.
+        for line in screen.iter().filter(|line| line.contains('\u{2502}')) {
+            assert!(line.trim_end().ends_with('\u{2502}'), "{line}");
+        }
+        assert_eq!(
+            text.matches("\u{2193}").count(),
+            MAX_LAYERS - 1,
+            "an arrow between layers"
+        );
+    }
+}
+
+#[test]
+fn a_flow_at_eighty_columns() {
+    let arguments = json!({ "flow": { "layers": [
+        { "title": "Request", "subtitle": "what comes in", "cards": [
+            { "title": "Parse", "line": "reads the body" }, { "title": "Check" }] },
+        { "title": "Handle", "emphasis": true, "cards": [{ "title": "Run", "line": "one" }] },
+    ] } });
+    let screen = screen(&shown(arguments), 80);
+    let text = screen.join("\n");
+    assert!(text.contains("\u{2570}"), "{text}");
+    assert!(
+        text.contains("Request") && text.contains("Handle"),
+        "{text}"
+    );
+    // Cards of one row share a height, so the second box's edge lines up with the first.
+    let parse = screen
+        .iter()
+        .position(|l| l.contains("Parse"))
+        .expect("card");
+    assert!(
+        screen[parse].matches('\u{2502}').count() >= 4,
+        "{}",
+        screen[parse]
+    );
+}
+
+#[test]
+fn a_narrow_flow_falls_back_to_text() {
+    let screen = screen(&shown(widest_flow()), 40).join("\n");
+    assert!(!screen.contains('\u{256D}'), "{screen}");
+    assert!(screen.contains("from the agent"), "{screen}");
+}
+
+#[test]
+fn checks_show_every_state_and_the_summary() {
+    let arguments = json!({ "checks": { "items": [
+        { "name": "unit tests", "state": "passed", "counts": { "passed": 214, "failed": 0, "total": 214 } },
+        { "name": "lint", "state": "failed", "counts": { "passed": 3, "failed": 2, "total": 5 }, "detail": "2 failed" },
+        { "name": "build", "state": "running" },
+        { "name": "deploy", "state": "queued" },
+        { "name": "docs", "state": "skipped" },
+    ] } });
+    for width in [20, 40, 80] {
+        let screen = screen(&shown(arguments.clone()), width).join("\n");
+        for glyph in ['\u{2713}', '\u{2717}', '\u{25D0}', '\u{25CB}', '\u{2013}'] {
+            assert!(screen.contains(glyph), "{glyph} at {width}: {screen}");
+        }
+    }
+    let screen = screen(&shown(arguments), 80).join("\n");
+    assert!(
+        screen
+            .contains("1 passed \u{b7} 1 failed \u{b7} 1 running \u{b7} 1 queued \u{b7} 1 skipped"),
+        "{screen}"
+    );
+    assert!(
+        screen.contains("214/214") && screen.contains("2 failed"),
+        "{screen}"
+    );
+}
+
+#[test]
+fn checks_at_their_caps_stay_inside_the_width() {
+    let item = json!({ "name": text(80, '\u{6570}'), "state": "failed", "detail": text(120, '\u{1f680}'),
+        "counts": { "passed": 4_000_000_000_u32, "failed": 1, "total": 4_000_000_001_u32 } });
+    let arguments = json!({ "checks": { "items": vec![item; 20] } });
+    for width in [20, 40, 80] {
+        screen(&shown(arguments.clone()), width);
+    }
+}
