@@ -181,6 +181,9 @@ impl Graph {
                 .links
                 .iter()
                 .filter(|link| !self.nodes.contains_key(*link))
+                // `pack/name` is an agent of a Workshop pack: without the pack it is
+                // simply not installed, which is no fault of the agent that names it.
+                .filter(|link| !link.contains('/'))
             {
                 self.skipped.push(Problem {
                     node: node.name.clone(),
