@@ -231,6 +231,35 @@ fn a_comment_the_parser_takes_for_code_gives_no_name() {
     let kept = names(&outline);
     assert!(kept.contains(&"Library"), "{kept:?}");
     assert!(kept.iter().all(|name| !name.contains("MARKER")), "{kept:?}");
+
+    // A second input it failed on, as proptest shrank it: the fixture's first line, a
+    // `//!` comment, moved behind an impl, and a junk line of a control byte and a
+    // backslash put before it.
+    let mut lines: Vec<&str> = FIXTURE.lines().collect();
+    lines.remove(1);
+    lines.swap(0, 70);
+    lines.remove(0);
+    lines.insert(0, lines[0]);
+    lines.insert(70, "\u{e}\\");
+    let outline = rust(lines.join("\n")).unwrap();
+    let kept = names(&outline);
+    assert!(kept.contains(&"Library"), "{kept:?}");
+    assert!(kept.iter().all(|name| !name.contains("MARKER")), "{kept:?}");
+
+    // A `'\` at a line's end: the compiler reads the next line into a character with no
+    // end, the string on it included. The line before the fixture's string, and before
+    // its raw string, with the stray byte that makes the parser recover.
+    for before in [12, 63] {
+        let mut lines: Vec<&str> = FIXTURE.lines().collect();
+        lines.insert(before, "~ '\\");
+        let outline = rust(lines.join("\n")).unwrap();
+        let kept = names(&outline);
+        assert!(
+            kept.iter()
+                .all(|name| !name.contains("MARKER") && !name.contains("4f9a")),
+            "{kept:?}"
+        );
+    }
 }
 
 #[test]
@@ -556,9 +585,11 @@ proptest! {
     #[test]
     fn the_markers_in_strings_and_comments_stay_out_whatever_breaks_around_them(
         edits in proptest::collection::vec(
+            // A quote or a line end in the junk becomes a space, not a rejected case: with
+            // a filter the run gave up ("too many local rejects") near 70,000 cases.
             (0..4_u8, any::<prop::sample::Index>(),
-             proptest::collection::vec(any::<u8>().prop_filter("no quote, one line", |byte| {
-                 !matches!(byte, b'"' | b'\n')
+             proptest::collection::vec(any::<u8>().prop_map(|byte| {
+                 if matches!(byte, b'"' | b'\n') { b' ' } else { byte }
              }), 0..40)),
             1..12,
         ),

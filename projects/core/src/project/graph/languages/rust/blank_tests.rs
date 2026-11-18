@@ -62,7 +62,11 @@ fn strings_and_comments_are_wiped_and_code_is_not() {
             r#"'outer: loop { break 'outer "a"; }"#,
             r#"'outer: loop { break 'outer " "; }"#,
         ),
-        (r##"m!('r#"a\"b"#, "c")"##, r##"m!('r#"    "#, " ")"##),
+        // A `'` that opens no whole character hides no string after it.
+        ("'\\\n \"a\" '", "'\\\n \" \" '"),
+        ("'\\x \"a\"\n\"b\"", "'\\x \" \"\n\" \""),
+        ("'\\x \"a\" ' \"b\"", "'\\x \" \" ' \" \""),
+        ("'# \"a\" ' 'ab' \"c\"", "'# \" \" ' 'ab' \" \""),
         // The line for the shell, but not an attribute of the crate.
         (
             "#!/bin/sh it's \"\nfn a() { \"b\" }",

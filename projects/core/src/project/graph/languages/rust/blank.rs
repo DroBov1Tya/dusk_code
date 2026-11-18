@@ -5,8 +5,9 @@
 //! the parser was never handed, whatever it does with the rest.
 //!
 //! The rules are those of `rustc_lexer` in the current edition (`c"..."` and `cr"..."`
-//! are strings). Where a file breaks them, a literal with no end runs to the end of the
-//! file, as the compiler reads it.
+//! are strings). Where a file breaks them the reading that hides more is taken: a string
+//! or a comment with no end runs to the end of the file, and a `'` that opens no whole
+//! character opens nothing.
 
 /// `source` with the text of every comment and every string replaced by spaces, byte for
 /// byte: the delimiters and the line ends stay, so every place and every line is where it
@@ -115,34 +116,33 @@ fn string_end(source: &[u8], from: usize) -> usize {
 }
 
 /// Where the code goes on after a `'` whose next byte is at `from`. It opens a character
-/// (`'x'`, `'"'`, `'\''`) or a lifetime (`'a`), and the difference decides whether a
-/// quote after it opens a string. As `rustc_lexer` tells them apart: one character and a
-/// `'` is a character; a name is a lifetime; anything else is a character that ends at
-/// its `'`, and without one at the line's end or at a `/`.
+/// (`'x'`, `'"'`, `'\''`, `'\u{22}'`) or it stands alone, as before the name of a lifetime
+/// (`'a`), and the difference decides whether a quote after it opens a string. A character
+/// is one character and a `'`, or a backslash and what follows it up to a `'`, on one line
+/// and with no `"` but an escaped one. No other `'` takes anything with it: the compiler
+/// reads an unclosed `'\` on into the next line, and a string there would keep its text.
 fn after_quote(source: &[u8], from: usize) -> usize {
     let Some(first) = source.get(from) else {
         return from;
     };
-    let one = from + char_len(*first);
-    if *first != b'\\' && source.get(one) == Some(&b'\'') {
-        return one + 1;
-    }
-    if in_word(*first) {
-        let end = word_end(source, from);
-        // `'abc'` is no lifetime; the compiler takes the second `'` with it.
-        return end + usize::from(source.get(end) == Some(&b'\''));
+    if *first != b'\\' {
+        let one = from + char_len(*first);
+        return if source.get(one) == Some(&b'\'') {
+            one + 1
+        } else {
+            from
+        };
     }
     let mut at = from;
     while let Some(byte) = source.get(at) {
         match byte {
             b'\'' => return at + 1,
-            b'/' => return at,
-            b'\n' if source.get(at + 1) != Some(&b'\'') => return at,
-            b'\\' => at += 2,
+            b'\n' | b'"' => break,
+            b'\\' if source.get(at + 1) != Some(&b'\n') => at += 2,
             _ => at += 1,
         }
     }
-    source.len()
+    from
 }
 
 /// The raw string the word in `word..end` opens, if it does (`r"`, `br#"`, `cr##"`):
