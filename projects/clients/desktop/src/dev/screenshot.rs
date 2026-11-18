@@ -28,6 +28,8 @@
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
 //! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
 //!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
+//! - `fake=pulls`: four pull requests in Changes, one of each state and checks, and a chat
+//!   of the chosen project in the sidebar with their icon;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
 //!   menu; `fake=sentpicture`: a user's message with a picture thumbnail under it;
@@ -423,6 +425,7 @@ fn act(
             });
             cx.notify();
         }
+        "fake" if value == "pulls" => fake_pulls(ws, cx),
         "fake" if value == "plugins" => {
             ws.status.plugin_parts = std::sync::Arc::new(super::plugins::parts());
             cx.notify();
@@ -805,4 +808,104 @@ fn demo_png() -> Vec<u8> {
     let mut bytes = std::io::Cursor::new(Vec::new());
     let _ = image.write_to(&mut bytes, ImageFormat::Png);
     bytes.into_inner()
+}
+
+/// Pull requests in every state, for the Changes module and a chat row's icon.
+fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use dusk_protocol::project::{
+        CheckState, Checks, DiffStat, PullState, PullStatus, PullSummary, RepositoryStatus,
+    };
+    let Some(project) = ws.selected_project().cloned() else {
+        return;
+    };
+    let pull = |number, title: &str, state, checks: Checks| PullStatus {
+        number,
+        title: title.to_owned(),
+        state,
+        branch: "pr-status".to_owned(),
+        added: 10 * number,
+        removed: 7 * number,
+        url: format!("https://github.com/example/repo/pull/{number}"),
+        checks,
+    };
+    let checks = |passed, running, failed, state| Checks {
+        total: passed + running + failed,
+        passed,
+        running,
+        failed,
+        state: Some(state),
+    };
+    let pulls = vec![
+        pull(
+            12,
+            "Show pull requests and CI in Changes",
+            PullState::Open,
+            checks(7, 3, 0, CheckState::Pending),
+        ),
+        pull(
+            11,
+            "Draft: a quieter sidebar",
+            PullState::Draft,
+            Checks::default(),
+        ),
+        pull(
+            9,
+            "Split the forge",
+            PullState::Merged,
+            checks(10, 0, 0, CheckState::Passing),
+        ),
+        pull(
+            7,
+            "Bump parking_lot",
+            PullState::Closed,
+            checks(8, 0, 2, CheckState::Failing),
+        ),
+    ];
+    ws.pulls.insert(
+        project.id.clone(),
+        PullSummary {
+            project_id: project.id.clone(),
+            pulls: pulls[..2].to_vec(),
+            checks: Some(CheckState::Pending),
+        },
+    );
+    ws.repository = Some(RepositoryStatus {
+        repository: "dusk_code".to_owned(),
+        branch: Some("pr-status".to_owned()),
+        stat: DiffStat {
+            files: 23,
+            added: 1473,
+            removed: 625,
+        },
+        pulls,
+        unavailable: None,
+    });
+    if let Some(git) = ws.git.as_mut() {
+        git.stat = DiffStat {
+            files: 23,
+            added: 1473,
+            removed: 625,
+        };
+        git.changes = vec![dusk_protocol::project::Change {
+            path: "src/lib.rs".to_owned(),
+            kind: dusk_protocol::project::ChangeKind::Modified,
+            staged: false,
+        }];
+    }
+    ws.threads.insert(
+        0,
+        dusk_protocol::thread::Thread {
+            id: "fake-pulls".to_owned(),
+            source: "gui".to_owned(),
+            created_at: 0,
+            title: Some("Pull request status".to_owned()),
+            active_at: 0,
+            parent_thread_id: None,
+            agent: None,
+            name: None,
+            project: Some(project.dir.to_string_lossy().into_owned()),
+            temporary: false,
+        },
+    );
+    cx.notify();
 }
