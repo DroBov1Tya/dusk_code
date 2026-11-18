@@ -198,6 +198,8 @@ pub struct Workspace {
     pub agents_trigger_focus: FocusHandle,
     /// The keys of a window that takes them: the subagents' list, a listing's gallery.
     pub modal_focus: FocusHandle,
+    /// The Workshop confirmation's Cancel button, where the keyboard starts.
+    pub confirm_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,

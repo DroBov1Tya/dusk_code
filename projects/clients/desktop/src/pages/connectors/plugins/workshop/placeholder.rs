@@ -1,7 +1,7 @@
 //! What stands where a cover is not: drawn here from the theme, no file and no network,
-//! and quieter than any cover. The kind's glyph for a listing without one; an empty box
-//! while its cover comes; the glyph and "Offline" for one that could not be fetched while
-//! the store could not be read.
+//! and quieter than any cover. The kind's glyph for a listing without one; a quieter
+//! glyph marked "Loading" while its cover comes; the glyph and "Offline" for one that
+//! could not be fetched while the store could not be read.
 
 use dusk_protocol::plugin::Kind;
 use gpui_kit::{
@@ -40,29 +40,23 @@ pub fn render(kind: Kind, look: Look, width: f32, corners: Corners<Pixels>, cx: 
         .bg(raised)
         .border_1()
         .border_color(hairline);
-    if look == Look::Coming {
-        return frame;
-    }
+    // The glyph is quieter while the cover comes: still, since nothing here answers a click.
+    let strength = if look == Look::Coming { 0.3 } else { 0.6 };
     let frame = frame.child(
         Icon::default()
             .path(glyph(kind))
             .size(px(GLYPH))
-            .text_color(muted.opacity(0.6)),
+            .text_color(muted.opacity(strength)),
     );
-    if look == Look::None {
-        return frame;
-    }
-    frame.child(
-        div()
-            .absolute()
-            .right(px(size::GAP_S))
-            .bottom(px(size::GAP_S))
+    // A word in the corner tells the three states apart without colour.
+    let corner = match look {
+        Look::None => return frame,
+        Look::Coming => div().child("Loading"),
+        Look::Offline => div()
             .flex()
             .flex_row()
             .items_center()
             .gap(px(size::GAP_XS))
-            .meta()
-            .text_color(muted)
             .child(
                 Icon::default()
                     .path(icons::CLOUD_OFF)
@@ -70,6 +64,14 @@ pub fn render(kind: Kind, look: Look, width: f32, corners: Corners<Pixels>, cx: 
                     .text_color(muted),
             )
             .child("Offline"),
+    };
+    frame.child(
+        corner
+            .absolute()
+            .right(px(size::GAP_S))
+            .bottom(px(size::GAP_S))
+            .meta()
+            .text_color(muted),
     )
 }
 

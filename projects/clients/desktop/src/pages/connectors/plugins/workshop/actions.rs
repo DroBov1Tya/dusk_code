@@ -66,9 +66,9 @@ pub fn remove(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) ->
             .outline()
             .min_w(px(WIDTH))
             .label("Remove")
-            .on_click(cx.listener(move |ws, _, _, cx| {
+            .on_click(cx.listener(move |ws, _, window, cx| {
                 cx.stop_propagation();
-                ws.confirm_store(Confirm::Remove(name.clone()), cx)
+                ws.confirm_store(Confirm::Remove(name.clone()), window, cx)
             })),
     )
 }
@@ -124,9 +124,9 @@ pub fn install(
     button
         .label(label)
         .disabled(listing.unfit.is_some())
-        .on_click(cx.listener(move |ws, _, _, cx| {
+        .on_click(cx.listener(move |ws, _, window, cx| {
             cx.stop_propagation();
-            ws.confirm_store(Confirm::Install(Box::new(shown.clone())), cx)
+            ws.confirm_store(Confirm::Install(Box::new(shown.clone())), window, cx)
         }))
 }
 

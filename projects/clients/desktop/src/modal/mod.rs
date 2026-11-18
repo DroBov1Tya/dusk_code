@@ -204,7 +204,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             (
                 confirm.title(),
                 480.,
-                crate::pages::connectors::plugins::confirm(&confirm, cx),
+                crate::pages::connectors::plugins::confirm(&confirm, &ws.confirm_focus, cx),
             )
         }
         Modal::Listing { source, name } => {
@@ -213,7 +213,13 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             (
                 name.clone(),
                 width,
-                listing::render(ws, &source, &name, width, cx),
+                listing::render(
+                    ws,
+                    &source,
+                    &name,
+                    (width, window.viewport_size().height.as_f32()),
+                    cx,
+                ),
             )
         }
         Modal::Rollback { .. } => ("Go back".to_owned(), 480., rollback(cx)),
