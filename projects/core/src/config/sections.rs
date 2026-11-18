@@ -117,8 +117,8 @@ pub struct Limits {
     /// on how to read it whole. The full output stays stored.
     #[serde(default = "yes")]
     pub shape_output: bool,
-    /// Whether the core keeps an index of a saved project's source (files, symbols, the
-    /// names each file uses) for the `project_graph` tool. The model sees nothing of it.
+    /// Whether the model is offered `project_graph`: a map of the project's files and
+    /// folders by name. The name is kept from the code graph it replaced.
     #[serde(default = "yes")]
     pub project_graph: bool,
     /// Whether the core writes down what ended a problem in a saved project (a repeated

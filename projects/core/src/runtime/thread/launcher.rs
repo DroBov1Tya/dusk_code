@@ -26,7 +26,7 @@ use crate::{
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
         McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, Tasks,
-        ToolRegistry, ToolScope, console::project_folder,
+        ToolRegistry, ToolScope,
     },
 };
 
@@ -53,9 +53,6 @@ pub struct Launcher {
     pub hooks: Arc<crate::plugins::Hooks>,
     /// How each provider's calls go, learned by every thread's calls.
     pub health: Arc<crate::providers::Health>,
-    /// Keeps the graph of saved projects current; `None` for chats that leave nothing
-    /// behind.
-    pub graph: Option<Arc<crate::project::graph::Indexer>>,
     /// What the teams that run plans keep in memory: a lock and caches.
     pub(crate) team: Arc<crate::runtime::team::Teams>,
     /// Its chats leave nothing behind: the database is in memory, their files are in the
@@ -85,10 +82,6 @@ impl Launcher {
         depth: usize,
     ) -> Result<ThreadSetup> {
         let scope = Arc::new(self.scope(cwd, workspace)?);
-        // The thread's task starts: its project is looked over, in the background.
-        if let Some(graph) = &self.graph {
-            graph.refresh(project_folder(&scope));
-        }
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
             model: Arc::clone(&self.model),
@@ -122,7 +115,6 @@ impl Launcher {
         tools.approvals = Some(Arc::clone(&self.approvals));
         tools.platform = self.platform;
         tools.state = Some(Arc::clone(&self.state));
-        tools.graph = self.graph.clone();
         tools.thread_id = thread_id.to_owned();
         for server in self.mcp.ready() {
             let pictures = ArtifactStore::new(self.paths.artifacts_dir());
