@@ -77,14 +77,16 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 ## Teams (TEAM mode)
 
 A team runs only in the chat's TEAM mode; every other mode keeps the board and the agents
-`ask_agent` starts. `limits.plan_graph` (on) is the kill switch: off, TEAM mode has the
+`ask_agent` starts. A chat's mode is the one the user last wrote to it in: a turn the core
+starts there, such as for a line from its team, keeps it, so switching the mode for
+another chat does not touch this one. `limits.plan_graph` (on) is the kill switch: off, TEAM mode has the
 board too and no team runs.
 
 - **The plan.** In TEAM mode the lead's `tasks` tool takes a plan: tasks that depend on
   each other, each with its files, role, acceptance and gate. `run` has the core give each
-  ready task to a member (a thread under the chat) and keep a lease on it. In another mode
-  nothing new is given out; what is at work finishes, and the team goes on when the mode
-  is back.
+  ready task to a member (a thread under the chat) and keep a lease on it. Once the user
+  writes to the chat in another mode, nothing new is given out; what is at work finishes,
+  and the team goes on when the chat is back in TEAM mode.
 - **Members.** A member gets a card the core writes: the task, its files, how done is
   told, what was done before it, and the rules. Its tools are an allowlist (`run_command`,
   `jobs`, `read_file`, `search_files`, `project_graph`, `recall`, `read_history`,
@@ -95,10 +97,24 @@ board too and no team runs.
 - **Gates.** A command gate is run by the core in the project folder under the chat's
   approval mode: exit 0 makes the task done; anything else sends it back to its member
   with the end of the output, twice at most, then the task fails and the lead decides. In
-  a mode that would ask the user the gate is not run and the task waits for the lead. A
-  task without a gate waits for the lead's review. A task whose gate is the user's
+  a mode that would ask the user, `run` asks once, in the usual approval card, with each
+  distinct gate command listed: a yes lets exactly those lines run as this team's gates
+  (in memory, like a yes for the session); a gate added or changed later, or one after a
+  restart, is not run and its task waits for the lead until a `run` asks again; a no
+  leaves every gated task to the lead. A gate runs `limits.team_gate_seconds` at most
+  (300), a team runs `limits.team_max_gate_runs` gates (128), and an end of the team
+  kills the gates that run; their tasks stay in review for the next run. A task without
+  a gate waits for the lead's review. A task whose gate is the user's
   confirmation waits in review while the team goes on; the lead is told once, and the
   desktop plan row has `confirm`.
+- **Files.** At hand-in the change ledger's rows of the member's turns on the task are
+  compared with its `files`; a change outside them holds the task for the lead with the
+  paths named, and its gate does not run. The ledger walks with the ignore rules, so
+  build output never counts. With members at work at once a walk around one command also
+  sees another's writes, so a path another thread recorded meanwhile is left out: the
+  check holds only what is surely the member's. A change the user or a background job
+  made during a member's command counts as the member's. A task without `files` is not
+  checked.
 - **What is forwarded.** A line to the lead (400 bytes at most), a task's note, a gate's
   output and a card are made plain and cleared of the project's variables and of what is
   shaped like a key before they are stored or sent.
@@ -112,4 +128,4 @@ board too and no team runs.
 
 Not built: a worktree per member, messages between members, procedures (their switches
 `limits.member_worktrees`, `peer_messages`, `procedures` do nothing yet; `task_packets`
-is no longer read). A task's `files` are told to its member and not checked at hand-in.
+is no longer read).
