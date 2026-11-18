@@ -41,6 +41,7 @@ pub struct Palette {
     pub foreground: Hsla,
     pub background: Hsla,
     pub cursor: Hsla,
+    pub selection: Hsla,
     named: [Hsla; 16],
 }
 
@@ -91,6 +92,7 @@ impl Palette {
             foreground: theme.foreground,
             background: theme.background,
             cursor: theme.primary,
+            selection: theme.selection,
             named,
         }
     }
@@ -117,17 +119,18 @@ impl Palette {
     }
 }
 
-/// The screen as an element that fills its place. It leaves the size it was given in
-/// `measured`, from which the panel works out how many cells fit.
+/// The screen as an element that fills its place. It leaves where it was drawn in
+/// `measured`, from which the panel works out how many cells fit and which one the
+/// pointer is on.
 pub fn grid(
     picture: Picture,
     metrics: Metrics,
     palette: Palette,
     focused: bool,
-    measured: Rc<Cell<Option<Size<Pixels>>>>,
+    measured: Rc<Cell<Option<Bounds<Pixels>>>>,
 ) -> impl IntoElement {
     canvas(
-        move |bounds, _, _| measured.set(Some(bounds.size)),
+        move |bounds, _, _| measured.set(Some(bounds)),
         move |bounds, _, window, cx| {
             let cell = metrics.cell;
             let place = |row: usize, col: usize| {
@@ -137,15 +140,30 @@ pub fn grid(
                 )
             };
             for (row, runs) in picture.rows.iter().enumerate() {
+                for run in runs.iter().filter(|run| run.style.bg != Ink::Background) {
+                    let area = size(cell.width * run.cells as f32, cell.height);
+                    window.paint_quad(fill(
+                        Bounds::new(place(row, run.col), area),
+                        palette.color(run.style.bg),
+                    ));
+                }
+            }
+            // The selection lies over the backgrounds and under the letters.
+            for (row, selected) in picture.selected.iter().enumerate() {
+                if let Some((first, last)) = *selected {
+                    let area = size(
+                        cell.width * (last + 1).saturating_sub(first) as f32,
+                        cell.height,
+                    );
+                    window.paint_quad(fill(
+                        Bounds::new(place(row, first), area),
+                        palette.selection,
+                    ));
+                }
+            }
+            for (row, runs) in picture.rows.iter().enumerate() {
                 for run in runs {
                     let origin = place(row, run.col);
-                    if run.style.bg != Ink::Background {
-                        let area = size(cell.width * run.cells as f32, cell.height);
-                        window.paint_quad(fill(
-                            Bounds::new(origin, area),
-                            palette.color(run.style.bg),
-                        ));
-                    }
                     if run.text.trim().is_empty() {
                         continue;
                     }

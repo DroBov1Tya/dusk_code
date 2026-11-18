@@ -90,6 +90,22 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new("tab", FocusNextRow, Some("Workspace")),
         KeyBinding::new("shift-tab", FocusPrevRow, Some("Workspace")),
     ]);
+    // A binding is matched before any key listener, so while a shell has the keyboard
+    // the keys it needs are unbound there: Tab completes instead of moving the focus,
+    // Control-C interrupts, and away from a Mac the window's Control shortcuts are the
+    // shell's own keys. Copy is the panel's, from its selection. Bound after the rest, so
+    // these win over a window binding of the same depth.
+    let mut shell = vec!["tab", "shift-tab"];
+    if cfg!(target_os = "macos") {
+        shell.push("cmd-c");
+    } else {
+        shell.extend(["ctrl-c", new, find, sidebar, quit, panel]);
+    }
+    cx.bind_keys(
+        shell
+            .into_iter()
+            .map(|key| KeyBinding::new(key, NoAction, Some("Terminal"))),
+    );
     // Quit works wherever the focus is, and the Mac's application menu shows it.
     cx.on_action(|_: &Quit, cx| cx.quit());
     cx.set_menus(vec![Menu {
