@@ -205,15 +205,28 @@ fn preview(opened: &Opened, width: f32, cx: &App) -> Div {
         Loaded::Loading => frame.child(widgets::muted("Reading...", cx)),
         Loaded::Failed(error) => frame.child(widgets::muted(error.clone(), cx)),
         Loaded::Ready(file) => {
-            let body = if path.ends_with(".md") {
-                links::markdown("contents-markdown", file.text.clone()).into_any_element()
-            } else {
+            let plain = |text: String| {
                 div()
                     .font_family(theme.mono_font_family.clone())
                     .text_sm()
                     .whitespace_normal()
-                    .child(file.text.clone())
-                    .into_any_element()
+                    .child(text)
+            };
+            let body = match path.ends_with(".md") {
+                // Front matter is data, not Markdown: as Markdown its fences read as a
+                // heading.
+                true => {
+                    let (front, rest) = front_matter(&file.text);
+                    div()
+                        .flex()
+                        .flex_col()
+                        .gap(px(size::GAP_S))
+                        .when_some(front, |body, front| {
+                            body.child(plain(front.to_owned()).text_color(muted))
+                        })
+                        .child(links::markdown("contents-markdown", rest.to_owned()))
+                }
+                false => plain(file.text.clone()),
             };
             frame.child(body).when(file.truncated, |frame| {
                 frame.child(div().meta().text_color(muted).child(format!(
@@ -222,6 +235,20 @@ fn preview(opened: &Opened, width: f32, cx: &App) -> Div {
                 )))
             })
         }
+    }
+}
+
+/// The `---` block a skill's file opens with, fences included, and the rest.
+fn front_matter(text: &str) -> (Option<&str>, &str) {
+    let Some(after) = text.strip_prefix("---\n") else {
+        return (None, text);
+    };
+    match after.find("\n---\n") {
+        Some(end) => {
+            let split = 4 + end + 5;
+            (Some(&text[..split - 1]), &text[split..])
+        }
+        None => (None, text),
     }
 }
 
