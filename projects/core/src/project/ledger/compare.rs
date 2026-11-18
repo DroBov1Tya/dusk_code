@@ -140,7 +140,8 @@ fn read_after(root: &Path, absolute: &Path, stamp: Stamp) -> Option<Vec<u8>> {
     read_regular(absolute, MAX_READ_BYTES).ok()
 }
 
-fn sha256(bytes: &[u8]) -> String {
+/// SHA-256 of `bytes` in hex, as the ledger and the episodes spell a hash.
+pub fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))

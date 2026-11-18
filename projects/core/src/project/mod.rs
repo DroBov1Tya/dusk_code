@@ -4,6 +4,7 @@
 mod diff;
 mod edit;
 pub mod env;
+pub mod episodes;
 mod files;
 mod git;
 pub mod ledger;
