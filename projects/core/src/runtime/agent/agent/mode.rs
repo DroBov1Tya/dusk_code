@@ -35,12 +35,18 @@ impl Agent {
     }
 
     /// A turn about to start in a chat: when the user wrote to it, the chat takes up the
-    /// mode they wrote in.
-    pub(super) async fn take_up_mode(&self, conversation: &Conversation) -> anyhow::Result<()> {
+    /// mode they wrote in. A setting that names no mode is not kept; a failed write keeps
+    /// the chat's mode as it was, which never stops the turn.
+    pub(super) async fn take_up_mode(&self, conversation: &Conversation) {
         if self.depth != 0 || !conversation.user_wrote() {
-            return Ok(());
+            return;
         }
         let mode = self.config.current().mode().to_owned();
-        self.state.set_chat_mode(&self.thread_id, &mode).await
+        if !Modes::new(&self.modes_dir).list().contains(&mode) {
+            return;
+        }
+        if let Err(error) = self.state.set_chat_mode(&self.thread_id, &mode).await {
+            warn!("thread {}: {error:#}", self.thread_id);
+        }
     }
 }

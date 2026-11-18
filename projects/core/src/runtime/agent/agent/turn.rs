@@ -29,7 +29,7 @@ impl Agent {
         if !conversation.has_queued() {
             return Ok(None);
         }
-        self.take_up_mode(&conversation).await?;
+        self.take_up_mode(&conversation).await;
         let config = self.config_now().await;
         let specs = self.tools.specs(&self.scope, &config);
         if self.context_too_large(&conversation, &specs, 0).is_some() {
