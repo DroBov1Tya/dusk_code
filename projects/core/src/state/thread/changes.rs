@@ -93,6 +93,29 @@ impl State {
         .context("list the changes")
     }
 
+    /// The paths the turns of `member` on `task_id` changed that only its own walks saw:
+    /// a path another thread recorded in the same project since the task's first turn
+    /// is left out. With members at work at once, one member's walk around its command
+    /// also sees what another wrote meanwhile, and that one records it too, so whose
+    /// change it was cannot be told; a path only this member saw changed during one of
+    /// its own commands. Sorted, each once.
+    pub async fn task_own_changes(&self, member: &str, task_id: &str) -> Result<Vec<String>> {
+        sqlx::query_scalar(
+            "SELECT DISTINCT c.path FROM changes c JOIN turns t ON t.turn_id = c.turn_id
+             WHERE c.thread_id = ?1 AND t.task_id = ?2
+               AND NOT EXISTS (SELECT 1 FROM changes o
+                   WHERE o.project = c.project AND o.path = c.path AND o.thread_id != ?1
+                     AND o.created_at >= (SELECT MIN(started_at) FROM turns
+                         WHERE thread_id = ?1 AND task_id = ?2))
+             ORDER BY c.path",
+        )
+        .bind(member)
+        .bind(task_id)
+        .fetch_all(&self.pool)
+        .await
+        .context("list what the task's turns changed")
+    }
+
     /// The thread's own changes for a client, newest first, at most `MAX_FILE_CHANGES`.
     pub async fn thread_changes(&self, thread_id: &str) -> Result<Vec<FileChange>> {
         sqlx::query(select!(

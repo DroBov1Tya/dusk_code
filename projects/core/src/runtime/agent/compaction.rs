@@ -104,7 +104,7 @@ impl Agent {
     /// point between turns, where `limits.compact_early` compacts sooner.
     pub async fn compact_if_needed(&self, turn: Option<&Turn>, inbox: &mut Inbox) -> Option<Stop> {
         let limit = self.input_limit();
-        let config = self.config.current();
+        let config = self.config_now().await;
         let stub_results = config.limits().stub_results;
         let conversation =
             match Conversation::load(&self.state, &self.thread_id, stub_results).await {
@@ -198,7 +198,7 @@ impl Agent {
         self.tools.refresh_descriptions();
         // The context starts over here, so a chat takes up the prompt of its mode now.
         if self.depth == 0 {
-            let mode = self.config.current().mode().to_owned();
+            let mode = self.config_now().await.mode().to_owned();
             let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
             let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
             self.state
@@ -281,7 +281,7 @@ impl Agent {
             "{prompt}\n\n{tail}Answer with text only; do not call tools."
         )));
         let choice = self.model.current().context("provider is unavailable")?;
-        let config = self.config.current();
+        let config = self.config_now().await;
         // Same tools, project text and key as the steps, so the provider's cache of the
         // thread serves this request too; without them the whole context is read cold.
         let tools = self.tools.specs(&self.scope, &config);

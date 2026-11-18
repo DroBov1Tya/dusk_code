@@ -647,9 +647,19 @@ struct Recorder {
 }
 
 impl TeamRunner for Recorder {
-    fn run<'a>(&'a self, _lead: &'a str, budget: TeamBudget) -> BoxFuture<'a, usize> {
+    fn run<'a>(
+        &'a self,
+        _lead: &'a str,
+        budget: TeamBudget,
+        _progress: Option<crate::tools::Progress>,
+    ) -> BoxFuture<'a, super::team::Started> {
         self.runs.lock().push(budget);
-        Box::pin(async { Ok(2) })
+        Box::pin(async {
+            Ok(super::team::Started {
+                given: 2,
+                gates: super::team::GatesYes::NotAsked,
+            })
+        })
     }
 
     fn stop<'a>(&'a self, _lead: &'a str) -> BoxFuture<'a, ()> {

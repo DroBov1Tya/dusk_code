@@ -24,12 +24,15 @@ impl Agent {
         if self.model.current().is_none() {
             return Ok(None);
         }
-        let config = self.config.current();
-        let stub_results = config.limits().stub_results;
+        let stub_results = self.config.current().limits().stub_results;
         let conversation = Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        if !conversation.has_queued() {
+            return Ok(None);
+        }
+        self.take_up_mode(&conversation).await;
+        let config = self.config_now().await;
         let specs = self.tools.specs(&self.scope, &config);
-        if !conversation.has_queued() || self.context_too_large(&conversation, &specs, 0).is_some()
-        {
+        if self.context_too_large(&conversation, &specs, 0).is_some() {
             return Ok(None);
         }
         if self.depth == 0 {
@@ -55,7 +58,7 @@ impl Agent {
     /// edit of the prompt, applies from the next turn. The cached prefix changes once
     /// then, and only then.
     pub(super) async fn follow_mode(&self, conversation: &Conversation) -> Result<()> {
-        let mode = self.config.current().mode().to_owned();
+        let mode = self.config_now().await.mode().to_owned();
         let prompt = Modes::new(&self.modes_dir).prompt(&mode)?;
         let prompt = prompt.as_deref().unwrap_or(NO_PROMPT);
         if conversation.prompt() != Some(prompt) {

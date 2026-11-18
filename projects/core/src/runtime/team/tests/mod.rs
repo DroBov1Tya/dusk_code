@@ -283,7 +283,8 @@ impl Rig {
     ) -> anyhow::Result<usize> {
         let limits = self.launcher().config.current().limits();
         let budget = change(TeamCeilings::from_limits(&limits)?.budget());
-        self.runner().run(&self.lead, budget).await
+        let started = self.runner().run(&self.lead, budget, None).await?;
+        Ok(started.given)
     }
 
     pub fn runner(&self) -> Runner {

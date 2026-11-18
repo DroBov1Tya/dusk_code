@@ -20,7 +20,7 @@ use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
-pub use team::TeamRunner;
+pub use team::{GatesYes, Started, TeamRunner};
 pub use text::short as short_task_id;
 
 use lead::Lead;

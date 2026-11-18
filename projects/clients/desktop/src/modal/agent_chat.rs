@@ -77,7 +77,8 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .child(copy(text, cx))
                 .into_any_element(),
             Item::Agent { from, text } => {
-                agent_report(ws, agent, at, from, text, cx).into_any_element()
+                // A modal's column is drawn whole, so its texts keep their parse.
+                agent_report(ws, agent, at, (from, text), false, cx).into_any_element()
             }
             Item::Assistant { text, reasoning } => {
                 let mut said = div().flex().flex_col().gap_2();
