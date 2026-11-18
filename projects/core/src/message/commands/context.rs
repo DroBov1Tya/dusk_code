@@ -27,6 +27,9 @@ pub struct ContextDetail {
     /// Memory files: the tool that carries them, the file, and the character cap it is
     /// sent under.
     pub memory: Vec<MemoryFile>,
+    /// Whether old tool results are counted as the stubs sent in their place
+    /// (`limits.stub_results`), as the thread's own steps send them.
+    pub stub_results: bool,
 }
 
 /// One ready MCP server: the tools it gave this thread, and its instructions if any.
@@ -63,7 +66,7 @@ pub async fn report(
     let usage = state.item_usage(thread_id).await?;
     let mut sections = Vec::new();
     let conversation = match thread_id {
-        Some(thread_id) => Some(Conversation::load(state, thread_id).await?),
+        Some(thread_id) => Some(Conversation::load(state, thread_id, detail.stub_results).await?),
         None => None,
     };
     match &conversation {
@@ -130,7 +133,7 @@ fn thread_sections(conversation: &Conversation) -> Vec<ContextSection> {
     let mut results: BTreeMap<String, (usize, u64)> = BTreeMap::new();
     let mut tool_names = BTreeMap::new();
     for message in &conversation.messages {
-        let tokens = message.context_tokens();
+        let tokens = conversation.sent_tokens(message);
         for call in &message.tool_calls {
             tool_names.insert(call.id.clone(), call.name.clone());
         }
@@ -376,6 +379,7 @@ mod tests {
                 path: memory_dir.join("MEMORY.md"),
                 max_chars: 5000,
             }],
+            stub_results: false,
         };
         let specs = vec![
             ToolSpec {

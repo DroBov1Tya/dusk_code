@@ -54,10 +54,10 @@ struct ReadHistoryArguments {
     offset: Option<usize>,
 }
 
-/// Whether the `result` form is offered and accepted. It is off until the stub store
-/// brings its switch (`limits.stub_results`); change only this function to connect it.
-fn result_form_on(_context: &ToolContext) -> bool {
-    false
+/// Whether the `result` form is offered and accepted: only where old results are sent as
+/// stubs, since a stub is what names a result to read.
+fn result_form_on(context: &ToolContext) -> bool {
+    context.config.limits().stub_results
 }
 
 impl ReadHistory {

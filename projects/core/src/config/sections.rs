@@ -89,6 +89,18 @@ pub struct Limits {
     /// command is watched and the chat's list of changed files stays empty too.
     #[serde(default = "yes")]
     pub record_changes: bool,
+    /// Whether old tool results are sent as short stubs that say how to get them back,
+    /// instead of word for word on every request. The full text stays stored. Off until
+    /// the evals show the model does not run again what it no longer sees.
+    #[serde(default)]
+    pub stub_results: bool,
+    /// Steps, newest first, whose tool results are always sent whole.
+    #[serde(default = "default_stub_keep_steps")]
+    pub stub_keep_steps: u32,
+    /// Tool results smaller than this, in estimated tokens, are always sent whole: their
+    /// stub would save little.
+    #[serde(default = "default_stub_min_tokens")]
+    pub stub_min_tokens: u64,
 }
 
 impl Default for Limits {
@@ -112,6 +124,9 @@ impl Default for Limits {
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),
             record_changes: true,
+            stub_results: false,
+            stub_keep_steps: default_stub_keep_steps(),
+            stub_min_tokens: default_stub_min_tokens(),
         }
     }
 }
@@ -174,6 +189,21 @@ fn default_failure_replan_at() -> u32 {
 
 fn default_failure_stop_at() -> u32 {
     8
+}
+
+/// Two steps at least, so the result the model is reading is never put away under it.
+pub const MIN_STUB_KEEP_STEPS: u32 = 2;
+pub const MAX_STUB_KEEP_STEPS: u32 = 50;
+/// Below 50 tokens a stub is about as long as the result.
+pub const MIN_STUB_MIN_TOKENS: u64 = 50;
+pub const MAX_STUB_MIN_TOKENS: u64 = 4000;
+
+fn default_stub_keep_steps() -> u32 {
+    8
+}
+
+fn default_stub_min_tokens() -> u64 {
+    200
 }
 
 /// What the core records about its work. Off, nothing is written or sent at all.

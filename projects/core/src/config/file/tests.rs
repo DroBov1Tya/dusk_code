@@ -217,6 +217,34 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
 }
 
 #[test]
+fn stubs_are_off_and_their_limits_stay_inside_their_bounds() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(!plain.stub_results);
+    assert_eq!((plain.stub_keep_steps, plain.stub_min_tokens), (8, 200));
+    let set =
+        parse("limits:\n  stub_results: true\n  stub_keep_steps: 2\n  stub_min_tokens: 4000\n")
+            .unwrap()
+            .limits();
+    assert!(set.stub_results);
+    assert_eq!((set.stub_keep_steps, set.stub_min_tokens), (2, 4000));
+    let set = parse("limits:\n  stub_keep_steps: 50\n  stub_min_tokens: 50\n")
+        .unwrap()
+        .limits();
+    assert_eq!((set.stub_keep_steps, set.stub_min_tokens), (50, 50));
+    for bad in [
+        "limits:\n  stub_results: 1\n",
+        "limits:\n  stub_keep_steps: 1\n",
+        "limits:\n  stub_keep_steps: 51\n",
+        "limits:\n  stub_keep_steps: -8\n",
+        "limits:\n  stub_min_tokens: 49\n",
+        "limits:\n  stub_min_tokens: 4001\n",
+        "limits:\n  stub_min_tokens: many\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
 fn the_failure_ladder_is_off_and_its_rungs_rise() {
     let plain = parse(PROVIDERS).unwrap().limits();
     assert!(!plain.failure_ladder);

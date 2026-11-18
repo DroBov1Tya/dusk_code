@@ -297,6 +297,11 @@ pub fn estimate_tokens(text: &str) -> u64 {
 /// The role markup around each message in a request.
 const MESSAGE_OVERHEAD: u64 = 4;
 
+/// The estimated size of a message whose content is `content`, its markup included.
+pub fn content_tokens(content: &str) -> u64 {
+    estimate_tokens(content) + MESSAGE_OVERHEAD
+}
+
 /// Appends a message at the end of the thread inside the caller's transaction.
 pub async fn insert_message(
     transaction: &mut Transaction<'_, Sqlite>,
@@ -309,7 +314,7 @@ pub async fn insert_message(
         [] => None,
         calls => Some(serde_json::to_string(calls).context("encode tool calls")?),
     };
-    let content_tokens = estimate_tokens(&message.content) + MESSAGE_OVERHEAD;
+    let content_tokens = content_tokens(&message.content);
     let tool_calls_tokens = tool_calls.as_deref().map_or(0, estimate_tokens);
     let reasoning_tokens = message.reasoning.as_deref().map_or(0, estimate_tokens);
     let artifacts = if message.artifacts.is_empty() {
