@@ -5,7 +5,7 @@
 use std::cmp::Reverse;
 
 use chrono::{DateTime, FixedOffset};
-use dusk_protocol::plugin::{Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, Tier};
+use dusk_protocol::plugin::{Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, RepoStars, Tier};
 
 use super::{index::Entry, record::Record, source::Fetched};
 use crate::{
@@ -50,12 +50,51 @@ pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) 
                 caption: screenshot.caption.clone(),
             })
             .collect(),
-        stars: entry.stars,
+        repo_stars: repo_stars(source.tier, entry),
         created: entry.created.clone(),
         updated: entry.updated.clone(),
         skills: entry.skills.clone(),
         clash: false,
     }
+}
+
+/// The stars a listing may show: only a mirror the user added, and only with the GitHub
+/// repository its `homepage` names, since the count is that repository's. The official
+/// list's and a verified mirror's counts were the store's or a vendor's whole
+/// repository's, so they are dropped whatever a list says.
+fn repo_stars(tier: Tier, entry: &Entry) -> Option<RepoStars> {
+    if tier != Tier::Community || entry.stars == 0 {
+        return None;
+    }
+    Some(RepoStars {
+        repo: github_repo(entry.homepage.as_deref()?)?,
+        stars: entry.stars,
+    })
+}
+
+/// `owner/name` of a `https://github.com/owner/name[/...]` page; nothing for any other
+/// page or for a name GitHub would not allow, so the text shown stays a plain name.
+fn github_repo(page: &str) -> Option<String> {
+    let rest = page.strip_prefix("https://")?;
+    let (host, path) = rest.split_once('/')?;
+    if !host.eq_ignore_ascii_case("github.com") {
+        return None;
+    }
+    let path = path.split(['?', '#']).next()?;
+    let mut parts = path.split('/');
+    let owner = parts.next()?;
+    let name = parts.next()?;
+    let name = name.strip_suffix(".git").unwrap_or(name);
+    let owner_ok = (1..=39).contains(&owner.len())
+        && owner
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'-');
+    let name_ok = (1..=100).contains(&name.len())
+        && !name.starts_with('.')
+        && name
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_' | b'.'));
+    (owner_ok && name_ok).then(|| format!("{owner}/{name}"))
 }
 
 /// Marks every listing whose name another source offers too.
@@ -111,7 +150,7 @@ pub fn newer(available: &str, installed: &str) -> Option<String> {
     (parse(available)? > parse(installed)?).then(|| available.to_owned())
 }
 
-/// Sorts by `order`; ties, and listings without the date or count sorted on, keep the
+/// Sorts by `order`; ties, and listings without the date sorted on, keep the
 /// trust order: Official, Verified, Community, Local, then by name.
 pub fn sort(listings: &mut [Listing], order: Order) {
     let trust = |listing: &Listing| (listing.tier, listing.name.clone(), listing.source.clone());
@@ -119,12 +158,12 @@ pub fn sort(listings: &mut [Listing], order: Order) {
         Order::Trust => listings.sort_by_key(trust),
         Order::Newest => listings.sort_by_key(|item| (Reverse(date(&item.created)), trust(item))),
         Order::Updated => listings.sort_by_key(|item| (Reverse(date(&item.updated)), trust(item))),
-        Order::Stars => listings.sort_by_key(|item| (Reverse(item.stars), trust(item))),
     }
 }
 
-/// The shelves of `listings`: the first few by date and by stars, each an index into
-/// `listings`, so a client shows them without sorting anything itself.
+/// The shelves of `listings`: the first few by date, each an index into `listings`, so
+/// a client shows them without sorting anything itself. None ranks by stars: a mirror
+/// writes its own count.
 pub fn picks(listings: &[Listing]) -> Picks {
     let top = |order: Order, has: fn(&Listing) -> bool| -> Vec<usize> {
         let mut sorted: Vec<Listing> = listings.iter().filter(|item| has(item)).cloned().collect();
@@ -142,7 +181,6 @@ pub fn picks(listings: &[Listing]) -> Picks {
     Picks {
         newest: top(Order::Newest, |item| date(&item.created).is_some()),
         updated: top(Order::Updated, |item| date(&item.updated).is_some()),
-        stars: top(Order::Stars, |item| item.stars > 0),
     }
 }
 

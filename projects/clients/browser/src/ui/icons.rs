@@ -47,7 +47,6 @@ pub enum IconName {
     Filter,
     ChevronLeft,
     ChevronRight,
-    Star,
     TriangleAlert,
     ExternalLink,
 }
@@ -98,7 +97,6 @@ impl IconName {
             Self::Filter => "#dusk-icon-filter",
             Self::ChevronLeft => "#dusk-icon-chevron-left",
             Self::ChevronRight => "#dusk-icon-chevron-right",
-            Self::Star => "#dusk-icon-star",
             Self::TriangleAlert => "#dusk-icon-triangle-alert",
             Self::ExternalLink => "#dusk-icon-external-link",
         }

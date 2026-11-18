@@ -95,6 +95,9 @@ pub fn confirm_box(confirm: &Confirm, width: usize) -> Vec<Line<'static>> {
             width,
         ));
     }
+    if let Some(stars) = &listing.repo_stars {
+        lines.extend(paragraph(&one_line(&stars.label()), dim(), width));
+    }
     if let Some(homepage) = &listing.homepage {
         lines.extend(paragraph(
             &format!("More: {}", one_line(homepage)),

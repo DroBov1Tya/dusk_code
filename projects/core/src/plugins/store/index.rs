@@ -93,7 +93,8 @@ pub struct Entry {
     /// Pictures of it at work, in the order shown.
     #[serde(default)]
     pub screenshots: Vec<Screenshot>,
-    /// Counted by the publisher when signing; duskcode never asks GitHub.
+    /// GitHub stars of the repository `homepage` names, counted by the publisher when
+    /// signing; duskcode never asks GitHub. Shown only for a mirror the user added.
     #[serde(default)]
     pub stars: u32,
     /// RFC 3339.

@@ -1,5 +1,5 @@
-//! The shelves under the hero: one per tier, then the core's picks of the newest, the
-//! latest updated and the most starred, then the packs here that no source lists. Each
+//! The shelves under the hero: one per tier, then the core's picks of the newest and the
+//! latest updated, then the packs here that no source lists. Each
 //! shows one row of capsules, with arrows when it holds more and "See all" for the whole
 //! shelf as a grid. A search, a filter or another order shows the results as one grid in
 //! the core's order instead.
@@ -29,7 +29,6 @@ pub enum Shelf {
     Tier(Tier),
     Newest,
     Updated,
-    Stars,
     /// Local listings and the packs here that no source lists.
     Local,
 }
@@ -40,7 +39,6 @@ impl Shelf {
             Self::Tier(each) => tier::word(each),
             Self::Newest => "New",
             Self::Updated => "Recently updated",
-            Self::Stars => "Top rated",
             Self::Local => "Built-in and local",
         }
     }
@@ -50,7 +48,6 @@ impl Shelf {
             Self::Tier(each) => tier::about(each),
             Self::Newest => "The latest additions to every source.",
             Self::Updated => "What changed most recently.",
-            Self::Stars => "What people starred most.",
             Self::Local => "Found on this machine; the built-in pack comes with duskcode.",
         }
     }
@@ -67,9 +64,6 @@ impl Shelf {
                 .path(crate::ui::icons::REFRESH)
                 .size(px(size::ICON_LARGE))
                 .text_color(muted),
-            Self::Stars => Icon::new(IconName::Star)
-                .size(px(size::ICON_LARGE))
-                .text_color(muted),
         }
     }
 }
@@ -81,13 +75,12 @@ enum Item<'a> {
     Pack(&'a SkillPack),
 }
 
-const ORDER: [Shelf; 7] = [
+const ORDER: [Shelf; 6] = [
     Shelf::Tier(Tier::Official),
     Shelf::Tier(Tier::Verified),
     Shelf::Tier(Tier::Community),
     Shelf::Newest,
     Shelf::Updated,
-    Shelf::Stars,
     Shelf::Local,
 ];
 
@@ -321,7 +314,6 @@ fn items<'a>(ws: &'a Workspace, shelf: Shelf, shown: &[&'a Listing], query: &str
             .collect(),
         Shelf::Newest => picked(&shop.picks.newest),
         Shelf::Updated => picked(&shop.picks.updated),
-        Shelf::Stars => picked(&shop.picks.stars),
         Shelf::Local => shown
             .iter()
             .copied()

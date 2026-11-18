@@ -49,9 +49,10 @@ pub struct Listing {
     /// by its place here.
     #[serde(default)]
     pub screenshots: Vec<ScreenshotRef>,
-    /// As the publisher counted them when signing the list.
+    /// GitHub stars of the repository it comes from, only for a mirror the user added;
+    /// never for an official or a verified listing, whose count was not the item's own.
     #[serde(default)]
-    pub stars: u32,
+    pub repo_stars: Option<RepoStars>,
     /// RFC 3339.
     #[serde(default)]
     pub created: Option<String>,
@@ -98,6 +99,23 @@ pub enum Kind {
     Agent,
 }
 
+/// The star count of a GitHub repository, as the publisher of a list counted it when
+/// signing: the repository's, not a rating of the listing, so it is shown with `repo`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RepoStars {
+    /// `owner/name` on github.com.
+    pub repo: String,
+    pub stars: u32,
+}
+
+impl RepoStars {
+    /// How every client words it: a repository's count, never a rating.
+    pub fn label(&self) -> String {
+        let noun = if self.stars == 1 { "star" } else { "stars" };
+        format!("{} GitHub {noun} of {}", self.stars, self.repo)
+    }
+}
+
 /// A picture beside the source's list: a `.png` or `.webp` of at most 512 KiB.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Cover {
@@ -127,8 +145,6 @@ pub enum Order {
     Newest,
     /// Latest `updated` first.
     Updated,
-    /// Most stars first.
-    Stars,
 }
 
 /// The answer to `StoreRequest::List`.
@@ -143,12 +159,12 @@ pub struct StoreList {
 }
 
 /// Indices into `StoreList::listings`, at most `PICKS` each, best first; a listing
-/// without the date or the stars sorted on is left out.
+/// without the date sorted on is left out. Nothing is picked by stars: a mirror writes
+/// its own count, so a shelf of them would rank whoever wrote the biggest number.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Picks {
     pub newest: Vec<usize>,
     pub updated: Vec<usize>,
-    pub stars: Vec<usize>,
 }
 
 /// How many listings a shelf of `Picks` holds.

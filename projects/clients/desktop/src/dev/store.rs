@@ -1,16 +1,17 @@
 //! A made-up plugin store for the screenshot tool, so the Workshop can be photographed
 //! before the real store is online: twenty listings of every tier and kind, some
 //! installed, one with an update, one that cannot run here, one that asks for nothing,
-//! one for the terminal only, packs, a clash, and a source that failed, drawn with the
-//! Workshop's real covers and screenshots. They are built in only with the feature.
+//! one for the terminal only, packs, a clash, two from a mirror with their repository's
+//! GitHub stars, and a source that failed, drawn with the Workshop's real covers and
+//! screenshots. They are built in only with the feature.
 
 use std::sync::Arc;
 
 use dusk_protocol::{
     catalog::{PackSkill, SkillPack},
     plugin::{
-        Client, Cover, Kind, Listing, Os, PICKS, Picks, ScreenshotRef, SourceFailure, Tier,
-        UpdateReport,
+        Client, Cover, Kind, Listing, Os, PICKS, Picks, RepoStars, ScreenshotRef, SourceFailure,
+        Tier, UpdateReport,
     },
 };
 use gpui_kit::*;
@@ -177,6 +178,11 @@ pub fn listings() -> Vec<Listing> {
             tier: Tier::Community,
             source: "friends".into(),
             category: "automation".into(),
+            homepage: Some("https://github.com/friends-example/tmux-panes".into()),
+            repo_stars: Some(RepoStars {
+                repo: "friends-example/tmux-panes".into(),
+                stars: 122,
+            }),
             ..listing(
                 "tmux-panes",
                 "Opens each agent in its own tmux pane of the terminal.",
@@ -189,6 +195,11 @@ pub fn listings() -> Vec<Listing> {
             permissions: Vec::new(),
             skills: vec!["writing/edit".into(), "writing/outline".into()],
             category: "writing".into(),
+            homepage: Some("https://github.com/friends-example/writing".into()),
+            repo_stars: Some(RepoStars {
+                repo: "friends-example/writing".into(),
+                stars: 37,
+            }),
             ..listing("writing", "Outlines and edits for prose.")
         },
         Listing {
@@ -233,7 +244,6 @@ pub fn listings() -> Vec<Listing> {
         });
     }
     for (index, listing) in all.iter_mut().enumerate() {
-        listing.stars = ((index * 37 + 11) % 180) as u32;
         listing.created = Some(format!(
             "2026-{:02}-{:02}T10:00:00Z",
             1 + index % 10,
@@ -357,7 +367,6 @@ fn picks(listings: &[Listing]) -> Picks {
     Picks {
         newest: top(&|listing| listing.created.clone().unwrap_or_default()),
         updated: top(&|listing| listing.updated.clone().unwrap_or_default()),
-        stars: top(&|listing| format!("{:06}", listing.stars)),
     }
 }
 
