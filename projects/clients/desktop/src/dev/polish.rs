@@ -1,0 +1,284 @@
+//! `fake=chat`: a long chat with everything a transcript draws (folded turns, steps of
+//! each state, markdown with code and a table, a picture, a notice, an error), tasks for
+//! the plan strip and the Todo, pins and a context reading. `fake=chat-open` unfolds the
+//! first turn and one of its steps. Made-up data only.
+
+use dusk_protocol::{
+    system::now_ms,
+    thread::{Pin, PlanCounts, Task, Tool, ToolState},
+};
+use gpui_kit::*;
+
+use crate::{
+    pages::chat::{
+        messages::STEP,
+        transcript::{Item, Picture, Transcript},
+    },
+    workspace::{Center, Workspace},
+};
+
+const ANSWER: &str = "Entries now expire. The change is in three places:\n\n\
+## What changed\n\n\
+1. `Entry` carries a `deadline`, set from the cache's `ttl` when the value is stored.\n\
+2. `get()` compares the deadline with the clock and removes an entry that is past it.\n\
+3. A sweep runs every 30 s for entries nobody reads.\n\n\
+```rust\npub fn get(&mut self, key: &str) -> Option<&str> {\n    let expired = self.entries.get(key)?.deadline <= Instant::now();\n    if expired {\n        self.entries.remove(key);\n        return None;\n    }\n    self.entries.get(key).map(|entry| entry.value.as_str())\n}\n```\n\n\
+| Check | Result | Time |\n|---|---|---|\n| unit tests | 14 passed | 0.8 s |\n| clippy | clean | 3.1 s |\n| expiry property test | 256 cases | 1.4 s |\n\n\
+The sweep is **off** in tests, so they stay deterministic; see the [Instant docs](https://doc.rust-lang.org/std/time/struct.Instant.html) for why the clock is monotonic.";
+
+const SECOND: &str = "Yes: `ttl` is read once, when the cache is built. A cache that is \
+already running keeps its old value until it is rebuilt.\n\n\
+- Changing it live needs a lock around the sweep.\n\
+- Entries stored earlier keep the deadline they were given.\n\n\
+> A shorter `ttl` never shortens the life of what is already stored.";
+
+/// `fake=mcp`: five servers, one of each state, in the place of the config's.
+pub fn mcp(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+    use dusk_protocol::config::{McpInfo, McpState};
+    let server = |name: &str, target: &str, remote: bool, state: McpState| McpInfo {
+        name: name.into(),
+        target: target.into(),
+        remote,
+        state,
+        tools: Vec::new(),
+        icon: None,
+    };
+    let ready = |tools: &[&str]| McpState::Ready(tools.iter().map(|tool| (*tool).into()).collect());
+    if let Some(settings) = ws.settings.as_mut() {
+        settings.mcp = vec![
+            server(
+                "github",
+                "https://mcp.example.com/github",
+                true,
+                ready(&["a", "b", "c"]),
+            ),
+            server(
+                "postgres",
+                "npx -y @example/postgres-mcp --read-only",
+                false,
+                ready(&["query"]),
+            ),
+            server(
+                "browser",
+                "npx -y @example/browser-mcp",
+                false,
+                McpState::Starting,
+            ),
+            server(
+                "sentry",
+                "https://mcp.example.com/sentry",
+                true,
+                McpState::Off,
+            ),
+            server(
+                "figma",
+                "",
+                true,
+                McpState::Failed("the server answered 401: sign in again".into()),
+            ),
+        ];
+    }
+    cx.notify();
+}
+
+pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
+    let tool = |id: &str, name: &str, detail: &str, state: ToolState| {
+        Item::Tool(Tool {
+            call_id: id.into(),
+            name: name.into(),
+            detail: detail.into(),
+            arguments: format!("{{\"path\": \"{detail}\"}}"),
+            output: "running 14 tests\ntest ttl::expires_after_deadline ... ok\n\
+                     test ttl::keeps_live_entries ... ok\ntest result: ok. 14 passed; 0 failed"
+                .into(),
+            state,
+        })
+    };
+    let said = |text: &str, reasoning: &str| Item::Assistant {
+        text: text.into(),
+        reasoning: reasoning.into(),
+    };
+    let mut chat = Transcript::default();
+    chat.items = vec![
+        Item::User {
+            text: "Add expiry to the cache: an entry should be gone after `ttl`, and `get()` \
+                   must never return a stale value."
+                .into(),
+            sequence: Some(1),
+        },
+        said(
+            "",
+            "The cache keeps values in a map; a deadline per entry is the smallest change.",
+        ),
+        tool("a1", "read_file", "src/lib.rs", ToolState::Done),
+        tool("a2", "search_files", "ttl", ToolState::Done),
+        tool("a3", "edit_file", "src/lib.rs", ToolState::Done),
+        tool(
+            "a4",
+            "run_command",
+            "cargo test -p cache",
+            ToolState::Failed,
+        ),
+        tool("a5", "edit_file", "src/lib.rs", ToolState::Done),
+        tool("a6", "run_command", "cargo test -p cache", ToolState::Done),
+        said(ANSWER, ""),
+        Item::User {
+            text: "Can `ttl` be changed while the cache runs?".into(),
+            sequence: Some(2),
+        },
+        tool("b1", "read_file", "src/config.rs", ToolState::Done),
+        said(SECOND, ""),
+        Item::Image(Picture {
+            id: "0000-face".into(),
+            title: Some("Entry lifetime".into()),
+            description: Some("Stored at t0, readable until `t0 + ttl`, swept after.".into()),
+        }),
+        Item::Notice("The context was compacted: 41.2k tokens summed up into 3.8k.".into()),
+        Item::Error("The provider closed the stream: 529 overloaded. Send again to go on.".into()),
+    ];
+    let now = now_ms();
+    chat.activity_boundaries = vec![0, 9, chat.items.len()];
+    chat.boundary_times = vec![now - 600_000, now - 466_000, now - 430_000];
+    chat.boundary_spend = vec![None, Some((48_200, 212_000)), Some((6_100, 31_000))];
+    chat.tokens = Some((58_400, 128_000));
+    chat.cost = Some("$0.24".into());
+    for (at, id) in [(0, "m1"), (8, "m2"), (9, "m3"), (11, "m4")] {
+        chat.message_ids.insert(at, id.into());
+    }
+    chat.pins = pins(now);
+    chat.tasks = tasks(now);
+    // The picture card reads its file from the pictures folder of the throwaway profile.
+    let folder = ws.status.artifacts_dir.join("0000-face");
+    if std::fs::create_dir_all(&folder).is_ok() {
+        let _ = std::fs::write(folder.join("image"), super::screenshot::demo_png());
+    }
+    let thread_id = ws.shown.clone().unwrap_or_else(|| "shot".to_owned());
+    if value == "chat-open" {
+        use crate::pages::chat::messages::ACTIVITY;
+        ws.unfolded.insert((thread_id.clone(), 1 | ACTIVITY));
+        ws.unfolded.insert((thread_id.clone(), 5 | STEP));
+    }
+    ws.dock.counts = Some((
+        thread_id.clone(),
+        PlanCounts {
+            open: 2,
+            claimed: 0,
+            running: 1,
+            blocked: 1,
+            review: 1,
+            done: 3,
+            failed: 0,
+        },
+    ));
+    ws.chats.insert(thread_id.clone(), chat);
+    ws.shown = Some(thread_id);
+    ws.center = Center::Chat;
+    cx.notify();
+}
+
+fn pins(now: i64) -> Vec<Pin> {
+    let pin = |id: &str, sequence: u64, role: &str, excerpt: &str, compacted: bool| {
+        serde_json::from_value::<Pin>(serde_json::json!({
+            "message_id": id, "sequence": sequence, "role": role, "excerpt": excerpt,
+            "pinned_at": now - 60_000, "compacted": compacted,
+        }))
+        .expect("a made-up pin is within caps")
+    };
+    vec![
+        pin(
+            "m1",
+            1,
+            "User",
+            "Add expiry to the cache: an entry should be gone after ttl, and get() must never return a stale value.",
+            true,
+        ),
+        pin(
+            "m2",
+            2,
+            "Assistant",
+            "Entries now expire. The change is in three places",
+            false,
+        ),
+        pin(
+            "m4",
+            4,
+            "Assistant",
+            "Yes: ttl is read once, when the cache is built.",
+            false,
+        ),
+    ]
+}
+
+fn tasks(now: i64) -> Vec<Task> {
+    let task = |n: u32, text: &str, status: &str, owner: Option<&str>, confirm: bool| {
+        let mut json = serde_json::json!({
+            "task_id": format!("t{n}"), "description": text, "done": status == "done",
+            "created_at": now - 500_000, "updated_at": now - 60_000, "items": [],
+            "status": status, "phase": "expiry",
+        });
+        if let Some(name) = owner {
+            json["owner"] =
+                serde_json::json!({ "thread_id": format!("0000000{n}-fake"), "name": name });
+        }
+        if confirm {
+            json["gate"] = serde_json::json!({ "kind": "user_confirmation" });
+        }
+        // The task in work has items, so the Todo's card shows its line of them.
+        if status == "running" {
+            let item = |id: u32, text: &str, done: bool, started: bool| {
+                serde_json::json!({
+                    "item_id": format!("i{id}"), "description": text, "done": done,
+                    "created_at": now - 400_000, "updated_at": now - 60_000,
+                    "started_at": started.then_some(now - 300_000),
+                    "finished_at": done.then_some(now - 200_000),
+                })
+            };
+            json["items"] = serde_json::json!([
+                item(1, "Put the sweep behind a lock", true, true),
+                item(2, "Read ttl through the lock in get()", false, true),
+                item(3, "Test a change while a sweep runs", false, false),
+            ]);
+        }
+        serde_json::from_value::<Task>(json).expect("a made-up task reads back")
+    };
+    vec![
+        task(1, "Give Entry a deadline", "done", Some("Ember-79"), false),
+        task(
+            2,
+            "Remove expired entries in get()",
+            "done",
+            Some("Ember-79"),
+            false,
+        ),
+        task(
+            3,
+            "Property test for expiry",
+            "done",
+            Some("Fable-3a"),
+            false,
+        ),
+        task(
+            4,
+            "Sweep entries nobody reads",
+            "review",
+            Some("Ember-79"),
+            true,
+        ),
+        task(
+            5,
+            "Make ttl changeable while the cache runs, behind a lock around the sweep",
+            "running",
+            Some("Fable-3a"),
+            false,
+        ),
+        task(
+            6,
+            "Document the expiry in the README",
+            "blocked",
+            None,
+            false,
+        ),
+        task(7, "Benchmark get() with a full map", "open", None, false),
+        task(8, "Release notes", "open", None, false),
+    ]
+}

@@ -5,5 +5,6 @@
 
 mod blocks;
 mod plugins;
+mod polish;
 pub mod screenshot;
 mod store;

@@ -8,7 +8,7 @@
 //! - `settings=PAGE` (appearance, llm, voice, image, video, chat, safety, me, notifications, vcs, memory,
 //!   advanced, updates, usage), `shelf=NAME` (connectors, skills, plugins, tools, agents),
 //!   `artifacts`: open the page as a click would, with its data;
-//! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all`: open a window; unfold the right column;
+//! - `modal=search|project|schedule|agents|arbiter|whatsnew|none`, `right=all|lower`: open a window; unfold the right column, or only its lower modules;
 //! - `detail=mcp|skill`: open the window of the first of those;
 //! - `chat`: show an empty chat that exists only in the window; with `DUSK_METEOR=MS` in
 //!   the environment the sky holds a falling star that many milliseconds into its flight;
@@ -28,6 +28,9 @@
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
 //! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
 //!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
+//! - `fake=chat|chat-open`: a long chat with folded turns, steps, markdown, a picture, tasks
+//!   and pins (see `dev::polish`); `open=pins|plan|panel|done`: the pins drawer, the plan's rows,
+//!   the composer's panel, the Todo's finished tasks; `fake=mcp`: five connectors, one of each state; `scroll=N`: the transcript from its Nth row;
 //! - `fake=pulls`: four pull requests in Changes, one of each state and checks, and a chat
 //!   of the chosen project in the sidebar with their icon;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
@@ -36,9 +39,10 @@
 //!   `viewer=picture`: the same picture large over the window;
 //! - `picker=model|mode|access|effort|more`, `attach`, `menu=chat|path|delete|rename|run`:
 //!   open a menu or window of the chat;
+//! - `hover=X,Y`: move the pointer to a point of the window;
 //! - `key=tab tab cmd-k ...`: press keys one after another, as the keyboard would;
 //! - `terminal`: show or hide the terminal panel; `run=COMMAND`: type the command in its
-//!   shown shell, with Return;
+//!   shown shell, with Return; `select=ROW:FROM-TO`: cells of a row selected;
 //! - `type=TEXT`: put the text in the message box; `idle=MIN`: as if left alone that long,
 //!   for the mist;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
@@ -117,6 +121,27 @@ pub fn run(opened: (AnyWindowHandle, Entity<Workspace>), cx: &mut App) {
                             }
                             None => eprintln!("no such key {key}"),
                         }
+                    }
+                }
+                // The pointer moved to a point of the window, as the mouse would.
+                "hover" => {
+                    let at = value
+                        .split_once(',')
+                        .and_then(|(x, y)| Some(point(px(x.parse().ok()?), px(y.parse().ok()?))));
+                    match at {
+                        Some(position) => {
+                            let _ = cx.update_window(window, |_, window, cx| {
+                                window.dispatch_event(
+                                    PlatformInput::MouseMove(MouseMoveEvent {
+                                        position,
+                                        pressed_button: None,
+                                        modifiers: Modifiers::default(),
+                                    }),
+                                    cx,
+                                );
+                            });
+                        }
+                        None => eprintln!("hover=X,Y: {value}"),
                     }
                 }
                 "quit" => break,
@@ -359,6 +384,18 @@ fn act(
         "dawn" => ws.dawn(cx),
         "terminal" => ws.toggle_terminal(window, cx),
         "run" => ws.type_in_terminal(format!("{value}\r").into_bytes(), cx),
+        // Cells of a row of the shown shell selected, as a drag would: `select=ROW:FROM-TO`.
+        "select" => {
+            let cells = value.split_once(':').and_then(|(row, cols)| {
+                let (from, to) = cols.split_once('-')?;
+                Some((row.parse().ok()?, from.parse().ok()?, to.parse().ok()?))
+            });
+            match cells {
+                Some((row, from, to)) => ws.terminal.select_cells(row, from, to),
+                None => eprintln!("select=ROW:FROM-TO: {value}"),
+            }
+            cx.notify();
+        }
         "type" => {
             ws.edit_draft(
                 ws.shown.clone(),
@@ -406,7 +443,13 @@ fn act(
             cx.notify();
         }
         "right" => {
+            use crate::workspace::Right;
             ws.folded.clear();
+            // `right=lower`: the tall upper modules folded, so the lower ones are in sight.
+            if value == "lower" {
+                ws.folded
+                    .extend([Right::Overview, Right::Git, Right::Files, Right::Arbiter]);
+            }
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
         }
@@ -469,6 +512,27 @@ fn act(
             cx.notify();
         }
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
+        "fake" if value == "mcp" => super::polish::mcp(ws, cx),
+        "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
+        // The transcript scrolled so its Nth row is at the top.
+        "scroll" => {
+            ws.list.scroll_to(ListOffset {
+                item_ix: value.parse().unwrap_or(0),
+                offset_in_item: px(0.),
+            });
+            cx.notify();
+        }
+        // The chat's folds, as a click on each would open them.
+        "open" => {
+            match value {
+                "pins" => ws.pins.open = true,
+                "plan" => ws.dock.plan_open = true,
+                "panel" => ws.toggle_panel(cx),
+                "done" => ws.todo_done_open = true,
+                other => eprintln!("no such fold: {other}"),
+            }
+            cx.notify();
+        }
         "fake" if value == "store" => super::store::fake(ws, cx),
         "workshop" => super::store::step(ws, value, window, cx),
         "fake" if value == "limits" => {
@@ -787,7 +851,7 @@ fn act(
 }
 
 /// A small PNG for the picture-thumbnail and viewer shots: a soft gradient with a frame.
-fn demo_png() -> Vec<u8> {
+pub(super) fn demo_png() -> Vec<u8> {
     use image::{ImageFormat, RgbImage};
     let (w, h) = (640u32, 400u32);
     let mut image = RgbImage::from_fn(w, h, |x, y| {

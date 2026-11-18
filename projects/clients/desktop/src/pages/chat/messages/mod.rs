@@ -36,7 +36,7 @@ use crate::{ui::widgets, workspace::Workspace};
 /// Keys of unfolded things share one set: answers by index, runs and steps apart.
 pub(crate) const RUN: usize = 1 << 40;
 pub(crate) const STEP: usize = 1 << 41;
-const ACTIVITY: usize = 1 << 42;
+pub(crate) const ACTIVITY: usize = 1 << 42;
 
 /// One row of the list: a visible item, a turn disclosure, or the working figure.
 #[derive(Clone, Copy, PartialEq, Eq)]
