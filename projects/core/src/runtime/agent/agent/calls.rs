@@ -12,10 +12,12 @@ use crate::{
         ChatRequest, ModelOutput, ProviderError, ToolCall, is_unsupported_effort, provider_error,
     },
     state::{GoalStatus, KIND_MCP_TOOL, KIND_SKILL, Turn, TurnOutcome},
-    tools::{Progress, ToolKind},
+    tools::{Progress, ToolKind, ToolResult},
 };
 use anyhow::{Context, Result, anyhow};
+use futures::{FutureExt, StreamExt, future::BoxFuture, stream};
 use serde_json::{Value, json};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::{sync::Arc, time::Instant};
 use tracing::{info, warn};
 
@@ -24,6 +26,58 @@ const USER_STOPPED: &str = "not run: the user interrupted the turn";
 
 /// What the calls after a stop by the failure ladder get.
 const LADDER_STOPPED: &str = "not run: the turn stopped because the same error kept coming back";
+
+/// Read-only calls of one step that run at once.
+const TOGETHER: usize = 8;
+
+/// What a call came to, before its result is stored.
+struct Ran {
+    content: String,
+    outcome: &'static str,
+    /// The tool's own result; `None` when the call did not run or was stopped.
+    finished: Option<ToolResult>,
+}
+
+impl Ran {
+    fn of(result: ToolResult) -> Self {
+        Self {
+            content: result.content.clone(),
+            outcome: if result.is_error {
+                "failed"
+            } else {
+                "succeeded"
+            },
+            finished: Some(result),
+        }
+    }
+
+    fn cancelled(content: &str) -> Self {
+        Self {
+            content: content.to_owned(),
+            outcome: "cancelled",
+            finished: None,
+        }
+    }
+
+    fn failed(content: String) -> Self {
+        Self {
+            content,
+            outcome: "failed",
+            finished: None,
+        }
+    }
+}
+
+/// How far a call of a group came.
+#[derive(Default)]
+enum Slot {
+    /// Not started, or not run at all.
+    #[default]
+    Idle,
+    /// Cut off by a stop while it ran.
+    Started,
+    Done(ToolResult),
+}
 
 /// What a model call came to after its attempts.
 pub struct Called {
@@ -185,10 +239,11 @@ impl Agent {
         }
     }
 
-    /// Calls run one by one, and each result is stored as soon as it is known. After a
-    /// stop, by the user or by the same error coming back too often, the rest are not run,
-    /// but each still gets a result, because the model expects one per call. An error
-    /// means a result could not be stored.
+    /// Calls run in order, each result stored as soon as it is known, except that a run
+    /// of read-only calls runs together and has its results stored in call order once
+    /// all are in. After a stop, by the user or by the same error coming back too often,
+    /// the rest are not run, but each still gets a result, because the model expects one
+    /// per call. An error means a result could not be stored.
     pub(super) async fn call_tools(
         &self,
         turn: &Turn,
@@ -196,140 +251,43 @@ impl Agent {
         config: &Arc<Config>,
         inbox: &mut Inbox,
     ) -> Result<Option<Stop>> {
+        let together = config.limits().parallel_reads;
         let mut stop = None;
         let mut surprised = false;
-        for call in calls {
-            let mut artifacts = Vec::new();
-            let mut finished = None;
-            let mut outcome = "cancelled";
-            let mut exit_code = None;
-            let draft = self.depth == 0
-                && self
-                    .state
-                    .goal(&self.thread_id)
-                    .await?
-                    .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
-            // Each call gets a result, so the model learns why the rest did not run.
-            let halted = match stop {
-                Some(_) => Some(USER_STOPPED),
-                None if self.repeats.lock().stopping(&turn.turn_id) => Some(LADDER_STOPPED),
-                None => None,
+        let mut rest = calls;
+        while !rest.is_empty() {
+            let size = if together {
+                self.reads_at_start(rest)
+            } else {
+                1
             };
-            let denied = match halted {
-                None if !self.hooks.is_empty() => {
-                    let within = self.tools.calls_within(&call.name, &call.arguments);
-                    let base = json!({ "thread": self.thread_id, "depth": self.depth });
-                    let checked =
-                        self.hooks
-                            .before_tool(&call.name, &call.arguments, &within, &base);
-                    checked.await
-                }
-                _ => None,
-            };
-            let mut content = match halted {
-                Some(why) => why.to_owned(),
-                None if draft && call.name != "goal" => {
-                    outcome = "failed";
-                    "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned()
-                }
-                None if let Some(denied) = &denied => {
-                    outcome = "failed";
-                    format!("error: {denied}")
-                }
-                None => {
-                    self.emit(ThreadEvent::ToolStarted(call.clone()));
-                    let progress = Progress {
-                        call_id: call.id.clone(),
-                        events: self.events.clone(),
-                    };
-                    let called = self.tools.call(call, &self.scope, config, progress);
-                    match inbox.race(called).await {
-                        Ok(result) => {
-                            let content = result.content.clone();
-                            outcome = if result.is_error {
-                                "failed"
-                            } else {
-                                "succeeded"
-                            };
-                            exit_code = result.exit_code;
-                            artifacts = result.artifacts.clone();
-                            finished = Some(result);
-                            content
+            let (group, after) = rest.split_at(size);
+            rest = after;
+            let mut refused = Vec::new();
+            for call in group {
+                refused.push(self.refusal(turn, call, stop.is_some()).await?);
+            }
+            let running: Vec<usize> = (0..group.len())
+                .filter(|&index| refused[index].is_none())
+                .collect();
+            let (mut slots, stopped) = self.run_group(group, &running, config, inbox).await;
+            stop = stop.or(stopped);
+            for (index, call) in group.iter().enumerate() {
+                let ran = match refused[index].take() {
+                    Some(ran) => ran,
+                    None => match std::mem::take(&mut slots[index]) {
+                        // A call that ran keeps its result unless an earlier one of its
+                        // group stopped the turn on repeated errors: as when run one by
+                        // one, it would not have run.
+                        Slot::Done(result) if !self.repeats.lock().stopping(&turn.turn_id) => {
+                            Ran::of(result)
                         }
-                        Err(reason) => {
-                            stop = Some(reason);
-                            "stopped: the user interrupted the turn".to_owned()
-                        }
-                    }
-                }
-            };
-            if finished.is_some() && !self.hooks.is_empty() {
-                let details =
-                    json!({ "tool": call.name, "arguments": call.arguments, "result": content });
-                let notes = self.run_hooks(HookEvent::AfterTool, Some(&call.name), details);
-                for note in notes.await.context {
-                    content.push_str(&format!("\n\n{note}"));
-                }
-            }
-            // Durable usage counts: skills loaded and MCP tools called, when the call
-            // ran and did not fail.
-            if finished.is_some() && outcome != "failed" {
-                if let Some(skill) = self.tools.loaded_skill(&call.name, &call.arguments) {
-                    if let Err(error) = self
-                        .state
-                        .record_item_use(Some(&self.thread_id), KIND_SKILL, &skill)
-                        .await
-                    {
-                        warn!("cannot count the skill use: {error:#}");
-                    }
-                } else if self.tools.kind_of(&call.name) == Some(ToolKind::Mcp)
-                    && let Err(error) = self
-                        .state
-                        .record_item_use(Some(&self.thread_id), KIND_MCP_TOOL, call.name.as_str())
-                        .await
-                {
-                    warn!("cannot count the MCP tool use: {error:#}");
-                }
-            }
-            let notice = finished.as_ref().and_then(|result| {
-                let limits = config.limits();
-                let mut repeats = self.repeats.lock();
-                repeats.note(&turn.turn_id, call, result, &content, &limits)
-            });
-            if let Some(notice) = &notice {
-                content.push_str(&format!("\n\n{}", notice.note));
-            }
-            surprised |= outcome != "succeeded";
-            let stored = self.state.record_tool_result_with_outcome(
-                &turn.turn_id,
-                &call.id,
-                content,
-                artifacts,
-                outcome,
-                exit_code,
-            );
-            stored.await.context("cannot store the tool result")?;
-            if call.name == "ask_user"
-                && let Some(result) = &finished
-                && !result.is_error
-                && let Some(question) = call.arguments["question"].as_str()
-            {
-                self.asking.lock().push(question.to_owned());
-            }
-            // A visible result must already be available when the thread is reopened.
-            if let Some(result) = finished {
-                self.emit(ThreadEvent::ToolFinished {
-                    call_id: call.id.clone(),
-                    result,
-                });
-            }
-            // A re-plan needs no pace of its own: its call failed, so the next step
-            // already runs at the effort set (`Pace::Rethink`).
-            if let Some(notice) = notice {
-                self.emit(ThreadEvent::RepeatNotice {
-                    rung: notice.rung,
-                    count: notice.count,
-                });
+                        Slot::Done(_) => Ran::cancelled(LADDER_STOPPED),
+                        Slot::Started => Ran::cancelled("stopped: the user interrupted the turn"),
+                        Slot::Idle => Ran::cancelled(USER_STOPPED),
+                    },
+                };
+                surprised |= self.settle(turn, call, config, ran).await?;
             }
         }
         *self.pace.lock() = if surprised {
@@ -338,6 +296,188 @@ impl Agent {
             Pace::Follow
         };
         Ok(stop)
+    }
+
+    /// How many calls at the start of `calls` run together: the read-only ones, else one.
+    fn reads_at_start(&self, calls: &[ToolCall]) -> usize {
+        let reads = calls
+            .iter()
+            .take_while(|call| self.tools.read_only(&call.name, &call.arguments))
+            .count();
+        reads.max(1)
+    }
+
+    /// Why a call does not run, as the result it gets instead; `None` when it runs.
+    /// Each call gets a result, so the model learns why the rest did not run.
+    async fn refusal(&self, turn: &Turn, call: &ToolCall, stopped: bool) -> Result<Option<Ran>> {
+        if stopped {
+            return Ok(Some(Ran::cancelled(USER_STOPPED)));
+        }
+        if self.repeats.lock().stopping(&turn.turn_id) {
+            return Ok(Some(Ran::cancelled(LADDER_STOPPED)));
+        }
+        let draft = self.depth == 0
+            && self
+                .state
+                .goal(&self.thread_id)
+                .await?
+                .is_some_and(|g| !g.approved && g.status != GoalStatus::Done);
+        let denied = match self.hooks.is_empty() {
+            true => None,
+            false => {
+                let within = self.tools.calls_within(&call.name, &call.arguments);
+                let base = json!({ "thread": self.thread_id, "depth": self.depth });
+                let checked = self
+                    .hooks
+                    .before_tool(&call.name, &call.arguments, &within, &base);
+                checked.await
+            }
+        };
+        Ok(match denied {
+            _ if draft && call.name != "goal" => Some(Ran::failed(
+                "error: draft goal execution is blocked until the user approves its acceptance contract".to_owned(),
+            )),
+            Some(denied) => Some(Ran::failed(format!("error: {denied}"))),
+            None => None,
+        })
+    }
+
+    /// Runs `group[i]` for each `i` in `running`, at most `TOGETHER` at once, until all are
+    /// done or the user stops them. Each slot says how far its call came, so a stop keeps
+    /// the results of the calls that finished.
+    async fn run_group(
+        &self,
+        group: &[ToolCall],
+        running: &[usize],
+        config: &Arc<Config>,
+        inbox: &mut Inbox,
+    ) -> (Vec<Slot>, Option<Stop>) {
+        let mut slots: Vec<Slot> = group.iter().map(|_| Slot::Idle).collect();
+        let started: Vec<AtomicBool> = group.iter().map(|_| AtomicBool::new(false)).collect();
+        let stopped = {
+            let slots = &mut slots;
+            let started = &started;
+            let work = async move {
+                // Boxed, or the compiler cannot show the spawned turn is `Send`.
+                let calls: Vec<BoxFuture<'_, (usize, ToolResult)>> = running
+                    .iter()
+                    .map(|&index| {
+                        async move {
+                            started[index].store(true, Ordering::Relaxed);
+                            (index, self.run_call(&group[index], config).await)
+                        }
+                        .boxed()
+                    })
+                    .collect();
+                let mut calls = stream::iter(calls).buffer_unordered(TOGETHER);
+                while let Some((index, result)) = calls.next().await {
+                    slots[index] = Slot::Done(result);
+                }
+            };
+            inbox.race(work).await.err()
+        };
+        for (slot, started) in slots.iter_mut().zip(&started) {
+            if matches!(slot, Slot::Idle) && started.load(Ordering::Relaxed) {
+                *slot = Slot::Started;
+            }
+        }
+        (slots, stopped)
+    }
+
+    async fn run_call(&self, call: &ToolCall, config: &Arc<Config>) -> ToolResult {
+        self.emit(ThreadEvent::ToolStarted(call.clone()));
+        let progress = Progress {
+            call_id: call.id.clone(),
+            events: self.events.clone(),
+        };
+        self.tools.call(call, &self.scope, config, progress).await
+    }
+
+    /// Everything after a call is known: hooks, counts, the note on a repeat, the stored
+    /// result and the events. Says whether the call did not succeed.
+    async fn settle(
+        &self,
+        turn: &Turn,
+        call: &ToolCall,
+        config: &Arc<Config>,
+        ran: Ran,
+    ) -> Result<bool> {
+        let Ran {
+            mut content,
+            outcome,
+            finished,
+        } = ran;
+        if finished.is_some() && !self.hooks.is_empty() {
+            let details =
+                json!({ "tool": call.name, "arguments": call.arguments, "result": content });
+            let notes = self.run_hooks(HookEvent::AfterTool, Some(&call.name), details);
+            for note in notes.await.context {
+                content.push_str(&format!("\n\n{note}"));
+            }
+        }
+        // Durable usage counts: skills loaded and MCP tools called, when the call
+        // ran and did not fail.
+        if finished.is_some() && outcome != "failed" {
+            if let Some(skill) = self.tools.loaded_skill(&call.name, &call.arguments) {
+                if let Err(error) = self
+                    .state
+                    .record_item_use(Some(&self.thread_id), KIND_SKILL, &skill)
+                    .await
+                {
+                    warn!("cannot count the skill use: {error:#}");
+                }
+            } else if self.tools.kind_of(&call.name) == Some(ToolKind::Mcp)
+                && let Err(error) = self
+                    .state
+                    .record_item_use(Some(&self.thread_id), KIND_MCP_TOOL, call.name.as_str())
+                    .await
+            {
+                warn!("cannot count the MCP tool use: {error:#}");
+            }
+        }
+        let notice = finished.as_ref().and_then(|result| {
+            let limits = config.limits();
+            let mut repeats = self.repeats.lock();
+            repeats.note(&turn.turn_id, call, result, &content, &limits)
+        });
+        if let Some(notice) = &notice {
+            content.push_str(&format!("\n\n{}", notice.note));
+        }
+        let (artifacts, exit_code) = finished
+            .as_ref()
+            .map_or((Vec::new(), None), |r| (r.artifacts.clone(), r.exit_code));
+        let stored = self.state.record_tool_result_with_outcome(
+            &turn.turn_id,
+            &call.id,
+            content,
+            artifacts,
+            outcome,
+            exit_code,
+        );
+        stored.await.context("cannot store the tool result")?;
+        if call.name == "ask_user"
+            && let Some(result) = &finished
+            && !result.is_error
+            && let Some(question) = call.arguments["question"].as_str()
+        {
+            self.asking.lock().push(question.to_owned());
+        }
+        // A visible result must already be available when the thread is reopened.
+        if let Some(result) = finished {
+            self.emit(ThreadEvent::ToolFinished {
+                call_id: call.id.clone(),
+                result,
+            });
+        }
+        // A re-plan needs no pace of its own: its call failed, so the next step
+        // already runs at the effort set (`Pace::Rethink`).
+        if let Some(notice) = notice {
+            self.emit(ThreadEvent::RepeatNotice {
+                rung: notice.rung,
+                count: notice.count,
+            });
+        }
+        Ok(outcome != "succeeded")
     }
 
     /// Runs the plugins' hooks of `event` with what every hook is told about the thread.

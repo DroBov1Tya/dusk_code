@@ -279,6 +279,61 @@ async fn a_call_after_a_repeatable_one_that_was_cut_off_runs_once() {
     assert_eq!(newest_turn(&state).await, TurnStatus::Completed);
 }
 
+/// A kill while a group of read-only calls was open: more than one of them may have
+/// started, all may run again, and the call after the group, which cannot have started
+/// before the whole group was stored, runs once. Nobody is asked.
+#[tokio::test]
+async fn a_kill_in_a_group_of_reads_runs_them_again_and_the_next_call_once() {
+    for done in [0, 1] {
+        let state = thread_state(&format!("resume_group_{done}")).await;
+        state.add_user_message("thread", "go", "go").await.unwrap();
+        let turn = state.start_turn("thread").await.unwrap().unwrap();
+        let call = |text: &str, read: bool| ToolCall {
+            id: text.into(),
+            name: "echo".into(),
+            arguments: json!({ "text": text, "read_only": read, "repeatable": read }),
+        };
+        let answer = TurnAnswer {
+            content: String::new(),
+            reasoning: None,
+        };
+        let calls = vec![
+            call("a", true),
+            call("b", true),
+            call("c", true),
+            call("w", false),
+        ];
+        let id = &turn.turn_id;
+        state.record_tool_calls(id, answer, calls).await.unwrap();
+        // Results are stored in call order, so the stored ones are a prefix.
+        for text in &["a", "b", "c"][..done] {
+            state
+                .record_tool_result(id, text, (*text).into())
+                .await
+                .unwrap();
+        }
+        let counter = Counter::default();
+
+        let (provider, runner, input, mut output) = restarted(&state, &counter, answered("done"));
+        drop(input);
+        runner.run().await;
+        let events = drain(&mut output).await;
+
+        assert!(!events.iter().any(|e| matches!(e, ThreadEvent::Question(_))));
+        let mut runs = counter.runs();
+        let last = runs.pop();
+        runs.sort();
+        let again = ["a", "b", "c"][done..].to_vec();
+        assert_eq!(runs, again, "the open reads ran again, once each");
+        assert_eq!(last.as_deref(), Some("w"), "the write ran once, after them");
+        for text in ["a", "b", "c", "w"] {
+            assert_eq!(results(&state, text).await, [text]);
+        }
+        assert_eq!(steps(&provider), 1);
+        assert_eq!(newest_turn(&state).await, TurnStatus::Completed);
+    }
+}
+
 /// A second kill while the restart runs the open calls again: the third start runs what
 /// is still open, and every call ends with one result.
 #[tokio::test]

@@ -1,6 +1,7 @@
 //! A turn a stopped process left running goes on where it stopped, and nothing that may
 //! have taken effect runs twice. Only the first open call of the last step can have
-//! started: when it may simply run again, the turn goes on by itself; when it may not, a
+//! started, or, when it is read-only, the reads after it that ran with it (they all may
+//! run again): when it may simply run again, the turn goes on by itself; when it may not, a
 //! chat asks the user and an agent, with no one to ask, stops. A turn left long ago asks
 //! too, so opening an old chat spends no tokens unasked.
 
@@ -235,7 +236,9 @@ impl Agent {
         Ok(())
     }
 
-    /// The first open call when it may have taken effect and may not simply run again.
+    /// The first open call when it may have taken effect and may not simply run again. A
+    /// group of read-only calls is repeatable throughout, and the call after it cannot
+    /// have started before the whole group was stored, so the first call decides.
     fn cut_off<'a>(&self, unfinished: &'a Unfinished) -> Option<&'a ToolCall> {
         let first = unfinished.open.first()?;
         (!self.tools.repeatable(&first.name, &first.arguments)).then_some(first)

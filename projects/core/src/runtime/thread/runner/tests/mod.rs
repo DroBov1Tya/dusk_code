@@ -204,18 +204,25 @@ impl Tool for Echo {
 
 /// Counts its runs by their `text`, so a restart shows which calls ran again. `repeatable`
 /// is what it says of a lost result, unless the call's own `repeatable` argument says
-/// otherwise; `hang` keeps a run going once counted, as a call a kill cut off after its
-/// effect.
+/// otherwise, and `read_only` likewise; `hang` keeps a run going once counted, as a call
+/// a kill cut off after its effect. `log` has `start:text` and `end:text` in the order
+/// they happened, and a call sleeps its `sleep_ms` between them, so overlap shows.
 #[derive(Clone, Default)]
 struct Counter {
     runs: Arc<Mutex<Vec<String>>>,
+    log: Arc<Mutex<Vec<String>>>,
     repeatable: bool,
+    read_only: bool,
     hang: bool,
 }
 
 impl Counter {
     fn runs(&self) -> Vec<String> {
         self.runs.lock().unwrap().clone()
+    }
+
+    fn log(&self) -> Vec<String> {
+        self.log.lock().unwrap().clone()
     }
 }
 
@@ -236,13 +243,22 @@ impl Tool for Counter {
         arguments["repeatable"].as_bool().unwrap_or(self.repeatable)
     }
 
+    fn read_only(&self, arguments: &Value) -> bool {
+        arguments["read_only"].as_bool().unwrap_or(self.read_only)
+    }
+
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let text = arguments["text"].as_str().unwrap_or_default().to_owned();
             self.runs.lock().unwrap().push(text.clone());
+            self.log.lock().unwrap().push(format!("start:{text}"));
             if self.hang {
                 std::future::pending::<()>().await;
             }
+            if let Some(ms) = arguments["sleep_ms"].as_u64() {
+                tokio::time::sleep(Duration::from_millis(ms)).await;
+            }
+            self.log.lock().unwrap().push(format!("end:{text}"));
             Ok(text)
         })
     }
@@ -367,5 +383,6 @@ mod repeats;
 mod resume;
 mod retries;
 mod shrink;
+mod together;
 mod turns;
 mod waits;

@@ -107,6 +107,14 @@ impl ToolRegistry {
             .is_some_and(|tool| tool.repeatable(arguments))
     }
 
+    /// Whether the call only reads, so it may run with the read-only calls next to it;
+    /// an unknown tool never does.
+    pub fn read_only(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_some_and(|tool| tool.read_only(arguments))
+    }
+
     /// The skill a successful `load_skill` call named; `None` for other tools or when
     /// the arguments do not name one.
     pub fn loaded_skill(&self, name: &str, arguments: &serde_json::Value) -> Option<String> {

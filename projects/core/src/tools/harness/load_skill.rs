@@ -96,6 +96,10 @@ impl Tool for LoadSkill {
         true
     }
 
+    fn read_only(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: LoadSkillArguments = parse_arguments(arguments)?;

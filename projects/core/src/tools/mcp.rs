@@ -21,6 +21,8 @@ pub struct McpTool {
     schema: Value,
     /// The server's own hint that a call may run again; see `RemoteTool::repeatable`.
     repeatable: bool,
+    /// The server's hint that a call changes nothing; see `RemoteTool::read_only`.
+    read_only: bool,
     /// Where the pictures it returns are kept for the model.
     pictures: ArtifactStore,
 }
@@ -39,6 +41,7 @@ impl McpTool {
                     description: tool.description.clone(),
                     schema: tool.input_schema.clone(),
                     repeatable: tool.repeatable,
+                    read_only: tool.read_only,
                     pictures: pictures.clone(),
                 })
             })
@@ -76,6 +79,12 @@ impl Tool for McpTool {
     /// that server's own call.
     fn repeatable(&self, _arguments: &Value) -> bool {
         self.repeatable
+    }
+
+    /// Trusted as little as `repeatable`: a server that lies can only make its own calls
+    /// run together.
+    fn read_only(&self, _arguments: &Value) -> bool {
+        self.read_only
     }
 
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {

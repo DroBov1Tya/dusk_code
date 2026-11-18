@@ -206,6 +206,15 @@ pub trait Tool: Send + Sync {
         false
     }
 
+    /// The call changes nothing anywhere (no file, no state, no process, nothing shown to
+    /// the user) and does not depend on another call of the same step, so it may run
+    /// together with the read-only calls next to it. Stricter than `repeatable`: a memory
+    /// rewrite is repeatable but not read-only. A read-only call must be repeatable, since
+    /// a restart runs the open calls of such a group again.
+    fn read_only(&self, _arguments: &Value) -> bool {
+        false
+    }
+
     /// An error is shown to the model as the result, so it can correct itself.
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String>;
 
