@@ -38,6 +38,9 @@ pub struct ToolContext {
     pub state: Option<Arc<crate::state::State>>,
     /// The thread the tool acts for, with `state`.
     pub thread_id: String,
+    /// The indexer of the project graph; `None` where no runtime runs the tools, and in
+    /// a chat that leaves nothing behind.
+    pub graph: Option<Arc<crate::project::graph::Indexer>>,
 }
 
 impl ToolContext {

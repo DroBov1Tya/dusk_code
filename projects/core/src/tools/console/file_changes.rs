@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 
 use dusk_protocol::project::{Change, ChangeKind, EditKind};
 
+use crate::project::graph::{Changed, Folder};
 use crate::project::ledger::{self, Edit, Snapshot};
 use crate::tools::{ToolScope, tool::ToolContext};
 
@@ -32,6 +33,7 @@ pub async fn watch(context: &ToolContext) -> Option<Watch> {
         Ok(Some(before)) => Some(Watch { root, before }),
         Ok(None) => {
             tracing::info!("the project is too large to record what a command changes");
+            unrecorded(context);
             None
         }
         Err(error) => {
@@ -63,6 +65,7 @@ impl Watch {
                 tracing::info!(
                     "a command changed too much, or the project is too large, to record"
                 );
+                unrecorded(context);
                 return;
             }
             Err(error) => {
@@ -84,6 +87,14 @@ impl Watch {
         {
             tracing::warn!("cannot record the changes a command made: {error:#}");
         }
+        // The graph follows the same edits: those files only, by the hash taken here.
+        if let Some(graph) = &context.graph {
+            let changed = edits.iter().map(|edit| Changed {
+                path: edit.path.clone(),
+                hash: edit.hash_after.clone(),
+            });
+            graph.changed(project_folder(&context.scope), changed.collect());
+        }
         let touched: Vec<Change> = edits.iter().map(touched).collect();
         if let Err(error) = state.note_thread_files(&context.thread_id, &touched).await {
             tracing::warn!("cannot note the files a command changed: {error:#}");
@@ -102,6 +113,22 @@ fn skipped(scope: &ToolScope) -> Vec<PathBuf> {
         .filter(|folder| *folder != root && folder.starts_with(root))
         .map(Path::to_owned)
         .collect()
+}
+
+/// The thread's project as the graph's indexer walks it: what the ledger walks.
+pub fn project_folder(scope: &ToolScope) -> Folder {
+    Folder {
+        root: scope.cwd().to_owned(),
+        skip: skipped(scope),
+    }
+}
+
+/// The ledger cannot say what the command changed, so the graph looks for itself when
+/// the turn ends.
+fn unrecorded(context: &ToolContext) {
+    if let Some(graph) = &context.graph {
+        graph.unrecorded(context.scope.cwd());
+    }
 }
 
 fn file_name(path: &str) -> &str {

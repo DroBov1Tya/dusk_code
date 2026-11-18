@@ -140,7 +140,8 @@ fn read_after(root: &Path, absolute: &Path, stamp: Stamp) -> Option<Vec<u8>> {
     read_regular(absolute, MAX_READ_BYTES).ok()
 }
 
-fn sha256(bytes: &[u8]) -> String {
+/// SHA-256 in hex: `hash_after`, and the hash the project graph keeps of a file.
+pub fn sha256(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))

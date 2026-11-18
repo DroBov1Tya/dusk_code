@@ -105,6 +105,15 @@ impl Language {
         }
     }
 
+    /// The language the store spelled `text`; `None` for one this build does not read,
+    /// as a row written by a later version.
+    pub fn parse(text: &str) -> Option<Self> {
+        LANGUAGES
+            .iter()
+            .map(|entry| entry.spec.language)
+            .find(|language| language.as_str() == text)
+    }
+
     pub(super) fn load(self) -> Result<&'static Loaded> {
         let entry = LANGUAGES
             .iter()

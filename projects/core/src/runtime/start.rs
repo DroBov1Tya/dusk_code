@@ -42,6 +42,8 @@ pub struct Runtime {
     pub(super) update_check: JoinHandle<()>,
     pub(super) updates: Arc<UpdateWatch>,
     pub(super) model_discovery: Option<JoinHandle<()>>,
+    /// The worker that keeps the graph of saved projects current.
+    pub(super) graph_index: JoinHandle<()>,
     /// Shipped files the user changed, kept at the start, with the new version beside.
     pub(super) updated_builtin: Vec<String>,
     /// The latest sounds made by reading aloud, by what was asked, so asking again plays the
@@ -130,7 +132,12 @@ impl Runtime {
         );
         let hooks = Arc::new(crate::plugins::Hooks::default());
         let platforms = Arc::new(crate::plugins::Platforms::default());
+        let (graph, graph_index) = crate::project::graph::Indexer::start(Arc::clone(&state), {
+            let config = Arc::clone(&config);
+            move || config.current().limits().project_graph
+        });
         let launcher = Launcher {
+            graph: Some(graph),
             threads: Arc::default(),
             hooks: Arc::clone(&hooks),
             health: Arc::default(),
@@ -172,6 +179,8 @@ impl Runtime {
                 state: memory,
                 paths: launcher.paths.temporary(&temporary_root.path),
                 approvals,
+                // Its database holds no saved project, so there is nothing to index.
+                graph: None,
                 temporary: true,
                 ..launcher.clone()
             }
@@ -234,6 +243,7 @@ impl Runtime {
             update_check,
             updates,
             model_discovery,
+            graph_index,
             updated_builtin: initialized.builtin.updated,
             speech: Default::default(),
             local_voice,
@@ -276,6 +286,7 @@ impl Runtime {
         self.agents_check.abort();
         self.plugins_check.abort();
         self.update_check.abort();
+        self.graph_index.abort();
         if let Some(discovery) = self.model_discovery {
             discovery.abort();
         }

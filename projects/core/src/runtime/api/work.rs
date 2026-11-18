@@ -44,6 +44,7 @@ impl Runtime {
             approvals: None,
             state: Some(Arc::clone(state)),
             thread_id: thread_id.to_owned(),
+            graph: launcher.graph.clone(),
         };
         crate::tools::console::run_for_user(command, &context).await
     }

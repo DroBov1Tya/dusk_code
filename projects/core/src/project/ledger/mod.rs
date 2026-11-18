@@ -10,8 +10,8 @@ use std::path::{Component, Path};
 
 #[cfg(test)]
 pub use compare::Diff;
-pub use compare::{Edit, compare};
-pub use snapshot::{Snapshot, Stamp, take};
+pub use compare::{Edit, compare, sha256};
+pub use snapshot::{Snapshot, Stamp, take, take_for};
 
 /// Whether the text of a project file may be kept and diffed: not for `.env` files or
 /// anything under `.ssh`, which hold secrets. Such a change is recorded without a diff.

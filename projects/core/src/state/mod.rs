@@ -16,6 +16,7 @@ pub use agents::{AgentPhase, Identity};
 pub use db::State;
 // Used by tasks E2 to E5 (recording, the lesson, `recall`, clients); until they land
 // only tests do.
+pub use project::graph;
 #[allow(unused_imports)]
 pub use project::{Episode, EpisodeKind, NewEpisode, Recall};
 pub use thread::{

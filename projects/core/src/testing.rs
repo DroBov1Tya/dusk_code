@@ -64,6 +64,7 @@ pub fn tool_context(scope: &ToolScope) -> ToolContext {
         approvals: None,
         state: None,
         thread_id: String::new(),
+        graph: None,
     }
 }
 

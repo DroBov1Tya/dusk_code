@@ -360,7 +360,8 @@ impl Found {
         let mut refs = self.uses(source, cut);
         refs.extend(self.imports.drain().map(|(name, import)| Ref {
             name,
-            kind: RefKind::Import(import.path),
+            kind: RefKind::Import,
+            path: Some(import.path),
             line: import.line,
             uses: import.uses,
         }));
@@ -412,6 +413,7 @@ impl Found {
             .map(|(name, (line, uses))| Ref {
                 name,
                 kind: RefKind::Use,
+                path: None,
                 line,
                 uses,
             })

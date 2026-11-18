@@ -25,7 +25,7 @@ use crate::{
     tools::{
         AgentState, Approvals, AskAgent, AskUser, DisplayAudio, DisplayImage, GoalTool, Jobs,
         McpTool, MessageParent, PlanEdit, ReadHistory, Remember, RunCommand, Show, Tasks,
-        ToolRegistry, ToolScope,
+        ToolRegistry, ToolScope, console::project_folder,
     },
 };
 
@@ -52,6 +52,9 @@ pub struct Launcher {
     pub hooks: Arc<crate::plugins::Hooks>,
     /// How each provider's calls go, learned by every thread's calls.
     pub health: Arc<crate::providers::Health>,
+    /// Keeps the graph of saved projects current; `None` for chats that leave nothing
+    /// behind.
+    pub graph: Option<Arc<crate::project::graph::Indexer>>,
     /// Its chats leave nothing behind: the database is in memory, their files are in the
     /// system's temporary folder, and they write no memory.
     pub temporary: bool,
@@ -78,13 +81,18 @@ impl Launcher {
         agent: Option<&Identity>,
         depth: usize,
     ) -> Result<ThreadSetup> {
+        let scope = Arc::new(self.scope(cwd, workspace)?);
+        // The thread's task starts: its project is looked over, in the background.
+        if let Some(graph) = &self.graph {
+            graph.refresh(project_folder(&scope));
+        }
         Ok(ThreadSetup {
             state: Arc::clone(&self.state),
             model: Arc::clone(&self.model),
             config: Arc::clone(&self.config),
             thread_id: thread_id.to_owned(),
             tools: self.tools(thread_id, agent, depth),
-            scope: Arc::new(self.scope(cwd, workspace)?),
+            scope,
             project: project::context(cwd),
             compact_prompt: self.paths.compact_prompt(),
             fork_prompt: self.paths.fork_prompt(),
@@ -111,6 +119,7 @@ impl Launcher {
         tools.approvals = Some(Arc::clone(&self.approvals));
         tools.platform = self.platform;
         tools.state = Some(Arc::clone(&self.state));
+        tools.graph = self.graph.clone();
         tools.thread_id = thread_id.to_owned();
         for server in self.mcp.ready() {
             let pictures = ArtifactStore::new(self.paths.artifacts_dir());
