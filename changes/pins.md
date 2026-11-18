@@ -1,0 +1,2 @@
+Added
+Pinned messages in the core: `ThreadRequest::Pin` pins or unpins one of a chat's messages (at most eight, the user's and the agent's words), `ThreadRequest::Pins` reads them, and `ThreadEvent::Pins` tells every client of the chat after a change or an /undo. A pin carries a plain one-line excerpt the core cuts to 120 characters and whether a compaction summed its message up; it goes with its message and its chat, and nothing of it reaches the model. Protocol 26.
