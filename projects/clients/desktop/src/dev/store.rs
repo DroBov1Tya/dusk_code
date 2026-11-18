@@ -23,7 +23,7 @@ use crate::{
     pages::connectors::{
         Shelf,
         plugins::{
-            Confirm,
+            Confirm, Scope, View,
             workshop::{
                 Shelf as StoreShelf,
                 contents::{Loaded, Opened},
@@ -423,6 +423,56 @@ fn webp(bytes: &'static [u8]) -> Arc<Image> {
     ))
 }
 
+/// Single skills, as the Skills page's Workshop lists them: of each tier, one here.
+pub fn skill_listings() -> Vec<Listing> {
+    let skill = |name: &str, author: &str, tier: Tier, description: &str| Listing {
+        name: name.into(),
+        version: "1.0.0".into(),
+        description: description.into(),
+        kind: Kind::Skill,
+        source: match tier {
+            Tier::Community => "friends".into(),
+            _ => "official".into(),
+        },
+        tier,
+        author: author.into(),
+        license: "MIT".into(),
+        categories: vec!["coding".into()],
+        created: Some("2026-11-02T00:00:00Z".into()),
+        updated: Some("2026-11-12T00:00:00Z".into()),
+        ..Listing::default()
+    };
+    vec![
+        Listing {
+            installed: Some("1.0.0".into()),
+            ..skill(
+                "commit-messages",
+                "duskcode",
+                Tier::Official,
+                "Write commit subjects as area: imperative summary, with a body that says why.",
+            )
+        },
+        skill(
+            "changelog",
+            "duskcode",
+            Tier::Official,
+            "Keep a changelog of fragments, one per change, merged at release.",
+        ),
+        skill(
+            "sql-review",
+            "Data Tools Collective",
+            Tier::Verified,
+            "Read a migration for locks, missing indexes and irreversible steps.",
+        ),
+        skill(
+            "haiku-docs",
+            "someone",
+            Tier::Community,
+            "Explain a module in three short lines before the details.",
+        ),
+    ]
+}
+
 /// The core's picks, made here the way the core makes them.
 fn picks(listings: &[Listing]) -> Picks {
     let top = |key: &dyn Fn(&Listing) -> String| {
@@ -486,8 +536,25 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 /// be read again, so covers not here are drawn offline; `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
 pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Context<Workspace>) {
     ws.center = Center::Connectors;
-    ws.shelf = Shelf::Plugins;
-    ws.workshop.open = true;
+    // `skills:` shows the Skills page's Workshop of single skills instead.
+    let skills = value == "skills";
+    ws.shelf = if skills {
+        Shelf::Skills
+    } else {
+        Shelf::Plugins
+    };
+    ws.workshop.plugins_view = Some(View::Discover);
+    ws.workshop.skills_view = Some(View::Discover);
+    ws.workshop.scope = if skills {
+        Scope::Skills
+    } else {
+        Scope::Plugins
+    };
+    if skills {
+        let listings = skill_listings();
+        ws.workshop.picks = picks(&listings);
+        ws.workshop.listings = Some(listings);
+    }
     if ws.settings.is_none() {
         ws.load_settings(cx);
     }
@@ -514,7 +581,7 @@ pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Conte
         .find(|listing| listing.name == name)
         .cloned();
     match (what, listing) {
-        ("", _) => {}
+        ("", _) | ("skills", _) => {}
         ("pack", _) => ws.workshop.pack = Some(name.into()),
         ("open", Some(listing)) => {
             ws.workshop.gallery = 0;

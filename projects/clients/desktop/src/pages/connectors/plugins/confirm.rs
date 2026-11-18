@@ -1,7 +1,7 @@
 //! The yes before the store changes this machine: what a plugin may do before it is
 //! installed, and what is lost before one is removed.
 
-use dusk_protocol::plugin::{Client, Kind, Listing};
+use dusk_protocol::plugin::{Client, Kind, Listing, Tier};
 use gpui_kit::{
     component::{
         ActiveTheme,
@@ -95,6 +95,14 @@ fn permissions(listing: &Listing, cx: &App) -> Div {
             body.child(div().meta().text_color(muted).child(
                 "Its skills and agents are text every thread may read; they run no programs.",
             ));
+        if listing.tier == Tier::Community {
+            body = body.child(
+                div()
+                    .small()
+                    .text_color(warning)
+                    .child("Instructions the agent will follow. Nobody checked them."),
+            );
+        }
     }
     let source = match listing.source.as_str() {
         "" => "duskcode",

@@ -6,7 +6,7 @@
 
 use std::time::{Duration, Instant};
 
-use dusk_protocol::plugin::{Kind, Order};
+use dusk_protocol::plugin::Order;
 use gpui_kit::{
     component::{
         ActiveTheme, Icon, IconName,
@@ -27,8 +27,6 @@ const ORDERS: [(Order, &str); 3] = [
     (Order::Newest, "Newest"),
     (Order::Updated, "Recently updated"),
 ];
-
-const KINDS: [Kind; 4] = [Kind::Plugin, Kind::Skill, Kind::Pack, Kind::Agent];
 
 /// Two columns: the order, tier and kind beside the categories, so all show at once.
 const MENU_WIDTH: f32 = 480.;
@@ -173,8 +171,15 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
             })),
         );
     }
-    list = list.child(section("Kind", cx));
-    for each in KINDS {
+    // The Skills page lists one kind, so there it has none to choose.
+    let kinds = match shop.scope {
+        super::Scope::Plugins => shop.scope.kinds(),
+        super::Scope::Skills => Vec::new(),
+    };
+    if !kinds.is_empty() {
+        list = list.child(section("Kind", cx));
+    }
+    for each in kinds {
         list = list.child(
             row(
                 format!("kind-{}", super::kind_word(each)),

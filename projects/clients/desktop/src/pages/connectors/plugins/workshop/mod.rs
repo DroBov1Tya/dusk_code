@@ -38,17 +38,46 @@ use gpui_kit::{
 use super::Confirm;
 use crate::{
     modal::Modal,
-    ui::{Type, size, widgets},
+    ui::{Type, controls, size, widgets},
     workspace::Workspace,
 };
 
 pub use grid::Grid;
 pub use shelves::Shelf;
 
+/// The page the Workshop is shown on. Each asks the core for its own kinds: single
+/// skills on the Skills page, everything that may hold more under Plugins.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Scope {
+    #[default]
+    Plugins,
+    Skills,
+}
+
+impl Scope {
+    pub fn kinds(self) -> Vec<Kind> {
+        match self {
+            Self::Plugins => vec![Kind::Plugin, Kind::Pack, Kind::Agent],
+            Self::Skills => vec![Kind::Skill],
+        }
+    }
+}
+
+/// "Discover | Installed" of a page.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum View {
+    Discover,
+    Installed,
+}
+
 #[derive(Default)]
 pub struct Workshop {
-    /// The Workshop is shown on the plugins shelf instead of the installed plugins.
-    pub open: bool,
+    /// What the Plugins and Skills pages show, once the user chose; until then Discover
+    /// when nothing is installed, Installed otherwise.
+    pub plugins_view: Option<View>,
+    pub skills_view: Option<View>,
+    /// The page the listings were read for.
+    pub scope: Scope,
     /// The store's listings, once read; kept while it is read again.
     pub listings: Option<Vec<Listing>>,
     /// The core's picks for the New and Recently updated shelves.
@@ -286,21 +315,135 @@ fn unreachable_store(error: &str, cx: &mut Context<Workspace>) -> Div {
         )
 }
 
+/// "Workshop  Discover | Installed" of a page, and while the listings are shown "Update
+/// all" and a refresh. There is no auto-update switch: the core has no such setting, and
+/// a client keeps no timers of its own.
+pub fn switch(ws: &Workspace, scope: Scope, cx: &mut Context<Workspace>) -> Div {
+    let open = ws.view(scope) == View::Discover;
+    let view = |id: &'static str, label: &'static str, this: View| {
+        controls::text_choice(id, label, ws.view(scope) == this, cx).on_click(cx.listener(
+            move |ws, _, _, cx| {
+                match scope {
+                    Scope::Plugins => ws.workshop.plugins_view = Some(this),
+                    Scope::Skills => ws.workshop.skills_view = Some(this),
+                }
+                ws.ensure_store(cx);
+                cx.notify();
+            },
+        ))
+    };
+    let ids: [&'static str; 2] = match scope {
+        Scope::Plugins => ["plugins-workshop", "plugins-installed"],
+        Scope::Skills => ["skills-workshop", "skills-installed"],
+    };
+    let mut row = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap_2()
+        .child(div().title().pr_2().child("Workshop"))
+        .child(view(ids[0], "Discover", View::Discover))
+        .child(controls::pipe(cx))
+        .child(view(ids[1], "Installed", View::Installed));
+    if open {
+        row = row
+            .child(div().flex_1())
+            .child(
+                Button::new("workshop-update-all")
+                    .outline()
+                    .label("Update all")
+                    .loading(ws.workshop.updating)
+                    .tooltip("Update everything whose update asks for nothing more")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.update_all(cx))),
+            )
+            .child(
+                Button::new("workshop-refresh")
+                    .ghost()
+                    .icon(Icon::default().path(crate::ui::icons::REFRESH))
+                    .loading(ws.workshop.loading)
+                    .tooltip("Read the store again")
+                    .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx))),
+            );
+    }
+    row
+}
+
 impl Workspace {
-    /// Reads the store in the chosen order and category, and the skill packs here.
+    /// What `scope`'s page shows: the user's choice, or Discover while nothing is
+    /// installed there.
+    pub fn view(&self, scope: Scope) -> View {
+        let (chosen, empty) = match scope {
+            Scope::Plugins => (self.workshop.plugins_view, self.status.plugins.is_empty()),
+            Scope::Skills => (
+                self.workshop.skills_view,
+                self.settings
+                    .as_ref()
+                    .is_some_and(|settings| settings.skills.is_empty()),
+            ),
+        };
+        chosen.unwrap_or(if empty {
+            View::Discover
+        } else {
+            View::Installed
+        })
+    }
+
+    /// The page whose Workshop is in view, if one is.
+    pub fn discovering(&self) -> Option<Scope> {
+        use crate::pages::connectors::Shelf;
+        let scope = match self.shelf {
+            Shelf::Plugins => Scope::Plugins,
+            Shelf::Skills => Scope::Skills,
+            _ => return None,
+        };
+        (self.view(scope) == View::Discover).then_some(scope)
+    }
+
+    /// Reads the store for the Workshop in view when it has not been read for that page;
+    /// a read that failed waits for Retry.
+    pub fn ensure_store(&mut self, cx: &mut Context<Self>) {
+        let Some(scope) = self.discovering() else {
+            return;
+        };
+        let shop = &mut self.workshop;
+        if shop.loading {
+            return;
+        }
+        if shop.scope != scope {
+            shop.scope = scope;
+            shop.listings = None;
+            shop.picks = Picks::default();
+            shop.error = None;
+            shop.kinds.clear();
+            shop.shelf = None;
+            shop.pack = None;
+        }
+        if shop.listings.is_none() && shop.error.is_none() {
+            self.load_store(cx);
+        }
+    }
+
+    /// Reads the store in the chosen order and category for the page in view, and the
+    /// skill packs here.
     pub fn load_store(&mut self, cx: &mut Context<Self>) {
         if self.workshop.loading {
             return;
         }
         self.workshop.loading = true;
         let (order, category) = (self.workshop.order, self.workshop.category.clone());
+        let scope = self.workshop.scope;
         let all = category.is_none();
         self.core.call(
             cx,
-            move |client| async move { client.plugins().store(order, category).await },
+            move |client| async move { client.plugins().store(order, category, scope.kinds()).await },
             move |ws, result, cx| {
                 let shop = &mut ws.workshop;
                 shop.loading = false;
+                // Another page was opened meanwhile; it reads its own.
+                if shop.scope != scope {
+                    cx.notify();
+                    return;
+                }
                 match result {
                     Ok(list) => {
                         if all {
@@ -440,6 +583,8 @@ impl Workspace {
                 ws.workshop.failed.insert(name, format!("{error:#}"));
             }
             ws.load_store(cx);
+            // A skill installed or removed shows on the Skills page at once.
+            ws.load_settings(cx);
         });
     }
 }

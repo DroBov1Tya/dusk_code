@@ -5,7 +5,7 @@ use anyhow::{Result, bail};
 use dusk_protocol::{
     client::{PluginRequest, Request, Response},
     plugin::{
-        Contents, FilePreview, Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport,
+        Contents, FilePreview, Kind, Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport,
     },
 };
 
@@ -58,10 +58,19 @@ impl Plugins<'_> {
 /// The plugin store. The core checks the signed list and every package; a client shows
 /// the list and asks the user before `install`, showing the listing's permissions.
 impl Plugins<'_> {
-    /// The listings in `order`, only `category`'s when one is given, and the sources
-    /// that could not be read; a client shows both.
-    pub async fn store(&self, order: Order, category: Option<String>) -> Result<StoreList> {
-        let request = StoreRequest::List { order, category };
+    /// The listings in `order`, only `category`'s when one is given and only of `kinds`
+    /// when they are, and the sources that could not be read; a client shows both.
+    pub async fn store(
+        &self,
+        order: Order,
+        category: Option<String>,
+        kinds: Vec<Kind>,
+    ) -> Result<StoreList> {
+        let request = StoreRequest::List {
+            order,
+            category,
+            kinds,
+        };
         let list = match self.0.call(Request::Store(request)).await? {
             Response::Store(list) => list,
             Response::Error(error) => bail!(error),

@@ -421,6 +421,7 @@ fn rest() -> Vec<R> {
         R::Store(St::List {
             order: Default::default(),
             category: None,
+            kinds: Vec::new(),
         }),
         R::Store(St::Install {
             source: word(),

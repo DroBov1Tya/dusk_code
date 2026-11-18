@@ -312,6 +312,11 @@ fn apart(folder: &Path) -> Vec<Request> {
         Request::Store(StoreRequest::List {
             order: Default::default(),
             category: None,
+            kinds: Vec::new(),
+        }),
+        Request::Store(StoreRequest::Contents {
+            source: word(),
+            name: word(),
         }),
         Request::Store(StoreRequest::UpdateAll),
         Request::SystemReport,

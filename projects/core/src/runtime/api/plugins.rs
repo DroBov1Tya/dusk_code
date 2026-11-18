@@ -40,8 +40,13 @@ impl Runtime {
         };
         let mirrors = self.config().current().workshop().sources.clone();
         match request {
-            StoreRequest::List { order, category } => {
-                let list = store::list(self.paths(), &mirrors, order, category.as_deref()).await?;
+            StoreRequest::List {
+                order,
+                category,
+                kinds,
+            } => {
+                let list =
+                    store::list(self.paths(), &mirrors, order, category.as_deref(), &kinds).await?;
                 return Ok(Response::Store(list));
             }
             StoreRequest::Install {

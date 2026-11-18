@@ -219,12 +219,15 @@ pub struct UpdateReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StoreRequest {
     /// What the sources offer; answered with `Response::Store`. Only `category`'s, when
-    /// it is given.
+    /// it is given, and only of `kinds`, all of them when it is empty: each page asks for
+    /// its own, so the core decides what a page lists.
     List {
         #[serde(default)]
         order: Order,
         #[serde(default)]
         category: Option<String>,
+        #[serde(default)]
+        kinds: Vec<Kind>,
     },
     /// Installs or updates `name` at `version` from `source` and switches it on.
     /// `agreed` is the listing's `permissions` the user was shown; a listing that

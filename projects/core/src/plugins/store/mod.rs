@@ -65,12 +65,14 @@ const STAGING: &str = ".staging";
 static BUSY: LazyLock<Mutex<()>> = LazyLock::new(Mutex::default);
 
 /// What the sources offer, with what is installed here, in `order`; only `category`'s
-/// when it is given. A source that cannot be read is reported beside the rest.
+/// when it is given, and only of `kinds` when they are. A source that cannot be read is
+/// reported beside the rest.
 pub async fn list(
     paths: &Paths,
     mirrors: &[Mirror],
     order: Order,
     category: Option<&str>,
+    kinds: &[Kind],
 ) -> Result<StoreList> {
     let (fetched, failed) = source::read(paths, mirrors).await;
     let record = Record::load(paths)?;
@@ -88,9 +90,11 @@ pub async fn list(
         .collect();
     listing::mark_clashes(&mut listings);
     listings.retain(|listing| {
-        category.is_none_or(|category| {
-            listing.category == category || listing.categories.iter().any(|item| item == category)
-        })
+        (kinds.is_empty() || kinds.contains(&listing.kind))
+            && category.is_none_or(|category| {
+                listing.category == category
+                    || listing.categories.iter().any(|item| item == category)
+            })
     });
     listing::sort(&mut listings, order);
     let picks = listing::picks(&listings);
@@ -204,6 +208,18 @@ pub async fn update_all(paths: &Paths, mirrors: &[Mirror]) -> Result<UpdateRepor
         }
     }
     Ok(report)
+}
+
+/// The single skills the store installed, by name: their folders are under `skills/` like
+/// the user's own, so only the record tells them apart.
+pub fn installed_skills(paths: &Paths) -> std::collections::BTreeSet<String> {
+    let record = Record::load(paths).unwrap_or_default();
+    record
+        .installed
+        .iter()
+        .filter(|(name, item)| item.kind == Kind::Skill && record.present(paths, name).is_some())
+        .map(|(name, _)| name.clone())
+        .collect()
 }
 
 /// What the store installed as `name`, when it may remove it: it installed it and its
