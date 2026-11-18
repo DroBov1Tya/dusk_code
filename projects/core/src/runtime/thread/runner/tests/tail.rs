@@ -501,6 +501,50 @@ async fn the_summary_request_sends_the_stub_view() {
     assert!(!request.iter().any(tool(&first.content)));
 }
 
+/// The shipped summary prompt before the kept tail: with the switches off a compaction
+/// must send it unchanged.
+const COMPACT_ON_MAIN: &str = r#"Summarize the conversation above so that the work can go on from the summary alone:
+the earlier messages are about to leave your context. Keep facts, decisions, exact
+names, paths, commands, errors and numbers; drop small talk. Write in the language of
+the conversation. Do not call tools. This request is not part of the conversation:
+do not list it as a task.
+
+Use exactly these sections:
+
+1. Requested tasks: everything the user asked for, in order.
+2. Completed tasks: what is done and how it was checked.
+3. Open tasks: what is not done yet, with known problems.
+4. Current task: what was in progress at the end, and the next step.
+5. Paths and files: every file, directory, URL and command that matters, one line each
+   on why.
+6. Summary: everything else worth keeping, in a few sentences.
+"#;
+
+/// Each new section of the summary prompt is there exactly when its switch is on.
+#[tokio::test]
+async fn the_new_sections_come_only_with_their_switches() {
+    for tail in [false, true] {
+        for stubs in [false, true] {
+            let name = format!("tail_sections_{tail}_{stubs}");
+            let state = thread_state(&name).await;
+            long_turn(&state, 2).await;
+            let settings = format!(
+                "limits:\n  compact_tail: {tail}\n  stub_results: {stubs}\n  \
+                 compact_tail_tokens: 2000\n"
+            );
+            let scripts = vec![answered("summary")];
+            let (provider, _) = run(&state, &name, &settings, None, scripts, &["/compact"]).await;
+
+            let prompt = last_text(&requests(&provider)[0]);
+            assert!(prompt.starts_with(COMPACT_ON_MAIN), "{prompt}");
+            let decisions = "- Decisions: what was chosen and why, so it is not reopened.";
+            let stored = "- Stored results worth reading (result N: what it holds), if any.";
+            assert_eq!(prompt.matches(decisions).count(), usize::from(tail));
+            assert_eq!(prompt.matches(stored).count(), usize::from(stubs));
+        }
+    }
+}
+
 /// With every switch off a compaction asks and stores what it did before them: all of
 /// the thread, the prompt as shipped, the model's text alone.
 #[tokio::test]
@@ -524,7 +568,8 @@ async fn with_every_switch_off_a_compaction_is_as_before() {
         assert_eq!(request[1..=all.len()], all[..]);
         assert!(matches!(&request[all.len() + 1], ChatMessage::System(_)));
         let shipped = crate::release::resources::text("internal/COMPACT.md").unwrap();
-        let prompt = format!("{shipped}\n\nAnswer with text only; do not call tools.");
+        assert_eq!(shipped, COMPACT_ON_MAIN);
+        let prompt = format!("{COMPACT_ON_MAIN}\n\nAnswer with text only; do not call tools.");
         assert_eq!(last_text(&request), prompt);
         assert_eq!(request.len(), all.len() + 3);
         sent.push(request);

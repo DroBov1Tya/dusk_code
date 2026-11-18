@@ -27,6 +27,11 @@ const EARLY_COMPACT_PERCENT: u64 = 60;
 const TAIL_NOTE: &str = "The newest messages are not shown here: they stay after your \
 summary word for word.\n\n";
 
+/// Sections a summary gains under the switch they serve, after the list of the prompt,
+/// so the prompt as shipped or edited stays as it is with the switches off.
+const DECISIONS: &str = "- Decisions: what was chosen and why, so it is not reopened.\n";
+const STORED_RESULTS: &str = "- Stored results worth reading (result N: what it holds), if any.\n";
+
 /// What a compaction may leave after its summary.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Keep {
@@ -51,6 +56,19 @@ enum Span {
 /// always frees most of the context.
 fn tail_tokens(limits: &Limits, input_limit: u64) -> u64 {
     limits.compact_tail_tokens.min(input_limit / 5)
+}
+
+/// The sections a summary adds to its prompt's list: decisions with a kept tail, which
+/// the summary must not retell, and stored results with stubs, whose numbers the model
+/// sees only then. Empty with both switches off.
+fn extra_sections(limits: &Limits) -> String {
+    let decisions = limits.compact_tail.then_some(DECISIONS);
+    let stored = limits.stub_results.then_some(STORED_RESULTS);
+    let sections: String = decisions.into_iter().chain(stored).collect();
+    match sections.is_empty() {
+        true => sections,
+        false => format!("\nAfter those, also these sections:\n{sections}"),
+    }
 }
 
 /// Names listed in the note; a thread with more attached is rare.
@@ -142,9 +160,10 @@ impl Agent {
         turn: Option<&Turn>,
         inbox: &mut Inbox,
     ) -> Result<Result<Compaction, Stop>> {
-        let prompt =
-            self.instructions(&self.compact_prompt, "internal/COMPACT.md", instructions)?;
         let limits = self.config.current().limits();
+        let mut prompt =
+            self.instructions(&self.compact_prompt, "internal/COMPACT.md", instructions)?;
+        prompt.push_str(&extra_sections(&limits));
         let span = match keep {
             Keep::Tail if limits.compact_tail => {
                 Span::BeforeTail(tail_tokens(&limits, self.input_limit()))
@@ -332,6 +351,22 @@ impl Agent {
 mod tests {
     use super::*;
     use crate::state::Source;
+
+    /// Each section comes with its switch alone, and nothing with both off.
+    #[test]
+    fn each_new_section_comes_only_with_its_switch() {
+        for tail in [false, true] {
+            for stubs in [false, true] {
+                let mut limits = Limits::default();
+                limits.compact_tail = tail;
+                limits.stub_results = stubs;
+                let sections = extra_sections(&limits);
+                assert_eq!(sections.is_empty(), !tail && !stubs);
+                assert_eq!(sections.matches(DECISIONS).count(), usize::from(tail));
+                assert_eq!(sections.matches(STORED_RESULTS).count(), usize::from(stubs));
+            }
+        }
+    }
 
     #[test]
     fn a_tail_is_its_size_or_a_fifth_of_the_input_limit() {
