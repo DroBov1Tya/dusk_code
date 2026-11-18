@@ -282,3 +282,159 @@ fn tasks(now: i64) -> Vec<Task> {
         task(8, "Release notes", "open", None, false),
     ]
 }
+
+/// `fake=retry|unreachable|busy-threads|limits-high|agent-tree`: states that need a live
+/// provider, a running turn or a broken config to come by.
+pub fn state(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
+    use dusk_protocol::{
+        model::{PlanWindow, ProviderErrorKind, RateLimits},
+        thread::{Retry, ThreadEvent, Turn, TurnStatus, TurnWait},
+    };
+    let turn = |thread: &str, waiting| Turn {
+        turn_id: "polish".into(),
+        thread_id: thread.into(),
+        last_sequence: 1,
+        response_message_id: None,
+        status: TurnStatus::Running,
+        started_at: now_ms() - 140_000,
+        finished_at: None,
+        error_message: None,
+        waiting,
+        steps: 3,
+        tokens: 18_420,
+        cost_micro_usd: 0,
+    };
+    let shown = ws.shown.clone().unwrap_or_default();
+    match value {
+        // A model call being tried again: the row counts down to the next attempt.
+        "retry" => {
+            if let Some(chat) = ws.chats.get_mut(&shown) {
+                chat.apply(ThreadEvent::TurnStarted(turn(&shown, None)));
+                chat.retry = Some((
+                    Retry {
+                        attempt: 2,
+                        max_attempts: Some(6),
+                        kind: ProviderErrorKind::Overloaded,
+                        wait_ms: 8_000,
+                        message: "529 overloaded".into(),
+                    },
+                    std::time::Instant::now(),
+                ));
+            }
+        }
+        // The turn waits for a provider that does not answer.
+        "unreachable" => {
+            if let Some(chat) = ws.chats.get_mut(&shown) {
+                chat.apply(ThreadEvent::TurnStarted(turn(&shown, None)));
+                let now = now_ms();
+                let waiting = TurnWait::provider(ProviderErrorKind::Unreachable, now, now + 45_000);
+                chat.apply(ThreadEvent::TurnWaiting(turn(&shown, waiting)));
+            }
+        }
+        // Two other chats of the list at work, so their rows show it.
+        "busy-threads" => {
+            let others: Vec<String> = ws
+                .threads
+                .iter()
+                .map(|thread| thread.id.clone())
+                .filter(|id| *id != shown)
+                .take(3)
+                .skip(1)
+                .collect();
+            for id in others {
+                let mut chat = Transcript::default();
+                chat.working = true;
+                ws.chats.insert(id, chat);
+            }
+        }
+        // The plan's windows near their end: the rings turn amber and red and breathe.
+        "limits-high" => {
+            ws.status.chatgpt_model = true;
+            let window = |minutes, used_percent, resets_in| PlanWindow {
+                minutes: Some(minutes),
+                used_percent,
+                resets_in: Some(resets_in),
+            };
+            ws.status.limits = Some(RateLimits {
+                requests: None,
+                tokens: None,
+                plan: vec![window(300, 88, 2_400), window(10_080, 97, 86_400)],
+            });
+            if let Some(chat) = ws.chats.get_mut(&shown) {
+                chat.tokens = Some((113_000, 128_000));
+            }
+        }
+        // A tree of agents with levels, links both ways, and what could not be read.
+        "agent-tree" => agent_tree(ws),
+        other => eprintln!("no such state: {other}"),
+    }
+    cx.notify();
+}
+
+fn agent_tree(ws: &mut Workspace) {
+    use dusk_protocol::catalog::{AgentNode, AgentTree, Problem};
+    let node = |name: &str, about: &str, links: &[&str], children: Vec<AgentNode>| AgentNode {
+        name: name.into(),
+        description: about.into(),
+        version: None,
+        enabled: name != "docs",
+        links: links.iter().map(|link| (*link).to_owned()).collect(),
+        children,
+    };
+    let problem = |node: &str, reason: &str| Problem {
+        node: node.into(),
+        reason: reason.into(),
+    };
+    let Some(settings) = ws.settings.as_mut() else {
+        eprintln!("fake=agent-tree: open a shelf first, so the settings are read");
+        return;
+    };
+    settings.agents = AgentTree {
+        root: node(
+            "chat",
+            "",
+            &[],
+            vec![
+                node(
+                    "general",
+                    "Works like the chat in MAIN mode, with every tool the chat has.",
+                    &[],
+                    vec![],
+                ),
+                node(
+                    "appsec-reviewer",
+                    "Application security engineering and review: threat models, trust \
+                     boundaries, injection, authorization and secrets handling.",
+                    &[],
+                    vec![],
+                ),
+                node(
+                    "architect",
+                    "System design, integration boundaries and structural trade-offs.",
+                    &["code-reviewer", "appsec-reviewer", "qa-engineer"],
+                    vec![node("planner", "Breaks a goal into tasks.", &[], vec![])],
+                ),
+                node(
+                    "code-reviewer",
+                    "Independent defect review with QA, performance and maintainability \
+                     in mind; reports findings by severity.",
+                    &["appsec-reviewer"],
+                    vec![],
+                ),
+                node("docs", "Writes what changed.", &[], vec![]),
+                node("qa-engineer", "", &[], vec![]),
+            ],
+        ),
+        problems: vec![
+            problem("release-manager", "agent.md has no description"),
+            problem(
+                "translator",
+                "the front matter is not YAML: line 3, column 7",
+            ),
+        ],
+        skipped: vec![problem(
+            "architect",
+            "asks data-engineer, which is not installed",
+        )],
+    };
+}

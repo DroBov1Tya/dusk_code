@@ -361,6 +361,10 @@ fn act(
             if ws.providers.is_empty() {
                 ws.load_models(cx);
             }
+            // The mode's button reads the modes as it opens its menu; so does this.
+            if ws.settings.is_none() {
+                ws.load_settings(cx);
+            }
             ws.picker = Some(match value {
                 "mode" => Picker::Mode,
                 "access" => Picker::Access,
@@ -515,6 +519,14 @@ fn act(
         }
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
         "fake" if value == "mcp" => super::polish::mcp(ws, cx),
+        "fake"
+            if matches!(
+                value,
+                "retry" | "unreachable" | "busy-threads" | "limits-high" | "agent-tree"
+            ) =>
+        {
+            super::polish::state(ws, value, cx)
+        }
         "fake" if value.starts_with("chat") => super::polish::fake(ws, value, cx),
         // The transcript scrolled so its Nth row is at the top.
         "scroll" => {
@@ -918,7 +930,8 @@ fn fake_pulls(ws: &mut Workspace, cx: &mut Context<Workspace>) {
             12,
             "Show pull requests and CI in Changes",
             PullState::Open,
-            checks(7, 3, 0, CheckState::Pending),
+            // One of each, so the checks card shows all three of its rows.
+            checks(7, 2, 1, CheckState::Pending),
         ),
         pull(
             11,
