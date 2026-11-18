@@ -34,18 +34,22 @@ pub fn meter(id: usize, meter: &Meter, size: f32, cx: &App) -> Stateful<Div> {
     div()
         .id(("meter", id))
         .flex_none()
-        .child(render(size, used, fill, theme.border).with_animation(
-            if breathes {
-                "meter-breath"
-            } else {
-                "meter-still"
-            },
-            Animation::new(std::time::Duration::from_millis(2600)).repeat(),
-            move |ring, phase| {
-                let breath = (phase * TAU).sin() * 0.5 + 0.5;
-                ring.opacity(if breathes { 0.5 + breath * 0.5 } else { 1. })
-            },
-        ))
+        // The track is the quiet text color, thinned: the hairline's own color left an
+        // empty quarter all but unseen, and a ring with unseen quarters reads as a spinner.
+        .child(
+            render(size, used, fill, theme.muted_foreground.opacity(0.3)).with_animation(
+                if breathes {
+                    "meter-breath"
+                } else {
+                    "meter-still"
+                },
+                Animation::new(std::time::Duration::from_millis(2600)).repeat(),
+                move |ring, phase| {
+                    let breath = (phase * TAU).sin() * 0.5 + 0.5;
+                    ring.opacity(if breathes { 0.5 + breath * 0.5 } else { 1. })
+                },
+            ),
+        )
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(tip.clone()).build(window, cx)
         })

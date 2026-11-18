@@ -46,6 +46,18 @@ fn side() -> Div {
         .pb(px(SIDE_LIFT))
 }
 
+/// The lane the dock's cards stand in: the box's own edges at every window width, so the
+/// plan strip, a request for approval and a question line up with the box under them.
+pub fn dock_lane(content: impl IntoElement) -> Div {
+    div()
+        .px_4()
+        .max_w(px(WIDTH + 2. * SIDE))
+        .mx_auto()
+        .w_full()
+        // A side column and the gap between it and the box.
+        .child(div().px(px(SIDE + crate::ui::size::GAP_S)).child(content))
+}
+
 /// Puts the shown chat's draft in the composer when another chat's is there. Called as the
 /// chat page is drawn: every way to another chat ends here, and here is the window.
 pub fn show_draft(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) {
@@ -115,12 +127,7 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
         cx.theme().border
     };
     let band = panel::panel(ws, edge, cx);
-    let under = if band.is_some() {
-        panel::surface(cx)
-    } else {
-        cx.theme().muted
-    };
-    let tab = panel::tab(ws, under, edge, window, cx);
+    let tab = panel::tab(ws, edge, window, cx);
     // One card: what goes with the message on top, the text under it across the whole
     // width, and a row of controls at the bottom. The card grows upward, as the box sits
     // at the foot of the chat.

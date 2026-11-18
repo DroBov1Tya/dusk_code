@@ -39,7 +39,11 @@ pub fn working_mark(id: SharedString, accent: Hsla, light: Hsla) -> impl IntoEle
     working::render(id, accent, light)
 }
 
-pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
+pub fn render(
+    ws: &mut Workspace,
+    window: &mut Window,
+    cx: &mut Context<Workspace>,
+) -> Stateful<Div> {
     composer::show_draft(ws, window, cx);
     let theme = cx.theme();
     let danger = theme.danger;
@@ -69,9 +73,16 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         welcome::render(ws, cx).into_any_element()
     };
     div()
+        .id("chat-page")
         .size_full()
         .flex()
         .flex_col()
+        // The composer's tab shows itself while the pointer is over the chat.
+        .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
+            ws.dock.chat_hovered = *hovered;
+            ws.dock.tab_seen |= *hovered;
+            cx.notify();
+        }))
         // Files and pictures dragged in from outside go with the next message.
         .drag_over::<ExternalPaths>(|style, _, _, cx| style.bg(cx.theme().primary.opacity(0.06)))
         .on_drop(cx.listener(|ws, paths: &ExternalPaths, _, cx| {
@@ -92,7 +103,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .children(pins::drawer(ws, cx)),
         )
         .children(dock::plan_strip(ws, cx))
-        .child(approval::render(ws, cx))
+        .child(composer::dock_lane(approval::render(ws, cx)))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))
 }
