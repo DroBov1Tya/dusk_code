@@ -499,10 +499,12 @@ impl Transcript {
     pub fn text(&self, index: usize) -> Option<String> {
         Some(match self.entries.get(index)? {
             Entry::User { text, .. } => paste::plain(text),
-            Entry::Answer(text) => text.clone(),
+            // What is drawn as markdown copies its labels' words without the braces.
+            Entry::Answer(text) | Entry::Summary { text, .. } | Entry::FromAgent { text, .. } => {
+                dusk_protocol::thread::unmarked(text)
+            }
             Entry::Activity { .. } => String::new(),
-            Entry::Reasoning { text, .. } | Entry::Summary { text, .. } => text.clone(),
-            Entry::Notice { text, .. } | Entry::FromAgent { text, .. } => text.clone(),
+            Entry::Reasoning { text, .. } | Entry::Notice { text, .. } => text.clone(),
             Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
             Entry::Block(block) => block.text(),
             Entry::Tool { call, result, .. } => match result {
