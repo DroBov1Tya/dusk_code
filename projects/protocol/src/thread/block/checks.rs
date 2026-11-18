@@ -116,6 +116,26 @@ impl Checks {
         &self.items
     }
 
+    // "3 passed \u{b7} 1 failed \u{b7} 1 running": the checks counted by state, in this
+    // order, states nobody is in left out. One place, so the clients word it alike.
+    pub fn summary(&self) -> String {
+        const ORDER: [CheckState; 5] = [
+            CheckState::Passed,
+            CheckState::Failed,
+            CheckState::Running,
+            CheckState::Queued,
+            CheckState::Skipped,
+        ];
+        ORDER
+            .iter()
+            .filter_map(|&state| {
+                let count = self.items.iter().filter(|c| c.state == state).count();
+                (count > 0).then(|| format!("{count} {}", state.name()))
+            })
+            .collect::<Vec<_>>()
+            .join(" \u{b7} ")
+    }
+
     pub(super) fn write(&self, text: &mut String) {
         for check in &self.items {
             text.push_str(&format!("{}: {}", check.state.name(), check.name));
@@ -146,5 +166,40 @@ impl TryFrom<CountsFields> for Counts {
 
     fn try_from(fields: CountsFields) -> anyhow::Result<Self> {
         Self::new(fields.passed, fields.failed, fields.total)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn checks(states: &[CheckState]) -> Checks {
+        let items = states
+            .iter()
+            .map(|&state| Check {
+                name: Line::new("x").unwrap(),
+                state,
+                counts: None,
+                detail: None,
+            })
+            .collect();
+        Checks::new(items).unwrap()
+    }
+
+    #[test]
+    fn the_summary_counts_states_in_a_fixed_order_and_skips_empty_ones() {
+        use CheckState::*;
+        let all = checks(&[Running, Passed, Failed, Passed, Passed, Queued, Skipped]);
+        assert_eq!(
+            all.summary(),
+            "3 passed \u{b7} 1 failed \u{b7} 1 running \u{b7} 1 queued \u{b7} 1 skipped"
+        );
+        assert_eq!(checks(&[Skipped]).summary(), "1 skipped");
+    }
+
+    #[test]
+    fn the_summary_of_a_full_list_counts_every_check() {
+        let full = checks(&[CheckState::Passed; MAX_CHECKS]);
+        assert_eq!(full.summary(), "20 passed");
     }
 }
