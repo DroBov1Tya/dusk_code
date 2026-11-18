@@ -29,7 +29,15 @@ The sweep is **off** in tests, so they stay deterministic; see the [Instant docs
 const SECOND: &str = "Yes: `ttl` is read once, when the cache is built. A cache that is \
 already running keeps its old value until it is rebuilt.\n\n\
 - Changing it live needs a lock around the sweep.\n\
+\x20 - The sweep takes it for the whole pass.\n\
+\x20   - A read waits at most one pass.\n\
+\x20 - `get()` takes it for one entry.\n\
 - Entries stored earlier keep the deadline they were given.\n\n\
+1. Build the cache with the new `ttl`.\n\
+2. Move the entries over.\n\
+\x20  1. Live ones first.\n\
+\x20  2. Then the rest.\n\
+10. Drop the old cache.\n\n\
 > A shorter `ttl` never shortens the life of what is already stored.";
 
 /// `fake=mcp`: five servers, one of each state, in the place of the config's.
