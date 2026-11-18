@@ -1,2 +1,0 @@
-Added
-The web client keeps the blocks the agent shows with the `show` tool (a flow, a list of checks, reply choices) as their own items of the chat, live and after a reload, in place of the tool step of the call. Until each kind has its own view a block is drawn as its plain text in a frame marked "From the agent"; a call that was not shown stays a tool step. `show` is still off by default, so nothing changes until it is switched on.

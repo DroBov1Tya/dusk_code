@@ -1,2 +1,0 @@
-Added
-The desktop's transcript keeps a block the model showed with `show` (a flow, checks or reply buttons) as its own item and row, in place of that call's step, live and in a reopened chat alike; until each kind is drawn it shows as its plain text in a card marked "from the agent". A call that was not shown stays a step, and nothing changes while `show` is off. The working row moved into its own file.

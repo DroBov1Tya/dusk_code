@@ -1,2 +1,0 @@
-Added
-The `project_graph` tool: the agent asks where a name is defined, which files use it (rows matched by name alone start with `?`), which files depend on a file, with its tests and the files changed with it, and which tests cover a file or a symbol, answered from the project's index in at most 16 rows and 2 KiB. A file changed on disk since it was indexed is marked and indexed again. It stays off until `tools: { project_graph: true }` and is offered only once the index of the thread's project is ready in this run (`limits.project_graph`).
