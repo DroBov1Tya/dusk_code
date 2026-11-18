@@ -16,6 +16,7 @@ mod error;
 mod files;
 mod graph;
 mod plan;
+mod view;
 
 use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
@@ -24,7 +25,7 @@ use uuid::Uuid;
 use super::{State, timestamp_ms};
 
 pub use claims::{Claim, PassedBy};
-pub use dusk_protocol::thread::{Task, TaskItem};
+pub use dusk_protocol::thread::Task;
 pub use error::{PlanError, Unclaimable};
 pub use files::{TaskFiles, overlaps};
 pub(super) use graph::root_of;
@@ -32,6 +33,7 @@ pub use plan::{
     BlockedOn, LEASE_MS, MAX_ATTEMPTS, MAX_DEPENDENCIES, MAX_FILES, MAX_OPEN_TASKS, MAX_REWORKS,
     MAX_TASKS_AN_ADD, NewTask, PlanStatus, PlanTask, TaskEdit, WaitsOn,
 };
+use plan::{decode, select_tasks};
 
 /// What an ID the agent gave turned out to be.
 enum Found {
@@ -237,62 +239,27 @@ impl State {
 
     /// Every task of the thread with its steps, oldest first.
     pub async fn thread_tasks(&self, thread_id: &str) -> Result<Vec<Task>> {
-        let ids: Vec<String> = sqlx::query_scalar(
-            "SELECT task_id FROM tasks WHERE thread_id = ? ORDER BY created_at, task_id",
-        )
+        let rows = sqlx::query(select_tasks!(
+            "WHERE t.thread_id = ? ORDER BY t.created_at, t.task_id"
+        ))
         .bind(thread_id)
         .fetch_all(&self.pool)
         .await
         .context("list tasks")?;
-        let mut tasks = Vec::with_capacity(ids.len());
-        for task_id in ids {
-            tasks.push(self.task(&task_id).await?);
-        }
-        Ok(tasks)
+        let tasks = rows.iter().map(decode).collect::<Result<Vec<_>, _>>()?;
+        let mut connection = self.pool.acquire().await.context("list tasks")?;
+        Ok(view::present(&mut connection, tasks).await?)
     }
 
     async fn task(&self, task_id: &str) -> Result<Task> {
-        let row = sqlx::query(
-            "SELECT task_id, description, done, created_at, updated_at FROM tasks
-             WHERE task_id = ?",
-        )
-        .bind(task_id)
-        .fetch_one(&self.pool)
-        .await
-        .context("load task")?;
-        let items = sqlx::query(
-            "SELECT i.item_id, i.description, i.done, i.created_at, i.updated_at,
-                    i.started_at, i.finished_at
-             FROM tasks t, json_each(t.item_ids) j JOIN task_items i ON i.item_id = j.value
-             WHERE t.task_id = ? ORDER BY j.key",
-        )
-        .bind(task_id)
-        .fetch_all(&self.pool)
-        .await
-        .context("load task steps")?
-        .into_iter()
-        .map(|row| {
-            Ok(TaskItem {
-                item_id: row.try_get("item_id")?,
-                description: row.try_get("description")?,
-                done: is_done(&row)?,
-                created_at: row.try_get("created_at")?,
-                updated_at: row.try_get("updated_at")?,
-                started_at: row.try_get("started_at")?,
-                finished_at: row.try_get("finished_at")?,
-            })
-        })
-        .collect::<Result<_>>()?;
-        Ok(Task {
-            task_id: row.try_get("task_id")?,
-            description: row.try_get("description")?,
-            done: is_done(&row)?,
-            created_at: row.try_get("created_at")?,
-            updated_at: row.try_get("updated_at")?,
-            items,
-            status: dusk_protocol::thread::TaskStatus::from_done(is_done(&row)?),
-            ..Task::default()
-        })
+        let row = sqlx::query(select_tasks!("WHERE t.task_id = ?"))
+            .bind(task_id)
+            .fetch_one(&self.pool)
+            .await
+            .context("load task")?;
+        let mut connection = self.pool.acquire().await.context("load task")?;
+        let mut shown = view::present(&mut connection, vec![decode(&row)?]).await?;
+        shown.pop().context("load task")
     }
 
     /// A task or step of the thread by its ID or the end of it, when only one fits. The

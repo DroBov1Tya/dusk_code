@@ -1,8 +1,9 @@
 //! Requests about a thread's jobs, sources, plan and changes.
 
-use super::Server;
-use anyhow::{Result, bail};
-use dusk_protocol::client::{Response, WorkRequest};
+use super::{Server, publish::publish};
+use anyhow::Result;
+use dusk_protocol::client::{Event, Response, WorkRequest};
+use dusk_protocol::thread::ThreadEvent;
 
 impl Server {
     pub(super) async fn work(&self, request: WorkRequest) -> Result<Response> {
@@ -49,13 +50,46 @@ impl Server {
             WorkRequest::SourcePicture { thread_id, name } => {
                 Response::Picture(runtime.source_picture(&thread_id, &name).await?)
             }
-            WorkRequest::PlanTasks { .. }
-            | WorkRequest::Team { .. }
-            | WorkRequest::ConfirmTask { .. }
-            | WorkRequest::StopTeam { .. }
-            | WorkRequest::SetTeamBudget { .. } => {
-                bail!("plans and teams are not served yet (task P1 of docs/plan-and-teams.md)")
+            WorkRequest::PlanTasks {
+                thread_id,
+                done_before,
+                limit,
+            } => Response::PlanPage(
+                runtime
+                    .plan_page(&thread_id, done_before.as_deref(), limit)
+                    .await?,
+            ),
+            WorkRequest::Team { thread_id } => Response::Team(runtime.team(&thread_id).await?),
+            WorkRequest::ConfirmTask { thread_id, task_id } => {
+                let (chat, task) = runtime.confirm_task(&thread_id, &task_id).await?;
+                self.announce(&chat, ThreadEvent::TaskChanged(task));
+                Response::Done
+            }
+            WorkRequest::StopTeam { thread_id } => {
+                let (team, returned) = runtime.stop_team(&thread_id).await?;
+                let chat = team.thread_id.clone();
+                for task in returned {
+                    self.announce(&chat, ThreadEvent::TaskChanged(task));
+                }
+                self.announce(&chat, ThreadEvent::Team(team));
+                Response::Done
+            }
+            WorkRequest::SetTeamBudget { thread_id, budget } => {
+                let team = runtime.set_team_budget(&thread_id, budget).await?;
+                self.announce(&team.thread_id.clone(), ThreadEvent::Team(team));
+                Response::Done
             }
         })
+    }
+
+    /// Tells every client that may read the chat of a change to its plan or team.
+    fn announce(&self, chat: &str, event: ThreadEvent) {
+        publish(
+            &self.subscribers,
+            Event::Thread {
+                thread_id: chat.to_owned(),
+                event: Box::new(event),
+            },
+        );
     }
 }

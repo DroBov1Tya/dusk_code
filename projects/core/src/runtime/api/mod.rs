@@ -12,6 +12,7 @@ mod secrets;
 mod settings;
 mod skills;
 mod system;
+mod team;
 mod threads;
 mod updates;
 mod voice;

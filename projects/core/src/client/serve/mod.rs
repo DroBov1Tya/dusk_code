@@ -3,6 +3,8 @@
 
 mod admit;
 mod catalog;
+#[cfg(test)]
+mod plan_tests;
 mod plugin;
 mod projects;
 mod publish;

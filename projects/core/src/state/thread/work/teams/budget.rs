@@ -25,7 +25,7 @@ pub enum BudgetBy {
     User,
 }
 
-// T1 and P1 are the callers; nothing in the tree is yet.
+// P1 serves `set_team_budget`; T1 (the lead's `run`) is the rest of the callers.
 #[allow(dead_code)]
 impl TeamCeilings {
     pub fn new(ceilings: TeamBudget) -> Self {
@@ -94,7 +94,7 @@ pub(super) fn may_change(
     Ok(())
 }
 
-// T1 and P1 are the callers; nothing in the tree is yet.
+// P1 serves `set_team_budget`; T1 (the lead's `run`) is the rest of the callers.
 #[allow(dead_code)]
 impl State {
     /// Sets the running team's budget, as `by` may (`may_change`). Minutes count from the
