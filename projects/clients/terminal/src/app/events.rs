@@ -92,6 +92,7 @@ impl App {
                 self.activity = Activity::Thinking;
             }
             ThreadEvent::TurnFinished(turn) => {
+                self.overview_stale = true;
                 self.turn_running = false;
                 self.last_turn_duration_ms = turn
                     .finished_at
@@ -181,6 +182,7 @@ impl App {
                     .push(Entry::from_agent(from, message.content));
             }
             ThreadEvent::Tasks(tasks) => self.tasks = tasks,
+            ThreadEvent::TaskChanged(_) | ThreadEvent::Team(_) => self.overview_stale = true,
             ThreadEvent::Goal {
                 goal,
                 note,

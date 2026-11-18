@@ -15,6 +15,7 @@ use super::diff;
 use super::help::help;
 use super::jobs::jobs;
 use super::models::models;
+use super::overview::overview;
 use super::paste::draw_paste;
 use super::plugins::plugins;
 use super::schedules::schedules;
@@ -212,6 +213,12 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
             context(report),
             None,
         ),
+        Panel::Overview(view) => (
+            "overview",
+            "up/down scroll  any other key closes",
+            overview(app, view),
+            None,
+        ),
         Panel::Diff(view) => {
             let width = screen.width.saturating_sub(8).min(116) as usize;
             let (lines, hints) = match view.open {
@@ -262,11 +269,13 @@ pub fn draw(frame: &mut Frame, screen: Rect, app: &mut App) {
     let skip = match &app.panel {
         // The context scrolls by its top row rather than following a selection.
         Some(Panel::Context { row, .. }) => (*row).min(lines.len().saturating_sub(inner)),
+        Some(Panel::Overview(view)) => view.row.min(lines.len().saturating_sub(inner)),
         Some(Panel::Diff(view)) if view.open => view.scroll.min(lines.len().saturating_sub(inner)),
         _ => selected.map_or(0, |row| (row + 1).saturating_sub(inner)),
     };
     match &mut app.panel {
         Some(Panel::Context { row, .. }) => *row = skip,
+        Some(Panel::Overview(view)) => view.row = skip,
         Some(Panel::Diff(view)) if view.open => view.scroll = skip,
         _ => {}
     }

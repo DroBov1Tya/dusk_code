@@ -48,14 +48,17 @@ pub enum Center {
     File,
     /// Prompts the core runs on a timetable.
     Schedules,
+    /// How the shown chat's work stands, as a page.
+    Overview,
 }
 
 /// The modules of the right column, top to bottom.
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Right {
     Arbiter,
-    /// The context and the activity under one fold.
-    Statistics,
+    /// How the shown chat's work stands: plan, team, tokens, context, changes, activity
+    /// and its log.
+    Overview,
     Screenshots,
     Git,
     Files,
@@ -71,7 +74,7 @@ pub enum Right {
 impl Right {
     const ALL: [Right; 10] = [
         Right::Arbiter,
-        Right::Statistics,
+        Right::Overview,
         Right::Screenshots,
         Right::Git,
         Right::Files,
@@ -86,7 +89,7 @@ impl Right {
     pub fn key(self) -> &'static str {
         match self {
             Self::Arbiter => "arbiter",
-            Self::Statistics => "statistics",
+            Self::Overview => "overview",
             Self::Screenshots => "screenshots",
             Self::Git => "git",
             Self::Files => "files",
@@ -102,7 +105,7 @@ impl Right {
     fn folded_at_first() -> HashSet<Right> {
         [
             Right::Arbiter,
-            Right::Statistics,
+            Right::Overview,
             Right::Screenshots,
             Right::Git,
             Right::Files,
@@ -208,6 +211,8 @@ pub struct Workspace {
     pub expanded: HashSet<String>,
     pub context: Option<ContextReport>,
     pub context_load: crate::columns::inspector::context::ContextLoad,
+    /// The core's answers the Overview draws.
+    pub overview: crate::columns::inspector::overview::Shown,
     pub alerts: crate::platform::notify::Alerts,
     /// The shown chat's pinned plan.
     pub plan: crate::columns::inspector::plan::Plan,
