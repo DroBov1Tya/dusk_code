@@ -14,11 +14,11 @@ mod work;
 
 pub use changes::ChangeQuery;
 pub use conversation::{
-    CallEnd, Compaction, Ended, LocalUnsent, Message, MessageRole, NewStub, PendingMessage,
-    ShapedResult, Source, Stub, UndoPoint, calls_of, estimate_tokens, saved_tokens,
+    CallEnd, Compaction, Delivery, Ended, LocalUnsent, Message, MessageRole, NewStub,
+    PendingMessage, ShapedResult, Source, Stub, UndoPoint, calls_of, estimate_tokens, saved_tokens,
 };
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
-pub use threads::Thread;
+pub use threads::{MEMBER_SOURCE, Thread};
 pub use work::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallPurpose, JobSummary, LastPrompt, ModelCall,
     ProviderFailure, Settle, Task, Turn, TurnAnswer, TurnFailure, TurnOutcome, TurnStatus,

@@ -12,6 +12,7 @@ use crate::init::create_private_dir;
 use crate::platform::Platform;
 use crate::runtime::ThreadHandle;
 use crate::runtime::agent::Mailboxes;
+use crate::runtime::team;
 use crate::runtime::thread::project;
 use crate::runtime::thread::start::{self, project_dir, start_thread};
 use crate::runtime::{ThreadLock, ThreadRunner, ThreadSetup, model_choice::ModelChoice};
@@ -55,6 +56,8 @@ pub struct Launcher {
     /// Keeps the graph of saved projects current; `None` for chats that leave nothing
     /// behind.
     pub graph: Option<Arc<crate::project::graph::Indexer>>,
+    /// What the teams that run plans keep in memory: a lock and caches.
+    pub(crate) team: Arc<crate::runtime::team::Teams>,
     /// Its chats leave nothing behind: the database is in memory, their files are in the
     /// system's temporary folder, and they write no memory.
     pub temporary: bool,
@@ -135,10 +138,15 @@ impl Launcher {
         tools.add(Box::new(Jobs(owner)));
         let history = ReadHistory::new(Arc::clone(&self.state), thread_id.to_owned());
         tools.add(Box::new(history));
-        tools.add(Box::new(Tasks::new(
-            Arc::clone(&self.state),
-            thread_id.to_owned(),
-        )));
+        let tasks = Tasks::new(Arc::clone(&self.state), thread_id.to_owned());
+        // Only a chat leads a team: its `tasks` is the plan the core runs, when the
+        // switch and the mode say so.
+        tools.add(Box::new(match depth {
+            0 => tasks
+                .lead(Arc::clone(&self.agents))
+                .with_team(Arc::new(team::Runner::new(self.clone()))),
+            _ => tasks,
+        }));
         // A temporary chat reads what is remembered and adds nothing to it.
         if !self.temporary {
             tools.add(Box::new(Remember::user(self.paths.rules_root())));

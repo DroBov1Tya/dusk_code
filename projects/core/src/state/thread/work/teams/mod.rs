@@ -17,6 +17,7 @@ use dusk_protocol::thread::{Team, TeamBudget, TeamEnd, TeamStatus};
 use sqlx::{Row, Sqlite, Transaction, sqlite::SqliteRow};
 
 use super::{PlanTask, State, tasks::root_of};
+use crate::state::MEMBER_SOURCE;
 
 pub use budget::{BudgetBy, TeamCeilings};
 pub use error::{BudgetPart, TeamError};
@@ -99,6 +100,35 @@ impl State {
             .ok_or(TeamError::NoTeam)?;
         transaction.commit().await?;
         Ok(run)
+    }
+
+    /// The chats whose team runs, for the dispatcher's tick.
+    pub async fn running_teams(&self) -> Result<Vec<String>, TeamError> {
+        Ok(
+            sqlx::query_scalar("SELECT thread_id FROM teams WHERE status = 'running'")
+                .fetch_all(&self.pool)
+                .await?,
+        )
+    }
+
+    /// A thread the team made under `lead` for `role` that never got a task and was
+    /// never written to: a claim another task lost, or a stop between making the thread
+    /// and the claim. The next claim of that role takes it instead of a new thread.
+    pub async fn spare_member(&self, lead: &str, role: &str) -> Result<Option<String>, TeamError> {
+        Ok(sqlx::query_scalar(
+            "SELECT t.id FROM threads t
+             WHERE t.parent_thread_id = ?1 AND t.source = ?2 AND t.agent = ?3
+               AND NOT EXISTS (SELECT 1 FROM tasks WHERE owner_thread_id = t.id)
+               AND NOT EXISTS (SELECT 1 FROM messages m
+                               WHERE m.thread_id = t.id AND m.role != 'system')
+               AND NOT EXISTS (SELECT 1 FROM pending_messages p WHERE p.thread_id = t.id)
+             ORDER BY t.created_at, t.id LIMIT 1",
+        )
+        .bind(lead)
+        .bind(MEMBER_SOURCE)
+        .bind(role)
+        .fetch_optional(&self.pool)
+        .await?)
     }
 
     /// The chat's team as stored; `None` when none has run.

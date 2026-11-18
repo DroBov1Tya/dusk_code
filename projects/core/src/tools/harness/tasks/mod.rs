@@ -21,6 +21,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 pub use team::TeamRunner;
+pub use text::short as short_task_id;
 
 use lead::Lead;
 use team::NoTeam;
@@ -119,8 +120,7 @@ impl Tasks {
 
     /// The tasks of a chat, which lead a team when the plan form is on; `agents` are the
     /// roles a task may name. Until `with_team` the plan cannot run.
-    // The launcher's to call, for a chat only; the team runtime (T1) wires it.
-    #[allow(dead_code)]
+    // The launcher's to call, for a chat only.
     pub fn lead(self, agents: Arc<Agents>) -> Self {
         Self {
             lead: Some(Lead::new(agents, Arc::new(NoTeam))),
@@ -129,8 +129,6 @@ impl Tasks {
     }
 
     /// What runs the plan of a chat's `tasks`.
-    // The team runtime (T1) is the caller.
-    #[allow(dead_code)]
     pub fn with_team(mut self, team: Arc<dyn TeamRunner>) -> Self {
         if let Some(lead) = &mut self.lead {
             lead.team = team;
@@ -273,6 +271,7 @@ impl Tool for Tasks {
                     .call(&self.state, &self.thread_id, arguments, &context)
                     .await?;
                 if answer.changed {
+                    lead.team.changed(&self.thread_id).await?;
                     self.tell_clients(&context).await?;
                 }
                 return Ok(answer.text);
