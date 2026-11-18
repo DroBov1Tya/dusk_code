@@ -16,7 +16,16 @@ const EXTENSIONS: &[&str] = &[
 ];
 
 pub fn markdown(id: impl Into<ElementId>, text: String) -> TextView {
-    TextView::markdown(id, linkify(&text))
+    view(id, linkify(&text, false))
+}
+
+/// The model's own answer: as `markdown`, and its `{{tone: label}}` drawn as labels.
+pub fn answer(id: impl Into<ElementId>, text: String) -> TextView {
+    view(id, linkify(&text, true)).markdown_extensions(super::marks::extensions())
+}
+
+fn view(id: impl Into<ElementId>, text: String) -> TextView {
+    TextView::markdown(id, text)
         .selectable(true)
         .code_block_actions(super::code::actions)
         .on_link_click(|url, _, window, cx| {
@@ -45,11 +54,20 @@ fn is_web(url: &str) -> bool {
     url.starts_with("https://") || url.starts_with("http://")
 }
 
-/// Turns each path in a single-backtick span into a link of ours. Fenced code is left
-/// alone, and the scheme is cut from anything the model wrote itself, so only a span
-/// that reads as a relative path can carry it.
-fn linkify(text: &str) -> String {
-    let text = text.replace(FILE_SCHEME, "dusk-file-");
+/// Turns each path in a single-backtick span into a link of ours and, when `marked`, each
+/// label in the prose around them into one too. Fenced code is left alone, and our schemes
+/// are cut from anything the model wrote itself, so only what we made can carry them.
+fn linkify(text: &str, marked: bool) -> String {
+    let text = text
+        .replace(FILE_SCHEME, "dusk-file-")
+        .replace(super::marks::SCHEME, "dusk-mark-");
+    let prose = |out: &mut String, text: &str| {
+        if marked {
+            super::marks::encode(out, text);
+        } else {
+            out.push_str(text);
+        }
+    };
     let mut out = String::with_capacity(text.len());
     let mut fenced = false;
     for line in text.split_inclusive('\n') {
@@ -65,7 +83,7 @@ fn linkify(text: &str) -> String {
             let after = &rest[start + 1..];
             let Some(end) = after.find('`') else { break };
             let span = &after[..end];
-            out.push_str(&rest[..start]);
+            prose(&mut out, &rest[..start]);
             if is_path(span) {
                 out.push_str(&format!("[`{span}`]({FILE_SCHEME}{span})"));
             } else {
@@ -73,7 +91,7 @@ fn linkify(text: &str) -> String {
             }
             rest = &after[end + 1..];
         }
-        out.push_str(rest);
+        prose(&mut out, rest);
     }
     out
 }
@@ -113,7 +131,7 @@ mod tests {
     fn only_a_relative_path_in_code_becomes_a_link() {
         let text = "see `src/main.rs:42`, `README.md` and `self.field`, not `/etc/passwd`, \
                     `../x.rs`, `1.2.3` or [x](dusk-file:/etc/passwd)\n```\n`a/b.rs`\n```\n";
-        let out = linkify(text);
+        let out = linkify(text, false);
         assert!(out.contains("[`src/main.rs:42`](dusk-file:src/main.rs:42)"));
         assert!(out.contains("[`README.md`](dusk-file:README.md)"));
         assert!(out.contains("`self.field`") && !out.contains("](dusk-file:self.field)"));

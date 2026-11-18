@@ -12,7 +12,7 @@ use crate::{
 /// Tools that landed before the clients draw what they make, or before the evals show
 /// they help. Each is off in every mode until `tools:` in the config switches it on by
 /// name; take a name out when it is ready.
-const OFF_UNTIL_SWITCHED_ON: [&str; 4] = ["show", "changes", "project_graph", "recall"];
+const OFF_UNTIL_SWITCHED_ON: [&str; 3] = ["changes", "project_graph", "recall"];
 
 impl Config {
     /// Whether the file switches the tool on, whatever the mode; the tests read it back.

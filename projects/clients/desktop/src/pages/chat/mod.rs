@@ -11,6 +11,7 @@ pub mod dictation;
 pub mod dock;
 mod fireflies;
 pub mod links;
+mod marks;
 mod media;
 pub mod messages;
 pub mod mode_menu;

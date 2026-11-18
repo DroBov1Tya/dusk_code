@@ -168,6 +168,15 @@ scripts/build-web.sh                  # the web page, embedded by the next build
 ```
 
 `Cargo.lock` is committed, so a build uses the dependency versions of a release.
+
+### Keeping the build folder small
+
+Cargo never deletes old artifacts, so `target/` only grows. Give each worktree its own
+target folder and never share one `CARGO_TARGET_DIR` between worktrees: each path builds
+its own copy of every crate anyway, so a shared folder only piles them up. Delete a
+worktree's target folder with the worktree. Now and then run `scripts/clean-build.sh`
+from the repository root: it removes what was not used for 7 days (`--days N` to change
+that, `cargo sweep` when it is installed), or everything with `--all`.
 [CONTRIBUTING.md](CONTRIBUTING.md) has the rules of the code, and
 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) says how we treat each other.
 

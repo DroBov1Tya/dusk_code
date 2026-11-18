@@ -96,7 +96,7 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 if !text.is_empty() {
                     said = said
                         .group(group.clone())
-                        .child(links::markdown(key("said"), text.clone()))
+                        .child(links::answer(key("said"), text.clone()))
                         .child(copy(text, cx));
                 }
                 said.into_any_element()
