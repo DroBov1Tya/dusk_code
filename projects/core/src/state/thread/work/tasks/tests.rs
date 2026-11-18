@@ -1,5 +1,12 @@
 use crate::testing::temp_state;
 
+mod claims;
+mod graph;
+mod kit;
+mod machine;
+mod migration;
+mod property;
+
 #[tokio::test]
 async fn an_agent_reaches_only_its_own_tasks() {
     let state = temp_state("tasks_own").await;
