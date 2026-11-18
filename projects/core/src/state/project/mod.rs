@@ -1,7 +1,9 @@
 //! Projects: named folders. Their chats are found by folder, so none is stored here.
-//! `env` keeps a project's variables, `schedules` its scheduled tasks.
+//! `env` keeps a project's variables, `schedules` its scheduled tasks, `episodes` what
+//! ended a problem in it.
 
 mod env;
+mod episodes;
 mod schedules;
 
 use std::path::PathBuf;
@@ -12,6 +14,7 @@ use sqlx::{Row, sqlite::SqliteRow};
 use super::{State, timestamp_ms};
 
 pub use dusk_protocol::project::Project;
+pub use episodes::{Episode, EpisodeKind, NewEpisode, Recall};
 
 impl State {
     pub async fn list_projects(&self) -> Result<Vec<Project>> {

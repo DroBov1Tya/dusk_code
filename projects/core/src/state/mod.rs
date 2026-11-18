@@ -14,6 +14,10 @@ mod usage;
 
 pub use agents::{AgentPhase, Identity};
 pub use db::State;
+// Used by tasks E2 to E5 (recording, the lesson, `recall`, clients); until they land
+// only tests do.
+#[allow(unused_imports)]
+pub use project::{Episode, EpisodeKind, NewEpisode, Recall};
 pub use thread::{
     BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Ended, Goal,
     GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent,
