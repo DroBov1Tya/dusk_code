@@ -10,6 +10,7 @@ mod plan_edit;
 mod read_history;
 mod remember;
 mod show;
+mod stored_result;
 mod tasks;
 
 pub use ask_user::{AskUser, Question};
