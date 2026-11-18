@@ -122,7 +122,7 @@ impl Workspace {
             rates: HashMap::new(),
             git: None,
             touched: Vec::new(),
-            review: crate::pages::review::Review::new(),
+            review: crate::pages::review::Review::new(window, cx),
             focus: cx.focus_handle(),
             agents_trigger_focus: cx.focus_handle(),
             modal_focus: cx.focus_handle(),

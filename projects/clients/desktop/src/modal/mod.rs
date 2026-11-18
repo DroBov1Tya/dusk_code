@@ -92,6 +92,8 @@ pub enum Modal {
     Uninstall(crate::pages::settings::uninstall::Uninstall),
     /// Forgetting every connected provider, after a yes.
     RemoveProviders,
+    /// A push or a discard of the review page, after a yes.
+    Git(crate::pages::review::GitConfirm),
     /// Installing or removing a plugin of the store, after a yes.
     Workshop(crate::pages::connectors::plugins::Confirm),
     /// A listing of the Workshop as a store page, by its source and name.
@@ -194,6 +196,14 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             480.,
             crate::pages::settings::providers::confirm_remove_all(cx),
         ),
+        Modal::Git(confirm) => {
+            let confirm = confirm.clone();
+            (
+                "Git".to_owned(),
+                480.,
+                crate::pages::review::git_confirm(&confirm, cx),
+            )
+        }
         Modal::VoiceMissing { speech } => (
             "Voice".to_owned(),
             480.,

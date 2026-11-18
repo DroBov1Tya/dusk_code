@@ -1,6 +1,9 @@
 //! The chosen file's diff: hunk headings and lines with their numbers and colors.
 
-use dusk_protocol::project::{ChangeKind, DiffKind};
+use dusk_protocol::{
+    client::GitRequest,
+    project::{ChangeKind, DiffKind},
+};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -32,6 +35,12 @@ pub fn diff(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
             .find_map(|line| line.new),
     );
     let can_open = file.kind != ChangeKind::Deleted;
+    let staged = ws.git.as_ref().is_some_and(|git| {
+        git.changes
+            .iter()
+            .any(|change| change.path == file.path && change.staged)
+    });
+    let (stage_path, discard_path) = (file.path.clone(), file.path.clone());
     let title = div()
         .flex()
         .flex_row()
@@ -50,6 +59,38 @@ pub fn diff(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
             ChangeKind::Modified => "modified",
         }))
         .child(div().flex_1())
+        .child(
+            Button::new("review-stage")
+                .ghost()
+                .small()
+                .icon(if staged {
+                    IconName::Minus
+                } else {
+                    IconName::Plus
+                })
+                .label(if staged { "Unstage" } else { "Stage" })
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    let paths = vec![stage_path.clone()];
+                    let request = match staged {
+                        true => GitRequest::Unstage { paths },
+                        false => GitRequest::Stage { paths },
+                    };
+                    ws.run_git(request, cx);
+                })),
+        )
+        .child(
+            Button::new("review-discard")
+                .ghost()
+                .small()
+                .icon(IconName::Undo2)
+                .label("Discard")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.modal = Some(crate::modal::Modal::Git(super::GitConfirm::Discard {
+                        path: discard_path.clone(),
+                    }));
+                    cx.notify();
+                })),
+        )
         .when(can_open, |row| {
             row.child(
                 Button::new("review-open-file")

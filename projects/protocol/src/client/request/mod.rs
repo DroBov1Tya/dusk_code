@@ -30,6 +30,7 @@ pub enum Request {
 }
 
 mod catalog;
+mod git;
 mod plugin;
 mod project;
 mod settings;
@@ -39,6 +40,7 @@ mod voice;
 mod work;
 
 pub use catalog::CatalogRequest;
+pub use git::GitRequest;
 pub use plugin::PluginRequest;
 pub use project::ProjectRequest;
 pub use settings::{ProviderTarget, SettingsRequest, Switch};

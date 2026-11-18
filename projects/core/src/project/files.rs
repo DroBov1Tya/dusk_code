@@ -69,10 +69,12 @@ mod tests {
             Change {
                 path: "src/a.rs".into(),
                 kind: ChangeKind::Modified,
+                staged: false,
             },
             Change {
                 path: "new".into(),
                 kind: ChangeKind::Untracked,
+                staged: false,
             },
         ];
         assert_eq!(change_of(&changes, "src", true), Some(ChangeKind::Modified));

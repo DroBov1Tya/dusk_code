@@ -57,4 +57,17 @@ pub enum ChangeKind {
 pub struct Change {
     pub path: String,
     pub kind: ChangeKind,
+    /// Whether the index holds a change of it, all or part.
+    #[serde(default)]
+    pub staged: bool,
+}
+
+/// What a change of the repository left: git's own words, and the files a merge or a
+/// pull left in conflict.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitOutcome {
+    /// Plain and capped; empty when git said nothing.
+    pub message: String,
+    /// Relative to the project folder.
+    pub conflicts: Vec<String>,
 }

@@ -247,6 +247,10 @@ fn project(request: &Project) -> Area {
         | Project::Git { .. }
         | Project::Diff { .. }
         | Project::SwitchBranch { .. }
+        // As a branch switch: a client that may change projects may change their
+        // repositories. A scope bound to threads takes none of them; push and discard
+        // are asked of the user by the client before they are sent.
+        | Project::Repository { .. }
         | Project::Files { .. }
         | Project::Outputs
         | Project::Env { .. }

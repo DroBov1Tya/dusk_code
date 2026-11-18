@@ -143,5 +143,6 @@ fn touched(edit: &Edit) -> Change {
             EditKind::Modified => ChangeKind::Modified,
             EditKind::Deleted => ChangeKind::Deleted,
         },
+        staged: false,
     }
 }

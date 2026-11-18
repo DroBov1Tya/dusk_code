@@ -7,8 +7,8 @@ use crate::catalog::{NodeText, SkillPack};
 use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
-    Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, OutputFile, Project,
-    Schedule,
+    Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile,
+    Project, PullRequest, PullRequestDetail, Schedule,
 };
 use crate::system::SystemReport;
 use crate::thread::{
@@ -64,6 +64,10 @@ pub enum Response {
     Schedules(Vec<Schedule>),
     Project(Project),
     Git(GitInfo),
+    /// What a change of a repository left.
+    GitDone(GitOutcome),
+    PullRequests(Vec<PullRequest>),
+    PullRequest(Box<PullRequestDetail>),
     Diff(Vec<FileDiff>),
     Files(Vec<FileEntry>),
     Changes(Vec<Change>),

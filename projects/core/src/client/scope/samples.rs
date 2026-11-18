@@ -2,9 +2,9 @@
 
 use dusk_protocol::{
     client::{
-        CatalogRequest as C, Command as Cmd, PluginRequest as Pl, ProjectRequest as P,
-        ProviderTarget, Request as R, Secret, SettingsRequest as S, Switch, TerminalRequest as Te,
-        ThreadRequest as T, VoiceRequest as V, WorkRequest as W,
+        CatalogRequest as C, Command as Cmd, GitRequest as G, PluginRequest as Pl,
+        ProjectRequest as P, ProviderTarget, Request as R, Secret, SettingsRequest as S, Switch,
+        TerminalRequest as Te, ThreadRequest as T, VoiceRequest as V, WorkRequest as W,
     },
     config::{ContextPolicy, Profile, ProviderKind, VoiceSettings},
     plugin::{StoreRequest as St, UiEvent},
@@ -244,6 +244,13 @@ fn catalog() -> Vec<C> {
     ]
 }
 
+fn repository(request: G) -> P {
+    P::Repository {
+        id: word(),
+        request,
+    }
+}
+
 fn projects() -> Vec<P> {
     vec![
         P::List,
@@ -267,6 +274,36 @@ fn projects() -> Vec<P> {
             id: word(),
             path: word(),
         },
+        repository(G::CreateBranch {
+            name: word(),
+            base: None,
+        }),
+        repository(G::Stage {
+            paths: vec![word()],
+        }),
+        repository(G::StageAll),
+        repository(G::Unstage {
+            paths: vec![word()],
+        }),
+        repository(G::Commit { message: word() }),
+        repository(G::Discard { path: word() }),
+        repository(G::Merge { branch: word() }),
+        repository(G::AbortMerge),
+        repository(G::AddWorktree {
+            branch: word(),
+            base: None,
+        }),
+        repository(G::RemoveWorktree { path: "/x".into() }),
+        repository(G::Fetch),
+        repository(G::Pull),
+        repository(G::Push),
+        repository(G::PullRequests),
+        repository(G::PullRequest { number: 1 }),
+        repository(G::CreatePullRequest {
+            title: word(),
+            body: word(),
+            base: None,
+        }),
         P::Outputs,
         P::Env { id: word() },
         P::SetEnv {
