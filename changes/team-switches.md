@@ -1,0 +1,2 @@
+Added
+Settings for teams of agents, all off or at their defaults and read by nothing yet: the `limits` switches `plan_graph`, `task_packets`, `member_worktrees`, `peer_messages` and `procedures`; the ceilings `team_at_once` (1 to 8, at most `max_agents_at_work` in effect), `team_max_steps` (10 to 5,000), `team_max_tokens` (100,000 to 100,000,000) and `team_max_minutes` (5 to 1,440); and a `team` section with `model` and `models` per role, as `provider/model`.

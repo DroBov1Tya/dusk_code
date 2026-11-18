@@ -136,6 +136,39 @@ pub struct Limits {
     /// lesson adds to the facts.
     #[serde(default)]
     pub episode_lesson: bool,
+    /// Whether the chat in ORCHESTRATOR mode gets the plan form of `tasks` (tasks that
+    /// depend on each other, and `run`, which has the core start the team). Off until the
+    /// evals show the lead needs fewer steps (`docs/plan-and-teams.md`).
+    #[serde(default)]
+    pub plan_graph: bool,
+    /// Whether a team member gets its own prompt, tool set, task card and a one-line
+    /// hand-in, instead of today's subagent prompt. Off until the evals show it helps.
+    #[serde(default)]
+    pub task_packets: bool,
+    /// Whether each writing member works in its own git worktree and branch. Off until
+    /// the evals show the pass rate does not fall.
+    #[serde(default)]
+    pub member_worktrees: bool,
+    /// Whether members of a team may message each other (`message`, and `task` for
+    /// them). Off until the evals show it helps.
+    #[serde(default)]
+    pub peer_messages: bool,
+    /// Whether a task may name a procedure that hands its steps out one at a time. Off
+    /// until the evals show it helps.
+    #[serde(default)]
+    pub procedures: bool,
+    /// Members of one team that work at once; never above `max_agents_at_work`.
+    #[serde(default = "default_team_at_once")]
+    pub team_at_once: usize,
+    /// The most model steps a team may spend before it ends.
+    #[serde(default = "default_team_max_steps")]
+    pub team_max_steps: u32,
+    /// The most tokens a team may spend, prompt and completion together.
+    #[serde(default = "default_team_max_tokens")]
+    pub team_max_tokens: u64,
+    /// The most minutes a team may run.
+    #[serde(default = "default_team_max_minutes")]
+    pub team_max_minutes: u32,
 }
 
 impl Default for Limits {
@@ -169,7 +202,24 @@ impl Default for Limits {
             project_graph: false,
             episodes: false,
             episode_lesson: false,
+            plan_graph: false,
+            task_packets: false,
+            member_worktrees: false,
+            peer_messages: false,
+            procedures: false,
+            team_at_once: default_team_at_once(),
+            team_max_steps: default_team_max_steps(),
+            team_max_tokens: default_team_max_tokens(),
+            team_max_minutes: default_team_max_minutes(),
         }
+    }
+}
+
+impl Limits {
+    /// Members that may work at once: `team_at_once`, cut to `max_agents_at_work`. Cut, not
+    /// refused, so a config that allows two agents still loads with the default of three.
+    pub fn team_members_at_once(&self) -> usize {
+        self.team_at_once.min(self.max_agents_at_work)
     }
 }
 
@@ -254,6 +304,77 @@ pub const MAX_COMPACT_TAIL_TOKENS: u64 = 64_000;
 
 fn default_compact_tail_tokens() -> u64 {
     16_000
+}
+
+/// A team's ceilings. The floors keep a plan able to finish one task; the tops keep a
+/// mistyped number from being an open-ended bill.
+pub const MIN_TEAM_AT_ONCE: usize = 1;
+pub const MAX_TEAM_AT_ONCE: usize = 8;
+pub const MIN_TEAM_MAX_STEPS: u32 = 10;
+pub const MAX_TEAM_MAX_STEPS: u32 = 5_000;
+pub const MIN_TEAM_MAX_TOKENS: u64 = 100_000;
+pub const MAX_TEAM_MAX_TOKENS: u64 = 100_000_000;
+pub const MIN_TEAM_MAX_MINUTES: u32 = 5;
+pub const MAX_TEAM_MAX_MINUTES: u32 = 1_440;
+
+fn default_team_at_once() -> usize {
+    3
+}
+
+fn default_team_max_steps() -> u32 {
+    400
+}
+
+fn default_team_max_tokens() -> u64 {
+    4_000_000
+}
+
+fn default_team_max_minutes() -> u32 {
+    120
+}
+
+/// A role name is an agent's folder name.
+const MAX_ROLE_NAME: usize = 64;
+
+/// Which model a team's members answer on, as `provider/model`. The user's alone: a role
+/// from a pack must not choose what the user pays for. A member's model is `models[role]`,
+/// else `model`, else the chat's.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Team {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model: Option<String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub models: BTreeMap<String, String>,
+}
+
+impl Team {
+    pub(super) fn is_default(&self) -> bool {
+        *self == Self::default()
+    }
+
+    pub(super) fn validate(&self) -> anyhow::Result<()> {
+        for model in self.model.iter().chain(self.models.values()) {
+            let named = model.split_once('/').is_some_and(|(provider, model)| {
+                !provider.trim().is_empty() && !model.trim().is_empty()
+            });
+            anyhow::ensure!(
+                named && !model.chars().any(char::is_control),
+                "team models must be written as provider/model"
+            );
+        }
+        for role in self.models.keys() {
+            anyhow::ensure!(
+                !role.is_empty()
+                    && role.len() <= MAX_ROLE_NAME
+                    && role
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
+                "team.models keys must be role names of up to {MAX_ROLE_NAME} of a-z, 0-9, - and _"
+            );
+        }
+        Ok(())
+    }
 }
 
 /// What the core records about its work. Off, nothing is written or sent at all.
