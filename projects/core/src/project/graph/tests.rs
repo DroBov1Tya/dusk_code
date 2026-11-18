@@ -14,7 +14,21 @@ use super::{
 
 const FIXTURE: &str = include_str!("fixtures/library.rs");
 
+/// The outline with no limit of time: what a test expects of a source must not depend on
+/// how busy the machine is. The limit has its own tests, which count the clock or read it.
 fn rust(source: impl AsRef<[u8]>) -> Result<Outline, Skipped> {
+    parse_until(
+        Language::Rust,
+        "core/src/library.rs",
+        source.as_ref(),
+        &|| false,
+    )
+    .expect("the Rust grammar loads and gives a tree")
+    .outline
+}
+
+/// The outline as the indexer asks for it, within 250 ms of the machine's clock.
+fn rust_in_time(source: impl AsRef<[u8]>) -> Result<Outline, Skipped> {
     parse(Language::Rust, "core/src/library.rs", source.as_ref())
         .expect("the Rust grammar loads and gives a tree")
         .outline
@@ -140,14 +154,15 @@ fn the_text_of_a_string_or_a_comment_is_never_a_name() {
 
 #[test]
 fn nothing_is_kept_after_a_string_that_never_closes() {
-    // The parser reads the rest of such a file as code, and a key in it as a name.
+    // Such a string runs to the end of the file, as the compiler reads it. The function
+    // it is in has no end either, so it is no symbol.
     let source = "fn before() { Kept::call(); }\n\
                   fn broken() { let key = \"AKIAIOSFODNN7EXAMPLE secret_call(); Leaked::now(); }\n\
                   fn after() { AlsoLeaked::now(); }\n";
     let outline = rust(source).unwrap();
     assert_eq!(
         written(&outline),
-        "function - before 1-1\nfunction - broken 2-2\nuse Kept 1 x1 -\nuse call 1 x1 -\n"
+        "function - before 1-1\nuse Kept 1 x1 -\nuse call 1 x1 -\n"
     );
     // The same for raw strings, whose text holds quotes of its own.
     for opener in ["r#\"", "r##\"", "br#\"", "r\""] {
@@ -186,6 +201,48 @@ fn nothing_is_kept_from_a_block_comment_that_never_closes() {
             );
         }
     }
+}
+
+#[test]
+fn a_comment_the_parser_takes_for_code_gives_no_name() {
+    // The grammar's scanner for comments and strings gives up while the parser recovers
+    // from an error, and their text is then read as code. Found by the property test
+    // below: a stray byte, a doc comment, and the next comment came out as names.
+    for source in [
+        "~\n///\n//Hunter2Prod",
+        "~\n/// doc\n// Hunter2Prod::leak() is the password\nfn kept() {}\n",
+        "~\n/// doc\n/// Hunter2Prod\nfn kept() {}\n",
+        "~\n//!\n// Hunter2Prod\nfn kept() {}\n",
+        "~\n///\n/* Hunter2Prod::leak() */\nfn kept() {}\n",
+    ] {
+        let outline = rust(source).unwrap();
+        let kept = names(&outline);
+        assert!(
+            kept.iter().all(|name| *name == "kept"),
+            "{source:?} {kept:?}"
+        );
+    }
+    // The input the property test failed on: a `~` put before the last test of the
+    // fixture, and the fixture's first line, a `//!` comment, moved into that test.
+    let mut lines: Vec<&str> = FIXTURE.lines().collect();
+    lines.insert(123, "~");
+    lines.swap(0, 125);
+    let outline = rust(lines.join("\n")).unwrap();
+    let kept = names(&outline);
+    assert!(kept.contains(&"Library"), "{kept:?}");
+    assert!(kept.iter().all(|name| !name.contains("MARKER")), "{kept:?}");
+}
+
+#[test]
+fn a_comment_inside_an_import_is_not_part_of_its_path() {
+    // Valid Rust, and a path may hold `/` and `*`: the comment's text was stored with it.
+    let outline = rust("use a /* Hunter2Prod */ ::b;\nuse c::{ // Hunter2Prod\n d };\n").unwrap();
+    let kept = names(&outline);
+    assert!(kept.contains(&"b") && kept.contains(&"c::d"), "{kept:?}");
+    assert!(
+        kept.iter().all(|name| !name.contains("Hunter2Prod")),
+        "{kept:?}"
+    );
 }
 
 #[test]
@@ -353,7 +410,7 @@ fn shapes_made_to_be_slow_or_deep_end_in_time() {
         ];
         for (shape, source) in shapes {
             let started = Instant::now();
-            let outline = rust(&source);
+            let outline = rust_in_time(&source);
             let took = started.elapsed();
             let ended = outline.as_ref().map(|outline| outline.symbols.len());
             println!("{shape}, {} bytes: {took:?}, {ended:?}", source.len());

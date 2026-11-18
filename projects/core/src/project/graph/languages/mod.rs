@@ -32,6 +32,10 @@ pub struct Spec {
     /// The bytes that open a string able to run to the end of the file. One of them in
     /// an `@error` means a string was never closed.
     pub quotes: &'static [u8],
+    /// The source with the text of its strings and comments replaced by spaces, byte for
+    /// byte. The parser is handed this and never the file, so nothing written in a string
+    /// or a comment can come out as a name, however the parser recovers from an error.
+    pub blank: fn(&[u8]) -> Vec<u8>,
     /// Gives every name an `@import` node brings in.
     pub imports: fn(Node, &[u8], ImportSink),
 }

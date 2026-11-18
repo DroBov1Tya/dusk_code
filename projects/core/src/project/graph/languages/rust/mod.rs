@@ -1,5 +1,9 @@
 //! Rust: what its files are called, and how a `use` splits into the names it imports.
 
+mod blank;
+#[cfg(test)]
+mod blank_tests;
+
 use std::rc::Rc;
 
 use tree_sitter::Node;
@@ -15,6 +19,7 @@ pub const SPEC: Spec = Spec {
     test_file,
     module,
     quotes: b"\"",
+    blank: blank::blank,
     imports,
 };
 
