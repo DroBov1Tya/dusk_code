@@ -10,6 +10,8 @@ Use exactly these sections:
 2. Completed tasks: what is done and how it was checked.
 3. Open tasks: what is not done yet, with known problems.
 4. Current task: what was in progress at the end, and the next step.
-5. Paths and files: every file, directory, URL and command that matters, one line each
+5. Decisions: what was chosen and why, so it is not reopened.
+6. Paths and files: every file, directory, URL and command that matters, one line each
    on why.
-6. Summary: everything else worth keeping, in a few sentences.
+7. Stored results worth reading (result N: what it holds), if any.
+8. Summary: everything else worth keeping, in a few sentences.

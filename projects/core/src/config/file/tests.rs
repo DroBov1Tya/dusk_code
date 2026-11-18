@@ -245,6 +245,34 @@ fn stubs_are_off_and_their_limits_stay_inside_their_bounds() {
 }
 
 #[test]
+fn the_kept_tail_is_off_and_stays_inside_its_bounds() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(!plain.compact_tail && !plain.compact_early);
+    assert_eq!(plain.compact_tail_tokens, 16_000);
+    let set = parse(
+        "limits:\n  compact_tail: true\n  compact_early: true\n  compact_tail_tokens: 2000\n",
+    )
+    .unwrap()
+    .limits();
+    assert!(set.compact_tail && set.compact_early);
+    assert_eq!(set.compact_tail_tokens, 2_000);
+    let set = parse("limits:\n  compact_tail_tokens: 64000\n")
+        .unwrap()
+        .limits();
+    assert_eq!(set.compact_tail_tokens, 64_000);
+    for bad in [
+        "limits:\n  compact_tail: yes please\n",
+        "limits:\n  compact_early: 1\n",
+        "limits:\n  compact_tail_tokens: 1999\n",
+        "limits:\n  compact_tail_tokens: 64001\n",
+        "limits:\n  compact_tail_tokens: -16000\n",
+        "limits:\n  compact_tail_tokens: lots\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
 fn the_failure_ladder_is_off_and_its_rungs_rise() {
     let plain = parse(PROVIDERS).unwrap().limits();
     assert!(!plain.failure_ladder);

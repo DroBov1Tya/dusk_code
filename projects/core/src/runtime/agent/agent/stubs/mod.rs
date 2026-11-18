@@ -22,7 +22,7 @@ use crate::{
     runtime::{ThreadEvent, thread::Conversation},
     state::{CallEnd, Message, MessageRole, NewStub, calls_of, saved_tokens},
 };
-use text::{Stored, stub_text};
+use text::{Stored, index_line, stub_text};
 
 /// The tools whose results are put away: they hold nearly all tool tokens, and what they
 /// did fits in a line. Questions, agents, plans, goals, MCP tools and the rest never are.
@@ -38,6 +38,11 @@ const MIN_SAVED_TOKENS: u64 = 4_000;
 const WARM_SHARE: (u64, u64) = (3, 5);
 /// After this long without a model call the provider's cache is taken to be gone.
 const COLD_AFTER_MS: i64 = 300_000;
+/// Results a compaction's index lists at most, the newest it covers.
+const INDEX_LINES: usize = 30;
+/// Heads the index; the lines after it are built by the core alone.
+const INDEX_INTRO: &str =
+    "Stored results, newest last (read_history {\"result\": N} returns one whole):";
 
 /// A stored result old enough to put away, and the call it answers.
 struct Candidate<'a> {
@@ -87,10 +92,6 @@ impl Agent {
     /// Puts away every old result of `conversation` now, with no thresholds, and updates
     /// its stubs: for the context after a compaction, which is read cold anyway.
     /// Nothing happens with `limits.stub_results` off.
-    #[cfg_attr(
-        not(test),
-        expect(dead_code, reason = "compaction that keeps a tail calls it next")
-    )]
     pub async fn put_away_all_results(
         &self,
         conversation: &mut Conversation,
@@ -100,6 +101,47 @@ impl Agent {
             return Ok(());
         }
         self.put_away(conversation, limits, When::Now).await
+    }
+
+    /// The index a compaction's summary through `through` ends with: a line for each of
+    /// the newest results it covers that are large enough to put away, so the model still
+    /// knows what it can get back. Built from stored data only; empty when there are none.
+    pub async fn stored_results_index(
+        &self,
+        conversation: &Conversation,
+        through: u64,
+        limits: &Limits,
+    ) -> Result<String> {
+        let calls = calls_of(&conversation.messages);
+        let mut covered: Vec<_> = conversation
+            .messages
+            .iter()
+            .filter(|message| message.role == MessageRole::Tool && message.sequence <= through)
+            .filter(|message| message.content_tokens >= limits.stub_min_tokens)
+            .filter_map(|result| Some((result, calls.get(result.message_id.as_str())?.1)))
+            .collect();
+        let newest = covered.split_off(covered.len().saturating_sub(INDEX_LINES));
+        let Some((first, _)) = newest.first() else {
+            return Ok(String::new());
+        };
+        let ends = self
+            .state
+            .call_ends(&self.thread_id, first.sequence)
+            .await?;
+        let lines: Vec<String> = newest
+            .iter()
+            .map(|(result, call)| {
+                index_line(&Stored {
+                    sequence: result.sequence,
+                    tool: &call.name,
+                    arguments: &call.arguments,
+                    end: ends.get(&result.message_id).copied(),
+                    content: &result.content,
+                    tokens: result.content_tokens,
+                })
+            })
+            .collect();
+        Ok(format!("\n\n{INDEX_INTRO}\n{}", lines.join("\n")))
     }
 
     async fn put_away(

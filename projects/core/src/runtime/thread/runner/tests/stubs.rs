@@ -18,7 +18,7 @@ const ANTHROPIC: &str =
 
 /// Called as `run_command`: prints `lines` lines of 80 bytes (20 tokens), then `last`;
 /// with `fail`, as an error.
-struct Command;
+pub(super) struct Command;
 
 impl Tool for Command {
     fn name(&self) -> &'static str {
