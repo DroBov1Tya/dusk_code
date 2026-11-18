@@ -185,8 +185,9 @@ pub(super) struct Rig {
     pub input: ThreadInput,
 }
 
-/// The settings every test starts from: the plan form on, in the mode that offers it.
-pub(super) const ON: &str = "mode: ORCHESTRATOR\nlimits:\n  plan_graph: true\n";
+/// The settings every test starts from: the mode that offers the plan and runs a team.
+// Tests add their own `limits` lines to it.
+pub(super) const ON: &str = "mode: TEAM\nlimits:\n  plan_graph: true\n";
 
 impl Rig {
     pub async fn new(name: &str, script: impl Fn(&Asked) -> Out + Send + Sync + 'static) -> Self {

@@ -3,7 +3,7 @@
 //! a step or a whole task done. Steps are timed as they run. The board lives in the
 //! database, so it outlives a compaction.
 //!
-//! A chat in ORCHESTRATOR mode with `limits.plan_graph` on is offered the plan form
+//! A chat in TEAM mode (unless `limits.plan_graph` is off) is offered the plan form
 //! instead (`lead`): the same rows as a plan the core runs with a team. The board's
 //! `add_items`, `start` and `done` are still taken there, never on a task the team has
 //! given out. Anywhere else the tool is byte for byte the board.
@@ -29,7 +29,7 @@ use team::NoTeam;
 use crate::tools::{Tool, ToolContext, schema, schema::parse_arguments};
 use crate::{
     BoxFuture,
-    catalog::{agents::Agents, modes::ORCHESTRATOR},
+    catalog::{agents::Agents, modes::TEAM},
     runtime::ThreadEvent,
     state::{PlanError, PlanStatus, State, Task},
 };
@@ -136,11 +136,12 @@ impl Tasks {
         self
     }
 
-    /// The plan form, when this is a chat's, its mode ORCHESTRATOR and the switch on.
+    /// The plan form, when this is a chat's and its mode is TEAM. `limits.plan_graph`
+    /// is the kill switch.
     fn plan_form(&self, context: &ToolContext) -> Option<&Lead> {
         let lead = self.lead.as_ref()?;
         let config = &context.config;
-        (config.limits().plan_graph && config.mode() == ORCHESTRATOR).then_some(lead)
+        (config.limits().plan_graph && config.mode() == TEAM).then_some(lead)
     }
 
     /// The board's actions do not touch a task the team has given out: its review, the
@@ -283,7 +284,7 @@ impl Tool for Tasks {
                     .any(|field| arguments.get(field).is_some())
             {
                 bail!(
-                    "the plan's actions need ORCHESTRATOR mode and limits.plan_graph; \
+                    "the plan's actions need TEAM mode; \
                      use add with task and items"
                 );
             }

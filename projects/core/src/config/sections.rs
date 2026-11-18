@@ -130,10 +130,10 @@ pub struct Limits {
     /// at the end of its answer, stored with the episode.
     #[serde(default = "yes")]
     pub episode_lesson: bool,
-    /// Whether the chat in ORCHESTRATOR mode gets the plan form of `tasks` (tasks that
-    /// depend on each other, and `run`, which has the core start the team). Off until the
-    /// evals show the lead needs fewer steps.
-    #[serde(default)]
+    /// The kill switch of teams. On, a chat in TEAM mode gets the plan form of `tasks`
+    /// (tasks that depend on each other, and `run`, which has the core start the team).
+    /// Off, TEAM mode has the board like any other mode and no team runs.
+    #[serde(default = "yes")]
     pub plan_graph: bool,
     /// Whether a team member gets its own prompt, tool set, task card and a one-line
     /// hand-in, instead of today's subagent prompt. Off until the evals show it helps.
@@ -196,7 +196,7 @@ impl Default for Limits {
             project_graph: true,
             episodes: true,
             episode_lesson: true,
-            plan_graph: false,
+            plan_graph: true,
             task_packets: false,
             member_worktrees: false,
             peer_messages: false,

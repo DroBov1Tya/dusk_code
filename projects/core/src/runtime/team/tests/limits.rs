@@ -62,7 +62,7 @@ async fn a_member_has_no_tool_to_start_agents_change_the_plan_or_write_to_the_le
 
 #[tokio::test]
 async fn with_the_switch_off_nothing_runs_and_the_lead_has_the_board() {
-    let rig = Rig::with("team_off", "mode: ORCHESTRATOR\n", all_done).await;
+    let rig = Rig::with("team_off", "mode: TEAM\nlimits:\n  plan_graph: false\n", all_done).await;
     let ids = rig.plan(&[task("one")]).await;
 
     let refused = rig.run_with(|budget| budget).await;
