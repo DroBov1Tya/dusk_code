@@ -1,5 +1,5 @@
-//! The middle column: the pinned bar, the shown chat's transcript, the cards that wait for the user,
-//! the composer and the bar under it.
+//! The middle column: the shown chat's transcript with its pins' drawer on top, the cards
+//! that wait for the user, the composer and the bar under it.
 
 mod access_menu;
 mod approval;
@@ -78,9 +78,9 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             ws.attachments.extend(paths.paths().iter().cloned());
             cx.notify();
         }))
-        .children(pins::render(ws, cx))
         .children(notice)
         .children(crate::pages::schedules::report::render(ws, cx))
+        .children(pins::handle(ws, cx))
         .child(
             div()
                 .relative()
@@ -88,11 +88,11 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 .min_h_0()
                 .child(body)
                 .children(fireflies::render(ws, cx))
-                .children(to_bottom(ws, cx)),
+                .children(to_bottom(ws, cx))
+                .children(pins::drawer(ws, cx)),
         )
         .children(dock::plan_strip(ws, cx))
         .child(approval::render(ws, cx))
-        .children(dock::views_tab(ws, window, cx))
         .child(composer::render(ws, window, cx))
         .child(div().h(px(12.)))
 }

@@ -41,7 +41,6 @@ pub enum Part {
     Model,
     History,
     Agents,
-    Context,
 }
 
 /// Where each part stands. A part a place does not know is passed over there.
@@ -72,7 +71,7 @@ pub struct Layout {
 }
 
 /// Parts an earlier version had; a kept layout that names one loads without it.
-const RETIRED: &[&str] = &["simulator"];
+const RETIRED: &[&str] = &["simulator", "context"];
 
 /// A list of parts, less the retired ones. Any other name it does not know is an error.
 fn parts<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<Part>, D::Error> {
@@ -97,7 +96,7 @@ impl Default for Layout {
             under_left: vec![Mode],
             under_right: vec![Model],
             side_left: vec![History, Plugins],
-            side_right: vec![Agents, Context],
+            side_right: vec![Agents],
         }
     }
 }
