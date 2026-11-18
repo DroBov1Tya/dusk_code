@@ -78,7 +78,12 @@ pub(crate) async fn member_event(
     };
     // From its first event on this runner moves the member's task; recovery leaves
     // the member to it.
-    launcher.team.served.lock().insert(member.id.clone());
+    {
+        let mut served = launcher.team.served.lock();
+        if !served.contains(&member.id) {
+            served.insert(member.id.clone());
+        }
+    }
     let moved = match event {
         ThreadEvent::TurnStarted(turn) | ThreadEvent::TurnRunning(turn) => {
             started(launcher, lead, member, turn).await

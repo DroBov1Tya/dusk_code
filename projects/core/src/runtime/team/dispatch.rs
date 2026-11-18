@@ -17,6 +17,7 @@ use super::{
     member::{self, Given},
 };
 use crate::{
+    catalog::modes::TEAM,
     runtime::{Launcher, agent::MAX_AGENT_MESSAGES},
     state::{PlanStatus, PlanTask, TeamAsk, TeamCheck, TeamRun, WaitsOn},
 };
@@ -45,6 +46,12 @@ pub(super) async fn pass(launcher: &Launcher, lead: &str, now: i64) -> Result<us
     expire(launcher, lead, now).await?;
     wake_members(launcher, lead, &folder).await?;
     gate::resume(launcher, lead).await?;
+    // A team is led only in TEAM mode. In another mode the lead has no plan tool to
+    // answer with, so nothing new is given out and the stall rule does not wake it;
+    // what is at work finishes, and the team goes on when the mode is back.
+    if launcher.config.current().mode() != TEAM {
+        return Ok(0);
+    }
     let Some(given) = give_out(launcher, &run, &folder, now).await? else {
         return Ok(0);
     };

@@ -173,3 +173,35 @@ async fn a_role_answers_on_its_own_model_and_one_that_cannot_answer_fails_the_ta
     );
     assert_eq!(rig.members().await.len(), 1);
 }
+
+#[tokio::test]
+async fn outside_team_mode_nothing_is_given_out_and_the_mode_coming_back_goes_on() {
+    let rig = Rig::new("team_mode_left", hang).await;
+    let ids = rig.plan(&[task("one"), task("two")]).await;
+    rig.run_with(|budget| {
+        TeamBudget::new(1, budget.steps(), budget.tokens(), budget.minutes()).unwrap()
+    })
+    .await
+    .unwrap();
+    assert_eq!(rig.status(&ids[1]).await, PlanStatus::Open);
+    let config = &rig.launcher().config;
+    config
+        .update(|config| config.set_mode("MAIN".into()))
+        .unwrap();
+    // The member at work is gone and its task is back: a slot is free.
+    let member = rig.members().await.remove(0);
+    rig.state()
+        .release_task(&rig.lead, &ids[0], "lost")
+        .await
+        .unwrap();
+    super::super::end::cancel_member(rig.launcher(), &member).await;
+
+    assert_eq!(rig.pass().await, 0);
+    assert!(rig.run_with(|budget| budget).await.is_err());
+    assert_eq!(rig.ended().await, None);
+
+    config
+        .update(|config| config.set_mode("TEAM".into()))
+        .unwrap();
+    assert_eq!(rig.pass().await, 1);
+}

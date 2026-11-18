@@ -1,6 +1,6 @@
 //! The command gate of a handed-in task: the core runs it, with no model call. It runs in
-//! the team's folder as the member's own command would: approved under the member's
-//! approval mode and confined by it. Exit 0 passes the task. Anything else sends it back
+//! the team's folder as a member's own command would: approved under the chat's approval
+//! mode, which a member's is a copy of, and confined by it. Exit 0 passes the task. Anything else sends it back
 //! to its member with the end of the output, at most `MAX_REWORKS` times; after that the
 //! task fails and the lead decides.
 //!
@@ -51,7 +51,7 @@ pub(super) async fn begin(
     if !launcher.team.gates.lock().insert(task.task_id.clone()) {
         return Ok(task.clone());
     }
-    let context = match approved(launcher, lead, member, command).await {
+    let context = match approved(launcher, lead, command).await {
         Ok(context) => context,
         Err(error) => {
             launcher.team.gates.lock().remove(&task.task_id);
@@ -118,24 +118,21 @@ pub(super) async fn resume(launcher: &Launcher, lead: &str) -> Result<()> {
     Ok(())
 }
 
-/// The command's approval under the member's own mode, and where it runs. Nobody
-/// listens for a question here, so a mode that would ask refuses instead.
-async fn approved(
-    launcher: &Launcher,
-    lead: &str,
-    member: &str,
-    command: &str,
-) -> Result<ToolContext> {
+/// The command's approval and where it runs. It is judged by the chat's approval mode
+/// as it is now, which is what a member's own is copied from: a mode the user tightened
+/// while the member worked holds for its gate. Nobody listens for a question here, so
+/// a mode that would ask refuses instead.
+async fn approved(launcher: &Launcher, lead: &str, command: &str) -> Result<ToolContext> {
     let state = &launcher.state;
     let folder = dispatch::folder(launcher, lead).await?;
-    let workspace = start::workspace(state, &launcher.paths, member).await?;
+    let workspace = start::workspace(state, &launcher.paths, lead).await?;
     let context = ToolContext {
         scope: Arc::new(launcher.scope(&folder, &workspace)?),
         config: launcher.config.current(),
         progress: None,
         approvals: Some(Arc::clone(&launcher.approvals)),
         state: Some(Arc::clone(state)),
-        thread_id: member.to_owned(),
+        thread_id: lead.to_owned(),
         graph: None,
     };
     context

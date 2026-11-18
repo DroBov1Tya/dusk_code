@@ -38,6 +38,7 @@ use tracing::warn;
 
 use crate::{
     BoxFuture,
+    catalog::modes::TEAM,
     runtime::Launcher,
     state::{BudgetBy, PlanTask, TeamCeilings, TeamError, timestamp_ms},
     tools::TeamRunner,
@@ -87,6 +88,10 @@ impl Runner {
         ensure!(
             config.limits().plan_graph,
             "the team is switched off (limits.plan_graph); the plan is kept"
+        );
+        ensure!(
+            config.mode() == TEAM,
+            "a team runs only in TEAM mode; the plan is kept"
         );
         let state = &launcher.state;
         let chat = state

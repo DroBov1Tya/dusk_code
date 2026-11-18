@@ -6,7 +6,7 @@
 //! |---|---|---|
 //! | tools | `MEMBER_TOOLS`, cut by its role and by `team.tools` | `limit_tools`, when its runner is built |
 //! | folder | the lead's project folder | `give`, as the folder its card is delivered in |
-//! | approval mode | the lead thread's, copied | `give`, before the claim |
+//! | approval mode | the lead thread's, copied | `give`, before the claim; again before each step (`lease::may_step`) |
 //! | model | `team.models[role]`, else `team.model`, else the chat's | `model_name`, into the claim; `model`, when its runner is built |
 //! | depth | 1, and no `ask_agent` | the thread's parent is the lead; `MEMBER_TOOLS` |
 //!
@@ -27,14 +27,14 @@ use tracing::{debug, info};
 use super::{card, clean, gate};
 use crate::{
     catalog::{agents::GENERAL_AGENT, skills},
-    config::Config,
+    config::{ApprovalPolicy, Config},
     providers::ProviderRegistry,
     runtime::{
         Launcher,
         model_choice::Choice,
         thread::start::{read_prompt, start_member_thread},
     },
-    state::{Claim, MAX_REWORKS, MEMBER_SOURCE, PlanError, PlanTask, TeamRun, Thread},
+    state::{Claim, MAX_REWORKS, MEMBER_SOURCE, PlanError, PlanTask, State, TeamRun, Thread},
     tools::{ToolRegistry, short_task_id},
 };
 
@@ -120,6 +120,18 @@ pub(crate) async fn model(launcher: &Launcher, member: &Thread) -> Result<Option
     Ok(Some(choice))
 }
 
+/// The approval mode of the chat `lead` as it is now: its own, else the settings'.
+pub(super) async fn lead_policy(
+    state: &State,
+    config: &Config,
+    lead: &str,
+) -> Result<ApprovalPolicy> {
+    Ok(match state.thread_approvals(lead).await? {
+        Some(own) => own,
+        None => config.approvals(),
+    })
+}
+
 /// How giving a task out went.
 pub(super) enum Given {
     Claimed(Box<PlanTask>),
@@ -163,10 +175,7 @@ pub(super) async fn give(
         },
     };
     // Copied, never raised: a member asks for no more than its lead may do unasked.
-    let policy = match state.thread_approvals(lead).await? {
-        Some(own) => own,
-        None => config.approvals(),
-    };
+    let policy = lead_policy(state, &config, lead).await?;
     state.set_thread_approvals(&member, Some(policy)).await?;
     let model = model_name(&config, role, launcher.model.current().as_ref());
     let claim = Claim {
