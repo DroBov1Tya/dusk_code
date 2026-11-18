@@ -241,5 +241,6 @@ When a file grows past what one reason to change holds, split it the way the exi
 
 ### evals
 
-Flat: `args`, `overrides`, `run`, `task`, `sandbox`, `score` beside `main.rs`; the tasks are in
-`projects/evals/tasks/`.
+Flat: `args`, `overrides`, `task`, `sandbox`, `score` beside `main.rs`, and `run/`: the runner,
+the core it starts on a runtime of its own so a run can kill it (`core`), and where it kills
+(`kill`). The tasks are in `projects/evals/tasks/`.

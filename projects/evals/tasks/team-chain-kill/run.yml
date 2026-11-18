@@ -1,0 +1,3 @@
+# team-chain, with the core killed once in each run, at a tool event picked from this
+# range by the run's seed, and started again.
+kill_after: 2..=40
