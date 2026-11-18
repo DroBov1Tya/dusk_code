@@ -167,6 +167,14 @@ const FILTER_SVG: &[u8] = lucide!(
     r#"<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />"#
 );
 
+/// Six dots: the handle a module is dragged by. The kit's catalog has it, but not its
+/// default bundle that the app serves.
+pub const GRIP: &str = "icons/dusk/grip-vertical.svg";
+
+const GRIP_SVG: &[u8] = lucide!(
+    r#"<circle cx="9" cy="12" r="1" /><circle cx="9" cy="5" r="1" /><circle cx="9" cy="19" r="1" /><circle cx="15" cy="12" r="1" /><circle cx="15" cy="5" r="1" /><circle cx="15" cy="19" r="1" />"#
+);
+
 pub const HOME: &str = "icons/dusk/home.svg";
 pub const LOCK: &str = "icons/dusk/lock.svg";
 pub const POWER: &str = "icons/dusk/power.svg";
@@ -210,6 +218,7 @@ impl AssetSource for Assets {
             TIER_COMMUNITY => return Ok(Some(Cow::Borrowed(TIER_COMMUNITY_SVG))),
             TIER_LOCAL => return Ok(Some(Cow::Borrowed(TIER_LOCAL_SVG))),
             FILTER => return Ok(Some(Cow::Borrowed(FILTER_SVG))),
+            GRIP => return Ok(Some(Cow::Borrowed(GRIP_SVG))),
             KIND_PLUGIN => return Ok(Some(Cow::Borrowed(KIND_PLUGIN_SVG))),
             KIND_PACK => return Ok(Some(Cow::Borrowed(KIND_PACK_SVG))),
             KIND_SKILL => return Ok(Some(Cow::Borrowed(KIND_SKILL_SVG))),

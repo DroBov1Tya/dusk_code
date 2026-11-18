@@ -26,7 +26,7 @@ mod ring;
 pub mod timing;
 pub mod transcript;
 mod welcome;
-mod working;
+pub mod working;
 
 use gpui_kit::{
     component::{ActiveTheme, IconName, button::Button},

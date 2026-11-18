@@ -149,8 +149,8 @@ voice/  (15)
 ### clients/desktop
 
 ```
-columns/  (30)
-  inspector/  (15)
+columns/  (31)
+  inspector/  (16)
     overview/  (3)
   sidebar/  (4)
   terminal/  (4)
