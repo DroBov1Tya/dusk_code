@@ -67,8 +67,11 @@ pub const RUN_COMMAND: &str = "run_command";
 pub struct Signature {
     /// Compared between failures.
     pub key: String,
-    /// The error lines as the tool wrote them.
+    /// The error lines as the tool wrote them, cut for the user and the parent.
     pub excerpt: String,
+    /// The same lines whole, for an episode, which cleans them before it cuts. The
+    /// tail they come from bounds them.
+    pub error: String,
 }
 
 /// The signature of a failed call, or None when its output has no text to recognize,
@@ -95,6 +98,7 @@ pub fn of(tool: &str, arguments: &Value, output: &str) -> Option<Signature> {
     Some(Signature {
         key,
         excerpt: truncate(&excerpt, MAX_EXCERPT_CHARS),
+        error: excerpt,
     })
 }
 

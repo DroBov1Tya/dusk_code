@@ -6,7 +6,7 @@
 //! result is no error and its exit code is 0. A background start, a command cut off, and
 //! any other tool say nothing of the loop, so they end none.
 
-use super::ladder::{Ladder, attempt, invocation};
+use super::ladder::{Attempt, Ladder, invocation};
 use crate::{providers::ToolCall, tools::ToolResult};
 
 /// Failures of one signature before a pass that make a loop; one is ordinary work.
@@ -21,11 +21,11 @@ const LESSON: &str = "Lesson:";
 pub struct Solved {
     /// The signature's key: what makes two such errors the same one.
     pub key: String,
-    /// The error lines, as the tool wrote them.
+    /// The error lines, as the tool wrote them, whole.
     pub problem: String,
-    /// The calls that failed, oldest first.
+    /// The calls that failed, oldest first, whole.
     pub attempts: Vec<String>,
-    /// The call that passed, on one line as an attempt is.
+    /// The call that passed, on one line as an attempt is, whole.
     pub passed: String,
     /// How many times the error came back before the pass.
     pub count: u32,
@@ -53,9 +53,13 @@ impl Ladder {
             }
             let solved = (open >= MIN_FAILURES).then(|| Solved {
                 key: seen.key.clone(),
-                problem: seen.excerpt.clone(),
-                attempts: seen.attempts.clone(),
-                passed: attempt(call),
+                problem: seen.error.clone(),
+                attempts: seen
+                    .attempts
+                    .iter()
+                    .map(|attempt| attempt.whole.clone())
+                    .collect(),
+                passed: Attempt::of(call).whole,
                 count: open,
                 since: seen.opened_at,
             });

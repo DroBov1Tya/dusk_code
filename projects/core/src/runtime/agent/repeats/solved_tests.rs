@@ -1,9 +1,17 @@
 //! Which pass ends a loop, as `solved` decides it, and the lesson line.
 
+use std::path::Path;
+
 use serde_json::json;
 
 use super::{Repeats, Solved, lesson, lesson_note, signature::invocation};
-use crate::{config::Limits, providers::ToolCall, tools::ToolResult};
+use crate::{
+    config::Limits,
+    project::episodes::{Facts, Origin, record},
+    providers::ToolCall,
+    state::State,
+    tools::ToolResult,
+};
 
 const UNKNOWN: &str = "error[E0425]: cannot find value `limit` in this scope";
 
@@ -215,4 +223,122 @@ fn the_lesson_is_the_last_line_that_starts_with_it() {
         None,
         "the last one is empty"
     );
+}
+
+/// The project the episode tests record into.
+const PROJECT: &str = "/work/service-a";
+
+/// Fails `failing` twice, passes `passing`, and records the loop it ended as the agent
+/// does; every text column of what was stored, or None when nothing was.
+async fn recorded(
+    variables: &[(&str, &str)],
+    failing: &str,
+    error: &str,
+    passing: &str,
+) -> Option<Vec<String>> {
+    let state = State::in_memory().await.unwrap();
+    state.create_project("p", "P", "", PROJECT).await.unwrap();
+    for (name, value) in variables {
+        state.set_project_env("p", name, value).await.unwrap();
+    }
+    let mut repeats = Repeats::default();
+    let limits = episodes_on();
+    fail(&mut repeats, failing, error, &limits);
+    fail(&mut repeats, failing, error, &limits);
+    let solved = pass(&mut repeats, passing).expect("a loop ended");
+    let facts = Facts::Fixed {
+        key: &solved.key,
+        problem: &solved.problem,
+        attempts: &solved.attempts,
+        passed: &solved.passed,
+        changed: &[],
+        lesson: None,
+    };
+    let origin = Origin {
+        project: Path::new(PROJECT),
+        thread_id: None,
+        turn_id: None,
+        tool: "run_command",
+        model: "m",
+    };
+    record(&state, &origin, &facts).await.unwrap()?;
+    let row: (String, String, String) =
+        sqlx::query_as("SELECT problem, failed, worked FROM episodes")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+    Some(vec![row.0, row.1, row.2])
+}
+
+/// Whether any 8 characters in a row of `secret` are in `stored`.
+fn leaks(stored: &[String], secret: &str) -> bool {
+    let chars: Vec<char> = secret.chars().collect();
+    chars.windows(8).any(|piece| {
+        let piece: String = piece.iter().collect();
+        stored.iter().any(|text| text.contains(&piece))
+    })
+}
+
+/// The command the review found: the ladder lists a call cut at 100 characters, and 21
+/// characters of the key were left, too few for the rules to know them as a key. An
+/// episode is built from the whole texts and cut only once cleaned.
+const AWS_KEY: &str = "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY";
+
+fn sets_the_key() -> String {
+    format!(
+        "cd /work/service-a && AWS_PROFILE=prod aws configure set aws_secret_access_key {AWS_KEY}"
+    )
+}
+
+#[tokio::test]
+async fn a_key_the_listed_attempt_cut_is_cleaned_whole() {
+    let stored = recorded(&[], &sets_the_key(), UNKNOWN, "aws configure list")
+        .await
+        .expect("written");
+    assert!(stored[1].contains("aws_secret_access_key"), "{stored:?}");
+    assert!(!leaks(&stored, AWS_KEY), "{stored:?}");
+}
+
+#[tokio::test]
+async fn a_variable_the_listed_attempt_cut_is_cleaned_whole() {
+    let value = "correct-horse-battery-staple";
+    let passing = format!(
+        "aws configure list --profile deploy-production-account-in-eu-west-1-cluster-a {value}"
+    );
+    assert!(passing.find(value).unwrap() < 100 && passing.len() > 100);
+    let stored = recorded(&[("DEPLOY", value)], &sets_the_key(), UNKNOWN, &passing)
+        .await
+        .expect("written");
+    assert!(stored[2].contains("<secret>"), "{stored:?}");
+    assert!(!leaks(&stored, value), "{stored:?}");
+}
+
+#[tokio::test]
+async fn a_key_the_error_excerpt_cut_is_cleaned_whole() {
+    let run = "Zm9vYmFyQmF6UXV4MTIzNDU2Nzg5MGFiY2RlZg";
+    let error = format!("error: {} {run} was refused", "word ".repeat(75));
+    let at = error.find(run).unwrap();
+    assert!(
+        at + 8 < 400 && at + 24 > 400,
+        "the old cut leaves part of the key"
+    );
+    let stored = recorded(
+        &[],
+        "aws configure get region",
+        &error,
+        "aws configure list",
+    )
+    .await
+    .expect("written");
+    assert!(!leaks(&stored, run), "{stored:?}");
+}
+
+/// A command that reads a secret file makes no episode, wherever in the line it is.
+#[tokio::test]
+async fn a_secret_file_past_the_listed_length_writes_nothing() {
+    let failing = "cd /work/service-a/deployments/production/eu-west-1/cluster-a/services/billing-api-v2 \
+                   && set -a && source ./config/.env && ./scripts/migrate";
+    assert!(failing.find(".env").unwrap() > 100);
+    let passing = "cd /work/service-a && ./scripts/migrate";
+    assert_eq!(recorded(&[], failing, UNKNOWN, passing).await, None);
 }

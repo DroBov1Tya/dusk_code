@@ -11,7 +11,7 @@ use std::collections::HashMap;
 use dusk_protocol::thread::RepeatRung;
 
 use super::{hash, signature};
-use crate::{config::Limits, providers::ToolCall};
+use crate::{config::Limits, project::episodes, providers::ToolCall};
 
 /// Distinct failures a turn keeps count of; more are not counted, so a turn that
 /// fails in many ways cannot grow this without bound.
@@ -33,12 +33,13 @@ pub struct Ladder {
 #[derive(Default)]
 pub(super) struct Seen {
     count: u32,
-    pub(super) attempts: Vec<String>,
+    pub(super) attempts: Vec<Attempt>,
     /// More distinct attempts came than are kept.
     more: bool,
-    /// The signature's key and its latest error lines.
+    /// The signature's key and its latest error lines, cut and whole.
     pub(super) key: String,
     pub(super) excerpt: String,
+    pub(super) error: String,
     /// Failures since a pass last ended them: what a pass now would end.
     pub(super) open: u32,
     /// Unix ms of the first of the open failures.
@@ -71,7 +72,7 @@ impl Ladder {
         self.failures += 1;
         let seen = self.seen.entry(key).or_default();
         seen.count = seen.count.saturating_add(1);
-        seen.add(attempt(call));
+        seen.add(Attempt::of(call));
         if seen.open == 0 {
             seen.opened_at = dusk_protocol::system::now_ms();
         }
@@ -85,6 +86,7 @@ impl Ladder {
         }
         seen.key = signature.key;
         seen.excerpt = signature.excerpt;
+        seen.error = signature.error;
         Some(key)
     }
 
@@ -132,8 +134,9 @@ impl Ladder {
 }
 
 impl Seen {
-    fn add(&mut self, attempt: String) {
-        if self.attempts.contains(&attempt) {
+    /// Attempts are told apart as they are listed, so the list reads as it always did.
+    fn add(&mut self, attempt: Attempt) {
+        if self.attempts.iter().any(|kept| kept.shown == attempt.shown) {
             return;
         }
         if self.attempts.len() < MAX_ATTEMPTS {
@@ -144,7 +147,11 @@ impl Seen {
     }
 
     fn list(&self) -> String {
-        let mut lines: Vec<String> = self.attempts.iter().map(|a| format!("- {a}")).collect();
+        let mut lines: Vec<String> = self
+            .attempts
+            .iter()
+            .map(|attempt| format!("- {}", attempt.shown))
+            .collect();
         if self.more {
             lines.push("- and others".to_owned());
         }
@@ -160,12 +167,31 @@ pub(super) fn invocation(call: &ToolCall) -> Option<(String, Option<String>)> {
     signature::invocation(call.arguments["command"].as_str()?)
 }
 
-/// A call on one short line: a command as written, another tool with its arguments.
-pub(super) fn attempt(call: &ToolCall) -> String {
-    let text = match call.arguments["command"].as_str() {
-        Some(command) if call.name == signature::RUN_COMMAND => command.to_owned(),
-        _ => format!("{} {}", call.name, call.arguments),
-    };
+/// A call on one line: a command as written, another tool with its arguments.
+pub(super) struct Attempt {
+    /// Cut short, as the ladder lists it to the model.
+    pub(super) shown: String,
+    /// Whole, as far as an episode reads (`episodes::bounded`): an episode cleans it
+    /// before it cuts it, so no half of a key escapes the rules.
+    pub(super) whole: String,
+}
+
+impl Attempt {
+    pub(super) fn of(call: &ToolCall) -> Self {
+        let text = match call.arguments["command"].as_str() {
+            Some(command) if call.name == signature::RUN_COMMAND => command.to_owned(),
+            _ => format!("{} {}", call.name, call.arguments),
+        };
+        let words: Vec<&str> = episodes::bounded(&text).split_whitespace().collect();
+        Self {
+            shown: shown(&text),
+            whole: words.join(" "),
+        }
+    }
+}
+
+/// `text` on one line of `MAX_ATTEMPT_CHARS` at most.
+fn shown(text: &str) -> String {
     let mut line = String::new();
     for word in text.split_whitespace() {
         if !line.is_empty() {
