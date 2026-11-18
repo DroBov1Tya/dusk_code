@@ -617,10 +617,10 @@ async fn the_context_report_agrees_with_the_tokens_event() {
     tokio::join!(runner.run(), client);
 }
 
-/// A turn that read a source and then failed still delivered it: the next turn names it
-/// in a line instead of sending it in full again.
+/// A source goes in full with the one model call that read it: the next step, here a
+/// failed one, and the next turn name it in a line instead.
 #[tokio::test]
-async fn a_source_read_before_a_failure_is_not_sent_again() {
+async fn a_source_read_once_is_not_sent_again() {
     let state = thread_state("source_once").await;
     let config = live_config("runner_config");
     let provider = provider(vec![
@@ -661,9 +661,7 @@ async fn a_source_read_before_a_failure_is_not_sent_again() {
             |message| matches!(message, ChatMessage::User(text) if text.contains("SOURCE BODY")),
         )
     };
-    assert!(
-        full(&requests[0]) && full(&requests[1]),
-        "each step of a turn carries it"
-    );
+    assert!(full(&requests[0]), "the first step carries it");
+    assert!(!full(&requests[1]), "the next step does not");
     assert!(!full(requests.last().unwrap()), "the next turn does not");
 }
