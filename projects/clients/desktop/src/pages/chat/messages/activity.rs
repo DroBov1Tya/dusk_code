@@ -27,6 +27,7 @@ pub fn turn_activity(
     start: usize,
     items: &[Item],
     span: Option<crate::pages::chat::timing::Span>,
+    spend: Option<(String, bool)>,
     cx: &mut Context<Workspace>,
 ) -> Div {
     let open = ws.unfolded.contains(&(shown.to_owned(), start | ACTIVITY));
@@ -77,6 +78,19 @@ pub fn turn_activity(
             .text_color(cx.theme().foreground)
             .child(title),
     )
+    // What the turn spent, on the same line: one row closes a turn, not two.
+    .children(spend.map(|(text, dear)| {
+        let theme = cx.theme();
+        div()
+            .flex_none()
+            .meta()
+            .text_color(if dear {
+                theme.warning
+            } else {
+                theme.muted_foreground
+            })
+            .child(format!("\u{00B7}  {text}"))
+    }))
     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, start | ACTIVITY, cx)));
     let mut row = div().flex().items_center().gap_2().child(header);
     if !open && let Some((index, tool)) = running {

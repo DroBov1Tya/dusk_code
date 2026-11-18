@@ -11,6 +11,7 @@ mod activity;
 mod block;
 mod command;
 mod cost;
+mod error_row;
 mod feedback;
 mod picture;
 mod row;
