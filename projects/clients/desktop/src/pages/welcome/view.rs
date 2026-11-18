@@ -118,6 +118,10 @@ fn form(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         .gap_4()
         .child(div().title().child("Your own provider"))
         .child(
+            labeled("Name", "how the model menu will call it", cx)
+                .child(Input::new(&welcome.name).large()),
+        )
+        .child(
             labeled("Address", "a server with the OpenAI API", cx)
                 .child(Input::new(&welcome.address).large()),
         )

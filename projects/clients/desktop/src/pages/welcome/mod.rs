@@ -1,5 +1,5 @@
 //! The first screen of a clean install: while the core has no provider, the chat page
-//! offers to connect one, with only an address and a token. The connection is the
+//! offers to connect one, with only a name, an address and a token. The connection is the
 //! Model page's own: the core checks the server, then saves it as OpenAI-compatible,
 //! with the token in the keychain. Dismissed, it stays away until the app starts again;
 //! once any provider is connected it does not come back.
@@ -29,7 +29,7 @@ pub enum Step {
     Hidden,
     /// The greeting and its one button.
     Intro,
-    /// The address and the token.
+    /// The name, the address and the token.
     Form,
 }
 
@@ -41,6 +41,8 @@ struct Failed {
 
 pub struct Welcome {
     pub step: Step,
+    /// What the provider is called in the model menu; empty takes the address's host.
+    name: Entity<InputState>,
     address: Entity<InputState>,
     token: Entity<InputState>,
     /// The core's answer to the last attempt, when it failed.
@@ -52,6 +54,7 @@ pub struct Welcome {
 
 impl Welcome {
     pub fn new(window: &mut Window, cx: &mut Context<Workspace>) -> Self {
+        let name = cx.new(|cx| InputState::new(window, cx).placeholder("Such as my-server"));
         let address = cx.new(|cx| {
             InputState::new(window, cx)
                 .placeholder("https://api.example.com/v1 or http://127.0.0.1:11434/v1")
@@ -61,7 +64,7 @@ impl Welcome {
                 .placeholder("Empty for a local server")
                 .masked(true)
         });
-        for field in [&address, &token] {
+        for field in [&name, &address, &token] {
             cx.subscribe_in(field, window, |ws, _, event: &InputEvent, window, cx| {
                 if let InputEvent::PressEnter { .. } = event {
                     ws.welcome_connect(window, cx);
@@ -71,6 +74,7 @@ impl Welcome {
         }
         Self {
             step: Step::Hidden,
+            name,
             address,
             token,
             error: None,
@@ -117,7 +121,7 @@ impl Workspace {
     pub fn welcome_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.welcome.step = Step::Form;
         self.welcome
-            .address
+            .name
             .update(cx, |field, cx| field.focus(window, cx));
         cx.notify();
     }
@@ -159,7 +163,10 @@ impl Workspace {
             .update(cx, |field, cx| field.set_value("", window, cx));
         welcome.busy = true;
         welcome.error = None;
-        let name = name::from_address(&address);
+        let typed = welcome.name.read(cx).value().trim().to_owned();
+        let name = Some(typed)
+            .filter(|name| !name.is_empty())
+            .or_else(|| name::from_address(&address));
         let kind = ProviderKind::OpenAiCompatible;
         self.core.call(
             cx,
