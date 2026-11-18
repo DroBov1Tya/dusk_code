@@ -165,6 +165,30 @@ fn nothing_is_kept_after_a_string_that_never_closes() {
 }
 
 #[test]
+fn nothing_is_kept_from_a_block_comment_that_never_closes() {
+    // A comment that runs to the end of the file holds whatever was written there, a
+    // password among it; none of it may become a name.
+    for opener in ["/*", "/**", "/*!", "/* /*", "/* outer /* inner */"] {
+        for rest in [
+            " Hunter2Prod Leaked::now(); fn leaked_fn() {}\nstruct LeakedType;\n",
+            " password = Hunter2Prod; \"quoted\" Leaked::now()\n",
+            "\nfn leaked_fn() { Hunter2Prod::call(); }\n",
+        ] {
+            let source = format!("fn before() {{ Kept::call(); }}\n{opener}{rest}");
+            let outline = rust(&source).unwrap();
+            let kept = names(&outline);
+            assert!(
+                kept.contains(&"before")
+                    && kept
+                        .iter()
+                        .all(|name| ["before", "Kept", "call"].contains(name)),
+                "{opener:?} {rest:?}: {kept:?}"
+            );
+        }
+    }
+}
+
+#[test]
 fn a_file_with_a_syntax_error_gives_what_parsed() {
     let source = "struct Kept;\nfn broken( { let = ; }\nimpl Kept { fn method(&self) {} }\n";
     let outline = rust(source).unwrap();

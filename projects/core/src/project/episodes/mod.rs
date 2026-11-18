@@ -16,6 +16,7 @@ use std::path::Path;
 
 use anyhow::Result;
 
+pub use self::clean::bounded;
 use self::clean::{Field, Secrets, clean, scrub};
 use super::ledger::{may_keep_text, sha256};
 use crate::state::{EpisodeKind, NewEpisode, State};
@@ -47,11 +48,12 @@ pub enum Facts<'a> {
     Fixed {
         /// The failure signature's key: what makes two such errors the same one.
         key: &'a str,
-        /// The error lines.
+        /// The error lines, whole: a text cut before it is cleaned may keep half a key
+        /// the rules no longer see.
         problem: &'a str,
-        /// The calls that failed, oldest first.
+        /// The calls that failed, oldest first, whole.
         attempts: &'a [String],
-        /// The call that passed.
+        /// The call that passed, whole.
         passed: &'a str,
         /// Files changed between the first failure and the pass, relative paths.
         changed: &'a [String],

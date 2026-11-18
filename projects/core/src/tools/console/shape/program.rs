@@ -14,26 +14,20 @@ pub enum Program {
     Npm,
     /// `git` moving objects to or from a remote.
     GitTransfer,
-    /// Output that is content the model may act on word for word, such as a diff or a
-    /// file, or a line this reading cannot follow: left as it is.
-    Verbatim,
-    /// Anything else: only repeated lines fold.
+    /// `tsc`: every line is a diagnostic or its frame, so only repeats fold.
+    Tsc,
+    /// A program we have no rules for, whose output may be content the model copies word
+    /// for word (a file, a diff, `awk`'s or `base64`'s output), or a line this reading
+    /// cannot follow: left as it is.
     Other,
 }
 
-/// Commands whose output is content, not a report about work.
-const VERBATIM: [&str; 6] = ["cat", "head", "tail", "sed", "nl", "diff"];
-
 /// The program `line` runs. A line with a substitution or a quote left open is not
-/// followed, so it is `Verbatim`.
+/// followed, so it is `Other`.
 pub fn program(line: &str) -> Program {
     let Some(split) = split(line) else {
-        return Program::Verbatim;
+        return Program::Other;
     };
-    let programs: Vec<Program> = split.commands.iter().map(|words| of(words)).collect();
-    if programs.contains(&Program::Verbatim) {
-        return Program::Verbatim;
-    }
     match split.commands.split_last() {
         Some((last, before)) if split.only_and && before.iter().all(|words| is_cd(words)) => {
             of(last)
@@ -161,6 +155,11 @@ fn of_words(words: &[&str]) -> Program {
         "pytest" | "py.test" => Program::Pytest,
         "npm" | "pnpm" | "yarn" => npm(name, rest),
         "git" => git(rest),
+        "tsc" => Program::Tsc,
+        "npx" => match rest {
+            ["tsc", ..] => Program::Tsc,
+            _ => Program::Other,
+        },
         "uv" => match rest {
             ["run", program @ ..] => of_words(program),
             _ => Program::Other,
@@ -169,7 +168,6 @@ fn of_words(words: &[&str]) -> Program {
             ["-m", "pytest", ..] => Program::Pytest,
             _ => Program::Other,
         },
-        name if VERBATIM.contains(&name) => Program::Verbatim,
         _ => Program::Other,
     }
 }
@@ -209,10 +207,10 @@ fn git(rest: &[&str]) -> Program {
             }
             option if option.starts_with('-') => {}
             "push" | "pull" | "fetch" | "clone" => return Program::GitTransfer,
-            _ => return Program::Verbatim,
+            _ => return Program::Other,
         }
     }
-    Program::Verbatim
+    Program::Other
 }
 
 fn is_python(name: &str) -> bool {
@@ -264,13 +262,16 @@ mod tests {
             ("yarn", Program::Npm),
             ("git -C repo push origin main", Program::GitTransfer),
             ("git fetch --all", Program::GitTransfer),
+            ("tsc --noEmit", Program::Tsc),
+            ("npx tsc --noEmit", Program::Tsc),
+            ("node_modules/.bin/tsc -p .", Program::Tsc),
         ] {
             assert_eq!(program(line), expected, "{line}");
         }
     }
 
-    /// Chained or piped, the output is not one program's: only repeats fold. Content,
-    /// and what cannot be followed, stays whole.
+    /// Chained or piped, the output is not one program's; content, a program without
+    /// rules and what cannot be followed are not either: all are left as they are.
     #[test]
     fn chains_pipes_content_and_the_unreadable_are_not_shaped() {
         for line in [
@@ -283,14 +284,10 @@ mod tests {
             "cargo test\necho done",
             "cargo nextest run",
             "cargo --manifest-path x/Cargo.toml test",
-            "npx tsc --noEmit",
+            "npx eslint .",
             "npm view react",
             "ls -la",
             "",
-        ] {
-            assert_eq!(program(line), Program::Other, "{line}");
-        }
-        for line in [
             "git diff",
             "git show HEAD",
             "git log -p",
@@ -303,8 +300,13 @@ mod tests {
             "(cd x && cargo test)",
             "cargo test 'unclosed",
             "sed -n '1,40p' src/main.rs",
+            "awk '{print}' data.txt",
+            "python -c 'print(1)'",
+            "sort words.txt",
+            "xxd image.png",
+            "base64 key.bin",
         ] {
-            assert_eq!(program(line), Program::Verbatim, "{line}");
+            assert_eq!(program(line), Program::Other, "{line}");
         }
     }
 

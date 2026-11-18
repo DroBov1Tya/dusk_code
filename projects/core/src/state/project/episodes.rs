@@ -231,7 +231,12 @@ impl State {
             .execute(&self.pool)
             .await
             .context("remove the episode")?;
-        Ok(done.rows_affected() > 0)
+        let removed = done.rows_affected() > 0;
+        if removed {
+            // `recall` is offered while a project has one; the last may have gone.
+            self.load_episode_counts().await?;
+        }
+        Ok(removed)
     }
 
     /// How many episodes each project has, by `dir`; projects with none are left out.

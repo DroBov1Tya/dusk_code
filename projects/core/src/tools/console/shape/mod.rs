@@ -46,12 +46,12 @@ pub fn shape(command: &str, output: &str) -> Option<Shaped> {
     let lines: Vec<&str> = output.split('\n').collect();
     let mut kept = Kept::default();
     match program::program(command) {
-        Program::Verbatim => return None,
         Program::Cargo { tests } => cargo::shape(&lines, tests, &mut kept),
         Program::Pytest => kept.filter(&lines, pytest::left_out),
         Program::Npm => kept.filter(&lines, npm::left_out),
         Program::GitTransfer => kept.filter(&lines, git::left_out),
-        Program::Other => kept.filter(&lines, |_| None),
+        Program::Tsc => kept.filter(&lines, |_| None),
+        Program::Other => return None,
     }
     kept.fold();
     kept.shaped()
@@ -60,18 +60,42 @@ pub fn shape(command: &str, output: &str) -> Option<Shaped> {
 /// The lines a program's rules keep, and how many went, by what they were.
 #[derive(Default)]
 struct Kept<'a> {
-    lines: Vec<Cow<'a, str>>,
+    lines: Vec<Line<'a>>,
     /// In the order first left out, so the note reads the same for the same output.
     gone: Vec<(&'static str, usize)>,
 }
 
+/// A kept line and how many it stands for: the fold's count, or a rule's.
+#[derive(Clone)]
+struct Line<'a> {
+    text: Cow<'a, str>,
+    count: usize,
+}
+
+impl Line<'_> {
+    fn written(&self) -> Cow<'_, str> {
+        if self.count > 1 {
+            Cow::Owned(format!("{} (x{})", self.text, self.count))
+        } else {
+            Cow::Borrowed(&self.text)
+        }
+    }
+}
+
 impl<'a> Kept<'a> {
+    fn keep(&mut self, line: &'a str) {
+        self.lines.push(Line {
+            text: Cow::Borrowed(line),
+            count: 1,
+        });
+    }
+
     /// Keeps each line `rule` names nothing for.
     fn filter(&mut self, lines: &[&'a str], rule: impl Fn(&str) -> Option<&'static str>) {
         for line in lines {
             match rule(line) {
                 Some(what) => self.leave_out(what, 1),
-                None => self.lines.push(Cow::Borrowed(line)),
+                None => self.keep(line),
             }
         }
     }
@@ -84,14 +108,20 @@ impl<'a> Kept<'a> {
     }
 
     /// Folds each run of identical lines into the first, with how many there were.
-    /// Blank lines stay: they only space the output.
+    /// Blank lines stay: they only space the output. A line that already stands for
+    /// more than itself, as a warning a rule counted, is not folded again: its count
+    /// would be counted twice.
     fn fold(&mut self) {
         let mut folded = Vec::with_capacity(self.lines.len());
         let mut repeats = 0;
-        for run in self.lines.chunk_by(|a, b| a == b) {
+        let same = |a: &Line, b: &Line| a.count == 1 && b.count == 1 && a.text == b.text;
+        for run in self.lines.chunk_by(same) {
             match run {
-                [line, rest @ ..] if !rest.is_empty() && !line.trim().is_empty() => {
-                    folded.push(Cow::Owned(format!("{line} (x{})", run.len())));
+                [line, rest @ ..] if !rest.is_empty() && !line.text.trim().is_empty() => {
+                    folded.push(Line {
+                        text: line.text.clone(),
+                        count: run.len(),
+                    });
                     repeats += rest.len();
                 }
                 _ => folded.extend(run.iter().cloned()),
@@ -109,8 +139,9 @@ impl<'a> Kept<'a> {
             return None;
         }
         let what: Vec<&str> = self.gone.iter().map(|(what, _)| *what).collect();
+        let lines: Vec<Cow<str>> = self.lines.iter().map(Line::written).collect();
         Some(Shaped {
-            text: self.lines.join("\n"),
+            text: lines.join("\n"),
             left_out,
             what: what.join(", "),
         })

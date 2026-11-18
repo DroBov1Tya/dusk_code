@@ -37,6 +37,12 @@ pub struct Limits {
     /// Files of the languages the graph reads.
     pub files: usize,
     pub refs: u64,
+    pub symbols: u64,
+    /// Files of one refresh that ran into the parse's time limit. Each holds the one
+    /// worker for the limit, so a project of such files would hold it for hours.
+    pub slow_files: usize,
+    /// Time one refresh may spend reading and parsing files, for the same reason.
+    pub parse_time: Duration,
 }
 
 impl Default for Limits {
@@ -45,9 +51,54 @@ impl Default for Limits {
             walk: Duration::from_secs(5),
             files: 20_000,
             refs: 1_500_000,
+            // Source refers to names more often than it defines them (this repository:
+            // 7 refs a symbol). At the refs cap that is about 210,000 symbols; this
+            // leaves room for code with fewer refs, is 20 a file at the files cap, and
+            // stops what is mostly definitions (generated code) at 200 full files.
+            symbols: 400_000,
+            slow_files: 50,
+            // A full index of this repository (897 files) parses in under 6 s in the dev
+            // profile; 30 s is five times that, and 120 files at the per-file limit.
+            parse_time: Duration::from_secs(30),
         }
     }
 }
+
+/// Why a project is past a cap, as the log says it.
+type Past = &'static str;
+
+/// What one call of `index` has spent, against the caps.
+#[derive(Default)]
+struct Spent {
+    refs: u64,
+    symbols: u64,
+    slow_files: usize,
+    parse_time: Duration,
+}
+
+impl Spent {
+    fn add(&mut self, file: &IndexedFile, took: Duration) {
+        self.refs += file.refs.len() as u64;
+        self.symbols += file.symbols.len() as u64;
+        self.slow_files += usize::from(file.skipped == Some(Skipped::TooSlow));
+        self.parse_time += took;
+    }
+
+    fn past(&self, limits: &Limits) -> Option<Past> {
+        if self.refs > limits.refs {
+            Some(TOO_MANY_REFS)
+        } else if self.symbols > limits.symbols {
+            Some(TOO_MANY_SYMBOLS)
+        } else if self.slow_files > limits.slow_files || self.parse_time > limits.parse_time {
+            Some("more time to parse than a refresh may take")
+        } else {
+            None
+        }
+    }
+}
+
+const TOO_MANY_REFS: Past = "more names referred to than a graph holds";
+const TOO_MANY_SYMBOLS: Past = "more definitions than a graph holds";
 
 /// How a file is read and parsed. Tests put their own in, to count the files opened and
 /// to make a parse panic.
@@ -147,16 +198,15 @@ impl Work<'_> {
                 (path, hash)
             })
             .collect();
-        if !self.index(changed).await {
-            return self
-                .too_large("more names referred to than a graph holds")
-                .await;
+        if let Err(past) = self.index(changed).await {
+            return self.too_large(past).await;
         }
         let counts = self.state.graph_counts(self.project).await?;
         if counts.refs > self.limits.refs {
-            return self
-                .too_large("more names referred to than a graph holds")
-                .await;
+            return self.too_large(TOO_MANY_REFS).await;
+        }
+        if counts.symbols > self.limits.symbols {
+            return self.too_large(TOO_MANY_SYMBOLS).await;
         }
         Ok(Refreshed::Done(counts))
     }
@@ -184,8 +234,8 @@ impl Work<'_> {
             }
             changed.push((path, stored));
         }
-        // Past the cap here, the next refresh is what drops the project.
-        self.index(changed).await;
+        // Past a cap here, the next refresh is what drops the project.
+        let _ = self.index(changed).await;
     }
 
     /// Whether a path a caller named may be opened: one the walk could have given.
@@ -201,30 +251,32 @@ impl Work<'_> {
     }
 
     /// Reads, parses and stores the files, each with the hash stored for it, in batches
-    /// of one transaction. False when they held more refs than a project may.
-    async fn index(&self, changed: Vec<(String, Option<String>)>) -> bool {
-        let mut refs = 0u64;
+    /// of one transaction. Stops when they went past a cap of the project: more refs or
+    /// symbols than it may hold, or more parsing than a refresh may do.
+    async fn index(&self, changed: Vec<(String, Option<String>)>) -> Result<(), Past> {
+        let mut spent = Spent::default();
         for files in changed.chunks(BATCH) {
             let mut batch = Batch::default();
             for (path, stored) in files {
+                let started = Instant::now();
                 match self.load(path, stored.as_deref()).await {
                     Loaded::Parsed(file) => {
-                        refs += file.refs.len() as u64;
+                        spent.add(&file, started.elapsed());
                         batch.files.push(file);
                     }
                     Loaded::Same(stamp) => batch.stamps.push((path.clone(), stamp)),
                     Loaded::Gone => batch.gone.push(path.clone()),
                     Loaded::Failed => {}
                 }
-            }
-            if refs > self.limits.refs {
-                return false;
+                if let Some(past) = spent.past(&self.limits) {
+                    return Err(past);
+                }
             }
             let took = self.store(&batch).await;
             // The database has one connection: it is left free for as long as it was held.
             tokio::time::sleep(took).await;
         }
-        true
+        Ok(())
     }
 
     async fn load(&self, path: &str, stored: Option<&str>) -> Loaded {

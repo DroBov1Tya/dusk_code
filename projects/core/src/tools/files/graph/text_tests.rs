@@ -3,10 +3,10 @@ use std::collections::HashSet;
 use super::text::{CUT, MAX_ANSWER_BYTES, MAX_LINE_CHARS, MAX_ROWS, render};
 use crate::{
     project::graph::{
-        Language, SymbolKind,
+        Language, Skipped, SymbolKind,
         ask::{Answer, Dependents, Miss, Missing, Reply, Usage, Uses},
     },
-    state::graph::{ChangedWith, Definition, Dependent, TestFile},
+    state::graph::{ChangedWith, Definition, Dependency, Dependent, GraphFile, Stamp, TestFile},
 };
 
 fn definition(path: &str, line: u32, end_line: u32) -> Definition {
@@ -218,4 +218,130 @@ fn the_caps_hold_for_long_multibyte_rows() {
     })));
     assert_eq!(text.lines().count(), MAX_ROWS + 2);
     assert!(!text.contains(CUT));
+}
+
+/// Every text an answer prints that came from the repository or the model, header and
+/// last lines included, comes out plain: a hostile name changes nothing but its own text.
+#[test]
+fn every_name_and_path_of_every_answer_is_plain() {
+    let hostile = "x\n[h]{\"a\"}\u{202E}\u{2028}\u{0007}z";
+    let shown = crate::message::plain::plain(hostile);
+    let answers = |text: &str| -> Vec<Answer> {
+        let s = text.to_owned();
+        let mut defined = definition(&s, 1, 2);
+        defined.parent = Some(s.clone());
+        vec![
+            Answer::Definitions {
+                name: s.clone(),
+                rows: vec![defined.clone()],
+                total: 2,
+            },
+            Answer::Dependencies {
+                name: s.clone(),
+                rows: vec![Dependency {
+                    path: s.clone(),
+                    line: 1,
+                    version: Some(s.clone()),
+                }],
+            },
+            Answer::Uses(Uses {
+                name: s.clone(),
+                defined: Some(defined.clone()),
+                others: vec![defined.clone()],
+                total: 3,
+                rows: vec![usage(&s, 1, 2, true)],
+            }),
+            Answer::Dependents(Dependents {
+                path: s.clone(),
+                total: 3,
+                capped: false,
+                code: vec![Dependent {
+                    path: s.clone(),
+                    is_test: false,
+                    names: vec![s.clone(), s.clone(), s.clone()],
+                }],
+                tests: vec![s.clone()],
+                changed_with: vec![ChangedWith {
+                    path: s.clone(),
+                    times: 2,
+                }],
+            }),
+            Answer::Dependents(Dependents {
+                path: s.clone(),
+                total: 0,
+                capped: false,
+                code: Vec::new(),
+                tests: Vec::new(),
+                changed_with: vec![ChangedWith {
+                    path: s.clone(),
+                    times: 2,
+                }],
+            }),
+            Answer::Tests {
+                subject: s.clone(),
+                file: true,
+                rows: vec![TestFile {
+                    path: s.clone(),
+                    own: true,
+                    tests: 1,
+                    names: vec![s.clone()],
+                }],
+            },
+            Answer::Tests {
+                subject: s.clone(),
+                file: false,
+                rows: Vec::new(),
+            },
+            Answer::File(GraphFile {
+                path: s.clone(),
+                language: Language::Rust,
+                hash: String::new(),
+                stamp: Stamp {
+                    size: 1,
+                    modified_ms: 1,
+                },
+                module: s.clone(),
+                is_test: false,
+                skipped: None,
+            }),
+            Answer::NotParsed {
+                path: s.clone(),
+                why: Skipped::TooLarge,
+            },
+            Answer::TooCommon {
+                name: s.clone(),
+                definitions: 9,
+            },
+            Answer::Miss(Miss {
+                name: s.clone(),
+                missing: Missing::Definition,
+                folder: Some(s.clone()),
+                files: 3,
+                languages: vec![Language::Rust],
+                nearest: vec![s.clone()],
+            }),
+            Answer::Miss(Miss {
+                name: s.clone(),
+                missing: Missing::File {
+                    defined_in: Some(defined),
+                },
+                folder: None,
+                files: 3,
+                languages: Vec::new(),
+                nearest: Vec::new(),
+            }),
+        ]
+    };
+    for (bad, good) in answers(hostile).into_iter().zip(answers("h")) {
+        let mut bad = reply(bad);
+        let mut good = reply(good);
+        bad.changed.insert(hostile.to_owned());
+        good.changed.insert("h".to_owned());
+        let text = render(&bad);
+        assert!(
+            !text.contains(['[', ']', '{', '}', '"', '\u{202E}', '\u{2028}', '\u{7}']),
+            "{text}"
+        );
+        assert_eq!(text.replace(&shown, "h"), render(&good), "{text}");
+    }
 }

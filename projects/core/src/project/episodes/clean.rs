@@ -139,9 +139,10 @@ fn marked(text: &str, secrets: &Secrets) -> String {
     keys(&in_context(&blocks(&text)))
 }
 
-/// At most `MAX_INPUT_BYTES` of `text`. A word the cut went through is dropped whole:
-/// half a key is not recognised as one.
-fn bounded(text: &str) -> &str {
+/// At most `MAX_INPUT_BYTES` of `text`, all `clean` reads of it. A word the cut went
+/// through is dropped whole: half a key is not recognised as one. Text kept for an
+/// episode is bounded by this, never cut shorter, until it is cleaned.
+pub fn bounded(text: &str) -> &str {
     if text.len() <= MAX_INPUT_BYTES {
         return text;
     }
