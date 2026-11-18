@@ -18,6 +18,8 @@
 mod content;
 #[cfg(test)]
 mod content_tests;
+#[cfg(test)]
+mod credit_tests;
 mod fetch;
 pub mod index;
 mod listing;
@@ -123,19 +125,19 @@ pub fn pick<'a>(fetched: &'a [Fetched], agreed: &Agreed<'_>) -> Result<(&'a Fetc
         .iter()
         .find(|item| item.name == agreed.source)
         .with_context(|| format!("there is no source named {}", agreed.source))?;
-    ensure!(
-        source.tier == agreed.tier,
-        "{} is {:?} now, not {:?} as you saw it; look at the list again",
-        source.name,
-        source.tier,
-        agreed.tier
-    );
     let entry = source
         .index
         .plugins
         .iter()
         .find(|entry| entry.name == name)
         .with_context(|| format!("{} offers no {name}", source.name))?;
+    let tier = listing::tier(source, entry);
+    ensure!(
+        tier == agreed.tier,
+        "{name} of {} is {tier:?} now, not {:?} as you saw it; look at the list again",
+        source.name,
+        agreed.tier
+    );
     ensure!(
         entry.version == agreed.version && entry.consent() == agreed.permissions,
         "the listing of {name} changed since you saw it; look at the list again"

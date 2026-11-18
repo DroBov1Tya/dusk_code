@@ -192,8 +192,8 @@ pub fn word(tier: Tier) -> &'static str {
 
 fn about(tier: Tier) -> &'static str {
     match tier {
-        Tier::Official => "signed by the key built into duskcode",
-        Tier::Verified => "from mirrors the official list names, with their address and key",
+        Tier::Official => "made by duskcode and signed by the key built into it",
+        Tier::Verified => "checked and signed for duskcode; written by somebody else",
         Tier::Community => "from mirrors you added; no key of duskcode vouches for them",
         Tier::Local => "found here; no source installed them",
     }
