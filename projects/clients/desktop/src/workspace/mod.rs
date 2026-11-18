@@ -342,6 +342,8 @@ pub struct Workspace {
     pub replied: Option<(String, usize)>,
     /// The pinned bar: the pin it shows, whether its list is open, a pin under way.
     pub pins: chat::pins::PinsView,
+    /// The first screen while no provider is connected.
+    pub welcome: crate::pages::welcome::Welcome,
 }
 
 impl Workspace {

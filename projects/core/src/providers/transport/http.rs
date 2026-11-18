@@ -6,6 +6,8 @@ use std::time::Duration;
 use anyhow::{Result, anyhow, ensure};
 use reqwest::{Client, Response, StatusCode, Url, header::CONTENT_TYPE, redirect::Policy};
 
+use dusk_protocol::model::CheckFailure;
+
 use crate::providers::errors::{ProviderError, ProviderErrorKind};
 
 /// Longest silence tolerated between streamed chunks; reasoning models can pause for a while.
@@ -216,6 +218,32 @@ fn printable(text: &str, limit: usize) -> String {
 }
 
 /// What a refused request tells the user; a bad key says so, with where to fix it.
+/// A model list that failed in a way a client can name; its text is the error's own.
+#[derive(Debug)]
+pub struct CheckFailed(pub CheckFailure, pub String);
+
+impl std::fmt::Display for CheckFailed {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.1)
+    }
+}
+
+impl std::error::Error for CheckFailed {}
+
+pub fn check_failed(cause: CheckFailure, text: impl Into<String>) -> anyhow::Error {
+    anyhow::Error::new(CheckFailed(cause, text.into()))
+}
+
+/// A model list the server refused: 401 and 403 are the key, 404 a wrong address.
+pub fn catalogue_refused(status: StatusCode) -> anyhow::Error {
+    let text = refused("model", status);
+    match status.as_u16() {
+        401 | 403 => check_failed(CheckFailure::Refused, text),
+        404 => check_failed(CheckFailure::NotCompatible, text),
+        _ => anyhow!(text),
+    }
+}
+
 pub fn refused(what: &str, status: StatusCode) -> String {
     let code = status.as_u16();
     match code {

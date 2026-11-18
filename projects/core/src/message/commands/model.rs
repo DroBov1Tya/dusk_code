@@ -28,6 +28,7 @@ pub fn unasked(runtime: &Runtime) -> Result<Vec<ProviderStatus>> {
             balance: None,
             limits: None,
             enabled: true,
+            failure: None,
         })
         .collect())
 }

@@ -19,6 +19,21 @@ pub struct ProviderStatus {
     /// Off: the provider is kept with its key but not asked, so `models` is empty.
     #[serde(default = "yes")]
     pub enabled: bool,
+    /// Why `models` failed, when the core can tell; the text there says it in full.
+    #[serde(default)]
+    pub failure: Option<CheckFailure>,
+}
+
+/// What kind of failure a provider check met, so a client can say it plainly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CheckFailure {
+    /// No connection, or no answer in time.
+    Unreachable,
+    /// HTTP 401 or 403: the key was refused.
+    Refused,
+    /// An answer, but not a model list of the OpenAI API.
+    NotCompatible,
 }
 
 impl ProviderStatus {
@@ -30,6 +45,7 @@ impl ProviderStatus {
             balance: None,
             limits: None,
             enabled: false,
+            failure: None,
         }
     }
 }

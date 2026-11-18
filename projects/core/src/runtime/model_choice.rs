@@ -330,10 +330,18 @@ pub async fn check_provider(
     };
     let listed = tokio::time::timeout(CHECK_TIMEOUT, provider.list_models());
     let (listed, balance) = tokio::join!(listed, balance);
-    let models = match listed {
-        Ok(Ok(models)) => Ok(models),
-        Ok(Err(error)) => Err(format!("{error:#}")),
-        Err(_) => Err("no answer in time".into()),
+    let (models, failure) = match listed {
+        Ok(Ok(models)) => (Ok(models), None),
+        Ok(Err(error)) => {
+            let failure = error
+                .downcast_ref::<crate::providers::transport::http::CheckFailed>()
+                .map(|failed| failed.0);
+            (Err(format!("{error:#}")), failure)
+        }
+        Err(_) => (
+            Err("no answer in time".into()),
+            Some(dusk_protocol::model::CheckFailure::Unreachable),
+        ),
     };
     ProviderStatus {
         name,
@@ -341,6 +349,7 @@ pub async fn check_provider(
         balance,
         limits: provider.limits(),
         enabled: true,
+        failure,
     }
 }
 
@@ -368,6 +377,7 @@ mod tests {
             balance: None,
             limits: None,
             enabled: true,
+            failure: None,
         };
         assert_eq!(
             selected.learn(&[status]).unwrap().model.max_output,

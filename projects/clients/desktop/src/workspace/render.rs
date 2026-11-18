@@ -7,7 +7,7 @@ use super::{Center, Workspace};
 use crate::{
     columns::{inspector, rail, sidebar, topbar},
     modal,
-    pages::{artifacts, chat, connectors, review, schedules, settings},
+    pages::{artifacts, chat, connectors, review, schedules, settings, welcome},
 };
 
 impl Workspace {
@@ -17,7 +17,7 @@ impl Workspace {
     }
 
     fn side_panel_shown(&self) -> bool {
-        self.side_panel_allowed() && !self.right_hidden && !self.quiet
+        self.side_panel_allowed() && !self.right_hidden && !self.quiet && !welcome::shown(self)
     }
 
     /// The middle column's width once the side columns have settled.
@@ -40,10 +40,12 @@ impl Render for Workspace {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         self.record_place();
         crate::plugins::settle(self, window, cx);
+        welcome::settle(self, window, cx);
         let theme = cx.theme();
         let (background, foreground) = (theme.background, theme.foreground);
         let (frame, theme_border) = (rail::color(cx), theme.border);
         let center = match self.center {
+            Center::Chat if welcome::shown(self) => welcome::render(self, cx).into_any_element(),
             Center::Chat => chat::render(self, window, cx).into_any_element(),
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
             Center::Connectors => connectors::render(self, window, cx).into_any_element(),

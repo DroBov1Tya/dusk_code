@@ -20,6 +20,7 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `center=chat\|review\|settings\|connectors\|artifacts` | switches the middle column (it does not load that page's data; use the click paths for that) |
 | `review` | opens the review page |
 | `file=PATH[:LINE]` | opens a file in the viewer |
+| `fake=welcome`, `welcome=form`, `welcome=address:URL` | the first screen of a clean install, its form, an address typed in it (`key=enter` connects) |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
 | `fake=pulls` | four pull requests in Changes, one of each state and checks, and a chat of the chosen project with their icon |
 | `fake=plan-limits` | the ChatGPT plan's 5-hour and weekly windows in the limits ring |

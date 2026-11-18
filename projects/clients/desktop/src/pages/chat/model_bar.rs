@@ -261,6 +261,7 @@ impl Workspace {
                     balance: None,
                     limits: None,
                     enabled: true,
+                    failure: None,
                 })
             })
             .collect();
