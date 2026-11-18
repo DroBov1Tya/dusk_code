@@ -14,6 +14,7 @@ pub use view::render;
 use dusk_protocol::{
     client::{Answer, Command, ProviderTarget, Secret},
     config::ProviderKind,
+    model::CheckFailure,
 };
 use gpui_kit::{
     component::input::{InputEvent, InputState},
@@ -32,12 +33,18 @@ pub enum Step {
     Form,
 }
 
+/// Why the last attempt failed: the kind, when the core could tell it, and its words.
+struct Failed {
+    cause: Option<CheckFailure>,
+    said: String,
+}
+
 pub struct Welcome {
     pub step: Step,
     address: Entity<InputState>,
     token: Entity<InputState>,
     /// The core's answer to the last attempt, when it failed.
-    error: Option<String>,
+    error: Option<Failed>,
     busy: bool,
     /// A connection went through: the next frame, which has the window, opens a new chat.
     connected: bool,
@@ -47,7 +54,7 @@ impl Welcome {
     pub fn new(window: &mut Window, cx: &mut Context<Workspace>) -> Self {
         let address = cx.new(|cx| {
             InputState::new(window, cx)
-                .placeholder("http://localhost:11434/v1 or https://api.example.com/v1")
+                .placeholder("https://api.example.com/v1 or http://127.0.0.1:11434/v1")
         });
         let token = cx.new(|cx| {
             InputState::new(window, cx)
@@ -141,7 +148,8 @@ impl Workspace {
         }
         let address = welcome.address.read(cx).value().trim().to_owned();
         if address.is_empty() {
-            welcome.error = Some("Type the server's address first.".into());
+            let said = "Type the server's address first.".into();
+            welcome.error = Some(Failed { cause: None, said });
             cx.notify();
             return;
         }
@@ -162,20 +170,34 @@ impl Workspace {
                     base_url: address.clone(),
                     api_key: token.clone().map(Secret),
                 };
-                if let Err(error) = settings.check_provider(target).await?.models {
-                    anyhow::bail!(error);
-                }
-                settings.connect(kind, name, address, token).await
+                let status = settings.check_provider(target).await?;
+                let first = match status.models {
+                    Ok(models) => models.into_iter().next().map(|model| model.id),
+                    Err(said) => {
+                        let cause = status.failure;
+                        return Ok(Err(Failed { cause, said }));
+                    }
+                };
+                let name = settings.connect(kind, name, address, token).await?;
+                Ok(Ok((name, first)))
             },
             |ws, result, cx| {
                 ws.welcome.busy = false;
                 match result {
-                    Ok(_) => {
+                    Ok(Ok((name, first))) => {
                         ws.welcome.step = Step::Hidden;
                         ws.welcome.connected = true;
+                        // The new chat can be used at once, as a first model is there.
+                        if let Some(model) = first {
+                            ws.choose_model(format!("{name}/{model}"), cx);
+                        }
                         ws.load_models(cx);
                     }
-                    Err(error) => ws.welcome.error = Some(format!("{error:#}")),
+                    Ok(Err(failed)) => ws.welcome.error = Some(failed),
+                    Err(error) => {
+                        let said = format!("{error:#}");
+                        ws.welcome.error = Some(Failed { cause: None, said });
+                    }
                 }
                 cx.notify();
             },

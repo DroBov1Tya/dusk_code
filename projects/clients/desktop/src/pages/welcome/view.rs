@@ -9,6 +9,8 @@ use gpui_kit::{
     *,
 };
 
+use dusk_protocol::model::CheckFailure;
+
 use super::Step;
 use crate::{
     platform::icon,
@@ -101,7 +103,7 @@ fn intro(cx: &mut Context<Workspace>) -> Div {
 fn form(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let welcome = &ws.welcome;
     let theme = cx.theme();
-    let (muted, foreground, danger) = (theme.muted_foreground, theme.foreground, theme.danger);
+    let (muted, foreground) = (theme.muted_foreground, theme.foreground);
     let back = div()
         .id("welcome-back")
         .small()
@@ -123,12 +125,7 @@ fn form(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             labeled("Token", "kept in the system keychain", cx)
                 .child(Input::new(&welcome.token).large()),
         )
-        .children(
-            welcome
-                .error
-                .clone()
-                .map(|error| div().small().text_color(danger).child(error)),
-        )
+        .children(welcome.error.as_ref().map(|failed| failure(failed, cx)))
         .child(
             div()
                 .flex()
@@ -150,4 +147,26 @@ fn form(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                         .on_click(cx.listener(|ws, _, window, cx| ws.welcome_connect(window, cx))),
                 ),
         )
+}
+
+/// One plain line for the kind of failure, then the core's own words, quieter; without
+/// a kind, the core's words alone.
+fn failure(failed: &super::Failed, cx: &App) -> Div {
+    let theme = cx.theme();
+    let headline = match failed.cause {
+        Some(CheckFailure::Unreachable) => Some("Cannot reach this address."),
+        Some(CheckFailure::Refused) => Some("The server refused the token."),
+        Some(CheckFailure::NotCompatible) => {
+            Some("The server did not answer like an OpenAI-compatible API.")
+        }
+        None => None,
+    };
+    let said = div().child(failed.said.clone());
+    let column = div().flex().flex_col().gap_1();
+    match headline {
+        Some(headline) => column
+            .child(div().small().text_color(theme.danger).child(headline))
+            .child(said.meta().text_color(theme.muted_foreground)),
+        None => column.child(said.small().text_color(theme.danger)),
+    }
 }

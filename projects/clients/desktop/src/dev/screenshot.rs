@@ -503,6 +503,7 @@ fn act(
                     balance: None,
                     limits: None,
                     enabled: true,
+                    failure: None,
                 })
                 .collect();
             cx.notify();
@@ -531,6 +532,7 @@ fn act(
                 balance: None,
                 limits: None,
                 enabled: true,
+                failure: None,
             }];
             ws.status.model = Some("chatgpt/gpt-6.1-sol".into());
             cx.notify();
