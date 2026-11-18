@@ -348,3 +348,88 @@ fn the_failure_ladder_is_off_and_its_rungs_rise() {
         assert!(parse(bad).is_err(), "{bad:?}");
     }
 }
+
+#[test]
+fn the_team_switches_are_off_and_its_ceilings_have_defaults() {
+    let plain = parse(PROVIDERS).unwrap().limits();
+    assert!(!plain.plan_graph && !plain.task_packets && !plain.member_worktrees);
+    assert!(!plain.peer_messages && !plain.procedures);
+    let ceilings = (
+        plain.team_at_once,
+        plain.team_max_steps,
+        plain.team_max_tokens,
+        plain.team_max_minutes,
+    );
+    assert_eq!(ceilings, (3, 400, 4_000_000, 120));
+    let set = parse(
+        "limits:\n  plan_graph: true\n  task_packets: true\n  member_worktrees: true\n  \
+         peer_messages: true\n  procedures: true\n",
+    )
+    .unwrap()
+    .limits();
+    assert!(set.plan_graph && set.task_packets && set.member_worktrees);
+    assert!(set.peer_messages && set.procedures);
+    for bad in [
+        "limits:\n  plan_graph: 1\n",
+        "limits:\n  procedures: maybe\n",
+        "limits:\n  team_unknown: 1\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
+fn the_team_ceilings_accept_their_bounds_and_refuse_beyond() {
+    let limit = |key: &str, value: u64| parse(&format!("limits:\n  {key}: {value}\n"));
+    for (key, low, high) in [
+        ("team_at_once", 1, 8),
+        ("team_max_steps", 10, 5_000),
+        ("team_max_tokens", 100_000, 100_000_000),
+        ("team_max_minutes", 5, 1_440),
+    ] {
+        assert!(limit(key, low).is_ok(), "{key} {low}");
+        assert!(limit(key, high).is_ok(), "{key} {high}");
+        assert!(limit(key, low - 1).is_err(), "{key} {}", low - 1);
+        assert!(limit(key, high + 1).is_err(), "{key} {}", high + 1);
+    }
+}
+
+#[test]
+fn a_team_never_runs_more_at_once_than_agents_may_work() {
+    let limits = |yaml: &str| parse(yaml).unwrap().limits();
+    assert_eq!(
+        limits("limits:\n  max_agents_at_work: 8\n").team_members_at_once(),
+        3
+    );
+    // The default of 3 would be too many for a user who allows two agents; it is cut.
+    assert_eq!(
+        limits("limits:\n  max_agents_at_work: 2\n").team_members_at_once(),
+        2
+    );
+    let both = "limits:\n  max_agents_at_work: 4\n  team_at_once: 6\n";
+    assert_eq!(limits(both).team_members_at_once(), 4);
+}
+
+#[test]
+fn the_team_section_names_models_and_roles() {
+    let plain = parse(PROVIDERS).unwrap();
+    assert!(plain.team().model.is_none() && plain.team().models.is_empty());
+    let set = parse(
+        "team:\n  model: main/small\n  models:\n    code-reviewer: main/strong\n    general: main/small\n",
+    )
+    .unwrap();
+    assert_eq!(set.team().model.as_deref(), Some("main/small"));
+    assert_eq!(set.team().models["code-reviewer"], "main/strong");
+    let yaml = set.to_yaml().unwrap();
+    assert_eq!(parse(&yaml).unwrap().team(), set.team());
+    for bad in [
+        "team:\n  model: small\n",
+        "team:\n  model: '/small'\n",
+        "team:\n  models:\n    reviewer: nowhere\n",
+        "team:\n  models:\n    '../x': main/small\n",
+        "team:\n  models:\n    '': main/small\n",
+        "team:\n  speed: fast\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
