@@ -106,16 +106,7 @@ impl Tool for ReadFile {
             match (&arguments.path, &arguments.paths) {
                 (Some(path), None) => {
                     let path = context.resolve(path, false).await?;
-                    // Taken before the read: a write in between leaves a stamp the text
-                    // does not match, so the text is never used as a "before" it was not.
-                    let stamp = tokio::fs::symlink_metadata(&path)
-                        .await
-                        .ok()
-                        .and_then(|meta| Stamp::from_metadata(&meta));
-                    let text = read_text(&path).await?;
-                    if let Some(stamp) = stamp {
-                        keep_seen(&context, &path, stamp, &text);
-                    }
+                    let text = read_and_keep(&context, &path).await?;
                     Ok(window(&text, arguments.offset, arguments.limit))
                 }
                 (None, Some(paths)) => {
@@ -152,7 +143,7 @@ async fn read_many(paths: &[String], context: &ToolContext) -> Result<String> {
     for path in paths {
         // The same check as a single `path`, approval of a place outside included.
         texts.push(match context.resolve(path, false).await {
-            Ok(resolved) => read_text(&resolved).await,
+            Ok(resolved) => read_and_keep(context, &resolved).await,
             Err(error) => Err(error),
         });
     }
@@ -224,6 +215,21 @@ fn section(text: &str, allowance: usize) -> String {
         out.push_str("\n[cut; read this file alone with path]");
     }
     out
+}
+
+/// Reads a file and keeps its text for the ledger. The stamp is taken before the read: a
+/// write in between leaves a stamp the text does not match, so the text is never used as
+/// a "before" it was not.
+async fn read_and_keep(context: &ToolContext, path: &Path) -> Result<String> {
+    let stamp = tokio::fs::symlink_metadata(path)
+        .await
+        .ok()
+        .and_then(|meta| Stamp::from_metadata(&meta));
+    let text = read_text(path).await?;
+    if let Some(stamp) = stamp {
+        keep_seen(context, path, stamp, &text);
+    }
+    Ok(text)
 }
 
 /// Keeps the text of a project file as the "before" of its next change, for the ledger.

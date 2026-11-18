@@ -120,6 +120,39 @@ async fn a_command_records_its_changes_in_its_turn_and_call() {
 }
 
 #[tokio::test]
+async fn files_read_together_are_diffed_like_files_read_alone() {
+    let state = Arc::new(temp_state("ledger-many").await);
+    thread_in_turn(&state, "t").await;
+    let scope = scope("ledger-many");
+    let cwd = scope.cwd().to_owned();
+    fs::write(cwd.join("a.txt"), "one\n").unwrap();
+    fs::write(cwd.join("b.txt"), "uno\n").unwrap();
+    let on = temp_live_config_with("ledger-many", "limits:\n  read_many_files: true\n");
+    let read = ToolContext {
+        config: on.current(),
+        ..context(&scope, &state, "t", "c0")
+    };
+    ReadFile
+        .call(json!({ "paths": ["a.txt", "b.txt"] }), read)
+        .await
+        .unwrap();
+    let call = context(&scope, &state, "t", "c1");
+    run(
+        &call,
+        "printf 'one\\ntwo\\n' > a.txt && printf 'uno\\ndos\\n' > b.txt",
+    )
+    .await;
+    let rows = state.thread_changes("t").await.unwrap();
+    for (path, diff) in [
+        ("a.txt", "@@ -1 +1,2 @@\n one\n+two\n"),
+        ("b.txt", "@@ -1 +1,2 @@\n uno\n+dos\n"),
+    ] {
+        let row = rows.iter().find(|row| row.path == path).unwrap();
+        assert_eq!(row.diff.as_deref(), Some(diff), "{path}");
+    }
+}
+
+#[tokio::test]
 async fn recording_off_watches_nothing() {
     let state = Arc::new(temp_state("ledger-off").await);
     state.create_thread("t", "test").await.unwrap();

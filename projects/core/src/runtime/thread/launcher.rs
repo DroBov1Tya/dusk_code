@@ -307,13 +307,13 @@ mod tests {
         ("agent_state", true, false),
         ("ask_agent", false, false),
         ("ask_user", true, false),
-        ("changes", true, false),
+        ("changes", true, true),
         ("click", false, false),
         ("computer_actions", false, false),
         ("display_audio", true, false),
         ("display_image", true, false),
         ("goal", false, false), // true for the show action only; see `argument_dependent_tools`
-        ("jobs", false, false), // true for list, status and output only
+        ("jobs", false, false), // true for list, status and output only, both ways
         ("load_skill", true, true),
         ("message_parent", false, false),
         ("plan_edit", true, false),
@@ -399,6 +399,12 @@ mod tests {
                 chat.repeatable(name, &arguments),
                 expected,
                 "{name} {arguments}"
+            );
+            assert_eq!(
+                chat.read_only(name, &arguments),
+                // Only the job reads are read-only; goal show is repeatable but writes.
+                expected && name == "jobs",
+                "{name} {arguments} read-only"
             );
         }
         assert!(!chat.repeatable("no_such_tool", &json!({})));
