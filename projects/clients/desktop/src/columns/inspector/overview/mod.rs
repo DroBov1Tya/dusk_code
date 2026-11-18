@@ -32,6 +32,8 @@ pub struct Shown {
     pub older: Vec<LogEntry>,
     /// The last page was full, so older lines may be left.
     pub more: bool,
+    /// The page Back returns to: where the user was when "Open" was pressed.
+    pub back: Option<Center>,
     /// A request is on its way or waits for its second.
     busy: bool,
     /// Something changed while busy: ask again once the answer is in.
@@ -55,10 +57,21 @@ impl Workspace {
 
     /// Opens the Overview as a page.
     pub fn open_overview(&mut self, cx: &mut Context<Self>) {
+        if self.center != Center::Overview {
+            self.overview.back = Some(self.center);
+        }
         self.center = Center::Overview;
         self.load_context(cx);
         self.load_overview(cx);
         cx.notify();
+    }
+
+    /// Leaves the Overview page for the page it was opened from; the chat keeps its place.
+    pub fn close_overview(&mut self, cx: &mut Context<Self>) {
+        if self.center == Center::Overview {
+            self.center = self.overview.back.take().unwrap_or(Center::Chat);
+            cx.notify();
+        }
     }
 
     /// A turn ended or the plan or team changed: the open Overview asks again.
@@ -128,6 +141,7 @@ impl Workspace {
                                 Vec::new()
                             },
                             more: if same { ws.overview.more } else { full },
+                            back: ws.overview.back,
                             busy: false,
                             queued: ws.overview.queued,
                             asked_at: ws.overview.asked_at,

@@ -76,6 +76,9 @@ pub fn fake(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         finished_at: None,
         error_message: None,
         waiting,
+        steps: 0,
+        tokens: 0,
+        cost_micro_usd: 0,
     };
     let wait = |event: fn(Turn) -> ThreadEvent, waiting| {
         let mut turn = turn(waiting);

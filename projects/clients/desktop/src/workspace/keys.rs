@@ -161,6 +161,10 @@ impl Workspace {
             self.center = Center::Chat;
             return true;
         }
+        if self.center == Center::Overview {
+            self.close_overview(cx);
+            return true;
+        }
         false
     }
 }
