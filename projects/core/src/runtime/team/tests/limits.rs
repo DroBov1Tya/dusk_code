@@ -175,27 +175,60 @@ async fn a_role_answers_on_its_own_model_and_one_that_cannot_answer_fails_the_ta
 }
 
 #[tokio::test]
-async fn outside_team_mode_nothing_is_given_out_and_the_mode_coming_back_goes_on() {
+async fn a_mode_switch_for_another_chat_does_not_pause_the_team() {
     let rig = Rig::new("team_mode_left", hang).await;
-    let ids = rig.plan(&[task("one"), task("two")]).await;
-    rig.run_with(|budget| {
-        TeamBudget::new(1, budget.steps(), budget.tokens(), budget.minutes()).unwrap()
+    // The user writes to the chat in TEAM mode: the chat takes that mode up.
+    rig.input.send("lead the work").await.unwrap();
+    until("the chat's turn ended", || async {
+        rig.turns(&rig.lead).await == (1, false)
     })
-    .await
-    .unwrap();
-    assert_eq!(rig.status(&ids[1]).await, PlanStatus::Open);
+    .await;
+    assert_eq!(
+        rig.state().chat_mode(&rig.lead).await.unwrap().as_deref(),
+        Some("TEAM")
+    );
+    rig.plan(&[task("one"), task("two")]).await;
     let config = &rig.launcher().config;
+    // The setting moves on, as when the user switches the mode in another chat.
     config
         .update(|config| config.set_mode("MAIN".into()))
         .unwrap();
+    let one_at_once =
+        |budget: TeamBudget| TeamBudget::new(1, budget.steps(), budget.tokens(), budget.minutes());
+    assert_eq!(
+        rig.run_with(|budget| one_at_once(budget).unwrap())
+            .await
+            .unwrap(),
+        1
+    );
     // The member at work is gone and its task is back: a slot is free.
-    let member = rig.members().await.remove(0);
-    rig.state()
-        .release_task(&rig.lead, &ids[0], "lost")
-        .await
-        .unwrap();
-    super::super::end::cancel_member(rig.launcher(), &member).await;
+    let free_a_slot = || async {
+        for task in rig.state().plan(&rig.lead).await.unwrap() {
+            let Some(member) = task.owner_thread_id.filter(|_| {
+                !matches!(
+                    task.status,
+                    PlanStatus::Open | PlanStatus::Done | PlanStatus::Failed
+                )
+            }) else {
+                continue;
+            };
+            rig.state()
+                .release_task(&rig.lead, &task.task_id, "lost")
+                .await
+                .unwrap();
+            super::super::end::cancel_member(rig.launcher(), &member).await;
+        }
+    };
+    free_a_slot().await;
+    assert_eq!(rig.pass().await, 1);
 
+    // The user writes to this chat in MAIN mode: its team gives out nothing new.
+    free_a_slot().await;
+    rig.input.send("plain work now").await.unwrap();
+    until("the chat's second turn ended", || async {
+        rig.turns(&rig.lead).await == (2, false)
+    })
+    .await;
     assert_eq!(rig.pass().await, 0);
     assert!(rig.run_with(|budget| budget).await.is_err());
     assert_eq!(rig.ended().await, None);
@@ -203,5 +236,10 @@ async fn outside_team_mode_nothing_is_given_out_and_the_mode_coming_back_goes_on
     config
         .update(|config| config.set_mode("TEAM".into()))
         .unwrap();
+    rig.input.send("lead again").await.unwrap();
+    until("the chat's third turn ended", || async {
+        rig.turns(&rig.lead).await == (3, false)
+    })
+    .await;
     assert_eq!(rig.pass().await, 1);
 }

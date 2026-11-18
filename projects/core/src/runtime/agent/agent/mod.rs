@@ -4,6 +4,7 @@
 
 mod calls;
 mod episodes;
+mod mode;
 mod pictures;
 mod report;
 mod resume;

@@ -93,7 +93,7 @@ impl Runner {
             "the team is switched off (limits.plan_graph); the plan is kept"
         );
         ensure!(
-            launcher.config.current().mode() == TEAM,
+            in_team_mode(launcher, lead).await?,
             "a team runs only in TEAM mode; the plan is kept"
         );
         let chat = launcher
@@ -241,6 +241,16 @@ impl Launcher {
             }
         }
     }
+}
+
+/// Whether the chat `lead` is in TEAM mode: its own mode, the one its user last wrote
+/// to it in, else the setting's. A switch made for another chat does not pause its team.
+pub(super) async fn in_team_mode(launcher: &Launcher, lead: &str) -> Result<bool> {
+    let mode = match launcher.state.chat_mode(lead).await? {
+        Some(mode) => mode,
+        None => launcher.config.current().mode().to_owned(),
+    };
+    Ok(mode == TEAM)
 }
 
 /// The dispatcher's tick, started with the core and aborted when it shuts down.

@@ -9,6 +9,7 @@ mod changes;
 mod conversation;
 mod files;
 mod goal;
+mod mode;
 mod threads;
 mod work;
 

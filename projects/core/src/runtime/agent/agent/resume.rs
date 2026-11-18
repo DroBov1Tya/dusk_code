@@ -213,7 +213,7 @@ impl Agent {
         let first = match open {
             [] => None,
             open => {
-                let config = self.config.current();
+                let config = self.config_now().await;
                 Some(self.run_calls(turn, open, &config, inbox).await)
             }
         };

@@ -127,6 +127,17 @@ impl Conversation {
         self.messages.iter().any(|message| self.is_queued(message))
     }
 
+    /// Whether the user's own words are among the queued messages, not only what another
+    /// thread or a job sent.
+    pub fn user_wrote(&self) -> bool {
+        self.messages.iter().any(|message| {
+            self.is_queued(message)
+                && message.role == MessageRole::User
+                && message.from_thread_id.is_none()
+                && message.from_job_id.is_none()
+        })
+    }
+
     /// IDs, timestamps and other metadata stay in the core and never reach the model.
     pub fn chat_messages(&self) -> Vec<ChatMessage> {
         self.chat_messages_through(u64::MAX)
