@@ -15,23 +15,7 @@ use crate::{ui::widgets, workspace::Workspace};
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (muted, hover) = (theme.muted_foreground, theme.accent);
-    let mut list = div().flex().flex_col().child(
-        div()
-            .flex()
-            .flex_row()
-            .items_center()
-            .justify_between()
-            .pr_3()
-            .child(widgets::caption("Projects", cx))
-            .child(
-                Button::new("add-project")
-                    .ghost()
-                    .small()
-                    .icon(IconName::Plus)
-                    .tooltip("Add a project")
-                    .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx))),
-            ),
-    );
+    let mut list = div().flex().flex_col();
     if ws.projects.is_empty() {
         list = list.child(widgets::muted(
             "A project is a folder the agents work in. Its chats gather under it.",
@@ -102,6 +86,15 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         if open {
             list = list.child(threads::render(ws, &project, window, cx));
         }
+    }
+    // The chats of no saved project close the list, so every chat has one place.
+    let loose = threads::loose(ws, cx);
+    if !loose.is_empty() {
+        let mut rows = div().flex().flex_col().gap_0p5();
+        for thread in &loose {
+            rows = rows.child(threads::chat_row(ws, thread, None, cx));
+        }
+        list = list.child(widgets::caption("No project", cx)).child(rows);
     }
     list
 }

@@ -28,6 +28,8 @@ pub struct Prefs {
     pub mono_size: f32,
     /// Chats pinned to the top of the list, by thread ID.
     pub pinned: Vec<String>,
+    /// How the side panel lists the chats: under their projects, or all by last activity.
+    pub chats_by: crate::columns::sidebar::Order,
     /// The right column's folded modules as the user left them; none before the first
     /// choice, so the first start folds the heavy ones.
     pub right_folded: Option<Vec<String>>,
@@ -60,6 +62,7 @@ impl Default for Prefs {
             mono_font: None,
             mono_size: 13.,
             pinned: Vec::new(),
+            chats_by: Default::default(),
             right_folded: None,
             footer_open: false,
             runs_seen_until: 0,

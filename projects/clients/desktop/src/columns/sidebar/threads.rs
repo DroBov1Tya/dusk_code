@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use dusk_protocol::{project::Project, thread::Thread};
 use gpui_kit::{
-    component::{ActiveTheme, Icon},
+    component::{ActiveTheme, Icon, IconName},
     prelude::FluentBuilder,
     *,
 };
@@ -16,6 +16,9 @@ use crate::{
     workspace::{Center, Workspace},
 };
 
+/// The box the working ring and the resting dot stand in.
+const MARK: f32 = 12.;
+
 pub fn render(
     ws: &Workspace,
     project: &Project,
@@ -23,11 +26,9 @@ pub fn render(
     cx: &mut Context<Workspace>,
 ) -> Div {
     let dir = project.dir.to_string_lossy();
-    let threads: Vec<&Thread> = ws
-        .threads
-        .iter()
+    let threads: Vec<&Thread> = super::listed(ws, cx)
+        .into_iter()
         .filter(|thread| thread.project.as_deref() == Some(dir.as_ref()))
-        .filter(|thread| ws.matches_search(thread, cx))
         .collect();
     let mut list = div().flex().flex_col().gap_0p5().pl_5().pt_1();
     if threads.is_empty() {
@@ -39,11 +40,37 @@ pub fn render(
     list
 }
 
-/// One chat in a list; `source` adds where it was started, for the recent list.
+/// The chats that stand under no saved project: started outside one, or in a folder that
+/// is not a project any more.
+pub fn loose(ws: &Workspace, cx: &App) -> Vec<Thread> {
+    super::listed(ws, cx)
+        .into_iter()
+        .filter(|thread| project_of(ws, thread).is_none())
+        .cloned()
+        .collect()
+}
+
+fn project_of<'a>(ws: &'a Workspace, thread: &Thread) -> Option<&'a Project> {
+    let dir = thread.project.as_deref()?;
+    ws.projects
+        .iter()
+        .find(|project| project.dir.to_string_lossy() == dir)
+}
+
+/// Where a chat belongs, for a list that is not grouped: where it was started when that
+/// is not this window, or else the name of its project.
+pub fn place(ws: &Workspace, thread: &Thread) -> Option<String> {
+    if thread.source != "gui" {
+        return Some(thread.source.clone());
+    }
+    project_of(ws, thread).map(|project| project.name.clone())
+}
+
+/// One chat in a list; `place` is said at the row's end, in a list that is not grouped.
 pub fn chat_row(
     ws: &Workspace,
     thread: &Thread,
-    source: Option<&str>,
+    place: Option<String>,
     cx: &mut Context<Workspace>,
 ) -> AnyElement {
     let theme = cx.theme();
@@ -60,23 +87,29 @@ pub fn chat_row(
         .and_then(|chat| chat.title.clone())
         .or_else(|| thread.title.clone())
         .unwrap_or_else(|| "New chat".to_owned());
-    let prefix = if source.is_some() { "recent" } else { "chat" };
+    let prefix = "chat";
     let fading = ws.fading.contains(&thread.id);
-    let dot = div().size_1p5().rounded_full().flex_none();
-    // A chat whose agent works breathes; the others rest.
+    // A chat whose agent works turns a small ring; the others rest on a dot. Both stand
+    // in a box of one size, so the titles keep one left edge.
+    let mark = div()
+        .size(px(MARK))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center();
     let dot = if working {
-        dot.bg(accent)
-            .with_animation(
-                SharedString::from(format!("{prefix}-working-{id}")),
-                Animation::new(std::time::Duration::from_millis(1400)).repeat(),
-                |dot, phase| {
-                    let pulse = 0.35 + 0.65 * (phase * std::f32::consts::TAU).cos().abs();
-                    dot.opacity(pulse)
-                },
-            )
-            .into_any_element()
+        mark.child(
+            Icon::new(IconName::LoaderCircle)
+                .size(px(MARK))
+                .text_color(accent)
+                .with_animation(
+                    SharedString::from(format!("{prefix}-working-{id}")),
+                    Animation::new(std::time::Duration::from_millis(900)).repeat(),
+                    |icon, delta| icon.rotate(percentage(delta)),
+                ),
+        )
     } else {
-        dot.bg(muted.opacity(0.4)).into_any_element()
+        mark.child(div().size_1p5().rounded_full().bg(muted.opacity(0.4)))
     };
     let row = widgets::row(SharedString::from(format!("{prefix}-{id}")), shown, cx)
         .child(dot)
@@ -90,12 +123,15 @@ pub fn chat_row(
         })
         .child(div().flex_1().min_w_0().truncate().child(title))
         .children(pulls_badge(ws, thread, prefix, cx))
-        .when_some(source.filter(|source| *source != "gui"), |row, source| {
+        .when_some(place, |row, place| {
             row.child(
                 div()
+                    .flex_none()
+                    .max_w(px(96.))
+                    .truncate()
                     .meta()
                     .text_color(muted.opacity(0.8))
-                    .child(source.to_owned()),
+                    .child(place),
             )
         })
         .on_click({

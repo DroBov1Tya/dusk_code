@@ -47,7 +47,8 @@
 //!   shown shell, with Return; `select=ROW:FROM-TO`: cells of a row selected;
 //! - `type=TEXT`: put the text in the message box; `idle=MIN`: as if left alone that long,
 //!   for the mist;
-//! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
+//! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse; `sidebar=project|recent`: how
+//!   the side panel lists the chats;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
 //! - `size=WxH`: resize the window, as a drag of its edge would;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
@@ -861,6 +862,15 @@ fn act(
             cx.notify();
         }
         "theme" => crate::ui::theme::change(cx, |prefs| prefs.theme = value.to_owned()),
+        "sidebar" => {
+            use crate::columns::sidebar::Order;
+            let order = if value == "recent" {
+                Order::Recent
+            } else {
+                Order::Project
+            };
+            crate::ui::theme::change(cx, |prefs| prefs.chats_by = order);
+        }
         "welcome" => match value.split_once(':') {
             Some(("address", address)) => ws.welcome_address(address, window, cx),
             _ => ws.welcome_form(window, cx),
