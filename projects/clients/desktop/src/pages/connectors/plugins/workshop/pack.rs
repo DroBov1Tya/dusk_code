@@ -17,7 +17,7 @@ use gpui_kit::{
     *,
 };
 
-use super::{Grid, actions, capsule, covers::Shown, hero, placeholder::Look, tier};
+use super::{Grid, actions, covers::Shown, hero, placeholder::Look, tier};
 use crate::{
     ui::{Type, size, widgets},
     workspace::Workspace,
@@ -125,14 +125,14 @@ fn banner(
                     })),
             );
     }
-    let art = capsule::art(
+    hero::banner(
         listing.map_or(Shown::Placeholder(Look::None), |listing| ws.cover(listing)),
         listing.map_or(Kind::Pack, |listing| listing.kind),
-        hero::art_width(grid.width),
-        Corners::default(),
+        grid.width,
+        panel,
+        foot,
         cx,
-    );
-    hero::banner(art, grid.width, panel, foot, cx)
+    )
 }
 
 /// The skills of a pack that is here, a row each with its switch at the right edge.
