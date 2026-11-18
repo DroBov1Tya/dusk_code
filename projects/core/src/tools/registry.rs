@@ -13,6 +13,7 @@ use serde_json::Value;
 use tracing::info;
 
 use super::{
+    Shaped,
     schema::Check,
     scope::ToolScope,
     tool::{Progress, Tool, ToolContext, ToolKind},
@@ -109,6 +110,11 @@ impl ToolRegistry {
         self.tools
             .get(name)
             .is_some_and(|tool| tool.repeatable(arguments))
+    }
+
+    /// The result of a call as the model is to be sent it, when the tool shapes it.
+    pub fn shape(&self, name: &str, arguments: &Value, result: &ToolResult) -> Option<Shaped> {
+        self.tools.get(name)?.shape(arguments, result)
     }
 
     /// Whether the call only reads, so it may run with the read-only calls next to it;

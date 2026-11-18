@@ -10,6 +10,7 @@ use tokio::sync::mpsc;
 #[cfg(target_os = "macos")]
 use super::approvals::WindowAccess;
 use super::{
+    Shaped,
     approvals::{Approvals, Request},
     scope::{Place, ToolScope},
 };
@@ -213,6 +214,13 @@ pub trait Tool: Send + Sync {
     /// a restart runs the open calls of such a group again.
     fn read_only(&self, _arguments: &Value) -> bool {
         false
+    }
+
+    /// The result as the model is to be sent it when that is shorter than what is
+    /// stored (`limits.shape_output`); `None` sends it whole. Decided from the call and
+    /// its result alone, so the same call always gives the same text.
+    fn shape(&self, _arguments: &Value, _result: &super::registry::ToolResult) -> Option<Shaped> {
+        None
     }
 
     /// An error is shown to the model as the result, so it can correct itself.

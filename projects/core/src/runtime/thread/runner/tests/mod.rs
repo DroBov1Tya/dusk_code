@@ -395,6 +395,7 @@ mod goals;
 mod repeats;
 mod resume;
 mod retries;
+mod shaped;
 mod shrink;
 mod stubs;
 mod tail;

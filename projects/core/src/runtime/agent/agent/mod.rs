@@ -7,6 +7,7 @@ mod pictures;
 mod report;
 mod resume;
 mod retry;
+mod shaped;
 mod step;
 mod stubs;
 #[cfg(test)]

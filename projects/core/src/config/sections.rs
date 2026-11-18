@@ -115,6 +115,12 @@ pub struct Limits {
     /// until the evals show the cached share and the wall time do not get worse.
     #[serde(default)]
     pub compact_early: bool,
+    /// Whether the output of a command whose program is known (cargo, pytest, npm, git
+    /// transfers) is sent with passing tests, progress and repeats left out, and a note
+    /// on how to read it whole. The full output stays stored. Off until the evals show
+    /// the model does not miss what it no longer sees.
+    #[serde(default)]
+    pub shape_output: bool,
 }
 
 impl Default for Limits {
@@ -144,6 +150,7 @@ impl Default for Limits {
             compact_tail: false,
             compact_tail_tokens: default_compact_tail_tokens(),
             compact_early: false,
+            shape_output: false,
         }
     }
 }

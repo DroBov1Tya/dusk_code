@@ -58,6 +58,12 @@ fn events_leave_their_lines_and_messages_leave_none() {
         saved_tokens: 9000,
     };
     assert_eq!(note(&stubbed), None, "a move leaves no row in the chat");
+    let shaped = ThreadEvent::ResultShaped { saved_tokens: 900 };
+    assert_eq!(
+        note(&shaped),
+        None,
+        "a shaped result leaves no row in the chat"
+    );
 }
 
 fn retrying(attempt: u32, max_attempts: Option<u32>) -> ThreadEvent {

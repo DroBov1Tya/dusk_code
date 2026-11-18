@@ -29,6 +29,7 @@ use crate::tools::{
 };
 
 use super::process::{CommandEnv, Running};
+use super::shape::Shaped;
 use crate::runtime::jobs::Launch;
 
 const DEFAULT_TIMEOUT_SECONDS: u64 = 120;
@@ -271,6 +272,12 @@ impl Tool for RunCommand {
 
     fn parameters(&self) -> Value {
         schema::of::<RunCommandArguments>()
+    }
+
+    /// Only a command that ended in the foreground has an exit code and output of its own.
+    fn shape(&self, arguments: &Value, result: &crate::tools::ToolResult) -> Option<Shaped> {
+        result.exit_code?;
+        super::shape::shape(arguments["command"].as_str()?, &result.content)
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {

@@ -1,6 +1,6 @@
 //! A thread as the model sees it: its system messages, the newest compaction summary and
-//! the messages after it, with old tool results as their stubs when those are on, and
-//! which of them are still waiting for an answer.
+//! the messages after it, with old tool results as their stubs when those are on and
+//! command output as it was shaped, and which of them are still waiting for an answer.
 
 mod cut;
 
@@ -15,7 +15,9 @@ use crate::{
         model_choice::ModelChoice,
         thread::start::{FORK_INTRO, NO_PROMPT, display_name},
     },
-    state::{Compaction, LastPrompt, Message, MessageRole, State, Stub, estimate_tokens},
+    state::{
+        Compaction, LastPrompt, Message, MessageRole, ShapedResult, State, Stub, estimate_tokens,
+    },
     tools::{ToolRegistry, ToolScope},
 };
 
@@ -37,11 +39,16 @@ pub struct Conversation {
     /// Stubs sent in place of tool results, by message ID; empty unless
     /// `limits.stub_results` is on.
     pub stubs: HashMap<String, Stub>,
+    /// Command output sent shaped, by message ID. Loaded whatever the switches say: the
+    /// text was decided when the result was stored, so turning `limits.shape_output` off
+    /// does not change what earlier requests sent.
+    pub shaped: HashMap<String, ShapedResult>,
 }
 
 impl Conversation {
     /// With `stub_results` off no stub is loaded, so the request is the stored messages
-    /// word for word, whatever stubs the thread holds.
+    /// word for word, whatever stubs the thread holds, save the results shaped when they
+    /// were stored.
     pub async fn load(state: &State, thread_id: &str, stub_results: bool) -> Result<Self> {
         let compaction = state.latest_compaction(thread_id).await?;
         let after = compaction
@@ -70,6 +77,7 @@ impl Conversation {
             true => state.stubs(thread_id, after).await?,
             false => HashMap::new(),
         };
+        let shaped = state.shaped_results(thread_id, after).await?;
         Ok(Self {
             messages,
             answered_through: state.answered_through(thread_id).await?,
@@ -77,6 +85,7 @@ impl Conversation {
             compaction,
             senders,
             stubs,
+            shaped,
         })
     }
 
@@ -162,9 +171,13 @@ impl Conversation {
     }
 
     /// The estimated size of a message as the request carries it: a stubbed result by
-    /// its stub.
+    /// its stub, a shaped one by its shaped text.
     pub fn sent_tokens(&self, message: &Message) -> u64 {
-        let saved = self.stub(message).map_or(0, |stub| stub.saved_tokens);
+        let saved = match (self.stub(message), self.shaped(message)) {
+            (Some(stub), _) => stub.saved_tokens,
+            (None, Some(shaped)) => shaped.saved_tokens,
+            (None, None) => 0,
+        };
         message.context_tokens().saturating_sub(saved)
     }
 
@@ -189,14 +202,19 @@ impl Conversation {
     }
 
     /// Tokens freed by stubs made after a request through `through` of messages that
-    /// request sent in full. Messages after it are estimated by their stubs already.
+    /// request sent whole or shaped. Messages after it are estimated by their stubs
+    /// already. A shaped result was shaped when it was stored, so the request counted
+    /// its shaped text, and the stub frees only what that held more.
     fn saved_since(&self, through: u64) -> u64 {
         self.messages
             .iter()
             .filter(|message| message.sequence <= through)
-            .filter_map(|message| self.stub(message))
-            .filter(|stub| stub.made_at_sequence > through)
-            .map(|stub| stub.saved_tokens)
+            .filter_map(|message| Some((self.stub(message)?, message)))
+            .filter(|(stub, _)| stub.made_at_sequence > through)
+            .map(|(stub, message)| {
+                let shaped = self.shaped(message).map_or(0, |shaped| shaped.saved_tokens);
+                stub.saved_tokens.saturating_sub(shaped)
+            })
             .sum()
     }
 
@@ -204,6 +222,14 @@ impl Conversation {
     fn stub(&self, message: &Message) -> Option<&Stub> {
         match message.role {
             MessageRole::Tool => self.stubs.get(&message.message_id),
+            _ => None,
+        }
+    }
+
+    /// Only a tool result is ever shaped.
+    fn shaped(&self, message: &Message) -> Option<&ShapedResult> {
+        match message.role {
+            MessageRole::Tool => self.shaped.get(&message.message_id),
             _ => None,
         }
     }
@@ -228,10 +254,15 @@ impl Conversation {
                 text: content,
                 tool_calls: message.tool_calls.clone(),
             }),
-            // A stub still answers its call, so the call and its result stay paired.
+            // A stub still answers its call, so the call and its result stay paired. It
+            // stands in for a shaped result too, which was what was sent before it.
             MessageRole::Tool => Some(ChatMessage::Tool {
                 call_id: message.tool_call_id.clone()?,
-                content: self.stub(message).map_or(content, |stub| stub.text.clone()),
+                content: match (self.stub(message), self.shaped(message)) {
+                    (Some(stub), _) => stub.text.clone(),
+                    (None, Some(shaped)) => shaped.text.clone(),
+                    (None, None) => content,
+                },
                 pictures: Vec::new(),
             }),
         }
@@ -320,6 +351,7 @@ mod tests {
             last_prompt: None,
             senders: HashMap::new(),
             stubs: HashMap::new(),
+            shaped: HashMap::new(),
         };
 
         let messages = conversation.chat_messages();
@@ -349,6 +381,7 @@ mod tests {
             last_prompt: None,
             senders: HashMap::new(),
             stubs: HashMap::new(),
+            shaped: HashMap::new(),
         };
         assert_eq!(
             conversation.system_texts(u64::MAX),
@@ -358,5 +391,57 @@ mod tests {
             conversation.system_texts(3),
             ["main prompt".to_owned(), fork]
         );
+    }
+
+    /// A shaped result is sent shaped and counted so; a stub made later stands in for
+    /// it and frees only what the shaped text held more than the stub.
+    #[test]
+    fn a_stub_stands_in_for_a_shaped_result_and_frees_what_was_sent() {
+        let mut result = message(4, MessageRole::Tool, "the whole output");
+        result.content_tokens = 1000;
+        let mut conversation = Conversation {
+            messages: vec![
+                message(1, MessageRole::System, "prompt"),
+                message(2, MessageRole::User, "go"),
+                result,
+                message(5, MessageRole::User, "next"),
+            ],
+            compaction: None,
+            answered_through: 5,
+            last_prompt: Some(LastPrompt {
+                prompt_tokens: 3000,
+                through_sequence: 5,
+            }),
+            senders: HashMap::new(),
+            stubs: HashMap::new(),
+            shaped: HashMap::from([(
+                "id-4".to_owned(),
+                ShapedResult {
+                    text: "shaped".into(),
+                    saved_tokens: 990,
+                },
+            )]),
+        };
+        let sent = |conversation: &Conversation| match &conversation.chat_messages()[2] {
+            ChatMessage::Tool { content, .. } => content.clone(),
+            other => panic!("{other:?}"),
+        };
+        assert_eq!(sent(&conversation), "shaped");
+        assert_eq!(conversation.sent_tokens(&conversation.messages[2]), 10);
+        assert_eq!(
+            conversation.tokens(&[]),
+            3000,
+            "the count held the shaped text"
+        );
+
+        let stub = Stub {
+            text: "stub".into(),
+            saved_tokens: 995,
+            made_at_sequence: 6,
+        };
+        conversation.stubs.insert("id-4".into(), stub);
+        assert_eq!(sent(&conversation), "stub");
+        assert_eq!(conversation.sent_tokens(&conversation.messages[2]), 5);
+        assert_eq!(conversation.tokens(&[]), 3000 - 5);
     }
 }

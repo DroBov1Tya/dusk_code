@@ -407,6 +407,10 @@ impl Agent {
             outcome,
             finished,
         } = ran;
+        let shaped = finished
+            .as_ref()
+            .filter(|_| config.limits().shape_output)
+            .and_then(|result| self.tools.shape(&call.name, &call.arguments, result));
         if finished.is_some() && !self.hooks.is_empty() {
             let details =
                 json!({ "tool": call.name, "arguments": call.arguments, "result": content });
@@ -443,6 +447,11 @@ impl Agent {
         if let Some(notice) = &notice {
             content.push_str(&format!("\n\n{}", notice.note));
         }
+        // What hooks and the repeat note added goes to the model shaped or not.
+        let shaped = shaped.zip(finished.as_ref()).and_then(|(shaped, result)| {
+            let notes = content.strip_prefix(result.content.as_str())?;
+            Some((shaped, notes.to_owned()))
+        });
         let (artifacts, exit_code) = finished
             .as_ref()
             .map_or((Vec::new(), None), |r| (r.artifacts.clone(), r.exit_code));
@@ -454,7 +463,10 @@ impl Agent {
             outcome,
             exit_code,
         );
-        stored.await.context("cannot store the tool result")?;
+        let stored = stored.await.context("cannot store the tool result")?;
+        if let Some((shaped, notes)) = shaped {
+            self.send_shaped(&stored, shaped, &notes).await;
+        }
         if call.name == "ask_user"
             && let Some(result) = &finished
             && !result.is_error

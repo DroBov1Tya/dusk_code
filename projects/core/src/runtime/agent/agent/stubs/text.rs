@@ -49,10 +49,22 @@ pub fn stub_text(stored: &Stored) -> String {
     {
         text.push_str(&format!(" Last line: {line}."));
     }
-    text.push_str(&format!(
-        " Stored: read_history {{\"result\": {n}}} returns it without running anything.]"
-    ));
+    text.push_str(&format!(" Stored: {}.]", get_back(n)));
     text
+}
+
+/// The line a shaped result ends with: how many lines of the stored output it leaves
+/// out, what they were, and how to read them. `what` is the core's own words.
+pub fn left_out_note(n: u64, lines: usize, what: &str) -> String {
+    format!(
+        "[{lines} lines left out: {what}. The whole output is stored: {}.]",
+        get_back(n)
+    )
+}
+
+/// How a stored result is read back, as every stub and note says it.
+fn get_back(n: u64) -> String {
+    format!("read_history {{\"result\": {n}}} returns it without running anything")
 }
 
 /// One line of the index a compaction's summary ends with: `N tool what outcome`. The

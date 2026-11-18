@@ -22,6 +22,7 @@ use crate::{
     runtime::{ThreadEvent, thread::Conversation},
     state::{CallEnd, Message, MessageRole, NewStub, calls_of, saved_tokens},
 };
+pub(super) use text::left_out_note;
 use text::{Stored, index_line, stub_text};
 
 /// The tools whose results are put away: they hold nearly all tool tokens, and what they
@@ -235,9 +236,9 @@ fn frontier(conversation: &Conversation) -> u64 {
 }
 
 /// The results after `after`, in order, that may be put away: of a tool on the list, at
-/// least `stub_min_tokens` large, with no stub yet, and older than the newest
-/// `stub_keep_steps` steps (2 for a large one). A step is an assistant message with tool
-/// calls; a result's age is that of the step that called it.
+/// least `stub_min_tokens` large as sent (shaped, when it was), with no stub yet, and
+/// older than the newest `stub_keep_steps` steps (2 for a large one). A step is an
+/// assistant message with tool calls; a result's age is that of the step that called it.
 fn candidates<'a>(
     conversation: &'a Conversation,
     limits: &Limits,
@@ -255,14 +256,14 @@ fn candidates<'a>(
     messages
         .iter()
         .filter(|message| message.role == MessageRole::Tool && message.sequence > after)
-        .filter(|message| message.content_tokens >= limits.stub_min_tokens)
+        .filter(|message| conversation.sent_tokens(message) >= limits.stub_min_tokens)
         .filter(|message| !conversation.stubs.contains_key(&message.message_id))
         .filter_map(|result| {
             let (step, call) = calls.get(result.message_id.as_str())?;
             let tool = *STUBBED_TOOLS.iter().find(|tool| **tool == call.name)?;
             // The steps from the one that made the call on, itself included.
             let newer = steps.len() - steps.partition_point(|&at| at < step.sequence);
-            let kept = match result.content_tokens >= BIG_RESULT_TOKENS {
+            let kept = match conversation.sent_tokens(result) >= BIG_RESULT_TOKENS {
                 true => BIG_KEEP_STEPS.min(keep),
                 false => keep,
             };
@@ -277,7 +278,7 @@ fn candidates<'a>(
 }
 
 /// The stubs for `candidates` and what they free; none for a stub that would not be
-/// shorter than its result. `None` when nothing is left.
+/// shorter than its result as sent. `None` when nothing is left.
 fn plan(
     conversation: &Conversation,
     candidates: &[Candidate],
@@ -296,7 +297,7 @@ fn plan(
             content: &result.content,
             tokens: result.content_tokens,
         });
-        let freed = saved_tokens(result.content_tokens, &text);
+        let freed = saved_tokens(conversation.sent_tokens(result), &text);
         if freed == 0 {
             continue;
         }

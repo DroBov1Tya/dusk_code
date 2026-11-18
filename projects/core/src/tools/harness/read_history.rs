@@ -54,10 +54,11 @@ struct ReadHistoryArguments {
     offset: Option<usize>,
 }
 
-/// Whether the `result` form is offered and accepted: only where old results are sent as
-/// stubs, since a stub is what names a result to read.
+/// Whether the `result` form is offered and accepted: only where results are sent as
+/// stubs or shaped, since a stub or a shaped result's note is what names one to read.
 fn result_form_on(context: &ToolContext) -> bool {
-    context.config.limits().stub_results
+    let limits = context.config.limits();
+    limits.stub_results || limits.shape_output
 }
 
 impl ReadHistory {

@@ -1,0 +1,60 @@
+exit code: 1
+stdout:
+============================= test session starts ==============================
+platform linux -- Python 3.11.9, pytest-8.3.2, pluggy-1.5.0 -- /usr/bin/python3
+cachedir: .pytest_cache
+rootdir: /home/dev/shop
+collecting ... collected 40 items
+
+tests/test_cart.py::test_add_item[0] PASSED                    [  2%]
+tests/test_cart.py::test_add_item[1] PASSED                    [  5%]
+tests/test_cart.py::test_add_item[2] PASSED                    [  7%]
+tests/test_cart.py::test_add_item[3] PASSED                    [ 10%]
+tests/test_cart.py::test_add_item[4] PASSED                    [ 12%]
+tests/test_cart.py::test_add_item[5] PASSED                    [ 15%]
+tests/test_cart.py::test_add_item[6] PASSED                    [ 17%]
+tests/test_cart.py::test_add_item[7] PASSED                    [ 20%]
+tests/test_cart.py::test_add_item[8] PASSED                    [ 22%]
+tests/test_cart.py::test_add_item[9] PASSED                    [ 25%]
+tests/test_cart.py::test_add_item[10] PASSED                    [ 27%]
+tests/test_cart.py::test_add_item[11] PASSED                    [ 30%]
+tests/test_cart.py::test_add_item[12] PASSED                    [ 32%]
+tests/test_cart.py::test_add_item[13] PASSED                    [ 35%]
+tests/test_cart.py::test_add_item[14] PASSED                    [ 37%]
+tests/test_cart.py::test_add_item[15] PASSED                    [ 40%]
+tests/test_cart.py::test_add_item[16] PASSED                    [ 42%]
+tests/test_cart.py::test_add_item[17] PASSED                    [ 45%]
+tests/test_cart.py::test_add_item[18] PASSED                    [ 47%]
+tests/test_cart.py::test_add_item[19] PASSED                    [ 50%]
+tests/test_cart.py::test_add_item[20] PASSED                    [ 52%]
+tests/test_cart.py::test_add_item[21] PASSED                    [ 55%]
+tests/test_cart.py::test_add_item[22] PASSED                    [ 57%]
+tests/test_cart.py::test_add_item[23] PASSED                    [ 60%]
+tests/test_cart.py::test_add_item[24] PASSED                    [ 62%]
+tests/test_cart.py::test_add_item[25] PASSED                    [ 65%]
+tests/test_cart.py::test_add_item[26] PASSED                    [ 67%]
+tests/test_cart.py::test_add_item[27] PASSED                    [ 70%]
+tests/test_cart.py::test_add_item[28] PASSED                    [ 72%]
+tests/test_cart.py::test_add_item[29] PASSED                    [ 75%]
+tests/test_cart.py::test_add_item[30] PASSED                    [ 77%]
+tests/test_cart.py::test_add_item[31] PASSED                    [ 80%]
+tests/test_cart.py::test_add_item[32] PASSED                    [ 82%]
+tests/test_cart.py::test_add_item[33] PASSED                    [ 85%]
+tests/test_cart.py::test_add_item[34] PASSED                    [ 87%]
+tests/test_cart.py::test_add_item[35] PASSED                    [ 90%]
+tests/test_cart.py::test_add_item[36] PASSED                    [ 92%]
+tests/test_cart.py::test_add_item[37] PASSED                    [ 95%]
+tests/test_cart.py::test_remove_missing FAILED                      [ 97%]
+tests/test_cart.py::test_discount SKIPPED (needs network)           [100%]
+
+=================================== FAILURES ===================================
+___________________________ test_remove_missing ____________________________
+
+    def test_remove_missing():
+>       Cart().remove("pen")
+E       KeyError: 'pen'
+
+tests/test_cart.py:88: KeyError
+=========================== short test summary info ============================
+FAILED tests/test_cart.py::test_remove_missing - KeyError: 'pen'
+=================== 1 failed, 38 passed, 1 skipped in 0.31s ====================

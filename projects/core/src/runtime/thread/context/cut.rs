@@ -134,6 +134,7 @@ mod tests {
             last_prompt: None,
             senders: HashMap::new(),
             stubs: HashMap::new(),
+            shaped: HashMap::new(),
         }
     }
 

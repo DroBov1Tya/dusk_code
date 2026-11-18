@@ -58,6 +58,7 @@ fn conversation(messages: Vec<Message>) -> Conversation {
         last_prompt: None,
         senders: HashMap::new(),
         stubs: HashMap::new(),
+        shaped: HashMap::new(),
     }
 }
 

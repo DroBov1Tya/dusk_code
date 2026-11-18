@@ -101,6 +101,13 @@ pub enum ThreadEvent {
         /// Estimated tokens each later request carries less.
         saved_tokens: u64,
     },
+    /// The result of the call just finished is sent shaped: a command's output with
+    /// passes, progress and repeats left out and a note on how to read it whole, which
+    /// stays stored. Clients show nothing for it; evals count it.
+    ResultShaped {
+        /// Estimated tokens each later request carries less.
+        saved_tokens: u64,
+    },
     /// The thread's token counts, when it starts and after each turn and compaction. `limit` is the largest request: the
     /// configured input limit or the model window, whichever is smaller.
     Tokens {

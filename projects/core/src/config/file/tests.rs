@@ -245,6 +245,19 @@ fn stubs_are_off_and_their_limits_stay_inside_their_bounds() {
 }
 
 #[test]
+fn shaped_output_is_off_until_set() {
+    assert!(!parse(PROVIDERS).unwrap().limits().shape_output);
+    let set = parse("limits:\n  shape_output: true\n").unwrap().limits();
+    assert!(set.shape_output);
+    for bad in [
+        "limits:\n  shape_output: 1\n",
+        "limits:\n  shape_output: yes please\n",
+    ] {
+        assert!(parse(bad).is_err(), "{bad:?}");
+    }
+}
+
+#[test]
 fn the_kept_tail_is_off_and_stays_inside_its_bounds() {
     let plain = parse(PROVIDERS).unwrap().limits();
     assert!(!plain.compact_tail && !plain.compact_early);
