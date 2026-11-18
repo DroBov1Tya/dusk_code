@@ -23,6 +23,8 @@ use crate::{
 const ASPECT: f32 = 16. / 10.;
 /// The width of a shot in the strip.
 const THUMB: f32 = 112.;
+/// The stage is never smaller than this high, whatever the window.
+const MIN_STAGE: f32 = 160.;
 const RADIUS: f32 = 8.;
 const FADE: Duration = Duration::from_millis(240);
 /// A caption is one line; the rest is never shaped.
@@ -55,11 +57,12 @@ fn shots(ws: &Workspace, listing: &Listing) -> Vec<Shot> {
         .collect()
 }
 
-/// The gallery at `width`, or nothing when the listing has no screenshots to show.
+/// The gallery at `width`, its stage at most `max_stage` high, or nothing when the listing has no screenshots to show.
 pub fn render(
     ws: &Workspace,
     listing: &Listing,
     width: f32,
+    max_stage: f32,
     cx: &mut Context<Workspace>,
 ) -> Option<Div> {
     let theme = cx.theme();
@@ -75,10 +78,13 @@ pub fn render(
         return None;
     }
     let index = ws.workshop.gallery.min(count - 1);
-    let height = (width / ASPECT).round();
+    // A short window gets a smaller stage of the same shape, so the caption is not cut.
+    let height = (width / ASPECT).min(max_stage).max(MIN_STAGE).round();
+    let stage_width = (height * ASPECT).min(width).round();
     let mut stage = div()
         .relative()
-        .w(px(width))
+        .flex_none()
+        .w(px(stage_width))
         .h(px(height))
         .rounded(px(RADIUS))
         .border_1()
@@ -137,7 +143,7 @@ pub fn render(
         .flex()
         .flex_col()
         .gap(px(size::GAP_S))
-        .child(stage)
+        .child(div().flex().justify_center().child(stage))
         .child(div().small().text_color(muted).truncate().child(line));
     if count > 1 {
         column = column.child(

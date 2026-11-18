@@ -383,9 +383,11 @@ impl Workspace {
         cx.notify();
     }
 
-    /// Asks before installing or removing; nothing happens until the yes.
-    pub fn confirm_store(&mut self, confirm: Confirm, cx: &mut Context<Self>) {
+    /// Asks before installing or removing; nothing happens until the yes. The keyboard
+    /// starts on Cancel, so Enter alone never installs or removes.
+    pub fn confirm_store(&mut self, confirm: Confirm, window: &mut Window, cx: &mut Context<Self>) {
         self.modal = Some(Modal::Workshop(confirm));
+        self.confirm_focus.focus(window, cx);
         cx.notify();
     }
 

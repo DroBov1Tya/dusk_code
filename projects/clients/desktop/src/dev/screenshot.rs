@@ -440,7 +440,7 @@ fn act(
         }
         "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
         "fake" if value == "store" => super::store::fake(ws, cx),
-        "workshop" => super::store::step(ws, value, cx),
+        "workshop" => super::store::step(ws, value, window, cx),
         "fake" if value == "limits" => {
             use dusk_protocol::model::{RateLimit, RateLimits};
             ws.status.limits = Some(RateLimits {

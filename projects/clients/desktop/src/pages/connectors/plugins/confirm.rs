@@ -36,7 +36,7 @@ pub fn verb(listing: &Listing) -> &'static str {
     }
 }
 
-pub fn render(confirm: &Confirm, cx: &mut Context<Workspace>) -> Div {
+pub fn render(confirm: &Confirm, focus: &FocusHandle, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let (body, yes) = match confirm {
         Confirm::Install(listing) => (permissions(listing, cx), verb(listing)),
@@ -50,7 +50,8 @@ pub fn render(confirm: &Confirm, cx: &mut Context<Workspace>) -> Div {
     let button = Button::new("store-confirm").label(yes);
     let button = match confirm {
         Confirm::Install(_) => button.primary(),
-        Confirm::Remove(_) => button.danger(),
+        // Outline like the listing window's Remove: the kit's filled danger is a pale tint.
+        Confirm::Remove(_) => button.danger().outline(),
     };
     div().flex().flex_col().gap_4().p_5().child(body).child(
         div()
@@ -61,6 +62,7 @@ pub fn render(confirm: &Confirm, cx: &mut Context<Workspace>) -> Div {
             .child(
                 Button::new("store-cancel")
                     .ghost()
+                    .track_focus(focus)
                     .label("Cancel")
                     .on_click(cx.listener(|ws, _, _, cx| ws.close_modal(cx))),
             )

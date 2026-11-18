@@ -407,7 +407,7 @@ pub fn fake(ws: &mut Workspace, cx: &mut Context<Workspace>) {
 /// `workshop=all:TIER`: that tier's shelf whole; `workshop=tier:TIER`: filter by it;
 /// `workshop=coming:NAME`: its cover still coming; `workshop=offline:`: the store could not
 /// be read again, so covers not here are drawn offline; `workshop=filters:`: the filter menu open; `workshop=scroll:PX`: the page that far down; `workshop=report`: what "Update all" did.
-pub fn step(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
+pub fn step(ws: &mut Workspace, value: &str, window: &mut Window, cx: &mut Context<Workspace>) {
     ws.center = Center::Connectors;
     ws.shelf = Shelf::Plugins;
     ws.workshop.open = true;
@@ -465,8 +465,10 @@ pub fn step(ws: &mut Workspace, value: &str, cx: &mut Context<Workspace>) {
         ("all", _) => {
             ws.workshop.shelf = Some(StoreShelf::Tier(tier_named(name).unwrap_or_default()))
         }
-        ("install", Some(listing)) => ws.confirm_store(Confirm::Install(Box::new(listing)), cx),
-        ("remove", Some(_)) => ws.confirm_store(Confirm::Remove(name.into()), cx),
+        ("install", Some(listing)) => {
+            ws.confirm_store(Confirm::Install(Box::new(listing)), window, cx)
+        }
+        ("remove", Some(_)) => ws.confirm_store(Confirm::Remove(name.into()), window, cx),
         ("busy", Some(_)) => {
             ws.workshop.busy.insert(name.into(), "Installing...");
         }

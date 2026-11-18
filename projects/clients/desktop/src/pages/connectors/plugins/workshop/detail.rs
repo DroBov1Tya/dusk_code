@@ -41,7 +41,7 @@ pub fn render(
     ws: &Workspace,
     source: &str,
     name: &str,
-    width: f32,
+    (width, window_height): (f32, f32),
     cx: &mut Context<Workspace>,
 ) -> Div {
     let page = div().flex().p(px(size::GAP_XL)).gap(px(size::GAP_XL));
@@ -62,7 +62,8 @@ pub fn render(
         .w(px(main_w))
         .flex_none()
         .child(header(ws, listing, main_w, cx));
-    if let Some(gallery) = gallery::render(ws, listing, main_w, cx) {
+    let stage_room = stage_room(window_height, main_w >= HEADER_SIDE_BY_SIDE);
+    if let Some(gallery) = gallery::render(ws, listing, main_w, stage_room, cx) {
         main = main.child(gallery);
     }
     let main = main.child(about(listing, cx));
@@ -72,6 +73,23 @@ pub fn render(
     } else {
         page.flex_col().child(main).child(side)
     }
+}
+
+/// The tallest stage that leaves the gallery's caption whole above the window's fold, for
+/// a window of this height: the body scrolls, but a line cut at the fold at rest reads as
+/// broken. The window is 86% of the room under the header bar (about 73 px); its title
+/// row takes 53.
+fn stage_room(window_height: f32, header_side_by_side: bool) -> f32 {
+    const BAR: f32 = 73.;
+    const TITLE_ROW: f32 = 53.;
+    const CAPTION: f32 = 18.;
+    const MARGIN: f32 = 8.;
+    // Under the cover the header's text takes about this much more.
+    const TEXT_UNDER: f32 = 110.;
+    let body = 0.86 * (window_height - BAR) - TITLE_ROW;
+    let header = (super::grid::cover_height(COVER - 2.) + 2.)
+        + if header_side_by_side { 0. } else { TEXT_UNDER };
+    body - size::GAP_XL - header - size::GAP_XL - size::GAP_S - CAPTION - MARGIN
 }
 
 /// The cover with the name, the facts and the tags beside it, or under it when narrow.
