@@ -448,6 +448,22 @@ pub(super) async fn close_call(
     Ok(())
 }
 
+impl State {
+    /// The newest turn of a thread, however it stands; `None` before its first.
+    pub async fn last_turn(&self, thread_id: &str) -> Result<Option<Turn>> {
+        let row = sqlx::query(concat!(
+            "SELECT ",
+            turn_row!(),
+            " FROM turns WHERE thread_id = ? ORDER BY started_at DESC, turn_id DESC LIMIT 1"
+        ))
+        .bind(thread_id)
+        .fetch_optional(&self.pool)
+        .await
+        .context("load the newest turn")?;
+        row.map(decode_turn).transpose()
+    }
+}
+
 pub(super) async fn read_running_turn(
     transaction: &mut Transaction<'_, Sqlite>,
     turn_id: &str,

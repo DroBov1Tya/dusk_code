@@ -76,6 +76,9 @@ pub(crate) async fn member_event(
     let Some(lead) = member.parent_thread_id.as_deref() else {
         return;
     };
+    // From its first event on this runner moves the member's task; recovery leaves
+    // the member to it.
+    launcher.team.served.lock().insert(member.id.clone());
     let moved = match event {
         ThreadEvent::TurnStarted(turn) | ThreadEvent::TurnRunning(turn) => {
             started(launcher, lead, member, turn).await
@@ -159,7 +162,12 @@ async fn finished(
 }
 
 /// The member's turn completed: its answer is the hand-in, or says it is blocked.
-async fn completed(launcher: &Launcher, lead: &str, member: &Thread, turn: &Turn) -> Result<bool> {
+pub(super) async fn completed(
+    launcher: &Launcher,
+    lead: &str,
+    member: &Thread,
+    turn: &Turn,
+) -> Result<bool> {
     let state = &launcher.state;
     let Some(held) = lease::at_work(state, lead, &member.id).await? else {
         return Ok(false);

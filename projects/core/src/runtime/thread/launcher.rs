@@ -257,6 +257,8 @@ impl Launcher {
         let handle = self
             .run_thread(thread_id.to_owned(), &workspace, cwd)
             .await?;
+        // What a stopped process left of its team is settled before its members wake.
+        self.team_settle(thread_id).await;
         // Its agents a stopped process left at work go on, or tell it they stopped.
         if let Err(error) = self.wake_unfinished(Some(thread_id), cwd).await {
             warn!("thread {thread_id}: cannot start its agents left at work: {error:#}");

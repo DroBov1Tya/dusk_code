@@ -7,7 +7,8 @@
 //! `member` makes a member's thread and fixes what it may do, `card` writes its first
 //! message, `clean` takes secrets out of every text that is forwarded, `lease` keeps its claim while its runner lives, `hand_in` moves its task when
 //! its turn ends, `gate` is where a command gate starts, `lead_lines` is what the lead is
-//! told, `end` ends a team, `events` tells the clients.
+//! told, `end` ends a team, `settle` recovers one after a restart, `events` tells the
+//! clients.
 //!
 //! Everything it needs to go on is in the database. `Teams` holds a lock and two caches.
 
@@ -21,6 +22,7 @@ mod hand_in;
 mod lead_lines;
 mod lease;
 mod member;
+mod settle;
 #[cfg(test)]
 mod tests;
 
@@ -62,6 +64,9 @@ pub struct Teams {
     /// The tasks whose gate runs now, so a pass starts none twice. After a restart it
     /// is empty and a gate that was cut off runs again: a gate is a check.
     gates: parking_lot::Mutex<HashSet<String>>,
+    /// The members a runner of this process has reported for. Recovery settles only
+    /// the others: what a stopped process left.
+    served: parking_lot::Mutex<HashSet<String>>,
 }
 
 /// The team behind a chat's `tasks`: what its `run`, `stop` and `show` reach.
@@ -165,6 +170,19 @@ impl Launcher {
             warn!("team of thread {lead}: {error:#}");
         }
         events::team(self, lead, now, false).await;
+    }
+
+    /// The chat `lead` was opened: what a stopped core left of its team is settled, then
+    /// a pass goes on with it. Called before the chat's agents are woken, so a member
+    /// whose turn can go on finds its lease started again.
+    pub async fn team_settle(&self, lead: &str) {
+        if !self.config.current().limits().plan_graph {
+            return;
+        }
+        if let Err(error) = settle::settle(self, lead).await {
+            warn!("team of thread {lead}: cannot settle it: {error:#}");
+        }
+        self.team_changed(lead).await;
     }
 
     /// Ends the chat's running team as stopped: its members at work are cancelled, their

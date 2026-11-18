@@ -171,6 +171,15 @@ async fn make(launcher: &Launcher, config: &Config, lead: &str, role: &str) -> R
     Ok(thread.thread_id)
 }
 
+/// The uid of what a member was last sent for `task`: its card, or the note of the
+/// newest time the task came back.
+pub(super) fn round_uid(task: &PlanTask) -> String {
+    match task.reworks {
+        0 => card::uid(task),
+        reworks => format!("rework:{}:{reworks}", task.task_id),
+    }
+}
+
 /// Delivers the card of a claimed task to its member and starts it; run again, it
 /// stores nothing and only starts a member that still waits.
 pub(super) async fn deliver_card(
@@ -199,7 +208,7 @@ pub(super) async fn deliver_rework(
     task: &PlanTask,
     folder: &Path,
 ) -> Result<()> {
-    let uid = format!("rework:{}:{}", task.task_id, task.reworks);
+    let uid = round_uid(task);
     let id = short_task_id(&task.task_id);
     let note = clean::text(launcher, lead, &task.note).await;
     let text = match task.note.starts_with(gate::FAILED) {
