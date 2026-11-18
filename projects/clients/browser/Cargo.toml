@@ -30,4 +30,5 @@ web-sys = { version = "=0.3.107", features = [
     "MediaStreamConstraints", "Headers", "Blob", "BlobPropertyBag", "Url", "HtmlAudioElement",
     "HtmlMediaElement", "DomTokenList", "CssStyleDeclaration", "File", "FileList",
     "DataTransfer", "ClipboardEvent", "DragEvent", "NodeList", "HtmlDialogElement",
+    "ResizeObserver",
 ] }

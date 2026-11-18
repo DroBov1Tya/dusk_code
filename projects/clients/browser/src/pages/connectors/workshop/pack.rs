@@ -8,7 +8,7 @@ use dusk_protocol::{
 };
 use leptos::prelude::*;
 
-use super::{Shop, card};
+use super::{Shop, card, placeholder::Picture};
 use crate::{
     api,
     ui::{Icon, IconName, Switch, run},
@@ -46,12 +46,12 @@ pub fn page(shop: Shop, name: String) -> impl IntoView {
         Some(listing) => card::facts(listing),
         None => card::mark(Tier::Local).into_any(),
     };
-    let art = card::art(
-        &name,
-        listing.as_ref().map_or(Tier::Local, |listing| listing.tier),
-        listing.as_ref().and_then(|listing| shop.cover(listing)),
-    );
-    let state = listing.as_ref().and_then(card::state);
+    let art = match &listing {
+        Some(listing) => card::cover(shop, listing).into_any(),
+        None => view! { <div class="cover">{card::art(Kind::Pack, &name, Picture::Missing)}</div> }
+            .into_any(),
+    };
+    let state = listing.as_ref().map(card::slot);
     let body = match (here, listing) {
         (Some(pack), _) => {
             let switched = pack.name.clone();

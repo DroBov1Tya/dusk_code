@@ -1,6 +1,8 @@
-//! Featured: the official picks as a wide hero, one at a time: the cover on the left
-//! fading into the panel with the name, what it is, its tags and facts; a strip of the
-//! picks' covers under it, and arrows. It does not move by itself.
+//! The hero: the official picks one at a time, as a card 280 px high across the grid,
+//! the cover at 40:21 on the left (on top when the page is narrow) and the panel with
+//! the name, three lines of text, the facts, the state, Details, and previous, dots and
+//! next. It never moves by itself; a change fades in. The controls stay in place while
+//! the pick changes, so the keyboard focus is kept.
 
 use dusk_protocol::plugin::Listing;
 use leptos::prelude::*;
@@ -10,51 +12,58 @@ use crate::ui::{Icon, IconName};
 
 pub fn hero(shop: Shop, picks: Vec<Listing>) -> impl IntoView {
     let count = picks.len();
-    let index = shop.hero.get() % count;
-    let listing = picks[index].clone();
-    let source = match listing.source.as_str() {
-        "" => "duskcode".to_owned(),
-        source => source.to_owned(),
+    let picks = StoredValue::new(picks);
+    let at = move || shop.hero.get() % count;
+    let current = move || picks.with_value(|picks| picks[at()].clone());
+    let step = move |by: usize| {
+        shop.hero
+            .update(|index| *index = (*index % count + by) % count)
     };
-    let thumbs = picks
-        .iter()
-        .enumerate()
-        .map(|(each, pick)| {
-            view! {
-                <button class="thumb" class:active=each == index aria-label=format!("Show {}", pick.name)
-                    on:click=move |_| shop.hero.set(each)>
-                    {card::art(&pick.name, pick.tier, shop.cover(pick))}</button>
-            }
-        })
+    let open = move |_| {
+        let index = shop.hero.get_untracked() % count;
+        picks.with_value(|picks| shop.open_listing(&picks[index]));
+    };
+    let dots = (0..count)
+        .map(|each| view! { <i class:on=move || at() == each></i> })
         .collect_view();
-    let opened = listing.clone();
-    let step = move |by: usize| shop.hero.set((index + by) % count);
     view! {
-        <section class="hero" aria-label="Featured">
-            <div class="hero-card">
-                <div class="hero-art">
-                    {card::art(&listing.name, listing.tier, shop.cover(&listing))}
+        <section class="hero hero-card" aria-label="Featured">
+            <div class="hero-art">{move || card::cover(shop, &current())}</div>
+            <div class="hero-panel">
+                {move || text(&current(), at(), count)}
+                <div class="hero-foot">
+                    {move || card::slot(&current())}
+                    <button class="ghost" on:click=open>"Details"</button>
                     {(count > 1).then(|| view! {
-                        <button class="round back" aria-label="Previous" on:click=move |_| step(count - 1)><Icon name=IconName::ChevronLeft /></button>
-                        <button class="round next" aria-label="Next" on:click=move |_| step(1)><Icon name=IconName::ChevronRight /></button>
+                        <span class="pager">
+                            <button class="icon" aria-label="Previous pick" on:click=move |_| step(count - 1)>
+                                <Icon name=IconName::ChevronLeft /></button>
+                            <span class="dots" aria-hidden="true">{dots}</span>
+                            <button class="icon" aria-label="Next pick" on:click=move |_| step(1)>
+                                <Icon name=IconName::ChevronRight /></button>
+                        </span>
                     })}
                 </div>
-                <div class="hero-panel">
-                    <span class="vendor">{format!("Featured \u{b7} from {source}")}</span>
-                    <h2>{listing.name.clone()}</h2>
-                    <p class="muted">{listing.description.clone()}</p>
-                    {card::facts(&listing)}
-                    {tags(&listing)}
-                    <div class="hero-foot">
-                        {card::state(&listing)}
-                        <span class="grow"></span>
-                        <button class="ghost" on:click=move |_| shop.open_listing(&opened)>"Details"</button>
-                    </div>
-                </div>
             </div>
-            {(count > 1).then(|| view! { <div class="hero-strip">{thumbs}</div> })}
         </section>
     }
+}
+
+/// Where it comes from and which of the picks, the name, the text and the facts.
+fn text(listing: &Listing, index: usize, count: usize) -> AnyView {
+    let source = match listing.source.as_str() {
+        "" => "duskcode",
+        source => source,
+    };
+    view! {
+        <div class="hero-text">
+            <span class="vendor">{format!("From {source} \u{b7} {} of {count}", index + 1)}</span>
+            <h2 title=listing.name.clone()>{listing.name.clone()}</h2>
+            <p>{listing.description.clone()}</p>
+            {card::facts(listing)}
+        </div>
+    }
+    .into_any()
 }
 
 /// The category and tags as quiet chips.
