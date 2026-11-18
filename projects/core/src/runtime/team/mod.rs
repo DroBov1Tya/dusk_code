@@ -24,7 +24,7 @@ mod member;
 mod tests;
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     time::{Duration, Instant},
 };
 
@@ -58,6 +58,9 @@ pub struct Teams {
     told: parking_lot::Mutex<HashMap<String, lead_lines::Told>>,
     /// When each lead's clients last heard of its team: at most one event a second.
     heard: parking_lot::Mutex<HashMap<String, Instant>>,
+    /// The tasks whose gate runs now, so a pass starts none twice. After a restart it
+    /// is empty and a gate that was cut off runs again: a gate is a check.
+    gates: parking_lot::Mutex<HashSet<String>>,
 }
 
 /// The team behind a chat's `tasks`: what its `run`, `stop` and `show` reach.

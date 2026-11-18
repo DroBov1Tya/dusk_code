@@ -9,5 +9,5 @@ mod skill_saves;
 
 pub use file_changes::project_folder;
 pub use jobs::Jobs;
-pub use run_command::{RunCommand, run_for_user};
+pub use run_command::{CHECK_TIMEOUT_SECONDS, RunCommand, run_check, run_for_user};
 pub use shape::Shaped;

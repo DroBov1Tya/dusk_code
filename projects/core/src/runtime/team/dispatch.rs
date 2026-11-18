@@ -1,7 +1,8 @@
 //! One pass of the dispatcher over a chat's team: everything the core does by itself for
 //! a plan, read from the tables each time, so a pass after a restart goes on where the
 //! last one stopped. In order: the lead that went quiet ends the team; leases past their
-//! time are released; members whose card or rework note did not arrive get it; the
+//! time are released; members whose card or rework note did not arrive get it; a gate
+//! that a stop cut off runs again; the
 //! budget is checked and ready tasks are given out, lowest phase label first and oldest
 //! first within it; then the end and the stall rule.
 
@@ -12,7 +13,7 @@ use dusk_protocol::thread::{TaskStatus, TeamEnd, TeamStatus};
 use tracing::warn;
 
 use super::{
-    end, events, lead_lines, lease,
+    end, events, gate, lead_lines, lease,
     member::{self, Given},
 };
 use crate::{
@@ -43,6 +44,7 @@ pub(super) async fn pass(launcher: &Launcher, lead: &str, now: i64) -> Result<us
     let folder = folder(launcher, lead).await?;
     expire(launcher, lead, now).await?;
     wake_members(launcher, lead, &folder).await?;
+    gate::resume(launcher, lead).await?;
     let Some(given) = give_out(launcher, &run, &folder, now).await? else {
         return Ok(0);
     };
@@ -51,7 +53,7 @@ pub(super) async fn pass(launcher: &Launcher, lead: &str, now: i64) -> Result<us
 }
 
 /// The folder members work in: the lead's project folder.
-async fn folder(launcher: &Launcher, lead: &str) -> Result<PathBuf> {
+pub(super) async fn folder(launcher: &Launcher, lead: &str) -> Result<PathBuf> {
     let chat = launcher.state.load_thread(lead).await?;
     chat.and_then(|chat| chat.project)
         .map(PathBuf::from)
@@ -95,7 +97,7 @@ pub(super) async fn lost(
 
 /// After a release: clients hear of the task, and when it failed, of the tasks the
 /// store blocked behind it, and the lead gets its one line.
-async fn released(launcher: &Launcher, lead: &str, task: &PlanTask) {
+pub(super) async fn released(launcher: &Launcher, lead: &str, task: &PlanTask) {
     events::task(launcher, lead, task).await;
     if task.status != PlanStatus::Failed {
         return;

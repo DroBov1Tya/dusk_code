@@ -67,6 +67,15 @@ pub(super) fn review_line(folded: &str, task: &PlanTask, result: &str, why: &str
     line(&head, &quoted(result, MAX_QUOTED), tail)
 }
 
+pub(super) fn confirm_line(folded: &str, task: &PlanTask, result: &str) -> String {
+    let head = format!(
+        "{folded}#{} waits for the user to confirm it. Result: ",
+        short_task_id(&task.task_id)
+    );
+    let tail = ". Tell the user what to look at; only they can confirm it, the team goes on.";
+    line(&head, &quoted(result, MAX_QUOTED), tail)
+}
+
 pub(super) fn failed_line(folded: &str, task: &PlanTask) -> String {
     let head = format!("{folded}#{} failed: ", short_task_id(&task.task_id));
     // A task that could not be given out at all failed before any attempt.
@@ -116,17 +125,31 @@ pub(super) fn stall_line(counts: &TeamCounts) -> String {
 pub(super) async fn review(
     launcher: &Launcher,
     lead: &str,
-    member: &Thread,
+    member: &str,
     task: &PlanTask,
     result: &str,
     why: &str,
 ) {
     let folded = folded(launcher, lead).await;
     let line = review_line(&folded, task, result, why);
+    tell(launcher, lead, member, &uid(task), &line, true).await;
+}
+
+/// A task waits for the user's confirmation.
+pub(super) async fn confirm(
+    launcher: &Launcher,
+    lead: &str,
+    member: &Thread,
+    task: &PlanTask,
+    result: &str,
+) {
+    let folded = folded(launcher, lead).await;
+    let line = confirm_line(&folded, task, result);
     tell(launcher, lead, &member.id, &uid(task), &line, true).await;
 }
 
-/// A task failed: its member's turns were lost three times.
+/// A task failed: its member's turns were lost three times, or its gate failed after
+/// its last rework.
 pub(super) async fn failed(launcher: &Launcher, lead: &str, task: &PlanTask) {
     let folded = folded(launcher, lead).await;
     let from = task.owner_thread_id.as_deref().unwrap_or(lead);

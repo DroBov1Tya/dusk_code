@@ -125,6 +125,12 @@ pub(super) async fn settle(launcher: &Launcher, run: &TeamRun, now: i64) -> Resu
     if counts.at_work > 0 || counts.ready > 0 {
         return Ok(());
     }
+    // A task whose gate runs, or that waits for the user's confirmation, is no stall:
+    // the gate ends by itself and the user was asked. The lead can do nothing about
+    // either, so it is not woken to end the team; the team's time bounds the wait.
+    if counts.review > counts.for_lead {
+        return Ok(());
+    }
     let mark = lead_lines::plan_mark(state, lead).await?;
     let stall = format!("team:{lead}:{}:stall:{mark}", run.started_at);
     let watched = match lead_lines::last_told(launcher, lead) {

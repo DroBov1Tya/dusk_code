@@ -134,6 +134,17 @@ impl Work<'_> {
         }
     }
 
+    /// Passes a task of the plan that waits for the user's confirmation.
+    pub async fn confirm_task(&self, thread_id: &str, task_id: &str) -> Result<()> {
+        let (thread_id, task_id) = (thread_id.to_owned(), task_id.to_owned());
+        self.0
+            .done(Request::Work(WorkRequest::ConfirmTask {
+                thread_id,
+                task_id,
+            }))
+            .await
+    }
+
     /// Rewrites the plan; empty text removes it.
     pub async fn save_plan(&self, thread_id: &str, text: &str) -> Result<()> {
         let (thread_id, text) = (thread_id.to_owned(), text.to_owned());
