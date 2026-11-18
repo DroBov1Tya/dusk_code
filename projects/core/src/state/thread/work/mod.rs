@@ -1,8 +1,10 @@
 //! What the agent does in a thread: its turns with their tool calls, the tokens each
-//! model call used, the task board, the plan's team and the background jobs.
+//! model call used, the task board, the plan's team, the background jobs and the
+//! Overview counted from them.
 
 mod failure;
 mod jobs;
+mod overview;
 mod resume;
 mod tasks;
 mod teams;

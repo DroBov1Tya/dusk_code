@@ -83,6 +83,18 @@ pub enum WorkRequest {
     Team {
         thread_id: String,
     },
+    /// How the thread's work stands: its activity, changes and newest log lines. Answers
+    /// with `Response::Overview`.
+    Overview {
+        thread_id: String,
+    },
+    /// The thread's event log older than `before` (Unix ms), newest first; the core holds
+    /// `limit` to `EVENTS_PAGE`. Answers with `Response::Events`.
+    Events {
+        thread_id: String,
+        before: Option<i64>,
+        limit: u32,
+    },
     /// Passes the `user_confirmation` gate of a task in review.
     ConfirmTask {
         thread_id: String,
