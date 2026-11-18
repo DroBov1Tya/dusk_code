@@ -2258,7 +2258,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "aws-lc-rs",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "core-foundation 0.10.1",
  "core-graphics 0.25.0",
@@ -2313,7 +2313,7 @@ version = "0.75.0"
 dependencies = [
  "alacritty_terminal",
  "anyhow",
- "base64 0.22.1",
+ "base64 0.23.1",
  "chrono",
  "dusk_core",
  "dusk_protocol",
@@ -2367,7 +2367,7 @@ version = "0.75.0"
 dependencies = [
  "anyhow",
  "axum",
- "base64 0.22.1",
+ "base64 0.23.1",
  "dusk_core",
  "dusk_protocol",
  "futures",
