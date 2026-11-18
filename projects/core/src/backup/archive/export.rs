@@ -193,3 +193,65 @@ pub fn export_files(
     sync_directory(&temporary.path)?;
     Ok(destination.to_owned())
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::{
+        state::{EpisodeKind, NewEpisode, Recall, State},
+        testing::temp_dir,
+    };
+
+    use super::rebuild_snapshot_search;
+
+    /// Episodes are keyed by an integer id, which VACUUM keeps, so their search index
+    /// needs no rebuild in a snapshot, unlike the messages'.
+    #[tokio::test]
+    async fn a_snapshot_finds_its_episodes() {
+        let dir = temp_dir("export_episodes");
+        let state = State::open(dir.join("state.db")).await.unwrap();
+        state.create_project("p", "P", "", "/work/p").await.unwrap();
+        let mut ids = Vec::new();
+        for n in 1..=3u32 {
+            let episode = NewEpisode {
+                project: "/work/p".into(),
+                thread_id: None,
+                turn_id: None,
+                kind: EpisodeKind::Verified,
+                signature: format!("{n:064x}"),
+                tool: "run_command".into(),
+                model: "model".into(),
+                problem: format!("snapshot problem p{n}x"),
+                failed: String::new(),
+                worked: "cargo test".into(),
+                lesson: String::new(),
+            };
+            ids.push(state.record_episode(&episode).await.unwrap());
+        }
+        // A gap before the rows that stay, which a renumbering VACUUM would close.
+        assert!(state.remove_episode("/work/p", ids[0]).await.unwrap());
+
+        let snapshot = dir.join("snapshot.db");
+        sqlx::query("VACUUM INTO ?")
+            .bind(snapshot.to_str().unwrap())
+            .execute(&state.pool)
+            .await
+            .unwrap();
+        state.close().await;
+        rebuild_snapshot_search(&snapshot).await.unwrap();
+
+        let restored = State::open(&snapshot).await.unwrap();
+        sqlx::query(
+            "INSERT INTO episodes_search (episodes_search, rank) VALUES ('integrity-check', 1)",
+        )
+        .execute(&restored.pool)
+        .await
+        .unwrap();
+        let Recall::Found(found) = restored.recall_episodes("/work/p", "p3x").await.unwrap() else {
+            panic!("the query has a usable word");
+        };
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].id, ids[2]);
+        assert_eq!(found[0].problem, "snapshot problem p3x");
+        restored.close().await;
+    }
+}
