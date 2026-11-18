@@ -195,6 +195,10 @@ pub struct Workspace {
     /// A short note over any page, and when it came; see `toast`.
     pub toast: Option<(std::time::Instant, String)>,
     pub git: Option<GitInfo>,
+    /// The shown project's work tree and pull requests, kept fresh by the core.
+    pub repository: Option<dusk_protocol::project::RepositoryStatus>,
+    /// The pull requests of each project's branch, by project ID, for the chat rows.
+    pub pulls: HashMap<String, dusk_protocol::project::PullSummary>,
     pub touched: Vec<dusk_protocol::project::Change>,
     pub review: crate::pages::review::Review,
     /// The window's own focus: shortcuts reach the workspace from here when no box or row

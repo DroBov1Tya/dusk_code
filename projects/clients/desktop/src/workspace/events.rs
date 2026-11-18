@@ -116,6 +116,9 @@ impl Workspace {
             } => self.plugin_frame(plugin, part, widget, jpeg, cx),
             Event::PluginNotice { plugin, text } => self.plugin_notice(&plugin, &text, cx),
             Event::GitChanged { project_id } => self.git_changed(&project_id, cx),
+            Event::RepositoryStatus { project_id, status } => {
+                self.repository_changed(&project_id, *status, cx)
+            }
             Event::Ended { thread_id } => {
                 if let Some(chat) = self.chats.get_mut(&thread_id) {
                     chat.working = false;

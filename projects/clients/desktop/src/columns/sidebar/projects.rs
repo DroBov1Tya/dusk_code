@@ -114,6 +114,7 @@ impl Workspace {
             |ws, result, cx| match result {
                 Ok(projects) => {
                     ws.projects = projects;
+                    ws.load_pull_summaries(cx);
                     cx.notify();
                 }
                 Err(error) => ws.fail(error, cx),
@@ -137,6 +138,7 @@ impl Workspace {
         self.files.clear();
         self.expanded.clear();
         self.git = None;
+        self.repository = None;
         self.refresh_inspector(cx);
     }
 }

@@ -63,6 +63,24 @@ const GIT_BRANCH_SVG: &[u8] = lucide!(
 const GIT_COMPARE_SVG: &[u8] = lucide!(
     r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><path d="M11 18H8a2 2 0 0 1-2-2V9" />"#
 );
+/// A pull request as it stands: open, a draft, merged or closed.
+pub const GIT_PULL: &str = "icons/dusk/git-pull-request.svg";
+pub const GIT_PULL_DRAFT: &str = "icons/dusk/git-pull-request-draft.svg";
+pub const GIT_PULL_CLOSED: &str = "icons/dusk/git-pull-request-closed.svg";
+pub const GIT_MERGE: &str = "icons/dusk/git-merge.svg";
+
+const GIT_PULL_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M13 6h3a2 2 0 0 1 2 2v7" /><line x1="6" x2="6" y1="9" y2="21" />"#
+);
+const GIT_PULL_DRAFT_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M18 6V5" /><path d="M18 11v-1" /><line x1="6" x2="6" y1="9" y2="21" />"#
+);
+const GIT_PULL_CLOSED_SVG: &[u8] = lucide!(
+    r#"<circle cx="6" cy="6" r="3" /><path d="M6 9v12" /><path d="m21 3-6 6" /><path d="m21 9-6-6" /><path d="M18 11.5V15" /><circle cx="18" cy="18" r="3" />"#
+);
+const GIT_MERGE_SVG: &[u8] = lucide!(
+    r#"<circle cx="18" cy="18" r="3" /><circle cx="6" cy="6" r="3" /><path d="M6 21V9a9 9 0 0 0 9 9" />"#
+);
 const BLOCKS_SVG: &[u8] = lucide!(
     r#"<path d="M10 22V7a1 1 0 0 0-1-1H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-5a1 1 0 0 0-1-1H2" /><rect x="14" y="2" width="8" height="8" rx="1" />"#
 );
@@ -169,6 +187,10 @@ impl AssetSource for Assets {
             PUZZLE => return Ok(Some(Cow::Borrowed(PUZZLE_SVG))),
             GIT_BRANCH => return Ok(Some(Cow::Borrowed(GIT_BRANCH_SVG))),
             GIT_COMPARE => return Ok(Some(Cow::Borrowed(GIT_COMPARE_SVG))),
+            GIT_PULL => return Ok(Some(Cow::Borrowed(GIT_PULL_SVG))),
+            GIT_PULL_DRAFT => return Ok(Some(Cow::Borrowed(GIT_PULL_DRAFT_SVG))),
+            GIT_PULL_CLOSED => return Ok(Some(Cow::Borrowed(GIT_PULL_CLOSED_SVG))),
+            GIT_MERGE => return Ok(Some(Cow::Borrowed(GIT_MERGE_SVG))),
             BLOCKS => return Ok(Some(Cow::Borrowed(BLOCKS_SVG))),
             PIN => return Ok(Some(Cow::Borrowed(PIN_SVG))),
             TIER_OFFICIAL => return Ok(Some(Cow::Borrowed(TIER_OFFICIAL_SVG))),

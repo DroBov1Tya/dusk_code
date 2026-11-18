@@ -1,0 +1,4 @@
+Added
+Pull requests and their CI in the desktop's Changes module: the work tree's line with the repository name and its added and removed lines, then one row per pull request of the current branch and the project's other open ones, with its state (open, draft, merged, closed), title, number and lines, and a dot for its checks (passed, running, failed). A click opens the pull request on GitHub. The web client's project page shows the same list.
+A chat in the desktop sidebar shows a pull request icon with a count when its project's branch has pull requests, tinted by their worst checks; its tooltip names them.
+The core reads this through the GitHub CLI and keeps it fresh while a window shows the project: every 30 seconds while a check runs, every 5 minutes otherwise, at once after a change made through the app, and later after each failure. Without `gh`, signed out, or off GitHub, the list is left out with a quiet note.

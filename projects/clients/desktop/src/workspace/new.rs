@@ -133,6 +133,8 @@ impl Workspace {
             pending: Vec::new(),
             rates: HashMap::new(),
             git: None,
+            repository: None,
+            pulls: HashMap::new(),
             touched: Vec::new(),
             review: crate::pages::review::Review::new(window, cx),
             focus: cx.focus_handle(),
