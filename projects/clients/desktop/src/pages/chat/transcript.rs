@@ -7,7 +7,7 @@ use dusk_protocol::{
     model::ModelEvent,
     thread::{
         AgentState, Block, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Retry, RetryRow,
-        Task, ThreadEvent, ThreadTokens, Tool, ToolState, clip, note, retry_row,
+        Task, ThreadEvent, ThreadTokens, Tool, ToolState, TurnWait, clip, note, retry_row,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
@@ -246,6 +246,13 @@ pub struct Transcript {
     pub working: bool,
     /// The model call being tried again and when its event came, for the countdown.
     pub retry: Option<(Retry, Instant)>,
+    /// What the running turn waits for, as the core last said.
+    pub waiting: Option<TurnWait>,
+    /// When the running turn began, in Unix milliseconds, as the core stamped it.
+    pub turn_started: Option<i64>,
+    /// The model calls the running turn has finished, counted here only until the core's
+    /// progress event carries them; none for a turn this client joined midway.
+    pub steps: Option<u32>,
     pub tokens: Option<(u64, u64)>,
     /// What the chat cost so far, when any call's cost is known.
     pub cost: Option<String>,
@@ -407,13 +414,20 @@ impl Transcript {
             Some(RetryRow::Clear) => self.retry = None,
             None => {}
         }
+        // The wait leaves a notice as well, below; the row shows what it waits for.
+        if let ThreadEvent::TurnWaiting(turn) = &event {
+            self.waiting = turn.waiting;
+        }
         // The row above is the whole of a retry: it leaves no notice.
         if matches!(event, ThreadEvent::Retrying { .. }) {
             return;
         }
         if let Some(note) = note(&event) {
             match &event {
-                ThreadEvent::Failed(_) => self.working = false,
+                ThreadEvent::Failed(_) => {
+                    self.working = false;
+                    self.end_turn();
+                }
                 ThreadEvent::ArbiterDecided {
                     what,
                     allow,
@@ -442,22 +456,37 @@ impl Transcript {
             ThreadEvent::UserMessage(message) | ThreadEvent::FromJob(message) => {
                 self.add_message(&message);
             }
-            ThreadEvent::TurnStarted(_) => {
+            ThreadEvent::TurnStarted(turn) => {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 self.working = true;
+                self.turn_started = Some(turn.started_at);
+                self.steps = Some(0);
+                self.waiting = turn.waiting;
             }
             // The turn began before this client listened: it works, but its items are
-            // already in the history and must not open a second fold boundary.
-            ThreadEvent::TurnRunning(_) => self.working = true,
+            // already in the history and must not open a second fold boundary. It also
+            // comes after a wait, with the turn no longer waiting.
+            ThreadEvent::TurnRunning(turn) => {
+                self.working = true;
+                if self.turn_started != Some(turn.started_at) {
+                    self.turn_started = Some(turn.started_at);
+                    self.steps = None;
+                }
+                self.waiting = turn.waiting;
+            }
             ThreadEvent::TurnFinished(_) | ThreadEvent::Idle => {
                 self.activity_boundary(dusk_protocol::system::now_ms());
                 if self.working {
                     self.finished_at = Some(Instant::now());
                 }
                 self.working = false;
+                self.end_turn();
             }
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
+            ThreadEvent::Model(ModelEvent::Finished(_)) => {
+                self.steps = self.steps.map(|steps| steps.saturating_add(1));
+            }
             ThreadEvent::Model(_) => {}
             ThreadEvent::ToolStarted(call) => self.start_tool(&call, ToolState::Running),
             ThreadEvent::ToolFinished { call_id, result } => {
@@ -567,6 +596,13 @@ impl Transcript {
             // The rest left a note above or is not shown; the rate waits for its UI.
             _ => {}
         }
+    }
+
+    /// The turn is over: what only a running turn has goes.
+    fn end_turn(&mut self) {
+        self.waiting = None;
+        self.turn_started = None;
+        self.steps = None;
     }
 
     /// How many times each tool ran in the chat, most used first.

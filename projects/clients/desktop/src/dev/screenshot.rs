@@ -26,6 +26,8 @@
 //! - `fake=store`: thirty made-up listings in the Workshop (see `dev::store`); `workshop`:
 //!   show the Workshop; `workshop=install:NAME|remove:NAME`: its window that asks first;
 //!   `workshop=busy:NAME|failed:NAME`: a row at work or after a failure;
+//! - `fake=blocks|blocks-working|blocks-wait|blocks-decision`: a chat with a Flow, Checks and
+//!   reply buttons, and a turn at work, waiting for the provider, waiting for the user;
 //! - `fake=approval|question`: put a request for approval, or a question, in the shown chat;
 //! - `fake=models`: the chatgpt provider with seven models and one in use, for the model
 //!   menu; `fake=sentpicture`: a user's message with a picture thumbnail under it;
@@ -430,6 +432,7 @@ fn act(
             }
             cx.notify();
         }
+        "fake" if value.starts_with("blocks") => super::blocks::fake(ws, value, cx),
         "fake" if value == "store" => super::store::fake(ws, cx),
         "workshop" => super::store::step(ws, value, cx),
         "fake" if value == "limits" => {
