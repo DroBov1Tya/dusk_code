@@ -203,6 +203,8 @@ that, `cargo sweep` when it is installed), or everything with `--all`.
 
 - Pre-1.0: commands, configuration and the database schema may change. Full releases are
   tagged on `stable`, beta pre-releases on `beta`, nightlies on `main`.
+  A nightly builds only the programs (terminal, desktop) whose code changed since the
+  previous tag (`scripts/release-plan.sh`); its notes name the previous tag for the rest.
 - Release builds are for macOS arm64 and Linux; there is no Windows build.
 - The macOS app is signed with the project's own certificate, not an Apple Developer
   ID, so the first start needs your confirmation.

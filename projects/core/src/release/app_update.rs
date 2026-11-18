@@ -36,7 +36,7 @@ fn bundle_of(exe: &Path) -> Option<PathBuf> {
 }
 
 /// The name of the image a release of `tag` carries.
-fn image_name(tag: &str) -> String {
+pub(super) fn image_name(tag: &str) -> String {
     format!("Duskcode-{}-macos-arm64.dmg", tag.trim_start_matches('v'))
 }
 
