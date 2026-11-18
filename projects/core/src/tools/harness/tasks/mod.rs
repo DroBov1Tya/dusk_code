@@ -2,19 +2,35 @@
 //! set itself with their steps, looks at the board, rewrites a task or a step, and marks
 //! a step or a whole task done. Steps are timed as they run. The board lives in the
 //! database, so it outlives a compaction.
+//!
+//! A chat in ORCHESTRATOR mode with `limits.plan_graph` on is offered the plan form
+//! instead (`lead`): the same rows as a plan the core runs with a team. The board's
+//! `add_items`, `start` and `done` are still taken there, never on a task the team has
+//! given out. Anywhere else the tool is byte for byte the board.
+
+mod check;
+mod lead;
+mod team;
+mod text;
 
 use std::sync::Arc;
 
-use anyhow::{Context, ensure};
+use anyhow::{Context, bail, ensure};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
+pub use team::TeamRunner;
+
+use lead::Lead;
+use team::NoTeam;
+
 use crate::tools::{Tool, ToolContext, schema, schema::parse_arguments};
 use crate::{
     BoxFuture,
+    catalog::{agents::Agents, modes::ORCHESTRATOR},
     runtime::ThreadEvent,
-    state::{State, Task},
+    state::{PlanError, PlanStatus, State, Task},
 };
 
 /// IDs are shown by their last characters, which are random; the agent may use those.
@@ -23,6 +39,19 @@ const SHORT_ID: usize = 8;
 pub struct Tasks {
     state: Arc<State>,
     thread_id: String,
+    /// A chat's, set by the launcher; without it only the board is offered.
+    lead: Option<Lead>,
+}
+
+/// Actions only the plan form has, and only the board has.
+const PLAN_ONLY: [&str; 5] = ["run", "review", "fail", "reopen", "stop"];
+const BOARD_ONLY: [&str; 3] = ["add_items", "start", "done"];
+
+fn action(arguments: &Value) -> &str {
+    arguments
+        .get("action")
+        .and_then(Value::as_str)
+        .unwrap_or_default()
 }
 
 /// Flat, since providers want one object at the top of a schema; `run` checks which
@@ -81,7 +110,65 @@ fn needed(field: Option<String>, name: &str, action: &str) -> anyhow::Result<Str
 
 impl Tasks {
     pub fn new(state: Arc<State>, thread_id: String) -> Self {
-        Self { state, thread_id }
+        Self {
+            state,
+            thread_id,
+            lead: None,
+        }
+    }
+
+    /// The tasks of a chat, which lead a team when the plan form is on; `agents` are the
+    /// roles a task may name. Until `with_team` the plan cannot run.
+    // The launcher's to call, for a chat only; the team runtime (T1) wires it.
+    #[allow(dead_code)]
+    pub fn lead(self, agents: Arc<Agents>) -> Self {
+        Self {
+            lead: Some(Lead::new(agents, Arc::new(NoTeam))),
+            ..self
+        }
+    }
+
+    /// What runs the plan of a chat's `tasks`.
+    // The team runtime (T1) is the caller.
+    #[allow(dead_code)]
+    pub fn with_team(mut self, team: Arc<dyn TeamRunner>) -> Self {
+        if let Some(lead) = &mut self.lead {
+            lead.team = team;
+        }
+        self
+    }
+
+    /// The plan form, when this is a chat's, its mode ORCHESTRATOR and the switch on.
+    fn plan_form(&self, context: &ToolContext) -> Option<&Lead> {
+        let lead = self.lead.as_ref()?;
+        let config = &context.config;
+        (config.limits().plan_graph && config.mode() == ORCHESTRATOR).then_some(lead)
+    }
+
+    /// The board's actions do not touch a task the team has given out: its review, the
+    /// lead's fail or reopen, or the core moves it.
+    async fn refuse_given_out(&self, id: &str) -> anyhow::Result<()> {
+        let task = match self.state.plan_task(&self.thread_id, id).await {
+            Ok(task) => task,
+            // A step, or no task: the board answers for those.
+            Err(
+                PlanError::NoSuchTask(_) | PlanError::Ambiguous(_) | PlanError::NoSuchThread(_),
+            ) => return Ok(()),
+            Err(error) => return Err(error.into()),
+        };
+        // A plan is found from the chat; an agent's own board is its thread's alone.
+        if task.plan != self.thread_id {
+            return Ok(());
+        }
+        let given_out = !matches!(task.status, PlanStatus::Open | PlanStatus::Done)
+            || task.owner_thread_id.is_some();
+        ensure!(
+            !given_out,
+            "task #{} is {} in the team's plan; the board cannot change it",
+            text::short(&task.task_id),
+            task.status.as_str()
+        );
+        Ok(())
     }
 
     async fn run(&self, arguments: TasksArguments) -> anyhow::Result<Vec<Task>> {
@@ -94,6 +181,11 @@ impl Tasks {
             text,
         } = arguments;
         let items: Vec<String> = items.into_iter().map(Step::into_text).collect();
+        if let (Some(id), Action::AddItems | Action::Start | Action::Done | Action::Edit) =
+            (&id, &action)
+        {
+            self.refuse_given_out(id).await?;
+        }
         match action {
             Action::Add => {
                 let task = needed(task, "task", "add")?;
@@ -128,7 +220,10 @@ impl Tool for Tasks {
         "tasks"
     }
 
-    fn description(&self, _context: &ToolContext) -> String {
+    fn description(&self, context: &ToolContext) -> String {
+        if self.plan_form(context).is_some() {
+            return text::DESCRIPTION.into();
+        }
         "Your board for this work: write down the tasks you set yourself, each with its \
          steps, and mark them done as you go. Plan with it before work of several steps, look at it \
          after a pause or a summary of the conversation, and mark a step done as soon as it \
@@ -140,19 +235,78 @@ impl Tool for Tasks {
             .into()
     }
 
+    /// Both forms, so a call of either passes the check and its own parser decides.
     fn parameters(&self) -> Value {
-        schema::of::<TasksArguments>()
+        text::checked_schema(schema::of::<TasksArguments>())
+    }
+
+    fn offered_parameters(&self, context: &ToolContext) -> Value {
+        match self.plan_form(context) {
+            Some(_) => text::schema(),
+            None => schema::of::<TasksArguments>(),
+        }
+    }
+
+    /// `show` reads. `run`, `review`, `fail`, `reopen` and `stop` set a state that setting
+    /// again does not change, and the plan's `add` finds its own tasks when run again; the
+    /// board's `add` and every `edit` are left to the user after a restart.
+    fn repeatable(&self, arguments: &Value) -> bool {
+        match action(arguments) {
+            "show" => true,
+            "add" => arguments.get("tasks").is_some(),
+            action => PLAN_ONLY.contains(&action),
+        }
+    }
+
+    fn read_only(&self, arguments: &Value) -> bool {
+        action(arguments) == "show"
     }
 
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
+            let name = action(&arguments).to_owned();
+            if let Some(lead) = self.plan_form(&context)
+                && !BOARD_ONLY.contains(&name.as_str())
+            {
+                let arguments = parse_arguments(arguments)?;
+                let answer = lead
+                    .call(&self.state, &self.thread_id, arguments, &context)
+                    .await?;
+                if answer.changed {
+                    self.tell_clients(&context).await?;
+                }
+                return Ok(answer.text);
+            }
+            let plan_fields = ["tasks", "budget", "ids"];
+            if PLAN_ONLY.contains(&name.as_str())
+                || plan_fields
+                    .iter()
+                    .any(|field| arguments.get(field).is_some())
+            {
+                bail!(
+                    "the plan's actions need ORCHESTRATOR mode and limits.plan_graph; \
+                     use add with task and items"
+                );
+            }
             let arguments = parse_arguments(arguments)?;
             let tasks = self.run(arguments).await?;
-            if let Some(progress) = context.progress {
+            if name != "show"
+                && let Some(progress) = context.progress
+            {
                 progress.emit(ThreadEvent::Tasks(tasks.clone()));
             }
             Ok(board(&tasks))
         })
+    }
+}
+
+impl Tasks {
+    async fn tell_clients(&self, context: &ToolContext) -> anyhow::Result<()> {
+        if let Some(progress) = &context.progress {
+            let tasks = self.state.thread_tasks(&self.thread_id).await?;
+            progress.emit(ThreadEvent::Tasks(tasks));
+        }
+        Ok(())
     }
 }
 
@@ -206,5 +360,7 @@ fn short(id: &str) -> &str {
     &id[id.len().saturating_sub(SHORT_ID)..]
 }
 
+#[cfg(test)]
+mod lead_tests;
 #[cfg(test)]
 mod tests;
