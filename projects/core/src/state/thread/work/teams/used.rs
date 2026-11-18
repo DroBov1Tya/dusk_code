@@ -1,6 +1,5 @@
-//! What a run has used of its budget, counted when asked (section 5 of
-//! `docs/plan-and-teams.md`), the check before each claim and step, the members, and
-//! the plan's counts the stall rule reads.
+//! What a run has used of its budget, counted when asked, the check before each claim and
+//! step, the members, and the plan's counts the stall rule reads.
 
 use dusk_protocol::thread::{
     MAX_TEAM_MEMBERS, TaskStatus, TeamEnd, TeamMember, TeamStatus, TeamUsed,

@@ -3,8 +3,7 @@
 //! hold for any input; `languages` says how each language is read; `outline` is what a
 //! parse gives, and the kinds the store keeps. `index` is the worker that keeps the graph
 //! of saved projects current and `refresh` what it does with one project. `ask` answers
-//! the four questions of the `project_graph` tool from what is stored. Design:
-//! `docs/project-intelligence.md`.
+//! the four questions of the `project_graph` tool from what is stored.
 
 pub mod ask;
 mod index;

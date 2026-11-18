@@ -1,5 +1,5 @@
 //! Episodes: what ended a problem in a project, written down from what the core saw so
-//! the same wall is not climbed twice (`docs/project-intelligence.md`, section 6). This
+//! the same wall is not climbed twice. This
 //! is the way in to the store: it builds an episode's fields from the facts of a turn,
 //! cleans every text (`clean`), and refuses what must not be kept. Finding the facts
 //! (which loop ended, where the lesson line is) is the runtime's.

@@ -1,9 +1,8 @@
-//! Putting old tool results away (`limits.stub_results`, `docs/context-life.md` sections 1
-//! and 2): which stored results are sent as a one-line stub from now on, and when a move
-//! pays for the part of the provider's cached prefix it breaks. A move happens before a
-//! request is built, writes all its stubs at once, and never changes a message at or
-//! before the newest stub, so each later request extends the one before. With the switch
-//! off nothing here runs, reads or writes.
+//! Putting old tool results away (`limits.stub_results`): which stored results are sent as
+//! a one-line stub from now on, and when a move pays for the part of the provider's cached
+//! prefix it breaks. A move happens before a request is built, writes all its stubs at
+//! once, and never changes a message at or before the newest stub, so each later request
+//! extends the one before. With the switch off nothing here runs, reads or writes.
 
 #[cfg(test)]
 mod tests;

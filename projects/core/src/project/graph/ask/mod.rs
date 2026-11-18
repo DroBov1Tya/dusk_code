@@ -1,4 +1,4 @@
-//! The four questions of the project graph (`docs/project-intelligence.md` section 4):
+//! The four questions of the project graph:
 //! from the store's rows to an answer that says which rows are guesses, where it was
 //! capped, what a miss knows, and which of its files changed since they were indexed.
 //! The wording is the tool's. The name asked about is data: it is matched against the
