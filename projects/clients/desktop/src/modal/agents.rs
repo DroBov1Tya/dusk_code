@@ -306,7 +306,7 @@ fn figure(
         .child(widgets::icon(IconName::ChevronRight, muted))
         .on_click(cx.listener(move |ws, _, window, cx| {
             ws.open_agent_chat(&open, cx);
-            ws.agents_modal_focus.focus(window, cx);
+            ws.modal_focus.focus(window, cx);
         }))
 }
 

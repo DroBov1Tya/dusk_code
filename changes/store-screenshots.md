@@ -1,0 +1,2 @@
+Added
+Workshop items can show up to 8 screenshots with captions in their detail window: format 2 lists name them like covers (`.png` or `.webp`, at most 1 MiB, checked by size, SHA-256 and first bytes), listings carry their count and captions, and `StoreRequest::Screenshot` fetches one only as the last signed list named it. The cover response is now `Response::Media`, shared by covers and screenshots.

@@ -76,6 +76,32 @@ const IMAGE_SVG: &[u8] = lucide!(
 const VIDEO_SVG: &[u8] =
     lucide!(r#"<rect x="2" y="6" width="14" height="12" rx="2"/><path d="m16 10 5-3v10l-5-3"/>"#);
 
+/// The marks of the Workshop's tiers, the same shapes as the browser's: a filled shield
+/// with its check cut out for Official, a badge with a check for Verified, people for
+/// Community and a folder for Local. The browser draws them from `assets/icons.svg`.
+pub const TIER_OFFICIAL: &str = "icons/dusk/tier-official.svg";
+pub const TIER_VERIFIED: &str = "icons/dusk/tier-verified.svg";
+pub const TIER_COMMUNITY: &str = "icons/dusk/tier-community.svg";
+pub const TIER_LOCAL: &str = "icons/dusk/tier-local.svg";
+
+const TIER_OFFICIAL_SVG: &[u8] = br#"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z M10.6 15.4 7.5 12.3l1.4-1.4 1.7 1.7 4.5-4.5 1.4 1.4z" /></svg>"#;
+const TIER_VERIFIED_SVG: &[u8] = lucide!(
+    r#"<path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" /><path d="m9 12 2 2 4-4" />"#
+);
+const TIER_COMMUNITY_SVG: &[u8] = lucide!(
+    r#"<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M22 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />"#
+);
+const TIER_LOCAL_SVG: &[u8] = lucide!(
+    r#"<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />"#
+);
+
+/// A funnel: the Workshop's filters, the same shape as the browser's.
+pub const FILTER: &str = "icons/dusk/filter.svg";
+
+const FILTER_SVG: &[u8] = lucide!(
+    r#"<path d="M10 20a1 1 0 0 0 .553.895l2 1A1 1 0 0 0 14 21v-7a2 2 0 0 1 .517-1.341L21.74 4.67A1 1 0 0 0 21 3H3a1 1 0 0 0-.742 1.67l7.225 7.989A2 2 0 0 1 10 14z" />"#
+);
+
 pub const HOME: &str = "icons/dusk/home.svg";
 pub const LOCK: &str = "icons/dusk/lock.svg";
 pub const POWER: &str = "icons/dusk/power.svg";
@@ -108,6 +134,11 @@ impl AssetSource for Assets {
             GIT_COMPARE => return Ok(Some(Cow::Borrowed(GIT_COMPARE_SVG))),
             BLOCKS => return Ok(Some(Cow::Borrowed(BLOCKS_SVG))),
             PIN => return Ok(Some(Cow::Borrowed(PIN_SVG))),
+            TIER_OFFICIAL => return Ok(Some(Cow::Borrowed(TIER_OFFICIAL_SVG))),
+            TIER_VERIFIED => return Ok(Some(Cow::Borrowed(TIER_VERIFIED_SVG))),
+            TIER_COMMUNITY => return Ok(Some(Cow::Borrowed(TIER_COMMUNITY_SVG))),
+            TIER_LOCAL => return Ok(Some(Cow::Borrowed(TIER_LOCAL_SVG))),
+            FILTER => return Ok(Some(Cow::Borrowed(FILTER_SVG))),
             _ => {}
         }
         gpui_kit::assets::Assets.load(path)

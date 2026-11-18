@@ -88,7 +88,18 @@ impl Runtime {
                 let (bytes, mime) = store::cover(&mirrors, &source, &name).await?;
                 let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
                 let mime = mime.to_owned();
-                return Ok(Response::Cover { base64, mime });
+                return Ok(Response::Media { base64, mime });
+            }
+            StoreRequest::Screenshot {
+                source,
+                name,
+                index,
+            } => {
+                use base64::Engine;
+                let (bytes, mime) = store::screenshot(&mirrors, &source, &name, index).await?;
+                let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+                let mime = mime.to_owned();
+                return Ok(Response::Media { base64, mime });
             }
         }
         Ok(Response::Done)

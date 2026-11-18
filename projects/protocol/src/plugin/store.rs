@@ -45,6 +45,10 @@ pub struct Listing {
     /// A picture of it, fetched with `StoreRequest::Cover`.
     #[serde(default)]
     pub cover: Option<Cover>,
+    /// Pictures of it at work, in order; each fetched with `StoreRequest::Screenshot`
+    /// by its place here.
+    #[serde(default)]
+    pub screenshots: Vec<ScreenshotRef>,
     /// As the publisher counted them when signing the list.
     #[serde(default)]
     pub stars: u32,
@@ -104,6 +108,14 @@ pub struct Cover {
     pub size: u64,
 }
 
+/// One screenshot of a listing; its bytes come with `StoreRequest::Screenshot`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenshotRef {
+    /// Plain text of at most 120 characters, without control characters.
+    #[serde(default)]
+    pub caption: Option<String>,
+}
+
 /// The order of the list; the core sorts, so every client shows the same.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -125,7 +137,22 @@ pub struct StoreList {
     pub listings: Vec<Listing>,
     /// The sources that could not be read; the others are listed all the same.
     pub failed: Vec<SourceFailure>,
+    /// The listings a client shows on its shelves, sorted by the core.
+    #[serde(default)]
+    pub picks: Picks,
 }
+
+/// Indices into `StoreList::listings`, at most `PICKS` each, best first; a listing
+/// without the date or the stars sorted on is left out.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Picks {
+    pub newest: Vec<usize>,
+    pub updated: Vec<usize>,
+    pub stars: Vec<usize>,
+}
+
+/// How many listings a shelf of `Picks` holds.
+pub const PICKS: usize = 12;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SourceFailure {
@@ -171,6 +198,13 @@ pub enum StoreRequest {
     /// `Response::StoreUpdates`.
     UpdateAll,
     /// The cover of `name` from `source`, as the last list read showed it; answered with
-    /// `Response::Cover`.
+    /// `Response::Media`.
     Cover { source: String, name: String },
+    /// The screenshot at `index` of `name`'s `screenshots`, as the last list read showed
+    /// them; answered with `Response::Media`.
+    Screenshot {
+        source: String,
+        name: String,
+        index: u32,
+    },
 }
