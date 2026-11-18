@@ -29,14 +29,6 @@ pub enum Shown {
 pub struct Covers(pub HashMap<String, Cover>);
 
 impl Covers {
-    /// The listing's cover, once it has come.
-    pub fn get(&self, listing: &Listing) -> Option<Arc<Image>> {
-        match self.shown(listing, false) {
-            Shown::Ready(image) => Some(image),
-            Shown::Placeholder(_) => None,
-        }
-    }
-
     /// The listing's cover, or what stands for it: none named, failed, still coming, or
     /// not here while the store could not be read (`offline`).
     pub fn shown(&self, listing: &Listing, offline: bool) -> Shown {

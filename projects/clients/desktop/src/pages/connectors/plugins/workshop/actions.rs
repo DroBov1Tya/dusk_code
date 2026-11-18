@@ -53,23 +53,24 @@ pub fn slot(
     button.h(px(height)).into_any_element()
 }
 
-/// All a listing's window and a pack's page have: the slot, then Remove once installed.
-pub fn all(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) -> Vec<AnyElement> {
-    let mut all = vec![slot(listing, ws, false, cx)];
-    if listing.installed.is_some() && !ws.workshop.busy.contains_key(&listing.name) {
-        let name = listing.name.clone();
-        all.push(
-            Button::new(id("remove", listing))
-                .outline()
-                .min_w(px(WIDTH))
-                .label("Remove")
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    ws.confirm_store(Confirm::Remove(name.clone()), cx)
-                }))
-                .into_any_element(),
-        );
+/// Remove, once installed and not at work: danger-coloured and set apart from the
+/// primary action, never first; it asks before anything is deleted.
+pub fn remove(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Button> {
+    if listing.installed.is_none() || ws.workshop.busy.contains_key(&listing.name) {
+        return None;
     }
-    all
+    let name = listing.name.clone();
+    Some(
+        Button::new(id("remove", listing))
+            .danger()
+            .outline()
+            .min_w(px(WIDTH))
+            .label("Remove")
+            .on_click(cx.listener(move |ws, _, _, cx| {
+                cx.stop_propagation();
+                ws.confirm_store(Confirm::Remove(name.clone()), cx)
+            })),
+    )
 }
 
 /// "Installed" with its check, in the success colour: a state, not a button.
@@ -78,7 +79,7 @@ pub fn installed(cx: &App) -> Div {
 }
 
 /// A glyph and a word in one colour: a state of a listing.
-pub fn state(icon: IconName, word: &'static str, color: Hsla) -> Div {
+pub fn state(icon: IconName, word: impl Into<SharedString>, color: Hsla) -> Div {
     div()
         .flex()
         .flex_row()
@@ -88,10 +89,10 @@ pub fn state(icon: IconName, word: &'static str, color: Hsla) -> Div {
         .font_weight(FontWeight::MEDIUM)
         .text_color(color)
         .child(Icon::new(icon).size(px(STATE_ICON)).text_color(color))
-        .child(word)
+        .child(word.into())
 }
 
-fn busy(listing: &Listing, doing: &'static str) -> Button {
+pub fn busy(listing: &Listing, doing: &'static str) -> Button {
     Button::new(id("busy", listing))
         .ghost()
         .min_w(px(WIDTH))
@@ -100,10 +101,16 @@ fn busy(listing: &Listing, doing: &'static str) -> Button {
         .disabled(true)
 }
 
-fn install(listing: &Listing, label: String, update: bool, cx: &mut Context<Workspace>) -> Button {
+/// Install, Retry or Update: it asks first, and it is off where the listing cannot run.
+pub fn install(
+    listing: &Listing,
+    label: String,
+    filled: bool,
+    cx: &mut Context<Workspace>,
+) -> Button {
     let shown = listing.clone();
     let button = Button::new(id("install", listing)).min_w(px(WIDTH));
-    let button = if update {
+    let button = if filled {
         button.primary()
     } else {
         button.outline()

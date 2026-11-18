@@ -109,7 +109,9 @@ fn banner(
         .gap(px(size::GAP_S))
         .h(px(size::CONTROL));
     if let Some(listing) = listing {
-        foot = foot.children(actions::all(listing, ws, cx));
+        foot = foot.child(actions::slot(listing, ws, false, cx)).children(
+            actions::remove(listing, ws, cx).map(|remove| div().pl(px(size::GAP_XL)).child(remove)),
+        );
     }
     if let Some(pack) = here {
         let switched = pack.name.clone();
