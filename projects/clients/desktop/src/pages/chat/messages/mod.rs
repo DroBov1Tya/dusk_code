@@ -18,7 +18,7 @@ mod step;
 mod working_row;
 
 pub use activity::{activity_text, agent_report, notice};
-pub use block::render as block;
+pub use block::{Pick, pills, render as block};
 pub use feedback::{answered, job};
 pub use picture::picture_path;
 pub use row::label;
@@ -50,7 +50,9 @@ pub enum Row {
     Working,
 }
 
-pub fn render(ws: &mut Workspace, _: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
+pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> AnyElement {
+    // Rows stand in a lane at most 780 px wide, with 24 px beside it.
+    ws.reading_width = (ws.chat_width(window) - 48.).clamp(0., 780.);
     let shown = ws.shown.clone().unwrap_or_default();
     let Some(chat) = ws.chats.get(&shown) else {
         return widgets::muted("Opening...", cx).into_any_element();

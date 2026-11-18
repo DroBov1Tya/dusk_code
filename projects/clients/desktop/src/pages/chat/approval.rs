@@ -1,6 +1,8 @@
 //! What waits for the user: a tool's request for a yes, and a question of the agent.
 
-use dusk_protocol::tools::{Decision, Request};
+use std::rc::Rc;
+
+use dusk_protocol::tools::{Decision, Question, Request};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -11,6 +13,7 @@ use gpui_kit::{
 };
 
 use crate::{
+    pages::chat::messages,
     ui::{Type, widgets},
     workspace::Workspace,
 };
@@ -107,7 +110,13 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                 .child(buttons),
         );
     }
-    if let Some(question) = chat.questions.front() {
+    if let Some(question) = chat.questions.front().filter(|question| buttons(question)) {
+        let (asked, total) = (
+            chat.answers.len() + 1,
+            chat.questions.len() + chat.answers.len(),
+        );
+        cards = cards.child(light_question(question, asked, total, cx));
+    } else if let Some(question) = chat.questions.front() {
         let muted = cx.theme().muted_foreground;
         let (primary, hover) = (cx.theme().primary, muted.opacity(0.5));
         let mut options = div().flex().flex_col().gap_2();
@@ -182,6 +191,55 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         cards = cards.child(card);
     }
     cards
+}
+
+/// A short question is answered with one click on a pill, not in a card.
+fn buttons(question: &Question) -> bool {
+    question.light()
+}
+
+/// A question of 2 to 4 short options as reply buttons, with "Other..." to write one's own.
+fn light_question(
+    question: &Question,
+    asked: usize,
+    total: usize,
+    cx: &mut Context<Workspace>,
+) -> Div {
+    let labels: Vec<String> = question
+        .options
+        .iter()
+        .map(|option| option.trim().to_owned())
+        .collect();
+    let count = labels.len();
+    let pick: messages::Pick = Rc::new(move |ws, index, window, cx| {
+        if index < count {
+            ws.pick(index, cx);
+        } else {
+            ws.composer
+                .update(cx, |composer, cx| composer.focus(window, cx));
+        }
+    });
+    let muted = cx.theme().muted_foreground;
+    div()
+        .flex()
+        .flex_col()
+        .gap_2()
+        .child(
+            div()
+                .small()
+                .font_weight(FontWeight::MEDIUM)
+                .child(question.question.clone()),
+        )
+        .child(messages::pills("question", &labels, true, true, pick, cx))
+        // More wait behind this one; the answers go to the agent together.
+        .when(total > 1, |column| {
+            column.child(
+                div()
+                    .meta()
+                    .text_color(muted)
+                    .child(format!("Question {asked} of {total}")),
+            )
+        })
 }
 
 fn card(border: Hsla, surface: Hsla) -> Div {
@@ -259,5 +317,29 @@ impl Workspace {
             },
         );
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use dusk_protocol::tools::Question;
+
+    use super::buttons;
+
+    fn question(options: &[&str], multiple: bool) -> Question {
+        Question {
+            question: "Which?".into(),
+            options: options.iter().map(ToString::to_string).collect(),
+            multiple,
+        }
+    }
+
+    #[test]
+    fn a_light_question_becomes_buttons_and_any_other_stays_a_card() {
+        assert!(buttons(&question(&["Yes", "No"], false)));
+        assert!(!buttons(&question(&["Yes", "No"], true)));
+        assert!(!buttons(&question(&["a", "b", "c", "d", "e"], false)));
+        assert!(!buttons(&question(&["Yes"], false)));
+        assert!(!buttons(&question(&["Yes", &"x".repeat(25)], false)));
     }
 }

@@ -3,6 +3,7 @@
 //! pictures of its pages; `plugins` are the made-up plugin parts it photographs, `store`
 //! the made-up listings of the Workshop.
 
+mod blocks;
 mod plugins;
 pub mod screenshot;
 mod store;

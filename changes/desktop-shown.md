@@ -1,0 +1,2 @@
+Added
+The desktop draws what the model shows with `show`: a Flow as stacked layers with their cards in a grid, a Checks list with state glyphs and its summary, and reply buttons under the answer. A short `ask_user` question is answered with the same buttons instead of a card; they are live only after the turn ended and while nothing came after them. The working row has fixed boxes for the elapsed time and the step, shows the provider wait and the wait for your decision with the protocol's words, and its figure stands still for a decision or with reduced motion.
