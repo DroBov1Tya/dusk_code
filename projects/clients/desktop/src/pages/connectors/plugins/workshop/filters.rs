@@ -22,11 +22,10 @@ use crate::{
     workspace::Workspace,
 };
 
-const ORDERS: [(Order, &str); 4] = [
+const ORDERS: [(Order, &str); 3] = [
     (Order::Trust, "Official first"),
     (Order::Newest, "Newest"),
     (Order::Updated, "Recently updated"),
-    (Order::Stars, "Most stars"),
 ];
 
 const KINDS: [Kind; 4] = [Kind::Plugin, Kind::Skill, Kind::Pack, Kind::Agent];

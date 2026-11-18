@@ -1,6 +1,6 @@
 //! The Workshop: what the store's sources offer, read through the core, as a storefront.
 //! A featured carousel of official picks, then shelves of capsules (a tier each, the
-//! newest, the latest updated, the most starred, the local packs); a capsule opens the
+//! newest, the latest updated, the local packs); a capsule opens the
 //! listing's window, a pack also has a page of its skills and their switches. The core
 //! checks, sorts, filters by category and picks the shelves; this page only shows what
 //! it read, narrows by tier and kind, and asks before anything changes.
@@ -49,7 +49,7 @@ pub struct Workshop {
     pub open: bool,
     /// The store's listings, once read; kept while it is read again.
     pub listings: Option<Vec<Listing>>,
-    /// The core's picks for the New, Recently updated and Top rated shelves.
+    /// The core's picks for the New and Recently updated shelves.
     pub picks: Picks,
     /// The sources the last read could not reach; the others are listed all the same.
     pub failed_sources: Vec<SourceFailure>,

@@ -212,7 +212,7 @@ fn kind_tag(kind: Kind) -> &'static str {
 }
 
 /// A listing: its mark, name and version with its kind and state on the right, then its
-/// tier and stars, and what it is about.
+/// tier, and what it is about.
 fn listing_rows(listing: &Listing, selected: bool, width: usize) -> Vec<Line<'static>> {
     let (state, style) = match (&listing.installed, &listing.update, &listing.unfit) {
         (Some(_), Some(update), None) => (format!("update to {}", one_line(update)), fg(ACCENT)),
@@ -234,9 +234,6 @@ fn listing_rows(listing: &Listing, selected: bool, width: usize) -> Vec<Line<'st
         selected,
     )];
     let mut facts = vec![word(listing.tier).to_owned()];
-    if listing.stars > 0 {
-        facts.push(format!("\u{2605} {}", listing.stars));
-    }
     if !listing.category.is_empty() {
         facts.push(one_line(&listing.category));
     }

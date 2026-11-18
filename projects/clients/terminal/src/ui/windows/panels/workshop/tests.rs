@@ -20,7 +20,6 @@ fn store() -> Vec<Listing> {
     let mut notes = listing("notes");
     notes.clients = vec![Client::Gui];
     notes.permissions = vec!["reach https://api.example.com".into()];
-    notes.stars = 42;
     let mut weather = listing("weather");
     weather.installed = Some("0.9.0".into());
     weather.update = Some("1.0.0".into());
@@ -97,7 +96,8 @@ fn list_shows_sections_marks_state_and_unfit_reason() {
     assert!(screen.contains("\u{2713} Official"), "{screen}");
     assert!(screen.contains("\u{25C6} Verified"), "{screen}");
     assert!(screen.contains("\u{2713} notes 1.0.0"), "{screen}");
-    assert!(screen.contains("\u{2605} 42"), "{screen}");
+    // Stars stay off the rows: an official listing carries none.
+    assert!(!screen.contains('\u{2605}'), "{screen}");
     assert!(screen.contains("for gui"), "{screen}");
     assert!(screen.contains("update to 1.0.0"), "{screen}");
     assert!(screen.contains("unfit"), "{screen}");
@@ -341,11 +341,30 @@ fn hostile_name_has_no_escape_at_any_width() {
     }
 }
 
+/// A mirror's stars are its repository's: off the row, and in its window only with the
+/// repository named.
 #[test]
-fn stars_are_still_shown_on_the_facts_line() {
+fn a_mirror_s_stars_show_in_its_window_with_their_repository() {
+    let mut friends = listing("friends-notes");
+    friends.tier = Tier::Community;
+    friends.source = "friends".into();
+    friends.repo_stars = Some(dusk_protocol::plugin::RepoStars {
+        repo: "someone/notes".into(),
+        stars: 122,
+    });
     let view = Workshop {
-        listings: Some(store()),
+        listings: Some(vec![friends.clone()]),
         ..Workshop::default()
     };
-    assert!(render_at(&view, 100, 60).contains("\u{2605} 42"));
+    let row = render_at(&view, 100, 60);
+    assert!(!row.contains("122"), "{row}");
+    let view = Workshop {
+        confirm: Some(Confirm {
+            listing: friends,
+            focus: 0,
+        }),
+        ..Workshop::default()
+    };
+    let text = render(&view);
+    assert!(text.contains("122 GitHub stars of someone/notes"), "{text}");
 }

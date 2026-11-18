@@ -1,6 +1,6 @@
 //! The Workshop in the browser: the same storefront as the desktop app. A featured hero
-//! of official picks, shelves of cards (a tier each, the core's picks of the newest,
-//! the latest updated and the most starred, the local packs), one Filters menu, a
+//! of official picks, shelves of cards (a tier each, the core's picks of the newest and
+//! the latest updated, the local packs), one Filters menu, a
 //! listing's window with its gallery, and a pack's page with its switches. A browser may
 //! look and switch, never install: the server refuses it, so no install button is drawn.
 //! The core sorts, filters by category and picks the shelves; tiers and kinds only
@@ -45,17 +45,15 @@ enum Shelf {
     Tier(Tier),
     Newest,
     Updated,
-    Stars,
     Local,
 }
 
-const SHELVES: [Shelf; 7] = [
+const SHELVES: [Shelf; 6] = [
     Shelf::Tier(Tier::Official),
     Shelf::Tier(Tier::Verified),
     Shelf::Tier(Tier::Community),
     Shelf::Newest,
     Shelf::Updated,
-    Shelf::Stars,
     Shelf::Local,
 ];
 
@@ -65,7 +63,6 @@ impl Shelf {
             Self::Tier(tier) => card::word(tier),
             Self::Newest => "New",
             Self::Updated => "Recently updated",
-            Self::Stars => "Top rated",
             Self::Local => "Built-in and local",
         }
     }
@@ -398,7 +395,6 @@ fn items(shop: Shop, shelf: Shelf, list: &StoreList, shown: &[Listing]) -> Vec<I
             .collect(),
         Shelf::Newest => picked(&list.picks.newest),
         Shelf::Updated => picked(&list.picks.updated),
-        Shelf::Stars => picked(&list.picks.stars),
         Shelf::Local => shown
             .iter()
             .filter(|listing| listing.tier == Tier::Local)
@@ -479,7 +475,6 @@ fn heading(shelf: Option<Shelf>, title: &str, count: usize, end: Option<AnyView>
     let icon = shelf.map(|shelf| match shelf {
         Shelf::Tier(tier) => view! { <span class=format!("tier {}", card::class(tier))><Icon name=card::icon(tier) /></span> }.into_any(),
         Shelf::Local => view! { <span class="tier tier-local"><Icon name=IconName::TierLocal /></span> }.into_any(),
-        Shelf::Stars => view! { <Icon name=IconName::Star /> }.into_any(),
         Shelf::Newest => view! { <Icon name=IconName::Calendar /> }.into_any(),
         Shelf::Updated => view! { <Icon name=IconName::RefreshCw /> }.into_any(),
     });

@@ -620,8 +620,6 @@ button.link, a.link { background: none; border: 0; padding: 0; color: var(--acce
 .tier-community { color: var(--muted); }
 .tier-local { color: var(--fg2); }
 .facts { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s3); align-items: center; font-size: 12px; color: var(--muted); }
-.stars { display: inline-flex; align-items: center; gap: var(--s1); font-size: 12px; color: var(--muted); }
-.stars .glyph { width: 16px; height: 16px; }
 .vendor { color: var(--muted); font-size: 12px; }
 .warn { color: var(--warn); display: flex; gap: var(--s2); align-items: flex-start; }
 .warn .glyph { width: 16px; height: 16px; flex: none; margin-top: 2px; }

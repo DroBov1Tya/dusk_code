@@ -139,7 +139,6 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
                 .child(name_line(
                     SharedString::from(format!("pack-name-{}", pack.name)),
                     &title,
-                    0,
                     Kind::Pack,
                     cx,
                 ))
@@ -187,14 +186,13 @@ fn name_row(listing: &Listing, cx: &App) -> Stateful<Div> {
     name_line(
         actions::id("name", listing),
         &listing.name,
-        listing.stars,
         listing.kind,
         cx,
     )
 }
 
-/// The name on one line, whole in its tooltip; the stars and the kind at the right.
-fn name_line(id: SharedString, name: &str, stars: u32, kind: Kind, cx: &App) -> Stateful<Div> {
+/// The name on one line, whole in its tooltip; the kind at the right.
+fn name_line(id: SharedString, name: &str, kind: Kind, cx: &App) -> Stateful<Div> {
     let muted = cx.theme().muted_foreground;
     let tip = SharedString::from(name.to_owned());
     div()
@@ -214,7 +212,6 @@ fn name_line(id: SharedString, name: &str, stars: u32, kind: Kind, cx: &App) -> 
                 .child(tip.clone()),
         )
         .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
-        .when(stars > 0, |row| row.child(actions::stars(stars, cx)))
         .child(
             div()
                 .flex_none()

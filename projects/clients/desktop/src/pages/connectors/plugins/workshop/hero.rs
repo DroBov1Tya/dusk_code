@@ -151,8 +151,8 @@ pub fn banner(shown: Shown, kind: Kind, width: f32, panel: Div, foot: Div, cx: &
         .child(text)
 }
 
-/// The tier's mark, the kind (with its skills for a pack), the stars, the version and
-/// the category on one line that wraps.
+/// The tier's mark, the kind (with its skills for a pack), the version, the category and,
+/// for a mirror the user added, its repository's GitHub stars, on one line that wraps.
 pub fn facts(listing: &Listing, cx: &App) -> Div {
     let muted = cx.theme().muted_foreground;
     let word = |text: String| div().meta().text_color(muted).child(text);
@@ -172,12 +172,12 @@ pub fn facts(listing: &Listing, cx: &App) -> Div {
         .gap(px(size::GAP_M))
         .child(tier::mark(listing.tier, cx))
         .child(word(kind))
-        .when(listing.stars > 0, |row| {
-            row.child(actions::stars(listing.stars, cx))
-        })
         .child(word(format!("v{}", listing.version)))
         .when(!listing.category.is_empty(), |row| {
             row.child(word(widgets::capitalize(&listing.category)))
+        })
+        .when_some(listing.repo_stars.as_ref(), |row, stars| {
+            row.child(word(stars.label()))
         })
 }
 

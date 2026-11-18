@@ -64,7 +64,8 @@ pub fn mark(tier: Tier) -> impl IntoView {
     view! { <span class=format!("tier {}", class(tier))><Icon name=icon(tier) />{word(tier)}</span> }
 }
 
-/// The tier's mark, the kind (with a pack's skill count), the stars and the version.
+/// The tier's mark, the kind (with a pack's skill count), the version and, for a mirror
+/// the user added, its repository's GitHub stars.
 pub fn facts(listing: &Listing) -> AnyView {
     let kind = match (listing.kind, listing.skills.len()) {
         (Kind::Pack, count) if count > 0 => format!("Pack \u{b7} {count} skills"),
@@ -74,15 +75,11 @@ pub fn facts(listing: &Listing) -> AnyView {
         <span class="facts">
             {mark(listing.tier)}
             <span>{kind}</span>
-            {(listing.stars > 0).then(|| stars(listing.stars))}
             <span>{format!("v{}", listing.version)}</span>
+            {listing.repo_stars.as_ref().map(|stars| view! { <span>{stars.label()}</span> })}
         </span>
     }
     .into_any()
-}
-
-pub fn stars(count: u32) -> impl IntoView {
-    view! { <span class="stars" aria-label=format!("{count} stars")><Icon name=IconName::Star />{count}</span> }
 }
 
 /// What goes in a cover's frame: the picture, cropped to fill, or the placeholder.
@@ -148,7 +145,6 @@ pub fn capsule(shop: Shop, listing: Listing) -> AnyView {
                 <div class="name">
                     <button class="open" title=listing.name.clone()
                         on:click=move |_| shop.open_listing(&opened)>{listing.name.clone()}</button>
-                    {(listing.stars > 0).then(|| stars(listing.stars))}
                     <span class="kind">{kind_word(listing.kind)}</span>
                 </div>
                 <div class="text">{notice}<p class="desc" class:one=one>{listing.description.clone()}</p></div>

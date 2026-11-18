@@ -130,24 +130,6 @@ pub fn install(
         }))
 }
 
-/// The star and the count, quiet.
-pub fn stars(stars: u32, cx: &App) -> Div {
-    let muted = cx.theme().muted_foreground;
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(size::GAP_XS))
-        .meta()
-        .text_color(muted)
-        .child(
-            Icon::new(IconName::Star)
-                .size(px(size::ICON))
-                .text_color(muted),
-        )
-        .child(stars.to_string())
-}
-
 /// Names repeat across sources, so an element's id carries both.
 pub fn id(what: &str, listing: &Listing) -> SharedString {
     SharedString::from(format!("store-{what}-{}-{}", listing.source, listing.name))
