@@ -4,7 +4,7 @@
 //! folds on its header.
 
 pub mod context;
-mod environment;
+pub mod environment;
 mod files;
 pub mod git;
 pub mod jobs;

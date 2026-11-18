@@ -1,12 +1,11 @@
 //! The dock between the transcript and the composer: the plan strip, one line that unfolds
-//! to the plan's rows, and the views tab on the composer's upper edge with its menu. Both
-//! draw what the core holds: the chat's tasks and the plan's counts.
+//! to the plan's rows, and the panel the tab on the composer's upper edge opens. Both draw
+//! what the core holds: the chat's tasks, the plan's counts, the chat's folder and meters.
 
+pub mod panel;
 mod plan;
-mod views;
 
 pub use plan::render as plan_strip;
-pub use views::render as views_tab;
 
 use dusk_protocol::thread::{PlanCounts, ThreadEvent};
 use gpui_kit::*;
@@ -24,13 +23,10 @@ pub struct Dock {
     /// The strip shows the plan's rows.
     pub plan_open: bool,
     pub rows: UniformListScrollHandle,
-    pub views_open: bool,
-    /// The chosen row of the views menu.
-    pub views_chosen: usize,
-    /// The views tab, a stop of the focus order.
-    pub views_focus: FocusHandle,
-    /// The open menu, which takes the keys.
-    pub views_menu_focus: FocusHandle,
+    /// The composer's panel is open.
+    pub panel_open: bool,
+    /// The panel's tab, a stop of the focus order.
+    pub panel_focus: FocusHandle,
 }
 
 impl Dock {
@@ -41,10 +37,8 @@ impl Dock {
             queued: false,
             plan_open: false,
             rows: UniformListScrollHandle::new(),
-            views_open: false,
-            views_chosen: 0,
-            views_focus: cx.focus_handle().tab_index(0).tab_stop(true),
-            views_menu_focus: cx.focus_handle(),
+            panel_open: false,
+            panel_focus: cx.focus_handle().tab_index(0).tab_stop(true),
         }
     }
 

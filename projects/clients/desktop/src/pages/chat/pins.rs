@@ -1,5 +1,6 @@
-//! The pinned bar at the top of the chat: the pins the core keeps, one line when folded,
-//! a list when unfolded; a click goes to the message. Excerpts are the core's plain text.
+//! The pins of the chat: a thin handle on the transcript's upper edge says how many there
+//! are, and a click pulls a drawer of them down over the chat; a row goes to its message.
+//! Excerpts are the core's plain text.
 
 use std::time::{Duration, Instant};
 
@@ -15,20 +16,23 @@ use gpui_kit::{
 
 use super::messages::Row;
 use crate::{
-    ui::{Type, icons, widgets::Focusable},
+    ui::{Type, icons, widgets, widgets::Focusable},
     workspace::Workspace,
 };
 
-/// The bar's height and a row's in the unfolded list.
-const BAR: f32 = 36.;
+/// The handle's height and a row's in the drawer.
+const HANDLE: f32 = 22.;
 const ROW: f32 = 32.;
+/// The drawer scrolls past this many rows.
+const SHOWN_ROWS: f32 = 8.;
 /// How long the message gone to stays tinted.
 const FLASH: Duration = Duration::from_millis(1200);
 
 #[derive(Default)]
 pub struct PinsView {
-    /// Which pin the bar shows, by its place among the chat's pins.
+    /// The pin the key goes to next, by its place among the chat's pins.
     pub at: usize,
+    /// The drawer is pulled down.
     pub open: bool,
     /// A pin or an unpin waits for the core.
     pub busy: bool,
@@ -36,12 +40,15 @@ pub struct PinsView {
     pub flash: Option<(String, usize, Instant)>,
 }
 
-pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
-    let shown = ws.shown.as_ref()?;
+fn shown_pins(ws: &Workspace) -> Option<(&str, &[Pin])> {
+    let shown = ws.shown.as_deref()?;
     let pins = &ws.chats.get(shown)?.pins;
-    if pins.is_empty() {
-        return None;
-    }
+    (!pins.is_empty()).then_some((shown, pins.as_slice()))
+}
+
+/// The handle over the transcript, none while the chat has no pins.
+pub fn handle(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Stateful<Div>> {
+    let (_, pins) = shown_pins(ws)?;
     let theme = cx.theme();
     let (surface, muted, accent, border, raised) = (
         theme.muted,
@@ -50,84 +57,85 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         theme.border,
         theme.list_hover,
     );
-    let at = ws.pins.at % pins.len();
-    let many = pins.len() > 1;
-    let bar = div()
-        .flex_none()
-        .h(px(BAR))
-        .flex()
-        .items_center()
-        .gap_2()
-        .px_4()
-        .bg(surface)
-        .border_b_1()
-        .border_color(border)
-        .child(Icon::default().path(icons::PIN).small().text_color(accent))
-        .child(
-            div()
-                .id("pin-shown")
-                .focusable_row(cx)
-                .role(Role::Button)
-                .aria_label(format!("Go to the pinned message: {}", pins[at].excerpt))
-                .flex_1()
-                .min_w_0()
-                .px_1()
-                .rounded_md()
-                .cursor_pointer()
-                .hover(move |line| line.bg(raised))
-                .small()
-                .truncate()
-                .child(pins[at].excerpt.to_string())
-                .on_click(cx.listener(move |ws, _, _, cx| {
-                    ws.go_to_pin(at, cx);
-                    // The next click goes to the next pin, as the bar then shows.
-                    ws.pins.at = at + 1;
-                    cx.notify();
-                })),
-        )
-        .when(many, |bar| {
-            bar.child(div().flex_none().meta().text_color(muted).child(format!(
-                "{} of {}",
-                at + 1,
-                pins.len()
-            )))
-        })
-        .child(
-            Button::new("pins-list")
-                .ghost()
-                .small()
-                .icon(if ws.pins.open {
+    let open = ws.pins.open;
+    Some(
+        div()
+            .id("pins-handle")
+            .focusable_row(cx)
+            .role(Role::Button)
+            .aria_label(if open {
+                "Fold the pinned messages"
+            } else {
+                "Show the pinned messages"
+            })
+            .flex_none()
+            .h(px(HANDLE))
+            .flex()
+            .items_center()
+            .justify_center()
+            .gap_1()
+            .bg(surface)
+            .border_b_1()
+            .border_color(border)
+            .cursor_pointer()
+            .hover(move |bar| bar.bg(raised))
+            .child(Icon::default().path(icons::PIN).xsmall().text_color(accent))
+            .child(
+                div()
+                    .meta()
+                    .text_color(muted)
+                    .child(format!("{} pinned", pins.len())),
+            )
+            .child(
+                Icon::new(if open {
                     IconName::ChevronUp
                 } else {
                     IconName::ChevronDown
                 })
-                .tooltip(if ws.pins.open {
-                    "Fold the pins"
-                } else {
-                    "All the pins"
-                })
-                .on_click(cx.listener(|ws, _, _, cx| {
-                    ws.pins.open = !ws.pins.open;
-                    cx.notify();
-                })),
-        );
-    let list = ws.pins.open.then(|| {
-        div()
-            .flex_none()
-            .flex()
-            .flex_col()
-            .px_2()
-            .py_1()
-            .bg(surface)
-            .border_b_1()
-            .border_color(border)
-            .children(
-                pins.iter()
-                    .enumerate()
-                    .map(|(n, pin)| list_row(ws, shown, n, pin, cx)),
+                .xsmall()
+                .text_color(muted),
             )
-    });
-    Some(div().flex().flex_col().child(bar).children(list))
+            .on_click(cx.listener(|ws, _, _, cx| {
+                ws.pins.open = !ws.pins.open;
+                cx.notify();
+            })),
+    )
+}
+
+/// The drawer of the pins over the top of the transcript, while it is pulled down.
+pub fn drawer(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
+    if !ws.pins.open {
+        return None;
+    }
+    let (shown, pins) = shown_pins(ws)?;
+    let theme = cx.theme();
+    let (surface, border) = (theme.muted, theme.border);
+    let list = div()
+        .id("pins-drawer")
+        .max_h(px(ROW * SHOWN_ROWS + 8.))
+        .overflow_y_scroll()
+        .flex()
+        .flex_col()
+        .px_2()
+        .py_1()
+        .bg(surface)
+        .border_b_1()
+        .border_color(border)
+        .shadow_md()
+        .children(
+            pins.iter()
+                .enumerate()
+                .map(|(n, pin)| list_row(ws, shown, n, pin, cx)),
+        );
+    Some(
+        div()
+            .absolute()
+            .top_0()
+            .left_0()
+            .right_0()
+            .occlude()
+            .child(widgets::unfold("pins-drawer-open", list)),
+    )
 }
 
 fn list_row(

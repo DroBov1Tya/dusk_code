@@ -22,6 +22,7 @@ use gpui_kit::{
     *,
 };
 
+use super::dock::panel;
 use crate::workspace::Workspace;
 use attach::{PASTE_THRESHOLD, attach_menu, strip};
 use mention::mention_menu;
@@ -108,6 +109,63 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
     let writing = gpui_kit::Focusable::focus_handle(ws.composer.read(cx), cx).is_focused(window);
     let mentions = mention_menu(ws, cx).or_else(|| super::commands::menu(ws, cx));
     let chips = strip(ws, cx);
+    let edge = if writing {
+        accent.opacity(0.5)
+    } else {
+        cx.theme().border
+    };
+    let band = panel::panel(ws, edge, cx);
+    let under = if band.is_some() {
+        panel::surface(cx)
+    } else {
+        cx.theme().muted
+    };
+    let tab = panel::tab(ws, under, edge, window, cx);
+    // One card: what goes with the message on top, the text under it across the whole
+    // width, and a row of controls at the bottom. The card grows upward, as the box sits
+    // at the foot of the chat.
+    let card = div()
+        .flex()
+        .flex_col()
+        .rounded_2xl()
+        .when(band.is_some(), |card| card.rounded_t_none())
+        .border_1()
+        .border_color(edge)
+        .bg(cx.theme().muted)
+        // The box lights up a little while it is written in.
+        .when(writing, |card| {
+            card.shadow(vec![BoxShadow {
+                color: accent.opacity(0.14),
+                offset: point(px(0.), px(0.)),
+                blur_radius: px(18.),
+                spread_radius: px(0.),
+                inset: false,
+            }])
+        })
+        .shadow_sm()
+        .relative()
+        .children(mentions.map(crate::ui::widgets::on_top))
+        .children(chips)
+        .child(
+            div()
+                .w_full()
+                .px_2()
+                .pt_1()
+                .child(Textarea::new(&ws.composer).appearance(false)),
+        )
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .gap_1()
+                .px_2()
+                .pb_2()
+                .children(box_left)
+                .child(div().flex_1())
+                .children(rate)
+                .children(box_right),
+        );
     div()
         .relative()
         .px_4()
@@ -131,54 +189,16 @@ pub fn render(ws: &Workspace, window: &mut Window, cx: &mut Context<Workspace>) 
                         .min_w_0()
                         .children(super::model_bar::quota(ws, cx))
                         .child(
-                            // One card: what goes with the message on top, the text under it
-                            // across the whole width, and a row of controls at the bottom.
-                            // The card grows upward, as the box sits at the foot of the chat.
+                            // The panel, when open, stands on the card and takes its upper
+                            // edge; the tab stands on whichever is on top.
                             div()
+                                .relative()
                                 .flex()
                                 .flex_col()
-                                .rounded_2xl()
-                                .border_1()
-                                .border_color(if writing {
-                                    accent.opacity(0.5)
-                                } else {
-                                    cx.theme().border
-                                })
-                                .bg(cx.theme().muted)
-                                // The box lights up a little while it is written in.
-                                .when(writing, |card| {
-                                    card.shadow(vec![BoxShadow {
-                                        color: accent.opacity(0.14),
-                                        offset: point(px(0.), px(0.)),
-                                        blur_radius: px(18.),
-                                        spread_radius: px(0.),
-                                        inset: false,
-                                    }])
-                                })
-                                .shadow_sm()
-                                .relative()
-                                .children(mentions.map(crate::ui::widgets::on_top))
-                                .children(chips)
-                                .child(
-                                    div()
-                                        .w_full()
-                                        .px_2()
-                                        .pt_1()
-                                        .child(Textarea::new(&ws.composer).appearance(false)),
-                                )
-                                .child(
-                                    div()
-                                        .flex()
-                                        .flex_row()
-                                        .items_center()
-                                        .gap_1()
-                                        .px_2()
-                                        .pb_2()
-                                        .children(box_left)
-                                        .child(div().flex_1())
-                                        .children(rate)
-                                        .children(box_right),
-                                ),
+                                .when(tab.is_some(), |stack| stack.mt(px(panel::TAB.1 - 1.)))
+                                .children(band)
+                                .child(card)
+                                .children(tab),
                         )
                         // Under the box: the mode on the left, the model on the right.
                         .child(

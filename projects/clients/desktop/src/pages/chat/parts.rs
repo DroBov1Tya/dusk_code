@@ -51,15 +51,6 @@ fn place(
             .into_any_element(),
         Part::Agents => super::composer::agents_button(ws, cx)?.into_any_element(),
         Part::Plugins => crate::plugins::place::composer(ws, cx)?,
-        // The account's limits sit over the context, when the provider reports them.
-        Part::Context => div()
-            .flex()
-            .flex_col()
-            .items_center()
-            .gap_1()
-            .children(super::model_bar::limits(ws, cx))
-            .child(super::model_bar::context(ws, cx))
-            .into_any_element(),
         _ => return None,
     })
 }

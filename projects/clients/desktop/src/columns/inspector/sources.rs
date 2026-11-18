@@ -1,6 +1,6 @@
 //! The shown chat's sources: the files and long pastes attached to it. Each goes to the
-//! model once, with the turn it came in; a pinned one goes with every request until it is
-//! unpinned. The pin and the removal are the core's; this only shows them.
+//! model in full once, with one request (one model call); a pinned one goes with every
+//! request until it is unpinned. The pin and the removal are the core's; this only shows them.
 
 use dusk_protocol::client::{Answer, Command};
 use gpui_kit::{
@@ -65,7 +65,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                         .small()
                         .label(if pinned { "Every time" } else { "Once" })
                         .tooltip(if pinned {
-                            "Send it once again only"
+                            "Stop sending it with every request"
                         } else {
                             "Send it with every request"
                         })
