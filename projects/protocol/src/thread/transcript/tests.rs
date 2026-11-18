@@ -64,6 +64,14 @@ fn events_leave_their_lines_and_messages_leave_none() {
         None,
         "a shaped result leaves no row in the chat"
     );
+    let recorded = ThreadEvent::EpisodeRecorded {
+        kind: crate::thread::EpisodeKind::Fixed,
+    };
+    assert_eq!(
+        note(&recorded),
+        None,
+        "an episode leaves no row in the chat"
+    );
 }
 
 fn retrying(attempt: u32, max_attempts: Option<u32>) -> ThreadEvent {

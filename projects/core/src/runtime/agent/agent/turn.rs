@@ -202,6 +202,9 @@ impl Agent {
                 self.thread_id
             );
         }
+        if let TurnOutcome::Completed(answer) = &outcome {
+            self.store_lesson(&turn.turn_id, &answer.content).await;
+        }
         let failure = match &outcome {
             TurnOutcome::Failed(failure) => Some(failure.clone()),
             _ => None,

@@ -145,6 +145,7 @@ struct Watch {
     stub_saved_tokens: u64,
     shaped_results: u64,
     shape_saved_tokens: u64,
+    episodes: u64,
     retrievals: u64,
     compactions: u64,
     /// Every call so far, as the agent's thread ("" for the chat) and name and arguments.
@@ -207,6 +208,7 @@ impl Watch {
                 self.shaped_results += 1;
                 self.shape_saved_tokens = self.shape_saved_tokens.saturating_add(saved_tokens);
             }
+            ThreadEvent::EpisodeRecorded { .. } => self.episodes += 1,
             ThreadEvent::CompactionFinished(_) => self.compactions += 1,
             ThreadEvent::Question(_) => self.questions += 1,
             ThreadEvent::Tokens { tokens, .. } if thread.is_none() => {
@@ -349,6 +351,7 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         stub_saved_tokens: watch.stub_saved_tokens,
         shaped_results: watch.shaped_results,
         shape_saved_tokens: watch.shape_saved_tokens,
+        episodes: watch.episodes,
         retrievals: watch.retrievals,
         compactions: watch.compactions,
         subagents: watch.subagents,
@@ -414,6 +417,13 @@ mod tests {
         watch.see(shaped(300), None);
         watch.see(from_agent(shaped(200)), None);
         assert_eq!((watch.shaped_results, watch.shape_saved_tokens), (2, 500));
+        let recorded = |kind| ThreadEvent::EpisodeRecorded { kind };
+        watch.see(recorded(dusk_protocol::thread::EpisodeKind::Fixed), None);
+        watch.see(
+            from_agent(recorded(dusk_protocol::thread::EpisodeKind::Verified)),
+            None,
+        );
+        assert_eq!(watch.episodes, 2);
         let counts = (
             watch.stub_moves,
             watch.stubbed_results,

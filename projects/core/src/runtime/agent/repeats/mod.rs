@@ -2,13 +2,17 @@
 //! burning a turn: the result of a repeated call carries a note to change course. Two
 //! rules share the note: the same call with the same result in a row (`same_call`), and,
 //! when `limits.failure_ladder` is on, the same error through calls that differ
-//! (`ladder`, with `signature` saying when two errors are the same).
+//! (`ladder`, with `signature` saying when two errors are the same). The same count tells,
+//! with `limits.episodes` on, when a pass ended such an error (`solved`).
 
 mod ladder;
 mod same_call;
 mod signature;
 #[cfg(test)]
 mod signature_tests;
+mod solved;
+#[cfg(test)]
+mod solved_tests;
 #[cfg(test)]
 mod tests;
 
@@ -20,6 +24,8 @@ use std::{
 use dusk_protocol::thread::RepeatRung;
 
 use crate::{config::Limits, providers::ToolCall, tools::ToolResult};
+
+pub use solved::{Solved, lesson, lesson_note};
 
 /// What the model is told about a repeated call, and what clients and evals are told.
 pub struct Notice {
@@ -37,6 +43,8 @@ pub struct Repeats {
     ladder: ladder::Ladder,
     /// Why the turn must end, once the ladder reached its top.
     stop: Option<String>,
+    /// A result of this turn asked the model for a lesson line.
+    lesson_asked: bool,
 }
 
 impl Repeats {
@@ -50,17 +58,16 @@ impl Repeats {
         content: &str,
         limits: &Limits,
     ) -> Option<Notice> {
-        if self.turn != turn_id {
-            *self = Self {
-                turn: turn_id.to_owned(),
-                ..Self::default()
-            };
-        }
+        self.enter(turn_id);
         let same = self.same_call.note(&call.name, &call.arguments, content);
-        // With the switch off, nothing of the ladder runs: no signature, no cost.
-        let climbed = (limits.failure_ladder && result.is_error)
-            .then(|| self.ladder.climb(call, &result.content, limits))
+        // With both switches off, nothing of the count runs: no signature, no cost.
+        let counting = limits.failure_ladder || limits.episodes;
+        let counted = (counting && result.is_error)
+            .then(|| self.ladder.count(call, &result.content))
             .flatten();
+        let climbed = counted
+            .filter(|_| limits.failure_ladder)
+            .and_then(|key| self.ladder.climb(key, limits));
         if let Some(climbed) = climbed {
             if climbed.stop.is_some() {
                 self.stop = climbed.stop;
@@ -76,6 +83,39 @@ impl Repeats {
             count,
             note,
         })
+    }
+
+    /// The loop a call that passed ended, for an episode. Only asked with
+    /// `limits.episodes` on, which is what counts the failures it ends.
+    pub fn solved(
+        &mut self,
+        turn_id: &str,
+        call: &ToolCall,
+        result: &ToolResult,
+    ) -> Option<Solved> {
+        self.enter(turn_id);
+        self.ladder.solved(call, result)
+    }
+
+    /// Notes that a result of the turn asked for a lesson line.
+    pub fn ask_lesson(&mut self, turn_id: &str) {
+        self.enter(turn_id);
+        self.lesson_asked = true;
+    }
+
+    /// Whether a result of the turn `turn_id` asked for a lesson line.
+    pub fn lesson_asked(&self, turn_id: &str) -> bool {
+        self.turn == turn_id && self.lesson_asked
+    }
+
+    /// A new turn starts every count over.
+    fn enter(&mut self, turn_id: &str) {
+        if self.turn != turn_id {
+            *self = Self {
+                turn: turn_id.to_owned(),
+                ..Self::default()
+            };
+        }
     }
 
     /// Whether the turn `turn_id` must end once the call at hand is done, so the rest of
