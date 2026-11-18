@@ -6,7 +6,7 @@
 use dusk_protocol::plugin::{Kind, Listing};
 use leptos::prelude::*;
 
-use super::{Shop, card, hero, shots_key};
+use super::{Shop, card, hero, placeholder::Picture, shots_key};
 use crate::ui::{Icon, IconName};
 
 pub fn window(shop: Shop, source: String, name: String) -> impl IntoView {
@@ -56,7 +56,11 @@ fn gallery(shop: Shop, listing: &Listing, step: impl Fn(isize) + Copy + 'static)
     let shots = shop
         .shots
         .with(|shots| shots.get(&shots_key(listing)).cloned().unwrap_or_default());
-    let mut media: Vec<(Option<String>, Option<String>)> = vec![(shop.cover(listing), None)];
+    let cover = match shop.picture(listing.cover.as_ref().map(|cover| cover.sha256.as_str())) {
+        Picture::Shown(url) => Some(url),
+        _ => None,
+    };
+    let mut media: Vec<(Option<String>, Option<String>)> = vec![(cover, None)];
     for (url, about) in shots.into_iter().zip(&listing.screenshots) {
         media.push(((!url.is_empty()).then_some(url), about.caption.clone()));
     }
@@ -65,7 +69,8 @@ fn gallery(shop: Shop, listing: &Listing, step: impl Fn(isize) + Copy + 'static)
     let (shown, caption) = media[index].clone();
     let picture = |url: Option<String>, name: &str, listing: &Listing| match url {
         Some(url) => view! { <div class="art fit"><img src=url alt="" /></div> }.into_any(),
-        None => card::art(name, listing.tier, None),
+        None => view! { <div class="art">{card::art(listing.kind, name, Picture::Missing)}</div> }
+            .into_any(),
     };
     let thumbs = media
         .iter()
