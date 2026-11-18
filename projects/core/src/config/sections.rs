@@ -121,6 +121,21 @@ pub struct Limits {
     /// the model does not miss what it no longer sees.
     #[serde(default)]
     pub shape_output: bool,
+    /// Whether the core keeps an index of a saved project's source (files, symbols, the
+    /// names each file uses) for the `project_graph` tool. The model sees nothing of it.
+    /// Off until the indexer's benchmark meets its budget.
+    #[serde(default)]
+    pub project_graph: bool,
+    /// Whether the core writes down what ended a problem in a saved project (a repeated
+    /// error that then passed, a verification that passed) for the `recall` tool. Off
+    /// until the evals show recalled notes help.
+    #[serde(default)]
+    pub episodes: bool,
+    /// Whether a call that ends a repeated failure asks the model for a one-line lesson
+    /// at the end of its answer, stored with the episode. Off until the evals show the
+    /// lesson adds to the facts.
+    #[serde(default)]
+    pub episode_lesson: bool,
 }
 
 impl Default for Limits {
@@ -151,6 +166,9 @@ impl Default for Limits {
             compact_tail_tokens: default_compact_tail_tokens(),
             compact_early: false,
             shape_output: false,
+            project_graph: false,
+            episodes: false,
+            episode_lesson: false,
         }
     }
 }
