@@ -102,6 +102,9 @@ fn outline(loaded: &Loaded, source: &[u8], late: Late) -> Result<Outline, Stop> 
     {
         return Err(Skipped::LongLines.into());
     }
+    // From here on nothing reads the file itself: a string or a comment the parser took
+    // for code has no text left to give.
+    let source = &(loaded.spec.blank)(source);
     let tree = tree(loaded, source, late)?;
     let mut found = Found::default();
     found.collect(loaded, &tree, source, late)?;
