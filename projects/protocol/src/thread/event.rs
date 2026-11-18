@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::agent::AgentPhase;
 use crate::model::{Effort, ModelEvent, ProviderErrorKind, ToolCall};
 use crate::thread::{
-    Compaction, Goal, LocalUnsent, Message, Task, ThreadTokens, Turn, TurnFailure,
+    Compaction, Goal, LocalUnsent, Message, Task, Team, ThreadTokens, Turn, TurnFailure,
 };
 use crate::tools::{ApprovalRequest, Question, ToolResult};
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,6 +155,11 @@ pub enum ThreadEvent {
     },
     /// The thread's task board changed: every task with its steps.
     Tasks(Vec<Task>),
+    /// One task of the plan this thread leads changed; `Tasks` stays for the board.
+    TaskChanged(Task),
+    /// The team running this thread's plan changed its status, members or budget; at
+    /// most one a second.
+    Team(Team),
     /// An agent's phase changed, by its own `agent_state` call or the runtime's.
     AgentPhase {
         phase: AgentPhase,

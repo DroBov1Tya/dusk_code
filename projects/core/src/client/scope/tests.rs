@@ -184,15 +184,19 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.stop_agent",
         "thread.tasks",
         "work.changed_files",
+        "work.confirm_task",
         "work.file_changes",
         "work.job_output",
         "work.jobs",
         "work.pin_source",
         "work.plan",
+        "work.plan_tasks",
         "work.remove_source",
         "work.save_plan",
         "work.source_picture",
         "work.stop_job",
+        "work.stop_team",
+        "work.team",
         "work.upload_picture",
     ];
     assert_eq!(permitted(&scope), BTreeSet::from(expected));
@@ -207,10 +211,12 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.resume",
         "thread.send",
         "thread.stop_agent",
+        "work.confirm_task",
         "work.pin_source",
         "work.remove_source",
         "work.save_plan",
         "work.stop_job",
+        "work.stop_team",
         "work.upload_picture",
     ];
     let mut read_only = BTreeSet::from(expected);

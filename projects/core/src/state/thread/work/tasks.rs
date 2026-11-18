@@ -244,6 +244,8 @@ impl State {
             created_at: row.try_get("created_at")?,
             updated_at: row.try_get("updated_at")?,
             items,
+            status: dusk_protocol::thread::TaskStatus::from_done(is_done(&row)?),
+            ..Task::default()
         })
     }
 
