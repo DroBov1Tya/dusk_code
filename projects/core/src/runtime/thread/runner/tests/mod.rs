@@ -397,6 +397,7 @@ mod resume;
 mod retries;
 mod shrink;
 mod stubs;
+mod tail;
 mod together;
 mod turns;
 mod waits;

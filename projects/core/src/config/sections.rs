@@ -101,6 +101,20 @@ pub struct Limits {
     /// stub would save little.
     #[serde(default = "default_stub_min_tokens")]
     pub stub_min_tokens: u64,
+    /// Whether a compaction summarizes only the older part of the context and keeps the
+    /// newest messages word for word, so the step in hand is not retold from a summary.
+    /// Off until the evals show it does not lower the pass rate.
+    #[serde(default)]
+    pub compact_tail: bool,
+    /// The most a kept tail holds, in estimated tokens; never more than a fifth of the
+    /// model's input limit, so a compaction always frees most of it.
+    #[serde(default = "default_compact_tail_tokens")]
+    pub compact_tail_tokens: u64,
+    /// Whether the context is also compacted between turns once it passes 60% of the input
+    /// limit, so the summary is written in the pause and not in the middle of a turn. Off
+    /// until the evals show the cached share and the wall time do not get worse.
+    #[serde(default)]
+    pub compact_early: bool,
 }
 
 impl Default for Limits {
@@ -127,6 +141,9 @@ impl Default for Limits {
             stub_results: false,
             stub_keep_steps: default_stub_keep_steps(),
             stub_min_tokens: default_stub_min_tokens(),
+            compact_tail: false,
+            compact_tail_tokens: default_compact_tail_tokens(),
+            compact_early: false,
         }
     }
 }
@@ -204,6 +221,14 @@ fn default_stub_keep_steps() -> u32 {
 
 fn default_stub_min_tokens() -> u64 {
     200
+}
+
+/// Below 2,000 tokens a tail holds about one step; above 64,000 it is most of a window.
+pub const MIN_COMPACT_TAIL_TOKENS: u64 = 2_000;
+pub const MAX_COMPACT_TAIL_TOKENS: u64 = 64_000;
+
+fn default_compact_tail_tokens() -> u64 {
+    16_000
 }
 
 /// What the core records about its work. Off, nothing is written or sent at all.

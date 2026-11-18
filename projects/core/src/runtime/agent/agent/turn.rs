@@ -4,7 +4,7 @@ use super::wait::Waited;
 use super::{Agent, Pace, StepEnd};
 use crate::catalog::modes::Modes;
 use crate::plugins::HookEvent;
-use crate::runtime::agent::{Inbox, Stop};
+use crate::runtime::agent::{Inbox, Keep, Stop};
 use crate::runtime::{
     ThreadEvent,
     thread::{Conversation, start::NO_PROMPT},
@@ -166,11 +166,17 @@ impl Agent {
                 }
                 StepEnd::TooLarge(_) if shrunk < MAX_SHRINKS => {
                     shrunk += 1;
+                    // A tail kept the first time may be what does not fit; the second
+                    // time everything goes.
+                    let keep = match shrunk {
+                        1 => Keep::Tail,
+                        _ => Keep::Nothing,
+                    };
                     info!(
                         "thread {} turn {}: the context is too large, compaction {shrunk}",
                         self.thread_id, turn.turn_id
                     );
-                    match self.compact(None, Some(turn), inbox).await {
+                    match self.compact(None, keep, Some(turn), inbox).await {
                         None => continue,
                         Some(reason) => {
                             stop = Some(reason);
