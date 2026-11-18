@@ -70,18 +70,13 @@ pub fn render(ws: &Workspace, picks: &[&Listing], grid: Grid, cx: &mut Context<W
     if let Some(tags) = tags(listing, cx) {
         panel = panel.child(tags);
     }
-    let mut foot = div()
+    let foot = div()
         .flex()
         .flex_row()
         .items_center()
         .gap(px(size::GAP_S))
-        .h(px(size::CONTROL));
-    if let Some(button) = actions::primary(listing, ws, false, cx) {
-        foot = foot.child(button);
-    }
-    if let Some(badge) = capsule::state_badge(listing, cx) {
-        foot = foot.child(badge);
-    }
+        .h(px(size::CONTROL))
+        .child(actions::slot(listing, ws, false, cx));
     let opened = listing.clone();
     let more = div()
         .id("hero-more")
@@ -97,7 +92,7 @@ pub fn render(ws: &Workspace, picks: &[&Listing], grid: Grid, cx: &mut Context<W
         &listing.name,
         listing.tier,
         art_width(grid.width),
-        None,
+        Corners::default(),
         cx,
     );
     let mut hero = banner(art, grid.width, panel, foot, cx);
@@ -324,7 +319,7 @@ fn strip(ws: &Workspace, picks: &[&Listing], index: usize, cx: &mut Context<Work
                     &listing.name,
                     listing.tier,
                     THUMB,
-                    None,
+                    Corners::default(),
                     cx,
                 ))
                 .on_click(cx.listener(move |ws, _, _, cx| {

@@ -39,6 +39,7 @@
 //!   for the mist;
 //! - `theme=NAME`: Dusk, Light, Dark, "Solar Dusk", Eclipse;
 //! - `file=PATH[:LINE]`: open a file in the viewer;
+//! - `size=WxH`: resize the window, as a drag of its edge would;
 //! - `quiet`: hide the columns as the rail's moon does; `working=MIN`: a turn under way
 //!   for that many minutes, for the header's sky;
 //! - `shot=NAME`: save `DUSK_SHOT_DIR/NAME.png`; `quit`: end.
@@ -163,6 +164,11 @@ fn act(
         }
         "review" => ws.open_review(cx),
         "quiet" => ws.quiet = true,
+        // The window's size, as a drag of its edge would set it.
+        "size" => match value.split_once('x').map(|(w, h)| (w.parse(), h.parse())) {
+            Some((Ok(width), Ok(height))) => window.resize(size(px(width), px(height))),
+            _ => eprintln!("size=WIDTHxHEIGHT: {value}"),
+        },
         // A turn of the shown chat that began `value` minutes ago and goes on.
         "working" => {
             let minutes: i64 = value.parse().unwrap_or(7);

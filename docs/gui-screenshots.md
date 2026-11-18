@@ -4,7 +4,7 @@ The shell cannot record the screen (no permission, no display session), so the w
 draw itself into a picture instead. It is a development feature, off in release builds:
 
 ```sh
-cargo build -p dusk_gui --features screenshot --target-dir target/shot
+cargo build -p dusk_desktop --features screenshot --target-dir target/shot
 DUSK_SHOT_DIR=/tmp/shots \
 DUSK_SHOTS='wait=4000;project=0;wait=2000;thread=0;wait=3500;shot=chat;review;wait=2500;shot=review;quit' \
   target/shot/debug/duskcode-gui

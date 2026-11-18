@@ -70,7 +70,14 @@ pub fn render(ws: &Workspace, listing: &Listing, width: f32, cx: &mut Context<Wo
             .w(px(width))
             .h(px(grid::cover_height(width)))
             .child(img(image).size_full().object_fit(ObjectFit::Contain)),
-        None => capsule::art(None, &listing.name, listing.tier, width, None, cx),
+        None => capsule::art(
+            None,
+            &listing.name,
+            listing.tier,
+            width,
+            Corners::default(),
+            cx,
+        ),
     };
     let mut stage = div()
         .relative()

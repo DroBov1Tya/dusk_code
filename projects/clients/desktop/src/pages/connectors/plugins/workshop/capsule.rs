@@ -1,15 +1,18 @@
-//! A listing as a capsule: its cover on top at the art's aspect, then its name and
-//! stars, one line of what it is, and its tier mark with its one button on a row of a
-//! control's height. The corner of the cover says Installed or Update; the other corner
-//! warns when another source offers the same name. A click opens the listing's window.
+//! A listing as a card: its cover at the card's inner width, then its name and kind,
+//! two lines of what it is (a notice takes the first when there is one), and a footer
+//! with the tier mark at the left and one slot at the right holding a button or a state.
+//! Nothing is drawn over the cover, and every card of a row is the same height whatever
+//! its text. A click opens the listing's window.
+
+use std::sync::Arc;
 
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
-    plugin::{Listing, Tier},
+    plugin::{Kind, Listing, Tier},
 };
 use gpui_kit::{
-    component::{ActiveTheme, Icon, IconName, switch::Switch},
+    component::{ActiveTheme, Icon, IconName, switch::Switch, tooltip::Tooltip},
     prelude::FluentBuilder,
     *,
 };
@@ -20,8 +23,27 @@ use crate::{
     workspace::Workspace,
 };
 
-/// How much a cover grows under the pointer: enough to answer it, not to move the page.
-const ZOOM: f32 = 1.03;
+/// The card's corner; the cover inside its 1 px border takes one less.
+const RADIUS: f32 = 12.;
+const BORDER: f32 = 1.;
+const NAME: f32 = 22.;
+/// One line of the text; the text is two.
+const LINE: f32 = 20.;
+const NOTICE_ICON: f32 = 14.;
+/// More than two lines never show; the rest is not shaped at all.
+const TEXT_CHARS: usize = 280;
+
+/// A card's height at `width`: the same for every card of a row.
+pub fn height(width: f32) -> f32 {
+    let cover = grid::cover_height(inner(width));
+    let body = size::GAP_M + NAME + size::GAP_XS + 2. * LINE + size::GAP_XS + size::CONTROL;
+    cover + body + size::GAP_S + 2. * BORDER
+}
+
+/// The width inside the card's border, which the cover fills.
+fn inner(width: f32) -> f32 {
+    width - 2. * BORDER
+}
 
 pub fn render(
     ws: &Workspace,
@@ -29,132 +51,104 @@ pub fn render(
     width: f32,
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
-    let muted = cx.theme().muted_foreground;
+    let theme = cx.theme();
+    let (warning, danger) = (theme.warning, theme.danger);
     let group = actions::id("capsule", listing);
-    let mut top = div().relative().child(art(
-        ws.workshop.covers.get(listing),
-        &listing.name,
-        listing.tier,
-        width,
-        Some(&group),
-        cx,
-    ));
-    if let Some(badge) = state_badge(listing, cx) {
-        top = top.child(badge.absolute().top(px(size::GAP_S)).right(px(size::GAP_S)));
-    }
-    if listing.clash {
-        top = top.child(
-            corner(
-                IconName::TriangleAlert,
-                "Same name elsewhere",
-                cx.theme().warning,
-                cx,
-            )
-            .absolute()
-            .top(px(size::GAP_S))
-            .left(px(size::GAP_S)),
-        );
-    }
-    let failed = ws.workshop.failed.get(&listing.name).cloned();
-    let line = match (failed, &listing.unfit) {
-        (Some(error), _) => div().text_color(cx.theme().danger).child(error),
-        (None, Some(why)) => div().text_color(cx.theme().warning).child(why.clone()),
-        (None, None) => div().text_color(muted).child(listing.description.clone()),
+    let failed = ws.workshop.failed.get(&listing.name);
+    let notice = match (failed, &listing.unfit) {
+        (Some(error), _) => Some((error.clone(), danger)),
+        (None, Some(why)) => Some((why.clone(), warning)),
+        (None, None) if listing.clash => {
+            Some(("Same name from another source".to_owned(), warning))
+        }
+        (None, None) => None,
     };
-    let footer = div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(size::GAP_S))
-        .h(px(size::CONTROL))
-        .child(tier::mark(listing.tier, cx))
-        .child(div().flex_1())
-        // The button keeps its click, so it does not open the window too.
-        .children(actions::primary(listing, ws, true, cx).map(|button| {
-            div()
-                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                .child(button)
-        }));
+    // The button keeps its click, so it does not open the window too.
+    let slot = div()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(actions::slot(listing, ws, true, cx));
     let opened = listing.clone();
-    shell(group, cx)
-        .w(px(width))
+    shell(group, width, cx)
         .on_click(cx.listener(move |ws, _, window, cx| ws.open_listing(&opened, window, cx)))
-        .child(top)
+        .child(art(
+            ws.workshop.covers.get(listing),
+            &listing.name,
+            listing.tier,
+            inner(width),
+            top_corners(),
+            cx,
+        ))
         .child(
             body()
-                .child(name_row(&listing.name, listing.stars, cx))
-                .child(line.small().truncate())
-                .child(footer),
+                .child(name_row(listing, cx))
+                .child(text(&listing.description, notice, cx))
+                .child(footer(tier::mark(listing.tier, cx), slot)),
         )
 }
 
-/// A pack here that no source lists: a letter cover, how many of its skills are on, and
-/// its switch where a listing has its button. A click opens its page.
+/// A pack here that no source lists: how many of its skills are on, and its switch in the
+/// slot where a listing has its button. A click opens its page.
 pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Stateful<Div> {
-    let muted = cx.theme().muted_foreground;
     let title = match pack.title.as_str() {
         "" => pack.name.clone(),
         title => title.to_owned(),
     };
     let on = pack.skills.iter().filter(|skill| skill.enabled).count();
+    let mut about = format!("{on} of {} on.", widgets::count(pack.skills.len(), "skill"));
+    if !pack.description.is_empty() {
+        about = format!("{about} {}", pack.description);
+    }
     let word = if pack.builtin { "Built-in" } else { "Local" };
     let group = SharedString::from(format!("workshop-pack-{}", pack.name));
     let (opened, switched) = (pack.name.clone(), pack.name.clone());
-    shell(group.clone(), cx)
-        .w(px(width))
+    let mark = div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(size::GAP_XS))
+        .text_color(tier::color(Tier::Local, cx))
+        .child(tier::icon(Tier::Local, size::ICON, cx))
+        .child(div().meta().font_weight(FontWeight::MEDIUM).child(word));
+    let switch = div()
+        .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
+        .child(
+            Switch::new(SharedString::from(format!("pack-{}", pack.name)))
+                .checked(pack.enabled)
+                .tooltip("The pack's switch: off hides all its skills")
+                .on_click(cx.listener(move |ws, on: &bool, _, cx| {
+                    ws.pack_switch(CoreSwitch::SkillPack(switched.clone()), *on, cx)
+                })),
+        );
+    shell(group, width, cx)
         .on_click(cx.listener(move |ws, _, _, cx| {
             ws.workshop.pack = Some(opened.clone());
             cx.notify();
         }))
-        .child(art(None, &pack.name, Tier::Local, width, Some(&group), cx))
+        .child(art(
+            None,
+            &pack.name,
+            Tier::Local,
+            inner(width),
+            top_corners(),
+            cx,
+        ))
         .child(
             body()
-                .child(name_row(&title, 0, cx))
-                .child(div().small().truncate().text_color(muted).child(format!(
-                    "{on} of {} on",
-                    widgets::count(pack.skills.len(), "skill")
-                )))
-                .child(
-                    div()
-                        .flex()
-                        .flex_row()
-                        .items_center()
-                        .gap(px(size::GAP_S))
-                        .h(px(size::CONTROL))
-                        .child(
-                            div()
-                                .flex()
-                                .flex_row()
-                                .items_center()
-                                .gap(px(size::GAP_XS))
-                                .text_color(tier::color(Tier::Local, cx))
-                                .child(tier::icon(Tier::Local, size::ICON, cx))
-                                .child(div().meta().font_weight(FontWeight::MEDIUM).child(word)),
-                        )
-                        .child(div().flex_1())
-                        .child(
-                            div()
-                                .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                                .child(
-                                    Switch::new(SharedString::from(format!("pack-{}", pack.name)))
-                                        .checked(pack.enabled)
-                                        .tooltip("The pack's switch: off hides all its skills")
-                                        .on_click(cx.listener(move |ws, on: &bool, _, cx| {
-                                            ws.pack_switch(
-                                                CoreSwitch::SkillPack(switched.clone()),
-                                                *on,
-                                                cx,
-                                            )
-                                        })),
-                                ),
-                        ),
-                ),
+                .child(name_line(
+                    SharedString::from(format!("pack-name-{}", pack.name)),
+                    &title,
+                    0,
+                    Kind::Pack,
+                    cx,
+                ))
+                .child(text(&about, None, cx))
+                .child(footer(mark, switch)),
         )
 }
 
-/// The capsule's frame: it lifts under the pointer, darkens while pressed and shows the
-/// accent ring while the keyboard is on it.
-fn shell(group: SharedString, cx: &App) -> Stateful<Div> {
+/// The card's frame: a step lighter with an accent border under the pointer, back to its
+/// surface while pressed, the accent border while the keyboard is on it.
+fn shell(group: SharedString, width: f32, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
     let (border, surface, hover, ring) = (theme.border, theme.muted, theme.list_hover, theme.ring);
     div()
@@ -163,17 +157,18 @@ fn shell(group: SharedString, cx: &App) -> Stateful<Div> {
         .flex_none()
         .flex()
         .flex_col()
-        .rounded_lg()
-        .overflow_hidden()
+        .w(px(width))
+        .h(px(height(width)))
+        .rounded(px(RADIUS))
         .border_1()
         .border_color(border)
         .bg(surface)
         .cursor_pointer()
-        .hover(move |capsule| capsule.border_color(ring.opacity(0.45)).bg(hover))
-        .active(move |capsule| capsule.bg(surface))
+        .hover(move |card| card.border_color(ring.opacity(0.45)).bg(hover))
+        .active(move |card| card.border_color(ring.opacity(0.6)).bg(surface))
         .tab_stop(true)
         .tab_index(0)
-        .focus_visible(move |capsule| capsule.border_color(ring))
+        .focus_visible(move |card| card.border_color(ring))
 }
 
 fn body() -> Div {
@@ -186,13 +181,27 @@ fn body() -> Div {
         .pb(px(size::GAP_S))
 }
 
-/// The name, cut when long, with the stars at the right end.
-fn name_row(name: &str, stars: u32, cx: &App) -> Div {
+fn name_row(listing: &Listing, cx: &App) -> Stateful<Div> {
+    name_line(
+        actions::id("name", listing),
+        &listing.name,
+        listing.stars,
+        listing.kind,
+        cx,
+    )
+}
+
+/// The name on one line, whole in its tooltip; the stars and the kind at the right.
+fn name_line(id: SharedString, name: &str, stars: u32, kind: Kind, cx: &App) -> Stateful<Div> {
+    let muted = cx.theme().muted_foreground;
+    let tip = SharedString::from(name.to_owned());
     div()
+        .id(id)
         .flex()
         .flex_row()
         .items_center()
         .gap(px(size::GAP_S))
+        .h(px(NAME))
         .child(
             div()
                 .flex_1()
@@ -200,46 +209,151 @@ fn name_row(name: &str, stars: u32, cx: &App) -> Div {
                 .body()
                 .font_weight(FontWeight::SEMIBOLD)
                 .truncate()
-                .child(name.to_owned()),
+                .child(tip.clone()),
         )
+        .tooltip(move |window, cx| Tooltip::new(tip.clone()).build(window, cx))
         .when(stars > 0, |row| row.child(actions::stars(stars, cx)))
+        .child(
+            div()
+                .flex_none()
+                .meta()
+                .text_color(muted)
+                .child(super::kind_word(kind)),
+        )
 }
 
-/// The cover at `width` and the art's aspect, growing a little under the pointer over
-/// `group`; without one, the name's letter on the tier's tint.
+/// Two lines of the description; a notice takes the first, in its colour.
+fn text(description: &str, notice: Option<(String, Hsla)>, cx: &App) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let lines = if notice.is_some() { 1 } else { 2 };
+    let about = div()
+        .w_full()
+        .small()
+        .line_height(px(LINE))
+        .text_color(muted)
+        .line_clamp(lines)
+        .text_ellipsis()
+        .child(clip(description, TEXT_CHARS));
+    div()
+        .flex()
+        .flex_col()
+        .h(px(2. * LINE))
+        .overflow_hidden()
+        .when_some(notice, |text, (notice, color)| {
+            text.child(
+                div()
+                    .flex()
+                    .flex_row()
+                    .items_center()
+                    .gap(px(size::GAP_XS))
+                    .h(px(LINE))
+                    .small()
+                    .text_color(color)
+                    .child(
+                        Icon::new(IconName::TriangleAlert)
+                            .size(px(NOTICE_ICON))
+                            .text_color(color),
+                    )
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .child(clip(&notice, TEXT_CHARS)),
+                    ),
+            )
+        })
+        .child(about)
+}
+
+/// The tier mark at the left, the one slot at the right.
+fn footer(mark: Div, slot: Div) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(size::GAP_S))
+        .mt(px(size::GAP_XS))
+        .h(px(size::CONTROL))
+        .child(mark)
+        .child(div().flex_1())
+        .child(slot)
+}
+
+/// A third party's text as one plain line of at most `max` characters: line breaks and
+/// controls become spaces, runs of space one.
+pub fn clip(text: &str, max: usize) -> String {
+    let mut line = String::with_capacity(text.len().min(max * 4));
+    let mut count = 0;
+    let mut space = false;
+    for c in text.trim().chars() {
+        if c.is_whitespace() || c.is_control() {
+            space = true;
+            continue;
+        }
+        if count >= max {
+            line.push('\u{2026}');
+            break;
+        }
+        if space && !line.is_empty() {
+            line.push(' ');
+            count += 1;
+        }
+        space = false;
+        line.push(c);
+        count += 1;
+    }
+    line
+}
+
+/// The top corners of a cover inside a card's border.
+pub fn top_corners() -> Corners<Pixels> {
+    let radius = px(RADIUS - BORDER);
+    Corners {
+        top_left: radius,
+        top_right: radius,
+        bottom_right: px(0.),
+        bottom_left: px(0.),
+    }
+}
+
+/// Rounds an element's corners one by one.
+pub fn rounded<E: Styled>(element: E, corners: Corners<Pixels>) -> E {
+    element
+        .rounded_tl(corners.top_left)
+        .rounded_tr(corners.top_right)
+        .rounded_br(corners.bottom_right)
+        .rounded_bl(corners.bottom_left)
+}
+
+/// The cover at `width` and the art's aspect, cropped to fill. The picture carries the
+/// corners itself, since gpui clips a child to its parent's rectangle, not its radius.
+/// Without one, the name's letter on the tier's tint.
 pub fn art(
-    image: Option<std::sync::Arc<Image>>,
+    image: Option<Arc<Image>>,
     name: &str,
     tier: Tier,
     width: f32,
-    group: Option<&SharedString>,
+    corners: Corners<Pixels>,
     cx: &App,
 ) -> Div {
     let height = grid::cover_height(width);
-    let frame = div()
-        .relative()
-        .flex_none()
-        .w(px(width))
-        .h(px(height))
-        .overflow_hidden()
-        .bg(cx.theme().accent);
-    let picture = match image {
-        Some(image) => div()
-            .size_full()
-            .child(img(image).size_full().object_fit(ObjectFit::Cover)),
+    let frame = div().flex_none().w(px(width)).h(px(height));
+    match image {
+        Some(image) => frame.child(rounded(
+            img(image).size_full().object_fit(ObjectFit::Cover),
+            corners,
+        )),
         None => {
             let letter = name
                 .chars()
                 .find(|c| c.is_alphanumeric())
                 .map(|c| c.to_uppercase().to_string())
                 .unwrap_or_else(|| "?".to_owned());
-            div()
-                .size_full()
+            rounded(frame, corners)
                 .flex()
-                .flex_col()
                 .items_center()
                 .justify_center()
-                .gap(px(size::GAP_S))
                 .bg(tier::color(tier, cx).opacity(0.12))
                 .child(
                     div()
@@ -248,52 +362,19 @@ pub fn art(
                         .child(letter),
                 )
         }
-    };
-    let (grown_w, grown_h) = (width * ZOOM, height * ZOOM);
-    let layer = div()
-        .absolute()
-        .top_0()
-        .left_0()
-        .w(px(width))
-        .h(px(height))
-        .child(picture);
-    let layer = match group {
-        Some(group) => layer.group_hover(group.clone(), move |style| {
-            style
-                .w(px(grown_w))
-                .h(px(grown_h))
-                .left(px((width - grown_w) / 2.))
-                .top(px((height - grown_h) / 2.))
-        }),
-        None => layer,
-    };
-    frame.child(layer)
-}
-
-/// Installed, or an update waiting: a badge on the cover's corner.
-pub fn state_badge(listing: &Listing, cx: &App) -> Option<Div> {
-    let theme = cx.theme();
-    match (&listing.installed, &listing.update) {
-        (Some(_), Some(_)) => Some(corner(IconName::ArrowUp, "Update", theme.primary, cx)),
-        (Some(_), None) => Some(corner(IconName::Check, "Installed", theme.success, cx)),
-        (None, _) => None,
     }
 }
 
-/// A short word with its icon on the cover, on the page's own colour so it reads on any art.
-fn corner(icon: IconName, text: &'static str, color: Hsla, cx: &App) -> Div {
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(size::GAP_XS))
-        .h(px(size::GAP_XL))
-        .px(px(size::GAP_S))
-        .rounded_md()
-        .bg(cx.theme().background.opacity(0.9))
-        .text_color(color)
-        .meta()
-        .font_weight(FontWeight::MEDIUM)
-        .child(Icon::new(icon).size(px(size::ICON)).text_color(color))
-        .child(text)
+#[cfg(test)]
+mod tests {
+    use super::clip;
+
+    #[test]
+    fn clip_makes_one_plain_line_of_whole_characters() {
+        assert_eq!(clip("  a\nb\r\n\tc\u{1b}[2J  ", 50), "a b c [2J");
+        assert_eq!(clip("ééééé", 3), "ééé\u{2026}");
+        assert_eq!(clip("👍🏽👍🏽", 1), "👍\u{2026}");
+        assert_eq!(clip("abc", 3), "abc");
+        assert_eq!(clip("", 5), "");
+    }
 }

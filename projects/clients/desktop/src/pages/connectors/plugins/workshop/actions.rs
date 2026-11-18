@@ -1,7 +1,7 @@
-//! What a listing's buttons do and say, the same on a capsule, the hero, a pack's page
-//! and a listing's window: Install, Update or a turning ring while at work, and Remove
-//! where there is room for it. Every button is a control's height; the one that waits on
-//! the user (an update) is the only filled one.
+//! What a listing's slot holds and its buttons do, the same on a card, the hero, a pack's
+//! page and a listing's window: one thing at a time, a button or a state, never both.
+//! Install, Retry after a failure, Update (the one filled button: it waits on the user),
+//! a turning ring while at work, or "Installed"; Remove only where there is room for it.
 
 use dusk_protocol::plugin::Listing;
 use gpui_kit::{
@@ -18,58 +18,82 @@ use crate::{
     workspace::Workspace,
 };
 
-/// The narrowest an action button is, so a row of capsules keeps its buttons one width.
+/// The narrowest an action button is, so a row of cards keeps its buttons one width.
 pub const WIDTH: f32 = 88.;
+/// A button in a card's footer is a little lower than a control.
+const IN_CARD: f32 = 28.;
+const STATE_ICON: f32 = 14.;
 
-/// The one button of a capsule or the hero: at work, Install, Update, or none once
-/// installed (the corner badge says so).
-pub fn primary(
+/// The slot of a card (`compact`: lower buttons, "Update" without its version) or of
+/// the hero.
+pub fn slot(
     listing: &Listing,
     ws: &Workspace,
-    short: bool,
+    compact: bool,
     cx: &mut Context<Workspace>,
-) -> Option<Button> {
+) -> AnyElement {
+    let height = if compact { IN_CARD } else { size::CONTROL };
     if let Some(doing) = ws.workshop.busy.get(&listing.name).copied() {
-        return Some(busy(listing, doing));
+        return busy(listing, doing).h(px(height)).into_any_element();
     }
-    match (&listing.installed, &listing.update) {
-        (None, _) => Some(install(listing, "Install".into(), false, cx)),
+    let failed = ws.workshop.failed.contains_key(&listing.name);
+    let button = match (&listing.installed, &listing.update) {
+        (None, _) if failed => install(listing, "Retry".into(), false, cx),
+        (None, _) => install(listing, "Install".into(), false, cx),
         (Some(_), Some(version)) => {
-            let label = if short {
+            let label = if compact {
                 "Update".to_owned()
             } else {
                 format!("Update to {version}")
             };
-            Some(install(listing, label, true, cx))
+            install(listing, label, true, cx)
         }
-        (Some(_), None) => None,
-    }
+        (Some(_), None) => return installed(cx).into_any_element(),
+    };
+    button.h(px(height)).into_any_element()
 }
 
-/// All the buttons a listing's window and a pack's page have: the primary one, or
-/// "Installed" with Remove.
-pub fn all(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) -> Vec<Button> {
-    if let Some(doing) = ws.workshop.busy.get(&listing.name).copied() {
-        return vec![busy(listing, doing)];
-    }
-    let mut buttons: Vec<Button> = primary(listing, ws, false, cx).into_iter().collect();
-    if listing.installed.is_some() {
+/// All a listing's window and a pack's page have: the slot, then Remove once installed.
+pub fn all(listing: &Listing, ws: &Workspace, cx: &mut Context<Workspace>) -> Vec<AnyElement> {
+    let mut all = vec![slot(listing, ws, false, cx)];
+    if listing.installed.is_some() && !ws.workshop.busy.contains_key(&listing.name) {
         let name = listing.name.clone();
-        buttons.push(
+        all.push(
             Button::new(id("remove", listing))
                 .outline()
                 .min_w(px(WIDTH))
                 .label("Remove")
                 .on_click(cx.listener(move |ws, _, _, cx| {
                     ws.confirm_store(Confirm::Remove(name.clone()), cx)
-                })),
+                }))
+                .into_any_element(),
         );
     }
-    buttons
+    all
+}
+
+/// "Installed" with its check, in the success colour: a state, not a button.
+pub fn installed(cx: &App) -> Div {
+    state(IconName::Check, "Installed", cx.theme().success)
+}
+
+/// A glyph and a word in one colour: a state of a listing.
+pub fn state(icon: IconName, word: &'static str, color: Hsla) -> Div {
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(size::GAP_XS))
+        .meta()
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(color)
+        .child(Icon::new(icon).size(px(STATE_ICON)).text_color(color))
+        .child(word)
 }
 
 fn busy(listing: &Listing, doing: &'static str) -> Button {
     Button::new(id("busy", listing))
+        .ghost()
         .min_w(px(WIDTH))
         .loading(true)
         .label(doing)

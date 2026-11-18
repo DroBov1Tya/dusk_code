@@ -12,7 +12,7 @@ use gpui_kit::{
     *,
 };
 
-use super::{actions, capsule, gallery, hero};
+use super::{actions, gallery, hero};
 use crate::{
     ui::{Type, size, widgets},
     workspace::Workspace,
@@ -107,7 +107,7 @@ fn side(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     if let Some(tags) = hero::tags(listing, cx) {
         column = column.child(tags);
     }
-    let mut buttons = div()
+    let buttons = div()
         .flex()
         .flex_row()
         .flex_wrap()
@@ -115,9 +115,6 @@ fn side(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
         .gap(px(size::GAP_S))
         .min_h(px(size::CONTROL))
         .children(actions::all(listing, ws, cx));
-    if listing.installed.is_some() && listing.update.is_none() {
-        buttons = buttons.children(capsule::state_badge(listing, cx));
-    }
     column = column.child(buttons);
     let headless = !listing.clients.is_empty() && !listing.clients.contains(&Client::Gui);
     let notes = [

@@ -110,9 +110,6 @@ fn banner(
         .h(px(size::CONTROL));
     if let Some(listing) = listing {
         foot = foot.children(actions::all(listing, ws, cx));
-        if let Some(badge) = capsule::state_badge(listing, cx) {
-            foot = foot.child(badge);
-        }
     }
     if let Some(pack) = here {
         let switched = pack.name.clone();
@@ -133,7 +130,7 @@ fn banner(
         name,
         listing.map_or(Tier::Local, |listing| listing.tier),
         hero::art_width(grid.width),
-        None,
+        Corners::default(),
         cx,
     );
     hero::banner(art, grid.width, panel, foot, cx)
