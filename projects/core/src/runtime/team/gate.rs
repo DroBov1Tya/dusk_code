@@ -133,7 +133,6 @@ async fn approved(launcher: &Launcher, lead: &str, command: &str) -> Result<Tool
         approvals: Some(Arc::clone(&launcher.approvals)),
         state: Some(Arc::clone(state)),
         thread_id: lead.to_owned(),
-        graph: None,
     };
     context
         .approve_command(command)
