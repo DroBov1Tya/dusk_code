@@ -15,10 +15,10 @@ mod usage;
 pub use agents::{AgentPhase, Identity};
 pub use db::State;
 pub use thread::{
-    BackgroundJob, CHECK_NOTE, CUT_OFF, CallPurpose, Compaction, Goal, GoalCheck, GoalCriterion,
-    GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message, MessageRole, ModelCall,
-    PendingMessage, ProviderFailure, Settle, Source, Task, Thread, Turn, TurnAnswer, TurnFailure,
-    TurnOutcome, TurnStatus, UndoPoint, Unfinished, estimate_tokens,
+    BackgroundJob, CHECK_NOTE, CUT_OFF, CallPurpose, ChangeQuery, Compaction, Goal, GoalCheck,
+    GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message,
+    MessageRole, ModelCall, PendingMessage, ProviderFailure, Settle, Source, Task, Thread, Turn,
+    TurnAnswer, TurnFailure, TurnOutcome, TurnStatus, UndoPoint, Unfinished, estimate_tokens,
 };
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 

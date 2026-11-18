@@ -1,12 +1,15 @@
 //! `read_file`: a UTF-8 text file, a window of lines at a time, so one read cannot
 //! flood the context.
 
+use std::path::Path;
+
 use schemars::JsonSchema;
 use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
     BoxFuture,
+    project::ledger::{self, Stamp},
     tools::{
         schema,
         schema::parse_arguments,
@@ -66,9 +69,36 @@ impl Tool for ReadFile {
     fn call<'a>(&'a self, arguments: Value, context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ReadArguments = parse_arguments(arguments)?;
-            let text = read_text(&context.resolve(&arguments.path, false).await?).await?;
+            let path = context.resolve(&arguments.path, false).await?;
+            // Taken before the read: a write in between leaves a stamp the text does not
+            // match, so the text is never used as a "before" it was not.
+            let stamp = tokio::fs::symlink_metadata(&path)
+                .await
+                .ok()
+                .and_then(|meta| Stamp::from_metadata(&meta));
+            let text = read_text(&path).await?;
+            if let Some(stamp) = stamp {
+                keep_seen(&context, &path, stamp, &text);
+            }
             Ok(window(&text, arguments.offset, arguments.limit))
         })
+    }
+}
+
+/// Keeps the text of a project file as the "before" of its next change, for the ledger.
+fn keep_seen(context: &ToolContext, path: &Path, stamp: Stamp, text: &str) {
+    if !context.config.limits().record_changes {
+        return;
+    }
+    let Some(relative) = path
+        .strip_prefix(context.scope.cwd())
+        .ok()
+        .and_then(Path::to_str)
+    else {
+        return;
+    };
+    if ledger::may_keep_text(relative) {
+        ledger::seen::remember(path, stamp, text);
     }
 }
 

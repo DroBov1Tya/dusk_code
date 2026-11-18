@@ -22,6 +22,9 @@ impl Server {
             WorkRequest::ChangedFiles { thread_id } => {
                 Response::Changes(runtime.changed_files(&thread_id).await?)
             }
+            WorkRequest::FileChanges { thread_id } => {
+                Response::FileChanges(runtime.file_changes(&thread_id).await?)
+            }
             WorkRequest::SavePlan { thread_id, text } => {
                 runtime.save_plan(&thread_id, &text).await?;
                 Response::Done

@@ -70,6 +70,11 @@ pub struct Limits {
     /// Times before the turn ends as failed.
     #[serde(default = "default_failure_stop_at")]
     pub failure_stop_at: u32,
+    /// Whether the files a command changes in the project are recorded, with a diff when
+    /// the text before is known, so the agent and clients can ask what changed. Off, no
+    /// command is watched and the chat's list of changed files stays empty too.
+    #[serde(default = "yes")]
+    pub record_changes: bool,
 }
 
 impl Default for Limits {
@@ -89,6 +94,7 @@ impl Default for Limits {
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),
+            record_changes: true,
         }
     }
 }

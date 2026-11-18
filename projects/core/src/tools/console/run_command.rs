@@ -112,7 +112,7 @@ impl RunCommand {
         let scope = &*context.scope;
         let confinement = confinement(context).await;
         let marker = scope.workspace().join(format!(
-            ".dusk-cwd-{}-{}",
+            "{MARKER}{}-{}",
             std::process::id(),
             NEXT_MARKER.fetch_add(1, Ordering::Relaxed)
         ));
@@ -135,10 +135,7 @@ impl RunCommand {
             }
             _ => None,
         };
-        let before = match &context.state {
-            Some(_) => Some(super::file_changes::snapshot(scope.cwd()).await),
-            None => None,
-        };
+        let watch = super::file_changes::watch(context).await;
         let ran = run(
             &script,
             &self.start_dir(scope),
@@ -181,11 +178,8 @@ impl RunCommand {
                 )));
             }
         };
-        if let (Some(before), Some(state)) = (before, &context.state) {
-            let touched = before.touched(&super::file_changes::snapshot(scope.cwd()).await);
-            if let Err(error) = state.note_thread_files(&context.thread_id, &touched).await {
-                tracing::warn!("cannot note the files a command changed: {error:#}");
-            }
+        if let Some(watch) = watch {
+            watch.record(context, MARKER).await;
         }
         if let Some(note) = self.keep_dir(scope, ended) {
             result.content.push_str(&format!("\n{note}"));
@@ -195,6 +189,8 @@ impl RunCommand {
 }
 
 static NEXT_MARKER: AtomicU64 = AtomicU64::new(0);
+/// The name of the file a command leaves its last folder in starts with this.
+const MARKER: &str = ".dusk-cwd-";
 
 fn inside(scope: &ToolScope, dir: &Path) -> bool {
     dir.is_dir()

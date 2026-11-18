@@ -438,6 +438,54 @@ mod tests {
         state.close().await;
     }
 
+    /// A database from before the change ledger gets its table, and its data stays.
+    #[tokio::test]
+    async fn a_database_before_the_ledger_gets_its_table() {
+        let path = temp_dir("legacy-changes").join("state.db");
+        let state = State::open(&path).await.unwrap();
+        state.create_thread("thread", "test").await.unwrap();
+        sqlx::raw_sql(
+            "DROP TABLE changes;
+             DELETE FROM _sqlx_migrations WHERE version = 31;",
+        )
+        .execute(&state.pool)
+        .await
+        .unwrap();
+        state.close().await;
+        let state = State::open(&path).await.unwrap();
+        assert!(state.load_thread("thread").await.unwrap().is_some());
+        let edit = crate::project::ledger::Edit {
+            path: "a.txt".into(),
+            kind: dusk_protocol::project::EditKind::Created,
+            size_before: None,
+            size_after: Some(1),
+            hash_after: None,
+            diff: None,
+        };
+        state
+            .record_changes("thread", None, "/project", &[edit])
+            .await
+            .unwrap();
+        let rows = state.thread_changes("thread").await.unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].turn, None);
+        // A row the schema forbids is refused: a deleted file has no size after.
+        let refused = sqlx::query(
+            "INSERT INTO changes (change_id, thread_id, project, path, kind, size_before,
+                size_after, created_at) VALUES ('x', 'thread', '/p', 'b', 'deleted', 1, 1, 0)",
+        )
+        .execute(&state.pool)
+        .await;
+        assert!(refused.is_err());
+        state.delete_thread("thread").await.unwrap();
+        let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM changes")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+        assert_eq!(left, 0, "a deleted thread's rows go with it");
+        state.close().await;
+    }
+
     #[tokio::test]
     async fn messages_without_image_cards_get_the_column() {
         let path = temp_dir("legacy-messages").join("state.db");
@@ -598,7 +646,7 @@ mod tests {
         let left: i64 = sqlx::query_scalar(
             "SELECT (SELECT count(*) FROM _sqlx_migrations
                      WHERE version >= 17
-                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits'))
+                       AND description NOT IN ('thread folders', 'agent phases', 'agent efforts', 'projects', 'thread approvals', 'item usage', 'usage cost', 'project env', 'thread files', 'schedules', 'schedule model', 'thread auto title', 'turn failure', 'turn waits', 'changes'))
                   + (SELECT count(*) FROM sqlite_master
                      WHERE name IN ('codex_sessions', 'message_attachments'))
                   + (SELECT count(*) FROM pragma_table_info('pending_messages')

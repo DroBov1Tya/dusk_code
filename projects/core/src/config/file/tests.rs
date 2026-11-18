@@ -180,10 +180,12 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
     assert_eq!(plain.limits().resume_within_seconds, 3600);
     assert!(plain.limits().wait_for_provider);
     assert!(!plain.limits().shrink_context);
+    assert!(plain.limits().record_changes);
     let set = parse(
-        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: true\n",
+        "limits:\n  model_timeout_seconds: 300\n  max_attempts: 3\n  retry_unreachable_seconds: 60\n  wait_for_provider: false\n  shrink_context: true\n  record_changes: false\n",
     )
     .unwrap();
+    assert!(!set.limits().record_changes);
     assert!(!set.limits().wait_for_provider);
     assert!(set.limits().shrink_context);
     assert_eq!(set.limits().model_timeout_seconds, 300);
@@ -200,6 +202,7 @@ fn the_model_timeout_and_attempts_stay_inside_their_bounds() {
         "limits:\n  resume_within_seconds: 604801\n",
         "limits:\n  wait_for_provider: 3\n",
         "limits:\n  shrink_context: often\n",
+        "limits:\n  record_changes: sometimes\n",
     ] {
         assert!(parse(bad).is_err(), "{bad:?}");
     }

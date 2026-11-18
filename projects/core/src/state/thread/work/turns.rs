@@ -148,6 +148,7 @@ impl State {
                     call.name.as_str(),
                     "goal"
                         | "read_file"
+                        | "changes"
                         | "search_files"
                         | "read_history"
                         | "load_skill"

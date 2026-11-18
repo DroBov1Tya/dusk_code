@@ -31,6 +31,8 @@ regex.workspace = true
 schemars.workspace = true
 jsonschema.workspace = true
 sha2.workspace = true
+# Diffs for the change ledger; already in the tree under gpui-component.
+similar = { version = "2.7.0", default-features = false, features = ["text"] }
 sha1.workspace = true
 async-trait.workspace = true
 parking_lot.workspace = true

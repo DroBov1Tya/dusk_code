@@ -184,6 +184,7 @@ fn reading_and_writing_shared_threads_is_this_list_and_no_more() {
         "thread.stop_agent",
         "thread.tasks",
         "work.changed_files",
+        "work.file_changes",
         "work.job_output",
         "work.jobs",
         "work.pin_source",
