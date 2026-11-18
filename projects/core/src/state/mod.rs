@@ -14,6 +14,7 @@ mod usage;
 
 pub use agents::{AgentPhase, Identity};
 pub use db::State;
+pub use project::graph;
 // Used by tasks E4 and E5 (`recall`, clients); until they land only tests do.
 #[allow(unused_imports)]
 pub use project::{Episode, Recall};

@@ -11,6 +11,33 @@ pub const MAX_NAME_CHARS: usize = 128;
 /// The longest import path kept, in characters.
 pub const MAX_IMPORT_PATH_CHARS: usize = 200;
 
+/// Declares a kind the store keeps as text. The spellings are those of the CHECK lists of
+/// the graph's migration; the store writes `as_str` and reads back with `parse`, so the
+/// kinds are declared once, here.
+macro_rules! stored_kind {
+    ($(#[$doc:meta])* $name:ident { $($variant:ident = $text:literal),+ $(,)? }) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+        pub enum $name {
+            $($variant),+
+        }
+
+        impl $name {
+            pub const ALL: &[Self] = &[$(Self::$variant),+];
+
+            pub fn as_str(self) -> &'static str {
+                match self {
+                    $(Self::$variant => $text),+
+                }
+            }
+
+            pub fn parse(text: &str) -> Option<Self> {
+                Self::ALL.iter().copied().find(|kind| kind.as_str() == text)
+            }
+        }
+    };
+}
+
 /// One parsed file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ParsedFile {
@@ -30,25 +57,15 @@ pub struct Outline {
     pub refs: Vec<Ref>,
 }
 
-/// Why a file has no symbols.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Skipped {
-    TooLarge,
-    TooSlow,
-    TooMany,
-    LongLines,
-}
-
-impl Skipped {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::TooLarge => "too_large",
-            Self::TooSlow => "too_slow",
-            Self::TooMany => "too_many",
-            Self::LongLines => "long_lines",
-        }
+stored_kind!(
+    /// Why a file has no symbols: it went past a cap.
+    Skipped {
+        TooLarge = "too_large",
+        TooSlow = "too_slow",
+        TooMany = "too_many",
+        LongLines = "long_lines",
     }
-}
+);
 
 /// A definition. Lines count from 1 and `end_line` is never before `line`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -61,62 +78,40 @@ pub struct Symbol {
     pub end_line: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SymbolKind {
-    Function,
-    Method,
-    Type,
-    Trait,
-    Constant,
-    Module,
-    Test,
-}
-
-impl SymbolKind {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Function => "function",
-            Self::Method => "method",
-            Self::Type => "type",
-            Self::Trait => "trait",
-            Self::Constant => "constant",
-            Self::Module => "module",
-            Self::Test => "test",
-        }
+stored_kind!(
+    /// What a symbol is. A `mod`, `namespace` or class body is a `Module`.
+    SymbolKind {
+        Function = "function",
+        Method = "method",
+        Type = "type",
+        Trait = "trait",
+        Constant = "constant",
+        Module = "module",
+        Test = "test",
     }
-}
+);
 
 /// A name the file refers to: once per name and kind, with the first line and the count.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ref {
     pub name: Name,
     pub kind: RefKind,
+    /// The path as written, for an import.
+    pub path: Option<ImportPath>,
     pub line: u32,
     pub uses: u32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum RefKind {
-    Use,
-    /// An import, with its path as written.
-    Import(ImportPath),
-}
-
-impl RefKind {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Use => "use",
-            Self::Import(_) => "import",
-        }
+stored_kind!(
+    /// What a file's reference to a name is: a use in its code, an import (with the path
+    /// as written) or a dependency of a manifest (with the version asked for; no parser
+    /// gives one until manifests are read, task G5c of the design).
+    RefKind {
+        Use = "use",
+        Import = "import",
+        Dependency = "dependency",
     }
-
-    pub fn path(&self) -> Option<&ImportPath> {
-        match self {
-            Self::Use => None,
-            Self::Import(path) => Some(path),
-        }
-    }
-}
+);
 
 /// An identifier: 1 to 128 letters, digits and `_`. A name can hold no space, quote or
 /// control character, so text from a string or a comment cannot pass for one.

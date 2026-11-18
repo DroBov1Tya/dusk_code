@@ -496,6 +496,7 @@ async fn replacing_a_file_rewrites_its_rows_only() {
         GraphCounts {
             files: 2,
             symbols: 2,
+            refs: 2,
             skipped: 0
         }
     );
@@ -658,7 +659,6 @@ async fn names_and_folders_match_literally() {
 async fn a_miss_finds_dependencies_and_near_names() {
     let state = state("graph-miss").await;
     let mut manifest = file("Cargo.toml", vec![], vec![]);
-    manifest.language = Language::Manifest;
     manifest.refs.push(NewRef {
         kind: RefKind::Dependency,
         name: "serde".into(),

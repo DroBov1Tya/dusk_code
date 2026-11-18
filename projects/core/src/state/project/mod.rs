@@ -4,7 +4,7 @@
 
 mod env;
 mod episodes;
-mod graph;
+pub mod graph;
 mod schedules;
 
 use std::path::PathBuf;

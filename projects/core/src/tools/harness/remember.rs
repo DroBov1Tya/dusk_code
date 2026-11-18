@@ -220,6 +220,7 @@ mod tests {
             approvals: None,
             state: None,
             thread_id: String::new(),
+            graph: None,
         };
         assert!(tool.description(&context).ends_with("(empty)"));
         tool.call(json!({"memory": "- prefers Russian"}), context.clone())
@@ -273,6 +274,7 @@ mod tests {
             approvals: None,
             state: None,
             thread_id: String::new(),
+            graph: None,
         };
         assert!(!tool.available(&context(&one, &off)));
         assert!(

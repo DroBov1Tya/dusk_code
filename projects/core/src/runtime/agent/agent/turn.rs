@@ -10,6 +10,7 @@ use crate::runtime::{
     thread::{Conversation, start::NO_PROMPT},
 };
 use crate::state::{AgentPhase, Goal, GoalStatus, PendingMessage, Turn, TurnOutcome, TurnStatus};
+use crate::tools::console::project_folder;
 use anyhow::Result;
 use dusk_protocol::thread::TurnWait;
 use serde_json::json;
@@ -216,6 +217,11 @@ impl Agent {
                 "thread {} turn {} {:?} after {took} ms",
                 self.thread_id, turn.turn_id, turn.status
             ),
+        }
+        // What the turn changed and the ledger did not record is found by a walk.
+        if let Some(graph) = &self.tools.graph {
+            let recorded = self.config.current().limits().record_changes;
+            graph.turn_ended(project_folder(&self.scope), recorded);
         }
         let status = turn.status;
         let ended = match status {

@@ -6,7 +6,11 @@ use std::{cell::Cell, fmt::Write, time::Instant};
 
 use proptest::prelude::*;
 
-use super::{parse::parse_until, *};
+use super::{
+    outline::{ImportPath, Name, Outline},
+    parse::parse_until,
+    *,
+};
 
 const FIXTURE: &str = include_str!("fixtures/library.rs");
 
@@ -31,7 +35,7 @@ fn written(outline: &Outline) -> String {
         .unwrap();
     }
     for found in &outline.refs {
-        let path = found.kind.path().map_or("-", ImportPath::as_str);
+        let path = found.path.as_ref().map_or("-", ImportPath::as_str);
         let (kind, name) = (found.kind.as_str(), found.name.as_str());
         writeln!(text, "{kind} {name} {} x{} {path}", found.line, found.uses).unwrap();
     }
@@ -48,7 +52,7 @@ fn names(outline: &Outline) -> Vec<&str> {
     let refs = outline.refs.iter().flat_map(|found| {
         [
             Some(found.name.as_str()),
-            found.kind.path().map(ImportPath::as_str),
+            found.path.as_ref().map(ImportPath::as_str),
         ]
     });
     symbols.chain(refs).flatten().collect()
@@ -362,7 +366,7 @@ fn holds(outline: &Result<Outline, Skipped>) -> Result<(), TestCaseError> {
     for found in &outline.refs {
         prop_assert!(Name::new(found.name.as_str()).is_some(), "{:?}", found.name);
         prop_assert!(found.line >= 1 && found.uses >= 1, "{found:?}");
-        if let Some(path) = found.kind.path() {
+        if let Some(path) = found.path.as_ref() {
             prop_assert!(ImportPath::new(path.as_str()).is_some(), "{path:?}");
         }
         // The key of the table: one row a name and kind.

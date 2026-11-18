@@ -4,16 +4,13 @@
 //! file's rows and nothing else. Every row is derived from the folder and can be built
 //! again. The answers here are rows; their wording is the tool's.
 
-// The indexer (task G3) and the `project_graph` tool (task G4) call this; until they
-// land only the tests do.
-#![allow(dead_code)]
-
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, ensure};
 use serde_json::json;
 use sqlx::{Row, sqlite::SqliteRow};
 
+use crate::project::graph::{Language, RefKind, Skipped, SymbolKind};
 use crate::state::State;
 
 /// Rows `graph_where` and `graph_dependencies` return: 10 to show, one to say there are more.
@@ -35,77 +32,6 @@ pub const COMMON_NAME_FILES: i64 = 3;
 pub const IMPORTS_FILES: usize = 16;
 /// Distinct names `graph_nearest_names` compares; a miss is not worth a longer scan.
 const NEAREST_CANDIDATES: i64 = 20_000;
-
-/// Declares a kind stored as text, with the spellings of its table's CHECK list.
-macro_rules! stored_kind {
-    ($(#[$doc:meta])* $name:ident { $($variant:ident = $text:literal),+ $(,)? }) => {
-        $(#[$doc])*
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-        pub enum $name {
-            $($variant),+
-        }
-
-        impl $name {
-            pub const ALL: &[Self] = &[$(Self::$variant),+];
-
-            pub fn as_str(self) -> &'static str {
-                match self {
-                    $(Self::$variant => $text),+
-                }
-            }
-
-            pub fn parse(text: &str) -> Option<Self> {
-                Self::ALL.iter().copied().find(|kind| kind.as_str() == text)
-            }
-        }
-    };
-}
-
-stored_kind!(
-    /// The grammar a file was parsed with; `Manifest` is `Cargo.toml`, `package.json` or
-    /// `pyproject.toml`.
-    Language {
-        Rust = "rust",
-        Typescript = "typescript",
-        Tsx = "tsx",
-        Javascript = "javascript",
-        Python = "python",
-        Manifest = "manifest",
-    }
-);
-
-stored_kind!(
-    /// Why a file has no symbols: it went past a cap.
-    Skipped {
-        TooLarge = "too_large",
-        TooSlow = "too_slow",
-        TooMany = "too_many",
-        LongLines = "long_lines",
-    }
-);
-
-stored_kind!(
-    /// What a symbol is. A `mod`, `namespace` or class body is a `Module`.
-    SymbolKind {
-        Function = "function",
-        Method = "method",
-        Type = "type",
-        Trait = "trait",
-        Constant = "constant",
-        Module = "module",
-        Test = "test",
-    }
-);
-
-stored_kind!(
-    /// What a file's reference to a name is: a use in its code, an import (with the path
-    /// as written) or a dependency of a manifest (with the version asked for).
-    RefKind {
-        Use = "use",
-        Import = "import",
-        Dependency = "dependency",
-    }
-);
 
 /// When a file was last seen as it is: equal stamps mean the file is not opened again.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -178,6 +104,8 @@ pub struct StoredStamp {
 pub struct GraphCounts {
     pub files: u64,
     pub symbols: u64,
+    /// Names its files refer to: the rows the project's cap counts.
+    pub refs: u64,
     /// Files that went past a cap.
     pub skipped: u64,
 }
@@ -437,15 +365,19 @@ impl State {
             .map(|rows| rows.into_iter().collect())
     }
 
-    /// One indexed file, when the project has it.
+    /// One indexed file, when the project has it. A row in a language this build does not
+    /// read (written by a later version) is not one of its files: `None`.
     pub async fn graph_file(&self, project: &str, path: &str) -> Result<Option<GraphFile>> {
-        sqlx::query("SELECT * FROM graph_files WHERE project = ? AND path = ?")
+        let file = sqlx::query("SELECT * FROM graph_files WHERE project = ? AND path = ?")
             .bind(project)
             .bind(path)
             .try_map(|row: SqliteRow| {
-                Ok(GraphFile {
+                let Some(language) = Language::parse(row.try_get("language")?) else {
+                    return Ok(None);
+                };
+                Ok(Some(GraphFile {
                     path: row.try_get("path")?,
-                    language: stored(&row, "language", Language::parse)?,
+                    language,
                     hash: row.try_get("hash")?,
                     stamp: stamp(&row)?,
                     module: row.try_get("module")?,
@@ -454,18 +386,31 @@ impl State {
                         .try_get::<Option<String>, _>("skipped")?
                         .map(|text| known(&text, Skipped::parse))
                         .transpose()?,
-                })
+                }))
             })
             .fetch_optional(&self.pool)
             .await
-            .context("read a graph file")
+            .context("read a graph file")?;
+        Ok(file.flatten())
+    }
+
+    /// Whether `dir` is a saved project's folder, spelled as it is saved: only such a
+    /// folder has a graph.
+    pub async fn graph_project(&self, dir: &str) -> Result<bool> {
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM projects WHERE dir = ?)")
+            .bind(dir)
+            .fetch_one(&self.pool)
+            .await
+            .context("look for the project")
     }
 
     pub async fn graph_counts(&self, project: &str) -> Result<GraphCounts> {
         let row = sqlx::query(
             "SELECT COUNT(*) AS files, COALESCE(SUM(skipped IS NOT NULL), 0) AS skipped,
                 (SELECT COUNT(*) FROM graph_symbols s JOIN graph_files f USING (file_id)
-                 WHERE f.project = ?1) AS symbols
+                 WHERE f.project = ?1) AS symbols,
+                (SELECT COUNT(*) FROM graph_refs r JOIN graph_files f USING (file_id)
+                 WHERE f.project = ?1) AS refs
              FROM graph_files WHERE project = ?1",
         )
         .bind(project)
@@ -478,6 +423,7 @@ impl State {
         Ok(GraphCounts {
             files: count("files")?,
             symbols: count("symbols")?,
+            refs: count("refs")?,
             skipped: count("skipped")?,
         })
     }

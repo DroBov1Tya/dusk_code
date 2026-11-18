@@ -46,6 +46,8 @@ pub struct ToolRegistry {
     pub(crate) state: Option<Arc<crate::state::State>>,
     /// The thread these tools run for; its own mode applies.
     pub(crate) thread_id: String,
+    /// The indexer of the project graph, which hears of the files a command changed.
+    pub(crate) graph: Option<Arc<crate::project::graph::Indexer>>,
     /// With `limits.stable_prefix`, each description as this thread first showed it, so
     /// the start of its requests stays byte-identical and the provider's cache holds.
     shown: Mutex<BTreeMap<String, String>>,
@@ -214,6 +216,7 @@ impl ToolRegistry {
             approvals: None,
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
+            graph: self.graph.clone(),
         };
         self.tools
             .iter()
@@ -230,6 +233,7 @@ impl ToolRegistry {
             approvals: None,
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
+            graph: self.graph.clone(),
         };
         let stable = config.limits().stable_prefix;
         self.tools
@@ -312,6 +316,7 @@ impl ToolRegistry {
             approvals: self.approvals.clone(),
             state: self.state.clone(),
             thread_id: self.thread_id.clone(),
+            graph: self.graph.clone(),
         };
         let started = Instant::now();
         if !tool.available(&context) {
