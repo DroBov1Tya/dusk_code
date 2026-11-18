@@ -324,6 +324,21 @@ version (semver) that asks for nothing more than the version here; one that asks
 more is left for you to update by hand. A browser can look at the store but not install
 or update from it: a plugin runs programs on this machine.
 
+Single skills are offered on the Skills page; plugins, packs and agents under Plugins.
+A client asks the core for the kinds its page shows (`StoreRequest::List` with `kinds`),
+so the split is the core's. Each page opens on Discover while nothing is installed there.
+
+### Contents
+
+A listing's page shows its files on a Contents tab, fetched only when the tab opens. The
+core lists the copy installed here, edits included, or else downloads the package the
+signed list names, checks its size and SHA-256, and reads it in memory under the unpack
+rules below; nothing of it is written out, run or read by the model. The last three
+listings opened are kept. A file is answered only by a path of that listing, never joined
+from what a client sends, only as UTF-8 text (programs and other files show their size),
+at most 256 KiB, with control and bidi characters shown as escapes. Links in an installed
+folder are neither followed nor listed.
+
 ### Tiers
 
 Every listing carries the tier of the key that checked its list; a field of the list
@@ -432,6 +447,29 @@ Format 3 adds who made each entry, and every entry must give all of it:
   Community listing's `author` is drawn as the mirror's claim.
 - A format 2 list with any of these fields is refused, as is a format 4 list: an older
   duskcode answers a newer list with "update it".
+
+A format 3 plugin entry also says what it runs and adds, and its `plugin.yml` must say
+exactly the same or the package is refused:
+
+```json
+  "mcp": [{"name": "search", "command": "./search-server", "args": ["--fast"]},
+          {"name": "docs", "url": "https://docs.example.com/mcp"}],
+  "programs": ["./bin/bot"],
+  "skills": ["triage"]
+```
+
+- `mcp`: up to 16 servers, each a program it starts (`command`, `args`) or an `https`
+  address, as in its manifest. `programs`: the command lines of its platform, panel and
+  hooks, up to 8, sorted. `skills`: the folders under its `skills/`.
+- Each program and server is a line of what the user agrees to, before the permission
+  lines, so an install that was not agreed to with them is refused and nothing of the
+  plugin is placed or started. An update that adds one is left for the user, as one that
+  asks for more permissions is. A list before format 3 cannot name them, and its plugins
+  install as before.
+- The listing shows the servers on a Connectors tab: "Not added", "Added" while the plugin
+  is on, or "Yours is used" when a connector of the user's `config.yml` has that name. A
+  plugin's servers are among the connectors only while it is on and go with it; a
+  connector the user configured is never replaced.
 
 An unknown field anywhere refuses the list. `index.json.sig` beside it holds the base64
 of the signature of the file's exact bytes. `DUSKCODE_STORE_URL` points duskcode at
