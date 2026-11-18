@@ -14,7 +14,7 @@ use super::paste;
 use dusk_protocol::{
     catalog::{SkillSave, SkillSaveAction},
     model::ToolCall,
-    thread::{JobResult, Message, MessageRole},
+    thread::{Block, JobResult, Message, MessageRole},
     tools::{Answered, Asked, Card, ToolResult},
 };
 
@@ -63,6 +63,8 @@ pub enum Entry {
         text: String,
         open: bool,
     },
+    /// What the agent showed with the `show` tool, in place of that tool step.
+    Block(Block),
 }
 
 /// Thinking and tool calls: the steps an activity line stands for.
@@ -408,17 +410,27 @@ impl Transcript {
 
     pub fn finish_tool(&mut self, call_id: &str, finished: ToolResult) {
         let mut saved = None;
-        let running = self.entries.iter_mut().rev().find_map(|entry| match entry {
-            Entry::Tool { call, result, .. } if call.id == call_id && result.is_none() => {
-                if !finished.is_error && call.name == "run_command" {
-                    saved = SkillSave::from_result(&finished.content);
+        let mut shown = None;
+        let running = self
+            .entries
+            .iter_mut()
+            .enumerate()
+            .rev()
+            .find_map(|(index, entry)| match entry {
+                Entry::Tool { call, result, .. } if call.id == call_id && result.is_none() => {
+                    if !finished.is_error && call.name == "run_command" {
+                        saved = SkillSave::from_result(&finished.content);
+                    }
+                    shown = Block::shown(call, &finished.content).map(|block| (index, block));
+                    Some(result)
                 }
-                Some(result)
-            }
-            _ => None,
-        });
+                _ => None,
+            });
         if let Some(result) = running {
             *result = Some(finished);
+        }
+        if let Some((index, block)) = shown {
+            self.show_block(index, block);
         }
         if let Some(saved) = saved {
             let tone = match saved.action {
@@ -427,6 +439,40 @@ impl Transcript {
             };
             self.notice(saved.notice(), tone);
         }
+        self.changed();
+    }
+
+    /// A shown block takes the place of its tool step and stands outside the run of steps:
+    /// the steps before it keep their activity line, the steps after it get their own.
+    /// Live and from history the calls start in the same order, so the block lands in the
+    /// same place both ways.
+    fn show_block(&mut self, index: usize, block: Block) {
+        self.entries[index] = Entry::Block(block);
+        if self.entries.get(index + 1).is_some_and(is_step) {
+            self.insert(index + 1, Entry::Activity { open: false });
+        }
+        let before = index.checked_sub(1);
+        if before.is_some_and(|before| matches!(self.entries[before], Entry::Activity { .. })) {
+            self.remove(index - 1);
+        }
+    }
+
+    /// Puts an entry at `index`, as of the entry before it; the hidden ones from there on
+    /// move down with it.
+    fn insert(&mut self, index: usize, entry: Entry) {
+        let at = index
+            .checked_sub(1)
+            .and_then(|before| self.time(before))
+            .unwrap_or_else(dusk_protocol::system::now_ms);
+        self.entries.insert(index, entry);
+        if index <= self.times.len() {
+            self.times.insert(index, at);
+        }
+        self.hidden = self
+            .hidden
+            .iter()
+            .map(|&hidden| if hidden >= index { hidden + 1 } else { hidden })
+            .collect();
         self.changed();
     }
 
@@ -458,6 +504,7 @@ impl Transcript {
             Entry::Reasoning { text, .. } | Entry::Summary { text, .. } => text.clone(),
             Entry::Notice { text, .. } | Entry::FromAgent { text, .. } => text.clone(),
             Entry::Job { result, .. } => format!("{}\n{}", result.title(), result.output),
+            Entry::Block(block) => block.text(),
             Entry::Tool { call, result, .. } => match result {
                 Some(result) => result.content.clone(),
                 None => call.arguments.to_string(),
@@ -555,5 +602,154 @@ impl Transcript {
         if !text.is_empty() {
             self.push(Entry::Answer(text.to_owned()));
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::{Value, json};
+
+    fn call(id: &str, name: &str, arguments: Value) -> ToolCall {
+        ToolCall {
+            id: id.into(),
+            name: name.into(),
+            arguments,
+        }
+    }
+
+    fn flow() -> Value {
+        json!({ "flow": { "layers": [
+            { "title": "Parse", "cards": [{ "title": "lexer", "line": "tokens" }] },
+            { "title": "Check", "emphasis": true },
+        ] } })
+    }
+
+    /// What `show` answers: the block's text, or the refusal.
+    fn result(call: &ToolCall) -> ToolResult {
+        let content = Block::asked(call).map_or("error: refused".into(), |block| block.text());
+        ToolResult {
+            is_error: content.starts_with("error:"),
+            content,
+            exit_code: None,
+            artifacts: Vec::new(),
+        }
+    }
+
+    fn message(
+        role: MessageRole,
+        content: &str,
+        calls: Vec<ToolCall>,
+        answers: Option<&str>,
+    ) -> Message {
+        Message {
+            message_id: String::new(),
+            thread_id: String::new(),
+            sequence: 0,
+            role,
+            content: content.into(),
+            reasoning: None,
+            tool_calls: calls,
+            tool_call_id: answers.map(Into::into),
+            artifacts: Vec::new(),
+            from_thread_id: None,
+            from_job_id: None,
+            content_tokens: 0,
+            tool_calls_tokens: 0,
+            reasoning_tokens: 0,
+            created_at: 0,
+        }
+    }
+
+    fn kinds(transcript: &Transcript) -> Vec<&'static str> {
+        let kinds = transcript.entries.iter().map(|entry| match entry {
+            Entry::User { .. } => "user",
+            Entry::Answer(_) => "answer",
+            Entry::Activity { .. } => "activity",
+            Entry::Tool { .. } => "tool",
+            Entry::Block(_) => "block",
+            _ => "other",
+        });
+        kinds.collect()
+    }
+
+    /// The same turn live and from history: a message that calls `calls` at once.
+    fn both_ways(calls: &[ToolCall]) -> (Transcript, Transcript) {
+        let mut live = Transcript::default();
+        live.add_user("go");
+        live.add_answer("Here it is.");
+        for call in calls {
+            live.start_tool(call.clone());
+        }
+        for call in calls {
+            live.finish_tool(&call.id, result(call));
+        }
+        let mut history = vec![
+            message(MessageRole::User, "go", Vec::new(), None),
+            message(MessageRole::Assistant, "Here it is.", calls.to_vec(), None),
+        ];
+        for call in calls {
+            let content = result(call).content;
+            history.push(message(
+                MessageRole::Tool,
+                &content,
+                Vec::new(),
+                Some(&call.id),
+            ));
+        }
+        (live, Transcript::from_history(&history))
+    }
+
+    #[test]
+    fn a_shown_block_is_one_entry_in_place_of_its_step() {
+        let (live, reopened) = both_ways(&[call("a", "show", flow())]);
+        assert_eq!(kinds(&live), ["user", "answer", "block"]);
+        assert_eq!(kinds(&reopened), kinds(&live));
+        let shown = Block::asked(&call("a", "show", flow()));
+        assert!(matches!(&live.entries[2], Entry::Block(block) if Some(block) == shown.as_ref()));
+        assert_eq!(live.text(2), shown.map(|block| block.text()));
+    }
+
+    #[test]
+    fn steps_around_a_block_keep_their_own_activity_lines() {
+        let calls = [
+            call("a", "read_file", json!({ "path": "x" })),
+            call("b", "show", flow()),
+            call("c", "search_files", json!({ "pattern": "y" })),
+        ];
+        let (live, reopened) = both_ways(&calls);
+        let expected = [
+            "user", "answer", "activity", "tool", "block", "activity", "tool",
+        ];
+        assert_eq!(kinds(&live), expected);
+        assert_eq!(kinds(&reopened), expected);
+        assert_eq!(live.run(2).count(), 1);
+        assert_eq!(live.run(5).count(), 1);
+    }
+
+    #[test]
+    fn a_block_that_was_not_shown_stays_a_step() {
+        let out_of_caps = json!({ "flow": { "layers": [{ "title": "only one" }] } });
+        let (live, reopened) = both_ways(&[call("a", "show", out_of_caps)]);
+        assert_eq!(kinds(&live), ["user", "answer", "activity", "tool"]);
+        assert_eq!(kinds(&reopened), kinds(&live));
+    }
+
+    #[test]
+    fn hidden_entries_follow_the_entries_a_block_moves() {
+        let mut transcript = Transcript::default();
+        transcript.add_user("go");
+        transcript.start_tool(call("a", "show", flow()));
+        transcript.start_tool(call("b", "read_file", json!({})));
+        transcript.add_answer("after");
+        transcript.hide(4);
+        transcript.finish_tool("a", result(&call("a", "show", flow())));
+        // user, block, activity, tool, answer: the answer is still the hidden one.
+        assert_eq!(
+            kinds(&transcript),
+            ["user", "block", "activity", "tool", "answer"]
+        );
+        assert!(transcript.is_hidden(4));
+        assert_eq!(transcript.times.len(), transcript.entries.len());
     }
 }

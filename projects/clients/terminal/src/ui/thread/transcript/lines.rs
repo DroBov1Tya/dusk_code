@@ -3,7 +3,7 @@
 use super::blocks::{
     answered, fold_mark, folded, from_agent, indent, job, plain, tokens, tool, user,
 };
-use super::spinner;
+use super::{shown, spinner};
 use crate::app::{App, Entry, ImageSpot, Tone, Transcript};
 use crate::ui::thread::{
     markdown,
@@ -159,6 +159,7 @@ pub(super) fn hidden_line(entry: &Entry, text: &str) -> Line<'static> {
         Entry::FromAgent { .. } => "agent message",
         Entry::Notice { .. } => "notice",
         Entry::Job { .. } => "job result",
+        Entry::Block(_) => "block",
     };
     let lines = text.lines().count().max(1);
     Line::from(vec![
@@ -175,7 +176,9 @@ pub(super) fn ends_turn(entries: &[Entry], index: usize) -> bool {
             Entry::Activity { .. } | Entry::Reasoning { .. } | Entry::Notice { .. }
         )
     });
-    matches!(entries[index], Entry::Answer(_)) && !matches!(next, Some(Entry::Tool { .. }))
+    // A shown block is a step of the turn, as its tool call was.
+    let step = matches!(next, Some(Entry::Tool { .. } | Entry::Block(_)));
+    matches!(entries[index], Entry::Answer(_)) && !step
 }
 
 /// `live` is set while the entry is still being written.
@@ -234,6 +237,7 @@ pub(super) fn entry_lines(
             text,
             open,
         } => from_agent(thread_id, text, *open, width),
+        Entry::Block(block) => shown::render(block, width),
         Entry::Notice { text, tone, .. } => {
             let (mark, style) = match tone {
                 Tone::Info => (DOT, dim()),
