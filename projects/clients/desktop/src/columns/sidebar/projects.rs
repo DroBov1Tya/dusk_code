@@ -17,10 +17,18 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
     let (muted, hover) = (theme.muted_foreground, theme.accent);
     let mut list = div().flex().flex_col();
     if ws.projects.is_empty() {
-        list = list.child(widgets::muted(
-            "A project is a folder the agents work in. Its chats gather under it.",
-            cx,
-        ));
+        list = list
+            .child(widgets::muted(
+                "A project is a folder the agents work in. Its chats gather under it.",
+                cx,
+            ))
+            .child(
+                div().px_3().pb_2().child(
+                    crate::ui::action("sidebar-empty-project", "Add a project")
+                        .small()
+                        .on_click(cx.listener(|ws, _, window, cx| ws.open_form(None, window, cx))),
+                ),
+            );
     }
     for project in ws.projects.clone() {
         let open = !ws.collapsed.contains(&project.id);

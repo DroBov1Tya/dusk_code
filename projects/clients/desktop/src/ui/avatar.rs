@@ -17,29 +17,62 @@ pub fn letter(name: &str) -> String {
         .map_or_else(|| "?".to_owned(), |c| c.to_uppercase().collect())
 }
 
-/// Which of the `SHADES` colors `name` takes: FNV-1a, which unlike `RandomState` gives the
-/// same answer on every run.
-pub fn shade(name: &str) -> usize {
-    let hash = name.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
+/// FNV-1a of `name`, which unlike `RandomState` gives the same answer on every run and
+/// machine.
+pub fn hash(name: &str) -> u64 {
+    name.bytes().fold(0xcbf2_9ce4_8422_2325_u64, |hash, byte| {
         (hash ^ u64::from(byte)).wrapping_mul(0x0100_0000_01b3)
-    });
-    (hash % SHADES as u64) as usize
+    })
+}
+
+/// Which of the `SHADES` colors `name` takes.
+pub fn shade(name: &str) -> usize {
+    (hash(name) % SHADES as u64) as usize
+}
+
+/// The color of a shade: four theme colors, then their opposites on the color wheel.
+pub fn tone(shade: usize, cx: &App) -> Hsla {
+    let theme = cx.theme();
+    let base = [theme.primary, theme.success, theme.warning, theme.danger];
+    let mut color = base[shade % base.len()];
+    if shade % SHADES >= base.len() {
+        color.h = (color.h + 0.5) % 1.;
+    }
+    color
 }
 
 /// The tile for `name`, `size` px square. `bundled_icon` is the slot for a picture the
 /// signed catalog ships for the connector; when present it is drawn instead of the letter.
+/// A cover made for `name` where a listing brings none: two of the shades run into each
+/// other across the box, picked by the name alone, so the same name has the same cover
+/// on every run and machine. No picture and no file.
+pub fn cover_fill(name: &str, cx: &App) -> Background {
+    let hash = hash(name);
+    let first = (hash % SHADES as u64) as usize;
+    // One to three steps on, so the two ends are never one color.
+    let second = (first + 1 + (hash / SHADES as u64 % 3) as usize) % SHADES;
+    let angle = COVER_ANGLES[(hash / 64 % COVER_ANGLES.len() as u64) as usize];
+    let surface = cx.theme().muted;
+    linear_gradient(
+        angle,
+        linear_color_stop(surface.blend(tone(first, cx).opacity(COVER_TINT.0)), 0.),
+        linear_color_stop(surface.blend(tone(second, cx).opacity(COVER_TINT.1)), 1.),
+    )
+}
+
+/// The directions a made cover's colors run in, in degrees from the top.
+const COVER_ANGLES: [f32; 4] = [115., 135., 155., 205.];
+/// How much of each end's color is mixed into the surface: enough to tell covers apart,
+/// and calm beside the drawn ones.
+const COVER_TINT: (f32, f32) = (0.46, 0.22);
+
 pub fn avatar(name: &str, size: f32, bundled_icon: Option<std::path::PathBuf>, cx: &App) -> Div {
     let tile = div().size(px(size)).flex_none().rounded_md();
     if let Some(path) = bundled_icon {
         return tile.child(img(path).size_full().rounded_md());
     }
     let theme = cx.theme();
-    // Four theme colors and their opposites on the color wheel.
-    let base = [theme.primary, theme.success, theme.warning, theme.danger];
-    let mut color = base[shade(name) % base.len()];
-    if shade(name) >= base.len() {
-        color.h = (color.h + 0.5) % 1.;
-    }
+    let color = tone(shade(name), cx);
     tile.bg(theme.muted.blend(color.opacity(TINT)))
         .flex()
         .items_center()

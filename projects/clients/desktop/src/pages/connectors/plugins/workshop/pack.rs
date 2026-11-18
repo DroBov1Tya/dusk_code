@@ -134,6 +134,7 @@ fn banner(
     }
     hero::banner(
         listing.map_or(Shown::Placeholder(Look::None), |listing| ws.cover(listing)),
+        name,
         listing.map_or(Kind::Pack, |listing| listing.kind),
         grid.width,
         panel,

@@ -34,8 +34,8 @@ pub fn render(ws: &Workspace, thread_id: &str, wide: bool, cx: &mut Context<Work
     else {
         return div().p_5().child(crate::ui::empty(
             IconName::Bot,
-            "No subagents yet",
-            "When the agent asks others for help, they appear here at work.",
+            "No subagents yet. When the agent asks others for help, they appear here at work.",
+            None,
             cx,
         ));
     };

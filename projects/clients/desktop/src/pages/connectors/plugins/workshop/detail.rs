@@ -208,6 +208,7 @@ fn header(ws: &Workspace, listing: &Listing, width: f32, cx: &App) -> Div {
         .border_color(cx.theme().border)
         .child(capsule::art(
             ws.cover(listing),
+            &listing.name,
             listing.kind,
             COVER - 2.,
             Corners::all(px(RADIUS - 1.)),

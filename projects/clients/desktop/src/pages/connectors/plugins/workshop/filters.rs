@@ -255,7 +255,7 @@ fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Deferred {
     widgets::on_top(widgets::appear("workshop-filters-open", panel))
 }
 
-fn clear(ws: &mut Workspace, cx: &mut Context<Workspace>) {
+pub fn clear(ws: &mut Workspace, cx: &mut Context<Workspace>) {
     ws.workshop.tiers.clear();
     ws.workshop.kinds.clear();
     let reload = ws.workshop.category.take().is_some() || ws.workshop.order != Order::Trust;

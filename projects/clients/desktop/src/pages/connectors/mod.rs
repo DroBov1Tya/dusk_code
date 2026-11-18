@@ -12,7 +12,7 @@ mod tools;
 use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::client::{Answer, Command, Switch as CoreSwitch};
 use gpui_kit::{
-    component::{ActiveTheme, Sizable, input::Input, switch::Switch},
+    component::{ActiveTheme, Sizable, button::Button, input::Input, switch::Switch},
     prelude::FluentBuilder,
     *,
 };
@@ -136,6 +136,25 @@ pub fn render(
                 )
                 .child(body),
         )
+}
+
+/// The button of an empty search: it clears the page's search box.
+fn clear_search(id: &'static str, cx: &mut Context<Workspace>) -> Button {
+    crate::ui::action(id, "Clear the search").on_click(cx.listener(|ws, _, window, cx| {
+        ws.shelf_search
+            .update(cx, |search, cx| search.set_value("", window, cx));
+        cx.notify();
+    }))
+}
+
+impl Workspace {
+    /// Shows the Workshop's Discover page, where plugins, skills and connectors are found.
+    pub fn discover_plugins(&mut self, cx: &mut Context<Self>) {
+        self.shelf = Shelf::Plugins;
+        self.workshop.plugins_view = Some(plugins::workshop::View::Discover);
+        self.ensure_store(cx);
+        cx.notify();
+    }
 }
 
 /// One card of rows, as wide as the Workshop's grid at most.

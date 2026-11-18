@@ -85,6 +85,7 @@ pub fn render(
         .on_click(cx.listener(move |ws, _, window, cx| ws.open_listing(&opened, window, cx)))
         .child(art(
             ws.cover(listing),
+            &listing.name,
             listing.kind,
             inner(width),
             top_corners(),
@@ -139,6 +140,7 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
         }))
         .child(art(
             Shown::Placeholder(Look::None),
+            &pack.name,
             Kind::Pack,
             inner(width),
             top_corners(),
@@ -358,7 +360,14 @@ pub fn rounded<E: Styled>(element: E, corners: Corners<Pixels>) -> E {
 /// The cover at `width` and the art's aspect, cropped to fill, or the placeholder in its
 /// place. The picture carries the corners itself, since gpui clips a child to its
 /// parent's rectangle, not its radius.
-pub fn art(shown: Shown, kind: Kind, width: f32, corners: Corners<Pixels>, cx: &App) -> Div {
+pub fn art(
+    shown: Shown,
+    name: &str,
+    kind: Kind,
+    width: f32,
+    corners: Corners<Pixels>,
+    cx: &App,
+) -> Div {
     match shown {
         Shown::Ready(image) => div()
             .flex_none()
@@ -368,7 +377,7 @@ pub fn art(shown: Shown, kind: Kind, width: f32, corners: Corners<Pixels>, cx: &
                 img(image).size_full().object_fit(ObjectFit::Cover),
                 corners,
             )),
-        Shown::Placeholder(look) => placeholder::render(kind, look, width, corners, cx),
+        Shown::Placeholder(look) => placeholder::render(name, kind, look, width, corners, cx),
     }
 }
 

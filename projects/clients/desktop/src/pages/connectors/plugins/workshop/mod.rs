@@ -298,23 +298,15 @@ fn update_report(report: &UpdateReport, cx: &mut Context<Workspace>) -> Div {
 
 /// The store did not answer: what went wrong and a way to ask again.
 fn unreachable_store(error: &str, cx: &mut Context<Workspace>) -> Div {
-    div()
-        .flex()
-        .flex_col()
-        .items_center()
-        .gap_3()
-        .child(crate::ui::empty(
-            IconName::Inbox,
-            "The store could not be read",
-            error,
-            cx,
-        ))
-        .child(
-            Button::new("workshop-retry")
-                .outline()
-                .label("Retry")
+    crate::ui::empty(
+        IconName::Inbox,
+        &format!("The store could not be read: {error}"),
+        Some(
+            crate::ui::action("workshop-retry", "Retry")
                 .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx))),
-        )
+        ),
+        cx,
+    )
 }
 
 /// "Workshop  Discover | Installed" of a page, and while the listings are shown "Update

@@ -22,7 +22,15 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> 
         .is_some_and(|overview| !overview.log.is_empty());
     let log = has_log.then(|| sections.pop()).flatten();
     let body = if ws.shown.is_none() {
-        ui::empty(IconName::LayoutDashboard, "No chat is open", "", cx)
+        ui::empty(
+            IconName::LayoutDashboard,
+            "No chat is open. Its overview shows here.",
+            Some(
+                ui::action("overview-empty-chat", "New chat")
+                    .on_click(cx.listener(|ws, _, window, cx| ws.new_chat(None, window, cx))),
+            ),
+            cx,
+        )
     } else if sections.is_empty() && log.is_none() {
         ui::loading("Reading the chat...", cx)
     } else {

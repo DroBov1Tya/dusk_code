@@ -73,8 +73,8 @@ pub fn render(settings: &Settings, query: &str, cx: &mut Context<Workspace>) -> 
     if !has_results {
         return page.child(crate::ui::empty(
             IconName::SquareTerminal,
-            "No matching tools",
-            "Search by a tool name or what it does.",
+            "No tool has that name or does that.",
+            Some(super::clear_search("tools-empty-clear", cx)),
             cx,
         ));
     }

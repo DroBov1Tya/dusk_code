@@ -47,15 +47,17 @@ pub fn render(
         return div().child(crate::ui::empty(
             IconName::Network,
             if query.is_empty() {
-                "No MCP servers"
+                "No connectors yet. A plugin can bring one, or add a server to the mcp section of the config."
             } else {
-                "No matching connectors"
+                "No connector has that name or address."
             },
-            if query.is_empty() {
-                "Add one to the mcp section of the config; it appears here with its tools."
+            Some(if query.is_empty() {
+                crate::ui::action("connectors-empty-workshop", "Discover in Workshop").on_click(
+                    cx.listener(|ws, _, _, cx| ws.discover_plugins(cx)),
+                )
             } else {
-                "Search by a server name or address."
-            },
+                super::clear_search("connectors-empty-clear", cx)
+            }),
             cx,
         ));
     }
