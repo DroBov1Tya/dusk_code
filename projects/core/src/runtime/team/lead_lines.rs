@@ -11,6 +11,7 @@ use std::path::Path;
 
 use tracing::warn;
 
+use super::clean;
 use crate::{
     message::plain::plain,
     runtime::Launcher,
@@ -56,6 +57,15 @@ fn line(head: &str, text: &str, tail: &str) -> String {
         end -= 1;
     }
     format!("{head}{}{tail}", &text[..end])
+}
+
+/// `text` at `MAX_LINE` bytes at most, never inside a character.
+fn cut(text: &str) -> &str {
+    let mut end = text.len().min(MAX_LINE);
+    while !text.is_char_boundary(end) {
+        end -= 1;
+    }
+    &text[..end]
 }
 
 pub(super) fn review_line(folded: &str, task: &PlanTask, result: &str, why: &str) -> String {
@@ -187,6 +197,10 @@ pub(super) async fn tell(
     wake: bool,
 ) {
     let state = &launcher.state;
+    // The one way a line reaches the lead: a member's or a program's words in it are
+    // cleared of secrets here, whoever built the line.
+    let cleaned = clean::text(launcher, lead, line).await;
+    let line = cut(&cleaned);
     let stored = match wake {
         // A chat is woken, never started, so no folder is used.
         true => {

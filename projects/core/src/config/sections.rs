@@ -340,6 +340,10 @@ pub struct Team {
     pub model: Option<String>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub models: BTreeMap<String, String>,
+    /// The tools a member of a role keeps, by role. A list only takes tools away from
+    /// what every member may have; a role without one keeps them all.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tools: BTreeMap<String, Vec<String>>,
 }
 
 impl Team {
@@ -357,14 +361,23 @@ impl Team {
                 "team models must be written as provider/model"
             );
         }
-        for role in self.models.keys() {
+        for tool in self.tools.values().flatten() {
+            anyhow::ensure!(
+                !tool.is_empty()
+                    && tool.len() <= MAX_ROLE_NAME
+                    && tool.chars().all(|c| c.is_ascii_lowercase() || c == '_'),
+                "team.tools names tools, such as read_file"
+            );
+        }
+        for role in self.models.keys().chain(self.tools.keys()) {
             anyhow::ensure!(
                 !role.is_empty()
                     && role.len() <= MAX_ROLE_NAME
                     && role
                         .chars()
                         .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_'),
-                "team.models keys must be role names of up to {MAX_ROLE_NAME} of a-z, 0-9, - and _"
+                "team.models and team.tools keys must be role names of up to {MAX_ROLE_NAME} of \
+                 a-z, 0-9, - and _"
             );
         }
         Ok(())

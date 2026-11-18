@@ -5,13 +5,14 @@
 //! to members, and the team ends when it is done, spent or stalled.
 //!
 //! `member` makes a member's thread and fixes what it may do, `card` writes its first
-//! message, `lease` keeps its claim while its runner lives, `hand_in` moves its task when
+//! message, `clean` takes secrets out of every text that is forwarded, `lease` keeps its claim while its runner lives, `hand_in` moves its task when
 //! its turn ends, `gate` is where a command gate starts, `lead_lines` is what the lead is
 //! told, `end` ends a team, `events` tells the clients.
 //!
 //! Everything it needs to go on is in the database. `Teams` holds a lock and two caches.
 
 mod card;
+mod clean;
 mod dispatch;
 mod end;
 mod events;

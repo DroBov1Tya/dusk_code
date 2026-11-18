@@ -1,6 +1,6 @@
 //! What a member may do is the core's to fix, and with the switch off nothing runs.
 
-use super::*;
+use super::{super::member::MEMBER_TOOLS, *};
 use crate::config::ApprovalPolicy;
 
 const DENIED: [&str; 6] = [
@@ -13,7 +13,7 @@ const DENIED: [&str; 6] = [
 ];
 
 #[tokio::test]
-async fn a_member_has_no_tool_to_start_agents_change_the_plan_or_write_to_the_lead() {
+async fn a_member_has_only_the_tools_of_the_allowlist() {
     let rig = Rig::new("team_tools", |asked| match asked.lead {
         true => Out::Say("Hello.".into()),
         false => Out::Hang,
@@ -34,11 +34,8 @@ async fn a_member_has_no_tool_to_start_agents_change_the_plan_or_write_to_the_le
     for member in &members {
         let offered = rig.offered(member);
         assert!(offered.contains(&"run_command".to_owned()), "{offered:?}");
-        for denied in DENIED {
-            assert!(
-                !offered.contains(&denied.to_owned()),
-                "{denied} in {offered:?}"
-            );
+        for tool in &offered {
+            assert!(MEMBER_TOOLS.contains(&tool.as_str()), "{tool} is offered");
         }
         // The lead's mode, copied: no wider than what the lead may do unasked.
         let policy = rig.state().thread_approvals(member).await.unwrap();
@@ -54,10 +51,60 @@ async fn a_member_has_no_tool_to_start_agents_change_the_plan_or_write_to_the_le
     let lead = rig.offered(&rig.lead);
     assert!(lead.contains(&"tasks".to_owned()) && lead.contains(&"ask_agent".to_owned()));
     // An agent the lead asks is no member and keeps an agent's tools.
+    let config = rig.launcher().config.current();
     let mut agent = rig.launcher().tools("t", None, 1);
     assert!(agent.names().any(|name| name == "message_parent"));
-    super::super::limit_tools(&mut agent);
+    super::super::limit_tools(&mut agent, &config, "general");
     assert!(!agent.names().any(|name| DENIED.contains(&name)));
+}
+
+#[tokio::test]
+async fn a_member_that_calls_a_tool_it_was_not_given_is_refused() {
+    let calls = AtomicUsize::new(0);
+    // The member tries to rewrite the plan and to start an agent before it answers.
+    let rig = Rig::with(
+        "team_tool_refused",
+        "mode: TEAM\nteam:\n  tools:\n    general: [read_file, tasks, ask_agent]\n",
+        move |asked| match asked.lead {
+            true => Out::Say("Noted.".into()),
+            false => match calls.fetch_add(1, Ordering::Relaxed) {
+                0 => Out::Call(
+                    "tasks",
+                    serde_json::json!({ "action": "add", "tasks": [{ "text": "mine" }] }),
+                ),
+                1 => Out::Call(
+                    "ask_agent",
+                    serde_json::json!({ "agent": "general", "task": "do it" }),
+                ),
+                _ => Out::Say(DONE.into()),
+            },
+        },
+    )
+    .await;
+    let ids = rig.plan(&[task("one")]).await;
+    rig.run().await;
+
+    until("the member handed in", || async {
+        rig.status(&ids[0]).await == PlanStatus::Review
+    })
+    .await;
+
+    // The settings named `tasks` and `ask_agent` for the role, and gave neither: a
+    // list narrows what a member may have and adds nothing to it.
+    let member = rig.members().await.remove(0);
+    assert_eq!(rig.offered(&member), ["read_file"]);
+    let results: Vec<String> = sqlx::query_scalar(
+        "SELECT content FROM messages WHERE thread_id = ? AND content LIKE '%unknown tool%'",
+    )
+    .bind(&member)
+    .fetch_all(&rig.state().pool)
+    .await
+    .unwrap();
+    assert_eq!(results.len(), 2, "{results:?}");
+    assert!(results[0].contains("unknown tool tasks"));
+    assert!(results[1].contains("unknown tool ask_agent"));
+    assert_eq!(rig.state().plan(&rig.lead).await.unwrap().len(), 1);
+    assert_eq!(rig.members().await.len(), 1);
 }
 
 #[tokio::test]

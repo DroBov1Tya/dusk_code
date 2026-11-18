@@ -247,7 +247,7 @@ impl Launcher {
         setup.ends_when_idle = true;
         // A member of a team has what the core fixed for it, not what its role lists.
         if team::is_member(thread) {
-            team::limit_tools(&mut setup.tools);
+            team::limit_tools(&mut setup.tools, &self.config.current(), name);
         }
         Ok(ThreadRunner::new(setup))
     }

@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use dusk_protocol::thread::TeamStatus;
 use tracing::{info, warn};
 
-use super::{dispatch, events, lead_lines};
+use super::{clean, dispatch, events, lead_lines};
 use crate::{
     message::plain::plain,
     runtime::{Launcher, thread::start},
@@ -60,6 +60,7 @@ pub(super) async fn begin(
                 "its gate was not run: {}",
                 lead_lines::quoted(&format!("{error:#}"), 200)
             );
+            let why = clean::note(launcher, lead, &why).await;
             let held = launcher
                 .state
                 .hold_for_lead(lead, &task.task_id, &why)
@@ -174,8 +175,10 @@ async fn settle(
             if !running {
                 return Ok(());
             }
+            // A build prints what it was given: tokens, URLs with a password.
+            let note = clean::note(launcher, lead, note).await;
             state
-                .rework_task(lead, task_id, note, timestamp_ms()?)
+                .rework_task(lead, task_id, &note, timestamp_ms()?)
                 .await
         }
     };

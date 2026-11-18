@@ -13,7 +13,7 @@ use dusk_protocol::thread::{TaskStatus, TeamEnd, TeamStatus};
 use tracing::warn;
 
 use super::{
-    end, events, gate, lead_lines, lease,
+    clean, end, events, gate, lead_lines, lease,
     member::{self, Given},
 };
 use crate::{
@@ -89,7 +89,8 @@ pub(super) async fn lost(
         let Some(held) = lease::at_work(state, lead, member).await? else {
             return Ok(false);
         };
-        state.release_task(lead, &held.task_id, note).await?
+        let note = clean::note(launcher, lead, note).await;
+        state.release_task(lead, &held.task_id, &note).await?
     };
     released(launcher, lead, &task).await;
     Ok(true)
@@ -179,7 +180,7 @@ async fn give_out(
             Given::Lost => passed_over.push(task.task_id),
             Given::NoSlot => break,
             Given::NoAgent(why) => {
-                let why = lead_lines::quoted(&why, 300);
+                let why = clean::note(launcher, lead, &lead_lines::quoted(&why, 300)).await;
                 let failed = state.fail_task(lead, &task.task_id, &why).await?;
                 released(launcher, lead, &failed).await;
             }

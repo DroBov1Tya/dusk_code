@@ -152,3 +152,58 @@ async fn a_task_waiting_for_the_user_does_not_stall_the_team() {
     until("the team ended", || async { rig.ended().await.is_some() }).await;
     assert_eq!(rig.ended().await, Some(TeamEnd::Done));
 }
+
+#[tokio::test]
+async fn a_secret_in_a_members_words_or_a_gates_output_does_not_reach_the_lead() {
+    const KEY: &str = "sk-live4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c";
+    let answer = format!(
+        "Done.\n\nStatus: done\nResult: set api_key={KEY} in src/api/config/settings.rs\n\
+         Checked: not run\nOpen: nothing"
+    );
+    let rig = Rig::new("team_scrub", move |asked| match asked.lead {
+        true => Out::Say("Noted.".into()),
+        false => Out::Say(answer.clone()),
+    })
+    .await;
+    rig.state()
+        .set_thread_approvals(&rig.lead, Some(ApprovalPolicy::FullAccess))
+        .await
+        .unwrap();
+    let ids = rig
+        .plan(&[
+            task("no gate"),
+            gated("gate", command(&format!("echo token {KEY}; exit 1"))),
+        ])
+        .await;
+    rig.run().await;
+
+    until("the gated task failed and the other waits", || async {
+        rig.status(&ids[1]).await == PlanStatus::Failed
+            && rig.status(&ids[0]).await == PlanStatus::Review
+    })
+    .await;
+    until("the lead was told of both", || async {
+        rig.lines().await.len() >= 2
+    })
+    .await;
+
+    let lines = rig.lines().await;
+    assert!(lines.iter().all(|line| !line.contains(KEY)), "{lines:?}");
+    let review = lines.iter().find(|line| line.contains("waits for you"));
+    let review = review.expect("a review line");
+    // The key is gone and the path beside it is not.
+    assert!(review.contains("<redacted>") && review.contains("src/api/config/settings.rs"));
+    // Neither the task's note, which clients read, nor what the member was sent back.
+    assert!(!rig.task(&ids[1]).await.note.contains(KEY));
+    for member in rig.members().await {
+        let sent = rig.state().list_messages(&member).await.unwrap();
+        let from_core = sent
+            .iter()
+            .filter(|message| message.from_thread_id.is_some());
+        assert!(
+            from_core
+                .clone()
+                .all(|message| !message.content.contains(KEY))
+        );
+    }
+}

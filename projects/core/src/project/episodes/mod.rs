@@ -157,6 +157,20 @@ async fn store_lesson(state: &State, project: &Path, turn_id: &str, lesson: &str
     state.set_turn_lesson(turn_id, &lesson).await
 }
 
+/// `text` as the core may forward it from one thread to another, such as a team
+/// member's words to its lead: each line made plain and cleared of the values of the
+/// variables of the project in `dir` and of what is shaped like a secret. Lines stay
+/// lines and nothing is cut.
+pub async fn forwarded(state: &State, dir: &Path, text: &str) -> Result<String> {
+    let variables = match dir.to_str() {
+        Some(dir) => state.project_env_for_dir(dir).await?,
+        None => Vec::new(),
+    };
+    let secrets = Secrets::new(variables.into_iter().map(|(_, value)| value));
+    let lines: Vec<String> = text.lines().map(|line| scrub(line, &secrets)).collect();
+    Ok(lines.join("\n"))
+}
+
 /// The saved project whose folder is exactly `dir`, as the store names it, and the
 /// values of its variables. A subfolder of a project is not the project.
 async fn saved_project(state: &State, dir: &Path) -> Result<Option<(String, Secrets)>> {

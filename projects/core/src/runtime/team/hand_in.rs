@@ -10,7 +10,7 @@ use anyhow::Result;
 use dusk_protocol::thread::TaskStatus;
 use tracing::warn;
 
-use super::{dispatch, events, gate, lead_lines, lease};
+use super::{clean, dispatch, events, gate, lead_lines, lease};
 use crate::{
     runtime::{Launcher, ThreadEvent},
     state::{GoalCheck, PlanError, Thread, Turn, TurnStatus},
@@ -183,8 +183,9 @@ async fn completed(launcher: &Launcher, lead: &str, member: &Thread, turn: &Turn
     let report = Report::of(&answer);
     let moved = match &report.blocked {
         Some(note) => {
+            let note = clean::note(launcher, lead, note).await;
             state
-                .block_task(&member.id, &held.task_id, None, note)
+                .block_task(&member.id, &held.task_id, None, &note)
                 .await
         }
         None => state.hand_in(&member.id, &held.task_id).await,
