@@ -88,7 +88,7 @@ pub async fn run(options: Headless) -> Result<()> {
         let policy = match mode.as_str() {
             "ask" => ApprovalPolicy::Ask,
             "sandbox" => ApprovalPolicy::Sandbox,
-            "arbiter" => ApprovalPolicy::Arbiter,
+            "auto" | "arbiter" => ApprovalPolicy::Arbiter,
             _ => ApprovalPolicy::FullAccess,
         };
         client

@@ -69,7 +69,7 @@ pub const KEYS: [(&str, &str); 43] = [
     ("/snippet", "write a snippet for @name: /snippet name"),
     (
         "/access",
-        "this chat's access: ask, sandbox, arbiter, full, default",
+        "this chat's access: ask, sandbox, auto, full, default",
     ),
     ("Ctrl+N", "new thread"),
     (

@@ -95,7 +95,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                     ApprovalPolicy::Sandbox,
                 ),
                 (
-                    "Arbiter",
+                    "Auto",
                     "A second model answers the approvals",
                     ApprovalPolicy::Arbiter,
                 ),

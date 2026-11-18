@@ -37,10 +37,10 @@ pub async fn access(client: &Client, app: &mut App, name: Option<String>) {
         "default" => None,
         "ask" => Some(ApprovalPolicy::Ask),
         "sandbox" => Some(ApprovalPolicy::Sandbox),
-        "arbiter" => Some(ApprovalPolicy::Arbiter),
+        "auto" | "arbiter" => Some(ApprovalPolicy::Arbiter),
         "full" | "full access" | "full_access" => Some(ApprovalPolicy::FullAccess),
         _ => {
-            app.flash = Some("Use ask, sandbox, arbiter, full or default".into());
+            app.flash = Some("Use ask, sandbox, auto, full or default".into());
             return;
         }
     };

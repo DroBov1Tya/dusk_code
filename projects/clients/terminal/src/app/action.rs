@@ -182,7 +182,7 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
         ("/snippet", "write a snippet for @name: /snippet name"),
         (
             "/access",
-            "this chat's access: ask, sandbox, arbiter, full or default",
+            "this chat's access: ask, sandbox, auto, full or default",
         ),
     ];
     COMMANDS.iter().chain(LOCAL.iter())
