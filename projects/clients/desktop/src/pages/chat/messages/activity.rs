@@ -231,15 +231,17 @@ pub fn activity_text(
                     .aria_label(title.to_owned())
                     .child(widgets::icon(icon, muted))
                     .child(div().flex_1().min_w_0().truncate().child(title.to_owned()))
+                    // Inside the row, before its chevron, so the chevrons of a turn's
+                    // rows stand in one column whether a row can be copied or not.
+                    .child(widgets::copy(
+                        SharedString::from(format!("activity-text-copy-{shown}-{index}")),
+                        &group,
+                        text,
+                        cx,
+                    ))
                     .child(disclosure_icon(open, muted))
                     .on_click(cx.listener(move |ws, _, _, cx| ws.fold(&id, index, cx))),
-                )
-                .child(widgets::copy(
-                    SharedString::from(format!("activity-text-copy-{shown}-{index}")),
-                    &group,
-                    text,
-                    cx,
-                )),
+                ),
         )
         .when(open, |block| {
             block.child(

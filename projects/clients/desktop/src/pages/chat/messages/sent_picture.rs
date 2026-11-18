@@ -113,7 +113,12 @@ pub fn sent_pictures(
                 tile.cursor_pointer()
                     .hover(|tile| tile.opacity(0.9))
                     .active(|tile| tile.opacity(0.8))
-                    .child(img(image.clone()).size_full().object_fit(ObjectFit::Cover))
+                    .child(
+                        img(image.clone())
+                            .size_full()
+                            .rounded_lg()
+                            .object_fit(ObjectFit::Cover),
+                    )
                     .on_click(cx.listener(move |ws, _, window, cx| {
                         ws.open_picture(large.clone().into(), window, cx);
                     }))
