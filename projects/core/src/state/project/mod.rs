@@ -1,10 +1,9 @@
 //! Projects: named folders. Their chats are found by folder, so none is stored here.
 //! `env` keeps a project's variables, `schedules` its scheduled tasks, `episodes` what
-//! ended a problem in it, `graph` the index of its source.
+//! ended a problem in it.
 
 mod env;
 mod episodes;
-pub mod graph;
 mod schedules;
 
 use std::path::PathBuf;
@@ -57,10 +56,9 @@ impl State {
     }
 
     /// Changes a project; false when there is none with `id`. A new folder starts with
-    /// no episodes and no graph: both describe the old folder, and an episode written
-    /// from one repository must not be recalled in another. The foreign keys would carry
-    /// them over (`ON UPDATE CASCADE`), so they are deleted first, in the same
-    /// transaction.
+    /// no episodes: they describe the old folder, and an episode written from one
+    /// repository must not be recalled in another. The foreign key would carry them over
+    /// (`ON UPDATE CASCADE`), so they are deleted first, in the same transaction.
     pub async fn update_project(
         &self,
         id: &str,
@@ -79,16 +77,11 @@ impl State {
         };
         let moved = old != dir;
         if moved {
-            for sql in [
-                "DELETE FROM episodes WHERE project = ?",
-                "DELETE FROM graph_files WHERE project = ?",
-            ] {
-                sqlx::query(sql)
-                    .bind(&old)
-                    .execute(&mut *transaction)
-                    .await
-                    .context("forget what the old folder held")?;
-            }
+            sqlx::query("DELETE FROM episodes WHERE project = ?")
+                .bind(&old)
+                .execute(&mut *transaction)
+                .await
+                .context("forget what the old folder held")?;
         }
         sqlx::query("UPDATE projects SET name = ?, description = ?, dir = ? WHERE id = ?")
             .bind(name)
@@ -129,11 +122,7 @@ fn project_from_row(row: SqliteRow) -> sqlx::Result<Project> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        project::graph::{Language, SymbolKind},
-        state::{
-            EpisodeKind, NewEpisode, State,
-            graph::{IndexedFile, NewSymbol, Stamp},
-        },
+        state::{EpisodeKind, NewEpisode, State},
         testing::temp_state,
     };
 
@@ -158,8 +147,8 @@ mod tests {
             .unwrap()
     }
 
-    /// Episodes and the graph describe a folder: a project moved to another folder keeps
-    /// neither, under the old name or the new one.
+    /// Episodes describe a folder: a project moved to another folder keeps none, under
+    /// the old name or the new one.
     #[tokio::test]
     async fn a_project_moved_to_another_folder_forgets_the_old_one() {
         let (a, b) = ("/work/repo-a", "/work/repo-b");
@@ -182,50 +171,23 @@ mod tests {
             .await
             .unwrap();
         state.note_episode(a);
-        let file = IndexedFile {
-            path: "src/lib.rs".into(),
-            language: Language::Rust,
-            hash: "0".repeat(64),
-            stamp: Stamp {
-                size: 1,
-                modified_ms: 1,
-            },
-            module: String::new(),
-            is_test: false,
-            skipped: None,
-            symbols: vec![NewSymbol {
-                name: "Alpha".into(),
-                parent: None,
-                kind: SymbolKind::Type,
-                line: 1,
-                end_line: 1,
-            }],
-            refs: Vec::new(),
-        };
-        state.replace_graph_files(a, &[file]).await.unwrap();
         assert!(state.has_episodes(a));
 
         // Only the name changes: what the folder held stays.
         assert!(state.update_project("p", "P2", "", a).await.unwrap());
         assert!(state.has_episodes(a));
-        assert_eq!(state.graph_counts(a).await.unwrap().files, 1);
 
         assert!(state.update_project("p", "P2", "", b).await.unwrap());
         for project in [a, b] {
             let episodes = "SELECT COUNT(*) FROM episodes WHERE project = ?";
-            let files = "SELECT COUNT(*) FROM graph_files WHERE project = ?";
             assert_eq!(count(&state, episodes, project).await, 0, "{project}");
-            assert_eq!(count(&state, files, project).await, 0, "{project}");
             assert!(!state.has_episodes(project), "{project}");
         }
-        for table in ["episodes_search", "graph_symbols"] {
-            let sql = format!("SELECT COUNT(*) FROM {table}");
-            let rows: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(sql))
-                .fetch_one(&state.pool)
-                .await
-                .unwrap();
-            assert_eq!(rows, 0, "{table}");
-        }
+        let rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM episodes_search")
+            .fetch_one(&state.pool)
+            .await
+            .unwrap();
+        assert_eq!(rows, 0);
         assert!(!state.update_project("missing", "M", "", b).await.unwrap());
     }
 

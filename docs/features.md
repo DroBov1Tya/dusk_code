@@ -53,11 +53,12 @@ every mode until `tools:` names it. Defaults are in `projects/core/src/config/se
 
 ## Project knowledge
 
-- **Project graph.** `limits.project_graph` (on): a background worker indexes the
-  symbols and references of each saved project. The `project_graph` tool (`tools: { project_graph: false }`
-  hides it) answers where a name is defined, who uses it, what a
-  file depends on and which tests cover it, in at most 16 rows. It is offered once the
-  index is ready.
+- **File map.** `limits.project_graph` (on): the `project_graph` tool (`tools: { project_graph: false }`
+  hides it) maps the working folder by file and folder names, never their content: an
+  indented tree that folds deeper folders to `name/ (N files)` to stay under 300 lines and
+  12 KiB, one folder of it on `path`, or the paths matching `find` (a part of a path or a
+  glob). It walks as the change ledger does (ignore rules, no `.git`, no links followed) on
+  every call; nothing is indexed or stored. The name is kept from the code graph it replaced.
 - **Episodes and `recall`.** `limits.episodes` (on): for a saved project, what ended a
   repeated failure, or a goal's verification that passed, is stored as an episode (at most
   500 a project). `limits.episode_lesson` (on) adds a one-line lesson from the model. The

@@ -8,7 +8,6 @@ pub mod episodes;
 mod files;
 pub mod forge;
 pub mod git;
-pub mod graph;
 pub mod ledger;
 mod outputs;
 pub mod schedule;

@@ -51,8 +51,8 @@ pub fn take(root: &Path, skip: &[PathBuf]) -> Option<Snapshot> {
     take_within(root, skip, MAX_FILES, TIME_BUDGET)
 }
 
-/// `take` with a time budget of the caller's: the graph's indexer walks in the
-/// background, where no command waits on it.
+/// `take` with a time budget of the caller's: the file map walks for the model, where
+/// no command waits on it.
 pub fn take_for(root: &Path, skip: &[PathBuf], budget: Duration) -> Option<Snapshot> {
     take_within(root, skip, MAX_FILES, budget)
 }
