@@ -12,7 +12,11 @@ use dusk_protocol::{
 use super::*;
 
 pub async fn store(order: Order, category: Option<String>) -> Res<StoreList> {
-    let call = Request::Store(StoreRequest::List { order, category });
+    let call = Request::Store(StoreRequest::List {
+        order,
+        category,
+        kinds: Vec::new(),
+    });
     ask!(call, Response::Store(list) => list)
 }
 

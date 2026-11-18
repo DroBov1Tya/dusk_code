@@ -35,6 +35,7 @@ pub fn answered(key: &str, answers: &[Answered], cx: &App) -> Div {
                 .child(super::super::links::markdown(
                     SharedString::from(format!("question-{key}-{index}")),
                     answer.question.clone(),
+                    super::super::links::Links::Paths,
                 ))
                 .children(
                     answer

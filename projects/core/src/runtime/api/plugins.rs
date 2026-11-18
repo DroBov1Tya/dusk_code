@@ -40,8 +40,24 @@ impl Runtime {
         };
         let mirrors = self.config().current().workshop().sources.clone();
         match request {
-            StoreRequest::List { order, category } => {
-                let list = store::list(self.paths(), &mirrors, order, category.as_deref()).await?;
+            StoreRequest::List {
+                order,
+                category,
+                kinds,
+            } => {
+                let here = store::Here {
+                    yours: self.config().current().mcp().keys().cloned().collect(),
+                    on: self
+                        .plugins
+                        .list()
+                        .into_iter()
+                        .filter(|plugin| plugin.enabled)
+                        .map(|plugin| plugin.name)
+                        .collect(),
+                };
+                let category = category.as_deref();
+                let list =
+                    store::list(self.paths(), &mirrors, order, category, &kinds, &here).await?;
                 return Ok(Response::Store(list));
             }
             StoreRequest::Install {
@@ -100,6 +116,15 @@ impl Runtime {
                 let base64 = base64::engine::general_purpose::STANDARD.encode(bytes);
                 let mime = mime.to_owned();
                 return Ok(Response::Media { base64, mime });
+            }
+            StoreRequest::Contents { source, name } => {
+                let contents =
+                    store::contents::contents(self.paths(), &mirrors, &source, &name).await?;
+                return Ok(Response::StoreContents(contents));
+            }
+            StoreRequest::File { source, name, path } => {
+                let file = store::contents::file(&source, &name, &path).await?;
+                return Ok(Response::StoreFile(file));
             }
         }
         Ok(Response::Done)

@@ -40,6 +40,7 @@ pub fn render(
             .id("connectors")
             .child(widgets::muted("Loading...", cx));
     };
+    ws.ensure_store(cx);
     let counts = [
         (Shelf::Connectors, "Connectors", settings.mcp.len()),
         (Shelf::Skills, "Skills", settings.skills.len()),
@@ -93,7 +94,7 @@ pub fn render(
     let query = ws.shelf_search.read(cx).value().trim().to_lowercase();
     let body = match ws.shelf {
         Shelf::Connectors => mcp::render(&settings, &ws.mcp_restarting, &query, cx),
-        Shelf::Skills => skills::render(&settings, &query, cx),
+        Shelf::Skills => skills::render(ws, &settings, &query, window, cx),
         Shelf::Plugins => plugins::render(ws, &query, window, cx),
         Shelf::Tools => tools::render(&settings, &query, cx),
         Shelf::Agents => graph::render(ws, &settings.agents, cx),
@@ -128,7 +129,7 @@ pub fn render(
                             row.child(div().w(px(280.)).child(Input::new(&ws.shelf_search)))
                         })
                         // The Workshop's filters sit beside the search they narrow with.
-                        .when(ws.shelf == Shelf::Plugins && ws.workshop.open, |row| {
+                        .when(ws.discovering().is_some(), |row| {
                             row.child(plugins::workshop::filters::button(ws, cx))
                         }),
                 )

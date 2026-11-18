@@ -36,7 +36,8 @@ pub struct Listing {
     pub platforms: Vec<Os>,
     /// All when empty.
     pub clients: Vec<Client>,
-    /// What it may do, one line each, as the user is asked before it is installed.
+    /// What it may do, one line each, as the user is asked before it is installed: first
+    /// one line per `programs`, then one per `connectors`, then what else it may reach.
     pub permissions: Vec<String>,
     /// An `https` page about it.
     pub homepage: Option<String>,
@@ -98,6 +99,52 @@ pub struct Listing {
     /// name to pass for another source's plugin.
     #[serde(default)]
     pub clash: bool,
+    /// For a plugin: the MCP servers it brings.
+    #[serde(default)]
+    pub connectors: Vec<Connector>,
+    /// For a plugin: the command lines of its own programs, run on this computer while it
+    /// is on.
+    #[serde(default)]
+    pub programs: Vec<String>,
+}
+
+impl Listing {
+    /// The lines of `permissions` after those of its programs and connectors: what else
+    /// it may reach.
+    pub fn reach(&self) -> &[String] {
+        let skip = self.programs.len() + self.connectors.len();
+        self.permissions.get(skip..).unwrap_or_default()
+    }
+}
+
+/// An MCP server a plugin brings.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Connector {
+    pub name: String,
+    pub runs: Runs,
+    pub state: ConnectorState,
+}
+
+/// What an MCP server is: a program on this computer, or an address on the network.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Runs {
+    /// The command line, `./` being the plugin's folder.
+    Command(String),
+    /// An `https` address the core sends the agent's requests to.
+    Url(String),
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectorState {
+    /// The plugin is not here or not on.
+    #[default]
+    NotAdded,
+    /// The plugin is on and its server is among the connectors.
+    Added,
+    /// A connector the user configured has the name; it is used, never replaced.
+    Yours,
 }
 
 /// Trust, highest first; the list is sorted in this order.
@@ -219,12 +266,15 @@ pub struct UpdateReport {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum StoreRequest {
     /// What the sources offer; answered with `Response::Store`. Only `category`'s, when
-    /// it is given.
+    /// it is given, and only of `kinds`, all of them when it is empty: each page asks for
+    /// its own, so the core decides what a page lists.
     List {
         #[serde(default)]
         order: Order,
         #[serde(default)]
         category: Option<String>,
+        #[serde(default)]
+        kinds: Vec<Kind>,
     },
     /// Installs or updates `name` at `version` from `source` and switches it on.
     /// `agreed` is the listing's `permissions` the user was shown; a listing that
@@ -253,4 +303,49 @@ pub enum StoreRequest {
         name: String,
         index: u32,
     },
+    /// The files of `name` from `source`: the copy installed here, or else the package
+    /// the last list read named, fetched and checked; answered with
+    /// `Response::StoreContents`. Nothing of it is installed, run or read by the model.
+    Contents { source: String, name: String },
+    /// One text file of the last `Contents` of `name`, by its `path` there; answered with
+    /// `Response::StoreFile`.
+    File {
+        source: String,
+        name: String,
+        path: String,
+    },
 }
+
+/// The answer to `StoreRequest::Contents`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Contents {
+    /// Sorted by path.
+    pub files: Vec<FileRef>,
+    /// The SHA-256 of the package, as the list names it or as it was installed.
+    pub package_sha256: String,
+    /// The files are the copy installed here, edits included, not the package's.
+    pub installed: bool,
+}
+
+/// One file of `Contents`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileRef {
+    /// Relative, `/` between names.
+    pub path: String,
+    pub size: u64,
+    /// UTF-8 text a client may ask for with `StoreRequest::File`; anything else, such as
+    /// a plugin's program, is shown by its size only.
+    pub text: bool,
+}
+
+/// The answer to `StoreRequest::File`: plain text, its control and bidi characters
+/// escaped, at most `PREVIEW_BYTES` of it.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilePreview {
+    pub text: String,
+    /// The file is longer than what `text` holds.
+    pub truncated: bool,
+}
+
+/// The most of one file `StoreRequest::File` answers with.
+pub const PREVIEW_BYTES: usize = 256 * 1024;

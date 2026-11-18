@@ -6,83 +6,27 @@ mod confirm;
 pub mod workshop;
 
 pub use confirm::{Confirm, render as confirm};
-pub use workshop::Workshop;
+pub use workshop::{Scope, View, Workshop};
 
 use gpui_kit::{
-    component::{
-        ActiveTheme, Icon, Sizable,
-        button::{Button, ButtonVariants},
-        switch::Switch,
-    },
-    prelude::FluentBuilder,
+    component::{ActiveTheme, Sizable, switch::Switch},
     *,
 };
 
 use super::{card, grid, matches};
-use crate::{
-    ui::{
-        Type,
-        controls::{pipe, text_choice},
-    },
-    workspace::Workspace,
-};
+use crate::workspace::Workspace;
 
 pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
-    let body = if ws.workshop.open {
-        workshop::render(ws, query, window, cx)
-    } else {
-        installed(ws, query, cx)
+    let body = match ws.view(Scope::Plugins) {
+        View::Discover => workshop::render(ws, query, window, cx),
+        View::Installed => installed(ws, query, cx),
     };
     div()
         .flex()
         .flex_col()
         .gap_4()
-        .child(views(ws, cx))
+        .child(workshop::switch(ws, Scope::Plugins, cx))
         .child(body)
-}
-
-/// "Workshop  Discover | Installed": the store's listings or the plugins here, and while
-/// the listings are shown "Update all" and a refresh. There is no auto-update switch:
-/// the core has no such setting, and a client keeps no timers of its own.
-fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
-    let open = ws.workshop.open;
-    let view = |id: &'static str, label: &'static str, chosen: bool, workshop: bool| {
-        text_choice(id, label, chosen, cx).on_click(cx.listener(move |ws, _, _, cx| {
-            ws.workshop.open = workshop;
-            if workshop && ws.workshop.listings.is_none() {
-                ws.load_store(cx);
-            }
-            cx.notify();
-        }))
-    };
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap_2()
-        .child(div().title().pr_2().child("Workshop"))
-        .child(view("plugins-workshop", "Discover", open, true))
-        .child(pipe(cx))
-        .child(view("plugins-installed", "Installed", !open, false))
-        .when(open, |row| {
-            row.child(div().flex_1())
-                .child(
-                    Button::new("workshop-update-all")
-                        .outline()
-                        .label("Update all")
-                        .loading(ws.workshop.updating)
-                        .tooltip("Update everything whose update asks for nothing more")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.update_all(cx))),
-                )
-                .child(
-                    Button::new("workshop-refresh")
-                        .ghost()
-                        .icon(Icon::default().path(crate::ui::icons::REFRESH))
-                        .loading(ws.workshop.loading)
-                        .tooltip("Read the store again")
-                        .on_click(cx.listener(|ws, _, _, cx| ws.load_store(cx))),
-                )
-        })
 }
 
 fn installed(ws: &Workspace, query: &str, cx: &mut Context<Workspace>) -> Div {

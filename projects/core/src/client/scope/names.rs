@@ -188,6 +188,8 @@ named! {
     R::Store(St::UpdateAll) => "store.update_all",
     R::Store(St::Cover { .. }) => "store.cover",
     R::Store(St::Screenshot { .. }) => "store.screenshot",
+    R::Store(St::Contents { .. }) => "store.contents",
+    R::Store(St::File { .. }) => "store.file",
     R::InstallUpdate { .. } => "install_update",
     R::Shutdown => "shutdown",
 }

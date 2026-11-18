@@ -14,17 +14,60 @@ use anyhow::{Context, Result, bail, ensure};
 use flate2::read::GzDecoder;
 use tar::{Archive, EntryType};
 
-const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
-const MAX_FILES: usize = 4000;
+pub const MAX_UNPACKED_BYTES: u64 = 256 * 1024 * 1024;
+pub const MAX_FILES: usize = 4000;
 /// Everything the gzip stream gives, headers and skipped entries included, so a small
 /// package cannot make the core read gigabytes.
 const MAX_DECOMPRESSED_BYTES: u64 = MAX_UNPACKED_BYTES + 16 * 1024 * 1024;
-const MAX_PATH: usize = 300;
+pub const MAX_PATH: usize = 300;
+
+/// One entry of a package whose path and type passed the rules.
+pub enum Item<'a> {
+    Folder,
+    File {
+        size: u64,
+        executable: bool,
+        /// Its bytes, at most `size`; what the visitor leaves unread is skipped.
+        body: &'a mut dyn Read,
+    },
+}
 
 /// Unpacks the `.tar.gz` in `package` into `into`, which must not exist yet.
 pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
     fs::create_dir(into).with_context(|| format!("cannot create {}", into.display()))?;
     set_mode(into, 0o700)?;
+    walk(package, |relative, item| {
+        let target = into.join(relative);
+        match item {
+            Item::Folder => {
+                fs::create_dir_all(&target)?;
+                set_mode(&target, 0o700)?;
+            }
+            Item::File {
+                size,
+                executable,
+                body,
+            } => {
+                if let Some(parent) = target.parent() {
+                    fs::create_dir_all(parent)?;
+                }
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .mode(if executable { 0o700 } else { 0o600 })
+                    .open(&target)
+                    .with_context(|| format!("cannot write {}", relative.display()))?;
+                let copied = io::copy(body, &mut file)?;
+                ensure!(copied == size, "{} is cut short", relative.display());
+            }
+        }
+        Ok(())
+    })
+}
+
+/// Reads the `.tar.gz` in `package` under the rules above without writing anything,
+/// handing `visit` each plain file and folder by its clean relative path.
+pub fn walk(package: &[u8], mut visit: impl FnMut(&Path, Item<'_>) -> Result<()>) -> Result<()> {
     let mut archive = Archive::new(Capped {
         inner: GzDecoder::new(package),
         left: MAX_DECOMPRESSED_BYTES,
@@ -41,7 +84,7 @@ pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
             continue;
         }
         let relative = relative(&entry.path().context("a path in the package")?)?;
-        // The archive's own root, `./`, is the folder made above.
+        // The archive's own root, `./`, is the folder itself.
         if relative.as_os_str().is_empty() && kind == EntryType::Directory {
             continue;
         }
@@ -51,12 +94,8 @@ pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
         );
         count += 1;
         ensure!(count <= MAX_FILES, "the package has over {MAX_FILES} files");
-        let target = into.join(&relative);
         match kind {
-            EntryType::Directory => {
-                fs::create_dir_all(&target)?;
-                set_mode(&target, 0o700)?;
-            }
+            EntryType::Directory => visit(&relative, Item::Folder)?,
             EntryType::Regular | EntryType::Continuous => {
                 let size = entry.header().size()?;
                 total = total.saturating_add(size);
@@ -64,18 +103,16 @@ pub fn unpack(package: &[u8], into: &Path) -> Result<()> {
                     total <= MAX_UNPACKED_BYTES,
                     "the package unpacks to over {MAX_UNPACKED_BYTES} bytes"
                 );
-                if let Some(parent) = target.parent() {
-                    fs::create_dir_all(parent)?;
-                }
                 let executable = entry.header().mode().unwrap_or(0) & 0o111 != 0;
-                let mut file = OpenOptions::new()
-                    .write(true)
-                    .create_new(true)
-                    .mode(if executable { 0o700 } else { 0o600 })
-                    .open(&target)
-                    .with_context(|| format!("cannot write {}", relative.display()))?;
-                let copied = io::copy(&mut (&mut entry).take(size), &mut file)?;
-                ensure!(copied == size, "{} is cut short", relative.display());
+                let mut body = (&mut entry).take(size);
+                visit(
+                    &relative,
+                    Item::File {
+                        size,
+                        executable,
+                        body: &mut body,
+                    },
+                )?;
             }
             other => bail!(
                 "{} is a {other:?}; a package holds only files and folders",

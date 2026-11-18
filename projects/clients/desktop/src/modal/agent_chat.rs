@@ -73,7 +73,11 @@ pub fn render(ws: &Workspace, agent: &str, cx: &mut Context<Workspace>) -> Div {
                 .rounded_lg()
                 .bg(surface)
                 .small()
-                .child(links::markdown(key("asked"), text.clone()))
+                .child(links::markdown(
+                    key("asked"),
+                    text.clone(),
+                    links::Links::Paths,
+                ))
                 .child(copy(text, cx))
                 .into_any_element(),
             Item::Agent { from, text } => {

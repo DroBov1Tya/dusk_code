@@ -215,7 +215,7 @@ fn remembered(name: &str) -> Mirror {
     let shots = [shot("s/1.png", 10, None), shot("s/2.png", 10, None)].join(", ");
     let (index, key) = read(&list(&entry("hello", &shots))).unwrap();
     let mirror = mirror(name, &key);
-    source::remember_pictures(&[Fetched {
+    source::remember(&[Fetched {
         name: mirror.name.clone(),
         url: mirror.url.clone(),
         key: key.clone(),

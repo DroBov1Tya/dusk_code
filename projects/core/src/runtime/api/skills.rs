@@ -31,11 +31,20 @@ impl Runtime {
         )
     }
 
+    /// Every skill; one the Workshop installed is marked as from there, not the user's.
     pub fn skills(&self) -> Vec<SkillInfo> {
-        skills::list(
+        let mut skills = skills::list(
             &self.launcher.paths.skills_dir(),
             &self.launcher.config.current(),
-        )
+        );
+        let installed = crate::plugins::store::installed_skills(&self.launcher.paths);
+        for skill in &mut skills {
+            if skill.kind == skills::SkillKind::Own && installed.contains(&skill.name) {
+                skill.kind = skills::SkillKind::Other;
+                skill.source = Some("Workshop".to_owned());
+            }
+        }
+        skills
     }
 
     /// A skill's file as it is on disk; reading it again throws edits away.

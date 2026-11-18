@@ -1,5 +1,6 @@
-//! A listing's byline, "by <author> · <version> · N skills · updated <date>", the same on
-//! its card and its page. A part the list does not give is left out, never guessed.
+//! A listing's byline, "by <author> · <version> · N skills", and on its page
+//! "· updated <date>" after it; a card has no room for the date. A part the list does not
+//! give is left out, never guessed.
 
 use dusk_protocol::plugin::{Kind, Listing};
 
@@ -9,7 +10,21 @@ use crate::ui::widgets;
 /// The longest author drawn; the list allows 64 characters.
 const AUTHOR_CHARS: usize = 64;
 
+/// The card's line.
 pub fn byline(listing: &Listing) -> String {
+    parts(listing).join(" \u{b7} ")
+}
+
+/// The page's line: the card's, then when it was updated.
+pub fn dated_byline(listing: &Listing) -> String {
+    let mut parts = parts(listing);
+    if let Some(date) = day(listing.updated.as_deref()) {
+        parts.push(format!("updated {date}"));
+    }
+    parts.join(" \u{b7} ")
+}
+
+fn parts(listing: &Listing) -> Vec<String> {
     let mut parts = Vec::new();
     if !listing.author.is_empty() {
         parts.push(format!(
@@ -23,10 +38,7 @@ pub fn byline(listing: &Listing) -> String {
     if listing.kind == Kind::Pack && !listing.skills.is_empty() {
         parts.push(widgets::count(listing.skills.len(), "skill"));
     }
-    if let Some(date) = day(listing.updated.as_deref()) {
-        parts.push(format!("updated {date}"));
-    }
-    parts.join(" \u{b7} ")
+    parts
 }
 
 /// The day of an RFC 3339 time in words, as "11 Nov 2026"; none when it is not a day.
@@ -55,7 +67,7 @@ pub fn day(text: Option<&str>) -> Option<String> {
 mod tests {
     use dusk_protocol::plugin::{Kind, Listing};
 
-    use super::{byline, day};
+    use super::{byline, dated_byline, day};
 
     #[test]
     fn dates_read_in_words_or_not_at_all() {
@@ -81,9 +93,10 @@ mod tests {
             ..Listing::default()
         };
         assert_eq!(
-            byline(&pack),
+            dated_byline(&pack),
             "by some one \u{b7} v1.2.0 \u{b7} 2 skills \u{b7} updated 10 Nov 2026"
         );
+        assert_eq!(byline(&pack), "by some one \u{b7} v1.2.0 \u{b7} 2 skills");
         let bare = Listing {
             version: "0.1.0".into(),
             ..Listing::default()

@@ -6,7 +6,8 @@
 //! Format 1 lists plugins. Format 2 adds what each entry is (`kind`), how it is filed
 //! and shown, and, in the official list only, the mirrors it vouches for. Format 3 adds
 //! who made each entry: `author`, `license`, `source`, `categories` and `badge`, all
-//! required.
+//! required; and for a plugin what it runs and adds, `mcp`, `programs` and `skills`,
+//! which its manifest must say exactly.
 
 use anyhow::{Context, Result, bail, ensure};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
@@ -42,6 +43,10 @@ const MAX_PACK_SKILLS: usize = 256;
 const MAX_CREDIT: usize = 64;
 const MAX_URL: usize = 200;
 const MAX_CATEGORIES: usize = 3;
+const MAX_SERVERS: usize = 16;
+const MAX_PROGRAMS: usize = 8;
+/// In characters, for a command line or an address shown to the user.
+const MAX_LINE: usize = 200;
 /// The system and processor of a package of plain files, which runs nowhere.
 pub const ANY: &str = "any";
 const SYSTEMS: [&str; 4] = [ANY, "macos", "linux", "windows"];
@@ -122,6 +127,44 @@ pub struct Entry {
     /// Format 3: whose work it is, as the publisher says. Read only from the official
     /// list, and only to lower its tier.
     pub badge: Option<Badge>,
+    /// Format 3, a plugin: the MCP servers it brings, by name.
+    #[serde(default)]
+    pub mcp: Vec<Server>,
+    /// Format 3, a plugin: the command lines of its own programs (its platform, panel and
+    /// hooks), sorted.
+    #[serde(default)]
+    pub programs: Vec<String>,
+    /// The list's format, which says what its manifest is checked against.
+    #[serde(skip)]
+    pub format: u32,
+}
+
+/// An MCP server a plugin brings: a program it starts, or an address the core sends the
+/// agent's requests to.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Server {
+    pub name: String,
+    /// The program, `./` being the plugin's folder.
+    pub command: Option<String>,
+    #[serde(default)]
+    pub args: Vec<String>,
+    pub url: Option<String>,
+}
+
+impl Server {
+    /// What it runs or reaches, as one line.
+    pub fn line(&self) -> String {
+        match (&self.command, &self.url) {
+            (Some(command), _) => std::iter::once(command)
+                .chain(&self.args)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+            (None, Some(url)) => url.clone(),
+            (None, None) => String::new(),
+        }
+    }
 }
 
 /// Official for the work of duskcode's maintainers, Verified for anybody else's.
@@ -212,9 +255,10 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
     let mut names = std::collections::BTreeSet::new();
     let mut plugins = Vec::new();
     for value in raw.plugins {
-        let Some(entry) = read_entry(value)? else {
+        let Some(mut entry) = read_entry(value)? else {
             continue;
         };
+        entry.format = raw.format;
         ensure!(
             names.insert(entry.name.clone()),
             "the list names {} twice",
@@ -327,9 +371,14 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
         DateTime::parse_from_rfc3339(date).context("a date is not RFC 3339")?;
     }
     ensure!(
-        entry.kind == Kind::Pack || entry.skills.is_empty(),
-        "only a pack names skills"
+        entry.kind == Kind::Pack || entry.kind == Kind::Plugin || entry.skills.is_empty(),
+        "only a pack or a plugin names skills"
     );
+    ensure!(
+        entry.kind == Kind::Plugin || (entry.mcp.is_empty() && entry.programs.is_empty()),
+        "only a plugin brings MCP servers or programs"
+    );
+    check_brings(entry)?;
     ensure!(
         entry.skills.len() <= MAX_PACK_SKILLS
             && entry
@@ -337,6 +386,45 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
                 .iter()
                 .all(|skill| crate::init::paths::is_plain_folder_name(skill)),
         "a pack's skills are not plain names"
+    );
+    Ok(())
+}
+
+/// A plugin's servers and programs: a few, each one plain line, named once.
+fn check_brings(entry: &Entry) -> Result<()> {
+    ensure!(
+        entry.mcp.len() <= MAX_SERVERS,
+        "up to {MAX_SERVERS} MCP servers are allowed"
+    );
+    let mut names = std::collections::BTreeSet::new();
+    for server in &entry.mcp {
+        ensure!(
+            is_word(&server.name, MAX_WORD) && names.insert(&server.name),
+            "an MCP server's name is not a word of a-z, 0-9 and -, or is given twice"
+        );
+        match (&server.command, &server.url) {
+            (Some(_), None) => {}
+            (None, Some(url)) => ensure!(
+                url.starts_with("https://") && !url.contains(' '),
+                "the MCP server {} is not at an https address",
+                server.name
+            ),
+            _ => bail!(
+                "the MCP server {} names a command or an address, not both",
+                server.name
+            ),
+        }
+        ensure!(
+            is_line(&server.line(), MAX_LINE),
+            "the MCP server {} is not one plain line of up to {MAX_LINE} characters",
+            server.name
+        );
+    }
+    ensure!(
+        entry.programs.len() <= MAX_PROGRAMS
+            && entry.programs.iter().all(|line| is_line(line, MAX_LINE))
+            && entry.programs.windows(2).all(|pair| pair[0] < pair[1]),
+        "programs are up to {MAX_PROGRAMS} plain lines, sorted, each once"
     );
     Ok(())
 }
@@ -452,10 +540,32 @@ fn is_sha256(text: &str) -> bool {
             .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
 }
 
+/// One line per program, then one per MCP server, as the user is asked.
+pub fn brings(programs: &[String], servers: &[Server]) -> Vec<String> {
+    let mut lines: Vec<String> = programs
+        .iter()
+        .map(|program| format!("run the program {program} on this computer while it is on"))
+        .collect();
+    lines.extend(servers.iter().map(|server| match &server.url {
+        Some(url) => format!(
+            "send the agent's requests for the tools of {} to {url}",
+            server.name
+        ),
+        None => format!(
+            "start the MCP server {} ({}) on this computer; the agent may use its tools",
+            server.name,
+            server.line()
+        ),
+    }));
+    lines
+}
+
 impl Entry {
-    /// What the user agrees to by installing it, one line each.
+    /// What the user agrees to by installing it, one line each: first one per program,
+    /// then one per MCP server, in their order, as `Listing::permissions` says.
     pub fn consent(&self) -> Vec<String> {
-        let mut lines = self.permissions.lines();
+        let mut lines = brings(&self.programs, &self.mcp);
+        lines.extend(self.permissions.lines());
         for url in &self.providers {
             lines.push(format!("send your chats to {url} when you pick its model"));
         }
@@ -517,7 +627,10 @@ impl Entry {
 
     /// Nothing format 3 added is set.
     fn is_format_2(&self) -> bool {
-        self.author.is_none()
+        self.mcp.is_empty()
+            && self.programs.is_empty()
+            && (self.kind != Kind::Plugin || self.skills.is_empty())
+            && self.author.is_none()
             && self.license.is_none()
             && self.source.is_none()
             && self.categories.is_empty()

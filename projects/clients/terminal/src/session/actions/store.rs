@@ -135,7 +135,7 @@ async fn read(client: &Client, app: &mut App) {
     };
     let (order, category) = (view.order, view.category.clone());
     let all = category.is_none();
-    let result = client.plugins().store(order, category).await;
+    let result = client.plugins().store(order, category, Vec::new()).await;
     packs(client, app).await;
     let Some(view) = workshop(app) else {
         return;

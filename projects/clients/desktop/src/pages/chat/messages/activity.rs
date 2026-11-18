@@ -191,7 +191,11 @@ pub fn agent_report(
         index,
         (&label, IconName::Bot),
         text,
-        || body.unwrap_or_else(|| links::markdown(key, text.to_owned()).into_any_element()),
+        || {
+            body.unwrap_or_else(|| {
+                links::markdown(key, text.to_owned(), links::Links::Paths).into_any_element()
+            })
+        },
         cx,
     )
 }

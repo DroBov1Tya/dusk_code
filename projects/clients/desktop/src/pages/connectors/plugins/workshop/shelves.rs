@@ -333,7 +333,8 @@ fn local_packs<'a>(ws: &'a Workspace, query: &str) -> Vec<&'a SkillPack> {
             .flatten()
             .any(|listing| listing.kind == Kind::Pack && listing.name == name)
     };
-    let shown = (shop.tiers.is_empty() || shop.tiers.contains(&Tier::Local))
+    let shown = shop.scope == super::Scope::Plugins
+        && (shop.tiers.is_empty() || shop.tiers.contains(&Tier::Local))
         && (shop.kinds.is_empty() || shop.kinds.contains(&Kind::Pack))
         && shop.category.is_none();
     if !shown {

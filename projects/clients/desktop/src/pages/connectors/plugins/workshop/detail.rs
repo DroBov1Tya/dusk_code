@@ -1,6 +1,7 @@
 //! A listing's window, as a store page: on the left its cover with its name, byline, mark
-//! and categories, then its tabs: Overview (screenshots and the whole description) and,
-//! for a pack, Skills; on the right its action (with Remove apart and in the danger
+//! and categories, then its tabs: Overview (screenshots and the whole description),
+//! Contents (its files), for a pack Skills and for a plugin that brings MCP servers
+//! Connectors; on the right its action (with Remove apart and in the danger
 //! colour), what it warns of, what it may access, where it comes from and its details
 //! with dates in words, its license and its addresses shown. A tab with nothing in it is
 //! not drawn. All of it is the publisher's text, drawn as plain text.
@@ -16,8 +17,8 @@ use gpui_kit::{
 
 use super::{
     actions,
-    byline::{byline, day},
-    capsule, gallery, hero, pack, tier,
+    byline::{dated_byline, day},
+    capsule, connectors, contents, gallery, hero, pack, tier,
 };
 use crate::{
     ui::{Type, controls, size, widgets},
@@ -29,7 +30,20 @@ use crate::{
 pub enum Tab {
     #[default]
     Overview,
+    Contents,
     Skills,
+    Connectors,
+}
+
+impl Tab {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Overview => "Overview",
+            Self::Contents => "Contents",
+            Self::Skills => "Skills",
+            Self::Connectors => "Connectors",
+        }
+    }
 }
 
 /// The width of the right column.
@@ -74,14 +88,14 @@ pub fn render(
         .w(px(main_w))
         .flex_none()
         .child(header(ws, listing, main_w, cx));
-    let has_skills = listing.kind == Kind::Pack && !listing.skills.is_empty();
-    let tab = if has_skills {
-        main = main.child(tabs(ws.workshop.tab, cx));
-        ws.workshop.tab
+    let shown = shown_tabs(listing);
+    let tab = if shown.len() > 1 {
+        main = main.child(tabs(listing, &shown, ws.workshop.tab, cx));
+        Some(ws.workshop.tab).filter(|tab| shown.contains(tab))
     } else {
-        Tab::Overview
+        None
     };
-    let main = match tab {
+    let main = match tab.unwrap_or_default() {
         Tab::Overview => {
             let stage_room = stage_room(window_height, main_w >= HEADER_SIDE_BY_SIDE);
             if let Some(gallery) = gallery::render(ws, listing, main_w, stage_room, cx) {
@@ -89,7 +103,9 @@ pub fn render(
             }
             main.child(about(listing, cx))
         }
+        Tab::Contents => main.child(contents::render(ws, listing, main_w, cx)),
         Tab::Skills => main.child(skills(ws, listing, cx)),
+        Tab::Connectors => main.child(connectors::render(listing, cx)),
     };
     let side = side(ws, listing, cx).w(px(if wide { SIDE } else { main_w }));
     if wide {
@@ -116,46 +132,70 @@ fn stage_room(window_height: f32, header_side_by_side: bool) -> f32 {
     body - size::GAP_XL - header - size::GAP_XL - size::GAP_S - CAPTION - MARGIN
 }
 
-/// "Overview | Skills"; drawn only when the listing has skills to show.
-fn tabs(open: Tab, cx: &mut Context<Workspace>) -> Div {
-    let tab = |id: &'static str, label: &'static str, this: Tab, cx: &mut Context<Workspace>| {
-        controls::text_choice(id, label, open == this, cx).on_click(cx.listener(
-            move |ws, _, _, cx| {
-                ws.workshop.tab = this;
-                cx.notify();
-            },
-        ))
-    };
-    div()
-        .flex()
-        .flex_row()
-        .items_center()
-        .gap(px(size::GAP_S))
-        .child(tab("detail-tab-overview", "Overview", Tab::Overview, cx))
-        .child(controls::pipe(cx))
-        .child(tab("detail-tab-skills", "Skills", Tab::Skills, cx))
+/// The tabs with something in them, Overview first.
+fn shown_tabs(listing: &Listing) -> Vec<Tab> {
+    let mut shown = vec![Tab::Overview];
+    if contents::has_files(listing) {
+        shown.push(Tab::Contents);
+    }
+    if matches!(listing.kind, Kind::Pack | Kind::Plugin) && !listing.skills.is_empty() {
+        shown.push(Tab::Skills);
+    }
+    if !listing.connectors.is_empty() {
+        shown.push(Tab::Connectors);
+    }
+    shown
 }
 
-/// The pack's skills, with their switches and descriptions once it is here, by name
-/// before; and the way to its page.
+/// "Overview | Contents | Skills | Connectors", the ones with something in them; Contents asks the
+/// core for the files when it opens, not before, since that may fetch the package.
+fn tabs(listing: &Listing, shown: &[Tab], open: Tab, cx: &mut Context<Workspace>) -> Div {
+    let mut row = div().flex().flex_row().items_center().gap(px(size::GAP_S));
+    for (index, this) in shown.iter().copied().enumerate() {
+        if index > 0 {
+            row = row.child(controls::pipe(cx));
+        }
+        let id = SharedString::from(format!("detail-tab-{}", this.label().to_lowercase()));
+        let listing = listing.clone();
+        row = row.child(
+            controls::text_choice(id, this.label(), open == this, cx).on_click(cx.listener(
+                move |ws, _, _, cx| {
+                    ws.workshop.tab = this;
+                    if this == Tab::Contents {
+                        ws.open_contents(&listing, cx);
+                    }
+                    cx.notify();
+                },
+            )),
+        );
+    }
+    row
+}
+
+/// The skills of a pack or a plugin, with their switches and descriptions once it is
+/// here, by name before; and for a pack the way to its page. A plugin's skills land as
+/// the pack of its name, so the rows are the same.
 fn skills(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     let opened = listing.name.clone();
-    div()
+    let list = div()
         .flex()
         .flex_col()
         .gap(px(size::GAP_M))
-        .child(pack::skill_list(ws, listing, cx))
-        .child(
-            div().flex().child(
-                Button::new("detail-pack-page")
-                    .link()
-                    .label("Open the pack's page")
-                    .on_click(cx.listener(move |ws, _, _, cx| {
-                        ws.workshop.pack = Some(opened.clone());
-                        ws.close_modal(cx);
-                    })),
-            ),
-        )
+        .child(pack::skill_list(ws, listing, cx));
+    if listing.kind != Kind::Pack {
+        return list;
+    }
+    list.child(
+        div().flex().child(
+            Button::new("detail-pack-page")
+                .link()
+                .label("Open the pack's page")
+                .on_click(cx.listener(move |ws, _, _, cx| {
+                    ws.workshop.pack = Some(opened.clone());
+                    ws.close_modal(cx);
+                })),
+        ),
+    )
 }
 
 /// The cover with the name, the byline, the mark and the chips beside it, or under it
@@ -188,7 +228,7 @@ fn header(ws: &Workspace, listing: &Listing, width: f32, cx: &App) -> Div {
             div()
                 .small()
                 .text_color(cx.theme().muted_foreground)
-                .child(byline(listing)),
+                .child(dated_byline(listing)),
         )
         .child(marks(listing, cx));
     if let Some(tags) = hero::tags(listing, cx) {
