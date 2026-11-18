@@ -14,6 +14,7 @@ mod gallery;
 mod grid;
 mod hero;
 mod pack;
+mod placeholder;
 mod shelves;
 pub mod tier;
 

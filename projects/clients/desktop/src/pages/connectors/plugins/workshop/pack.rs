@@ -17,7 +17,7 @@ use gpui_kit::{
     *,
 };
 
-use super::{Grid, actions, capsule, hero, tier};
+use super::{Grid, actions, capsule, covers::Shown, hero, placeholder::Look, tier};
 use crate::{
     ui::{Type, size, widgets},
     workspace::Workspace,
@@ -126,9 +126,8 @@ fn banner(
             );
     }
     let art = capsule::art(
-        listing.and_then(|listing| ws.workshop.covers.get(listing)),
-        name,
-        listing.map_or(Tier::Local, |listing| listing.tier),
+        listing.map_or(Shown::Placeholder(Look::None), |listing| ws.cover(listing)),
+        listing.map_or(Kind::Pack, |listing| listing.kind),
         hero::art_width(grid.width),
         Corners::default(),
         cx,

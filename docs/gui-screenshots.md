@@ -23,7 +23,8 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
 | `fake=plan-limits` | the ChatGPT plan's 5-hour and weekly windows in the limits ring |
 | `fake=store` | fills the Workshop with made-up listings of every tier and kind, packs and a failed source instead of the store's, drawn with the Workshop's real covers and screenshots (`dev/media/`, built in only with the feature) |
-| `workshop`, `workshop=install:NAME\|remove:NAME\|busy:NAME\|failed:NAME\|pack:NAME\|open:NAME`, `workshop=gallery:N\|hero:N\|next:N\|scroll:PX`, `workshop=tier:TIER\|all:TIER`, `workshop=filters:`, `workshop=report` | shows the Workshop; opens its confirmation for a listing, shows a capsule at work or failed, a pack's page, a listing's window and its Nth picture, the Nth featured pick, the Official shelf from its Nth capsule, the page scrolled down, a tier filtered or its shelf whole, the filter menu, or what "Update all" did |
+| `workshop`, `workshop=install:NAME\|remove:NAME\|busy:NAME\|failed:NAME\|coming:NAME\|pack:NAME\|open:NAME`, `workshop=offline:`, `workshop=gallery:N\|hero:N\|next:N\|scroll:PX`, `workshop=tier:TIER\|all:TIER`, `workshop=filters:`, `workshop=report` | shows the Workshop; opens its confirmation for a listing, shows a capsule at work or failed, its cover still coming, the store not read again (covers not here drawn offline), a pack's page, a listing's window and its Nth picture, the Nth featured pick, the Official shelf from its Nth capsule, the page scrolled down, a tier filtered or its shelf whole, the filter menu, or what "Update all" did |
+| `size=WxH` | resizes the window, as a drag of its edge would |
 | `shot=NAME` | saves `$DUSK_SHOT_DIR/NAME.png`, drawn at the window's scale (2x on a Retina screen) |
 | `quit` | ends |
 

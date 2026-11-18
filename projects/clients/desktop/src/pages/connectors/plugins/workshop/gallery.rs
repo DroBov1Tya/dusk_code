@@ -15,7 +15,12 @@ use gpui_kit::{
     *,
 };
 
-use super::{capsule, covers::Cover, grid, hero};
+use super::{
+    capsule,
+    covers::{Cover, Shown},
+    grid, hero,
+    placeholder::Look,
+};
 use crate::{
     modal::Modal,
     ui::{Type, size},
@@ -71,9 +76,8 @@ pub fn render(ws: &Workspace, listing: &Listing, width: f32, cx: &mut Context<Wo
             .h(px(grid::cover_height(width)))
             .child(img(image).size_full().object_fit(ObjectFit::Contain)),
         None => capsule::art(
-            None,
-            &listing.name,
-            listing.tier,
+            Shown::Placeholder(Look::Coming),
+            listing.kind,
             width,
             Corners::default(),
             cx,

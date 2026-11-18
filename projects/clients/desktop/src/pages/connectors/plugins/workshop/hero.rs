@@ -88,9 +88,8 @@ pub fn render(ws: &Workspace, picks: &[&Listing], grid: Grid, cx: &mut Context<W
         .on_click(cx.listener(move |ws, _, window, cx| ws.open_listing(&opened, window, cx)));
     let foot = foot.child(div().flex_1()).child(more);
     let art = capsule::art(
-        ws.workshop.covers.get(listing),
-        &listing.name,
-        listing.tier,
+        ws.cover(listing),
+        listing.kind,
         art_width(grid.width),
         Corners::default(),
         cx,
@@ -315,9 +314,8 @@ fn strip(ws: &Workspace, picks: &[&Listing], index: usize, cx: &mut Context<Work
                 .opacity(if chosen { 1. } else { 0.6 })
                 .hover(|thumb| thumb.opacity(1.))
                 .child(capsule::art(
-                    ws.workshop.covers.get(listing),
-                    &listing.name,
-                    listing.tier,
+                    ws.cover(listing),
+                    listing.kind,
                     THUMB,
                     Corners::default(),
                     cx,

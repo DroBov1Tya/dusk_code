@@ -1,2 +1,2 @@
 Fixed
-Desktop Workshop: a card's cover is rounded inside its border at the card's inner width, nothing is drawn over it, and every card of a row is one height with two lines of text and a footer of the tier mark and one slot (a button or a state).
+Desktop Workshop: a card's cover is rounded inside its border at the card's inner width, nothing is drawn over it, and every card of a row is one height with two lines of text and a footer of the tier mark and one slot (a button or a state). A listing without a cover shows a quiet placeholder drawn in code with its kind's glyph, an empty box while the cover comes, and "Offline" when it could not be fetched while the store could not be read; the pale letter tile is gone.

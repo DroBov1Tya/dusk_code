@@ -4,8 +4,6 @@
 //! Nothing is drawn over the cover, and every card of a row is the same height whatever
 //! its text. A click opens the listing's window.
 
-use std::sync::Arc;
-
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
@@ -17,7 +15,13 @@ use gpui_kit::{
     *,
 };
 
-use super::{actions, grid, tier};
+use super::{
+    actions,
+    covers::Shown,
+    grid,
+    placeholder::{self, Look},
+    tier,
+};
 use crate::{
     ui::{Type, size, widgets},
     workspace::Workspace,
@@ -71,9 +75,8 @@ pub fn render(
     shell(group, width, cx)
         .on_click(cx.listener(move |ws, _, window, cx| ws.open_listing(&opened, window, cx)))
         .child(art(
-            ws.workshop.covers.get(listing),
-            &listing.name,
-            listing.tier,
+            ws.cover(listing),
+            listing.kind,
             inner(width),
             top_corners(),
             cx,
@@ -125,9 +128,8 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
             cx.notify();
         }))
         .child(art(
-            None,
-            &pack.name,
-            Tier::Local,
+            Shown::Placeholder(Look::None),
+            Kind::Pack,
             inner(width),
             top_corners(),
             cx,
@@ -326,42 +328,20 @@ pub fn rounded<E: Styled>(element: E, corners: Corners<Pixels>) -> E {
         .rounded_bl(corners.bottom_left)
 }
 
-/// The cover at `width` and the art's aspect, cropped to fill. The picture carries the
-/// corners itself, since gpui clips a child to its parent's rectangle, not its radius.
-/// Without one, the name's letter on the tier's tint.
-pub fn art(
-    image: Option<Arc<Image>>,
-    name: &str,
-    tier: Tier,
-    width: f32,
-    corners: Corners<Pixels>,
-    cx: &App,
-) -> Div {
-    let height = grid::cover_height(width);
-    let frame = div().flex_none().w(px(width)).h(px(height));
-    match image {
-        Some(image) => frame.child(rounded(
-            img(image).size_full().object_fit(ObjectFit::Cover),
-            corners,
-        )),
-        None => {
-            let letter = name
-                .chars()
-                .find(|c| c.is_alphanumeric())
-                .map(|c| c.to_uppercase().to_string())
-                .unwrap_or_else(|| "?".to_owned());
-            rounded(frame, corners)
-                .flex()
-                .items_center()
-                .justify_center()
-                .bg(tier::color(tier, cx).opacity(0.12))
-                .child(
-                    div()
-                        .display()
-                        .text_color(cx.theme().foreground.opacity(0.8))
-                        .child(letter),
-                )
-        }
+/// The cover at `width` and the art's aspect, cropped to fill, or the placeholder in its
+/// place. The picture carries the corners itself, since gpui clips a child to its
+/// parent's rectangle, not its radius.
+pub fn art(shown: Shown, kind: Kind, width: f32, corners: Corners<Pixels>, cx: &App) -> Div {
+    match shown {
+        Shown::Ready(image) => div()
+            .flex_none()
+            .w(px(width))
+            .h(px(grid::cover_height(width)))
+            .child(rounded(
+                img(image).size_full().object_fit(ObjectFit::Cover),
+                corners,
+            )),
+        Shown::Placeholder(look) => placeholder::render(kind, look, width, corners, cx),
     }
 }
 
