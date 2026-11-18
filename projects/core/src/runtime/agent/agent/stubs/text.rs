@@ -5,7 +5,10 @@
 
 use serde_json::Value;
 
-use crate::state::{CallEnd, Ended};
+use crate::{
+    message,
+    state::{CallEnd, Ended},
+};
 
 /// Characters of what ran, and of the last line, that a stub keeps.
 const CLIP_CHARS: usize = 120;
@@ -135,44 +138,16 @@ fn last_line(content: &str) -> Option<String> {
         .find(|line| !line.is_empty())
 }
 
-/// `text` on one line, cut to `CLIP_CHARS`: control and invisible characters become
-/// spaces, brackets and braces parentheses, double quotes single ones. The stub's own
-/// brackets, braces and quotes are then the only ones it holds, so neither its number
-/// nor its retrieval call can be forged.
+/// `text` made plain and cut to `CLIP_CHARS`. The stub's own brackets, braces and
+/// quotes are then the only ones it holds, so neither its number nor its retrieval call
+/// can be forged.
 fn plain(text: &str) -> String {
-    let mapped: String = text
-        .chars()
-        .map(|c| match c {
-            '"' => '\'',
-            '[' | '{' => '(',
-            ']' | '}' => ')',
-            c if c.is_control() || hidden(c) => ' ',
-            c => c,
-        })
-        .collect();
-    let trimmed = mapped.trim();
-    let mut clipped: String = trimmed.chars().take(CLIP_CHARS).collect();
-    if trimmed.chars().nth(CLIP_CHARS).is_some() {
+    let whole = message::plain::plain(text);
+    let mut clipped: String = whole.chars().take(CLIP_CHARS).collect();
+    if whole.chars().nth(CLIP_CHARS).is_some() {
         clipped.push_str("...");
     }
     clipped
-}
-
-/// Characters that show nothing or reorder what is shown: bidirectional controls, line
-/// and paragraph separators, zero-width marks and the tag block used to smuggle text.
-fn hidden(c: char) -> bool {
-    matches!(
-        c,
-        '\u{00AD}'
-            | '\u{061C}'
-            | '\u{180E}'
-            | '\u{200B}'..='\u{200F}'
-            | '\u{2028}'..='\u{202E}'
-            | '\u{2060}'..='\u{206F}'
-            | '\u{FEFF}'
-            | '\u{FFF9}'..='\u{FFFB}'
-            | '\u{E0000}'..='\u{E007F}'
-    )
 }
 
 #[cfg(test)]
@@ -180,6 +155,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::message::plain::hidden;
 
     fn stored<'a>(tool: &'a str, arguments: &'a Value, content: &'a str) -> Stored<'a> {
         Stored {
