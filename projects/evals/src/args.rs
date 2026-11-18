@@ -18,6 +18,8 @@ pub struct Options {
     pub out: PathBuf,
     /// Keys of the run's config.yml changed for this run, to compare a mechanism on and off.
     pub settings: Vec<Setting>,
+    /// Picks where a task with `kill_after` kills the core, run by run.
+    pub seed: u64,
 }
 
 pub enum Args {
@@ -97,6 +99,13 @@ pub fn parse_args() -> Args {
                 ),
         )
         .arg(
+            Arg::new("seed")
+                .long("seed")
+                .default_value("1")
+                .value_parser(value_parser!(u64))
+                .help("Picks the kill points of tasks with kill_after; the same seed, the same points"),
+        )
+        .arg(
             Arg::new("selfcheck")
                 .long("selfcheck")
                 .action(ArgAction::SetTrue)
@@ -148,5 +157,6 @@ pub fn parse_args() -> Args {
             .get_many::<Setting>("set")
             .map(|settings| settings.cloned().collect())
             .unwrap_or_default(),
+        seed: matches.get_one::<u64>("seed").copied().unwrap_or(1),
     })
 }

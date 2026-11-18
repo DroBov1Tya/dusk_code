@@ -6,8 +6,8 @@ use std::{collections::BTreeMap, time::Instant};
 use dusk_protocol::{
     model::ModelEvent,
     thread::{
-        AgentState, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task,
-        ThreadEvent, ThreadTokens, Tool, ToolState, clip, note, retry_row,
+        AgentState, Block, DETAIL_KEYS, JobResult, Message, MessageRole, Note, Retry, RetryRow,
+        Task, ThreadEvent, ThreadTokens, Tool, ToolState, clip, note, retry_row,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, Question},
 };
@@ -31,6 +31,8 @@ pub enum Item {
         reasoning: String,
     },
     Tool(Tool),
+    /// What a `show` call put in the chat, in place of that call's step.
+    Block(Block),
     /// A picture a tool or a message carries, by its ID in the pictures folder.
     Image(Picture),
     /// A sound a tool carries, to play in the chat.
@@ -228,6 +230,9 @@ pub struct Transcript {
     pub changed_from: Option<usize>,
     pub answered: BTreeMap<usize, Vec<Answered>>,
     asked: Asked,
+    /// The blocks `show` calls ask for, by call, until their results say whether they
+    /// were shown.
+    blocks: BTreeMap<String, Block>,
     pub activity_boundaries: Vec<usize>,
     /// When each boundary was drawn, in Unix milliseconds, beside `activity_boundaries`.
     pub boundary_times: Vec<i64>,
@@ -349,13 +354,13 @@ impl Transcript {
                     });
                 }
                 for call in &message.tool_calls {
-                    self.asked.call(call);
-                    self.items.push(Item::Tool(tool(call, ToolState::Done)));
+                    self.start_tool(call, ToolState::Done);
                 }
             }
             MessageRole::Tool => {
-                if let Some(tool) =
-                    self.tool_mut(message.tool_call_id.as_deref().unwrap_or_default())
+                let call_id = message.tool_call_id.as_deref().unwrap_or_default();
+                if !self.show_block(call_id, &message.content)
+                    && let Some(tool) = self.tool_mut(call_id)
                 {
                     tool.output = clip(&message.content);
                 }
@@ -454,12 +459,11 @@ impl Transcript {
             ThreadEvent::Model(ModelEvent::Text(text)) => self.assistant().0.push_str(&text),
             ThreadEvent::Model(ModelEvent::Reasoning(text)) => self.assistant().1.push_str(&text),
             ThreadEvent::Model(_) => {}
-            ThreadEvent::ToolStarted(call) => {
-                self.asked.call(&call);
-                self.items.push(Item::Tool(tool(&call, ToolState::Running)));
-            }
+            ThreadEvent::ToolStarted(call) => self.start_tool(&call, ToolState::Running),
             ThreadEvent::ToolFinished { call_id, result } => {
-                if let Some(tool) = self.tool_mut(&call_id) {
+                if !self.show_block(&call_id, &result.content)
+                    && let Some(tool) = self.tool_mut(&call_id)
+                {
                     tool.finish(&result);
                 }
                 self.add_pictures(&call_id, &result.artifacts);
@@ -548,6 +552,7 @@ impl Transcript {
                     self.items.truncate(at);
                     self.answered.retain(|index, _| *index < at);
                     self.asked = Asked::default();
+                    self.blocks.clear();
                     let kept = self
                         .activity_boundaries
                         .iter()
@@ -607,6 +612,40 @@ impl Transcript {
             ExchangeKind::Denied
         };
         self.exchange(ARBITER, asker, kind, &format!("{what}: {reason}"));
+    }
+
+    /// A step that starts, live or read from history; a `show` call also keeps the block it
+    /// asks for, which its result may put in the step's place.
+    fn start_tool(&mut self, call: &dusk_protocol::model::ToolCall, state: ToolState) {
+        self.asked.call(call);
+        if let Some(block) = Block::asked(call) {
+            self.blocks.insert(call.id.clone(), block);
+        }
+        self.items.push(Item::Tool(tool(call, state)));
+    }
+
+    /// Puts the block of a finished `show` call in place of its step, when `result` says
+    /// it was shown; a refused call stays a step with its error. Whether it did.
+    fn show_block(&mut self, call_id: &str, result: &str) -> bool {
+        let Some(block) = self
+            .blocks
+            .remove(call_id)
+            .filter(|block| block.shown_by(result))
+        else {
+            return false;
+        };
+        let step = self
+            .items
+            .iter_mut()
+            .rev()
+            .find(|item| matches!(item, Item::Tool(tool) if tool.call_id == call_id));
+        match step {
+            Some(step) => {
+                *step = Item::Block(block);
+                true
+            }
+            None => false,
+        }
     }
 
     fn tool_mut(&mut self, call_id: &str) -> Option<&mut Tool> {

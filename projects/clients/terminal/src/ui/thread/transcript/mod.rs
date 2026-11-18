@@ -3,6 +3,7 @@
 
 mod blocks;
 mod lines;
+mod shown;
 
 pub use lines::thread_lines;
 use lines::{Placed, append_entry};
@@ -416,3 +417,6 @@ impl TranscriptView<'_> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests;

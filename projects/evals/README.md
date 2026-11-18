@@ -36,7 +36,8 @@ not a sandbox: `run_command` can reach anything you can.
 A task is a folder in `tasks/`: `task.md` is the request, `fixture/` the project, `check.sh`
 decides from the working folder, with the agent's last message in the file `$EVAL_ANSWER`,
 `solution.sh` is a known way to pass, and `answer.txt` the message it is checked with.
-`setup.sh`, if any, adds to the project. The agent never sees the check.
+`setup.sh`, if any, adds to the project. The agent never sees the check. `run.yml`, if
+any, says how the runner runs the task; its one key is `kill_after`.
 
 ## What a report holds
 
@@ -70,6 +71,38 @@ cargo run -q -p dusk_evals -- --compare projects/evals/results/baseline.json pro
 The `hard-` tasks hide what the request does not spell out: randomized checks against a
 reference, concurrency under stress, encoded attacks, a specification with amendments, a
 large log. `--only hard-` runs them alone.
+
+## Team tasks
+
+The `team-` tasks have parts for a lead and its members (`docs/plan-and-teams.md`, section
+13). Each part has its own files and a check command named in `task.md`, which a plan can
+take as the part's gate; `check.sh` runs those and hidden cases of each part. They run as
+well for one agent, the baseline they are compared with: `--mode ORCHESTRATOR` for a team,
+the default mode for one agent.
+
+| Task | Design | What it shows |
+|---|---|---|
+| `team-fan-out` | Q1 | four modules of `textkit`, each with its tests, no file shared |
+| `team-chain` | Q2 | schema, then API, then command line of an SQLite stock book; each needs the one before |
+| `team-chain-kill` | Q5 | `team-chain`, linked, with the core killed once a run and started again |
+| `team-small` | Q7 | three short tasks (`add-cli-flag`, `fix-pagination`, `thread-a-setting`) in one project, to see what a plan costs when none is needed |
+
+`kill_after: 2..=40` in a task's `run.yml` kills the core once in each run, after that many
+tool events (a call's start or end, of the chat or any agent), picked from the range by
+`--seed` (default 1), the task and the run's number: the same seed gives the same points,
+and `--runs 20` gives twenty points over the range. `kill_after: 12` is one point. The core
+runs on a tokio runtime of its own; a kill drops that runtime, so every task of the core
+stops where it stands and no shutdown code runs, then a new core starts on the same folders
+and the runner opens the thread again, as a person would after a crash. Unlike a killed
+process, what the core held is dropped, so a command `run_command` started is killed with
+it (`kill_on_drop`) where a crash would leave it running; blocking work still running after
+10 s outlives the kill.
+The report has `killed_after` per run; a run that ended before its point has none.
+
+```bash
+cargo run -q -p dusk_evals -- --only team- --mode ORCHESTRATOR --runs 4 --out projects/evals/results/team.json
+cargo run -q -p dusk_evals -- --only team-chain-kill --runs 20 --seed 1 --out projects/evals/results/kill.json
+```
 
 ## What is known so far
 

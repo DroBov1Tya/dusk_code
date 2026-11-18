@@ -496,7 +496,7 @@ fn a_plugin_no_source_installed_is_local() {
 
 #[test]
 fn a_cover_is_known_by_its_first_bytes() {
-    use super::cover::sniff;
+    use super::picture::sniff;
     assert_eq!(sniff(b"\x89PNG\r\n\x1a\nrest"), Some("image/png"));
     assert_eq!(sniff(b"RIFF\x10\0\0\0WEBPVP8 "), Some("image/webp"));
     assert_eq!(sniff(b"RIFF\x10\0\0\0WAVEfmt "), None);

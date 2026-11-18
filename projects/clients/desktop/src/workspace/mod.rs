@@ -154,6 +154,8 @@ pub struct Workspace {
     pub center: Center,
     pub shelf: Shelf,
     pub shelf_search: Entity<InputState>,
+    /// Where the connectors page is scrolled to; a shelf shown whole starts at its top.
+    pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
     pub modal: Option<Modal>,
@@ -194,7 +196,8 @@ pub struct Workspace {
     /// has the keyboard.
     pub focus: FocusHandle,
     pub agents_trigger_focus: FocusHandle,
-    pub agents_modal_focus: FocusHandle,
+    /// The keys of a window that takes them: the subagents' list, a listing's gallery.
+    pub modal_focus: FocusHandle,
     pub file: crate::pages::file::FileView,
     /// MCP servers whose restart button was just pressed.
     pub mcp_restarting: HashSet<String>,

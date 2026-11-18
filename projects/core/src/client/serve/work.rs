@@ -1,7 +1,7 @@
 //! Requests about a thread's jobs, sources, plan and changes.
 
 use super::Server;
-use anyhow::Result;
+use anyhow::{Result, bail};
 use dusk_protocol::client::{Response, WorkRequest};
 
 impl Server {
@@ -48,6 +48,13 @@ impl Server {
             } => Response::Text(runtime.add_picture(&thread_id, &name, &bytes).await?),
             WorkRequest::SourcePicture { thread_id, name } => {
                 Response::Picture(runtime.source_picture(&thread_id, &name).await?)
+            }
+            WorkRequest::PlanTasks { .. }
+            | WorkRequest::Team { .. }
+            | WorkRequest::ConfirmTask { .. }
+            | WorkRequest::StopTeam { .. }
+            | WorkRequest::SetTeamBudget { .. } => {
+                bail!("plans and teams are not served yet (task P1 of docs/plan-and-teams.md)")
             }
         })
     }

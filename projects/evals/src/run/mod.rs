@@ -2,6 +2,11 @@
 //! own. The config folder is a temporary one, so the user's stays as it is: only config.yml
 //! is copied in, for the provider, and the rules are the ones in this repository.
 
+mod core;
+mod kill;
+
+pub use kill::KillAfter;
+
 use std::{
     collections::{BTreeSet, HashSet},
     fs,
@@ -11,18 +16,16 @@ use std::{
 };
 
 use anyhow::{Context, Result};
-use dusk_core::{
-    app::{self, Paths},
-    client::Client,
-};
+use dusk_core::{app::Paths, client::Client};
 use dusk_protocol::{
-    client::{Event, Hello, PROTOCOL_VERSION},
+    client::Event,
     model::{ModelEvent, Usage},
     thread::{RepeatRung, ThreadEvent},
 };
 use regex::Regex;
 use tokio::sync::mpsc::UnboundedReceiver;
 
+use self::core::Core;
 use crate::{
     args::Options,
     overrides::{self, Setting},
@@ -31,7 +34,6 @@ use crate::{
     task::{self, Task},
 };
 
-const SOURCE: &str = "evals";
 /// How long a timed-out run may take to stop its turn and report what it spent.
 const SETTLE: Duration = Duration::from_secs(20);
 static DELETES: LazyLock<Regex> =
@@ -54,29 +56,21 @@ pub async fn all(options: &Options) -> Result<()> {
         fs::copy(file, paths.main_prompt()).context("cannot read the prompt")?;
         prompt = file.display().to_string();
     }
-    let hello = Hello {
-        protocol: PROTOCOL_VERSION,
-        client: SOURCE.to_owned(),
-    };
     // The core refuses a key it does not know, so a misspelt --set ends the run here.
-    let mut client = app::start(paths, None, hello).await.with_context(|| {
-        if options.settings.is_empty() {
-            "cannot start the core"
-        } else {
-            "cannot start the core with the --set keys"
-        }
-    })?;
+    let mut core = Core::start(paths, options.mode.clone())
+        .await
+        .with_context(|| {
+            if options.settings.is_empty() {
+                "cannot start the core"
+            } else {
+                "cannot start the core with the --set keys"
+            }
+        })?;
     if let Some(mode) = &options.mode {
-        client.settings().mode(mode).await?;
         prompt = format!("{prompt}, mode {mode}");
     }
-    // The core looks for a model in the background when the config names none.
-    while client.status.borrow_and_update().discovering_model {
-        if client.status.changed().await.is_err() {
-            break;
-        }
-    }
-    let model = client
+    let model = core
+        .client
         .status
         .borrow()
         .model
@@ -87,7 +81,11 @@ pub async fn all(options: &Options) -> Result<()> {
         for run in 1..=options.runs {
             eprintln!("{} run {run}/{}", task.name, options.runs);
             let timeout = Duration::from_secs(options.timeout_seconds);
-            let outcome = one(&mut client, task, &home.0, timeout).await;
+            let kill_at = task
+                .kill_after
+                .as_ref()
+                .map(|range| range.pick(options.seed, &task.name, run));
+            let outcome = one(&mut core, task, &home.0, timeout, kill_at).await;
             outcomes.push(outcome.unwrap_or_else(|error| Outcome {
                 task: task.name.clone(),
                 problem: Some(format!("{error:#}")),
@@ -95,10 +93,11 @@ pub async fn all(options: &Options) -> Result<()> {
             }));
         }
     }
-    client.shutdown().await;
+    core.stop().await;
     let report = Report {
         model,
         prompt,
+        seed: options.seed,
         settings: overrides::recorded(&options.settings),
         outcomes,
     };
@@ -135,6 +134,10 @@ struct Watch {
     /// Token counts the chat sent; one comes after each of its turns.
     reports: u64,
     tool_calls: u64,
+    /// Starts and ends of tool calls: the clock of `kill_after`.
+    tool_events: u64,
+    /// The tool event after which the core was killed and started again.
+    killed_after: Option<u64>,
     tool_errors: u64,
     retries: u64,
     reruns: u64,
@@ -165,6 +168,7 @@ impl Watch {
             }
             ThreadEvent::ToolStarted(call) => {
                 self.tool_calls += 1;
+                self.tool_events += 1;
                 // A `result` is a retrieval of a stub; null is a plain read.
                 let result = call
                     .arguments
@@ -188,6 +192,7 @@ impl Watch {
                 }
             }
             ThreadEvent::ToolFinished { result, .. } => {
+                self.tool_events += 1;
                 self.tool_errors += u64::from(result.is_error);
             }
             ThreadEvent::Retrying { .. } => self.retries += 1,
@@ -243,8 +248,20 @@ impl Watch {
         }
     }
 
+    /// The chat is idle with no agent at work, after its turn ended. After a restart an
+    /// idle chat is the end too: the turn the kill cut off went on and ended, or the core
+    /// judged that it could not go on.
     fn done(&self) -> bool {
-        self.problem.is_some() || self.turns > 0 && self.idle && self.agents_at_work.is_empty()
+        let ended = self.turns > 0 || self.killed_after.is_some();
+        self.problem.is_some() || ended && self.idle && self.agents_at_work.is_empty()
+    }
+
+    /// The old process's agents and text are gone with it; the new one tells its own.
+    fn restarted(&mut self) {
+        self.killed_after = Some(self.tool_events);
+        self.idle = false;
+        self.agents_at_work.clear();
+        self.answer.clear();
     }
 }
 
@@ -287,17 +304,53 @@ async fn settle(client: &mut Client, thread_id: &str, watch: &mut Watch) {
     }
 }
 
-async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -> Result<Outcome> {
+/// Follows the run to its end. At the kill point, kills the core, starts it again and
+/// opens the thread again, as a person would after a crash.
+async fn to_the_end(
+    core: &mut Core,
+    thread_id: &str,
+    project: &Path,
+    watch: &mut Watch,
+    kill_at: Option<u64>,
+) -> Result<()> {
+    if let Some(point) = kill_at {
+        let reached = |watch: &Watch| watch.tool_events >= point;
+        let enough = |watch: &Watch| watch.done() || reached(watch);
+        follow(&mut core.client.events, thread_id, watch, enough).await;
+        if watch.done() || !reached(watch) {
+            eprintln!("the run ended before tool event {point}; the core was not killed");
+        } else {
+            eprintln!("killing the core after tool event {}", watch.tool_events);
+            core.restart().await?;
+            watch.restarted();
+            core.client
+                .threads()
+                .resume(thread_id, project.to_owned())
+                .await
+                .context("cannot open the thread after the restart")?;
+        }
+    }
+    follow(&mut core.client.events, thread_id, watch, Watch::done).await;
+    Ok(())
+}
+
+async fn one(
+    core: &mut Core,
+    task: &Task,
+    home: &Path,
+    timeout: Duration,
+    kill_at: Option<u64>,
+) -> Result<Outcome> {
     let project = home.join(format!("project-{}", uuid::Uuid::now_v7()));
     sandbox::prepare(task, &project)?;
     let started = Instant::now();
-    let thread_id = client.threads().start(project.clone()).await?;
-    client
+    let thread_id = core.client.threads().start(project.clone()).await?;
+    core.client
         .threads()
         .send(&thread_id, task.prompt.clone(), false)
         .await?;
     let mut watch = Watch::default();
-    let followed = follow(&mut client.events, &thread_id, &mut watch, Watch::done);
+    let followed = to_the_end(core, &thread_id, &project, &mut watch, kill_at);
     let waited = tokio::time::timeout(timeout, followed).await;
     let seconds = started.elapsed().as_secs();
     // The state the run stopped in, before stopping the turn changes it.
@@ -308,13 +361,14 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         watch.agents_at_work.len()
     );
     let problem = match waited {
-        Ok(()) => watch.problem.take(),
+        Ok(Ok(())) => watch.problem.take(),
+        Ok(Err(error)) => Some(format!("{error:#}")),
         Err(_) => {
-            settle(client, &thread_id, &mut watch).await;
+            settle(&mut core.client, &thread_id, &mut watch).await;
             Some(TIMED_OUT.to_owned())
         }
     };
-    client.threads().close(&thread_id).await?;
+    core.client.threads().close(&thread_id).await?;
     // Timed-out work is judged as it stands: it counts as a failure whatever it holds.
     let (passed, why) = match problem {
         None => sandbox::check(task, &project, &watch.answer, home)?,
@@ -356,6 +410,7 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         compactions: watch.compactions,
         subagents: watch.subagents,
         questions: watch.questions,
+        killed_after: watch.killed_after,
     })
 }
 
@@ -433,6 +488,22 @@ mod tests {
         );
         assert_eq!(counts, (2, 5, 14_000, 2, 1));
         assert_eq!(watch.tool_calls, 4);
+    }
+
+    /// The old process's agents never say they stopped, and an idle chat after a restart
+    /// is an end even when no turn ended before the kill.
+    #[test]
+    fn a_restart_forgets_the_old_agents_and_waits_for_the_chat_to_settle() {
+        let mut watch = Watch::default();
+        watch.agents_at_work.insert("child".into());
+        watch.see(ThreadEvent::Idle, None);
+        assert!(!watch.done(), "no turn ended and no restart");
+        watch.tool_events = 7;
+        watch.restarted();
+        assert_eq!(watch.killed_after, Some(7));
+        assert!(watch.agents_at_work.is_empty() && !watch.done());
+        watch.see(ThreadEvent::Idle, None);
+        assert!(watch.done());
     }
 
     /// A run never waits hours for a provider, unless `--set` asks it to.

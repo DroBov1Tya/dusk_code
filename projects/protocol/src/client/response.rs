@@ -11,7 +11,7 @@ use crate::project::{
     Schedule,
 };
 use crate::system::SystemReport;
-use crate::thread::{Found, JobInfo, LocalUnsent, Message, Task, Thread};
+use crate::thread::{Found, JobInfo, LocalUnsent, Message, PlanPage, Task, Team, Thread};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
     Done,
@@ -28,6 +28,10 @@ pub enum Response {
     /// Messages of any chat that contain the searched text.
     Found(Vec<Found>),
     Tasks(Vec<Task>),
+    /// A page of a root thread's plan.
+    PlanPage(PlanPage),
+    /// The team running a root thread's plan, or none before one ran.
+    Team(Option<Team>),
     LocalUnsent(Vec<LocalUnsent>),
     Jobs(Vec<JobInfo>),
     Node(NodeText),
@@ -68,8 +72,9 @@ pub enum Response {
     Answer(Box<Answer>),
     Store(crate::plugin::StoreList),
     StoreUpdates(crate::plugin::UpdateReport),
-    /// A store cover, checked against its list: its bytes in base64, and their type.
-    Cover {
+    /// A store picture (a cover or a screenshot), checked against its list: its bytes in
+    /// base64, and their type.
+    Media {
         base64: String,
         mime: String,
     },

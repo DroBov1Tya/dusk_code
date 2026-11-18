@@ -13,9 +13,16 @@ pub fn words(spans: Vec<Span<'static>>, width: usize, indent: usize) -> Vec<Vec<
     let mut line = Vec::new();
     let mut used = 0;
     for span in spans {
-        for piece in split_words(&span.content) {
+        // A span on a background of its own is a label: it moves to the next line whole,
+        // and its spaces are part of it.
+        let label = span.style.bg.is_some();
+        let pieces = match label {
+            true => vec![span.content.as_ref()],
+            false => split_words(&span.content),
+        };
+        for piece in pieces {
             let piece_width = piece.width();
-            let is_space = piece.starts_with(char::is_whitespace);
+            let is_space = !label && piece.starts_with(char::is_whitespace);
             if is_space && (used <= indent && !lines.is_empty() || used == 0) {
                 continue;
             }

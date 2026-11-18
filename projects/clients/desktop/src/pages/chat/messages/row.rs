@@ -1,5 +1,5 @@
-//! One row of the list: the user's words, an answer, a command, a picture, a notice;
-//! and going back to a sent message.
+//! One row of the list: the user's words, an answer, a command, a block, a picture, a
+//! notice, the working row; and going back to a sent message.
 
 use gpui_kit::{
     component::{
@@ -13,6 +13,7 @@ use gpui_kit::{
 use super::{
     Row,
     activity::{agent_report, notice, turn_activity},
+    block,
     command::command_card,
     cost::TurnCost,
     picture::picture,
@@ -20,7 +21,7 @@ use super::{
 };
 
 use crate::{
-    pages::chat::{links, transcript::Item, working},
+    pages::chat::{links, transcript::Item},
     ui::{Type, clipboard},
     workspace::Workspace,
 };
@@ -43,38 +44,7 @@ impl Workspace {
         let (muted, accent, danger) = (theme.muted_foreground, theme.primary, theme.danger);
         // Space between rows lives in the rows, as the list has no gap of its own.
         let content = match row {
-            Row::Working => div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .gap_3()
-                .meta()
-                .text_color(muted)
-                .child(working::render(
-                    SharedString::from(format!("working-{shown}")),
-                    accent,
-                    theme.foreground,
-                ))
-                .child(
-                    match (&chat.retry, chat.span(chat.activity_boundaries.len())) {
-                        (Some((retry, arrived)), _) => div()
-                            .min_w_0()
-                            .truncate()
-                            .child(retry.line(
-                                u64::try_from(arrived.elapsed().as_millis()).unwrap_or(u64::MAX),
-                            ))
-                            .into_any_element(),
-                        (None, Some((began, None))) => format!(
-                            "Working \u{00B7} {}",
-                            crate::pages::chat::timing::duration(
-                                dusk_protocol::system::now_ms() - began
-                            )
-                        )
-                        .into_any_element(),
-                        _ => "Working".into_any_element(),
-                    },
-                )
-                .into_any_element(),
+            Row::Working => super::working_row::render(&shown, chat, cx),
             Row::Activity {
                 start,
                 end,
@@ -247,6 +217,7 @@ impl Workspace {
                         }
                         answer.into_any_element()
                     }
+                    Item::Block(shown_block) => block::render(self, &shown, at, shown_block, cx),
                     Item::Image(image) => picture(&self.status.artifacts_dir, image, cx),
                     Item::Audio(clip) => crate::pages::chat::audio::card(self, &key, clip, cx),
                     Item::Notice(text) => {

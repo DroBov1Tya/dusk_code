@@ -1,5 +1,5 @@
 //! What happens in a thread: the events it tells a client, its messages, turns, tasks,
-//! token counts, goal and context, the blocks it shows, and the steps of the transcript a
+//! the team that runs its plan, token counts, goal and context, the blocks it shows, and the steps of the transcript a
 //! client folds them into.
 
 mod block;
@@ -11,6 +11,7 @@ mod message;
 mod name;
 mod summary;
 mod task;
+mod team;
 mod tokens;
 mod transcript;
 mod turn;
@@ -31,7 +32,13 @@ pub use message::{
 };
 pub use name::{ARBITER_THREAD, agent_name, fnv1a, name_seed};
 pub use summary::{Found, Thread};
-pub use task::{Task, TaskItem};
+pub use task::{
+    PLAN_PAGE_DONE, PlanCounts, PlanPage, Task, TaskItem, TaskOwner, TaskStatus, WaitsOn,
+};
+pub use team::{
+    MAX_TEAM_AT_ONCE, MAX_TEAM_MEMBERS, MAX_TEAM_MINUTES, MAX_TEAM_STEPS, MAX_TEAM_TOKENS, Team,
+    TeamBudget, TeamEnd, TeamMember, TeamStatus, TeamUsed,
+};
 pub use tokens::{AUTO_COMPACT_PERCENT, ThreadTokens, TokenCounts};
 pub use transcript::{
     AgentState, DETAIL_KEYS, MAX_MARK_CHARS, Note, Retry, RetryRow, SHOWN_CHARS, Span, Tone, Tool,

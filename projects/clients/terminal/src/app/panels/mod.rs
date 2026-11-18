@@ -15,4 +15,4 @@ pub use settings::{
     AgentRow, FileButton, FileEditor, HitTarget, McpRow, SettingCategory, SettingsHit,
     SettingsView, SwitchKind,
 };
-pub use workshop::{Choice, Confirm, Step, Workshop, choices};
+pub use workshop::{Choice, Confirm, PackPage, Row, Step, Workshop, choices, order_word};

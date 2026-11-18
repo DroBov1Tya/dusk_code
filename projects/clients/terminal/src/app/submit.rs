@@ -2,9 +2,7 @@
 
 use dusk_protocol::client::{Command, parse};
 
-use super::{
-    Action, Activity, App, Connection, Panel, TabMove, Tone, Workshop, schedule::ScheduleAction,
-};
+use super::{Action, Activity, App, Connection, Panel, TabMove, Tone, schedule::ScheduleAction};
 
 impl App {
     /// Takes the typed text for sending; commands show as notices, messages as the user's.
@@ -31,7 +29,7 @@ impl App {
             "/diff" => return Action::Diff,
             "/me" => return Action::OpenMe,
             "/plugins store" => {
-                self.panel = Some(Panel::Workshop(Workshop::default()));
+                self.panel = Some(Panel::Workshop(Box::default()));
                 return Action::LoadStore;
             }
             "/plugins" => {

@@ -6,6 +6,9 @@
 //! the agents' figures, code, the context gauge and the idle screen. Main text keeps
 //! the terminal's own colour, so light and dark terminals both read well.
 
+use std::sync::OnceLock;
+
+use dusk_protocol::thread::Tone;
 use ratatui::style::{Color, Modifier, Style};
 
 /// The rail and status bar, the deepest surface.
@@ -31,6 +34,10 @@ pub const DUSK: Color = Color::Rgb(128, 108, 204);
 /// Done and failed, toned to sit with the ink.
 pub const POSITIVE: Color = Color::Rgb(76, 195, 138);
 pub const NEGATIVE: Color = Color::Rgb(229, 72, 77);
+/// The Workshop's Verified tier, a sky blue beside the amber of Official.
+pub const INFO: Color = Color::Rgb(110, 168, 236);
+/// A label that warns: the Dark palette's yellow, lighter than the accent's amber.
+pub const WARNING: Color = Color::Rgb(224, 176, 80);
 
 // Glyphs, written as escapes to keep the sources ASCII.
 pub const SUN_GLYPH: &str = "\u{25D2}";
@@ -91,6 +98,26 @@ pub fn thought() -> Style {
 
 pub fn bold(color: Color) -> Style {
     fg(color).add_modifier(Modifier::BOLD)
+}
+
+/// A label in the agent's text, on the raised surface in the colour of its tone. The
+/// model names only the tone; the colours are the theme's.
+pub fn tone(tone: Tone) -> Style {
+    let on = Style::new().bg(RAISED);
+    match tone {
+        Tone::Neutral => on.fg(TEXT_SOFT),
+        Tone::Info => on.fg(DUSK),
+        Tone::Success => on.fg(POSITIVE),
+        Tone::Warning => on.fg(WARNING),
+        Tone::Danger => on.fg(NEGATIVE),
+        Tone::Accent => on.fg(ACCENT).add_modifier(Modifier::BOLD),
+    }
+}
+
+/// `NO_COLOR` is set and not empty, as no-color.org has it; read once.
+pub fn no_color() -> bool {
+    static NO_COLOR: OnceLock<bool> = OnceLock::new();
+    *NO_COLOR.get_or_init(|| std::env::var_os("NO_COLOR").is_some_and(|value| !value.is_empty()))
 }
 
 /// How full something is, from quiet ink through the amber to red at the end: `at`

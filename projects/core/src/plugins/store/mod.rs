@@ -10,7 +10,7 @@
 //! - `index` — one list and its signature;
 //! - `listing` — what a client is shown, and in which order;
 //! - `fetch` — files over https to public addresses, capped and checked;
-//! - `cover` — the pictures of the cards;
+//! - `picture` — the covers and screenshots of the cards;
 //! - `record` — what the store did here;
 //! - `unpack` — a package into a folder;
 //! - `content`, `pack` — skills, packs and agents, which are plain files.
@@ -18,11 +18,13 @@
 mod content;
 #[cfg(test)]
 mod content_tests;
-mod cover;
 mod fetch;
 pub mod index;
 mod listing;
 mod pack;
+mod picture;
+#[cfg(test)]
+mod picture_tests;
 mod record;
 mod source;
 #[cfg(test)]
@@ -46,8 +48,8 @@ use index::Entry;
 use record::{Installed, Record};
 use source::Fetched;
 
-pub use cover::get as cover;
 pub use pack::{FILE as PACK_FILE, Pack};
+pub use picture::{cover, screenshot};
 
 /// Where the store keeps a package while it is checked, under the plugins folder; the
 /// leading dot keeps it out of the plugins found.
@@ -81,7 +83,12 @@ pub async fn list(
     listing::mark_clashes(&mut listings);
     listings.retain(|listing| category.is_none_or(|category| listing.category == category));
     listing::sort(&mut listings, order);
-    Ok(StoreList { listings, failed })
+    let picks = listing::picks(&listings);
+    Ok(StoreList {
+        listings,
+        failed,
+        picks,
+    })
 }
 
 /// What the user agreed to install, as they were shown it.
