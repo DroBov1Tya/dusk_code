@@ -1,7 +1,7 @@
 //! The transcript: the items of a chat, with runs of tool steps folded into one line.
 
 use super::data::{ChatData, Entry, Item, Shown};
-use super::{markdown::Markdown, voice};
+use super::{markdown::Markdown, shown::ShownBlock, voice};
 use crate::{
     state::{Chat, state},
     ui::{Icon, IconName},
@@ -37,11 +37,12 @@ impl Block {
     }
 }
 
-/// What a finished turn folds away: all but its answer, the user's words and errors.
+/// What a finished turn folds away: all but its answer, the user's words, the blocks the
+/// agent showed and errors.
 fn folds(item: &Item) -> bool {
     !matches!(
         item,
-        Item::User(_) | Item::Answered(_) | Item::Job(_) | Item::Error(_)
+        Item::User(_) | Item::Answered(_) | Item::Job(_) | Item::Block(_) | Item::Error(_)
     )
 }
 
@@ -250,6 +251,7 @@ fn item_view(item: Item) -> impl IntoView {
         .into_any(),
         Item::Assistant { text, reasoning } => assistant_view(text, reasoning).into_any(),
         Item::Tool(_) => ().into_any(),
+        Item::Block(block) => view! { <ShownBlock block /> }.into_any(),
         Item::Image(shown) => view! { <ImageCard shown /> }.into_any(),
         Item::Audio(shown) => view! { <AudioCard shown /> }.into_any(),
         Item::Notice(text) => view! { <div class="notice">{text}</div> }.into_any(),
@@ -529,5 +531,35 @@ mod tests {
             })
             .collect();
         assert_eq!(texts, ["first", "second"]);
+    }
+
+    /// A block is what the agent showed, not a step on its way: a finished turn keeps it
+    /// in sight with the answer.
+    #[test]
+    fn a_finished_turn_keeps_its_block_in_sight() {
+        let call = ToolCall {
+            id: "show".into(),
+            name: dusk_protocol::thread::SHOW_TOOL.into(),
+            arguments: serde_json::json!({ "choices": { "labels": ["Yes", "No"] } }),
+        };
+        let shown = dusk_protocol::thread::Block::asked(&call).expect("a block");
+        let mut chat = ChatData::default();
+        chat.apply(ThreadEvent::Rejected {
+            reason: "first".into(),
+        });
+        chat.apply(ThreadEvent::ToolStarted(call));
+        chat.apply(ThreadEvent::ToolFinished {
+            call_id: "show".into(),
+            result: dusk_protocol::tools::ToolResult::text(shown.text()),
+        });
+        chat.apply(ThreadEvent::Model(ModelEvent::Text("Pick one".into())));
+        let blocks = blocks(&chat);
+        assert!(blocks.iter().any(|block| matches!(block, Block::One(entry)
+            if matches!(&entry.item, Item::Block(block) if *block == shown))));
+        assert!(
+            !blocks
+                .iter()
+                .any(|block| matches!(block, Block::Turn { .. }))
+        );
     }
 }
