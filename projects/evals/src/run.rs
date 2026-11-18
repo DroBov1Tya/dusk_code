@@ -143,6 +143,8 @@ struct Watch {
     stub_moves: u64,
     stubbed_results: u64,
     stub_saved_tokens: u64,
+    shaped_results: u64,
+    shape_saved_tokens: u64,
     retrievals: u64,
     compactions: u64,
     /// Every call so far, as the agent's thread ("" for the chat) and name and arguments.
@@ -200,6 +202,10 @@ impl Watch {
                 self.stub_moves += 1;
                 self.stubbed_results += u64::from(results);
                 self.stub_saved_tokens = self.stub_saved_tokens.saturating_add(saved_tokens);
+            }
+            ThreadEvent::ResultShaped { saved_tokens } => {
+                self.shaped_results += 1;
+                self.shape_saved_tokens = self.shape_saved_tokens.saturating_add(saved_tokens);
             }
             ThreadEvent::CompactionFinished(_) => self.compactions += 1,
             ThreadEvent::Question(_) => self.questions += 1,
@@ -341,6 +347,8 @@ async fn one(client: &mut Client, task: &Task, home: &Path, timeout: Duration) -
         stub_moves: watch.stub_moves,
         stubbed_results: watch.stubbed_results,
         stub_saved_tokens: watch.stub_saved_tokens,
+        shaped_results: watch.shaped_results,
+        shape_saved_tokens: watch.shape_saved_tokens,
         retrievals: watch.retrievals,
         compactions: watch.compactions,
         subagents: watch.subagents,
@@ -402,6 +410,10 @@ mod tests {
         };
         watch.see(ThreadEvent::CompactionFinished(compaction), None);
         watch.see(ThreadEvent::CompactionFailed { error: "x".into() }, None);
+        let shaped = |saved_tokens| ThreadEvent::ResultShaped { saved_tokens };
+        watch.see(shaped(300), None);
+        watch.see(from_agent(shaped(200)), None);
+        assert_eq!((watch.shaped_results, watch.shape_saved_tokens), (2, 500));
         let counts = (
             watch.stub_moves,
             watch.stubbed_results,

@@ -58,6 +58,12 @@ pub struct Outcome {
     pub stubbed_results: u64,
     #[serde(default)]
     pub stub_saved_tokens: u64,
+    /// Command results sent shaped (`limits.shape_output`), and the estimated tokens each
+    /// later request carries less, summed over them.
+    #[serde(default)]
+    pub shaped_results: u64,
+    #[serde(default)]
+    pub shape_saved_tokens: u64,
     /// `read_history` calls that read one stored result back.
     #[serde(default)]
     pub retrievals: u64,
@@ -107,6 +113,8 @@ struct Totals {
     stub_moves: f64,
     stubbed_results: f64,
     stub_saved_tokens: f64,
+    shaped_results: f64,
+    shape_saved_tokens: f64,
     retrievals: f64,
     compactions: f64,
 }
@@ -150,6 +158,8 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
         stub_moves: mean(|outcome| outcome.stub_moves),
         stubbed_results: mean(|outcome| outcome.stubbed_results),
         stub_saved_tokens: mean(|outcome| outcome.stub_saved_tokens),
+        shaped_results: mean(|outcome| outcome.shaped_results),
+        shape_saved_tokens: mean(|outcome| outcome.shape_saved_tokens),
         retrievals: mean(|outcome| outcome.retrievals),
         compactions: mean(|outcome| outcome.compactions),
     }
@@ -181,8 +191,8 @@ impl Totals {
             "means over {} runs{left_out}: {:.1} calls, {:.0} tokens (prompt {:.0} cached, \
              {:.0} uncached, {:.0} written to cache; {:.0} out of which {:.0} reasoning), \
              {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} repeat notices, {:.2} repeat stops, \
-             {:.1} stub moves ({:.1} results, {:.0} tokens saved), {:.1} retrievals, \
-             {:.2} compactions, {:.0} s",
+             {:.1} stub moves ({:.1} results, {:.0} tokens saved), {:.1} shaped results \
+             ({:.0} tokens saved), {:.1} retrievals, {:.2} compactions, {:.0} s",
             self.runs - self.timed_out,
             self.calls,
             self.tokens,
@@ -199,6 +209,8 @@ impl Totals {
             self.stub_moves,
             self.stubbed_results,
             self.stub_saved_tokens,
+            self.shaped_results,
+            self.shape_saved_tokens,
             self.retrievals,
             self.compactions,
             self.seconds
@@ -418,7 +430,10 @@ mod tests {
             "{text}"
         );
         assert!(
-            text.contains("0.0 stub moves (0.0 results, 0 tokens saved), 0.0 retrievals"),
+            text.contains(
+                "0.0 stub moves (0.0 results, 0 tokens saved), 0.0 shaped results (0 tokens \
+                 saved), 0.0 retrievals"
+            ),
             "{text}"
         );
         assert!(summary(&after).contains("timeout"));
@@ -438,6 +453,7 @@ mod tests {
         let stubs = (outcome.stub_moves, outcome.stubbed_results);
         assert_eq!(stubs, (0, 0));
         assert_eq!(outcome.stub_saved_tokens, 0);
+        assert_eq!((outcome.shaped_results, outcome.shape_saved_tokens), (0, 0));
         assert_eq!((outcome.retrievals, outcome.compactions), (0, 0));
     }
 
@@ -447,6 +463,8 @@ mod tests {
         moved.stub_moves = 2;
         moved.stubbed_results = 7;
         moved.stub_saved_tokens = 9_000;
+        moved.shaped_results = 3;
+        moved.shape_saved_tokens = 1_200;
         moved.retrievals = 1;
         moved.compactions = 1;
         let still = run("a", true, None, 100);
@@ -455,7 +473,8 @@ mod tests {
         let means = totals(&all).means();
         assert!(
             means.contains(
-                "1.0 stub moves (3.5 results, 4500 tokens saved), 0.5 retrievals, 0.50 compactions"
+                "1.0 stub moves (3.5 results, 4500 tokens saved), 1.5 shaped results (600 \
+                 tokens saved), 0.5 retrievals, 0.50 compactions"
             ),
             "{means}"
         );

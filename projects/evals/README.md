@@ -45,7 +45,8 @@ own count, subagents included: prompt tokens served from the provider's cache, n
 served from it, and written to it; completion tokens and the reasoning among them. Beside
 those: tool calls and errors, provider retries, and re-runs (tool calls with the name and
 arguments of an earlier call of the same agent). For context work: stub moves, the results
-they put away and the tokens they saved (`limits.stub_results`), retrievals (`read_history`
+they put away and the tokens they saved (`limits.stub_results`), command results sent
+shaped and the tokens that saved (`limits.shape_output`), retrievals (`read_history`
 calls that read one stored result back), and finished compactions.
 
 The headline is the pass rate and tokens per solved task: every token of every run,
