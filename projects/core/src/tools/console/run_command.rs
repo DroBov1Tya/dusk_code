@@ -448,7 +448,10 @@ mod tests {
     fn the_description_gains_the_stub_sentence_only_with_the_switch_on() {
         let scope = scope("shell-description");
         let tool = RunCommand::default();
-        let off = tool.description(&tool_context(&scope));
+        let off = tool.description(&tool_context_with(
+            &scope,
+            "limits:\n  stub_results: false\n",
+        ));
         let before = format!(
             "Run a command with sh -c. The first starts in {}; the folder a command ends in \
              carries over to the next, so `cd` once, not in every command. Stdin is empty. \

@@ -176,7 +176,7 @@ async fn without_stable_prefix_each_request_shows_the_tools_as_they_are_now() {
     let cwd = crate::testing::temp_dir("live_prefix_cwd");
     std::fs::create_dir_all(&cwd).unwrap();
     let thread = thread("stable_prefix_off", &cwd).await;
-    let config = config(MEMORIES);
+    let config = config(&format!("limits:\n  stable_prefix: false\n{MEMORIES}"));
     let before = prefix(&thread, &config);
     change_what_the_tools_describe(&thread, &config).await;
     let after = prefix(&thread, &config);

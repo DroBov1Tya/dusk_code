@@ -8,7 +8,7 @@ use super::*;
 use crate::runtime::thread::Conversation;
 use crate::state::{Message, NewStub, TurnAnswer, TurnOutcome};
 
-const TAIL: &str = "limits:\n  compact_tail: true\n  compact_tail_tokens: 2000\n";
+const TAIL: &str = "limits:\n  compact_tail: true\n  compact_tail_tokens: 2000\n  shrink_context: false\n  stub_results: false\n";
 /// What the summary request says when the newest messages stay.
 const TAIL_NOTE: &str = "they stay after your summary word for word";
 
@@ -320,7 +320,7 @@ async fn with_shrink_context_a_tail_summary_too_large_covers_the_older_half() {
     let state = thread_state("tail_half").await;
     long_turn(&state, 8).await;
     let half = load(&state).await.compactable_half().unwrap();
-    let settings = format!("{TAIL}  shrink_context: true\n");
+    let settings = TAIL.replace("shrink_context: false", "shrink_context: true");
     let scripts = vec![too_long(), too_long(), answered("older half")];
     let (provider, _) = run(&state, "tail_half", &settings, None, scripts, &["/compact"]).await;
 
@@ -379,11 +379,11 @@ async fn compact_early_compacts_at_sixty_percent_only_between_turns() {
             assert!(started.unwrap() < turn.unwrap(), "before the turn");
         }
     }
-    // Off unless asked for.
+    // On unless switched off.
     let state = thread_state("tail_early_default").await;
     let config = live_config("tail_early_default_config");
-    assert!(!config.current().limits().compact_early);
-    assert!(!config.current().limits().compact_tail);
+    assert!(config.current().limits().compact_early);
+    assert!(config.current().limits().compact_tail);
     drop(state);
 }
 
@@ -545,15 +545,18 @@ async fn the_new_sections_come_only_with_their_switches() {
     }
 }
 
+const OFF: &str = "limits:\n  compact_tail: false\n  compact_early: false\n  shrink_context: false\n  stub_results: false\n";
+const OFF_SIZED: &str = "limits:\n  compact_tail: false\n  compact_early: false\n  shrink_context: false\n  stub_results: false\n  compact_tail_tokens: 2000\n";
+
 /// With every switch off a compaction asks and stores what it did before them: all of
 /// the thread, the prompt as shipped, the model's text alone.
 #[tokio::test]
 async fn with_every_switch_off_a_compaction_is_as_before() {
     let mut sent = Vec::new();
     for (name, settings) in [
-        ("tail_off", ""),
+        ("tail_off", OFF),
         // The size of a tail means nothing while the tail is off.
-        ("tail_off_sized", "limits:\n  compact_tail_tokens: 2000\n"),
+        ("tail_off_sized", OFF_SIZED),
     ] {
         let state = thread_state(name).await;
         long_turn(&state, 4).await;

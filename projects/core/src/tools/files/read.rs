@@ -345,7 +345,7 @@ mod tests {
         use std::fs;
 
         use super::super::*;
-        use crate::testing::{temp_dir, tool_context, tool_context_with};
+        use crate::testing::{temp_dir, tool_context_with};
         use crate::tools::ToolScope;
 
         const ON: &str = "limits:\n  read_many_files: true\n";
@@ -484,7 +484,10 @@ mod tests {
             let scope = project("many_off", &[("a.txt", b"a"), ("b.txt", b"b")]);
             let paths = json!({ "paths": ["a.txt", "b.txt"] });
             let error = ReadFile
-                .call(paths, tool_context(&scope))
+                .call(
+                    paths,
+                    tool_context_with(&scope, "limits:\n  read_many_files: false\n"),
+                )
                 .await
                 .unwrap_err();
             assert!(format!("{error:#}").contains("not available"));
@@ -506,7 +509,7 @@ mod tests {
         #[test]
         fn the_spec_is_unchanged_while_the_switch_is_off() {
             let scope = project("many_spec", &[]);
-            let off = tool_context(&scope);
+            let off = tool_context_with(&scope, "limits:\n  read_many_files: false\n");
             assert_eq!(ReadFile.offered_parameters(&off), schema::of::<Before>());
             let before = format!(
                 "Read a UTF-8 text file. Returns up to {MAX_LINES} lines or 50 KiB from `offset` \

@@ -190,7 +190,13 @@ async fn errors_that_differ_never_climb() {
 async fn with_the_switch_off_the_turn_runs_as_before() {
     let mut scripts: Vec<_> = (1..=8).map(missing).collect();
     scripts.push(vec![Step::Text("done"), Step::Done]);
-    let (state, provider, events, turn) = run("ladder_off", "effort: high\n", scripts, 0).await;
+    let (state, provider, events, turn) = run(
+        "ladder_off",
+        "effort: high\nlimits:\n  failure_ladder: false\n",
+        scripts,
+        0,
+    )
+    .await;
     assert_eq!(notices(&events), []);
     assert_eq!(turn.status, TurnStatus::Completed);
     assert_eq!(provider.efforts.lock().unwrap().len(), 9);
@@ -203,7 +209,13 @@ async fn with_the_switch_off_the_turn_runs_as_before() {
 async fn the_same_call_notice_is_an_event_with_the_switch_off() {
     let same = || calls("fail:cannot open /tmp/a/config.yml: No such file".into());
     let scripts = vec![same(), same(), same(), vec![Step::Text("done"), Step::Done]];
-    let (state, _, events, _) = run("ladder_same_call", "", scripts, 0).await;
+    let (state, _, events, _) = run(
+        "ladder_same_call",
+        "limits:\n  failure_ladder: false\n",
+        scripts,
+        0,
+    )
+    .await;
     assert_eq!(notices(&events), [(RepeatRung::SameCall, 3)]);
     let results = tool_results(&state).await;
     assert!(

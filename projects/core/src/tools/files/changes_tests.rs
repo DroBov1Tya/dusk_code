@@ -313,10 +313,10 @@ async fn the_tool_filters_by_path_time_and_thread() {
     }
 }
 
-/// Every word of a tool's description is paid on every request, so it is offered only
-/// once the config switches it on; recording runs either way.
+/// Every word of a tool's description is paid on every request, so it is offered unless
+/// the config switches it off; recording runs either way.
 #[tokio::test]
-async fn the_tool_is_off_until_switched_on() {
+async fn the_tool_is_on_until_switched_off() {
     let state = Arc::new(temp_state("ledger-switch").await);
     let scope = Arc::new(scope("ledger-switch"));
     let mut registry = ToolRegistry::default();
@@ -328,12 +328,12 @@ async fn the_tool_is_off_until_switched_on() {
         let specs = registry.specs(&scope, &Arc::new(config.clone()));
         specs.iter().any(|spec| spec.name == "changes")
     };
-    let off = (*tool_context(&scope).config).clone();
-    assert!(off.limits().record_changes);
-    assert!(!offered(&off));
-    let mut on = off.clone();
-    on.set_tool_enabled("changes", true);
+    let on = (*tool_context(&scope).config).clone();
+    assert!(on.limits().record_changes);
     assert!(offered(&on));
+    let mut off = on.clone();
+    off.set_tool_enabled("changes", false);
+    assert!(!offered(&off));
 
     let call = ToolCall {
         id: "c".into(),

@@ -275,7 +275,7 @@ mod tests {
     use super::*;
     use crate::{providers::ToolCall, state::TurnAnswer};
     use crate::{
-        testing::{temp_dir, temp_state, tool_context},
+        testing::{temp_dir, temp_state, tool_context, tool_context_with},
         tools::ToolScope,
     };
 
@@ -439,7 +439,10 @@ mod tests {
         let directory = temp_dir("history_spec_scope");
         std::fs::create_dir_all(&directory).unwrap();
         let scope = ToolScope::new(&directory, &directory).unwrap();
-        let off = tool_context(&scope);
+        let off = tool_context_with(
+            &scope,
+            "limits:\n  stub_results: false\n  shape_output: false\n",
+        );
         let plain = ReadHistory::new(tool.state.clone(), "thread".into());
         assert_eq!(plain.offered_parameters(&off), schema::of::<Before>());
         let before = "Read earlier messages of this conversation, including those replaced by a \
@@ -451,7 +454,16 @@ mod tests {
         assert!(offered["properties"].get("result").is_some());
         assert!(tool.description(&off).starts_with(before));
         assert!(tool.description(&off).len() - before.len() < 120);
-        let error = read(&plain, json!({ "result": 3 })).await.unwrap_err();
+        let error = plain
+            .call(
+                json!({ "result": 3 }),
+                tool_context_with(
+                    &scope,
+                    "limits:\n  stub_results: false\n  shape_output: false\n",
+                ),
+            )
+            .await
+            .unwrap_err();
         assert!(format!("{error:#}").contains("not available"));
         assert!(
             tool.repeatable(&json!({ "result": 3 })) && tool.read_only(&json!({ "result": 3 }))
