@@ -8,6 +8,7 @@ mod markdown;
 mod pictures;
 mod shown;
 mod voice;
+mod working;
 pub use composer::Draft;
 pub use pictures::Picture;
 pub mod data;
@@ -50,7 +51,7 @@ pub fn Chat(id: Option<String>) -> impl IntoView {
                     {menu_id.clone().map(|id| view! { <ChatMenu id /> })}
                 </header>
             </Show>
-            <Transcript chat />
+            <Transcript chat thread=id.clone() />
             <approval::Approvals chat />
             <approval::AskUser chat id=id.clone() />
             <Composer id chat />

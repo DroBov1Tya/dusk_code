@@ -6,7 +6,7 @@ use dusk_protocol::{
     model::{ModelEvent, ToolCall},
     thread::{
         AgentState, Block, JobResult, Message, MessageRole, Note, Retry, RetryRow, Task,
-        ThreadEvent, Tool, ToolState, agent_name, clip, note, retry_row,
+        ThreadEvent, Tool, ToolState, TurnWait, agent_name, clip, note, retry_row,
     },
     tools::{Answered, ApprovalRequest, Asked, Card, CardKind, Question},
 };
@@ -76,6 +76,12 @@ pub struct Agent {
 pub struct ChatData {
     pub items: Vec<Entry>,
     pub working: bool,
+    /// When the running turn began, in Unix milliseconds of the core's clock.
+    pub turn_started: Option<i64>,
+    /// What the running turn waits for, until its next `TurnRunning`.
+    pub waiting: Option<TurnWait>,
+    /// The context is being compacted.
+    pub compacting: bool,
     /// The model call being tried again and when its event came, in Unix milliseconds.
     pub retry: Option<(Retry, i64)>,
     /// The context used and its limit.
@@ -212,8 +218,34 @@ impl ChatData {
         self.pending.push(text);
     }
 
+    /// What the working row says about the running turn.
+    fn track_turn(&mut self, event: &ThreadEvent) {
+        match event {
+            ThreadEvent::TurnStarted(turn)
+            | ThreadEvent::TurnRunning(turn)
+            | ThreadEvent::TurnWaiting(turn) => {
+                self.turn_started = Some(turn.started_at);
+                self.waiting = turn.waiting;
+            }
+            ThreadEvent::TurnFinished(_)
+            | ThreadEvent::TurnFailed(_)
+            | ThreadEvent::Failed(_)
+            | ThreadEvent::Idle => {
+                self.turn_started = None;
+                self.waiting = None;
+                self.compacting = false;
+            }
+            ThreadEvent::CompactionStarted => self.compacting = true,
+            ThreadEvent::CompactionFinished(_) | ThreadEvent::CompactionFailed { .. } => {
+                self.compacting = false;
+            }
+            _ => {}
+        }
+    }
+
     pub fn apply(&mut self, event: ThreadEvent) {
         self.clock = now_ms();
+        self.track_turn(&event);
         match retry_row(&event) {
             Some(RetryRow::Show(retry)) => self.retry = Some((retry, self.clock)),
             Some(RetryRow::Clear) => self.retry = None,
