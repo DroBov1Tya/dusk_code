@@ -22,14 +22,15 @@ normal build. `DUSK_SHOTS` is steps separated by `;`:
 | `file=PATH[:LINE]` | opens a file in the viewer |
 | `fake=welcome`, `welcome=form`, `welcome=address:URL` | the first screen of a clean install, its form, an address typed in it (`key=enter` connects) |
 | `fake=providers` | two saved providers, to look at a row's switch and buttons |
-| `fake=pulls` | four pull requests in Changes, one of each state and checks, the first with its checks unfolded, a chat of the chosen project with their icon, and a chat whose links to two of them are drawn as chips (`hover=` on one shows its card); needs `right=all` before it, since reading the column again replaces the fake |
+| `fake=pulls` | four pull requests in Changes, one of each state and checks (a click on a count opens its window of checks), a chat of the chosen project with their icon, and a chat whose links to two of them are drawn as chips (`hover=` on one shows its card); needs `right=all` before it, since reading the column again replaces the fake |
 | `fake=plan-limits` | the ChatGPT plan's 5-hour and weekly windows in the limits ring |
 | `fake=store` | fills the Workshop with made-up listings of every tier and kind, packs and a failed source instead of the store's, drawn with the Workshop's real covers and screenshots (`dev/media/`, built in only with the feature) |
 | `workshop`, `workshop=install:NAME\|remove:NAME\|busy:NAME\|failed:NAME\|coming:NAME\|pack:NAME\|open:NAME`, `workshop=offline:`, `workshop=gallery:N\|hero:N\|next:N\|scroll:PX`, `workshop=tier:TIER\|all:TIER`, `workshop=filters:`, `workshop=report` | shows the Workshop; opens its confirmation for a listing, shows a capsule at work or failed, its cover still coming, the store not read again (covers not here drawn offline), a pack's page, a listing's window and its Nth picture, the Nth featured pick, the Official shelf from its Nth capsule, the page scrolled down, a tier filtered or its shelf whole, the filter menu, or what "Update all" did |
 | `fake=chat`, `fake=chat-open` | a long chat with folded turns, steps of each state, markdown with code and a table, a picture, a notice, an error, tasks and pins; `-open` unfolds the first turn and a step |
 | `fake=mcp` | five connectors, one of each state, in the place of the config's |
 | `open=pins\|plan\|panel\|done`, `scroll=N`, `right=lower` | the pins drawer, the plan's rows, the composer's panel, the Todo's finished tasks; the transcript from its Nth row; the right column with its tall upper modules folded |
-| `hover=X,Y` | moves the pointer to a point of the window, for what shows only under it (the composer's tab, the checks card of a pull request) |
+| `hover=X,Y` | moves the pointer to a point of the window, for what shows only under it (the composer's tab, a module header's grip) |
+| `down=X,Y`, `move=X,Y`, `up=X,Y` | presses the left button, moves with it held, lets it go: a click is `down` then `up`, a drag (a module's grip to another place) is `down`, a few `move`, `up`; a `shot` between shows the drop line |
 | `select=ROW:FROM-TO` | selects cells of a row of the shown terminal |
 | `size=WxH` | resizes the window, as a drag of its edge would |
 | `shot=NAME` | saves `$DUSK_SHOT_DIR/NAME.png`, drawn at the window's scale (2x on a Retina screen) |

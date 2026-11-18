@@ -110,6 +110,10 @@ impl Workspace {
             shelf_scroll: ScrollHandle::new(),
             todo_done_open: false,
             folded: Right::folded_from(crate::ui::theme::prefs(cx).right_folded.as_deref()),
+            right_order: crate::columns::inspector::order::saved(
+                &crate::ui::theme::prefs(cx).right_order,
+            ),
+            module_drop: None,
             modal: None,
             settings_page: SettingsPage::Ai,
             ai_tab: crate::pages::settings::ai::Tab::Llm,
@@ -135,7 +139,6 @@ impl Workspace {
             git: None,
             repository: None,
             pulls: HashMap::new(),
-            open_checks: HashSet::new(),
             touched: Vec::new(),
             review: crate::pages::review::Review::new(window, cx),
             focus: cx.focus_handle(),

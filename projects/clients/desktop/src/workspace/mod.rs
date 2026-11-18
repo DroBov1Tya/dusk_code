@@ -52,8 +52,8 @@ pub enum Center {
     Overview,
 }
 
-/// The modules of the right column, top to bottom.
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+/// The modules of the right column, in their default order top to bottom.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Right {
     Arbiter,
     /// How the shown chat's work stands: plan, team, tokens, context, changes, activity
@@ -72,7 +72,7 @@ pub enum Right {
 }
 
 impl Right {
-    const ALL: [Right; 10] = [
+    pub const ALL: [Right; 10] = [
         Right::Arbiter,
         Right::Overview,
         Right::Screenshots,
@@ -85,7 +85,7 @@ impl Right {
         Right::Sources,
     ];
 
-    /// The name the choice of folding is kept under.
+    /// The name the choices of folding and order are kept under.
     pub fn key(self) -> &'static str {
         match self {
             Self::Arbiter => "arbiter",
@@ -161,6 +161,11 @@ pub struct Workspace {
     pub shelf_scroll: ScrollHandle,
     /// The right column's modules that are folded.
     pub folded: HashSet<Right>,
+    /// The right column's modules top to bottom, every one once.
+    pub right_order: Vec<Right>,
+    /// While a module's header is dragged: the module under the pointer, and whether the
+    /// drop lands below it rather than above.
+    pub module_drop: Option<(Right, bool)>,
     /// The todo module shows its finished tasks; they are folded away by default.
     pub todo_done_open: bool,
     pub modal: Option<Modal>,
@@ -199,8 +204,6 @@ pub struct Workspace {
     pub repository: Option<dusk_protocol::project::RepositoryStatus>,
     /// The pull requests of each project's branch, by project ID, for the chat rows.
     pub pulls: HashMap<String, dusk_protocol::project::PullSummary>,
-    /// The pull requests whose checks are unfolded under their row in Changes.
-    pub open_checks: HashSet<u64>,
     pub touched: Vec<dusk_protocol::project::Change>,
     pub review: crate::pages::review::Review,
     /// The window's own focus: shortcuts reach the workspace from here when no box or row

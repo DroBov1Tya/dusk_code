@@ -1,7 +1,7 @@
-//! Every check of a pull request, unfolded under its row in Changes: one line each with
-//! its state, its name and workflow, and how long it has run or how long ago it ended;
-//! a line opens the check's page. The core orders them, the ones that need a look
-//! first, and caps them; the fold is the window's own.
+//! Every check of a pull request, in a window over its row in Changes: one line each
+//! with its state, its name and workflow, and how long it has run or how long ago it
+//! ended; a line opens the check's page. The core orders them, the ones that need a look
+//! first, and caps them.
 
 use dusk_protocol::project::{Check, CheckStage, PullStatus};
 use gpui_kit::{
@@ -13,48 +13,55 @@ use gpui_kit::{
     *,
 };
 
-use crate::{
-    ui::{Type, icons, widgets},
-    workspace::Workspace,
-};
+use crate::ui::{Type, icons, widgets};
 
-/// The chevron that unfolds the checks; none without checks to list.
-pub fn toggle(ws: &Workspace, pull: &PullStatus, cx: &mut Context<Workspace>) -> Option<Button> {
-    if pull.checks.list.is_empty() {
-        return None;
-    }
-    let number = pull.number;
-    let open = ws.open_checks.contains(&number);
-    Some(
-        Button::new(("pull-checks-fold", number as usize))
-            .ghost()
-            .xsmall()
-            .icon(if open {
-                IconName::ChevronDown
-            } else {
-                IconName::ChevronRight
-            })
-            .tooltip(if open {
-                "Hide the checks"
-            } else {
-                "Show every check"
-            })
-            .on_click(cx.listener(move |ws, _, _, cx| {
-                // The row under the chevron would open the pull request.
-                cx.stop_propagation();
-                if !ws.open_checks.remove(&number) {
-                    ws.open_checks.insert(number);
-                }
-                cx.notify();
-            })),
-    )
+/// The window over Changes: "CI" with a way to the checks' page, then every check,
+/// scrolling inside when the list is long. It draws from the shown status, so it follows
+/// the checks while it stays open.
+pub fn window(pull: &PullStatus, cx: &App) -> Div {
+    let page = format!("{}/checks", pull.url);
+    div()
+        .w(px(264.))
+        .flex()
+        .flex_col()
+        .gap_1()
+        .p_1()
+        .child(
+            div()
+                .flex()
+                .flex_row()
+                .items_center()
+                .pl_1()
+                .child(
+                    div()
+                        .flex_1()
+                        .small()
+                        .font_weight(FontWeight::MEDIUM)
+                        .child("CI"),
+                )
+                .child(
+                    Button::new(("pull-checks-open", pull.number as usize))
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::ExternalLink)
+                        .tooltip("Open the checks in the browser")
+                        .on_click(move |_, _, cx| open(&page, cx)),
+                ),
+        )
+        .child(
+            div()
+                .id(("pull-checks-list", pull.number as usize))
+                .max_h(px(320.))
+                .overflow_y_scroll()
+                .child(list(pull, cx)),
+        )
 }
 
 /// The lines of the checks, and one for those the core did not list.
-pub fn list(pull: &PullStatus, cx: &App) -> Div {
+fn list(pull: &PullStatus, cx: &App) -> Div {
     let now = now();
     let muted = cx.theme().muted_foreground;
-    let mut column = div().flex().flex_col().ml(px(36.)).mr_2().pb_1();
+    let mut column = div().flex().flex_col();
     for (index, check) in pull.checks.list.iter().enumerate() {
         column = column.child(line(pull.number, index, check, now, cx));
     }

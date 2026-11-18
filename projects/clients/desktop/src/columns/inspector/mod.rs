@@ -1,7 +1,7 @@
 //! The right column, the engineering side, as modules stacked one under another like
 //! the TUI's sidebar: where the chat works, its context, what it wrote, the project's
 //! git and files, and the chat's todo list, subagents and background jobs. Each module
-//! folds on its header.
+//! folds on its header and is dragged to another place by its grip (see `order`).
 
 pub mod checks;
 pub mod context;
@@ -10,6 +10,7 @@ mod files;
 pub mod git;
 pub mod jobs;
 pub mod mascot;
+pub mod order;
 pub mod overview;
 pub mod plan;
 pub mod pulls;
@@ -26,38 +27,33 @@ use gpui_kit::{
 
 use crate::{
     pages::settings::SettingsPage,
-    ui::{Type, widgets},
+    ui::{Type, widgets, widgets::Focusable as _},
     workspace::{Center, Right, Workspace},
 };
 
 pub const WIDTH: f32 = 300.;
 
-const MODULES: &[(Right, &str)] = &[
-    (Right::Arbiter, "Arbiter"),
-    (Right::Overview, "Overview"),
-    (Right::Screenshots, "Screenshots"),
-    (Right::Git, "Changes"),
-    (Right::Files, "Files"),
-    (Right::Touched, "Touched"),
-    (Right::Plan, "Plan"),
-    (Right::Todo, "Todo"),
-    (Right::Jobs, "Jobs"),
-    (Right::Sources, "Sources"),
-];
-
 pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (panel, border, muted) = (theme.sidebar, theme.sidebar_border, theme.muted_foreground);
-    let mut column = div().flex().flex_col().pb_6();
-    let shown: Vec<_> = MODULES
+    let mut column =
+        div().flex().flex_col().pb_6().on_drop(
+            cx.listener(|ws, dragged: &order::Dragged, _, cx| ws.drop_module(dragged, cx)),
+        );
+    let shown: Vec<Right> = ws
+        .right_order
         .iter()
-        .filter(|(module, _)| ws.has_content(*module))
+        .copied()
+        .filter(|module| ws.has_content(*module))
         .collect();
-    for (index, (module, title)) in shown.into_iter().enumerate() {
-        let module = *module;
+    for (index, module) in shown.into_iter().enumerate() {
+        let title = title(module);
         let open = !ws.folded.contains(&module);
+        let group = SharedString::from(format!("module-head-{}", module.key()));
         let header = div()
-            .id(("module", index))
+            // Named by the module, not its place, so the focus follows it when it moves.
+            .id(group.clone())
+            .group(group.clone())
             .flex()
             .flex_row()
             .items_center()
@@ -65,6 +61,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             .h(px(44.))
             .px_4()
             .cursor_pointer()
+            .focusable_row(cx)
             // Every header starts with its icon, on the grid of the rows below.
             .child(
                 module_icon(module)
@@ -76,7 +73,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .flex_1()
                     .body()
                     .font_weight(FontWeight::MEDIUM)
-                    .child(*title),
+                    .child(title),
             )
             // A folded module still says how it stands.
             .children(
@@ -85,6 +82,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                     .flatten()
                     .map(|text| div().meta().text_color(muted).child(text)),
             )
+            .child(order::grip(module, title, group, cx))
             .child(widgets::icon(
                 if open {
                     IconName::ChevronDown
@@ -93,6 +91,17 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 },
                 muted,
             ))
+            .on_key_down(cx.listener(move |ws, event: &KeyDownEvent, _, cx| {
+                let keys = &event.keystroke;
+                let alt_only = keys.modifiers.alt
+                    && !keys.modifiers.control
+                    && !keys.modifiers.platform
+                    && !keys.modifiers.shift;
+                if alt_only && matches!(keys.key.as_str(), "up" | "down") {
+                    cx.stop_propagation();
+                    ws.step_module(module, keys.key == "up", cx);
+                }
+            }))
             .on_click(cx.listener(move |ws, _, _, cx| {
                 if !ws.folded.remove(&module) {
                     ws.folded.insert(module);
@@ -105,6 +114,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
             }));
         // The rule between modules stops short of the column's edges.
         let mut section = div()
+            .relative()
             .flex()
             .flex_col()
             .when(index > 0, |section| {
@@ -129,7 +139,8 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
                 div().pb_3().child(body),
             ));
         }
-        column = column.child(section);
+        let section = section.children(order::indicator(ws, module, cx));
+        column = column.child(order::target(section, module, cx));
     }
     div()
         .w(px(WIDTH))
@@ -150,6 +161,21 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         // Where the chat works waits folded under everything that scrolls: a bar across
         // the column's width unfolds it.
         .child(footer(ws, cx))
+}
+
+fn title(module: Right) -> &'static str {
+    match module {
+        Right::Arbiter => "Arbiter",
+        Right::Overview => "Overview",
+        Right::Screenshots => "Screenshots",
+        Right::Git => "Changes",
+        Right::Files => "Files",
+        Right::Touched => "Touched",
+        Right::Plan => "Plan",
+        Right::Todo => "Todo",
+        Right::Jobs => "Jobs",
+        Right::Sources => "Sources",
+    }
 }
 
 fn module_icon(module: Right) -> Icon {
@@ -289,9 +315,9 @@ impl Workspace {
 
     /// Asks the core again for what the open modules show.
     pub fn refresh_inspector(&mut self, cx: &mut Context<Self>) {
-        for (module, _) in MODULES {
-            if !self.folded.contains(module) {
-                self.refresh_module(*module, cx);
+        for module in Right::ALL {
+            if !self.folded.contains(&module) {
+                self.refresh_module(module, cx);
             }
         }
         // The repository decides whether the Changes module shows at all, and the footer

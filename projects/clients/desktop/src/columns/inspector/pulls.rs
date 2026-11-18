@@ -1,14 +1,11 @@
 //! The pull requests under the Changes module: a state icon, the title, the repository
-//! with the number and the lines, and a dot for the checks. The core reads them, keeps
-//! them fresh while the project is shown, and says when they change; a row opens its page.
+//! with the number and the lines, and the checks as a dot and a count. The core reads
+//! them, keeps them fresh while the project is shown, and says when they change; a row
+//! opens its page, its checks open their list.
 
 use dusk_protocol::project::{CheckState, Checks, PullState, PullStatus, RepositoryStatus};
 use gpui_kit::{
-    component::{
-        ActiveTheme, Icon, IconName, Sizable,
-        button::{Button, ButtonVariants},
-        hover_card::HoverCard,
-    },
+    component::{ActiveTheme, Icon, Selectable, popover::Popover},
     prelude::FluentBuilder,
     *,
 };
@@ -25,11 +22,7 @@ pub fn rows(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     };
     let mut column = div().flex().flex_col();
     for pull in &status.pulls {
-        let fold = super::checks::toggle(ws, pull, cx);
-        column = column.child(row(status, pull, cx).when_some(fold, |row, fold| row.child(fold)));
-        if ws.open_checks.contains(&pull.number) {
-            column = column.child(super::checks::list(pull, cx));
-        }
+        column = column.child(row(status, pull, cx));
     }
     if let Some(reason) = &status.unavailable {
         column = column.child(
@@ -84,7 +77,7 @@ fn row(status: &RepositoryStatus, pull: &PullStatus, cx: &mut Context<Workspace>
                         ),
                 ),
         )
-        .when_some(checks_dot(pull, cx), |row, dot| row.child(dot))
+        .when_some(checks(pull, cx), |row, checks| row.child(checks))
         .on_click(move |_, _, cx| {
             // The core gives https links only; anything else is not opened.
             if url.starts_with("https://") || url.starts_with("http://") {
@@ -93,9 +86,10 @@ fn row(status: &RepositoryStatus, pull: &PullStatus, cx: &mut Context<Workspace>
         })
 }
 
-/// A dot for the checks: green passed, yellow and breathing while one runs, red failed;
-/// nothing without checks. Under the pointer it opens a card that counts them by state.
-fn checks_dot(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
+/// The checks at the row's right: a dot on the title's line (green passed, yellow and
+/// breathing while one runs, red failed) and "passed/total" on the line under it; nothing
+/// without checks. A press opens the list of every check over the column.
+fn checks(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
     let state = pull.checks.state?;
     let color = check_color(state, cx);
     let dot = div().size_2().rounded_full().bg(color);
@@ -109,108 +103,68 @@ fn checks_dot(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
     } else {
         dot.into_any_element()
     };
-    let (checks, url, said) = (
-        pull.checks.clone(),
-        pull.url.clone(),
-        checks_said(&pull.checks),
-    );
     let number = pull.number as usize;
+    let trigger = div()
+        .id(("pull-checks", number))
+        .role(Role::Button)
+        .aria_label(checks_said(&pull.checks))
+        .flex_none()
+        .flex()
+        .flex_col()
+        .items_end()
+        .px_1()
+        .rounded_md()
+        .cursor_pointer()
+        .hover(|trigger| trigger.bg(cx.theme().list_active))
+        // An empty character gives the line the title's height, so the dot sits on it.
+        .child(
+            div()
+                .small()
+                .flex()
+                .items_center()
+                .child(dot)
+                .child("\u{200B}"),
+        )
+        .child(
+            div()
+                .meta()
+                .font_features(crate::pages::chat::working::tabular())
+                .text_color(color)
+                .child(format!("{}/{}", pull.checks.passed, pull.checks.total)),
+        )
+        // The press is the window's, not the row's, which would open the pull request.
+        .on_click(|_, _, cx| cx.stop_propagation());
+    let shown = pull.clone();
     Some(
-        HoverCard::new(("pull-checks-card", number))
+        Popover::new(("pull-checks-window", number))
             .anchor(Anchor::TopRight)
-            .open_delay(std::time::Duration::from_millis(150))
-            .trigger(
-                // Wider than the dot, so the pointer finds it; a press on it is the card's,
-                // not the row's, which would open the pull request.
-                div()
-                    .id(("pull-checks", number))
-                    .role(Role::Button)
-                    .aria_label(said)
-                    .flex_none()
-                    .size_5()
-                    .flex()
-                    .items_center()
-                    .justify_center()
-                    .rounded_md()
-                    .child(dot)
-                    .on_click(|_, _, cx| cx.stop_propagation()),
-            )
-            .content(move |_, _, cx| checks_card(number, &checks, &url, cx))
-            // The card pads its own rows; the popover's wide padding made a small list large.
+            .trigger(Trigger(trigger))
+            .content(move |_, _, cx| super::checks::window(&shown, cx))
+            // The window pads its own rows; the popover's wide padding made a small list large.
             .p_1()
             .into_any_element(),
     )
 }
 
-/// "CI monitoring": a way to the checks' page, then a row for each state that has any.
-fn checks_card(number: usize, checks: &Checks, url: &str, cx: &App) -> Div {
-    let theme = cx.theme();
-    let muted = theme.muted_foreground;
-    let page = format!("{url}/checks");
-    let rows = [
-        (
-            IconName::CircleCheck,
-            "Passed",
-            checks.passed,
-            theme.success,
-        ),
-        (
-            IconName::LoaderCircle,
-            "Running",
-            checks.running,
-            theme.warning,
-        ),
-        (IconName::CircleX, "Failed", checks.failed, theme.danger),
-    ];
-    div()
-        .w(px(208.))
-        .flex()
-        .flex_col()
-        .gap_1()
-        .p_2()
-        .child(
-            div()
-                .flex()
-                .flex_row()
-                .items_center()
-                .pl_1()
-                .child(
-                    div()
-                        .flex_1()
-                        .small()
-                        .font_weight(FontWeight::MEDIUM)
-                        .child("CI monitoring"),
-                )
-                .child(
-                    Button::new(("pull-checks-open", number))
-                        .ghost()
-                        .xsmall()
-                        .icon(IconName::ExternalLink)
-                        .tooltip("Open the checks in the browser")
-                        .on_click(move |_, _, cx| {
-                            cx.stop_propagation();
-                            // The core gives https links only; anything else is not opened.
-                            if page.starts_with("https://") {
-                                cx.open_url(&page);
-                            }
-                        }),
-                ),
-        )
-        .children(rows.into_iter().filter(|(_, _, count, _)| *count > 0).map(
-            |(icon, word, count, color)| {
-                div()
-                    .flex()
-                    .flex_row()
-                    .items_center()
-                    .gap_2()
-                    .h(px(24.))
-                    .px_1()
-                    .small()
-                    .child(widgets::icon(icon, color))
-                    .child(div().flex_1().child(word))
-                    .child(div().text_color(muted).child(count.to_string()))
-            },
-        ))
+/// A plain element as a popover's trigger; it draws no open state of its own.
+struct Trigger(Stateful<Div>);
+
+impl Selectable for Trigger {
+    fn selected(self, _: bool) -> Self {
+        self
+    }
+
+    fn is_selected(&self) -> bool {
+        false
+    }
+}
+
+impl IntoElement for Trigger {
+    type Element = Stateful<Div>;
+
+    fn into_element(self) -> Self::Element {
+        self.0
+    }
 }
 
 fn checks_said(checks: &Checks) -> String {
