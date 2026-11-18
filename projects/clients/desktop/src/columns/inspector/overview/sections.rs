@@ -127,19 +127,34 @@ fn progress(shown: &Shown, form: Form, cx: &App) -> Option<Div> {
         };
         div().child(format!("{state} \u{00B7} {} min", team.used.minutes))
     });
-    // A segment a task, in the order done, at work, blocked, the rest.
+    // A segment a status, as wide as its share, in the order done, at work, blocked, the
+    // rest: the bar stays the same size whether the plan has 3 tasks or 300.
     let parts = [
         (counts.done, theme.success),
         (running + counts.review, theme.primary),
         (counts.blocked + counts.failed, theme.warning),
         (counts.open, theme.border),
     ];
-    let mut segments = div().flex().flex_row().gap(px(2.)).my_3();
-    for (count, color) in parts {
-        for _ in 0..count {
-            segments = segments.child(div().flex_1().h(px(6.)).rounded_full().bg(color));
-        }
-    }
+    let segments = div()
+        .flex()
+        .flex_row()
+        .w_full()
+        .gap(px(2.))
+        .my_3()
+        .overflow_hidden()
+        .children(
+            parts
+                .into_iter()
+                .filter(|(count, _)| *count > 0)
+                .map(|(count, color)| {
+                    div()
+                        .w(relative(count as f32 / all as f32))
+                        .min_w(px(3.))
+                        .h(px(6.))
+                        .rounded_full()
+                        .bg(color)
+                }),
+        );
     let mut body = div()
         .flex()
         .flex_col()

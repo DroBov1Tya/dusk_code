@@ -170,7 +170,9 @@ fn progress(counts: PlanCounts, team: Option<&Team>) -> Option<AnyView> {
     ];
     let segments = parts
         .into_iter()
-        .flat_map(|(class, count)| (0..count).map(move |_| view! { <i class=class></i> }))
+        .filter(|(_, count)| *count > 0)
+        // One segment a status, as wide as its share: 200 tasks stay one bar.
+        .map(|(class, count)| view! { <i class=class style=format!("flex:{count}")></i> })
         .collect_view();
     let budget = team.map(|team| {
         let (budget, used) = (team.budget, team.used);

@@ -1,7 +1,13 @@
 //! The Overview opened as a page: the column's sections in the same order, in two
 //! columns; the event log takes the whole width under them.
 
-use gpui_kit::{component::IconName, *};
+use gpui_kit::{
+    component::{
+        IconName, Sizable,
+        button::{Button, ButtonVariants},
+    },
+    *,
+};
 
 use super::sections::{self, Form};
 use crate::{ui, workspace::Workspace};
@@ -60,6 +66,16 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Stateful<Div> 
                 .py_6()
                 .flex()
                 .flex_col()
+                .child(
+                    div().pb_2().flex().flex_row().child(
+                        Button::new("overview-back")
+                            .ghost()
+                            .small()
+                            .icon(IconName::ArrowLeft)
+                            .label("Back")
+                            .on_click(cx.listener(|ws, _, _, cx| ws.close_overview(cx))),
+                    ),
+                )
                 .child(ui::page_title(
                     "Overview",
                     "How the shown chat's work stands",

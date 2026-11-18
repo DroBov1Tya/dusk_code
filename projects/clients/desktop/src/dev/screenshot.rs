@@ -165,6 +165,10 @@ fn act(
                 "connectors" => Center::Connectors,
                 "artifacts" => Center::Artifacts,
                 "schedules" => Center::Schedules,
+                "overview" => {
+                    ws.overview.back = Some(Center::Chat);
+                    Center::Overview
+                }
                 _ => Center::Chat,
             };
             if ws.center == Center::Schedules {
@@ -403,6 +407,21 @@ fn act(
             ws.folded.clear();
             ws.right_hidden = false;
             ws.refresh_inspector(cx);
+        }
+        // A board of 200 tasks in the Overview; the next real answer replaces it.
+        "fake" if value == "overview" => {
+            ws.overview.chat = ws.shown.clone();
+            ws.overview.overview = Some(Default::default());
+            ws.overview.plan = Some(dusk_protocol::thread::PlanCounts {
+                open: 120,
+                claimed: 4,
+                running: 6,
+                blocked: 10,
+                review: 5,
+                done: 50,
+                failed: 5,
+            });
+            cx.notify();
         }
         "fake" if value == "plugins" => {
             ws.status.plugin_parts = std::sync::Arc::new(super::plugins::parts());
