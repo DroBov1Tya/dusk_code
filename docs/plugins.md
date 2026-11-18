@@ -326,18 +326,18 @@ or update from it: a plugin runs programs on this machine.
 
 ### Tiers
 
-Every listing carries the tier of the key that checked its list, never a field of the
-list itself:
+Every listing carries the tier of the key that checked its list; a field of the list
+can only lower it, never raise it:
 
 | Tier | Where it comes from |
 | --- | --- |
-| Official | the official list, signed by the key built in |
-| Verified | a mirror you added whose address and key the official list names under `verified` |
+| Official | the official list, signed by the key built in, for the work of duskcode's maintainers |
+| Verified | the official list for somebody else's work (`badge: verified`, or an `author` who is not a maintainer), or a mirror you added whose address and key the official list names under `verified` |
 | Community | any other mirror you added |
 | Local | a plugin in the plugins folder that no source installed; no key vouches for it |
 
-An install names the tier you were shown and is refused when the source earns another
-one now. A listing whose name another source also offers is marked, since a mirror may
+An install names the tier you were shown and is refused when the listing earns another
+one now. A mirror's `badge` is never read. A listing whose name another source also offers is marked, since a mirror may
 copy a name to pass for another source's plugin.
 
 The list comes sorted in that order, then by name; a client may ask for the newest or
@@ -396,6 +396,8 @@ Format 2 (format 1, the same without the new fields and `verified`, is still rea
 - `category` and `tags` (up to 8) are `a-z`, `0-9` and `-`.
 - `cover` is a `.png` or `.webp` of at most 512 KiB, by a path under the list's folder;
   the core fetches it, checks its size, SHA-256 and first bytes, and keeps it in memory.
+  Before anything decodes it, the size its header declares must be within 2400x1260
+  (3200x2000 for a screenshot) and a WebP must not be animated.
 - `screenshots` (up to 8) are pictures of the item at work, each checked like a cover but
   up to 1 MiB, with an optional `caption`: one line of at most 120 characters, without
   control characters or bidi overrides. A client gets their count and captions in the
@@ -411,6 +413,25 @@ Format 2 (format 1, the same without the new fields and `verified`, is still rea
   read: they were the store's own or a vendor's whole repository's.
 - `created` and `updated` are RFC 3339.
 - `verified` is believed only in the official list.
+
+Format 3 adds who made each entry, and every entry must give all of it:
+
+```json
+  "author": "someone", "license": "MIT", "source": "https://github.com/someone/x",
+  "categories": ["coding", "review"], "badge": "verified"
+```
+
+- `author` and `license` (SPDX) are one plain line of at most 64 characters, without
+  control characters or bidi overrides; `source` is an https address of at most 200.
+  The listing carries `source` as `origin`, since `source` names the source there.
+- `categories` are 1 to 3 different ones of `coding`, `review`, `testing`, `security`,
+  `research`, `writing`, `data`, `devops`, `design`, `productivity`, `devices`,
+  `communication` (`dusk_protocol::plugin::CATEGORIES`).
+- `badge` is `official` or `verified`. In the official list, `verified`, or an `author`
+  who is not a maintainer, makes the listing Verified; elsewhere it is ignored, and a
+  Community listing's `author` is drawn as the mirror's claim.
+- A format 2 list with any of these fields is refused, as is a format 4 list: an older
+  duskcode answers a newer list with "update it".
 
 An unknown field anywhere refuses the list. `index.json.sig` beside it holds the base64
 of the signature of the file's exact bytes. `DUSKCODE_STORE_URL` points duskcode at

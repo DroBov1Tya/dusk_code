@@ -7,7 +7,11 @@ use std::cmp::Reverse;
 use chrono::{DateTime, FixedOffset};
 use dusk_protocol::plugin::{Kind, LOCAL_SOURCE, Listing, Order, PICKS, Picks, RepoStars, Tier};
 
-use super::{index::Entry, record::Record, source::Fetched};
+use super::{
+    index::{Badge, Entry},
+    record::Record,
+    source::Fetched,
+};
 use crate::{
     init::paths::Paths,
     plugins::{catalog, manifest::Manifest},
@@ -30,7 +34,7 @@ pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) 
             .and_then(|installed| newer(&entry.version, installed)),
         installed,
         unfit: entry.download_here().err(),
-        tier: source.tier,
+        tier: tier(source, entry),
         source: source.name.clone(),
         kind: entry.kind,
         category: entry.category.clone(),
@@ -54,7 +58,31 @@ pub fn listing(paths: &Paths, record: &Record, source: &Fetched, entry: &Entry) 
         created: entry.created.clone(),
         updated: entry.updated.clone(),
         skills: entry.skills.clone(),
+        author: entry.author.clone().unwrap_or_default(),
+        license: entry.license.clone().unwrap_or_default(),
+        origin: entry.source.clone(),
+        categories: entry.categories.clone(),
         clash: false,
+    }
+}
+
+/// Who the Official mark is for: the maintainers of the official Workshop, as its
+/// publisher (`scripts/repo.py`) names them.
+const OWNERS: [&str; 2] = ["duskcode", "DroBov1Tya"];
+
+/// How far `entry` is trusted: its source's tier, lowered to Verified for an entry of the
+/// official list that somebody else made. Only the official list's badge and author are
+/// read, and only to lower: a mirror's list cannot raise its own trust by what it says.
+pub fn tier(source: &Fetched, entry: &Entry) -> Tier {
+    let not_ours = entry.badge == Some(Badge::Verified)
+        || entry
+            .author
+            .as_deref()
+            .is_some_and(|author| !OWNERS.contains(&author));
+    if source.tier == Tier::Official && not_ours {
+        Tier::Verified
+    } else {
+        source.tier
     }
 }
 

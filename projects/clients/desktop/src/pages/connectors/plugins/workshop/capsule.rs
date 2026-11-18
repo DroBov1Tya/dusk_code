@@ -1,5 +1,5 @@
-//! A listing as a card: its cover at the card's inner width, then its name and kind,
-//! two lines of what it is (a notice takes the first when there is one), and a footer
+//! A listing as a card: its cover at the card's inner width, then its name and kind, its
+//! byline, two lines of what it is (a notice takes the first when there is one), and a footer
 //! with the tier mark at the left and one slot at the right holding a button or a state.
 //! Nothing is drawn over the cover, and every card of a row is the same height whatever
 //! its text. A click opens the listing's window.
@@ -31,6 +31,7 @@ use crate::{
 const RADIUS: f32 = 12.;
 const BORDER: f32 = 1.;
 const NAME: f32 = 22.;
+const BYLINE: f32 = 16.;
 /// One line of the text; the text is two.
 const LINE: f32 = 20.;
 const NOTICE_ICON: f32 = 14.;
@@ -40,7 +41,14 @@ const TEXT_CHARS: usize = 280;
 /// A card's height at `width`: the same for every card of a row.
 pub fn height(width: f32) -> f32 {
     let cover = grid::cover_height(inner(width));
-    let body = size::GAP_M + NAME + size::GAP_XS + 2. * LINE + size::GAP_XS + size::CONTROL;
+    let body = size::GAP_M
+        + NAME
+        + size::GAP_XS
+        + BYLINE
+        + size::GAP_XS
+        + 2. * LINE
+        + size::GAP_XS
+        + size::CONTROL;
     cover + body + size::GAP_S + 2. * BORDER
 }
 
@@ -84,6 +92,7 @@ pub fn render(
         .child(
             body()
                 .child(name_row(listing, cx))
+                .child(byline_row(&super::byline::byline(listing), cx))
                 .child(text(&listing.description, notice, cx))
                 .child(footer(tier::mark(listing.tier, cx), slot)),
         )
@@ -142,6 +151,7 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
                     Kind::Pack,
                     cx,
                 ))
+                .child(byline_row(&pack_byline(pack), cx))
                 .child(text(&about, None, cx))
                 .child(footer(mark, switch)),
         )
@@ -219,6 +229,27 @@ fn name_line(id: SharedString, name: &str, kind: Kind, cx: &App) -> Stateful<Div
                 .text_color(muted)
                 .child(super::kind_word(kind)),
         )
+}
+
+/// The byline on one muted line, cut at the card's edge; the row keeps its height when
+/// the list gives nothing for it.
+fn byline_row(text: &str, cx: &App) -> Div {
+    div()
+        .h(px(BYLINE))
+        .meta()
+        .text_color(cx.theme().muted_foreground)
+        .truncate()
+        .child(text.to_owned())
+}
+
+/// A pack here that no source lists: the built-in pack is duskcode's, any other is only
+/// counted.
+fn pack_byline(pack: &SkillPack) -> String {
+    let count = widgets::count(pack.skills.len(), "skill");
+    match pack.builtin {
+        true => format!("by duskcode \u{b7} {count}"),
+        false => count,
+    }
 }
 
 /// Two lines of the description; a notice takes the first, in its colour.

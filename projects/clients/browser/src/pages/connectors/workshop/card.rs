@@ -64,18 +64,24 @@ pub fn mark(tier: Tier) -> impl IntoView {
     view! { <span class=format!("tier {}", class(tier))><Icon name=icon(tier) />{word(tier)}</span> }
 }
 
-/// The tier's mark, the kind (with a pack's skill count), the version and, for a mirror
-/// the user added, its repository's GitHub stars.
+/// The tier's mark, the kind (with a pack's skill count), who made it, the version, its
+/// license and categories, and for a mirror the user added, its repository's GitHub
+/// stars. A part the list does not give is left out. All plain text.
 pub fn facts(listing: &Listing) -> AnyView {
     let kind = match (listing.kind, listing.skills.len()) {
         (Kind::Pack, count) if count > 0 => format!("Pack \u{b7} {count} skills"),
         (kind, _) => kind_word(kind).to_owned(),
     };
+    let given = |text: String| (!text.is_empty()).then(|| view! { <span>{text}</span> });
+    let author = (!listing.author.is_empty()).then(|| format!("by {}", listing.author));
     view! {
         <span class="facts">
             {mark(listing.tier)}
             <span>{kind}</span>
+            {author.and_then(given)}
             <span>{format!("v{}", listing.version)}</span>
+            {given(listing.license.clone())}
+            {given(listing.categories.join(", "))}
             {listing.repo_stars.as_ref().map(|stars| view! { <span>{stars.label()}</span> })}
         </span>
     }

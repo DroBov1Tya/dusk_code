@@ -4,13 +4,15 @@
 //! names.
 //!
 //! Format 1 lists plugins. Format 2 adds what each entry is (`kind`), how it is filed
-//! and shown, and, in the official list only, the mirrors it vouches for.
+//! and shown, and, in the official list only, the mirrors it vouches for. Format 3 adds
+//! who made each entry: `author`, `license`, `source`, `categories` and `badge`, all
+//! required.
 
 use anyhow::{Context, Result, bail, ensure};
 use aws_lc_rs::signature::{ED25519, UnparsedPublicKey};
 use base64::Engine;
 use chrono::{DateTime, Utc};
-use dusk_protocol::plugin::{Client, Kind, Os, Permissions};
+use dusk_protocol::plugin::{CATEGORIES, Client, Kind, Os, Permissions};
 use serde::Deserialize;
 
 use crate::config::{Mirror, is_word};
@@ -19,7 +21,7 @@ use crate::config::{Mirror, is_word};
 /// leaves the store's maintainers.
 pub const PUBLIC_KEY: &str = "ajB547F8pPEYYXGxEYBRZgpgw+iU57ydMrr6VtaLwBQ=";
 /// The formats read; a list in another one is refused rather than half read.
-const FORMATS: [u32; 2] = [1, 2];
+const FORMATS: [u32; 3] = [1, 2, 3];
 pub const MAX_INDEX_BYTES: u64 = 4 * 1024 * 1024;
 pub const MAX_SIGNATURE_BYTES: u64 = 1024;
 /// The largest package the store may name.
@@ -36,6 +38,10 @@ const MAX_TAGS: usize = 8;
 const MAX_WORD: usize = 32;
 const MAX_PICTURE_PATH: usize = 200;
 const MAX_PACK_SKILLS: usize = 256;
+/// In characters, for `author` and `license`; `source` is an address of `MAX_URL` bytes.
+const MAX_CREDIT: usize = 64;
+const MAX_URL: usize = 200;
+const MAX_CATEGORIES: usize = 3;
 /// The system and processor of a package of plain files, which runs nowhere.
 pub const ANY: &str = "any";
 const SYSTEMS: [&str; 4] = [ANY, "macos", "linux", "windows"];
@@ -104,6 +110,26 @@ pub struct Entry {
     /// For a pack: the skills it holds, by name.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Format 3: who made it, one plain line.
+    pub author: Option<String>,
+    /// Format 3: an SPDX expression.
+    pub license: Option<String>,
+    /// Format 3: an `https` address of where it comes from.
+    pub source: Option<String>,
+    /// Format 3: one to three of `CATEGORIES`.
+    #[serde(default)]
+    pub categories: Vec<String>,
+    /// Format 3: whose work it is, as the publisher says. Read only from the official
+    /// list, and only to lower its tier.
+    pub badge: Option<Badge>,
+}
+
+/// Official for the work of duskcode's maintainers, Verified for anybody else's.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Badge {
+    Official,
+    Verified,
 }
 
 /// One package of a plugin, for one system and processor or for all.
@@ -166,7 +192,7 @@ pub fn verify(json: &[u8], signature: &[u8], key: &str, now: DateTime<Utc>) -> R
     let raw: Raw = serde_json::from_slice(json).context("the list is not valid")?;
     ensure!(
         FORMATS.contains(&raw.format),
-        "the list is in format {}; this duskcode reads 1 and 2, update it",
+        "the list is in format {}; this duskcode reads 1 to 3, update it",
         raw.format
     );
     let expires =
@@ -239,6 +265,14 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
         format >= 2 || entry.is_format_1(),
         "fields of format 2 in a format 1 list"
     );
+    if format >= 3 {
+        check_credit(entry)?;
+    } else {
+        ensure!(
+            entry.is_format_2(),
+            "fields of format 3 in a format {format} list"
+        );
+    }
     if let Some(page) = &entry.homepage {
         ensure!(page.starts_with("https://"), "the homepage is not https");
     }
@@ -307,6 +341,43 @@ fn check(entry: &Entry, format: u32) -> Result<()> {
     Ok(())
 }
 
+/// Format 3's fields: all given, each one plain line, the categories from the fixed list.
+fn check_credit(entry: &Entry) -> Result<()> {
+    let author = entry.author.as_deref().context("no author")?;
+    ensure!(
+        is_line(author, MAX_CREDIT),
+        "the author is not one plain line of up to {MAX_CREDIT} characters"
+    );
+    let license = entry.license.as_deref().context("no license")?;
+    ensure!(
+        is_line(license, MAX_CREDIT),
+        "the license is not one plain line of up to {MAX_CREDIT} characters"
+    );
+    let source = entry.source.as_deref().context("no source")?;
+    ensure!(
+        source.starts_with("https://")
+            && source.len() <= MAX_URL
+            && is_line(source, MAX_URL)
+            && !source.contains(' '),
+        "the source is not an https address"
+    );
+    let categories = &entry.categories;
+    ensure!(
+        (1..=MAX_CATEGORIES).contains(&categories.len())
+            && categories
+                .iter()
+                .all(|item| CATEGORIES.contains(&item.as_str()))
+            && categories
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len()
+                == categories.len(),
+        "the categories are not 1 to {MAX_CATEGORIES} different ones of the fixed list"
+    );
+    ensure!(entry.badge.is_some(), "no badge");
+    Ok(())
+}
+
 /// A relative path to a `.png` or `.webp` under the list's folder, of a checked size.
 pub fn check_cover(cover: &Cover) -> Result<()> {
     check_picture(cover, MAX_COVER_BYTES).context("the cover")
@@ -318,7 +389,7 @@ pub fn check_screenshot(screenshot: &Screenshot) -> Result<()> {
     check_picture(&screenshot.picture(), MAX_SCREENSHOT_BYTES).context("a screenshot")?;
     if let Some(caption) = &screenshot.caption {
         ensure!(
-            is_caption(caption),
+            is_line(caption, MAX_CAPTION),
             "a screenshot's caption is not one plain line of up to {MAX_CAPTION} characters"
         );
     }
@@ -352,14 +423,14 @@ fn check_picture(picture: &Cover, max: u64) -> Result<()> {
     Ok(())
 }
 
-/// Not empty, not padded, at most `MAX_CAPTION` characters, and none that is a control
-/// or one that turns the text around (bidi overrides and isolates), which could make a
-/// caption read as something else.
-fn is_caption(text: &str) -> bool {
+/// Not empty, not padded, at most `max` characters, and none that is a control or one
+/// that turns the text around (bidi overrides and isolates), which could make a caption
+/// or a name read as something else.
+fn is_line(text: &str, max: usize) -> bool {
     let bidi = |c: char| matches!(c, '\u{202a}'..='\u{202e}' | '\u{2066}'..='\u{2069}');
     !text.trim().is_empty()
         && text.trim() == text
-        && text.chars().count() <= MAX_CAPTION
+        && text.chars().count() <= max
         && !text.chars().any(|c| c.is_control() || bidi(c))
 }
 
@@ -442,5 +513,14 @@ impl Entry {
             && self.created.is_none()
             && self.updated.is_none()
             && self.skills.is_empty()
+    }
+
+    /// Nothing format 3 added is set.
+    fn is_format_2(&self) -> bool {
+        self.author.is_none()
+            && self.license.is_none()
+            && self.source.is_none()
+            && self.categories.is_empty()
+            && self.badge.is_none()
     }
 }

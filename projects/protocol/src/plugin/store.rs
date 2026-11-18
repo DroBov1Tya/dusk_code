@@ -10,6 +10,21 @@ use super::{Client, Os};
 pub const OFFICIAL_SOURCE: &str = "official";
 /// The source of plugins found here that no source installed.
 pub const LOCAL_SOURCE: &str = "local";
+/// The categories a listing may be filed under, in the order a client offers them.
+pub const CATEGORIES: [&str; 12] = [
+    "coding",
+    "review",
+    "testing",
+    "security",
+    "research",
+    "writing",
+    "data",
+    "devops",
+    "design",
+    "productivity",
+    "devices",
+    "communication",
+];
 
 /// One thing a source offers, or a plugin found here.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -65,6 +80,20 @@ pub struct Listing {
     /// For a pack: the skills it holds.
     #[serde(default)]
     pub skills: Vec<String>,
+    /// Who made it, one plain line; empty when the list gives none. For a Community
+    /// listing it is the mirror's claim, not checked by anyone.
+    #[serde(default)]
+    pub author: String,
+    /// An SPDX expression; empty when the list gives none.
+    #[serde(default)]
+    pub license: String,
+    /// An `https` address of where it comes from: the list's `source`, a name `source`
+    /// already has.
+    #[serde(default)]
+    pub origin: Option<String>,
+    /// One to three of `CATEGORIES`; empty when the list gives none.
+    #[serde(default)]
+    pub categories: Vec<String>,
     /// Another source offers the same name; a client warns, since a mirror may copy a
     /// name to pass for another source's plugin.
     #[serde(default)]
@@ -77,10 +106,11 @@ pub struct Listing {
 )]
 #[serde(rename_all = "snake_case")]
 pub enum Tier {
-    /// Signed by the key built into duskcode.
+    /// Signed by the key built into duskcode, and made by duskcode's maintainers.
     #[default]
     Official,
-    /// From a mirror the official list names with the same address and key.
+    /// Signed by the key built into duskcode for somebody else's work, or from a mirror
+    /// the official list names with the same address and key.
     Verified,
     /// From a mirror the user added.
     Community,

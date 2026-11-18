@@ -62,7 +62,7 @@ fn a_signed_list_is_still_checked() {
         list(&entry("").replace("\"size\": 10", "\"size\": 0")),
         list(&entry("").replace("\"hello\"", "\"../x\"")),
         list(&entry(r#", "secret": 1"#)),
-        list(&entry("")).replace("\"format\": 1", "\"format\": 3"),
+        list(&entry("")).replace("\"format\": 1", "\"format\": 4"),
         list(&entry("")).replace("2030-01-01", "2026-01-01"),
         list(&entry("")).replace("2030-01-01T00:00:00Z", "soon"),
         list(&format!("{}, {}", entry(""), entry(""))),
