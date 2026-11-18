@@ -11,6 +11,7 @@ pub mod jobs;
 pub mod mascot;
 pub mod overview;
 pub mod plan;
+pub mod pulls;
 mod screenshots;
 mod sources;
 mod todo;

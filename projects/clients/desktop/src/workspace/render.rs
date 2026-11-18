@@ -48,7 +48,7 @@ impl Render for Workspace {
             Center::Artifacts => artifacts::render(self, window, cx).into_any_element(),
             Center::Connectors => connectors::render(self, window, cx).into_any_element(),
             Center::Settings => settings::render(self, window, cx).into_any_element(),
-            Center::Review => review::render(self, cx).into_any_element(),
+            Center::Review => review::render(self, window, cx).into_any_element(),
             Center::File => crate::pages::file::render(self, window, cx).into_any_element(),
             Center::Schedules => schedules::render(self, window, cx).into_any_element(),
             Center::Overview => inspector::overview::page(self, cx).into_any_element(),

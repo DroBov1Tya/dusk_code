@@ -39,7 +39,10 @@ pub use files::{
     FileEntry, FileStamp, FileText, MAX_EDIT_BYTES, MAX_PREVIEW_BYTES, OutputFile, OutputKind,
     OutputPreview,
 };
-pub use forge::{Check, CheckState, PullRequest, PullRequestDetail};
+pub use forge::{
+    Check, CheckState, Checks, PullRequest, PullRequestDetail, PullState, PullStatus, PullSummary,
+    RepositoryStatus,
+};
 pub use git::{Change, ChangeKind, GitInfo, GitOutcome, GitSummary, Worktree};
 pub use ledger::{EditKind, FileChange, MAX_FILE_CHANGES};
 pub use path::{PathCompletion, PathEntry};

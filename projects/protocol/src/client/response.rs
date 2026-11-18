@@ -8,7 +8,7 @@ use crate::client::Answer;
 use crate::config::{ApprovalPolicy, McpInfo, Profile, SecretsInfo, Snippet, VoiceSettings};
 use crate::project::{
     Change, FileChange, FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile,
-    Project, PullRequest, PullRequestDetail, Schedule,
+    Project, PullRequest, PullRequestDetail, PullSummary, RepositoryStatus, Schedule,
 };
 use crate::system::SystemReport;
 use crate::thread::{
@@ -70,6 +70,8 @@ pub enum Response {
     GitDone(GitOutcome),
     PullRequests(Vec<PullRequest>),
     PullRequest(Box<PullRequestDetail>),
+    RepositoryStatus(Box<RepositoryStatus>),
+    PullSummaries(Vec<PullSummary>),
     Diff(Vec<FileDiff>),
     Files(Vec<FileEntry>),
     Changes(Vec<Change>),

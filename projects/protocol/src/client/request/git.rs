@@ -7,10 +7,13 @@ use std::path::PathBuf;
 /// branch names are letters, digits and `-_./`. Nothing here forces, amends or prunes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum GitRequest {
-    /// A new branch from `base`, or from the current commit; the branch is not switched to.
+    /// A new branch from `base`, or from the current commit. With `switch` the work tree
+    /// moves to it, its changes carried along; git refuses when they would be lost.
     CreateBranch {
         name: String,
         base: Option<String>,
+        #[serde(default)]
+        switch: bool,
     },
     Stage {
         paths: Vec<String>,

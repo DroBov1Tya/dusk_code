@@ -6,7 +6,7 @@ use dusk_protocol::{
     client::{GitRequest, ProjectRequest, Request, Response, Secret},
     project::{
         FileDiff, FileEntry, FileStamp, FileText, GitInfo, GitOutcome, OutputFile, Project,
-        Schedule, ScheduleDraft,
+        PullSummary, RepositoryStatus, Schedule, ScheduleDraft,
     },
 };
 use std::path::PathBuf;
@@ -94,6 +94,29 @@ impl Projects<'_> {
             .await?
         {
             Response::GitDone(outcome) => Ok(outcome),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// The work tree and pull requests at a glance; this client then watches the project
+    /// and hears of changes as `Event::RepositoryStatus`.
+    pub async fn repository_status(&self, id: &str) -> Result<RepositoryStatus> {
+        let id = id.to_owned();
+        let request = ProjectRequest::RepositoryStatus { id };
+        match self.0.call(Request::Project(request)).await? {
+            Response::RepositoryStatus(status) => Ok(*status),
+            other => Err(unexpected(other)),
+        }
+    }
+
+    /// The pull requests of each project's current branch, as the core last read them.
+    pub async fn pull_summaries(&self) -> Result<Vec<PullSummary>> {
+        match self
+            .0
+            .call(Request::Project(ProjectRequest::PullSummaries))
+            .await?
+        {
+            Response::PullSummaries(summaries) => Ok(summaries),
             other => Err(unexpected(other)),
         }
     }

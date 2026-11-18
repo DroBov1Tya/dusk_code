@@ -80,7 +80,7 @@ impl Review {
     }
 }
 
-pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
+pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (border, muted, success, danger) = (
         theme.border,
@@ -162,7 +162,7 @@ pub fn render(ws: &mut Workspace, cx: &mut Context<Workspace>) -> Div {
         .flex()
         .flex_col()
         .child(header)
-        .child(git::bar(ws, cx))
+        .child(git::bar(ws, window, cx))
         .child(body)
 }
 

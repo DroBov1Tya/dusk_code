@@ -23,6 +23,7 @@ impl Server {
     ) {
         let runtime = Arc::clone(&self.runtime);
         let subscribers = Arc::clone(&self.subscribers);
+        let tracker = self.pulls.clone();
         tokio::spawn(async move {
             let changes = changes_repository(&request);
             let response = match answer(&runtime, &id, request).await {
@@ -32,6 +33,7 @@ impl Server {
             // A failed merge or pull can still leave the repository changed.
             if changes {
                 publish::git_changed(&subscribers, &id);
+                tracker.changed(&id);
             }
             let _ = reply.send(response);
         });
@@ -49,8 +51,8 @@ async fn answer(runtime: &Runtime, id: &str, request: GitRequest) -> Result<Resp
     let project = project::find(runtime.state(), id).await?;
     let project = &project;
     Ok(Response::GitDone(match request {
-        GitRequest::CreateBranch { name, base } => {
-            git::create_branch(project, &name, base.as_deref()).await?
+        GitRequest::CreateBranch { name, base, switch } => {
+            git::create_branch(project, &name, base.as_deref(), switch).await?
         }
         GitRequest::Stage { paths } => git::stage(project, &paths).await?,
         GitRequest::StageAll => git::stage_all(project).await?,

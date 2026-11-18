@@ -6,7 +6,9 @@ use crate::{
     state::{View, state},
     ui::{Icon, IconName, Section, confirm, run},
 };
-use dusk_protocol::project::{FileDiff, FileEntry, GitInfo, Project};
+use dusk_protocol::project::{
+    CheckState, FileDiff, FileEntry, GitInfo, Project, PullState, PullStatus,
+};
 use leptos::prelude::*;
 
 /// The dialog that adds a project (`Some(None)`) or edits one (`Some(Some(project))`).
@@ -138,9 +140,25 @@ fn GitSection(id: String) -> impl IntoView {
         let id = id.clone();
         move || {
             let id = id.clone();
-            run(async move { api::git(&id).await }, move |git| {
+            let asked = id.clone();
+            run(async move { api::git(&asked).await }, move |git| {
                 info.set(Some(git))
             });
+            let asked = id.clone();
+            run(
+                async move { api::repository_status(&asked).await },
+                move |status| state().repository.set(Some((id, status))),
+            );
+        }
+    };
+    let pulls = {
+        let id = id.clone();
+        move || {
+            state()
+                .repository
+                .get()
+                .filter(|(shown, _)| *shown == id)
+                .map(|(_, status)| status)
         }
     };
     load();
@@ -187,8 +205,47 @@ fn GitSection(id: String) -> impl IntoView {
                     }).collect_view()}</ul>
                 }
             })}
+            {move || pulls().map(|status| view! {
+                <ul class="pulls">
+                    {status.pulls.iter().map(|pull| pull_row(&status.repository, pull)).collect_view()}
+                </ul>
+                {status.unavailable.clone().map(|reason| view! { <p class="muted">{reason}</p> })}
+            })}
             <DiffView files=diff />
         </Section>
+    }
+}
+
+/// A pull request: its state, title, number and lines, and a dot for its checks. The
+/// core gives https links only.
+fn pull_row(repository: &str, pull: &PullStatus) -> impl IntoView + use<> {
+    let (tone, state) = match pull.state {
+        PullState::Open => ("tone-success", "open"),
+        PullState::Draft => ("tone-neutral", "draft"),
+        PullState::Merged => ("tone-accent", "merged"),
+        PullState::Closed => ("tone-danger", "closed"),
+    };
+    let dot = pull.checks.state.map(|checks| match checks {
+        CheckState::Passing => "dot on",
+        CheckState::Pending => "dot wait running",
+        CheckState::Failing => "dot off",
+    });
+    let checks = format!(
+        "{} checks: {} passed, {} running, {} failed",
+        pull.checks.total, pull.checks.passed, pull.checks.running, pull.checks.failed
+    );
+    let url = Some(pull.url.clone()).filter(|url| url.starts_with("https://"));
+    view! {
+        <li>
+            <span class=format!("tone {tone} pull-state")>{state}</span>
+            <a class="pull-title" href=url target="_blank" rel="noopener noreferrer">
+                {pull.title.clone()}
+            </a>
+            <span class="muted">{format!("{repository} #{}", pull.number)}</span>
+            <span class="add">{format!("+{}", pull.added)}</span>
+            <span class="del">{format!("\u{2212}{}", pull.removed)}</span>
+            {dot.map(|dot| view! { <span class=dot title=checks></span> })}
+        </li>
     }
 }
 

@@ -4,7 +4,10 @@
 use crate::link::request;
 use dusk_protocol::{
     client::{ProjectRequest, Response, Secret},
-    project::{FileDiff, FileEntry, GitInfo, OutputFile, Project, Schedule, ScheduleDraft},
+    project::{
+        FileDiff, FileEntry, GitInfo, OutputFile, Project, RepositoryStatus, Schedule,
+        ScheduleDraft,
+    },
 };
 
 use super::*;
@@ -32,6 +35,15 @@ pub async fn remove_project(id: &str) -> Res<()> {
 
 pub async fn git(id: &str) -> Res<GitInfo> {
     ask!(project(ProjectRequest::Git { id: id.to_owned() }), Response::Git(g) => g)
+}
+
+/// The work tree and pull requests; the core then keeps this page told of changes.
+pub async fn repository_status(id: &str) -> Res<RepositoryStatus> {
+    let id = id.to_owned();
+    ask!(
+        project(ProjectRequest::RepositoryStatus { id }),
+        Response::RepositoryStatus(s) => *s
+    )
 }
 
 pub async fn project_diff(id: &str, path: Option<String>) -> Res<Vec<FileDiff>> {
