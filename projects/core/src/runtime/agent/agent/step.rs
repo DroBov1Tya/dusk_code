@@ -35,7 +35,9 @@ impl Agent {
         // One snapshot per step: switches flipped meanwhile apply from the next step.
         let config = self.config.current();
         let stub_results = config.limits().stub_results;
-        let conversation = Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        let mut conversation =
+            Conversation::load(&self.state, &self.thread_id, stub_results).await?;
+        self.put_away_old_results(&mut conversation, &config).await;
         // Messages that joined between steps are answered by this turn, not a next one.
         let newest_user = conversation
             .messages

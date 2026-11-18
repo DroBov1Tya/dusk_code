@@ -50,6 +50,20 @@ pub struct Outcome {
     /// judges `limits.failure_ladder`.
     #[serde(default)]
     pub repeat_stops: u64,
+    /// Times old tool results were put away (`limits.stub_results`), how many, and the
+    /// estimated tokens each later request carries less, summed over the moves.
+    #[serde(default)]
+    pub stub_moves: u64,
+    #[serde(default)]
+    pub stubbed_results: u64,
+    #[serde(default)]
+    pub stub_saved_tokens: u64,
+    /// `read_history` calls that read one stored result back.
+    #[serde(default)]
+    pub retrievals: u64,
+    /// Compactions that finished.
+    #[serde(default)]
+    pub compactions: u64,
     pub subagents: u64,
     pub questions: u64,
 }
@@ -90,6 +104,11 @@ struct Totals {
     reruns: f64,
     repeat_notices: f64,
     repeat_stops: f64,
+    stub_moves: f64,
+    stubbed_results: f64,
+    stub_saved_tokens: f64,
+    retrievals: f64,
+    compactions: f64,
 }
 
 /// Saturates: a report is a file anyone may have edited.
@@ -128,6 +147,11 @@ fn totals(outcomes: &[&Outcome]) -> Totals {
         reruns: mean(|outcome| outcome.reruns),
         repeat_notices: mean(|outcome| outcome.repeat_notices),
         repeat_stops: mean(|outcome| outcome.repeat_stops),
+        stub_moves: mean(|outcome| outcome.stub_moves),
+        stubbed_results: mean(|outcome| outcome.stubbed_results),
+        stub_saved_tokens: mean(|outcome| outcome.stub_saved_tokens),
+        retrievals: mean(|outcome| outcome.retrievals),
+        compactions: mean(|outcome| outcome.compactions),
     }
 }
 
@@ -156,7 +180,9 @@ impl Totals {
         format!(
             "means over {} runs{left_out}: {:.1} calls, {:.0} tokens (prompt {:.0} cached, \
              {:.0} uncached, {:.0} written to cache; {:.0} out of which {:.0} reasoning), \
-             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} repeat notices, {:.2} repeat stops, {:.0} s",
+             {:.1} tool errors, {:.1} retries, {:.1} re-runs, {:.1} repeat notices, {:.2} repeat stops, \
+             {:.1} stub moves ({:.1} results, {:.0} tokens saved), {:.1} retrievals, \
+             {:.2} compactions, {:.0} s",
             self.runs - self.timed_out,
             self.calls,
             self.tokens,
@@ -170,6 +196,11 @@ impl Totals {
             self.reruns,
             self.repeat_notices,
             self.repeat_stops,
+            self.stub_moves,
+            self.stubbed_results,
+            self.stub_saved_tokens,
+            self.retrievals,
+            self.compactions,
             self.seconds
         )
     }
@@ -386,6 +417,10 @@ mod tests {
             text.contains("0.0 repeat notices, 0.00 repeat stops"),
             "{text}"
         );
+        assert!(
+            text.contains("0.0 stub moves (0.0 results, 0 tokens saved), 0.0 retrievals"),
+            "{text}"
+        );
         assert!(summary(&after).contains("timeout"));
     }
 
@@ -399,5 +434,30 @@ mod tests {
         assert_eq!(report.outcomes[0].reruns, 0);
         assert_eq!(report.outcomes[0].repeat_notices, 0);
         assert_eq!(report.outcomes[0].repeat_stops, 0);
+        let outcome = &report.outcomes[0];
+        let stubs = (outcome.stub_moves, outcome.stubbed_results);
+        assert_eq!(stubs, (0, 0));
+        assert_eq!(outcome.stub_saved_tokens, 0);
+        assert_eq!((outcome.retrievals, outcome.compactions), (0, 0));
+    }
+
+    #[test]
+    fn the_means_show_stub_moves_retrievals_and_compactions() {
+        let mut moved = run("a", true, None, 100);
+        moved.stub_moves = 2;
+        moved.stubbed_results = 7;
+        moved.stub_saved_tokens = 9_000;
+        moved.retrievals = 1;
+        moved.compactions = 1;
+        let still = run("a", true, None, 100);
+        let outcomes = [moved, still];
+        let all: Vec<&Outcome> = outcomes.iter().collect();
+        let means = totals(&all).means();
+        assert!(
+            means.contains(
+                "1.0 stub moves (3.5 results, 4500 tokens saved), 0.5 retrievals, 0.50 compactions"
+            ),
+            "{means}"
+        );
     }
 }

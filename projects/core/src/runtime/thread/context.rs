@@ -206,7 +206,8 @@ impl Conversation {
         message.context_tokens().saturating_sub(saved)
     }
 
-    fn covered_through(&self) -> u64 {
+    /// The newest message the compaction summary stands in for; 0 without one.
+    pub fn covered_through(&self) -> u64 {
         self.compaction
             .as_ref()
             .map_or(0, |compaction| compaction.through_sequence)

@@ -14,16 +14,12 @@ mod usage;
 
 pub use agents::{AgentPhase, Identity};
 pub use db::State;
-#[cfg_attr(
-    not(test),
-    expect(unused_imports, reason = "the move rule that writes stubs comes next")
-)]
-pub use thread::NewStub;
 pub use thread::{
-    BackgroundJob, CHECK_NOTE, CUT_OFF, CallPurpose, ChangeQuery, Compaction, Goal, GoalCheck,
-    GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent, Message,
-    MessageRole, ModelCall, PendingMessage, ProviderFailure, Settle, Source, Stub, Task, Thread,
-    Turn, TurnAnswer, TurnFailure, TurnOutcome, TurnStatus, UndoPoint, Unfinished, estimate_tokens,
+    BackgroundJob, CHECK_NOTE, CUT_OFF, CallEnd, CallPurpose, ChangeQuery, Compaction, Ended, Goal,
+    GoalCheck, GoalCriterion, GoalEvidence, GoalStatus, JobSummary, LastPrompt, LocalUnsent,
+    Message, MessageRole, ModelCall, NewStub, PendingMessage, ProviderFailure, Settle, Source,
+    Stub, Task, Thread, Turn, TurnAnswer, TurnFailure, TurnOutcome, TurnStatus, UndoPoint,
+    Unfinished, calls_of, estimate_tokens, saved_tokens,
 };
 pub use usage::{ItemUsage, KIND_MCP_TOOL, KIND_SKILL};
 

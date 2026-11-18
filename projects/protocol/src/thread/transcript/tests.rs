@@ -53,6 +53,11 @@ fn events_leave_their_lines_and_messages_leave_none() {
         Some(Note::Notice("Arbiter denied rm: no".into()))
     );
     assert_eq!(note(&ThreadEvent::Idle), None);
+    let stubbed = ThreadEvent::ResultsStubbed {
+        results: 3,
+        saved_tokens: 9000,
+    };
+    assert_eq!(note(&stubbed), None, "a move leaves no row in the chat");
 }
 
 fn retrying(attempt: u32, max_attempts: Option<u32>) -> ThreadEvent {

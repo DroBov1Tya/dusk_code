@@ -5,7 +5,7 @@
 
 use std::collections::HashMap;
 
-use anyhow::{Context, Result, ensure};
+use anyhow::{Context, Result, bail, ensure};
 use sqlx::{Row, sqlite::SqliteRow};
 
 use super::{
@@ -33,7 +33,48 @@ pub struct Stub {
     pub made_at_sequence: u64,
 }
 
+/// How a call ended, as `tool_executions` keeps it with its result. A call still
+/// pending, or one whose end is not known, has none.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Ended {
+    Succeeded,
+    Failed,
+    Cancelled,
+}
+
+/// How the call of a stored result ended, and its exit code when it ran a process.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CallEnd {
+    pub ended: Ended,
+    pub exit_code: Option<i64>,
+}
+
+/// Tokens a stub frees: the size of the message it stands in for, `message_tokens`, less
+/// its own, never below zero.
+pub fn saved_tokens(message_tokens: u64, stub: &str) -> u64 {
+    message_tokens.saturating_sub(content_tokens(stub))
+}
+
 impl State {
+    /// How the calls answered by this thread's tool messages from sequence `from` on
+    /// ended, by the result's message ID. Results with no known end are left out.
+    pub async fn call_ends(&self, thread_id: &str, from: u64) -> Result<HashMap<String, CallEnd>> {
+        sqlx::query(
+            "SELECT e.result_message_id, e.outcome, e.exit_code
+             FROM tool_executions e JOIN messages m ON m.message_id = e.result_message_id
+             WHERE e.thread_id = ? AND m.sequence >= ?
+                AND e.outcome IN ('succeeded', 'failed', 'cancelled')",
+        )
+        .bind(thread_id)
+        .bind(i64::try_from(from).context("sequence is too large")?)
+        .fetch_all(&self.pool)
+        .await
+        .context("load how calls ended")?
+        .into_iter()
+        .map(decode_call_end)
+        .collect()
+    }
+
     /// Stores stubs made when the thread's newest message was `made_at_sequence`, all or
     /// none. Each must be for a tool message of this thread at or before that point, and
     /// one that has a stub already is refused: a stub is never rewritten, since that
@@ -73,8 +114,7 @@ impl State {
                 "message {} has a stub already; a stub is never rewritten",
                 stub.message_id
             );
-            let saved =
-                read_tokens(&row, "content_tokens")?.saturating_sub(content_tokens(&stub.text));
+            let saved = saved_tokens(read_tokens(&row, "content_tokens")?, &stub.text);
             sqlx::query(
                 "INSERT INTO result_stubs (message_id, thread_id, stub, saved_tokens,
                     made_at_sequence)
@@ -109,6 +149,20 @@ impl State {
         .map(decode_stub)
         .collect()
     }
+}
+
+fn decode_call_end(row: SqliteRow) -> Result<(String, CallEnd)> {
+    let ended = match row.try_get::<String, _>("outcome")?.as_str() {
+        "succeeded" => Ended::Succeeded,
+        "failed" => Ended::Failed,
+        "cancelled" => Ended::Cancelled,
+        other => bail!("unexpected call outcome {other:?}"),
+    };
+    let end = CallEnd {
+        ended,
+        exit_code: row.try_get("exit_code")?,
+    };
+    Ok((row.try_get("result_message_id")?, end))
 }
 
 fn decode_stub(row: SqliteRow) -> Result<(String, Stub)> {
