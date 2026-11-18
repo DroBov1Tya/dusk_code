@@ -4,14 +4,16 @@
 //! ask for: leases that ran out are released, budgets are checked, ready tasks are given
 //! to members, and the team ends when it is done, spent or stalled.
 //!
-//! `member` makes a member's thread and fixes what it may do, `card` writes its first
-//! message, `clean` takes secrets out of every text that is forwarded, `lease` keeps its claim while its runner lives, `hand_in` moves its task when
-//! its turn ends, `gate` is where a command gate starts, `lead_lines` is what the lead is
-//! told, `end` ends a team, `settle` recovers one after a restart, `events` tells the
-//! clients.
+//! `member` makes a member's thread and fixes what it may do, `allow` is the user's one
+//! yes for the plan's gates, `card` writes its first message, `clean` takes secrets out
+//! of every text that is forwarded, `lease` keeps its claim while its runner lives,
+//! `hand_in` moves its task when its turn ends, `gate` is where a command gate starts,
+//! `lead_lines` is what the lead is told, `end` ends a team, `settle` recovers one after
+//! a restart, `events` tells the clients.
 //!
-//! Everything it needs to go on is in the database. `Teams` holds a lock and two caches.
+//! Everything it needs to go on is in the database. `Teams` holds a lock and a few caches.
 
+mod allow;
 mod card;
 mod clean;
 mod dispatch;
@@ -41,7 +43,7 @@ use crate::{
     catalog::modes::TEAM,
     runtime::Launcher,
     state::{BudgetBy, PlanTask, TeamCeilings, TeamError, timestamp_ms},
-    tools::TeamRunner,
+    tools::{Progress, Started, TeamRunner},
 };
 
 pub(crate) use hand_in::member_event;
@@ -62,6 +64,8 @@ pub struct Teams {
     told: parking_lot::Mutex<HashMap<String, lead_lines::Told>>,
     /// When each lead's clients last heard of its team: at most one event a second.
     heard: parking_lot::Mutex<HashMap<String, Instant>>,
+    /// The gate commands the user allowed for each chat's team, exactly as written.
+    allowed: parking_lot::Mutex<HashMap<String, HashSet<String>>>,
     /// The tasks whose gate runs now, so a pass starts none twice. After a restart it
     /// is empty and a gate that was cut off runs again: a gate is a check.
     gates: parking_lot::Mutex<HashSet<String>>,
@@ -80,21 +84,20 @@ impl Runner {
         Self { launcher }
     }
 
-    /// Starts the chat's team, or goes on with the one running: a part of its budget the
-    /// lead now names lower is lowered, none is raised.
-    async fn start(&self, lead: &str, budget: TeamBudget, now: i64) -> Result<()> {
+    /// Whether the chat `lead` may run a team now: the switch is on, the chat is in TEAM
+    /// mode, and it is a chat.
+    async fn may_lead(&self, lead: &str) -> Result<()> {
         let launcher = &self.launcher;
-        let config = launcher.config.current();
         ensure!(
-            config.limits().plan_graph,
+            launcher.config.current().limits().plan_graph,
             "the team is switched off (limits.plan_graph); the plan is kept"
         );
         ensure!(
-            config.mode() == TEAM,
+            launcher.config.current().mode() == TEAM,
             "a team runs only in TEAM mode; the plan is kept"
         );
-        let state = &launcher.state;
-        let chat = state
+        let chat = launcher
+            .state
             .load_thread(lead)
             .await?
             .with_context(|| format!("thread {lead} does not exist"))?;
@@ -102,6 +105,15 @@ impl Runner {
             chat.parent_thread_id.is_none(),
             "only a chat leads a team; an agent's thread cannot"
         );
+        Ok(())
+    }
+
+    /// Starts the chat's team, or goes on with the one running: a part of its budget the
+    /// lead now names lower is lowered, none is raised.
+    async fn start(&self, lead: &str, budget: TeamBudget, now: i64) -> Result<()> {
+        let launcher = &self.launcher;
+        let config = launcher.config.current();
+        let state = &launcher.state;
         let ceilings = || TeamCeilings::from_limits(&config.limits());
         let _one = launcher.team.pass.lock().await;
         match state.team_run(lead).await? {
@@ -135,12 +147,21 @@ impl Runner {
 }
 
 impl TeamRunner for Runner {
-    fn run<'a>(&'a self, lead: &'a str, budget: TeamBudget) -> BoxFuture<'a, usize> {
+    fn run<'a>(
+        &'a self,
+        lead: &'a str,
+        budget: TeamBudget,
+        progress: Option<Progress>,
+    ) -> BoxFuture<'a, Started> {
         Box::pin(async move {
+            self.may_lead(lead).await?;
+            // Before the start, so no member works before the user answered.
+            let gates = allow::ask(&self.launcher, lead, progress).await?;
             let now = timestamp_ms()?;
             self.start(lead, budget, now).await?;
             events::team(&self.launcher, lead, now, true).await;
-            dispatch::pass(&self.launcher, lead, now).await
+            let given = dispatch::pass(&self.launcher, lead, now).await?;
+            Ok(Started { given, gates })
         })
     }
 

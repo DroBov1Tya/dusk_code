@@ -66,7 +66,8 @@ pub struct ApprovalRequest {
     /// What a yes for the session covers, as the core decides it: the folder of the
     /// path, or the program of a plain command. `None` when it cannot be offered.
     pub session: Option<String>,
-    /// Every step of a batch of screen actions, in order; empty for a single request.
+    /// Every step of a batch of screen actions, or every gate command of a plan, in
+    /// order; empty for a single request.
     /// The user answers for all of them, so a client shows each one, never a summary.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub steps: Vec<ApprovalStep>,
@@ -97,10 +98,18 @@ impl ApprovalStep {
 
 impl ApprovalRequest {
     /// What `who` asks for, in a line: for a batch a neutral heading over its steps,
-    /// since no one kind says what all of them do.
+    /// since no one kind says what all of them do. A batch of commands only is a plan's
+    /// gates, allowed once to run later.
     pub fn title(&self, who: &str) -> String {
+        let commands = self
+            .steps
+            .iter()
+            .all(|step| matches!(step.request, Request::Command { .. }));
         match self.steps.len() {
             0 => self.request.describe(who),
+            count if commands => {
+                format!("{who} wants {count} commands to run as its plan's gates, unasked")
+            }
             count => format!("{who} wants to run {count} computer actions"),
         }
     }

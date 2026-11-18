@@ -136,6 +136,41 @@ impl Approvals {
         self.prompt(request, session, steps, progress).await
     }
 
+    /// Command lines asked as one list, for a yes that covers exactly these lines: the
+    /// gates of a plan, which run later where nobody can be asked. A line the session
+    /// allows already is listed but not asked. The session is never offered, and the
+    /// caller asks only in a mode that would ask for each command.
+    pub async fn ask_commands(
+        &self,
+        commands: &[String],
+        progress: Option<Progress>,
+    ) -> Result<()> {
+        let steps: Vec<ApprovalStep> = {
+            let grants = self.grants.lock();
+            commands
+                .iter()
+                .enumerate()
+                .map(|(index, command)| {
+                    let request = Request::Command {
+                        command: command.clone(),
+                    };
+                    ApprovalStep {
+                        number: index + 1,
+                        allowed: grants.covers(&request),
+                        request,
+                    }
+                })
+                .collect()
+        };
+        if steps.iter().all(|step| step.allowed) {
+            return Ok(());
+        }
+        let request = Request::Command {
+            command: commands.join("\n"),
+        };
+        self.prompt(request, None, steps, progress).await
+    }
+
     /// Shows the request to the user and waits. A yes for the session
     /// adds a grant only when `session` offered one.
     async fn prompt(

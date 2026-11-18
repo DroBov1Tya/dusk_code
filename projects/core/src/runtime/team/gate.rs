@@ -14,7 +14,7 @@ use anyhow::{Context, Result};
 use dusk_protocol::thread::TeamStatus;
 use tracing::{info, warn};
 
-use super::{clean, dispatch, events, lead_lines};
+use super::{allow, clean, dispatch, events, lead_lines};
 use crate::{
     message::plain::plain,
     runtime::{Launcher, thread::start},
@@ -121,7 +121,8 @@ pub(super) async fn resume(launcher: &Launcher, lead: &str) -> Result<()> {
 /// The command's approval and where it runs. It is judged by the chat's approval mode
 /// as it is now, which is what a member's own is copied from: a mode the user tightened
 /// while the member worked holds for its gate. Nobody listens for a question here, so
-/// a mode that would ask refuses instead.
+/// a mode that would ask refuses instead, unless the user allowed this very line for
+/// the team when `run` asked (`allow`). Confinement is the mode's either way.
 async fn approved(launcher: &Launcher, lead: &str, command: &str) -> Result<ToolContext> {
     let state = &launcher.state;
     let folder = dispatch::folder(launcher, lead).await?;
@@ -134,10 +135,12 @@ async fn approved(launcher: &Launcher, lead: &str, command: &str) -> Result<Tool
         state: Some(Arc::clone(state)),
         thread_id: lead.to_owned(),
     };
-    context
-        .approve_command(command)
-        .await
-        .context("a gate cannot ask for approval")?;
+    if !allow::covers(launcher, lead, command) {
+        context
+            .approve_command(command)
+            .await
+            .context("a gate cannot ask for approval; run asks once for the plan's gates")?;
+    }
     Ok(context)
 }
 

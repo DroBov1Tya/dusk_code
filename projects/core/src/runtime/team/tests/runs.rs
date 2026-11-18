@@ -42,6 +42,26 @@ async fn a_chain_runs_to_done_and_wakes_the_lead_only_for_its_reviews() {
         false => Out::Held(DONE.into()),
     })
     .await;
+    // The user says no when `run` asks for the gate, so the gated task waits too.
+    let approvals = Arc::clone(&rig.launcher().approvals);
+    let events = Arc::clone(&rig.events);
+    tokio::spawn(async move {
+        loop {
+            let asked: Vec<u64> = events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter_map(|event| match event {
+                    ThreadEvent::Approval(request) => Some(request.id),
+                    _ => None,
+                })
+                .collect();
+            for id in asked {
+                approvals.answer(id, crate::tools::Decision::Deny);
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    });
     rig.input.send("go").await.unwrap();
     // Each member answers while the lead rests, so every line starts a turn of its own.
     for reviews in 0..3 {

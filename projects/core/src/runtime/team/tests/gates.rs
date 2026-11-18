@@ -3,7 +3,8 @@
 use super::*;
 use crate::{
     config::ApprovalPolicy,
-    state::{GoalCheck, MAX_REWORKS},
+    state::{GoalCheck, MAX_REWORKS, TaskEdit, WaitsOn},
+    tools::{Decision, GatesYes, Progress},
 };
 
 fn gated(text: &str, gate: GoalCheck) -> NewTask {
@@ -116,6 +117,101 @@ async fn a_gate_that_may_not_run_unasked_waits_for_the_lead() {
     assert_eq!(held.status, PlanStatus::Review);
     assert_eq!(held.waits_on, Some(crate::state::WaitsOn::Lead));
     assert!(rig.lines().await[0].contains("its gate was not run"));
+}
+
+/// A client that answers every approval with yes once, and keeps the command lines of
+/// each request it was shown.
+fn yes_once(rig: &Rig) -> (Progress, Arc<Mutex<Vec<Vec<String>>>>) {
+    let (events, mut seen) = tokio::sync::mpsc::unbounded_channel();
+    let asked = Arc::new(Mutex::new(Vec::new()));
+    let kept = Arc::clone(&asked);
+    let approvals = Arc::clone(&rig.launcher().approvals);
+    tokio::spawn(async move {
+        while let Some(event) = seen.recv().await {
+            let ThreadEvent::Approval(request) = event else {
+                continue;
+            };
+            let lines = request.steps.iter().map(|step| match &step.request {
+                crate::tools::Request::Command { command } => command.clone(),
+                other => other.what(),
+            });
+            kept.lock().unwrap().push(lines.collect());
+            approvals.answer(request.id, Decision::Once);
+        }
+    });
+    let progress = Progress {
+        call_id: "run".into(),
+        events,
+    };
+    (progress, asked)
+}
+
+#[tokio::test]
+async fn one_yes_at_run_covers_exactly_the_listed_gates() {
+    // Members hand in only when let through, so the test edits the plan between.
+    let rig = Rig::new("team_gate_yes", |asked| match asked.lead {
+        true => Out::Say("Noted.".into()),
+        false => Out::Held(DONE.into()),
+    })
+    .await;
+    rig.state()
+        .set_thread_approvals(&rig.lead, Some(ApprovalPolicy::Ask))
+        .await
+        .unwrap();
+    let first = rig.plan(&[gated("one", command("true"))]).await;
+    let second = rig
+        .plan(&[NewTask {
+            after: first.clone(),
+            ..gated("two", command("true"))
+        }])
+        .await;
+    let budget = TeamCeilings::from_limits(&rig.launcher().config.current().limits())
+        .unwrap()
+        .budget();
+    let (progress, asked) = yes_once(&rig);
+    let started = rig
+        .runner()
+        .run(&rig.lead, budget, Some(progress.clone()))
+        .await
+        .unwrap();
+    assert_eq!(started.gates, GatesYes::Allowed);
+    // One request, each distinct command once.
+    assert_eq!(*asked.lock().unwrap(), [vec!["true".to_owned()]]);
+
+    // A gate changed after the yes is not covered by it.
+    let edit = TaskEdit {
+        gate: Some(Some(command("true && true"))),
+        ..TaskEdit::default()
+    };
+    rig.state()
+        .edit_plan_task(&rig.lead, &second[0], &edit)
+        .await
+        .unwrap();
+    rig.let_through();
+    until("the allowed gate passed the first task", || async {
+        rig.status(&first[0]).await == PlanStatus::Done
+    })
+    .await;
+    rig.let_through();
+    until("the changed gate was held for the lead", || async {
+        rig.task(&second[0]).await.waits_on == Some(WaitsOn::Lead)
+    })
+    .await;
+    let held = rig.task(&second[0]).await;
+    assert_eq!(held.status, PlanStatus::Review);
+    assert!(held.note.contains("its gate was not run"), "{}", held.note);
+
+    // The next run asks for the changed line alone.
+    let again = rig
+        .runner()
+        .run(&rig.lead, budget, Some(progress))
+        .await
+        .unwrap();
+    assert_eq!(again.gates, GatesYes::Allowed);
+    assert_eq!(
+        asked.lock().unwrap().last().cloned(),
+        Some(vec!["true && true".to_owned()])
+    );
 }
 
 #[tokio::test]

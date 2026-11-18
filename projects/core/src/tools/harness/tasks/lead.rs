@@ -10,7 +10,7 @@ use serde::Deserialize;
 
 use super::{
     check::{self, TaskArguments},
-    team::TeamRunner,
+    team::{GatesYes, TeamRunner},
     text::{self, Shown, short},
 };
 use crate::{
@@ -269,8 +269,21 @@ impl Lead {
                 .any(|task| !matches!(task.status, PlanStatus::Done | PlanStatus::Failed)),
             "the plan has nothing left to do; add tasks first, or reopen a failed one"
         );
-        let given = self.team.run(thread, budget).await?;
-        Ok(changed(format!("running: {given} given out")))
+        let started = self
+            .team
+            .run(thread, budget, context.progress.clone())
+            .await?;
+        let gates = match started.gates {
+            GatesYes::Refused => {
+                "; the user did not allow its gate commands, so a gated task waits for your \
+                 review"
+            }
+            GatesYes::Allowed | GatesYes::NotAsked => "",
+        };
+        Ok(changed(format!(
+            "running: {} given out{gates}",
+            started.given
+        )))
     }
 }
 
