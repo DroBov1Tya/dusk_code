@@ -2,6 +2,7 @@
 //! then a fold per plugin with its parts, each with its icon, its title, where it opens
 //! and a pin. Few plugins start unfolded, many folded, and a search unfolds what it finds.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::time::{Duration, Instant};
 
 use dusk_protocol::plugin::{Part, Place};
@@ -46,7 +47,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Deferred> {
         return None;
     }
     let theme = cx.theme();
-    let (border, surface) = (theme.border, theme.popover);
+    let border = theme.border;
     let query = ws.plugins.search.read(cx).value().trim().to_lowercase();
     let groups = groups(ws, &query);
     let many = groups.len() > OPEN_UP_TO;
@@ -80,10 +81,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Deferred> {
         .flex()
         .flex_col()
         .rounded_lg()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .on_mouse_down_out(cx.listener(|ws, _, _, cx| ws.close_plugins_menu(cx)))
         .child(
             div()

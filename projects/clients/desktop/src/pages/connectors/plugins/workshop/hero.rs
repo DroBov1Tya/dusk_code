@@ -4,6 +4,7 @@
 //! and the arrows round the dots. Narrower than three columns the cover is on top. It
 //! never moves by itself; a change fades in.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::plugin::{Kind, Listing, Tier};
 use gpui_kit::{
     component::{
@@ -105,15 +106,13 @@ pub fn render(
 /// or the cover on top when narrow. The pack's page draws its banner with this too.
 pub fn banner(shown: Shown, kind: Kind, width: f32, panel: Div, foot: Div, cx: &App) -> Div {
     let theme = cx.theme();
-    let (surface, border) = (theme.muted, theme.border);
+    let border = theme.border;
     let inner = width - 2.;
     let frame = div()
         .flex()
         .w(px(width))
         .rounded(px(RADIUS))
-        .border_1()
-        .border_color(border)
-        .bg(surface);
+        .elevation(Level::Raised, cx);
     let text = div()
         .flex()
         .flex_col()

@@ -3,6 +3,7 @@
 //! first, since the core erases the chat and its folder for good.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName,
@@ -56,10 +57,7 @@ pub fn render(
             .flex()
             .flex_col()
             .rounded_lg()
-            .border_1()
-            .border_color(theme.border)
-            .bg(theme.popover)
-            .shadow_lg()
+            .elevation(Level::Floating, cx)
             .child(
                 widgets::menu_item("menu-rename", cx)
                     .child(widgets::icon(IconName::Replace, muted))

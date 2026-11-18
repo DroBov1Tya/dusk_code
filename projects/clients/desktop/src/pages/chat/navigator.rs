@@ -1,5 +1,6 @@
 //! A compact index of the user's sent messages, beside the composer.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::cell::Cell;
 
 use gpui_kit::{
@@ -27,10 +28,9 @@ pub fn render(
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let theme = cx.theme();
-    let (foreground, mut panel, border, raised, accent) = (
+    let (foreground, mut panel, raised, accent) = (
         theme.foreground,
         theme.popover,
-        theme.border,
         theme.list_hover,
         theme.primary,
     );
@@ -141,10 +141,8 @@ pub fn render(
             .gap_1()
             .p_2()
             .rounded_xl()
-            .border_1()
-            .border_color(border)
+            .elevation(Level::Floating, cx)
             .bg(panel)
-            .shadow_lg()
             .occlude()
             .on_hover(cx.listener(|ws, hovered: &bool, _, cx| {
                 if !*hovered {

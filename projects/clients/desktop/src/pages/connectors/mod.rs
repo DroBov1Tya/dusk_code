@@ -9,6 +9,7 @@ pub mod plugins;
 mod skills;
 mod tools;
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::client::{Answer, Command, Switch as CoreSwitch};
 use gpui_kit::{
     component::{ActiveTheme, Sizable, input::Input, switch::Switch},
@@ -139,16 +140,13 @@ pub fn render(
 
 /// One card of rows, as wide as the Workshop's grid at most.
 fn grid(cx: &App) -> Div {
-    let theme = cx.theme();
     div()
         .flex()
         .flex_col()
         .max_w(px(1184.))
         .p_1()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
 }
 
 fn matches(query: &str, texts: &[&str]) -> bool {

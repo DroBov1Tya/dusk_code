@@ -1,6 +1,7 @@
 //! The focused agent and its direct reports. Breadcrumbs keep navigation in the
 //! hierarchy; relationship chips link to agents elsewhere in the tree.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::collections::BTreeMap;
 
 use dusk_protocol::{
@@ -162,12 +163,7 @@ fn card(
     cx: &mut Context<Workspace>,
 ) -> Stateful<Div> {
     let theme = cx.theme();
-    let (muted, border, surface, accent) = (
-        theme.muted_foreground,
-        theme.border,
-        theme.muted,
-        theme.primary,
-    );
+    let (muted, accent) = (theme.muted_foreground, theme.primary);
     let name = node.name.clone();
     let inside = node.children.len();
     // One line of chips at most, so a card keeps its height; the rest is a count.
@@ -246,9 +242,7 @@ fn card(
         .gap_1()
         .overflow_hidden()
         .rounded_lg()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .elevation(Level::Raised, cx)
         .cursor_pointer()
         .hover(|card| card.border_color(muted.opacity(0.5)))
         .child(

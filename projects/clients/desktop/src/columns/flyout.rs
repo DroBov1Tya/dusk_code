@@ -2,6 +2,7 @@
 //! hidden, the timetable from any other page. It floats beside the rail, closes a moment
 //! after the pointer leaves both, and a click on the icon opens the place for good.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::time::Duration;
 
 use gpui_kit::{
@@ -44,10 +45,8 @@ pub fn render(
         .w(px(crate::columns::sidebar::WIDTH))
         .rounded_xl()
         .overflow_hidden()
-        .border_1()
-        .border_color(theme.border)
+        .elevation(Level::Floating, cx)
         .bg(theme.sidebar)
-        .shadow_lg()
         .occlude()
         .on_hover(cx.listener(|ws, inside: &bool, _, cx| ws.hover_flyout(None, *inside, cx)))
         .child(body);

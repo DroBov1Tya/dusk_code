@@ -14,6 +14,7 @@ mod viewer;
 mod whats_new;
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use std::path::PathBuf;
 
 use gpui_kit::{
@@ -325,10 +326,7 @@ pub fn render(ws: &mut Workspace, window: &mut Window, cx: &mut Context<Workspac
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         // Clicks inside stay inside.
         .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
         .child(

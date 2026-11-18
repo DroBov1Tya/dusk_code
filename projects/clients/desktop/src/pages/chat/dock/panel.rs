@@ -2,6 +2,7 @@
 //! on top of the box. The band shows where the chat works on the left and the plan's
 //! limits on the right. Open or closed is the window's, never the core's.
 
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName, Sizable},
     *,
@@ -125,7 +126,7 @@ pub fn panel(
         .px_3()
         .py_1()
         .rounded_t_2xl()
-        .border_1()
+        .elevation(Level::Raised, cx)
         .border_b_0()
         .border_color(border)
         .bg(surface(cx))

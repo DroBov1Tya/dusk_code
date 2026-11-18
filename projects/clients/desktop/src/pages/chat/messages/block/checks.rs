@@ -2,6 +2,7 @@
 //! head that it is "from the agent": it is a snapshot the model wrote, not what a forge or
 //! a test run reports. It has no button.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::thread::{Check, CheckState, Checks};
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -22,9 +23,7 @@ pub fn render(checks: &Checks, cx: &App) -> AnyElement {
         .flex()
         .flex_col()
         .rounded(px(12.))
-        .border_1()
-        .border_color(hairline)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
         .overflow_hidden()
         .child(
             div()

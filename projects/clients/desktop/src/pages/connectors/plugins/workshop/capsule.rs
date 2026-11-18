@@ -4,6 +4,7 @@
 //! Nothing is drawn over the cover, and every card of a row is the same height whatever
 //! its text. A click opens the listing's window.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
@@ -161,7 +162,7 @@ pub fn pack(pack: &SkillPack, width: f32, cx: &mut Context<Workspace>) -> Statef
 /// surface while pressed, the accent border while the keyboard is on it.
 fn shell(group: SharedString, width: f32, cx: &App) -> Stateful<Div> {
     let theme = cx.theme();
-    let (border, surface, hover, ring) = (theme.border, theme.muted, theme.list_hover, theme.ring);
+    let (surface, hover, ring) = (theme.muted, theme.list_hover, theme.ring);
     div()
         .id(group.clone())
         .group(group)
@@ -171,9 +172,7 @@ fn shell(group: SharedString, width: f32, cx: &App) -> Stateful<Div> {
         .w(px(width))
         .h(px(height(width)))
         .rounded(px(RADIUS))
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .elevation(Level::Raised, cx)
         .cursor_pointer()
         .hover(move |card| card.border_color(ring.opacity(0.45)).bg(hover))
         .active(move |card| card.border_color(ring.opacity(0.6)).bg(surface))

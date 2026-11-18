@@ -1,5 +1,6 @@
 //! What waits for the user: a tool's request for a yes, and a question of the agent.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::rc::Rc;
 
 use dusk_protocol::tools::{Decision, Question, Request};
@@ -24,7 +25,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
         return cards;
     };
     let theme = cx.theme();
-    let (border, warning, surface) = (theme.border, theme.warning, theme.muted);
+    let (border, warning) = (theme.border, theme.warning);
     for request in &chat.approvals {
         let id = request.id;
         let mut buttons = div().flex().flex_row().gap_2().child(
@@ -97,7 +98,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
             other => div().child(other.describe("The agent")),
         };
         cards = cards.child(
-            card(border, surface)
+            card(cx)
                 .border_color(warning.opacity(0.6))
                 .child(what)
                 .child(buttons),
@@ -153,7 +154,7 @@ pub fn render(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
                     .on_click(cx.listener(move |ws, _, _, cx| ws.pick(index, cx))),
             );
         }
-        let mut card = card(border, surface)
+        let mut card = card(cx)
             .child(
                 div()
                     .font_weight(FontWeight::MEDIUM)
@@ -235,16 +236,14 @@ fn light_question(
         })
 }
 
-fn card(border: Hsla, surface: Hsla) -> Div {
+fn card(cx: &App) -> Div {
     div()
         .flex()
         .flex_col()
         .gap_3()
         .p_3()
         .rounded_xl()
-        .border_1()
-        .border_color(border)
-        .bg(surface)
+        .elevation(Level::Raised, cx)
 }
 
 impl Workspace {

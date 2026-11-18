@@ -1,5 +1,6 @@
 //! What a right click on a tile offers.
 
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{ActiveTheme, IconName},
     *,
@@ -36,10 +37,7 @@ pub fn menu(ws: &Workspace, window: &Window, cx: &mut Context<Workspace>) -> Opt
             .flex()
             .flex_col()
             .rounded_lg()
-            .border_1()
-            .border_color(border)
-            .bg(theme.popover)
-            .shadow_lg()
+            .elevation(Level::Floating, cx)
             .child(
                 widgets::menu_item("artifact-menu-open", cx)
                     .child(widgets::icon(IconName::Eye, muted))

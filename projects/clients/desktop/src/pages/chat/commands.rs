@@ -2,6 +2,7 @@
 //! running one. The core says what a command is and does the work; a command that only
 //! shows something opens the window's own place for it.
 
+use crate::ui::elevation::{Elevation, Level};
 use dusk_protocol::client::{Answer, COMMANDS, Command, parse};
 use gpui_kit::{component::ActiveTheme, *};
 
@@ -44,10 +45,7 @@ pub(super) fn menu(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg();
+        .elevation(Level::Floating, cx);
     for (index, (name, help)) in matches.into_iter().enumerate() {
         menu = menu.child(
             crate::ui::widgets::row(("command", index), index == 0, cx)

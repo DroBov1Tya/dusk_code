@@ -2,6 +2,7 @@
 //! mode and the approval policy. A click on the folder opens what to do with it.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{ActiveTheme, Icon, IconName},
     *,
@@ -97,10 +98,7 @@ fn path_menu(dir: PathBuf, web: Option<String>, cx: &mut Context<Workspace>) -> 
         .flex()
         .flex_col()
         .rounded_lg()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .occlude()
         .child(
             item("path-reveal", IconName::Folder.into(), reveal_label(), cx).on_click(cx.listener(

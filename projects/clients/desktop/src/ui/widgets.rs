@@ -1,6 +1,7 @@
 //! Small pieces every column draws with.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{ActiveTheme, Icon},
     prelude::FluentBuilder,
@@ -161,16 +162,13 @@ pub fn capitalize(text: &str) -> String {
 
 /// A card: the one surface the page is built of.
 pub fn card(cx: &App) -> Div {
-    let theme = cx.theme();
     div()
         .flex()
         .flex_col()
         .gap_3()
         .p_4()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.muted)
+        .elevation(Level::Raised, cx)
 }
 
 /// A field's label above its box.

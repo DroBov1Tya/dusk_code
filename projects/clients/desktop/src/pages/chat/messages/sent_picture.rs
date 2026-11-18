@@ -1,6 +1,7 @@
 //! The pictures a user's message carries, as thumbnails under its words. The bytes come
 //! from the core by the source's name, never from a path; a click opens one large.
 
+use crate::ui::elevation::{Elevation, Level};
 use std::sync::Arc;
 
 use gpui_kit::{component::ActiveTheme, *};
@@ -95,7 +96,7 @@ pub fn sent_pictures(
         return None;
     }
     let theme = cx.theme();
-    let (surface, border, muted) = (theme.muted, theme.border, theme.muted_foreground);
+    let muted = theme.muted_foreground;
     let tiles = names.into_iter().enumerate().map(|(n, name)| {
         let tile = div()
             .id(SharedString::from(format!("{key}-picture-{n}")))
@@ -104,9 +105,7 @@ pub fn sent_pictures(
             .flex_none()
             .rounded_lg()
             .overflow_hidden()
-            .bg(surface)
-            .border_1()
-            .border_color(border);
+            .elevation(Level::Raised, cx);
         match ws.sent_pictures.get(&(thread_id.to_owned(), name.clone())) {
             Some(SentPicture::Ready(image)) => {
                 let large = image.clone();

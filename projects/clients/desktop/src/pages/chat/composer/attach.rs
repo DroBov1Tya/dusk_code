@@ -2,6 +2,7 @@
 //! strip above the text, and the menu that adds them.
 
 use crate::ui::Type;
+use crate::ui::elevation::{Elevation, Level};
 use gpui_kit::{
     component::{
         ActiveTheme, IconName, Sizable,
@@ -151,10 +152,7 @@ pub fn attach_menu(has_chat: bool, cx: &mut Context<Workspace>) -> Stateful<Div>
         .flex()
         .flex_col()
         .rounded_xl()
-        .border_1()
-        .border_color(theme.border)
-        .bg(theme.popover)
-        .shadow_lg()
+        .elevation(Level::Floating, cx)
         .child(
             crate::ui::widgets::row("attach-files", false, cx)
                 .child(crate::ui::widgets::icon(

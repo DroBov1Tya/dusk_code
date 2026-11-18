@@ -13,6 +13,7 @@
 pub mod avatar;
 pub mod clipboard;
 pub mod controls;
+pub mod elevation;
 pub mod icons;
 pub mod layout;
 pub mod phone;

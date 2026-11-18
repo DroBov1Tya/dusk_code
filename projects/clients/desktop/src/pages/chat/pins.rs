@@ -2,6 +2,7 @@
 //! are, and a click pulls a drawer of them down over the chat; a row goes to its message.
 //! Excerpts are the core's plain text.
 
+use crate::ui::elevation::{Level, shadows};
 use std::time::{Duration, Instant};
 
 use dusk_protocol::thread::{MessageRole, Pin};
@@ -121,7 +122,7 @@ pub fn drawer(ws: &Workspace, cx: &mut Context<Workspace>) -> Option<Div> {
         .bg(surface)
         .border_b_1()
         .border_color(border)
-        .shadow_md()
+        .shadow(shadows(Level::Floating, cx))
         .children(
             pins.iter()
                 .enumerate()
