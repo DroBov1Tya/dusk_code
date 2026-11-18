@@ -92,7 +92,8 @@ pub fn render(ws: &Workspace, thread_id: &str, cx: &mut Context<Workspace>) -> D
                 .flex_row()
                 .items_center()
                 .gap_2()
-                .min_h(px(40.))
+                // Two lines a row: air between rows, or the names read as one block.
+                .py_1p5()
                 .child(dot)
                 .child(
                     div()

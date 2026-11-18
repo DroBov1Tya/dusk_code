@@ -51,7 +51,7 @@ pub fn section(cx: &mut Context<Workspace>) -> Div {
         .flex_col()
         .gap_2()
         .pt_4()
-        .child(widgets::caption("Remove duskcode", cx).px_1().pt_0())
+        .child(widgets::caption("Remove duskcode", cx).px_0().pt_0())
         .child(super::list(
             [line(
                 "Remove duskcode from this computer",

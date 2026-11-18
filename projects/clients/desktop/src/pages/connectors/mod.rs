@@ -106,7 +106,7 @@ pub fn render(
         .child(
             div()
                 .px_8()
-                .py_6()
+                .py_8()
                 .flex()
                 .flex_col()
                 .child(crate::ui::page_title(

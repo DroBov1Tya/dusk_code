@@ -32,7 +32,7 @@ pub fn render(ws: &mut Workspace, page: SettingsPage, cx: &mut Context<Workspace
                         .child(
                             Button::new("settings-mode")
                                 .outline()
-                                .label(ws.status.mode.clone())
+                                .label(ws.status.mode.to_lowercase())
                                 .dropdown_caret(true)
                                 .tooltip("Pick a mode")
                                 .on_click(cx.listener(|ws, _, _, cx| {
