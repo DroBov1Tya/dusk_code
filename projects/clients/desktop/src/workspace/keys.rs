@@ -18,7 +18,9 @@ actions!(
         SaveFile,
         Quit,
         FocusNextRow,
-        FocusPrevRow
+        FocusPrevRow,
+        TogglePlan,
+        ToggleViews
     ]
 );
 
@@ -33,6 +35,7 @@ pub const SHORTCUTS: &[(&str, &str)] = &[
     ("secondary-j", "Show or hide the terminal"),
     ("secondary-s", "Save the open file"),
     ("secondary-q", "Quit"),
+    ("secondary-e", "Open the views of the chat: the Overview"),
     (
         "escape",
         "Close the menu or window; leave the review or the box",
@@ -47,6 +50,12 @@ pub fn bind(cx: &mut App) {
         // Control-J, Control-S and Control-F are the shell's own keys, so these take
         // Shift too.
         ("ctrl-shift-j", "ctrl-shift-s", "ctrl-shift-f")
+    };
+    // Control-P is the shell's own key too.
+    let (views, plan) = if cfg!(target_os = "macos") {
+        ("cmd-e", "cmd-p")
+    } else {
+        ("ctrl-e", "ctrl-shift-p")
     };
     let (new, find, settings, sidebar, side, quit) = if cfg!(target_os = "macos") {
         ("cmd-n", "cmd-k", "cmd-,", "cmd-b", "cmd-alt-b", "cmd-q")
@@ -70,6 +79,8 @@ pub fn bind(cx: &mut App) {
         KeyBinding::new(terminal, ToggleTerminal, None),
         KeyBinding::new(save, SaveFile, None),
         KeyBinding::new(quit, Quit, None),
+        KeyBinding::new(views, ToggleViews, None),
+        KeyBinding::new(plan, TogglePlan, None),
         // Tab walks the rows only while a row has the keyboard; in a box it stays the box's.
         KeyBinding::new("tab", FocusNextRow, Some("Row")),
         KeyBinding::new("shift-tab", FocusPrevRow, Some("Row")),
@@ -121,6 +132,19 @@ impl Workspace {
         self.toggle_terminal(window, cx);
     }
 
+    pub fn on_toggle_views(
+        &mut self,
+        _: &ToggleViews,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.toggle_views(window, cx);
+    }
+
+    pub fn on_toggle_plan(&mut self, _: &TogglePlan, _: &mut Window, cx: &mut Context<Self>) {
+        self.toggle_plan(cx);
+    }
+
     pub fn on_save_file(&mut self, _: &SaveFile, _: &mut Window, cx: &mut Context<Self>) {
         self.save_file(cx);
     }
@@ -152,6 +176,9 @@ impl Workspace {
             || std::mem::take(&mut self.attach_open)
             || std::mem::take(&mut self.plugins.menu)
         {
+            return true;
+        }
+        if self.close_views(window, cx) {
             return true;
         }
         if std::mem::take(&mut self.navigator_open) {

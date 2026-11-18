@@ -132,6 +132,7 @@ impl Workspace {
             files: BTreeMap::new(),
             expanded: HashSet::new(),
             context: None,
+            dock: crate::pages::chat::dock::Dock::new(cx),
             alerts: Default::default(),
             plan: crate::columns::inspector::plan::Plan::new(window, cx),
             providers_page: crate::pages::settings::providers::State::new(window, cx),

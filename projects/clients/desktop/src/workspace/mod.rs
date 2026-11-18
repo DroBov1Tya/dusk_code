@@ -213,6 +213,8 @@ pub struct Workspace {
     pub context_load: crate::columns::inspector::context::ContextLoad,
     /// The core's answers the Overview draws.
     pub overview: crate::columns::inspector::overview::Shown,
+    /// The plan strip and the views tab over the composer.
+    pub dock: chat::dock::Dock,
     pub alerts: crate::platform::notify::Alerts,
     /// The shown chat's pinned plan.
     pub plan: crate::columns::inspector::plan::Plan,
