@@ -199,6 +199,8 @@ pub struct Workspace {
     pub repository: Option<dusk_protocol::project::RepositoryStatus>,
     /// The pull requests of each project's branch, by project ID, for the chat rows.
     pub pulls: HashMap<String, dusk_protocol::project::PullSummary>,
+    /// The pull requests whose checks are unfolded under their row in Changes.
+    pub open_checks: HashSet<u64>,
     pub touched: Vec<dusk_protocol::project::Change>,
     pub review: crate::pages::review::Review,
     /// The window's own focus: shortcuts reach the workspace from here when no box or row

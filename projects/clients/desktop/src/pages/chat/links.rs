@@ -32,7 +32,8 @@ pub enum Links {
 
 pub fn markdown(id: impl Into<ElementId>, text: String, links: Links) -> TextView {
     match links {
-        Links::Paths => view(TextView::markdown(id, linkify(&text, false)), links),
+        Links::Paths => view(TextView::markdown(id, linkify(&text, false)), links)
+            .markdown_extensions(super::pull_link::extensions(false)),
         Links::Web => view(TextView::markdown(id, unschemed(&text)), links),
     }
 }
@@ -40,16 +41,13 @@ pub fn markdown(id: impl Into<ElementId>, text: String, links: Links) -> TextVie
 /// The model's own answer: as `markdown`, and its `{{tone: label}}` drawn as labels.
 pub fn answer(id: impl Into<ElementId>, text: String) -> TextView {
     view(TextView::markdown(id, linkify(&text, true)), Links::Paths)
-        .markdown_extensions(super::marks::extensions())
+        .markdown_extensions(super::pull_link::extensions(true))
 }
 
 /// A view of a state kept apart, set up as `markdown` or, `marked`, as `answer`.
 pub fn kept(state: &Entity<TextViewState>, marked: bool) -> TextView {
-    let view = view(TextView::new(state), Links::Paths);
-    match marked {
-        true => view.markdown_extensions(super::marks::extensions()),
-        false => view,
-    }
+    view(TextView::new(state), Links::Paths)
+        .markdown_extensions(super::pull_link::extensions(marked))
 }
 
 fn view(view: TextView, links: Links) -> TextView {

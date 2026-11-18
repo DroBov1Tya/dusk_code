@@ -25,7 +25,11 @@ pub fn rows(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     };
     let mut column = div().flex().flex_col();
     for pull in &status.pulls {
-        column = column.child(row(status, pull, cx));
+        let fold = super::checks::toggle(ws, pull, cx);
+        column = column.child(row(status, pull, cx).when_some(fold, |row, fold| row.child(fold)));
+        if ws.open_checks.contains(&pull.number) {
+            column = column.child(super::checks::list(pull, cx));
+        }
     }
     if let Some(reason) = &status.unavailable {
         column = column.child(
@@ -105,7 +109,11 @@ fn checks_dot(pull: &PullStatus, cx: &App) -> Option<AnyElement> {
     } else {
         dot.into_any_element()
     };
-    let (checks, url, said) = (pull.checks, pull.url.clone(), checks_said(&pull.checks));
+    let (checks, url, said) = (
+        pull.checks.clone(),
+        pull.url.clone(),
+        checks_said(&pull.checks),
+    );
     let number = pull.number as usize;
     Some(
         HoverCard::new(("pull-checks-card", number))
@@ -286,6 +294,7 @@ impl Workspace {
                     return;
                 }
                 ws.repository = result.ok();
+                crate::pages::chat::pull_link::show(ws, cx);
                 cx.notify();
             },
         );
@@ -317,6 +326,7 @@ impl Workspace {
     ) {
         if self.project.as_deref() == Some(project_id) {
             self.repository = Some(status);
+            crate::pages::chat::pull_link::show(self, cx);
         }
         self.load_pull_summaries(cx);
     }
