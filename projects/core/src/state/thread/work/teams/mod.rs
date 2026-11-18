@@ -45,7 +45,7 @@ pub struct TeamRun {
     pub base_commit: Option<String>,
 }
 
-// T1 (the team's runtime) and P1 (serving) are the callers; nothing in the tree is yet.
+// P1 serves `team` and `end_team`; T1 (the team's runtime) is the rest of the callers.
 #[allow(dead_code)]
 impl State {
     /// Starts a run of the chat's plan at `now` with `budget`, which must be within

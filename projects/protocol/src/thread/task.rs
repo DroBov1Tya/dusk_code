@@ -216,6 +216,10 @@ pub struct TaskOwner {
 pub enum WaitsOn {
     /// A task of the plan that failed, by its id.
     Task(String),
+    /// A message of the team's mailbox that nobody answered yet, by its id.
+    Message(i64),
+    /// A task in review that the core held for the lead's decision.
+    Lead,
 }
 
 /// One page of a plan, for the strip: every task not done, then done ones, newest first.
@@ -308,6 +312,18 @@ mod tests {
         };
         let text = serde_json::to_string(&page).unwrap();
         assert_eq!(serde_json::from_str::<PlanPage>(&text).unwrap(), page);
+    }
+
+    #[test]
+    fn every_wait_survives_a_round_trip() {
+        for waits in [
+            WaitsOn::Task("t0".into()),
+            WaitsOn::Message(7),
+            WaitsOn::Lead,
+        ] {
+            let text = serde_json::to_string(&waits).unwrap();
+            assert_eq!(serde_json::from_str::<WaitsOn>(&text).unwrap(), waits);
+        }
     }
 
     #[test]
