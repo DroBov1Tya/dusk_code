@@ -69,6 +69,12 @@ pub struct Limits {
     /// model sees the same results in the same order; off is for comparing runs.
     #[serde(default = "yes")]
     pub parallel_reads: bool,
+    /// Whether each tool's description stays as a thread first showed it until the
+    /// thread's next compaction, so a memory rewritten, or a skill or an agent added,
+    /// mid-thread does not change the start of its requests and the provider's cache of
+    /// it holds. Off until the evals show it does not lower the pass rate.
+    #[serde(default)]
+    pub stable_prefix: bool,
     /// Times the same error comes back before the model is told to stop varying the call.
     #[serde(default = "default_failure_note_at")]
     pub failure_note_at: u32,
@@ -96,6 +102,7 @@ impl Default for Limits {
             failure_ladder: false,
             read_many_files: false,
             parallel_reads: true,
+            stable_prefix: false,
             failure_note_at: default_failure_note_at(),
             failure_replan_at: default_failure_replan_at(),
             failure_stop_at: default_failure_stop_at(),

@@ -5,6 +5,8 @@
 mod context;
 mod launcher;
 mod lock;
+#[cfg(test)]
+mod prefix;
 pub mod project;
 mod runner;
 pub mod start;

@@ -27,7 +27,7 @@ pub fn of<T: JsonSchema>() -> Value {
         settings.meta_schema = None;
     });
     let mut schema = settings.into_generator().root_schema_for::<T>().to_value();
-    drop_null(&mut schema);
+    simplify(&mut schema);
     if let Some(object) = schema.as_object_mut() {
         object.remove("title");
         // Doc comments on the type are for this code, not for the model.
@@ -37,8 +37,9 @@ pub fn of<T: JsonSchema>() -> Value {
 }
 
 /// `Option` fields allow null; models only need to leave them out, and some providers
-/// reject a list of types.
-fn drop_null(schema: &mut Value) {
+/// reject a list of types. The width schemars names for an integer (`"format": "uint64"`)
+/// is no JSON Schema format and says nothing `minimum` does not; every request carries it.
+fn simplify(schema: &mut Value) {
     match schema {
         Value::Object(object) => {
             if let Some(Value::Array(types)) = object.get_mut("type") {
@@ -47,6 +48,20 @@ fn drop_null(schema: &mut Value) {
                     let only = only.clone();
                     object.insert("type".into(), only);
                 }
+            }
+            let kind = object
+                .get("type")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if let (Some(kind), Some(Value::Array(choices))) = (&kind, object.get_mut("enum"))
+                && kind != "null"
+            {
+                choices.retain(|choice| !choice.is_null());
+            }
+            if matches!(kind.as_deref(), Some("integer" | "number"))
+                && object.get("format").is_some_and(Value::is_string)
+            {
+                object.remove("format");
             }
             if let Some(Value::Array(choices)) = object.get("anyOf") {
                 let kept: Vec<Value> = choices
@@ -62,9 +77,9 @@ fn drop_null(schema: &mut Value) {
                     }
                 }
             }
-            object.values_mut().for_each(drop_null);
+            object.values_mut().for_each(simplify);
         }
-        Value::Array(items) => items.iter_mut().for_each(drop_null),
+        Value::Array(items) => items.iter_mut().for_each(simplify),
         _ => {}
     }
 }
@@ -131,6 +146,14 @@ mod tests {
         limit: Option<u32>,
         #[serde(default)]
         items: Vec<String>,
+        kind: Option<Kind>,
+    }
+
+    #[derive(Deserialize, JsonSchema)]
+    #[allow(dead_code)]
+    enum Kind {
+        A,
+        B,
     }
 
     #[test]
@@ -140,6 +163,9 @@ mod tests {
         assert_eq!(schema["required"], json!(["path"]));
         assert_eq!(schema["additionalProperties"], false);
         assert_eq!(schema["properties"]["limit"]["type"], "integer");
+        assert_eq!(schema["properties"]["limit"]["minimum"], 0);
+        assert!(schema["properties"]["limit"].get("format").is_none());
+        assert_eq!(schema["properties"]["kind"]["enum"], json!(["A", "B"]));
         let check = Check::new(&schema);
         let good = json!({ "path": "a", "items": ["x"] });
         assert!(check.problems("t", &schema, &good).is_none());
