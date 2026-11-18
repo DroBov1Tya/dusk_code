@@ -1,6 +1,7 @@
 //! A pack's page, as a store page: its cover as a banner with the name, where it comes
-//! from, its stars and its buttons; then its skills as rows with their switches on one
-//! column, once the pack is here, or by name while it is only offered.
+//! from, its stars and its buttons; then its skills as rows with their descriptions and
+//! switches on one column, once the pack is here, or by name while it is only offered.
+//! A listing's window shows the same rows on its Skills tab.
 
 use dusk_protocol::{
     catalog::SkillPack,
@@ -22,6 +23,9 @@ use crate::{
     ui::{Type, size, widgets},
     workspace::Workspace,
 };
+
+/// The longest description a row shapes; one line shows.
+const DESCRIPTION_CHARS: usize = 200;
 
 pub fn render(ws: &Workspace, name: &str, grid: Grid, cx: &mut Context<Workspace>) -> Div {
     let shop = &ws.workshop;
@@ -47,7 +51,7 @@ pub fn render(ws: &Workspace, name: &str, grid: Grid, cx: &mut Context<Workspace
         .child(div().flex().child(back))
         .child(banner(ws, name, listing, here, grid, cx));
     match (here, listing) {
-        (Some(pack), _) => page.child(skills(pack, cx)),
+        (Some(pack), _) => page.child(skills(ws, pack, cx)),
         (None, Some(listing)) => page.child(offered(listing, cx)),
         (None, None) => page.child(widgets::muted("This pack is no longer listed.", cx)),
     }
@@ -137,8 +141,34 @@ fn banner(
     )
 }
 
-/// The skills of a pack that is here, a row each with its switch at the right edge.
-fn skills(pack: &SkillPack, cx: &mut Context<Workspace>) -> Div {
+/// The skills of the pack `listing` offers: those here with their switches, else by name.
+pub fn skill_list(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
+    let here = ws
+        .workshop
+        .packs
+        .iter()
+        .flatten()
+        .find(|pack| pack.name == listing.name);
+    match here {
+        Some(pack) => skills(ws, pack, cx),
+        None => offered(listing, cx),
+    }
+}
+
+/// A skill's description as the skills shelf read it; none before it is here.
+fn description<'a>(ws: &'a Workspace, name: &str) -> Option<&'a str> {
+    ws.settings
+        .as_ref()?
+        .skills
+        .iter()
+        .find(|skill| skill.name == name)
+        .map(|skill| skill.description.as_str())
+        .filter(|text| !text.is_empty())
+}
+
+/// The skills of a pack that is here, a row each with its description and its switch at
+/// the right edge.
+fn skills(ws: &Workspace, pack: &SkillPack, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (border, muted, surface) = (theme.border, theme.muted_foreground, theme.muted);
     let mut rows = div()
@@ -156,13 +186,29 @@ fn skills(pack: &SkillPack, cx: &mut Context<Workspace>) -> Div {
             .strip_prefix(&format!("{}/", pack.name))
             .unwrap_or(&skill.name)
             .to_owned();
+        let mut text = div()
+            .flex()
+            .flex_col()
+            .flex_1()
+            .min_w_0()
+            .child(div().body().truncate().child(short));
+        if let Some(about) = description(ws, &skill.name) {
+            text = text.child(
+                div()
+                    .small()
+                    .text_color(muted)
+                    .truncate()
+                    .child(super::capsule::clip(about, DESCRIPTION_CHARS)),
+            );
+        }
         rows = rows.child(
             div()
                 .flex()
                 .flex_row()
                 .items_center()
                 .gap(px(size::GAP_M))
-                .h(px(size::ROW))
+                .min_h(px(size::ROW))
+                .py(px(size::GAP_S))
                 .px(px(size::GAP_L))
                 .when(index > 0, |row| row.border_t_1().border_color(border))
                 .child(
@@ -170,7 +216,7 @@ fn skills(pack: &SkillPack, cx: &mut Context<Workspace>) -> Div {
                         .size(px(size::ICON))
                         .text_color(muted),
                 )
-                .child(div().flex_1().min_w_0().body().truncate().child(short))
+                .child(text)
                 .child(
                     Switch::new(SharedString::from(format!("pack-skill-{}", skill.name)))
                         .checked(skill.enabled)
@@ -215,7 +261,10 @@ fn skills(pack: &SkillPack, cx: &mut Context<Workspace>) -> Div {
 fn offered(listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     let theme = cx.theme();
     let (border, muted, surface) = (theme.border, theme.muted_foreground, theme.muted);
+    // The pack is the context, so a skill goes by its own name.
+    let prefix = format!("{}/", listing.name);
     let rows = listing.skills.iter().enumerate().map(|(index, skill)| {
+        let short = skill.strip_prefix(&prefix).unwrap_or(skill).to_owned();
         div()
             .flex()
             .flex_row()
@@ -229,7 +278,7 @@ fn offered(listing: &Listing, cx: &mut Context<Workspace>) -> Div {
                     .size(px(size::ICON))
                     .text_color(muted),
             )
-            .child(div().body().truncate().child(skill.clone()))
+            .child(div().body().truncate().child(short))
     });
     div()
         .flex()

@@ -1,9 +1,9 @@
-//! A listing's window, as a store page: on the left its cover with its name, facts and
-//! tags, then its screenshots and the whole description; on the right its action (with
-//! Remove apart and in the danger colour), what it warns of, what it may access, where it
-//! comes from and its details with dates in words and its page's address shown. A pack
-//! lists its skills and leads to its page. All of it is the publisher's text, drawn as
-//! plain text.
+//! A listing's window, as a store page: on the left its cover with its name, byline, mark
+//! and categories, then its tabs: Overview (screenshots and the whole description) and,
+//! for a pack, Skills; on the right its action (with Remove apart and in the danger
+//! colour), what it warns of, what it may access, where it comes from and its details
+//! with dates in words, its license and its addresses shown. A tab with nothing in it is
+//! not drawn. All of it is the publisher's text, drawn as plain text.
 
 use dusk_protocol::plugin::{Client, Kind, Listing};
 use gpui_kit::{
@@ -14,11 +14,23 @@ use gpui_kit::{
     *,
 };
 
-use super::{actions, capsule, gallery, hero, tier};
+use super::{
+    actions,
+    byline::{byline, day},
+    capsule, gallery, hero, pack, tier,
+};
 use crate::{
-    ui::{Type, size, widgets},
+    ui::{Type, controls, size, widgets},
     workspace::Workspace,
 };
+
+/// The tab of a listing's window in view.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum Tab {
+    #[default]
+    Overview,
+    Skills,
+}
 
 /// The width of the right column.
 const SIDE: f32 = 296.;
@@ -62,11 +74,23 @@ pub fn render(
         .w(px(main_w))
         .flex_none()
         .child(header(ws, listing, main_w, cx));
-    let stage_room = stage_room(window_height, main_w >= HEADER_SIDE_BY_SIDE);
-    if let Some(gallery) = gallery::render(ws, listing, main_w, stage_room, cx) {
-        main = main.child(gallery);
-    }
-    let main = main.child(about(listing, cx));
+    let has_skills = listing.kind == Kind::Pack && !listing.skills.is_empty();
+    let tab = if has_skills {
+        main = main.child(tabs(ws.workshop.tab, cx));
+        ws.workshop.tab
+    } else {
+        Tab::Overview
+    };
+    let main = match tab {
+        Tab::Overview => {
+            let stage_room = stage_room(window_height, main_w >= HEADER_SIDE_BY_SIDE);
+            if let Some(gallery) = gallery::render(ws, listing, main_w, stage_room, cx) {
+                main = main.child(gallery);
+            }
+            main.child(about(listing, cx))
+        }
+        Tab::Skills => main.child(skills(ws, listing, cx)),
+    };
     let side = side(ws, listing, cx).w(px(if wide { SIDE } else { main_w }));
     if wide {
         page.flex_row().items_start().child(main).child(side)
@@ -92,7 +116,50 @@ fn stage_room(window_height: f32, header_side_by_side: bool) -> f32 {
     body - size::GAP_XL - header - size::GAP_XL - size::GAP_S - CAPTION - MARGIN
 }
 
-/// The cover with the name, the facts and the tags beside it, or under it when narrow.
+/// "Overview | Skills"; drawn only when the listing has skills to show.
+fn tabs(open: Tab, cx: &mut Context<Workspace>) -> Div {
+    let tab = |id: &'static str, label: &'static str, this: Tab, cx: &mut Context<Workspace>| {
+        controls::text_choice(id, label, open == this, cx).on_click(cx.listener(
+            move |ws, _, _, cx| {
+                ws.workshop.tab = this;
+                cx.notify();
+            },
+        ))
+    };
+    div()
+        .flex()
+        .flex_row()
+        .items_center()
+        .gap(px(size::GAP_S))
+        .child(tab("detail-tab-overview", "Overview", Tab::Overview, cx))
+        .child(controls::pipe(cx))
+        .child(tab("detail-tab-skills", "Skills", Tab::Skills, cx))
+}
+
+/// The pack's skills, with their switches and descriptions once it is here, by name
+/// before; and the way to its page.
+fn skills(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
+    let opened = listing.name.clone();
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(size::GAP_M))
+        .child(pack::skill_list(ws, listing, cx))
+        .child(
+            div().flex().child(
+                Button::new("detail-pack-page")
+                    .link()
+                    .label("Open the pack's page")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.workshop.pack = Some(opened.clone());
+                        ws.close_modal(cx);
+                    })),
+            ),
+        )
+}
+
+/// The cover with the name, the byline, the mark and the chips beside it, or under it
+/// when narrow.
 fn header(ws: &Workspace, listing: &Listing, width: f32, cx: &App) -> Div {
     let cover = div()
         .flex_none()
@@ -117,7 +184,13 @@ fn header(ws: &Workspace, listing: &Listing, width: f32, cx: &App) -> Div {
                 .title()
                 .child(capsule::clip(&listing.name, LINE_CHARS)),
         )
-        .child(hero::facts(listing, cx));
+        .child(
+            div()
+                .small()
+                .text_color(cx.theme().muted_foreground)
+                .child(byline(listing)),
+        )
+        .child(marks(listing, cx));
     if let Some(tags) = hero::tags(listing, cx) {
         text = text.child(tags);
     }
@@ -127,6 +200,28 @@ fn header(ws: &Workspace, listing: &Listing, width: f32, cx: &App) -> Div {
     } else {
         row.flex_col().child(cover).child(text)
     }
+}
+
+/// The tier's mark, what the listing is and, for a mirror the user added, its stars.
+fn marks(listing: &Listing, cx: &App) -> Div {
+    let muted = cx.theme().muted_foreground;
+    let mut row = div()
+        .flex()
+        .flex_row()
+        .flex_wrap()
+        .items_center()
+        .gap(px(size::GAP_M))
+        .child(tier::mark(listing.tier, cx))
+        .child(
+            div()
+                .meta()
+                .text_color(muted)
+                .child(super::kind_word(listing.kind)),
+        );
+    if let Some(stars) = &listing.repo_stars {
+        row = row.child(div().meta().text_color(muted).child(stars.label()));
+    }
+    row
 }
 
 /// The full description, its line breaks kept.
@@ -201,29 +296,6 @@ fn side(ws: &Workspace, listing: &Listing, cx: &mut Context<Workspace>) -> Div {
         _ => vec!["Nothing: it is text the model reads; it runs nothing".to_owned()],
     };
     column = column.child(list("What it may access", access, cx));
-    if listing.kind == Kind::Pack {
-        let opened = listing.name.clone();
-        // The pack is the context, so a skill goes by its own name.
-        let prefix = format!("{}/", listing.name);
-        let skills = listing
-            .skills
-            .iter()
-            .map(|skill| skill.strip_prefix(&prefix).unwrap_or(skill).to_owned())
-            .collect();
-        column = column.child(
-            list(&widgets::count(listing.skills.len(), "skill"), skills, cx).child(
-                div().flex().child(
-                    Button::new("detail-pack-page")
-                        .link()
-                        .label("Open the pack's page")
-                        .on_click(cx.listener(move |ws, _, _, cx| {
-                            ws.workshop.pack = Some(opened.clone());
-                            ws.close_modal(cx);
-                        })),
-                ),
-            ),
-        );
-    }
     column
         .child(origin(listing, cx))
         .child(details(listing, cx))
@@ -311,7 +383,8 @@ fn origin(listing: &Listing, cx: &App) -> Div {
         .child(fact("Source", source.to_owned(), cx))
 }
 
-/// The version, the dates in words, and the page's address with the external glyph.
+/// The version, the dates in words, the license, and the addresses of its page and its
+/// origin with the external glyph.
 fn details(listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     let muted = cx.theme().muted_foreground;
     let mut block = div()
@@ -329,14 +402,28 @@ fn details(listing: &Listing, cx: &mut Context<Workspace>) -> Div {
     if let Some(version) = &listing.installed {
         block = block.child(fact("Installed", version.clone(), cx));
     }
-    let Some((url, shown)) = listing
-        .homepage
-        .as_deref()
-        .and_then(|url| address(url).map(|shown| (url.to_owned(), shown)))
-    else {
-        return block;
-    };
-    block.child(
+    if !listing.license.is_empty() {
+        block = block.child(fact("License", listing.license.clone(), cx));
+    }
+    let links = [
+        ("detail-homepage", "Page", listing.homepage.as_deref()),
+        ("detail-origin", "Origin", listing.origin.as_deref()),
+    ];
+    for (id, label, url) in links {
+        if let Some(url) = url {
+            block = block.children(link(id, label, url, cx));
+        }
+    }
+    block
+}
+
+/// A label and an `https` address shown as its host and path, opened on a click; none
+/// for an address that is not one.
+fn link(id: &'static str, label: &'static str, url: &str, cx: &App) -> Option<Div> {
+    let muted = cx.theme().muted_foreground;
+    let shown = address(url)?;
+    let url = url.to_owned();
+    Some(
         div()
             .flex()
             .flex_row()
@@ -347,11 +434,11 @@ fn details(listing: &Listing, cx: &mut Context<Workspace>) -> Div {
                     .flex_none()
                     .w(px(SIDE / 3.))
                     .text_color(muted)
-                    .child("Page"),
+                    .child(label),
             )
             .child(
                 div().flex_1().min_w_0().child(
-                    Button::new("detail-homepage")
+                    Button::new(id)
                         .link()
                         .icon(Icon::new(IconName::ExternalLink))
                         .label(shown)
@@ -417,28 +504,6 @@ fn paragraphs(text: &str, max: usize) -> String {
     kept
 }
 
-/// The day of an RFC 3339 time in words, as "11 Nov 2026"; none when it is not a day.
-fn day(text: Option<&str>) -> Option<String> {
-    const MONTHS: [&str; 12] = [
-        "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-    ];
-    let date = text?.get(..10)?;
-    let mut parts = date.split('-');
-    let (year, month, day) = (parts.next()?, parts.next()?, parts.next()?);
-    let digits =
-        |part: &str, len: usize| part.len() == len && part.bytes().all(|b| b.is_ascii_digit());
-    if !(digits(year, 4) && digits(month, 2) && digits(day, 2)) {
-        return None;
-    }
-    let month: usize = month.parse().ok()?;
-    let day: u32 = day.parse().ok()?;
-    if !(1..=31).contains(&day) {
-        return None;
-    }
-    let name = MONTHS.get(month.checked_sub(1)?)?;
-    Some(format!("{day} {name} {year}"))
-}
-
 /// An `https` link as its host and path, the way it is shown; none for anything else, or
 /// for a link that names a user before its host and so could pass for another site.
 fn address(url: &str) -> Option<String> {
@@ -457,7 +522,7 @@ fn address(url: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{address, day, paragraphs};
+    use super::{address, paragraphs};
 
     #[test]
     fn a_link_shows_its_real_host_or_nothing() {
@@ -475,19 +540,6 @@ mod tests {
         assert_eq!(address("https://evil.com\\@good.com"), None);
         assert_eq!(address("https://a.com/\nb"), None);
         assert_eq!(address("https:///path"), None);
-    }
-
-    #[test]
-    fn dates_read_in_words_or_not_at_all() {
-        assert_eq!(
-            day(Some("2026-11-01T10:00:00Z")).as_deref(),
-            Some("1 Nov 2026")
-        );
-        assert_eq!(day(Some("2026-13-01")), None);
-        assert_eq!(day(Some("2026-00-01")), None);
-        assert_eq!(day(Some("2026-1-011")), None);
-        assert_eq!(day(Some("é")), None);
-        assert_eq!(day(None), None);
     }
 
     #[test]

@@ -34,6 +34,42 @@ pub fn choice(button: Button, chosen: bool, cx: &App) -> Button {
     )
 }
 
+/// One of a few words separated by `pipe`, as "Discover | Installed": the chosen one in
+/// the text colour and heavier, the others muted. The caller adds the click.
+pub fn text_choice(
+    id: impl Into<ElementId>,
+    label: &'static str,
+    chosen: bool,
+    cx: &App,
+) -> Stateful<Div> {
+    let theme = cx.theme();
+    let foreground = theme.foreground;
+    let color = if chosen {
+        foreground
+    } else {
+        theme.muted_foreground
+    };
+    div()
+        .id(id)
+        .px_1()
+        .rounded_sm()
+        .cursor_pointer()
+        .body()
+        .font_weight(if chosen {
+            FontWeight::SEMIBOLD
+        } else {
+            FontWeight::NORMAL
+        })
+        .text_color(color)
+        .hover(move |word| word.text_color(foreground))
+        .child(label)
+}
+
+/// The quiet bar between two `text_choice` words.
+pub fn pipe(cx: &App) -> Div {
+    div().body().text_color(cx.theme().border).child("|")
+}
+
 /// A number between a minus and a plus, joined in one rounded field as on macOS. A side
 /// at its bound is greyed out, so the field says where the range ends. `middle` is the
 /// number as drawn: its text, or a box to type it in.

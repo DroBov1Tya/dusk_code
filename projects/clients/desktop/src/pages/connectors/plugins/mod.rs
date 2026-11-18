@@ -19,7 +19,13 @@ use gpui_kit::{
 };
 
 use super::{card, grid, matches};
-use crate::{ui::controls::choice, workspace::Workspace};
+use crate::{
+    ui::{
+        Type,
+        controls::{pipe, text_choice},
+    },
+    workspace::Workspace,
+};
 
 pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Workspace>) -> Div {
     let body = if ws.workshop.open {
@@ -35,29 +41,29 @@ pub fn render(ws: &Workspace, query: &str, window: &Window, cx: &mut Context<Wor
         .child(body)
 }
 
-/// "Installed | Workshop", and while the Workshop is shown "Update all" and a refresh.
-/// There is no auto-update switch: the core has no such setting, and a client keeps no
-/// timers of its own.
+/// "Workshop  Discover | Installed": the store's listings or the plugins here, and while
+/// the listings are shown "Update all" and a refresh. There is no auto-update switch:
+/// the core has no such setting, and a client keeps no timers of its own.
 fn views(ws: &Workspace, cx: &mut Context<Workspace>) -> Div {
     let open = ws.workshop.open;
     let view = |id: &'static str, label: &'static str, chosen: bool, workshop: bool| {
-        choice(Button::new(id).label(label), chosen, cx).on_click(cx.listener(
-            move |ws, _, _, cx| {
-                ws.workshop.open = workshop;
-                if workshop && ws.workshop.listings.is_none() {
-                    ws.load_store(cx);
-                }
-                cx.notify();
-            },
-        ))
+        text_choice(id, label, chosen, cx).on_click(cx.listener(move |ws, _, _, cx| {
+            ws.workshop.open = workshop;
+            if workshop && ws.workshop.listings.is_none() {
+                ws.load_store(cx);
+            }
+            cx.notify();
+        }))
     };
     div()
         .flex()
         .flex_row()
         .items_center()
-        .gap_1()
+        .gap_2()
+        .child(div().title().pr_2().child("Workshop"))
+        .child(view("plugins-workshop", "Discover", open, true))
+        .child(pipe(cx))
         .child(view("plugins-installed", "Installed", !open, false))
-        .child(view("plugins-workshop", "Workshop", open, true))
         .when(open, |row| {
             row.child(div().flex_1())
                 .child(

@@ -6,6 +6,7 @@
 //! it read, narrows by tier and kind, and asks before anything changes.
 
 mod actions;
+mod byline;
 mod capsule;
 pub mod covers;
 pub mod detail;
@@ -23,7 +24,7 @@ use std::{collections::HashMap, time::Instant};
 use dusk_protocol::{
     catalog::SkillPack,
     client::Switch as CoreSwitch,
-    plugin::{Kind, Listing, Order, Picks, SourceFailure, Tier, UpdateReport},
+    plugin::{CATEGORIES, Kind, Listing, Order, Picks, SourceFailure, Tier, UpdateReport},
 };
 use gpui_kit::{
     component::{
@@ -85,7 +86,8 @@ pub struct Workshop {
     pub pack: Option<String>,
     pub covers: covers::Covers,
     pub shots: covers::Shots,
-    /// The gallery of the open listing's window: the picture in view and its strip.
+    /// The open listing's window: its tab in view, the picture in view and its strip.
+    pub tab: detail::Tab,
     pub gallery: usize,
     pub strip: ScrollHandle,
     /// What the last "Update all" did, until it is closed.
@@ -371,6 +373,7 @@ impl Workspace {
 
     /// Opens a listing's window at its cover, with the keys for its gallery.
     pub fn open_listing(&mut self, listing: &Listing, window: &mut Window, cx: &mut Context<Self>) {
+        self.workshop.tab = detail::Tab::Overview;
         self.workshop.gallery = 0;
         self.workshop.filters = false;
         self.workshop.strip = ScrollHandle::new();
@@ -438,14 +441,30 @@ impl Workspace {
     }
 }
 
-/// The categories the listings name, each once, for the chips.
+/// The categories the listings name, each once, for the filter menu: the fixed ones in
+/// their order, then any other a format 2 list gave, by name.
 fn categories(listings: &[Listing]) -> Vec<String> {
-    let set: std::collections::BTreeSet<&str> = listings
+    let named: std::collections::BTreeSet<&str> = listings
         .iter()
-        .map(|listing| listing.category.as_str())
+        .flat_map(|listing| {
+            listing
+                .categories
+                .iter()
+                .map(String::as_str)
+                .chain([listing.category.as_str()])
+        })
         .filter(|category| !category.is_empty())
         .collect();
-    set.into_iter().map(str::to_owned).collect()
+    let fixed = CATEGORIES
+        .iter()
+        .filter(|category| named.contains(*category));
+    let other = named
+        .iter()
+        .filter(|category| !CATEGORIES.contains(*category));
+    fixed
+        .chain(other)
+        .map(|category| (*category).to_owned())
+        .collect()
 }
 
 /// What a listing is, in a word.

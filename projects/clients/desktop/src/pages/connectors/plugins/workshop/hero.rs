@@ -181,13 +181,21 @@ pub fn facts(listing: &Listing, cx: &App) -> Div {
         })
 }
 
-/// The category and tags as quiet chips; none when it has neither.
+/// The categories (or a format 2 list's one category) and tags as quiet chips; none when
+/// it has neither.
 pub fn tags(listing: &Listing, cx: &App) -> Option<Div> {
-    let words: Vec<String> = std::iter::once(&listing.category)
+    let categories = match listing.categories.is_empty() {
+        true => std::slice::from_ref(&listing.category),
+        false => listing.categories.as_slice(),
+    };
+    let mut words: Vec<String> = categories
+        .iter()
         .chain(&listing.tags)
         .filter(|word| !word.is_empty())
         .map(|word| widgets::capitalize(word))
         .collect();
+    let mut seen = std::collections::BTreeSet::new();
+    words.retain(|word| seen.insert(word.clone()));
     if words.is_empty() {
         return None;
     }
