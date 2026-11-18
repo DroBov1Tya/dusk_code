@@ -42,8 +42,10 @@ impl Runtime {
             usage::disk_bytes(Path::new(&name))
         };
         let paths = &self.launcher.paths;
+        let (process, children) = usage::process_tree();
         Ok(SystemReport {
-            process: usage::process(),
+            process,
+            children,
             database_bytes: usage::disk_bytes(&self.state_db),
             wal_bytes: wal("-wal") + wal("-shm"),
             artifacts_bytes: usage::disk_bytes(&paths.artifacts_dir()),

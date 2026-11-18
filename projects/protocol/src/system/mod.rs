@@ -5,4 +5,4 @@ mod report;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use clock::now_ms;
-pub use report::{ProcessUsage, SystemReport};
+pub use report::{Children, ProcessUsage, SystemReport};

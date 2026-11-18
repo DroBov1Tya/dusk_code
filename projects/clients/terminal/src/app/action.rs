@@ -170,6 +170,10 @@ pub fn commands() -> impl Iterator<Item = &'static (&'static str, &'static str)>
             "pin the agent's last answer; /unpin N takes pin N away",
         ),
         ("/files", "the files this chat's commands changed"),
+        (
+            "/link",
+            "copy this chat's link, for a message in another chat",
+        ),
         ("/diff", "review the changes in this chat's folder"),
         (
             "/disconnect",

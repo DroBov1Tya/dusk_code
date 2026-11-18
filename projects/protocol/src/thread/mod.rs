@@ -1,4 +1,5 @@
 //! What happens in a thread: the events it tells a client, its messages, turns, tasks,
+//! the link that names it,
 //! the team that runs its plan, token counts, goal and context, the Overview, its pins, the blocks it shows, and the steps of the transcript a
 //! client folds them into.
 
@@ -7,6 +8,7 @@ mod context;
 mod event;
 mod goal;
 mod job;
+mod link;
 mod message;
 mod name;
 mod overview;
@@ -28,6 +30,7 @@ pub use context::{ContextItemDetail, ContextReport, ContextSection, ContextSourc
 pub use event::{EpisodeKind, RepeatRung, ThreadEvent};
 pub use goal::{Goal, GoalCheck, GoalCriterion, GoalEvidence, GoalStatus};
 pub use job::{JobInfo, JobResult, job_message};
+pub use link::{THREAD_LINK_PREFIX, links_in, thread_link, thread_of_link};
 pub use message::{
     Compaction, LocalUnsent, Message, MessageRole, Part, Source, UndoPoint, has_pasted, plain,
     sound_tag, source_tag, split, wrap,

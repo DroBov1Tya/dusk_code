@@ -27,6 +27,15 @@ impl App {
             "/overview" => return Action::Overview,
             "/schedules" => return Action::Schedule(ScheduleAction::Open),
             "/files" => return Action::ChangedFiles,
+            "/link" => {
+                return match &self.thread_id {
+                    Some(id) => Action::Copy(dusk_protocol::thread::thread_link(id)),
+                    None => {
+                        self.flash = Some("No chat yet: send a message first".into());
+                        Action::None
+                    }
+                };
+            }
             "/diff" => return Action::Diff,
             "/me" => return Action::OpenMe,
             "/pins" => return Action::Pin(super::PinAsk::List),

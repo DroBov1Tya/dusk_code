@@ -1,5 +1,5 @@
-//! What a right click on a chat offers: rename, pin to the top, a task on a timetable,
-//! delete. Delete asks
+//! What a right click on a chat offers: rename, pin to the top, copy its link, a task on
+//! a timetable, delete. Delete asks
 //! first, since the core erases the chat and its folder for good.
 
 use gpui_kit::{
@@ -21,8 +21,8 @@ use crate::{
 };
 
 /// The small menu at the pointer, over everything.
-/// Tall enough for the four rows and the padding.
-const MENU_HEIGHT: f32 = 144.;
+/// Tall enough for the five rows and the padding.
+const MENU_HEIGHT: f32 = 176.;
 
 pub fn render(
     ws: &Workspace,
@@ -40,7 +40,8 @@ pub fn render(
     let theme = cx.theme();
     let muted = theme.muted_foreground;
     let pinned = theme::prefs(cx).pinned.contains(&thread_id);
-    let (rename, pin, delete) = (thread_id.clone(), thread_id.clone(), thread_id);
+    let (rename, pin, delete) = (thread_id.clone(), thread_id.clone(), thread_id.clone());
+    let link = dusk_protocol::thread::thread_link(&thread_id);
     Some(
         div()
             .id("chat-menu")
@@ -71,6 +72,16 @@ pub fn render(
                     .child(widgets::icon(IconName::Star, muted))
                     .child(if pinned { "Unpin" } else { "Pin to the top" })
                     .on_click(cx.listener(move |ws, _, _, cx| ws.toggle_pin(&pin, cx))),
+            )
+            .child(
+                widgets::menu_item("menu-link", cx)
+                    .child(widgets::icon(IconName::Copy, muted))
+                    .child("Copy link")
+                    .on_click(cx.listener(move |ws, _, _, cx| {
+                        ws.chat_menu = None;
+                        cx.write_to_clipboard(ClipboardItem::new_string(link.clone()));
+                        cx.notify();
+                    })),
             )
             .child(
                 widgets::menu_item("menu-schedule", cx)
