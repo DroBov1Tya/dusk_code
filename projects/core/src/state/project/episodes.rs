@@ -2,7 +2,7 @@
 //! twice. This file only stores and finds them; the text arrives cleaned and cut to the
 //! table's caps (`project::episodes`), and the table refuses anything longer.
 
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::PoisonError};
 
 use anyhow::{Context, Result, bail};
 use sqlx::{Row, sqlite::SqliteRow};
@@ -244,6 +244,33 @@ impl State {
         rows.into_iter()
             .map(|(project, count)| Ok((project, u64::try_from(count)?)))
             .collect()
+    }
+
+    /// Reads the counts from the table into memory; the database does it when it opens.
+    pub(crate) async fn load_episode_counts(&self) -> Result<()> {
+        let counts = self.episode_counts().await?;
+        *self
+            .episodes
+            .write()
+            .unwrap_or_else(PoisonError::into_inner) = counts;
+        Ok(())
+    }
+
+    /// Whether the project has an episode, from memory, with no query.
+    pub fn has_episodes(&self, project: &str) -> bool {
+        let counts = self.episodes.read().unwrap_or_else(PoisonError::into_inner);
+        counts.get(project).is_some_and(|count| *count > 0)
+    }
+
+    /// Tells `recall` that the project has one more episode; whoever records one calls it
+    /// after the write. It adds one even when the write only counted a known episode
+    /// again: the number only has to tell none from some.
+    pub fn note_episode(&self, project: &str) {
+        let mut counts = self
+            .episodes
+            .write()
+            .unwrap_or_else(PoisonError::into_inner);
+        *counts.entry(project.to_owned()).or_default() += 1;
     }
 }
 

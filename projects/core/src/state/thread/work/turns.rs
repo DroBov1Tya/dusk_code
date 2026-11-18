@@ -151,6 +151,7 @@ impl State {
                         | "changes"
                         | "search_files"
                         | "read_history"
+                        | "recall"
                         | "load_skill"
                         | "display_image"
                         | "display_audio"

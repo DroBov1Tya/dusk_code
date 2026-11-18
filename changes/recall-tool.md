@@ -1,0 +1,2 @@
+Added
+The `recall` tool: the agent asks what ended a problem before in this project and gets up to three notes from earlier turns (an error that kept coming back with the call that passed, or a check that passed), at most 2 KiB, only from the project of the thread's folder. It stays off until `tools: { recall: true }` and is offered only while the project has an episode; nothing records episodes yet.

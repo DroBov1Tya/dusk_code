@@ -329,6 +329,7 @@ mod tests {
         ("press_keys", false, false),
         ("read_file", true, true),
         ("read_history", true, true),
+        ("recall", true, true),
         ("remember", true, false),
         ("remember_project", true, false),
         ("run_command", false, false),
