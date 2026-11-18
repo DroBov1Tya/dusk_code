@@ -300,34 +300,35 @@ mod tests {
 
     use crate::{init::paths::Paths, runtime::Runtime};
 
-    /// Every built-in tool and whether a call whose result was lost may run again. A tool
-    /// added without a decision here fails the test.
-    const REPEATABLE: &[(&str, bool)] = &[
-        ("agent_state", true),
-        ("ask_agent", false),
-        ("ask_user", true),
-        ("click", false),
-        ("computer_actions", false),
-        ("display_audio", true),
-        ("display_image", true),
-        ("goal", false), // true for the show action only; see `argument_dependent_tools`
-        ("jobs", false), // true for list, status and output only
-        ("load_skill", true),
-        ("message_parent", false),
-        ("plan_edit", true),
-        ("press_keys", false),
-        ("read_file", true),
-        ("read_history", true),
-        ("remember", true),
-        ("remember_project", true),
-        ("run_command", false),
-        ("screenshot", true),
-        ("scroll", false),
-        ("search_files", true),
-        ("show", true),
-        ("tasks", false),
-        ("type_text", false),
-        ("window_session", false),
+    /// Every built-in tool, whether a call whose result was lost may run again, and
+    /// whether the call only reads, so it may run with the reads next to it. A tool added
+    /// without a decision here fails the test.
+    const DECISIONS: &[(&str, bool, bool)] = &[
+        ("agent_state", true, false),
+        ("ask_agent", false, false),
+        ("ask_user", true, false),
+        ("click", false, false),
+        ("computer_actions", false, false),
+        ("display_audio", true, false),
+        ("display_image", true, false),
+        ("goal", false, false), // true for the show action only; see `argument_dependent_tools`
+        ("jobs", false, false), // true for list, status and output only
+        ("load_skill", true, true),
+        ("message_parent", false, false),
+        ("plan_edit", true, false),
+        ("press_keys", false, false),
+        ("read_file", true, true),
+        ("read_history", true, true),
+        ("remember", true, false),
+        ("remember_project", true, false),
+        ("run_command", false, false),
+        ("screenshot", true, false),
+        ("scroll", false, false),
+        ("search_files", true, true),
+        ("show", true, false),
+        ("tasks", false, false),
+        ("type_text", false, false),
+        ("window_session", false, false),
     ];
 
     /// The registries a chat (depth 0) and an agent (depth 1) get, as the launcher builds
@@ -349,7 +350,7 @@ mod tests {
         let mut built: BTreeSet<String> = BTreeSet::new();
         built.extend(chat.names().map(str::to_owned));
         built.extend(agent.names().map(str::to_owned));
-        let decided: BTreeSet<String> = REPEATABLE.iter().map(|(n, _)| (*n).to_owned()).collect();
+        let decided: BTreeSet<String> = DECISIONS.iter().map(|(n, _, _)| (*n).to_owned()).collect();
         let undecided: Vec<_> = built.difference(&decided).collect();
         assert!(undecided.is_empty(), "no repeat decision for {undecided:?}");
         // window_session exists on macOS only.
@@ -361,11 +362,19 @@ mod tests {
             missing.is_empty(),
             "the table names unknown tools {missing:?}"
         );
-        for (name, expected) in REPEATABLE {
+        for (name, repeatable, read_only) in DECISIONS {
+            // A group of reads is run again after a restart, so a read-only call must be
+            // one that may run again.
+            assert!(
+                *repeatable || !read_only,
+                "{name} reads only, yet is not repeatable"
+            );
             for registry in [&chat, &agent] {
                 if registry.names().any(|n| n == *name) {
                     let got = registry.repeatable(name, &json!({}));
-                    assert_eq!(got, *expected, "{name}");
+                    assert_eq!(got, *repeatable, "{name}");
+                    let got = registry.read_only(name, &json!({}));
+                    assert_eq!(got, *read_only, "{name} read-only");
                 }
             }
         }
@@ -392,5 +401,6 @@ mod tests {
             );
         }
         assert!(!chat.repeatable("no_such_tool", &json!({})));
+        assert!(!chat.read_only("no_such_tool", &json!({})));
     }
 }

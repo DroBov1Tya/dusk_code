@@ -25,7 +25,7 @@ use crate::{
 pub use dusk_protocol::tools::ToolResult;
 
 /// The model reads every result; a runaway one must not flood its context.
-const MAX_RESULT_BYTES: usize = 64 * 1024;
+pub(super) const MAX_RESULT_BYTES: usize = 64 * 1024;
 
 #[derive(Default)]
 pub struct ToolRegistry {
@@ -105,6 +105,14 @@ impl ToolRegistry {
         self.tools
             .get(name)
             .is_some_and(|tool| tool.repeatable(arguments))
+    }
+
+    /// Whether the call only reads, so it may run with the read-only calls next to it;
+    /// an unknown tool never does.
+    pub fn read_only(&self, name: &str, arguments: &Value) -> bool {
+        self.tools
+            .get(name)
+            .is_some_and(|tool| tool.read_only(arguments))
     }
 
     /// The skill a successful `load_skill` call named; `None` for other tools or when
@@ -219,7 +227,7 @@ impl ToolRegistry {
             .map(|tool| ToolSpec {
                 name: tool.name().to_owned(),
                 description: tool.description(&context),
-                parameters: tool.parameters(),
+                parameters: tool.offered_parameters(&context),
             })
             .collect()
     }

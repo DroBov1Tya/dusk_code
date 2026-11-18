@@ -44,7 +44,9 @@ const NOT_RUN: &str = "not run: an earlier call of this step was cut off by a re
 pub struct Unfinished {
     pub turn: Turn,
     /// Calls of the newest step without a result, in call order. Calls run one by one,
-    /// so only the first can have started.
+    /// except a run of read-only calls, which runs together and is stored in call order
+    /// once all are in. So only the first can have started, or, when it is read-only,
+    /// any of the reads that follow it up to the first call that is not.
     pub open: Vec<ToolCall>,
     /// The newest time anything of the turn was written, in Unix ms.
     pub active_at: i64,

@@ -69,6 +69,10 @@ impl Tool for ReadHistory {
         true
     }
 
+    fn read_only(&self, _arguments: &Value) -> bool {
+        true
+    }
+
     fn call<'a>(&'a self, arguments: Value, _context: ToolContext) -> BoxFuture<'a, String> {
         Box::pin(async move {
             let arguments: ReadHistoryArguments = parse_arguments(arguments)?;

@@ -58,6 +58,9 @@ pub struct RemoteTool {
     /// The server says the tool only reads or is idempotent. The hint comes from the
     /// server and is not trusted for anything beyond repeating that server's own call.
     pub repeatable: bool,
+    /// The server says the tool changes nothing. Only `readOnlyHint` says so; an
+    /// idempotent call may still change state.
+    pub read_only: bool,
 }
 
 /// HTTPS, or plain HTTP to this machine by its address, without credentials in the URL.
@@ -261,6 +264,7 @@ fn remote_tool(tool: rmcp::model::Tool) -> RemoteTool {
     };
     RemoteTool {
         repeatable: hint(|a| a.read_only_hint) || hint(|a| a.idempotent_hint),
+        read_only: hint(|a| a.read_only_hint),
         name: tool.name.into_owned(),
         description: tool
             .description
@@ -295,6 +299,18 @@ mod tests {
             tool["annotations"] = annotations;
         }
         remote_tool(serde_json::from_value(tool).unwrap()).repeatable
+    }
+
+    #[test]
+    fn only_a_read_only_hint_makes_a_tool_read_only() {
+        let read_only = |annotations: Value| {
+            let tool =
+                json!({"name": "t", "inputSchema": {"type": "object"}, "annotations": annotations});
+            remote_tool(serde_json::from_value(tool).unwrap()).read_only
+        };
+        assert!(read_only(json!({"readOnlyHint": true})));
+        assert!(!read_only(json!({"idempotentHint": true})));
+        assert!(!read_only(json!({"readOnlyHint": false})));
     }
 
     #[test]
