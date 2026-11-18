@@ -4,7 +4,7 @@ use super::Client;
 use anyhow::{Result, bail};
 use dusk_protocol::{
     client::{PluginRequest, Request, Response},
-    plugin::{Listing, Order, StoreRequest, UiEvent},
+    plugin::{Listing, Order, StoreList, StoreRequest, UiEvent, UpdateReport},
 };
 
 /// Views, frames and notes of the parts this client opened come as `Event::PluginView`,
@@ -56,13 +56,10 @@ impl Plugins<'_> {
 /// The plugin store. The core checks the signed list and every package; a client shows
 /// the list and asks the user before `install`, showing the listing's permissions.
 impl Plugins<'_> {
-    /// The listings in trust order. A source that cannot be read is logged; when none
-    /// can, the first one's error is the answer.
-    pub async fn store(&self) -> Result<Vec<Listing>> {
-        let request = StoreRequest::List {
-            order: Order::default(),
-            category: None,
-        };
+    /// The listings in `order`, only `category`'s when one is given, and the sources
+    /// that could not be read; a client shows both.
+    pub async fn store(&self, order: Order, category: Option<String>) -> Result<StoreList> {
+        let request = StoreRequest::List { order, category };
         let list = match self.0.call(Request::Store(request)).await? {
             Response::Store(list) => list,
             Response::Error(error) => bail!(error),
@@ -71,9 +68,48 @@ impl Plugins<'_> {
         for failure in &list.failed {
             tracing::warn!("store source {}: {}", failure.source, failure.error);
         }
-        match (list.listings.is_empty(), list.failed.first()) {
-            (true, Some(failure)) => bail!("{}: {}", failure.source, failure.error),
-            _ => Ok(list.listings),
+        Ok(list)
+    }
+
+    /// Updates every installed listing whose update asks for nothing more.
+    pub async fn update_all(&self) -> Result<UpdateReport> {
+        match self.0.call(Request::Store(StoreRequest::UpdateAll)).await? {
+            Response::StoreUpdates(report) => Ok(report),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
+        }
+    }
+
+    /// The cover of `name` from `source`, checked by the core against its list: the
+    /// bytes in base64 and their type.
+    pub async fn cover(&self, source: &str, name: &str) -> Result<(String, String)> {
+        let request = StoreRequest::Cover {
+            source: source.to_owned(),
+            name: name.to_owned(),
+        };
+        self.media(request).await
+    }
+
+    /// The `index`th screenshot of `name` from `source`, checked like a cover.
+    pub async fn screenshot(
+        &self,
+        source: &str,
+        name: &str,
+        index: u32,
+    ) -> Result<(String, String)> {
+        let request = StoreRequest::Screenshot {
+            source: source.to_owned(),
+            name: name.to_owned(),
+            index,
+        };
+        self.media(request).await
+    }
+
+    async fn media(&self, request: StoreRequest) -> Result<(String, String)> {
+        match self.0.call(Request::Store(request)).await? {
+            Response::Media { base64, mime } => Ok((base64, mime)),
+            Response::Error(error) => bail!(error),
+            other => bail!("unexpected answer: {other:?}"),
         }
     }
 

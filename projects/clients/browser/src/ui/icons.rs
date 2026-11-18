@@ -40,6 +40,16 @@ pub enum IconName {
     FileText,
     SquareTerminal,
     Check,
+    TierOfficial,
+    TierVerified,
+    TierCommunity,
+    TierLocal,
+    Filter,
+    ChevronLeft,
+    ChevronRight,
+    Star,
+    TriangleAlert,
+    ExternalLink,
 }
 
 impl IconName {
@@ -81,6 +91,16 @@ impl IconName {
             Self::FileText => "#dusk-icon-file-text",
             Self::SquareTerminal => "#dusk-icon-square-terminal",
             Self::Check => "#dusk-icon-check",
+            Self::TierOfficial => "#dusk-icon-tier-official",
+            Self::TierVerified => "#dusk-icon-tier-verified",
+            Self::TierCommunity => "#dusk-icon-tier-community",
+            Self::TierLocal => "#dusk-icon-tier-local",
+            Self::Filter => "#dusk-icon-filter",
+            Self::ChevronLeft => "#dusk-icon-chevron-left",
+            Self::ChevronRight => "#dusk-icon-chevron-right",
+            Self::Star => "#dusk-icon-star",
+            Self::TriangleAlert => "#dusk-icon-triangle-alert",
+            Self::ExternalLink => "#dusk-icon-external-link",
         }
     }
 }

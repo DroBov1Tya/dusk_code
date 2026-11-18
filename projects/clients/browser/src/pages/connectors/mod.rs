@@ -62,6 +62,7 @@ mod plugins;
 mod skills;
 mod tools;
 mod voice;
+mod workshop;
 
 use agents::Agents;
 use mcp::Mcp;

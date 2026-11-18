@@ -28,12 +28,16 @@ pub enum Action {
         key: String,
         value: String,
     },
-    /// Reads the plugin store into the Workshop.
+    /// Reads the store and the skill packs into the Workshop.
     LoadStore,
     /// Installs or updates a plugin from the store at the version the user saw.
     InstallPlugin(Box<dusk_protocol::plugin::Listing>),
     /// Removes a plugin the store installed.
     RemovePlugin(String),
+    /// Updates what asks for nothing more, and says what was done and left.
+    UpdateAll,
+    /// Switches a skill pack or a skill of one from the Workshop.
+    PackSwitch(dusk_protocol::client::Switch, bool),
     Connect {
         kind: ProviderKind,
         /// `None` takes the next free `provider-N`.
